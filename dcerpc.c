@@ -1,0 +1,1438 @@
+/*
+ *   fs/cifssrv/dcerpc.c
+ *
+ *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ */
+
+#include"dcerpc.h"
+#include"export.h"
+
+/**
+ * process_rpc() - process a RPC request
+ * @server:     TCP server instance of connection
+ * @data:	RPC request packet - data
+ *
+ * Return:      0 on success, error number on error
+ */
+int process_rpc(struct tcp_server_info *server, char *data)
+{
+	RPC_HDR *rpc_hdr;
+	int ret = 0;
+
+	rpc_hdr = (RPC_HDR *)data;
+
+	cifssrv_debug("DCERPC pktype = %u\n", rpc_hdr->pkt_type);
+
+	switch (rpc_hdr->pkt_type) {
+	case RPC_REQUEST:
+		cifssrv_debug("GOT RPC_REQUEST\n");
+		ret = rpc_request(server, data);
+		break;
+	case RPC_BIND:
+		cifssrv_debug("GOT RPC_BIND\n");
+		ret = rpc_bind(server, data);
+		break;
+	default:
+		cifssrv_debug("rpc type = %d Not Implemented\n",
+				rpc_hdr->pkt_type);
+		ret = -EOPNOTSUPP;
+	}
+
+	if (!ret)
+		server->pipe_desc->pkt_type = rpc_hdr->pkt_type;
+
+	return ret;
+}
+
+/**
+ * process_rpc_rsp() - create RPC response buffer
+ * @server:     TCP server instance of connection
+ * @data_buf:	RPC response out buffer
+ * @size:	response buffer size
+ *
+ * Return:      response length on success, otherwise error number
+ */
+int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
+{
+	int nbytes = 0;
+
+	if (server->pipe_desc == NULL) {
+		cifssrv_debug("Pipe Not opened\n");
+		return -EINVAL;
+	}
+
+	switch (server->pipe_desc->pkt_type) {
+	case RPC_REQUEST:
+		nbytes = rpc_read_srvsvc_data(server,
+				data_buf, size);
+		break;
+	case RPC_BIND:
+		nbytes = rpc_read_bind_data(server, data_buf);
+		break;
+	default:
+		cifssrv_debug("rpc type = %d Not Implemented\n",
+				server->pipe_desc->pkt_type);
+		return -EINVAL;
+	}
+
+	return nbytes;
+}
+
+/**
+ * rpc_read_bind_data() - create RPC response buffer for RPC_BIND request
+ * @server:     TCP server instance of connection
+ * @out_data:	RPC response out buffer
+ *
+ * Return:      response length on success, otherwise error number
+ */
+int rpc_read_bind_data(struct tcp_server_info *server, char *out_data)
+{
+	RPC_HDR *hdr = (RPC_HDR *)out_data;
+	int offset = 0;
+	RPC_BIND_RSP *rpc_bind_rsp;
+
+	rpc_bind_rsp = (RPC_BIND_RSP *)server->pipe_desc->data;
+
+	memcpy(out_data, &rpc_bind_rsp->hdr, sizeof(RPC_HDR));
+	offset += sizeof(RPC_HDR);
+
+	memcpy(out_data + offset, &rpc_bind_rsp->bind_info,
+	       sizeof(BIND_ACK_INFO));
+	offset += sizeof(BIND_ACK_INFO);
+
+	memcpy(out_data + offset, &rpc_bind_rsp->addr.sec_addr_len,
+	       sizeof(__u16));
+	offset += sizeof(__u16);
+
+	memcpy(out_data + offset, rpc_bind_rsp->addr.sec_addr,
+		rpc_bind_rsp->addr.sec_addr_len);
+	offset += rpc_bind_rsp->addr.sec_addr_len;
+	offset += (((offset + 3) & ~3) - offset);
+
+	memcpy(out_data + offset, &rpc_bind_rsp->results, sizeof(RPC_RESULTS));
+	offset += sizeof(RPC_RESULTS);
+
+	memcpy(out_data + offset, rpc_bind_rsp->transfer, sizeof(RPC_IFACE));
+	offset += sizeof(RPC_IFACE);
+
+	hdr->frag_len = offset;
+
+	kfree(rpc_bind_rsp->addr.sec_addr);
+	kfree(rpc_bind_rsp->transfer);
+	kfree(rpc_bind_rsp);
+
+	return offset;
+}
+
+/**
+ * rpc_read_srvsvc_data() - create RPC response buffer for RPC_REQUEST
+ * @server:     TCP server instance of connection
+ * @out_data:	RPC response out buffer
+ * @buf_len:	RPC response buffer length
+ *
+ * Return:      response length on success, otherwise error number
+ */
+int rpc_read_srvsvc_data(struct tcp_server_info *server, char *outdata,
+								int buf_len)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp = (RPC_REQUEST_RSP *)outdata;
+	int offset = 0, num_shares, string_len = 0;
+	int i = 0, resume_handle = 0, data_sent = 0, datasize = 0;
+	SRVSVC_SHARE_INFO_CTR *sharectr;
+	SRVSVC_SHARE_GETINFO *shareinfo;
+	WKSSVC_SHARE_GETINFO *wkssvc_info;
+	char *buf = NULL;
+
+
+	sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
+	memcpy(outdata, &sharectr->rpc_request_rsp, sizeof(RPC_REQUEST_RSP));
+	offset += sizeof(RPC_REQUEST_RSP);
+
+
+	if (server->pipe_desc->opnum == SRV_NET_SHARE_GETINFO) {
+		shareinfo = (SRVSVC_SHARE_GETINFO *)server->pipe_desc->data;
+
+		memcpy(outdata + offset, &shareinfo->info_level,
+				sizeof(shareinfo->info_level));
+		offset += sizeof(shareinfo->info_level);
+		memcpy(outdata + offset, &shareinfo->switch_value,
+				sizeof(shareinfo->switch_value));
+		offset += sizeof(shareinfo->switch_value);
+		if (shareinfo->status == WERR_INVALID_NAME)
+			goto out;
+		memcpy(outdata + offset, shareinfo->ptrs,
+				sizeof(PTR_INFO1));
+		offset += sizeof(PTR_INFO1);
+
+		for (i = 0; i < 1; i++) {
+			memcpy(outdata + offset,
+			&shareinfo->shares[i].str_info1, sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			string_len =
+				shareinfo->shares[i].str_info1.actual_count * 2;
+
+			memcpy(outdata + offset, shareinfo->shares[i].sharename,
+					string_len);
+			offset += ((string_len + 3) & ~3);
+
+			memcpy(outdata + offset,
+			       &shareinfo->shares[i].str_info2,
+			       sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			string_len =
+				shareinfo->shares[i].str_info2.actual_count * 2;
+
+			memcpy(outdata + offset, shareinfo->shares[i].comment,
+					string_len);
+			offset += ((string_len + 3) & ~3);
+		}
+out:
+		memcpy(outdata + offset, &shareinfo->status,
+				sizeof(shareinfo->status));
+		offset += sizeof(shareinfo->status);
+
+		rpc_request_rsp->hdr.frag_len = offset;
+		rpc_request_rsp->alloc_hint = offset - sizeof(RPC_REQUEST_RSP);
+
+		cifssrv_debug("frag len = %d alloc_hint = %d\n",
+			       rpc_request_rsp->hdr.frag_len,
+			       rpc_request_rsp->alloc_hint);
+
+		kfree(shareinfo->shares);
+		kfree(shareinfo->ptrs);
+		kfree(shareinfo);
+	}
+
+	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
+		sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
+		buf = server->pipe_desc->buf;
+		data_sent = server->pipe_desc->sent;
+		datasize = server->pipe_desc->datasize;
+		num_shares = sharectr->info.num_entries;
+		resume_handle = sharectr->resume_handle;
+
+		cifssrv_debug("num entries = %d\n", sharectr->info.num_entries);
+		if (resume_handle) {
+			memcpy(outdata, server->pipe_desc->buf + data_sent,
+								resume_handle);
+			datasize = resume_handle;
+			goto finish;
+		}
+
+		if (datasize > buf_len) {
+			memcpy(outdata, buf, buf_len);
+			resume_handle = datasize - buf_len;
+			server->pipe_desc->sent = buf_len;
+			sharectr->resume_handle = resume_handle;
+		} else {
+			memcpy(outdata, buf, datasize);
+		}
+
+		rpc_request_rsp->hdr.frag_len = datasize;
+		rpc_request_rsp->alloc_hint = datasize -
+					sizeof(RPC_REQUEST_RSP);
+		cifssrv_debug("frag len = %d alloc_hint = %d\n",
+				       rpc_request_rsp->hdr.frag_len,
+				       rpc_request_rsp->alloc_hint);
+		if (resume_handle) {
+			server->pipe_desc->sent = buf_len;
+			cifssrv_debug("Pipe data is outstanding, "
+			"sent %d, remaining %d\n", buf_len, datasize - buf_len);
+			return datasize;
+		}
+finish:
+		kfree(sharectr->shares);
+		kfree(sharectr->ptrs);
+		kfree(sharectr);
+		kfree(server->pipe_desc->buf);
+		server->pipe_desc->buf = NULL;
+		server->pipe_desc->sent = 0;
+		server->pipe_desc->datasize = 0;
+		return datasize;
+	}
+
+	if (server->pipe_desc->opnum == 0) {
+		wkssvc_info = (WKSSVC_SHARE_GETINFO *)server->pipe_desc->data;
+
+		memcpy(outdata + offset, &wkssvc_info->info_level,
+				sizeof(wkssvc_info->info_level));
+		offset += sizeof(wkssvc_info->info_level);
+
+		memcpy(outdata + offset, &wkssvc_info->platform_id,
+					sizeof(wkssvc_info->platform_id));
+		offset += sizeof(wkssvc_info->platform_id);
+
+		memcpy(outdata + offset, &wkssvc_info->refid,
+						sizeof(wkssvc_info->refid));
+		offset += sizeof(wkssvc_info->refid);
+
+		memcpy(outdata + offset, &wkssvc_info->ref_id1,
+						sizeof(wkssvc_info->ref_id1));
+		offset += sizeof(wkssvc_info->ref_id1);
+
+		memcpy(outdata + offset, &wkssvc_info->ref_id2,
+						sizeof(wkssvc_info->ref_id2));
+		offset += sizeof(wkssvc_info->ref_id2);
+
+		memcpy(outdata + offset, &wkssvc_info->maj,
+						sizeof(wkssvc_info->maj));
+		offset += sizeof(wkssvc_info->maj);
+
+		memcpy(outdata + offset, &wkssvc_info->min,
+						sizeof(wkssvc_info->min));
+		offset += sizeof(wkssvc_info->min);
+
+		for (i = 0; i < 1; i++) {
+			memcpy(outdata + offset,
+			&wkssvc_info->shares[i].str_info1, sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			string_len =
+			wkssvc_info->shares[i].str_info1.actual_count * 2;
+
+			memcpy(outdata + offset,
+				wkssvc_info->shares[i].server_name, string_len);
+			offset += ((string_len + 3) & ~3);
+
+			memcpy(outdata + offset,
+			&wkssvc_info->shares[i].str_info2, sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			string_len =
+			wkssvc_info->shares[i].str_info2.actual_count * 2;
+
+			memcpy(outdata + offset,
+			wkssvc_info->shares[i].domain_name, string_len);
+			offset += ((string_len + 3) & ~3);
+		}
+
+		memcpy(outdata + offset, &wkssvc_info->status,
+				sizeof(wkssvc_info->status));
+		offset += sizeof(wkssvc_info->status);
+
+		rpc_request_rsp->hdr.frag_len = offset;
+		rpc_request_rsp->alloc_hint = offset - sizeof(RPC_REQUEST_RSP);
+
+		cifssrv_debug("frag len = %d alloc_hint = %d\n",
+		rpc_request_rsp->hdr.frag_len, rpc_request_rsp->alloc_hint);
+
+		kfree(wkssvc_info->shares);
+		kfree(wkssvc_info);
+
+	}
+	return offset;
+}
+
+/**
+ * pipe_data_size() - determine data size on pipe for share list enumeration
+ * @server:     TCP server instance of connection
+ * @data:	share control specific data
+ * @num_shares:	number of shares points on given share control
+ *
+ * Return:      data size used for share enumeration so far
+ */
+int pipe_data_size(struct tcp_server_info *server, void *data, int num_shares)
+{
+	int size = 0, i, string_len;
+	SRVSVC_SHARE_INFO_CTR *sharectr;
+
+	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
+		sharectr = (SRVSVC_SHARE_INFO_CTR *)data;
+
+		size += sizeof(RPC_REQUEST_RSP);
+		size += sizeof(SRVSVC_SHARE_COMMON_INFO);
+		size += num_shares * sizeof(PTR_INFO1);
+
+		/* determine the size of share info */
+		for (i = 0; i < num_shares; i++) {
+			size += sizeof(UNISTR_INFO);
+			string_len =
+				sharectr->shares[i].str_info1.actual_count * 2;
+			size += ((string_len + 3) & ~3);
+			size += sizeof(UNISTR_INFO);
+			string_len =
+				sharectr->shares[i].str_info2.actual_count * 2;
+
+			size += ((string_len + 3) & ~3);
+		}
+
+		size += sizeof(sharectr->total_entries);
+		size += sizeof(sharectr->resume_handle);
+		size += sizeof(sharectr->status);
+	}
+	cifssrv_debug("Total data length in pipe %d\n", size);
+	return size;
+}
+
+/**
+ * pipe_data_copy() - copy share info data on rpc pipe
+ * @server:     TCP server instance of connection
+ * @buf:	buffer to copy share data
+ *
+ * Return:      data size copied on buffer
+ */
+int pipe_data_copy(struct tcp_server_info *server, char *buf)
+{
+	int offset = 0, i, str_len, num_shares;
+	SRVSVC_SHARE_INFO_CTR *sharectr;
+	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
+		sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
+		num_shares = sharectr->info.num_entries;
+
+		cifssrv_debug("num entries = %d\n", sharectr->info.num_entries);
+		memcpy(buf, &sharectr->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+
+		memcpy(buf + offset, &sharectr->info,
+				sizeof(SRVSVC_SHARE_COMMON_INFO));
+		offset += sizeof(SRVSVC_SHARE_COMMON_INFO);
+
+		memcpy(buf + offset, sharectr->ptrs,
+				num_shares * sizeof(PTR_INFO1));
+		offset += num_shares * sizeof(PTR_INFO1);
+
+		for (i = 0; i < num_shares; i++) {
+
+			memcpy(buf + offset, &sharectr->shares[i].str_info1,
+					sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			str_len =
+				sharectr->shares[i].str_info1.actual_count * 2;
+
+			memcpy(buf + offset, sharectr->shares[i].sharename,
+					str_len);
+			offset += ((str_len + 3) & ~3);
+
+			memcpy(buf + offset, &sharectr->shares[i].str_info2,
+					sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+
+			str_len =
+				sharectr->shares[i].str_info2.actual_count * 2;
+
+			memcpy(buf + offset, sharectr->shares[i].comment,
+					str_len);
+			offset += ((str_len + 3) & ~3);
+
+		}
+		memcpy(buf + offset, &sharectr->total_entries,
+				sizeof(sharectr->total_entries));
+		offset += sizeof(sharectr->total_entries);
+		memcpy(buf + offset, &sharectr->resume_handle,
+				sizeof(sharectr->resume_handle));
+		offset += sizeof(sharectr->resume_handle);
+		memcpy(buf + offset, &sharectr->status,
+				sizeof(sharectr->status));
+		offset += sizeof(sharectr->status);
+	}
+
+	return offset;
+}
+
+/**
+ * init_srvsvc_share_info1() - initialize srvsvc pipe share information
+ * @server:		TCP server instance of connection
+ * @rpc_request_req:	rpc request
+ *
+ * Return:      0 on success or error number
+ */
+int init_srvsvc_share_info1(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req)
+{
+	int num_shares = 0, cnt = 0, len = 0;
+	int total_pipe_data = 0, data_copied = 0;
+	struct list_head *tmp;
+	struct cifssrv_share *share;
+	SRVSVC_SHARE_INFO1 *share_info;
+	PTR_INFO1 *ptr_info;
+	int share_name_len, comment_len = 0;
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	SRVSVC_SHARE_INFO_CTR *sharectr;
+	char *buf = NULL;
+
+	num_shares = cifssrv_num_shares;
+	sharectr = (SRVSVC_SHARE_INFO_CTR *)
+			kzalloc(sizeof(SRVSVC_SHARE_INFO_CTR), GFP_KERNEL);
+	if (!sharectr) {
+		cifssrv_err("failed to allocate memory\n");
+		return -ENOMEM;
+	}
+	server->pipe_desc->data = (char *)sharectr;
+
+	sharectr->ptrs = kzalloc((num_shares *
+				sizeof(PTR_INFO1)), GFP_KERNEL);
+
+	if (!sharectr->ptrs) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(sharectr);
+		return -ENOMEM;
+	}
+	sharectr->shares = kzalloc((num_shares * sizeof(SRVSVC_SHARE_INFO1)),
+				   GFP_KERNEL);
+
+	if (!sharectr->shares) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(sharectr->ptrs);
+		kfree(sharectr);
+		return -ENOMEM;
+	}
+
+	rpc_request_rsp = &sharectr->rpc_request_rsp;
+
+	rpc_request_rsp->hdr.major = 5;
+	rpc_request_rsp->hdr.minor = 0;
+	rpc_request_rsp->hdr.pkt_type = 2;
+	rpc_request_rsp->hdr.flags = 0x3;
+	rpc_request_rsp->hdr.pack_type[0] = 0x10;
+	rpc_request_rsp->hdr.pack_type[1] = 0;
+	rpc_request_rsp->hdr.pack_type[2] = 0;
+	rpc_request_rsp->hdr.pack_type[3] = 0;
+	rpc_request_rsp->hdr.auth_len = 0;
+	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
+
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	rpc_request_rsp->cancel_count = 0;
+
+	sharectr->info.info_level = cpu_to_le32(1);
+	sharectr->info.switch_value = cpu_to_le32(1);
+	sharectr->info.ptr_share_info = cpu_to_le32(1);
+	sharectr->info.num_entries = cpu_to_le32(num_shares);
+	sharectr->info.ptr_entries = cpu_to_le32(1);
+	sharectr->info.num_entries2 = cpu_to_le32(num_shares);
+
+	list_for_each(tmp, &cifssrv_share_list) {
+		share_info = &sharectr->shares[cnt];
+		ptr_info = &sharectr->ptrs[cnt];
+		share = list_entry(tmp, struct cifssrv_share, list);
+		share_name_len = strlen(share->sharename) + 1;
+
+		if (share_name_len > 13) {
+			cifssrv_debug("Not displaying share = %s",
+					share->sharename);
+			continue;
+		}
+
+		if (strcmp(share->sharename, "IPC$") == 0) {
+			ptr_info->type = STYPE_IPC_HIDDEN;
+			len = smbConvertToUTF16((__le16 *)share_info->comment,
+					"IPC SHARE", 256, server->local_nls, 0);
+			comment_len = strlen("IPC SHARE") + 1;
+			cifssrv_debug("IPC share %s added len = %d\n",
+				       share->sharename, len);
+		} else {
+			ptr_info->type = STYPE_DISKTREE;
+			if (share->config.comment) {
+				len =
+				smbConvertToUTF16((__le16 *)share_info->comment,
+				share->config.comment,
+						256, server->local_nls, 0);
+				comment_len = strlen(share->config.comment) + 1;
+			} else {
+				/* Windows expect comment to be non-null
+				   In case comment is not given in conf file,
+				   using sharename as comment */
+				len =
+				smbConvertToUTF16((__le16 *)share_info->comment,
+				share->sharename,
+						256, server->local_nls, 0);
+				comment_len = strlen(share->sharename) + 1;
+			}
+			cifssrv_debug("share %s added\n", share->sharename);
+		}
+
+		cifssrv_debug("comment len = %d share len = %d uni len = %d\n",
+				comment_len, share_name_len, len);
+
+		/* Since sharename and comment are non-null*/
+		ptr_info->ptr_netname = 1;
+		ptr_info->ptr_remark = 1;
+
+		smbConvertToUTF16((__le16 *)share_info->sharename,
+				share->sharename, 256, server->local_nls, 0);
+		share_info->str_info1.max_count = share_name_len;
+		share_info->str_info1.offset = 0;
+		share_info->str_info1.actual_count = share_name_len;
+
+		share_info->str_info2.max_count = comment_len;
+		share_info->str_info2.offset = 0;
+		share_info->str_info2.actual_count = comment_len;
+		cnt++;
+	}
+
+	sharectr->total_entries = cpu_to_le32(num_shares);
+	sharectr->resume_handle = 0;
+	sharectr->status = 0;
+
+	total_pipe_data = pipe_data_size(server, (void *)sharectr, num_shares);
+	if (total_pipe_data == 0)
+		return 0;
+	buf =  kzalloc(total_pipe_data, GFP_KERNEL);
+	if (buf == NULL)
+		return -ENOMEM;
+	server->pipe_desc->buf = buf;
+
+	data_copied = pipe_data_copy(server, buf);
+	cifssrv_debug("data_copied %d, total_pipe_data %d\n", data_copied,
+							total_pipe_data);
+	server->pipe_desc->datasize = data_copied;
+	return 0;
+}
+
+/**
+ * srvsvc_net_share_enum_all() - srvsvc pipe for share list enumeration
+ * @server:     TCP server instance of connection
+ * @data:	SRVSVC_REQ data
+ * @rpc_request_req:	rpc request
+ *
+ * Return:      0 on success or error number
+ */
+int srvsvc_net_share_enum_all(struct tcp_server_info *server, char *data,
+				RPC_REQUEST_REQ *rpc_request_req)
+{
+	SRVSVC_REQ *req = (SRVSVC_REQ *)data;
+	SERVER_HANDLE handle;
+	char *server_unc_ptr, *server_unc;
+	int server_unc_len = 0;
+	int ret = 0;
+
+	handle = req->server_unc_handle;
+	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
+	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
+			server->local_nls);
+	if (!server_unc)
+		return -ENOMEM;
+
+	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
+			handle.handle_info.actual_count);
+
+	server_unc_len = 2 * handle.handle_info.actual_count;
+	server_unc_len = ((server_unc_len + 3) & ~3);
+	/* Add 2 for Pad */
+	req->info_level = le32_to_cpu(*(server_unc_ptr + server_unc_len));
+
+	switch (req->info_level) {
+
+	case INFO_1:
+		cifssrv_debug("GOT SRVSVC pipe info level %u\n",
+			       req->info_level);
+
+		ret = init_srvsvc_share_info1(server, rpc_request_req);
+		break;
+
+	default:
+		cifssrv_debug("SRVSVC pipe info level %u  not supported\n",
+				req->info_level);
+		return -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * init_srvsvc_share_info2() - get a share information on srvsvc pipe
+ * @server:		TCP server instance of connection
+ * @rpc_request_req:	rpc request
+ * @share_name:		share_name for which information is requested
+ *
+ * Return:      0 on success or error number
+ */
+int init_srvsvc_share_info2(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *share_name)
+{
+	int num_shares = 1, cnt = 0, len = 0;
+	struct list_head *tmp;
+	struct cifssrv_share *share;
+	SRVSVC_SHARE_INFO1 *share_info;
+	SRVSVC_SHARE_GETINFO *shareinfo;
+	PTR_INFO1 *ptr_info;
+	int share_name_len, comment_len = 0;
+	RPC_REQUEST_RSP *rpc_request_rsp;
+
+	shareinfo = (SRVSVC_SHARE_GETINFO *)
+			kzalloc(sizeof(SRVSVC_SHARE_GETINFO), GFP_KERNEL);
+	if (!shareinfo) {
+		cifssrv_err("failed to allocate memory\n");
+		return -ENOMEM;
+	}
+
+	server->pipe_desc->data = (char *)shareinfo;
+	shareinfo->ptrs = kzalloc((num_shares *
+				sizeof(PTR_INFO1)), GFP_KERNEL);
+	if (!shareinfo->ptrs) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(shareinfo);
+		return -ENOMEM;
+	}
+
+	shareinfo->shares = kzalloc((num_shares * sizeof(SRVSVC_SHARE_INFO1)),
+				   GFP_KERNEL);
+	if (!shareinfo->shares) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(shareinfo->ptrs);
+		kfree(shareinfo);
+		return -ENOMEM;
+	}
+
+	rpc_request_rsp = &shareinfo->rpc_request_rsp;
+
+	rpc_request_rsp->hdr.major = 5;
+	rpc_request_rsp->hdr.minor = 0;
+	rpc_request_rsp->hdr.pkt_type = 2;
+	rpc_request_rsp->hdr.flags = 0x3;
+	rpc_request_rsp->hdr.pack_type[0] = 0x10;
+	rpc_request_rsp->hdr.pack_type[1] = 0;
+	rpc_request_rsp->hdr.pack_type[2] = 0;
+	rpc_request_rsp->hdr.pack_type[3] = 0;
+	rpc_request_rsp->hdr.auth_len = 0;
+	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
+
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	rpc_request_rsp->cancel_count = 0;
+
+	shareinfo->status = cpu_to_le32(WERR_INVALID_NAME);
+	shareinfo->info_level = cpu_to_le32(1);
+	shareinfo->switch_value = cpu_to_le32(0);
+
+	list_for_each(tmp, &cifssrv_share_list) {
+		share_info = &shareinfo->shares[cnt];
+		ptr_info = &shareinfo->ptrs[cnt];
+		share = list_entry(tmp, struct cifssrv_share, list);
+		share_name_len = strlen(share->sharename) + 1;
+
+		if (share_name_len > 13) {
+			cifssrv_err("Not displaying share = %s",
+					share->sharename);
+			continue;
+		}
+
+		if (strcmp(share->sharename, share_name) == 0) {
+			ptr_info->type = STYPE_DISKTREE;
+			if (share->config.comment) {
+				len =
+				smbConvertToUTF16((__le16 *)share_info->comment,
+				share->config.comment,
+						256, server->local_nls, 0);
+				comment_len = strlen(share->config.comment) + 1;
+			} else {
+				len =
+				smbConvertToUTF16((__le16 *)share_info->comment,
+				share->sharename,
+						256, server->local_nls, 0);
+				comment_len = strlen(share->sharename) + 1;
+			}
+			cifssrv_debug("share %s added\n", share->sharename);
+
+			shareinfo->switch_value = cpu_to_le32(1);
+			cifssrv_debug("comment len = %d share len = %d uni len = %d\n",
+				      comment_len, share_name_len, len);
+
+			/* Since sharename and comment are non-null*/
+			ptr_info->ptr_netname = 1;
+			ptr_info->ptr_remark = 1;
+
+			smbConvertToUTF16((__le16 *)share_info->sharename,
+					  share->sharename, 256,
+					  server->local_nls, 0);
+			share_info->str_info1.max_count = share_name_len;
+			share_info->str_info1.offset = 0;
+			share_info->str_info1.actual_count = share_name_len;
+
+			share_info->str_info2.max_count = comment_len;
+			share_info->str_info2.offset = 0;
+			share_info->str_info2.actual_count = comment_len;
+			shareinfo->status = cpu_to_le32(WERR_OK);
+		}
+	}
+
+	return 0;
+}
+
+/**
+ * srvsvc_net_share_info() - get share information on srvsvc pipe
+ * @server:		TCP server instance of connection
+ * @data:		SRVSVC_REQ data
+ * @rpc_request_req:	rpc request
+ *
+ * parse srvspc packet for share_name. Get share information on requested
+ * share_name
+ *
+ * Return:      0 on success or error number
+ */
+int srvsvc_net_share_info(struct tcp_server_info *server, char *data,
+				RPC_REQUEST_REQ *rpc_request_req)
+{
+	SRVSVC_REQ *req = (SRVSVC_REQ *)data;
+	SERVER_HANDLE handle;
+	char *server_unc_ptr, *server_unc;
+	int server_unc_len = 0;
+	int ret = 0;
+	int infolevel_len;
+	UNISTR_INFO *istr_info;
+	char *ptr, *share_name_ptr, *share_name;
+	handle = req->server_unc_handle;
+	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
+	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
+			server->local_nls);
+	if (!server_unc)
+		return -ENOMEM;
+
+	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
+			handle.handle_info.actual_count);
+
+	server_unc_len = 2 * handle.handle_info.actual_count;
+	server_unc_len = ((server_unc_len + 3) & ~3);
+	/* Add 2 for Pad */
+	istr_info = (UNISTR_INFO *)((char *)(server_unc_ptr + server_unc_len));
+
+	infolevel_len = 2 * istr_info->actual_count;
+	infolevel_len = ((infolevel_len + 3) & ~3);
+
+	cifssrv_debug("istr_info->max_count %u, offset %u, actual count %u\n",
+	istr_info->max_count, istr_info->offset, istr_info->actual_count);
+	share_name_ptr = (char *)((char *)istr_info + sizeof(UNISTR_INFO));
+	share_name = smb_strndup_from_utf16(share_name_ptr, 256, 1,
+				server->local_nls);
+	if (!share_name)
+		return -ENOMEM;
+
+	ptr = (char *)((char *)istr_info + infolevel_len + sizeof(UNISTR_INFO));
+	cifssrv_debug("Share name is %s\n", share_name);
+	switch (le32_to_cpu(*(ptr))) {
+	case INFO_1:
+		cifssrv_debug("GOT SRVSVC pipe info level %u\n",
+			       req->info_level);
+		ret = init_srvsvc_share_info2(server, rpc_request_req,
+								share_name);
+		break;
+
+	default:
+		cifssrv_debug("SRVSVC pipe info level %u  not supported\n",
+				req->info_level);
+		return -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * init_wkssvc_share_info2() - helper function to initialize share info
+ *			response on wkssvc pipe
+ * @server:		TCP server instance of connection
+ * @rpc_request_req:	rpc request
+ *
+ * Return:      0 on success or error number
+ */
+int init_wkssvc_share_info2(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req)
+{
+	int len = 0;
+	WKSSVC_SHARE_INFO1 *share_info;
+	WKSSVC_SHARE_GETINFO *shareinfo;
+	int share_name_len, comment_len;
+	RPC_REQUEST_RSP *rpc_request_rsp;
+
+	shareinfo = (WKSSVC_SHARE_GETINFO *)
+			kzalloc(sizeof(WKSSVC_SHARE_GETINFO), GFP_KERNEL);
+	if (!shareinfo) {
+		cifssrv_err("failed to allocate memory\n");
+		return -ENOMEM;
+	}
+	server->pipe_desc->data = (char *)shareinfo;
+	shareinfo->shares = kzalloc(sizeof(WKSSVC_SHARE_INFO1),
+				   GFP_KERNEL);
+
+	if (!shareinfo->shares) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(shareinfo);
+		return -ENOMEM;
+	}
+
+	rpc_request_rsp = &shareinfo->rpc_request_rsp;
+
+	rpc_request_rsp->hdr.major = 5;
+	rpc_request_rsp->hdr.minor = 0;
+	rpc_request_rsp->hdr.pkt_type = 2;
+	rpc_request_rsp->hdr.flags = 0x3;
+	rpc_request_rsp->hdr.pack_type[0] = 0x10;
+	rpc_request_rsp->hdr.pack_type[1] = 0;
+	rpc_request_rsp->hdr.pack_type[2] = 0;
+	rpc_request_rsp->hdr.pack_type[3] = 0;
+	rpc_request_rsp->hdr.auth_len = 0;
+	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
+
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	rpc_request_rsp->cancel_count = 0;
+
+	shareinfo->info_level = cpu_to_le32(100);
+	shareinfo->refid = cpu_to_le32(1);
+	shareinfo->platform_id = cpu_to_le32(500);
+	shareinfo->ref_id1 = cpu_to_le32(1);
+	shareinfo->ref_id2 = cpu_to_le32(1);
+	shareinfo->maj =	cpu_to_le32(4);
+	shareinfo->min = cpu_to_le32(9);
+	share_info = &shareinfo->shares[0];
+
+
+	len = smbConvertToUTF16((__le16 *)share_info->domain_name,
+			workgroup, 256, server->local_nls, 0);
+	comment_len = strlen(workgroup) + 1;
+
+
+	share_name_len = strlen(server_string) + 1;
+	cifssrv_debug("comment len = %d share len = %d uni len = %d\n",
+			comment_len, share_name_len, len);
+
+	smbConvertToUTF16((__le16 *)share_info->server_name,
+			server_string, 256, server->local_nls, 0);
+
+	share_info->str_info1.max_count = share_name_len;
+	share_info->str_info1.offset = 0;
+	share_info->str_info1.actual_count = share_name_len;
+
+	share_info->str_info2.max_count = comment_len;
+	share_info->str_info2.offset = 0;
+	share_info->str_info2.actual_count = comment_len;
+
+	shareinfo->status = cpu_to_le32(0);
+	return 0;
+}
+
+/**
+ * wkkssvc_net_share_info() - get share info on wkssvc pipe
+ * @server:		TCP server instance of connection
+ * @data:		wkssvc request data
+ * @rpc_request_req:	rpc request
+ *
+ * Return:      0 on success or error number
+ */
+int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
+				RPC_REQUEST_REQ *rpc_request_req)
+{
+	SRVSVC_REQ *req = (SRVSVC_REQ *)data;
+	SERVER_HANDLE handle;
+	char *server_unc_ptr, *server_unc;
+	int server_unc_len = 0;
+	int ret = 0;
+	int *info_level;
+	handle = req->server_unc_handle;
+	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
+	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
+			server->local_nls);
+	if (!server_unc)
+		return -ENOMEM;
+
+	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
+			handle.handle_info.actual_count);
+
+	server_unc_len = 2 * handle.handle_info.actual_count;
+	server_unc_len = ((server_unc_len + 3) & ~3);
+	/* Add 2 for Pad */
+	info_level = (int *)((char *)(server_unc_ptr + server_unc_len));
+
+	switch (le32_to_cpu(*info_level)) {
+	case INFO_100:
+		cifssrv_debug("GOT WKSSVC pipe info level %u\n",
+			       le32_to_cpu(*info_level));
+
+		ret = init_wkssvc_share_info2(server, rpc_request_req);
+		break;
+
+	default:
+		cifssrv_err("WKSSVC pipe info level %u  not supported\n",
+				req->info_level);
+		return -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * rpc_request() - rpc request dispatcher
+ * @server:	TCP server instance of connection
+ * @in_data:	wkssvc request data
+ *
+ * parse rpc request command number, and call corresponding
+ * command handler
+ *
+ * Return:      0 on success or error number
+ */
+int rpc_request(struct tcp_server_info *server, char *in_data)
+{
+	RPC_REQUEST_REQ *rpc_request_req = (RPC_REQUEST_REQ *)in_data;
+	int opnum;
+	char *data;
+	int ret = 0;
+
+	opnum = cpu_to_le16(rpc_request_req->opnum);
+
+	server->pipe_desc->opnum = opnum;
+	switch (opnum) {
+	case SRV_NET_SHARE_ENUM_ALL:
+		cifssrv_debug("GOT SRV_NET_SHARE_ENUM_ALL\n");
+		data = in_data + sizeof(RPC_REQUEST_REQ);
+		ret = srvsvc_net_share_enum_all(server, data, rpc_request_req);
+		break;
+	case SRV_NET_SHARE_GETINFO:
+		cifssrv_debug("Got SRV_NET_SHARE_GETINFO\n");
+		data = in_data + sizeof(RPC_REQUEST_REQ);
+		ret = srvsvc_net_share_info(server, data, rpc_request_req);
+		break;
+	case WKSSVC_NET_SHARE_GETINFO:
+		cifssrv_debug("Got WKSSVC_SHARE_GETINFO\n");
+		data = in_data + sizeof(RPC_REQUEST_REQ);
+		ret = wkkssvc_net_share_info(server, data, rpc_request_req);
+		break;
+	default:
+		cifssrv_debug("WKSSVC pipe opnum not supported = %d\n", opnum);
+		return -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * rpc_bind() - rpc bind request handler
+ * @server:	TCP server instance of connection
+ * @in_data:	rpc bind request data
+ *
+ * Return:      0 on success or error number
+ */
+int rpc_bind(struct tcp_server_info *server, char *in_data)
+{
+	RPC_BIND_REQ *rpc_bind_req = (RPC_BIND_REQ *)in_data;
+	char *pipe_name = NULL;
+	int len;
+	RPC_CONTEXT *rpc_context;
+	RPC_IFACE *transfer;
+	RPC_BIND_RSP *rpc_bind_rsp;
+	int version_maj;
+	rpc_context = (RPC_CONTEXT *)(((char *)in_data) + sizeof(RPC_BIND_REQ));
+	transfer = (RPC_IFACE *)(((char *)in_data) + sizeof(RPC_BIND_REQ) +
+				   sizeof(RPC_CONTEXT));
+	rpc_bind_rsp = kzalloc(sizeof(RPC_BIND_RSP), GFP_KERNEL);
+	if (!rpc_bind_rsp) {
+		cifssrv_err("failed to allocate memory\n");
+		return -ENOMEM;
+	}
+
+	version_maj = rpc_context->abstract.version_maj;
+
+	server->pipe_desc->data = (char *)rpc_bind_rsp;
+
+	rpc_bind_rsp->addr.sec_addr = kmalloc(256, GFP_KERNEL);
+	if (!rpc_bind_rsp->addr.sec_addr) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(rpc_bind_rsp);
+		return -ENOMEM;
+	}
+
+	/* Initialize header */
+	rpc_bind_rsp->hdr.major = 5;
+	rpc_bind_rsp->hdr.minor = 0;
+	rpc_bind_rsp->hdr.pkt_type = 12;
+	rpc_bind_rsp->hdr.flags = 0x3;
+	rpc_bind_rsp->hdr.pack_type[0] = 0x10;
+	rpc_bind_rsp->hdr.pack_type[1] = 0;
+	rpc_bind_rsp->hdr.pack_type[2] = 0;
+	rpc_bind_rsp->hdr.pack_type[3] = 0;
+	rpc_bind_rsp->hdr.auth_len = 0;
+	rpc_bind_rsp->hdr.call_id  = rpc_bind_req->hdr.call_id;
+	cifssrv_debug("incoming call id = %u frag_len = %u\n",
+		      rpc_bind_req->hdr.call_id, rpc_bind_req->hdr.frag_len);
+
+	/* Update bind info */
+	rpc_bind_rsp->bind_info.max_tsize = rpc_bind_req->max_tsize;
+	rpc_bind_rsp->bind_info.max_rsize = rpc_bind_req->max_rsize;
+	/* Using hard coded assoc_gid value, same as as used by Samba*/
+	rpc_bind_rsp->bind_info.assoc_gid = 0x53f0;
+
+	cifssrv_debug("max_tsize = %u max_rsize = %u\n",
+		       rpc_bind_req->max_tsize, rpc_bind_req->max_rsize);
+
+	/* Update pipe name*/
+	if (version_maj == 3)
+		pipe_name = "\\PIPE\\srvsvc";
+	else if (version_maj == 1)
+		pipe_name = "\\PIPE\\wkssvc";
+	else {
+		cifssrv_err("invalid version %d\n", version_maj);
+		kfree(rpc_bind_rsp->addr.sec_addr);
+		kfree(rpc_bind_rsp);
+		return -EINVAL;
+	}
+
+	memcpy(rpc_bind_rsp->addr.sec_addr, pipe_name, strlen(pipe_name));
+	len = strlen(pipe_name) + 1;
+	rpc_bind_rsp->addr.sec_addr[len - 1] = '\0';
+	rpc_bind_rsp->addr.sec_addr_len = len;
+	cifssrv_debug("pipe_name len = %d\n", len);
+
+	/* Results */
+	rpc_bind_rsp->results.num_results = 1;
+	rpc_bind_rsp->results.reserved1 = 0;
+	rpc_bind_rsp->results.reserved2 = 0;
+	rpc_bind_rsp->results.result = 0;
+	rpc_bind_rsp->results.reason = 0;
+
+	/* Interface */
+	rpc_bind_rsp->transfer = kmalloc(sizeof(RPC_IFACE), GFP_KERNEL);
+
+	if (!rpc_bind_rsp->transfer) {
+		cifssrv_err("failed to allocate memory\n");
+		kfree(rpc_bind_rsp->addr.sec_addr);
+		kfree(rpc_bind_rsp);
+		return -ENOMEM;
+	}
+
+	cifssrv_debug("num syntaxes = %u\n",
+		       rpc_context->num_transfer_syntaxes);
+
+	memcpy(rpc_bind_rsp->transfer, transfer, sizeof(RPC_IFACE));
+
+	return 0;
+}
+
+/**
+ * handle_netshareenum_info1() - helper function for share info using LANMAN
+ *		request
+ * @server:	TCP server instance of connection
+ * @in_params:	LANMAN request parameters
+ * @out_data:	output response buffer
+ *
+ * Return:      response buffer size or error number
+ */
+static int handle_netshareenum_info1(struct tcp_server_info *server,
+				     LANMAN_PARAMS *in_params, char *out_data)
+{
+	LANMAN_NETSHAREENUM_RESP *resp;
+	NETSHAREINFO1 *info1;
+	struct list_head *tmp;
+	struct cifssrv_share *share;
+	int out_buffersize, comment_len = 0, comment_offset;
+	int num_shares = 0;
+	char *data_buf, *comment_buf;
+
+	resp = (LANMAN_NETSHAREENUM_RESP *)out_data;
+
+	data_buf = resp->RAPOutData;
+
+	info1 = (NETSHAREINFO1 *)resp->RAPOutData;
+
+	num_shares = cifssrv_num_shares;
+	comment_offset = num_shares * sizeof(NETSHAREINFO1);
+
+	list_for_each(tmp, &cifssrv_share_list) {
+		memset(info1, 0, sizeof(NETSHAREINFO1));
+		share = list_entry(tmp, struct cifssrv_share, list);
+		memcpy(info1->NetworkName, share->sharename,
+			strlen(share->sharename));
+
+		comment_buf = resp->RAPOutData + comment_offset;
+
+		info1->RemarkOffsetLow = comment_offset;
+
+		info1->RemarkOffsetHigh = 0;
+
+		if (strcmp(share->sharename, "IPC$") == 0) {
+			info1->Type = STYPE_IPC;
+			comment_len = strlen("IPC share");
+			memcpy(comment_buf, "IPC share", comment_len);
+		} else {
+			if (share->config.comment) {
+				comment_len = strlen(share->config.comment);
+				memcpy(comment_buf, share->config.comment,
+				       comment_len);
+			} else {
+				comment_len = strlen(share->sharename);
+				memcpy(comment_buf, share->config.comment,
+				       comment_len);
+			}
+			info1->Type = STYPE_DISKTREE;
+		}
+
+		/* Increment for '\0' */
+		comment_buf[comment_len] = '\0';
+		comment_len++;
+		comment_offset += comment_len;
+
+		cifssrv_debug("share %s added comment_offset = %d\n",
+				share->sharename, comment_offset);
+		info1++;
+	}
+
+	out_buffersize = sizeof(LANMAN_NETSHAREENUM_RESP) - 1 + comment_offset;
+
+	resp->Win32ErrorCode = 0;
+	resp->Converter = 0;
+	resp->EntriesReturned = num_shares;
+	resp->EntriesAvailable = num_shares;
+
+	cifssrv_debug("num_shares = %d out buffer size = %d\n",
+			num_shares, out_buffersize);
+
+	return out_buffersize;
+}
+
+/**
+ * handle_netshareenum() - get share info using LANMAN request
+ * @server:	TCP server instance of connection
+ * @req:	LANMAN request
+ * @out_data:	output response buffer
+ *
+ * Return:      response buffer size or error number
+ */
+static int handle_netshareenum(struct tcp_server_info *server, LANMAN_REQ *req,
+				char *out_data)
+{
+	char *paramdesc, *datadesc;
+	int paramdesc_len, datadesc_len;
+	LANMAN_PARAMS *in_params;
+	int info_level;
+	int ret = 0;
+
+	paramdesc = req->ParamDesc;
+
+	paramdesc_len = strlen("WrLeh") + 1;
+	cifssrv_debug("paramdesc = %s paramdesc_len = %d\n",
+			paramdesc, paramdesc_len);
+
+	if (strcmp(paramdesc, "WrLeh") != 0)
+		return -EOPNOTSUPP;
+
+	datadesc = (req->ParamDesc + paramdesc_len);
+
+	datadesc_len = strlen(datadesc) + 1;
+
+	cifssrv_debug("datadesc = %s datadesc_len = %d\n",
+			datadesc, datadesc_len);
+
+	in_params = (LANMAN_PARAMS *)(datadesc + datadesc_len);
+
+	info_level = le16_to_cpu(in_params->InfoLevel);
+
+	cifssrv_debug("info_level = %d\n", info_level);
+
+	switch (info_level) {
+	case INFO_1:
+		cifssrv_debug("GOT RAP_NetshareEnum Info1\n");
+		ret = handle_netshareenum_info1(server, in_params, out_data);
+		break;
+	default:
+		cifssrv_debug("Info level = %d not supported\n", info_level);
+		ret = -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * handle_wkstagetinfo_info10() - helper function to get target info command
+ *		using LANMAN request
+ * @server:	TCP server instance of connection
+ * @in_params:	LANMAN request parameters
+ * @out_data:	output response buffer
+ *
+ * Return:      response buffer size or error number
+ */
+int handle_wkstagetinfo_info10(struct tcp_server_info *server,
+			       LANMAN_PARAMS *in_params, char *out_data)
+{
+	LANMAN_WKSTAGEINFO_RESP *resp;
+	NETWKSTAGEINFO10 *info10;
+	int out_buffersize;
+	int offset, len;
+	char *data;
+	struct cifssrv_usr *usr;
+	struct list_head *tmp;
+	int user_valid = false;
+
+	resp = (LANMAN_WKSTAGEINFO_RESP *)out_data;
+
+	offset = sizeof(NETWKSTAGEINFO10);
+
+	info10 = (NETWKSTAGEINFO10 *)resp->RAPOutData;
+	data = resp->RAPOutData;
+
+	/* Add name of workstation */
+	data += offset;
+	info10->ComputerName = offset;
+	len = strlen(server_string);
+	memcpy(data, server_string, len);
+	data[len] = '\0';
+	offset += len + 1;
+	data += len + 1;
+
+	/* Add user name */
+	info10->UserName = offset;
+	list_for_each(tmp, &cifssrv_usr_list) {
+		usr = list_entry(tmp, struct cifssrv_usr, list);
+		if (server->vuid  == usr->vuid) {
+			user_valid = true;
+			break;
+		}
+	}
+
+	/* If valid user is found provide logged in user
+	   otherwise send default user "root" */
+	if (user_valid == true) {
+		len = strlen(usr->name);
+		memcpy(data, usr->name, len);
+	} else {
+		return -EINVAL;
+	}
+
+	data[len] = '\0';
+	offset += len + 1;
+	data += len + 1;
+
+	/* Add Domain name */
+	info10->LanGroup = offset;
+	len = strlen(workgroup);
+	memcpy(data, workgroup, len);
+	data[len] = '\0';
+	offset += len + 1;
+	data += len + 1;
+
+	/* Add Major version*/
+	info10->VerMajor = CIFSSRV_MAJOR_VERSION;
+
+	/* Add Minor Version */
+	info10->VerMinor = CIFSSRV_MINOR_VERSION;
+
+	/* User logged domain */
+	info10->LogonDomain = offset;
+	len = strlen(workgroup);
+	memcpy(data, workgroup, len);
+	data[len] = '\0';
+	offset += len + 1;
+	data += len + 1;
+
+	/* All domains */
+	info10->OtherDomain = offset;
+	len = strlen(workgroup);
+	memcpy(data, workgroup, len);
+	data[len] = '\0';
+	offset += len + 1;
+
+	resp->TotalBytesAvailable = offset;
+	resp->Win32ErrorCode = 0;
+	resp->Converter = 0;
+
+	out_buffersize = offset + sizeof(LANMAN_WKSTAGEINFO_RESP) - 1;
+
+	return out_buffersize;
+}
+
+/**
+ * handle_wkstagetinfo() - handle target info command using
+ *			LANMAN request
+ * @server:	TCP server instance of connection
+ * @in_params:	LANMAN request parameters
+ * @out_data:	output response buffer
+ *
+ * Return:      response buffer size or error number
+ */
+int handle_wkstagetinfo(struct tcp_server_info *server,
+			LANMAN_REQ *req, char *out_data)
+{
+	char *paramdesc, *datadesc;
+	int paramdesc_len, datadesc_len;
+	LANMAN_PARAMS *in_params;
+	int info_level;
+	int ret = 0;
+
+	paramdesc = req->ParamDesc;
+
+	paramdesc_len = strlen("WrLh") + 1;
+	cifssrv_debug("paramdesc = %s paramdesc_len = %d\n",
+			paramdesc, paramdesc_len);
+
+	if (strcmp(paramdesc, "WrLh") != 0)
+		return -EOPNOTSUPP;
+
+	datadesc = (req->ParamDesc + paramdesc_len);
+
+	datadesc_len = strlen(datadesc) + 1;
+
+	cifssrv_debug("datadesc = %s datadesc_len = %d\n",
+			datadesc, datadesc_len);
+
+	in_params = (LANMAN_PARAMS *)(datadesc + datadesc_len);
+
+	info_level = le16_to_cpu(in_params->InfoLevel);
+
+	cifssrv_debug("info_level = %d\n", info_level);
+
+	switch (info_level) {
+	case INFO_10:
+		cifssrv_debug("GOT RAP_WkstaGetInfo Info10\n");
+		ret = handle_wkstagetinfo_info10(server, in_params, out_data);
+		break;
+	default:
+		cifssrv_debug("Info level = %d not supported\n", info_level);
+		ret = -EOPNOTSUPP;
+	}
+
+	return ret;
+}
+
+/**
+ * handle_lanman_pipe() - dispatcher for LANMAN pipe requests
+ * @server:	TCP server instance of connection
+ * @in_data:	LANMAN request parameters
+ * @out_data:	output response buffer
+ * @param_len:	LANMAN request parameters length
+ *
+ * Return:      response buffer size or error number
+ */
+int handle_lanman_pipe(struct tcp_server_info *server, char *in_data,
+		       char *out_data, int *param_len)
+{
+	LANMAN_REQ *req = (LANMAN_REQ *)in_data;
+	int opcode;
+	int ret = 0;
+
+	opcode = le16_to_cpu(req->RAPOpcode);
+
+	switch (opcode) {
+	case RAP_NetshareEnum:
+		cifssrv_debug("GOT RAP_NetshareEnum\n");
+		ret = handle_netshareenum(server, req, out_data);
+		if (ret < 0)
+			ret = -EOPNOTSUPP;
+		else
+			*param_len = 8;
+		break;
+	case RAP_WkstaGetInfo:
+		cifssrv_debug("GOT RAP_WkstaGetInfo\n");
+		ret = handle_wkstagetinfo(server, req, out_data);
+		if (ret < 0)
+			ret = -EOPNOTSUPP;
+		else
+			*param_len = 6;
+		break;
+	default:
+		cifssrv_debug("opcode = %d not supported\n", opcode);
+		ret = -EOPNOTSUPP;
+	}
+
+	return ret;
+}
