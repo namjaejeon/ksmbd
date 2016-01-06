@@ -373,6 +373,7 @@ void handle_smb_work(struct work_struct *work)
 		}
 	}
 
+chained:
 	rc = check_server_state(smb_work);
 	if (rc)
 		goto send;
@@ -414,6 +415,9 @@ again:
 		spin_unlock(&server->request_lock);
 		goto nosend;
 	}
+
+	if (is_chained_smb2_message(smb_work))
+		goto chained;
 
 send:
 	smb_send_rsp(smb_work);

@@ -317,6 +317,12 @@ struct smb_work {
 	unsigned int rdata_cnt;		/* read data count */
 	unsigned int rrsp_hdr_size;	/* read response smb header size */
 	char *rsp_buf;			/* response buffer */
+	int next_smb2_rcv_hdr_off;	/* Next cmd hdr in compound req buf*/
+	int next_smb2_rsp_hdr_off;	/* Next cmd hdr in compound rsp buf*/
+	__u64 cur_local_fid;		/* Current Local FID assigned compound
+					   response if SMB2 CREATE command is
+					   present in compound request*/
+	__u64 cur_local_pfid;
 	__u64 cur_local_sess_id;
 	bool req_wbuf:1;		/* large write request */
 	bool large_buf:1;		/* if valid response, is pointer
@@ -461,6 +467,10 @@ static inline void init_smb2_0_server(struct tcp_server_info *server) { }
 static inline void init_smb2_1_server(struct tcp_server_info *server) { }
 static inline void init_smb3_0_server(struct tcp_server_info *server) { }
 static inline int is_smb2_neg_cmd(struct smb_work *smb_work) { return 0; }
+static inline bool is_chained_smb2_message(struct smb_work *smb_work)
+{
+	return 0;
+}
 #endif
 
 /* functions */

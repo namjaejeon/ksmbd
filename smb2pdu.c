@@ -106,7 +106,11 @@ void smb2_set_err_rsp(struct smb_work *smb_work)
 	char *rsp = smb_work->rsp_buf;
 	struct smb2_err_rsp *err_rsp;
 
-	err_rsp = (struct smb2_err_rsp *)rsp;
+	if (smb_work->next_smb2_rcv_hdr_off)
+		err_rsp = (struct smb2_err_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	else
+		err_rsp = (struct smb2_err_rsp *)rsp;
 
 	if (err_rsp->hdr.Status != cpu_to_le32(NT_STATUS_STOPPED_ON_SYMLINK)) {
 		err_rsp->StructureSize =
@@ -150,6 +154,9 @@ int is_smb2_neg_cmd(struct smb_work *smb_work)
 int get_smb2_cmd_val(struct smb_work *smb_work)
 {
 	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)smb_work->buf;
+	if (smb_work->next_smb2_rcv_hdr_off)
+		rcv_hdr = (struct smb2_hdr *)((char *)rcv_hdr
+					+ smb_work->next_smb2_rcv_hdr_off);
 	return le16_to_cpu(rcv_hdr->Command);
 }
 
@@ -160,8 +167,129 @@ int get_smb2_cmd_val(struct smb_work *smb_work)
 void set_smb2_rsp_status(struct smb_work *smb_work, unsigned int err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) smb_work->rsp_buf;
+	if (smb_work->next_smb2_rcv_hdr_off)
+		rsp_hdr = (struct smb2_hdr *)((char *)rsp_hdr
+					+ smb_work->next_smb2_rsp_hdr_off);
 	rsp_hdr->Status = cpu_to_le32(err);
 	smb2_set_err_rsp(smb_work);
+}
+
+/**
+ * init_smb2_rsp() - initialize smb2 chained response
+ * @smb_work:	smb work containing smb response buffer
+ */
+void init_smb2_rsp(struct smb_work *smb_work)
+{
+	struct smb2_hdr *req;
+	struct smb2_hdr *rsp;
+	struct smb2_hdr *rsp_hdr;
+	struct smb2_hdr *rcv_hdr;
+	int next_hdr_offset = 0;
+	int len, new_len;
+
+
+	req = (struct smb2_hdr *)(smb_work->buf +
+				  smb_work->next_smb2_rcv_hdr_off);
+	rsp = (struct smb2_hdr *)(smb_work->rsp_buf +
+				  smb_work->next_smb2_rsp_hdr_off);
+
+	/* Len of this response = updated RFC len - offset of previous cmd
+	   in the compound rsp */
+
+	/* Storing the current local FID which may be needed by subsequent
+	   command in the compound request */
+	if (le16_to_cpu(req->Command) == SMB2_CREATE &&
+			le32_to_cpu(rsp->Status) == NT_STATUS_OK) {
+		smb_work->cur_local_fid =
+			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
+				VolatileFileId);
+		smb_work->cur_local_pfid =
+			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
+				PersistentFileId);
+		smb_work->cur_local_sess_id = rsp->SessionId;
+	}
+
+	len = get_rfc1002_length(smb_work->rsp_buf) -
+				 smb_work->next_smb2_rsp_hdr_off;
+
+	next_hdr_offset = le32_to_cpu(req->NextCommand);
+
+	/* Align the length to 8Byte  */
+	new_len = ((len + 7) & ~7);
+	inc_rfc1001_len(smb_work->rsp_buf, ((sizeof(struct smb2_hdr) - 4)
+			+ new_len - len));
+	rsp->NextCommand = cpu_to_le32(new_len);
+
+	smb_work->next_smb2_rcv_hdr_off += next_hdr_offset;
+	smb_work->next_smb2_rsp_hdr_off += new_len;
+	cifssrv_debug("Compound req new_len = %d rcv off = %d rsp off = %d\n",
+		      new_len, smb_work->next_smb2_rcv_hdr_off,
+		      smb_work->next_smb2_rsp_hdr_off);
+
+	rsp_hdr = (struct smb2_hdr *)(((char *)smb_work->rsp_buf +
+					smb_work->next_smb2_rsp_hdr_off));
+	rcv_hdr = (struct smb2_hdr *)(((char *)smb_work->buf +
+					smb_work->next_smb2_rcv_hdr_off));
+
+	if (!(le32_to_cpu(rcv_hdr->Flags) & SMB2_FLAGS_RELATED_OPERATIONS)) {
+		cifssrv_debug("related flag should be set\n");
+		smb_work->cur_local_fid = -1;
+		smb_work->cur_local_pfid = -1;
+	}
+	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
+	memcpy(rsp_hdr->ProtocolId, rcv_hdr->ProtocolId, 4);
+	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = cpu_to_le16(1);
+	rsp_hdr->Command = rcv_hdr->Command;
+
+	/*
+	 * Message is response. We don't grant oplock yet.
+	 */
+	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR |
+				SMB2_FLAGS_RELATED_OPERATIONS);
+	rsp_hdr->NextCommand = 0;
+	rsp_hdr->MessageId = rcv_hdr->MessageId;
+	rsp_hdr->ProcessId = rcv_hdr->ProcessId;
+	rsp_hdr->TreeId = rcv_hdr->TreeId;
+	rsp_hdr->SessionId = rcv_hdr->SessionId;
+	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
+}
+
+/**
+ * is_chained_smb2_message() - check for chained command
+ * @smb_work:	smb work containing smb request buffer
+ *
+ * Return:      true if chained request, otherwise false
+ */
+bool is_chained_smb2_message(struct smb_work *smb_work)
+{
+	struct smb2_hdr *hdr = (struct smb2_hdr *)smb_work->buf;
+	unsigned int len;
+
+	if (*(__le32 *)(hdr->ProtocolId) != SMB2_PROTO_NUMBER)
+		return false;
+
+	hdr = (struct smb2_hdr *)(smb_work->buf +
+			smb_work->next_smb2_rcv_hdr_off);
+	if (le32_to_cpu(hdr->NextCommand) > 0) {
+		cifssrv_debug("got SMB2 chained command\n");
+		init_smb2_rsp(smb_work);
+		return true;
+	} else if (smb_work->next_smb2_rcv_hdr_off) {
+		/*
+		 * This is last request in chained command,
+		 * align response to 8 byte
+		 */
+		len = ((get_rfc1002_length(smb_work->rsp_buf) + 7) & ~7);
+		len = len - get_rfc1002_length(smb_work->rsp_buf);
+		if (len) {
+			cifssrv_debug("padding len %u\n", len);
+			inc_rfc1001_len(smb_work->rsp_buf, len);
+			if (smb_work->rdata_buf)
+				smb_work->rrsp_hdr_size += len;
+		}
+	}
+	return false;
 }
 
 /**
@@ -359,6 +487,10 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 	char *name, *unixname;
 	char *wild_card_pos;
+
+	if (smb_work->next_smb2_rcv_hdr_off)
+		req_hdr = (struct smb2_hdr *)((char *)req_hdr
+				+ smb_work->next_smb2_rcv_hdr_off);
 
 	name = smb_strndup_from_utf16(src, maxlen, 1,
 			smb_work->server->local_nls);
@@ -1187,7 +1319,7 @@ int smb2_open(struct smb_work *smb_work)
 {
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_create_req *req;
-	struct smb2_create_rsp *rsp;
+	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifssrv_share *share;
 	struct cifssrv_file *fp = NULL;
@@ -1211,6 +1343,24 @@ int smb2_open(struct smb_work *smb_work)
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_create_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_create_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	if (le32_to_cpu(req->hdr.NextCommand) &&
+			!smb_work->next_smb2_rcv_hdr_off &&
+			(le32_to_cpu(req->hdr.Flags) &
+			 SMB2_FLAGS_RELATED_OPERATIONS)) {
+		cifssrv_debug("invalid flag in chained command\n");
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		smb2_set_err_rsp(smb_work);
+		return -EINVAL;
+	}
 
 	if (req->StructureSize != 57) {
 		cifssrv_err("malformed packet\n");
@@ -1590,14 +1740,14 @@ reconnect:
 	rsp->VolatileFileId = cpu_to_le64(volatile_id);
 	rsp->CreateContextsOffset = 0;
 	rsp->CreateContextsLength = 0;
-	inc_rfc1001_len(rsp, 88); /* StructureSize - 1*/
+	inc_rfc1001_len(rsp_org, 88); /* StructureSize - 1*/
 
 	if (durable_open) {
 		create_durable_rsp_buf(rsp->Buffer + rsp->CreateContextsLength);
 		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
 				Buffer) - 4 + rsp->CreateContextsLength;
 		rsp->CreateContextsLength += sizeof(struct create_durable_rsp);
-		inc_rfc1001_len(rsp, sizeof(struct create_durable_rsp));
+		inc_rfc1001_len(rsp_org, sizeof(struct create_durable_rsp));
 	}
 
 err_out:
@@ -1963,7 +2113,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 {
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_query_directory_req *req;
-	struct smb2_query_directory_rsp *rsp;
+	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	int data_count = 0, srch_flag;
 	int rc = 0, err = 0;
 	uint64_t id = -1;
@@ -1984,6 +2134,19 @@ int smb2_query_dir(struct smb_work *smb_work)
 
 	req = (struct smb2_query_directory_req *)smb_work->buf;
 	rsp = (struct smb2_query_directory_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_directory_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_directory_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+		if (le64_to_cpu(req->VolatileFileId == -1)) {
+			cifssrv_debug("Compound request assigning stored FID = %llu\n",
+				    smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
+	}
 
 	if (req->StructureSize != 33) {
 		cifssrv_err("malformed packet\n");
@@ -2277,7 +2440,7 @@ full_buf:
 			((char *)rsp->Buffer + num_entry))->NextEntryOffset = 0;
 	rsp->OutputBufferOffset = cpu_to_le16(72);
 	rsp->OutputBufferLength = cpu_to_le32(data_count);
-	inc_rfc1001_len(rsp, 8 + data_count);
+	inc_rfc1001_len(rsp_org, 8 + data_count);
 	kfree(pathname);
 	kfree(srch_ptr);
 	return 0;
@@ -2291,14 +2454,16 @@ no_more_files:
 		dirdesc_fp->readdir_data.full = r_data.full;
 	}
 
-	if (rsp->hdr.Status == 0)
+	if (smb_work->next_smb2_rcv_hdr_off)
+		rsp->hdr.Status = 0;
+	else if (rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_NO_MORE_FILES;
 
 	rsp->StructureSize = cpu_to_le16(9);
 	rsp->OutputBufferOffset = cpu_to_le16(0);
 	rsp->OutputBufferLength = cpu_to_le32(0);
 	rsp->Buffer[0] = 0;
-	inc_rfc1001_len(rsp, 9);
+	inc_rfc1001_len(rsp_org, 9);
 	kfree(pathname);
 	kfree(srch_ptr);
 	return 0;
@@ -2313,11 +2478,20 @@ no_more_files:
 int smb2_query_info(struct smb_work *smb_work)
 {
 	struct smb2_query_info_req *req;
-	struct smb2_query_info_rsp *rsp;
+	struct smb2_query_info_rsp *rsp, *rsp_org;
 	int rc = 0;
 
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+
+	}
 
 	cifssrv_debug("GOT query info request\n");
 
@@ -2353,7 +2527,7 @@ int smb2_query_info(struct smb_work *smb_work)
 	}
 	rsp->StructureSize = cpu_to_le16(9);
 	rsp->OutputBufferOffset = cpu_to_le16(72);
-	inc_rfc1001_len(rsp, 8);
+	inc_rfc1001_len(rsp_org, 8);
 	return 0;
 }
 
@@ -2415,8 +2589,17 @@ int smb2_close(struct smb_work *smb_work)
 	uint64_t volatile_id = -1, persistent_id = -1, sess_id;
 	struct smb2_close_req *req = (struct smb2_close_req *)smb_work->buf;
 	struct smb2_close_rsp *rsp = (struct smb2_close_rsp *)smb_work->rsp_buf;
+	struct smb2_close_rsp *rsp_org;
 	struct tcp_server_info *server = smb_work->server;
 	int err = 0;
+
+	rsp_org = rsp;
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_close_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_close_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	if (req->StructureSize != 24) {
 		cifssrv_err("malformed packet\n");
@@ -2446,8 +2629,35 @@ int smb2_close(struct smb_work *smb_work)
 		goto out;
 	}
 
-	volatile_id = le64_to_cpu(req->VolatileFileId);
-	persistent_id = le64_to_cpu(req->PersistentFileId);
+	if (smb_work->next_smb2_rcv_hdr_off &&
+			le64_to_cpu(req->VolatileFileId) == -1) {
+		if (!smb_work->cur_local_fid) {
+			/* file open failed, return EINVAL */
+			cifssrv_debug("file open was failed\n");
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			err = -EBADF;
+			goto out;
+		} else if (smb_work->cur_local_fid == -1) {
+			/* file already closed, return FILE_CLOSED */
+			cifssrv_debug("file already closed\n");
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			err = -EBADF;
+			goto out;
+		} else {
+			cifssrv_debug("Compound request assigning stored FID = %llu: %llu\n",
+					smb_work->cur_local_fid,
+					smb_work->cur_local_pfid);
+			volatile_id = smb_work->cur_local_fid;
+			persistent_id = smb_work->cur_local_pfid;
+
+			/* file closed, stored id is not valid anymore */
+			smb_work->cur_local_fid = -1;
+			smb_work->cur_local_pfid = -1;
+		}
+	} else {
+		volatile_id = le64_to_cpu(req->VolatileFileId);
+		persistent_id = le64_to_cpu(req->PersistentFileId);
+	}
 	cifssrv_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
 
@@ -2476,7 +2686,7 @@ out:
 		smb2_set_err_rsp(smb_work);
 	} else {
 		server->stats.open_files_count--;
-		inc_rfc1001_len(rsp, 60);
+		inc_rfc1001_len(rsp_org, 60);
 	}
 
 	return 0;
@@ -2620,11 +2830,11 @@ int smb2_get_shortname(struct tcp_server_info *server, char *longname,
  * Return:	0 on success, otherwise error
  */
 int smb2_get_ea(struct smb_work *smb_work, struct path *path,
-		void *rq, void *resp)
+		void *rq, void *resp, void *resp_org)
 {
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_query_info_req *req;
-	struct smb2_query_info_rsp *rsp;
+	struct smb2_query_info_rsp *rsp_org, *rsp;
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL;
 	int rc, name_len, value_len, xattr_list_len;
@@ -2634,6 +2844,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 
 	req = (struct smb2_query_info_req *)rq;
 	rsp = (struct smb2_query_info_rsp *)resp;
+	rsp_org = (struct smb2_query_info_rsp *)resp_org;
 
 	/* single EA entry is requested with given user.* name */
 	if (req->InputBufferLength)
@@ -2647,7 +2858,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	}
 
 	buf_free_len = SMBMaxBufSize + MAX_HEADER_SIZE(server) -
-		(get_rfc1002_length(rsp) + 4)
+		(get_rfc1002_length(rsp_org) + 4)
 		- sizeof(struct smb2_query_info_rsp);
 
 	rc = smb_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
@@ -2733,7 +2944,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 done:
 	rc = 0;
 	rsp->OutputBufferLength = cpu_to_le32(rsp_data_cnt);
-	inc_rfc1001_len(rsp, rsp_data_cnt);
+	inc_rfc1001_len(rsp_org, rsp_data_cnt);
 out:
 	if (xattr_list)
 		vfree(xattr_list);
@@ -2833,7 +3044,7 @@ int buffer_check_err(int reqOutputBufferLength, struct smb2_query_info_rsp *rsp,
 int smb2_info_file(struct smb_work *smb_work)
 {
 	struct smb2_query_info_req *req;
-	struct smb2_query_info_rsp *rsp;
+	struct smb2_query_info_rsp *rsp, *rsp_org;
 	struct cifssrv_file *fp;
 	struct tcp_server_info *server = smb_work->server;
 	int fileinfoclass = 0;
@@ -2846,6 +3057,20 @@ int smb2_info_file(struct smb_work *smb_work)
 
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_info_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+
+		if (le64_to_cpu(req->VolatileFileId) == -1) {
+			cifssrv_debug("Compound request assigning stored FID = %llu\n",
+				    smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
+	}
 
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
@@ -2876,7 +3101,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		smb2_set_access_flags(filp, &(file_info->AccessFlags));
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_access_info));
-		inc_rfc1001_len(rsp, sizeof(struct smb2_file_access_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_access_info));
 		file_infoclass_size = FILE_ACCESS_INFORMATION_SIZE;
 		break;
 	}
@@ -2904,7 +3129,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		rsp->OutputBufferLength =
 			cpu_to_le32(offsetof(struct smb2_file_all_info,
 						AllocationSize));
-		inc_rfc1001_len(rsp, offsetof(struct smb2_file_all_info,
+		inc_rfc1001_len(rsp_org, offsetof(struct smb2_file_all_info,
 					AllocationSize));
 		file_infoclass_size = FILE_BASIC_INFORMATION_SIZE;
 		break;
@@ -2922,7 +3147,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_standard_info));
-		inc_rfc1001_len(rsp,
+		inc_rfc1001_len(rsp_org,
 				sizeof(struct smb2_file_standard_info));
 		file_infoclass_size = FILE_STANDARD_INFORMATION_SIZE;
 		break;
@@ -2935,7 +3160,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->AlignmentRequirement = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_alignment_info));
-		inc_rfc1001_len(rsp,
+		inc_rfc1001_len(rsp_org,
 				sizeof(struct smb2_file_alignment_info));
 		file_infoclass_size = FILE_ALIGNMENT_INFORMATION_SIZE;
 		break;
@@ -2992,7 +3217,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_all_info) +
 				    uni_filename_len - 1);
-		inc_rfc1001_len(rsp, le32_to_cpu(rsp->OutputBufferLength));
+		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_ALL_INFORMATION_SIZE;
 		break;
 	}
@@ -3014,7 +3239,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_alt_name_info) +
 				    uni_filename_len);
-		inc_rfc1001_len(rsp, le32_to_cpu(rsp->OutputBufferLength));
+		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_ALTERNATE_NAME_INFORMATION_SIZE;
 		break;
 	}
@@ -3044,7 +3269,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_stream_info) +
 					   streamlen);
-		inc_rfc1001_len(rsp, cpu_to_le32(rsp->OutputBufferLength));
+		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
 	}
@@ -3057,7 +3282,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->IndexNumber = cpu_to_le64(stat.ino);
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_internal_info));
-		inc_rfc1001_len(rsp,
+		inc_rfc1001_len(rsp_org,
 				sizeof(struct smb2_file_internal_info));
 		file_infoclass_size = FILE_INTERNAL_INFORMATION_SIZE;
 		break;
@@ -3089,7 +3314,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->Reserved = cpu_to_le32(0);
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_ntwrk_info));
-		inc_rfc1001_len(rsp, sizeof(struct smb2_file_ntwrk_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ntwrk_info));
 		file_infoclass_size = FILE_NETWORK_OPEN_INFORMATION_SIZE;
 		break;
 	}
@@ -3101,12 +3326,12 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->EASize = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_ea_info));
-		inc_rfc1001_len(rsp, sizeof(struct smb2_file_ea_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ea_info));
 		file_infoclass_size = FILE_EA_INFORMATION_SIZE;
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
-		rc = smb2_get_ea(smb_work, &filp->f_path, req, rsp);
+		rc = smb2_get_ea(smb_work, &filp->f_path, req, rsp, rsp_org);
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		if (rc < 0)
 			return rc;
@@ -3121,7 +3346,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->ReparseTag = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_alloc_info));
-		inc_rfc1001_len(rsp, sizeof(struct smb2_file_alloc_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_alloc_info));
 		file_infoclass_size = FILE_ALLOCATION_INFORMATION_SIZE;
 		break;
 	}
@@ -3165,7 +3390,7 @@ inline int fsTypeSearch(struct fs_type_info fs_type[],
 int smb2_info_filesystem(struct smb_work *smb_work)
 {
 	struct smb2_query_info_req *req;
-	struct smb2_query_info_rsp *rsp;
+	struct smb2_query_info_rsp *rsp, *rsp_org;
 	struct tcp_server_info *server = smb_work->server;
 	int fsinfoclass = 0;
 	struct kstatfs stfs;
@@ -3176,6 +3401,14 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 	int fs_type_idx;
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_info_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	share = find_matching_share(req->hdr.TreeId);
 	if (!share)
@@ -3210,7 +3443,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 			fs_info->DeviceType = cpu_to_le32(stfs.f_type);
 			fs_info->DeviceCharacteristics = (0x00000020);
 			rsp->OutputBufferLength = cpu_to_le32(8);
-			inc_rfc1001_len(rsp, 8);
+			inc_rfc1001_len(rsp_org, 8);
 			fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
 			break;
 		}
@@ -3232,7 +3465,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 			fs_info->FileSystemNameLen = len;
 			rsp->OutputBufferLength = cpu_to_le32(sizeof
 					(FILE_SYSTEM_ATTRIBUTE_INFO) -2 + len);
-			inc_rfc1001_len(rsp,
+			inc_rfc1001_len(rsp_org,
 				sizeof(FILE_SYSTEM_ATTRIBUTE_INFO) - 2 + len);
 			fs_infoclass_size = FS_ATTRIBUTE_INFORMATION_SIZE;
 			break;
@@ -3253,7 +3486,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 			rsp->OutputBufferLength =
 				cpu_to_le32(sizeof(FILE_SYSTEM_VOL_INFO)
 								- 2 + len);
-			inc_rfc1001_len(rsp, sizeof(FILE_SYSTEM_VOL_INFO)
+			inc_rfc1001_len(rsp_org, sizeof(FILE_SYSTEM_VOL_INFO)
 								+ len - 2);
 			fs_infoclass_size = FS_VOLUME_INFORMATION_SIZE;
 			break;
@@ -3271,7 +3504,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 						cpu_to_le32(stfs.f_bsize >> 9);
 			fs_size_info->BytesPerSector = cpu_to_le32(512);
 			rsp->OutputBufferLength = cpu_to_le32(24);
-			inc_rfc1001_len(rsp, 24);
+			inc_rfc1001_len(rsp_org, 24);
 			fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
 			break;
 		}
@@ -3291,7 +3524,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 						cpu_to_le32(stfs.f_bsize >> 9);
 			fs_fullsize_info->BytesPerSector = cpu_to_le32(512);
 			rsp->OutputBufferLength = cpu_to_le32(32);
-			inc_rfc1001_len(rsp, 32);
+			inc_rfc1001_len(rsp_org, 32);
 			fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
 			break;
 		}
@@ -3793,7 +4026,7 @@ int smb2_read_pipe(struct smb_work *smb_work)
 int smb2_read(struct smb_work *smb_work)
 {
 	struct smb2_read_req *req;
-	struct smb2_read_rsp *rsp;
+	struct smb2_read_rsp *rsp, *rsp_org;
 	struct tcp_server_info *server = smb_work->server;
 	loff_t offset;
 	size_t length, mincount;
@@ -3803,6 +4036,20 @@ int smb2_read(struct smb_work *smb_work)
 
 	req = (struct smb2_read_req *)smb_work->buf;
 	rsp = (struct smb2_read_rsp *)smb_work->rsp_buf;
+
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_read_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_read_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+		if (le64_to_cpu(req->VolatileFileId) == -1) {
+			cifssrv_debug("Compound request assigning stored FID = %llu\n",
+				    smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
+	}
 
 	if (req->StructureSize != 49) {
 		cifssrv_err("malformed packet\n");
@@ -3854,10 +4101,10 @@ int smb2_read(struct smb_work *smb_work)
 	rsp->DataLength = cpu_to_le32(nbytes);
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(rsp, 16);
-	smb_work->rrsp_hdr_size = get_rfc1002_length(rsp) + 4;
+	inc_rfc1001_len(rsp_org, 16);
+	smb_work->rrsp_hdr_size = get_rfc1002_length(rsp_org) + 4;
 	smb_work->rdata_cnt = nbytes;
-	inc_rfc1001_len(rsp, nbytes);
+	inc_rfc1001_len(rsp_org, nbytes);
 	return 0;
 
 out:
@@ -3959,7 +4206,7 @@ out:
 int smb2_write(struct smb_work *smb_work)
 {
 	struct smb2_write_req *req;
-	struct smb2_write_rsp *rsp;
+	struct smb2_write_rsp *rsp, *rsp_org;
 	struct tcp_server_info *server = smb_work->server;
 	loff_t offset;
 	size_t length;
@@ -3971,6 +4218,19 @@ int smb2_write(struct smb_work *smb_work)
 
 	req = (struct smb2_write_req *)smb_work->buf;
 	rsp = (struct smb2_write_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_write_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_write_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+		if (le64_to_cpu(req->VolatileFileId) == -1) {
+			cifssrv_debug("Compound request assigning stored FID  = %llu\n",
+				    smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
+	}
 
 	if (req->StructureSize != 49) {
 		cifssrv_err("malformed packet\n");
@@ -4023,7 +4283,7 @@ int smb2_write(struct smb_work *smb_work)
 	rsp->DataLength = cpu_to_le32(nbytes);
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(rsp, 16);
+	inc_rfc1001_len(rsp_org, 16);
 	return 0;
 
 out:
@@ -4319,7 +4579,7 @@ int smb2_lock(struct smb_work *smb_work)
 int smb2_ioctl(struct smb_work *smb_work)
 {
 	struct smb2_ioctl_req *req;
-	struct smb2_ioctl_rsp *rsp;
+	struct smb2_ioctl_rsp *rsp, *rsp_org;
 	int cnt_code, nbytes = 0;
 	int out_buf_len;
 	char *data_buf;
@@ -4328,6 +4588,19 @@ int smb2_ioctl(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	req = (struct smb2_ioctl_req *)smb_work->buf;
 	rsp = (struct smb2_ioctl_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_ioctl_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_ioctl_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+		if (le64_to_cpu(req->VolatileFileId) == -1) {
+			cifssrv_debug("Compound request assigning stored FID = %llu\n",
+					smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
+	}
 
 	if (req->StructureSize != 57) {
 		cifssrv_err("malformed packet\n");
@@ -4403,7 +4676,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 	rsp->Reserved = cpu_to_le16(0);
 	rsp->flags = cpu_to_le32(0);
 	rsp->Reserved2 = cpu_to_le32(0);
-	inc_rfc1001_len(rsp, 48 + nbytes);
+	inc_rfc1001_len(rsp_org, 48 + nbytes);
 	return 0;
 
 out:
@@ -4588,14 +4861,29 @@ err_out:
 int smb2_notify(struct smb_work *smb_work)
 {
 	struct smb2_notify_req *req;
-	struct smb2_notify_rsp *rsp;
+	struct smb2_notify_rsp *rsp, *rsp_org;
 
 	req = (struct smb2_notify_req *)smb_work->buf;
 	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_notify_req *)((char *)req +
+					smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_notify_rsp *)((char *)rsp +
+					smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	if (req->StructureSize != 32) {
 		cifssrv_err("malformed packet\n");
 		smb_work->send_no_response = 1;
+		return 0;
+	}
+
+	if (smb_work->next_smb2_rcv_hdr_off &&
+			le32_to_cpu(req->hdr.NextCommand)) {
+		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
+		smb2_set_err_rsp(smb_work);
 		return 0;
 	}
 
@@ -4604,6 +4892,6 @@ int smb2_notify(struct smb_work *smb_work)
 	rsp->OutputBufferLength = cpu_to_le32(0);
 	rsp->OutputBufferOffset = cpu_to_le16(0);
 	rsp->Buffer[0] = 0;
-	inc_rfc1001_len(rsp, 9);
+	inc_rfc1001_len(rsp_org, 9);
 	return 0;
 }
