@@ -555,6 +555,8 @@ static int update_global(char *param_buf,
 			cifssrv_err("[%s] invalid parameter\n", param_buf);
 			break;
 		}
+
+		kfree(guestAccountName);
 		guestAccountName = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!guestAccountName)
 			return -ENOMEM;
@@ -567,6 +569,8 @@ static int update_global(char *param_buf,
 			cifssrv_err("[%s] invalid parameter\n", param_buf);
 			break;
 		}
+
+		kfree(server_string);
 		server_string = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!server_string)
 			return -ENOMEM;
@@ -579,6 +583,8 @@ static int update_global(char *param_buf,
 			cifssrv_err("[%s] invalid parameter\n", param_buf);
 			break;
 		}
+
+		kfree(workgroup);
 		workgroup = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!workgroup)
 			return -ENOMEM;
@@ -614,8 +620,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.allow_hosts);
-		share->config.allow_hosts = NULL;
-
 		share->config.allow_hosts = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.allow_hosts)
 			return -ENOMEM;
@@ -663,8 +667,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.comment);
-		share->config.comment = NULL;
-
 		share->config.comment = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.comment)
 			return -ENOMEM;
@@ -680,8 +682,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.deny_hosts);
-		share->config.deny_hosts = NULL;
-
 		share->config.deny_hosts = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.deny_hosts)
 			return -ENOMEM;
@@ -729,8 +729,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.invalid_users);
-		share->config.invalid_users = NULL;
-
 		share->config.invalid_users = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.invalid_users)
 			return -ENOMEM;
@@ -779,8 +777,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->path);
-		share->path = NULL;
-
 		share->path = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->path)
 			return -ENOMEM;
@@ -796,8 +792,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.read_list);
-		share->config.read_list = NULL;
-
 		share->config.read_list = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.read_list)
 			return -ENOMEM;
@@ -813,8 +807,6 @@ static int update_share(struct cifssrv_share *share, char *param_buf,
 		}
 
 		kfree(share->config.valid_users);
-		share->config.valid_users = NULL;
-
 		share->config.valid_users = kzalloc(data_sz+1, GFP_KERNEL);
 		if (!share->config.valid_users)
 			return -ENOMEM;
