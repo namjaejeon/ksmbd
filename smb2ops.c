@@ -79,6 +79,7 @@ struct smb_version_ops smb2_0_server_ops = {
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
+	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
 };
 
@@ -119,6 +120,8 @@ void init_smb2_0_server(struct tcp_server_info *server)
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_credits = SMB2_MAX_CREDITS;
+	server->credits_granted = 0;
 }
 
 /**

@@ -169,6 +169,9 @@ extern struct fidtable_desc global_fidtable;
 #define CREATE_OPTION_READONLY  0x10000000
 #define CREATE_OPTION_SPECIAL   0x20000000   /* system. NB not sent over wire */
 
+/* SMB2 Max Credits */
+#define SMB2_MAX_CREDITS 8192
+
 #define SMB2_CLIENT_GUID_SIZE		16
 
 /* SMB2 timeouts */
@@ -215,6 +218,7 @@ struct smb_version_ops {
 	int (*init_rsp_hdr)(struct smb_work *swork);
 	void (*set_rsp_status)(struct smb_work *swork, unsigned int err);
 	int (*allocate_rsp_buf)(struct smb_work *smb_work);
+	void (*set_rsp_credits)(struct smb_work *swork);
 	int (*check_user_session)(struct smb_work *work);
 };
 
@@ -278,6 +282,8 @@ struct tcp_server_info {
 	struct cifssrv_pipe *pipe_desc;
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
+	int max_credits;
+	int credits_granted;
 	char peeraddr[MAX_ADDRBUFLEN];
 	int connection_type;
 	struct cifssrv_stats stats;
@@ -462,6 +468,7 @@ extern void init_smb2_0_server(struct tcp_server_info *server);
 extern void init_smb2_1_server(struct tcp_server_info *server);
 extern void init_smb3_0_server(struct tcp_server_info *server);
 extern int is_smb2_neg_cmd(struct smb_work *smb_work);
+extern int is_smb2_rsp(struct smb_work *smb_work);
 #else
 static inline void init_smb2_0_server(struct tcp_server_info *server) { }
 static inline void init_smb2_1_server(struct tcp_server_info *server) { }

@@ -420,6 +420,12 @@ again:
 		goto chained;
 
 send:
+	/* call set_rsp_credits() function to set number of credits granted in
+	 * hdr of smb2 response.
+	 */
+	if (is_smb2_rsp(smb_work))
+		server->ops->set_rsp_credits(smb_work);
+
 	smb_send_rsp(smb_work);
 
 nosend:
@@ -493,6 +499,8 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	server->local_nls = load_nls_default();
 	atomic_set(&server->req_running, 0);
 	atomic_set(&server->r_count, 0);
+	server->max_credits = 0;
+	server->credits_granted = 0;
 	init_waitqueue_head(&server->req_running_q);
 	INIT_LIST_HEAD(&server->tcp_sess);
 	INIT_LIST_HEAD(&server->cifssrv_sess);

@@ -146,6 +146,27 @@ int is_smb2_neg_cmd(struct smb_work *smb_work)
 }
 
 /**
+ * is_smb2_rsp() - is it smb2 response
+ * @smb_work:	smb work containing smb response buffer
+ *
+ * Return:      1 if smb2 response, otherwise 0
+ */
+int is_smb2_rsp(struct smb_work *smb_work)
+{
+	struct smb2_hdr *hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+
+	/* is it SMB2 header ? */
+	if (*(__le32 *)hdr->ProtocolId != SMB2_PROTO_NUMBER)
+		return 0;
+
+	/* make sure it is response not request message */
+	if (!(hdr->Flags & SMB2_FLAGS_SERVER_TO_REDIR))
+		return 0;
+
+	return 1;
+}
+
+/**
  * get_smb2_cmd_val() - get smb command code from smb header
  * @smb_work:	smb work containing smb request buffer
  *
@@ -239,7 +260,7 @@ void init_smb2_rsp(struct smb_work *smb_work)
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	memcpy(rsp_hdr->ProtocolId, rcv_hdr->ProtocolId, 4);
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(1);
+	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -302,6 +323,7 @@ int init_smb2_rsp_hdr(struct smb_work *smb_work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
 	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)smb_work->buf;
+	struct tcp_server_info *server = smb_work->server;
 	int next_hdr_offset = 0;
 
 	next_hdr_offset = le32_to_cpu(rcv_hdr->NextCommand);
@@ -311,7 +333,7 @@ int init_smb2_rsp_hdr(struct smb_work *smb_work)
 
 	memcpy(rsp_hdr->ProtocolId, rcv_hdr->ProtocolId, 4);
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(1);
+	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -327,6 +349,15 @@ int init_smb2_rsp_hdr(struct smb_work *smb_work)
 	rsp_hdr->TreeId = rcv_hdr->TreeId;
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
+
+	if (server->credits_granted) {
+		if (le16_to_cpu(rcv_hdr->CreditCharge))
+			server->credits_granted -=
+				le16_to_cpu(rcv_hdr->CreditCharge);
+		else
+			server->credits_granted -= 1;
+	}
+
 	return 0;
 }
 
@@ -381,6 +412,63 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 	}
 
 	return 0;
+}
+
+/**
+ * smb2_set_rsp_credits() - set number of credits iin response buffer
+ * @smb_work:	smb work containing smb response buffer
+ */
+void smb2_set_rsp_credits(struct smb_work *smb_work)
+{
+	struct smb2_hdr *hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+	struct tcp_server_info *server = smb_work->server;
+	unsigned int status = le32_to_cpu(hdr->Status);
+	unsigned int flags = le32_to_cpu(hdr->Flags);
+	unsigned short credits_requested = le16_to_cpu(hdr->CreditRequest);
+	unsigned short cmd = le16_to_cpu(hdr->Command);
+	unsigned short credit_charge = 1, credits_granted = 0;
+	unsigned short aux_max, aux_credits, min_credits;
+
+	BUG_ON(server->credits_granted >= server->max_credits);
+
+	/* get default minimum credits by shifting maximum credits by 4 */
+	min_credits = server->max_credits >> 4;
+
+	if (flags & SMB2_FLAGS_ASYNC_COMMAND) {
+		credits_granted = 0;
+	} else if (credits_requested > 0) {
+		aux_max = 0;
+		aux_credits = credits_requested - 1;
+		switch (cmd) {
+		case SMB2_NEGOTIATE:
+			break;
+		case SMB2_SESSION_SETUP:
+			aux_max = (status) ? 0 : 32;
+			break;
+		default:
+			aux_max = 32;
+			break;
+		}
+		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
+		credits_granted = aux_credits + credit_charge;
+
+		/* if credits granted per client is getting bigger than default
+		 * minimum credits then we should wrap it up within the limits.
+		 */
+		if ((server->credits_granted + credits_granted) > min_credits)
+			credits_granted = min_credits -	server->credits_granted;
+
+	} else if (server->credits_granted == 0) {
+		credits_granted = 1;
+	}
+
+	server->credits_granted += credits_granted;
+	cifssrv_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
+			credits_requested, credits_granted,
+			server->credits_granted);
+	/* set number of credits granted in SMB2 hdr */
+	hdr->CreditRequest = cpu_to_le16(credits_granted);
+
 }
 
 /**
@@ -647,7 +735,6 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp, 65);
 	server->tcp_status = CifsNeedNegotiate;
-	rsp->hdr.CreditRequest = cpu_to_le16(3);
 	server->need_neg = false;
 	return 0;
 
