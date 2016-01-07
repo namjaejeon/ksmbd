@@ -156,6 +156,7 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
 			continue;
 		} else if (length <= 0) {
 			/* cifs_reconnect(server); */
+			usleep_range(1000, 2000);
 			total_read = -EAGAIN;
 			break;
 		}
