@@ -86,6 +86,7 @@ extern struct fidtable_desc global_fidtable;
 #define SMB20_PROT_ID 0x0202
 #define SMB21_PROT_ID 0x0210
 #define SMB30_PROT_ID 0x0300
+#define SMB2X_PROT_ID 0x02FF    /* multi-protocol negotiate request */
 #define BAD_PROT_ID   0xFFFF
 
 #define LOCKING_ANDX_SHARED_LOCK     0x01
@@ -403,7 +404,7 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work);
 void smb_put_name(void *name);
 bool is_smb_request(struct tcp_server_info *server, unsigned char type);
 int switch_req_buf(struct tcp_server_info *server);
-int get_dialect_idx(void *buf);
+int negotiate_dialect(void *buf);
 
 /* cifssrv export functions */
 extern int cifssrv_export_init(void);
@@ -478,6 +479,11 @@ static inline bool is_chained_smb2_message(struct smb_work *smb_work)
 {
 	return 0;
 }
+
+static inline void init_smb2_neg_rsp(struct smb_work *smb_work)
+{
+}
+
 #endif
 
 /* functions */

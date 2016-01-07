@@ -32,6 +32,7 @@ static struct {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	{SMB2_PROT, "\2SMB 2.002", SMB20_PROT_ID},
 	{SMB21_PROT, "\2SMB 2.1", SMB21_PROT_ID},
+	{SMB2X_PROT, "\2SMB 2.???", SMB2X_PROT_ID},
 	{SMB30_PROT, "\2SMB 3.0", SMB30_PROT_ID},
 #endif
 };
@@ -268,36 +269,48 @@ bool is_smb_request(struct tcp_server_info *server, unsigned char type)
 }
 
 /**
- * get_dialect_idx() - get smb negotiate dialect index supported by server
+ * negotiate_dialect() - negotiate smb dialect with smb client
  * @buf:	smb header
  *
  * Return:     protocol index on success, otherwise bad protocol id error
  */
-int get_dialect_idx(void *buf)
+int negotiate_dialect(void *buf)
 {
-	int byte_count, count, i, smb1_index;
+	int byte_count, count, i, smb1_index, start_index;
 	char *dialects = NULL;
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	start_index = SMB30_PROT;
+#else
+	start_index = CIFS_PROT;
+#endif
 
 	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
 			SMB1_PROTO_NUMBER) {
 		/* SMB1 neg protocol */
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
-		byte_count = le16_to_cpu(req->ByteCount);
-		dialects = req->DialectsArray;
-		smb1_index = 0;
-		while (byte_count) {
-			count = strlen(dialects);
-			cifssrv_debug("client requested dialect %s\n",
-					dialects);
-			if (!strncmp(dialects, protocols[CIFS_PROT].name,
-						count)) {
-				cifssrv_debug("selected %s dialect\n",
-						protocols[CIFS_PROT].name);
-				return smb1_index;
+		for (i = start_index; i >= CIFS_PROT; i--) {
+			byte_count = le16_to_cpu(req->ByteCount);
+			dialects = req->DialectsArray;
+			smb1_index = 0;
+
+			while (byte_count) {
+				count = strlen(dialects);
+				cifssrv_debug("client requested dialect %s\n",
+						dialects);
+				if (!strncmp(dialects, protocols[i].name,
+							count)) {
+					cifssrv_debug("selected %s dialect\n",
+							protocols[i].name);
+					if (i == CIFS_PROT)
+						return smb1_index;
+					else
+						return protocols[i].prot_id;
+				}
+				byte_count -= (++count);
+				dialects += count;
+				smb1_index++;
 			}
-			byte_count -= (++count);
-			dialects += count;
-			smb1_index++;
 		}
 	} else if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
@@ -305,7 +318,7 @@ int get_dialect_idx(void *buf)
 		/* SMB2 neg protocol */
 		struct smb2_negotiate_req *req;
 		req = (struct smb2_negotiate_req *)buf;
-		for (i = SMB30_PROT; i >= SMB2_PROT; i--) {
+		for (i = start_index; i >= SMB2_PROT; i--) {
 			count = le16_to_cpu(req->DialectCount);
 
 			while (--count >= 0) {

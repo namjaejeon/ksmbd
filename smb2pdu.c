@@ -196,6 +196,68 @@ void set_smb2_rsp_status(struct smb_work *smb_work, unsigned int err)
 }
 
 /**
+ * init_smb2_neg_rsp() - initialize smb2 response for negotiate command
+ * @smb_work:	smb work containing smb request buffer
+ *
+ * smb2 negotiate response is sent in reply of smb1 negotiate command for
+ * dialect auto-negotiation.
+ */
+void init_smb2_neg_rsp(struct smb_work *smb_work)
+{
+	struct smb2_hdr *rsp_hdr;
+	struct smb2_negotiate_rsp *rsp;
+	struct tcp_server_info *server = smb_work->server;
+	init_smb2_0_server(server);
+	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+
+	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
+
+	rsp_hdr->smb2_buf_length =
+		cpu_to_be32(sizeof(struct smb2_hdr) - 4);
+
+	rsp_hdr->ProtocolId[0] = 0xFE;
+	rsp_hdr->ProtocolId[1] = 'S';
+	rsp_hdr->ProtocolId[2] = 'M';
+	rsp_hdr->ProtocolId[3] = 'B';
+
+	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = cpu_to_le16(1);
+	rsp_hdr->Command = 0;
+	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
+	rsp_hdr->NextCommand = 0;
+	rsp_hdr->MessageId = 0;
+	rsp_hdr->ProcessId = 0;
+	rsp_hdr->TreeId = 0;
+	rsp_hdr->SessionId = 0;
+	memset(rsp_hdr->Signature, 0, 16);
+
+	rsp = (struct smb2_negotiate_rsp *)smb_work->rsp_buf;
+
+	WARN_ON(server->tcp_status == CifsGood);
+
+	rsp->StructureSize = cpu_to_le16(65);
+	rsp->SecurityMode = 0;
+	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
+	rsp->DialectRevision = cpu_to_le16(server->dialect);
+	rsp->Reserved = 0;
+	/* Not setting server guid rsp->ServerGUID, as it
+	 *          * not used by client for identifying server*/
+	rsp->Capabilities = 0;
+	rsp->MaxTransactSize = SMBMaxBufSize;
+	rsp->MaxReadSize = CIFS_DEFAULT_IOSIZE;
+	rsp->MaxWriteSize = CIFS_DEFAULT_IOSIZE;
+	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
+	rsp->ServerStartTime = 0;
+
+	rsp->SecurityBufferOffset = cpu_to_le16(128);
+	rsp->SecurityBufferLength = 0;
+	rsp->Reserved2 = 0;
+	inc_rfc1001_len(rsp, 65);
+	server->tcp_status = CifsNeedNegotiate;
+	rsp->hdr.CreditRequest = cpu_to_le16(2);
+}
+
+/**
  * init_smb2_rsp() - initialize smb2 chained response
  * @smb_work:	smb work containing smb response buffer
  */
@@ -696,7 +758,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		return 0;
 	}
 
-	server->dialect = get_dialect_idx(smb_work->buf);
+	server->dialect = negotiate_dialect(smb_work->buf);
 	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
 	if (server->dialect == BAD_PROT_ID) {
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
@@ -707,11 +769,13 @@ int smb2_negotiate(struct smb_work *smb_work)
 	server->connection_type = server->dialect;
 	rsp->Capabilities = 0;
 
+	if (server->dialect == SMB30_PROT_ID) {
+		init_smb3_0_server(server);
+		rsp->Capabilities |= server->capabilities;
+	}
+
 	if (server->dialect == SMB21_PROT_ID) {
 		init_smb2_1_server(server);
-		rsp->Capabilities |= server->capabilities;
-	} else if (server->dialect == SMB30_PROT_ID) {
-		init_smb3_0_server(server);
 		rsp->Capabilities |= server->capabilities;
 	}
 

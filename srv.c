@@ -398,7 +398,14 @@ again:
 	mutex_unlock(&server->srv_mutex);
 	rc = cmds->proc(smb_work);
 	mutex_lock(&server->srv_mutex);
-
+	if (server->need_neg && (server->dialect == SMB20_PROT_ID ||
+				server->dialect == SMB21_PROT_ID ||
+				server->dialect == SMB2X_PROT_ID ||
+				server->dialect == SMB30_PROT_ID)) {
+		cifssrv_debug("Need to send the smb2 negotiate response\n");
+		init_smb2_neg_rsp(smb_work);
+		goto send;
+	}
 	/* AndX commands - chained request can return positive values */
 	if (rc > 0) {
 		command = rc;

@@ -667,12 +667,16 @@ int smb_negotiate(struct smb_work *smb_work)
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(server->tcp_status == CifsGood);
 
-	server->dialect = get_dialect_idx(smb_work->buf);
+	server->dialect = negotiate_dialect(smb_work->buf);
 	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
 	if (server->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
 		return 0;
-	}
+	} else if (server->dialect == SMB20_PROT_ID ||
+			server->dialect == SMB21_PROT_ID ||
+			server->dialect == SMB2X_PROT_ID ||
+			server->dialect == SMB30_PROT_ID)
+		return server->dialect;
 
 	server->connection_type = 0;
 

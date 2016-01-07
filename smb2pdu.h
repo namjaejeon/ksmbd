@@ -996,6 +996,7 @@ extern void set_smb2_rsp_status(struct smb_work *smb_work, unsigned int err);
 extern int init_smb2_rsp_hdr(struct smb_work *smb_work);
 extern int smb2_allocate_rsp_buf(struct smb_work *smb_work);
 extern bool is_chained_smb2_message(struct smb_work *smb_work);
+extern void init_smb2_neg_rsp(struct smb_work *smb_work);
 extern void smb2_set_rsp_credits(struct smb_work *smb_work);
 extern void smb2_set_err_rsp(struct smb_work *smb_work);
 extern int smb2_check_user_session(struct smb_work *smb_work);
