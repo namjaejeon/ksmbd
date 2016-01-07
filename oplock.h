@@ -34,6 +34,7 @@
 #define SMB2_OPLOCK_LEVEL_II            0x01
 #define SMB2_OPLOCK_LEVEL_EXCLUSIVE     0x08
 #define SMB2_OPLOCK_LEVEL_BATCH         0x09
+#define SMB2_OPLOCK_LEVEL_LEASE         0xFF
 
 /* Oplock states */
 #define OPLOCK_NOT_BREAKING             0x00
@@ -43,7 +44,20 @@
 #define OPLOCK_WRITE_TO_NONE		0x02
 #define OPLOCK_READ_TO_NONE		0x04
 
+#define SMB2_LEASE_KEY_SIZE		16
 extern struct mutex ofile_list_lock;
+
+struct lease_ctx_info {
+	__u8			LeaseKey[SMB2_LEASE_KEY_SIZE];
+	__le32			CurrentLeaseState;
+	__le32			LeaseFlags;
+	__le64			LeaseDuration;
+};
+
+struct lease_fidinfo {
+	__u32                   fid;
+	struct list_head        fid_entry;
+};
 
 struct oplock_info {
 	struct tcp_server_info  *server;
@@ -52,6 +66,17 @@ struct oplock_info {
 	int                     fid;
 	__u16                   Tid;
 	struct list_head        op_list;
+
+	/* lease info */
+	bool			leased;
+	__u8			LeaseKey[SMB2_LEASE_KEY_SIZE];
+	__le32			CurrentLeaseState;
+	__le32			NewLeaseState;
+	__le32			LeaseFlags;
+	__le64			LeaseDuration;
+	atomic_t		LeaseCount;
+	struct list_head	fid_list;
+
 	bool			open_trunc:1;	/* truncate on open */
 };
 
@@ -67,7 +92,7 @@ struct ofile_info {
 
 extern int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
 		int id, struct cifssrv_file *fp, __u16 Tid,
-		bool attr_only);
+		struct lease_ctx_info *lctx, bool attr_only);
 extern void smb1_send_oplock_break(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 extern void smb2_send_oplock_break(struct work_struct *work);
@@ -78,7 +103,7 @@ extern void smb_breakII_oplock(struct tcp_server_info *server,
 struct oplock_info *get_matching_opinfo(struct tcp_server_info *server,
 		struct ofile_info *ofile, int fid, int fhclose);
 int opinfo_write_to_read(struct ofile_info *ofile,
-		struct oplock_info *opinfo);
+		struct oplock_info *opinfo, __le32 lease_state);
 int opinfo_write_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 int opinfo_read_to_none(struct ofile_info *ofile,
@@ -90,6 +115,16 @@ void smb_break_all_oplock(struct tcp_server_info *server,
 		struct cifssrv_file *fp, struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
+/* Lease related functions */
+void create_lease_buf(u8 *rbuf, u8 *LeaseKey, u8 oplock, u8 handle);
+__u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq);
+struct oplock_info *get_matching_opinfo_lease(struct tcp_server_info *server,
+		struct ofile_info **ofile, char *LeaseKey,
+		struct lease_fidinfo **fidinfo, int id);
+int smb_break_write_lease(struct ofile_info *ofile,
+		struct oplock_info *opinfo);
+int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo);
+
 /* Durable related functions */
 void create_durable_buf(char *buf);
 void create_durable_rsp_buf(char *buf);

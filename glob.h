@@ -72,6 +72,7 @@ extern unsigned int smb_min_small;
 extern int cifssrv_debug_enable;
 extern int cifssrv_caseless_search;
 extern bool oplocks_enable;
+extern bool lease_enable;
 extern bool durable_enable;
 extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
@@ -212,6 +213,7 @@ struct smb_version_values {
 	unsigned int    cap_large_files;
 	__u16           signing_enabled;
 	__u16           signing_required;
+	size_t          create_lease_size;
 };
 
 struct smb_version_ops {

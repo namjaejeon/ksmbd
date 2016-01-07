@@ -1121,7 +1121,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	} else if (((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
 				(opinfo->lock_type == OPLOCK_BATCH)) &&
 			(oplock == OPLOCK_READ)) {
-		ret = opinfo_write_to_read(ofile, opinfo);
+		ret = opinfo_write_to_read(ofile, opinfo, 0);
 		if (ret) {
 			opinfo->state = OPLOCK_NOT_BREAKING;
 			mutex_unlock(&ofile_list_lock);

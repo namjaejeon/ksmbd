@@ -79,13 +79,15 @@ struct cifssrv_file {
         /* oplock info */
         struct ofile_info *ofile;
         bool delete_on_close;
+        bool lease_granted;
+        char LeaseKey[16];
         bool is_durable;
         uint64_t persistent_id;
 }; 
 
 Each file handle is represented by "struct file" in linux, for CIFSSRV,
 this reference is stored in corresponding "cifssrv_file".
-In addition to this - the corresponding, oplock/durable information is
+In addition to this - the corresponding, oplock/lease/durable information is
 also stored in this. So, from SMB Requests - where in FID is part of
 the request, which becomes a "value" to be searched in the bitmap to locate
 the "cifssrv_file" instance and then correspondingly "filp" can be

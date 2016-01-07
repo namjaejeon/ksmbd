@@ -449,6 +449,28 @@ struct create_durable_rsp {
 	} Data;
 } __packed;
 
+
+#define SMB2_LEASE_NONE			__constant_cpu_to_le32(0x00)
+#define SMB2_LEASE_READ_CACHING		__constant_cpu_to_le32(0x01)
+#define SMB2_LEASE_HANDLE_CACHING	__constant_cpu_to_le32(0x02)
+#define SMB2_LEASE_WRITE_CACHING	__constant_cpu_to_le32(0x04)
+
+#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS __constant_cpu_to_le32(0x02)
+
+struct lease_context {
+	__le64 LeaseKeyLow;
+	__le64 LeaseKeyHigh;
+	__le32 LeaseState;
+	__le32 LeaseFlags;
+	__le64 LeaseDuration;
+} __packed;
+
+struct create_lease {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct lease_context lcontext;
+} __packed;
+
 /* Currently defined values for close flags */
 #define SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB	cpu_to_le16(0x0001)
 struct smb2_close_req {
@@ -779,6 +801,31 @@ struct smb2_oplock_break {
 	__le32 Reserved2;
 	__u64  PersistentFid;
 	__u64  VolatileFid;
+} __packed;
+
+#define SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED cpu_to_le32(0x01)
+
+struct smb2_lease_break {
+	struct smb2_hdr hdr;
+	__le16 StructureSize; /* Must be 44 */
+	__le16 Reserved;
+	__le32 Flags;
+	__u8   LeaseKey[16];
+	__le32 CurrentLeaseState;
+	__le32 NewLeaseState;
+	__le32 BreakReason;
+	__le32 AccessMaskHint;
+	__le32 ShareMaskHint;
+} __packed;
+
+struct smb2_lease_ack {
+	struct smb2_hdr hdr;
+	__le16 StructureSize; /* Must be 36 */
+	__le16 Reserved;
+	__le32 Flags;
+	__u8   LeaseKey[16];
+	__le32 LeaseState;
+	__le64 LeaseDuration;
 } __packed;
 
 /*

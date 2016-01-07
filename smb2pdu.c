@@ -1489,6 +1489,8 @@ int smb2_open(struct smb_work *smb_work)
 	int durable_reconnect = false, durable_reopened = false;
 	struct create_durable *recon_state;
 	struct cifssrv_durable_state *durable_state;
+	char *lk = NULL;
+	struct lease_ctx_info lc;
 	bool attrib_only = false;
 	int open_directory = 0;
 
@@ -1818,10 +1820,29 @@ reconnect:
 
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode)) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
+	} else if (oplock == SMB2_OPLOCK_LEVEL_LEASE) {
+		if (!(server->capabilities & SMB2_GLOBAL_CAP_LEASING)
+				|| stat.nlink != 1)
+			oplock = SMB2_OPLOCK_LEVEL_NONE;
+		else {
+			oplock = parse_lease_state(req, &lc);
+			if (oplock) {
+				lk = (char *)&lc.LeaseKey;
+				cifssrv_debug("lease req for(%s) oplock 0x%x, "
+						"lease state 0x%x\n",
+						name, oplock,
+						lc.CurrentLeaseState);
+				rc = smb_grant_oplock(server, &oplock,
+					volatile_id, fp, req->hdr.TreeId,
+					&lc, attrib_only);
+				if (rc)
+					oplock = SMB2_OPLOCK_LEVEL_NONE;
+			}
+		}
 	} else if (oplock & (SMB2_OPLOCK_LEVEL_BATCH |
 				SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		rc = smb_grant_oplock(server, &oplock, volatile_id, fp,
-				req->hdr.TreeId, attrib_only);
+				req->hdr.TreeId, NULL, attrib_only);
 		if (rc)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 	}
@@ -1892,6 +1913,21 @@ reconnect:
 	rsp->CreateContextsOffset = 0;
 	rsp->CreateContextsLength = 0;
 	inc_rfc1001_len(rsp_org, 88); /* StructureSize - 1*/
+
+	/* If lease is request send lease context response */
+	if (lk && (req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_LEASE)) {
+		cifssrv_debug("lease granted on(%s) oplock 0x%x, "
+				"lease state 0x%x\n",
+				name, oplock,
+				lc.CurrentLeaseState);
+		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
+		create_lease_buf(rsp->Buffer, lk, oplock,
+			lc.CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING);
+		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
+				Buffer) - 4;
+		rsp->CreateContextsLength = sizeof(struct create_lease);
+		inc_rfc1001_len(rsp_org, sizeof(struct create_lease));
+	}
 
 	if (durable_open) {
 		create_durable_rsp_buf(rsp->Buffer + rsp->CreateContextsLength);
@@ -4925,7 +4961,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 
 	switch (oplock_change_type) {
 	case OPLOCK_WRITE_TO_READ:
-		ret = opinfo_write_to_read(ofile, opinfo);
+		ret = opinfo_write_to_read(ofile, opinfo, 0);
 		oplock = SMB2_OPLOCK_LEVEL_II;
 		break;
 	case OPLOCK_WRITE_TO_NONE:
@@ -4968,8 +5004,120 @@ err_out:
 }
 
 /**
- * smb2_oplock_break() - dispatcher for smb2.0 oplock break
- * @smb_work:	smb work containing oplock break command buffer
+ * smb21_lease_break() - handler for smb2.1 lease break command
+ * @smb_work:	smb work containing lease break command buffer
+ *
+ * Return:	0
+ */
+int smb21_lease_break(struct smb_work *smb_work)
+{
+	struct tcp_server_info *server = smb_work->server;
+	struct smb2_lease_ack *req, *rsp;
+	struct ofile_info *ofile = NULL;
+	struct oplock_info *opinfo;
+	int err = 0, ret = 0;
+	unsigned int lease_change_type;
+	__le32 lease_state;
+
+	req = (struct smb2_lease_ack *)smb_work->buf;
+	rsp = (struct smb2_lease_ack *)smb_work->rsp_buf;
+
+	cifssrv_debug("smb21 lease break, lease state(0x%x)\n",
+			req->LeaseState);
+	mutex_lock(&ofile_list_lock);
+	opinfo = get_matching_opinfo_lease(server, &ofile, req->LeaseKey,
+			NULL, 0);
+	if (ofile == NULL || opinfo == NULL) {
+		mutex_unlock(&ofile_list_lock);
+		cifssrv_debug("file not opened\n");
+		goto err_out;
+	}
+
+	if (opinfo->state == OPLOCK_NOT_BREAKING) {
+		mutex_unlock(&ofile_list_lock);
+		rsp->hdr.Status =
+			NT_STATUS_INVALID_DEVICE_STATE;
+		cifssrv_debug("unexpected lease break state 0x%x\n",
+				opinfo->state);
+		goto err_out;
+	}
+
+	/* check for bad lease state */
+	if (req->LeaseState & (~(SMB2_LEASE_READ_CACHING |
+					SMB2_LEASE_HANDLE_CACHING))) {
+		err = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
+		if (opinfo->CurrentLeaseState & SMB2_LEASE_WRITE_CACHING)
+			lease_change_type = OPLOCK_WRITE_TO_NONE;
+		else
+			lease_change_type = OPLOCK_READ_TO_NONE;
+		cifssrv_debug("handle bad lease state 0x%x -> 0x%x\n",
+				opinfo->CurrentLeaseState, req->LeaseState);
+	} else if ((opinfo->CurrentLeaseState == SMB2_LEASE_READ_CACHING) &&
+			(req->LeaseState != SMB2_LEASE_NONE)) {
+		err = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
+		lease_change_type = OPLOCK_READ_TO_NONE;
+		cifssrv_debug("handle bad lease state 0x%x -> 0x%x\n",
+				opinfo->CurrentLeaseState, req->LeaseState);
+	} else {
+		/* valid lease state changes */
+		err = NT_STATUS_INVALID_DEVICE_STATE;
+		if (req->LeaseState == SMB2_LEASE_NONE) {
+			if (opinfo->CurrentLeaseState &
+					SMB2_LEASE_WRITE_CACHING)
+				lease_change_type = OPLOCK_WRITE_TO_NONE;
+			else
+				lease_change_type = OPLOCK_READ_TO_NONE;
+		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING)
+			lease_change_type = OPLOCK_WRITE_TO_READ;
+		else
+			lease_change_type = 0;
+	}
+
+	switch (lease_change_type) {
+	case OPLOCK_WRITE_TO_READ:
+		ret = opinfo_write_to_read(ofile, opinfo, req->LeaseState);
+		break;
+	case OPLOCK_WRITE_TO_NONE:
+		ret = opinfo_write_to_none(ofile, opinfo);
+		break;
+	case OPLOCK_READ_TO_NONE:
+		ret = opinfo_read_to_none(ofile, opinfo);
+		break;
+	default:
+		cifssrv_debug("unknown lease change 0x%x -> 0x%x\n",
+				opinfo->CurrentLeaseState, req->LeaseState);
+	}
+
+	lease_state = opinfo->CurrentLeaseState;
+	opinfo->state = OPLOCK_NOT_BREAKING;
+	wake_up_interruptible(&server->oplock_q);
+	wake_up(&ofile->op_end_wq);
+	mutex_unlock(&ofile_list_lock);
+
+	if (ret < 0) {
+		rsp->hdr.Status = err;
+		smb2_set_err_rsp(smb_work);
+		return 0;
+	}
+
+	rsp->StructureSize = cpu_to_le16(36);
+	rsp->Reserved = 0;
+	rsp->Flags = 0;
+	memcpy(rsp->LeaseKey, req->LeaseKey, 16);
+	rsp->LeaseState = lease_state;
+	rsp->LeaseDuration = 0;
+	inc_rfc1001_len(rsp, 36);
+	return 0;
+
+err_out:
+	rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+	smb2_set_err_rsp(smb_work);
+	return 0;
+}
+
+/**
+ * smb2_oplock_break() - dispatcher for smb2.0 and 2.1 oplock/lease break
+ * @smb_work:	smb work containing oplock/lease break command buffer
  *
  * Return:	0
  */
@@ -4985,6 +5133,9 @@ int smb2_oplock_break(struct smb_work *smb_work)
 	switch (le16_to_cpu(req->StructureSize)) {
 	case OP_BREAK_STRUCT_SIZE_20:
 		err = smb20_oplock_break(smb_work);
+		break;
+	case OP_BREAK_STRUCT_SIZE_21:
+		err = smb21_lease_break(smb_work);
 		break;
 	default:
 		cifssrv_debug("invalid break cmd %d\n", req->StructureSize);
