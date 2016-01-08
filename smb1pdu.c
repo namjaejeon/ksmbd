@@ -728,10 +728,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_sess *sess;
 	struct cifssrv_usr *usr;
-	struct list_head *tmp;
 	char *name, key[CIFS_AUTH_RESP_SIZE];
 	int offset, rc;
-	bool user_valid = false;
 	unsigned char p21[21];
 
 	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)smb_work->buf;
@@ -757,21 +755,15 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("session setup request for user %s\n", name);
-	list_for_each(tmp, &cifssrv_usr_list) {
-		usr = list_entry(tmp, struct cifssrv_usr, list);
-		cifssrv_debug("comparing with user %s\n", usr->name);
-		if (strcmp(usr->name, name) == 0) {
-			user_valid = true;
-			break;
-		}
-	}
-	kfree(name);
-
-	if (user_valid == false) {
+	usr = cifssrv_is_user_present(name);
+	if (!usr) {
 		cifssrv_err("user not present in database\n");
+		kfree(name);
 		rc = -EINVAL;
 		goto out_err;
 	}
+
+	kfree(name);
 
 	/* Match passkey with client response */
 	memset(p21, '\0', 21);
@@ -814,9 +806,10 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 				goto out_err;
 			}
 
-			if (!proc_v2(server, ptrci + lenci, usr, ntdomain,
-						lencs - CIFS_ENCPWD_SIZE,
-						server->local_nls)) {
+			rc = process_ntlmv2(server, ptrci + lenci, usr,
+					ntdomain, lencs - CIFS_ENCPWD_SIZE,
+					server->local_nls);
+			if (!rc) {
 				cifssrv_debug("authentication success\n");
 				goto done;
 			}

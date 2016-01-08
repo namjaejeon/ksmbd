@@ -27,10 +27,9 @@
 
 #include "glob.h"
 #include "export.h"
-#include "ntlmssp.h"
 
 /**
- * int proc_v2() - NTLMv2 authentication handler
+ * int process_ntlmv2() - NTLMv2 authentication handler
  * @server:	TCP server instance of connection
  * @pv2:	NTLMv2 challenge response
  * @usr:	user details
@@ -40,8 +39,9 @@
  *
  * Return:	0 on success, error number on error
  */
-int proc_v2(struct tcp_server_info *server, char *pv2, struct cifssrv_usr *usr,
-		char *dname, int blen, struct nls_table *local_nls)
+int process_ntlmv2(struct tcp_server_info *server, char *pv2,
+		struct cifssrv_usr *usr, char *dname, int blen,
+		struct nls_table *local_nls)
 {
 	struct ntlmv2_resp *v2data;
 	struct crypto_shash *hmacmd5 = NULL;
@@ -189,4 +189,92 @@ EXIT:
 	kfree(construct);
 
 	return rc;
+}
+
+/**
+ * build_ntlmssp_challenge_blob() - helper function to construct negotiate blob
+ * @chgblob:	challenge blob source pointer to initialize
+ * @rsp:	response header pointer to be updated
+ * @server:	TCP server instance of connection
+ *
+ */
+void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+		struct smb2_sess_setup_rsp *rsp,
+		struct tcp_server_info *server) {
+	TargetInfo attr;
+	int len, off;
+	int attrs = 0;
+	int names = 0;
+	__le16 type;
+	__le16 name[8];
+
+	*(__le64 *)chgblob->Signature = NTLMSSP_SIGNATURE_VAL;
+	chgblob->MessageType = NtLmChallenge;
+
+	len = smb_strtoUTF16(name, netbios_name, strlen(netbios_name),
+			server->local_nls);
+	chgblob->TargetName.Length = UNICODE_LEN(len);
+	chgblob->TargetName.MaximumLength = chgblob->TargetName.Length;
+	chgblob->TargetName.BufferOffset = sizeof(CHALLENGE_MESSAGE);
+
+	off = rsp->SecurityBufferOffset +
+		chgblob->TargetName.BufferOffset;
+	/* start from rsp->hdr.ProtocolId */
+	memcpy((char *)&rsp->hdr + 4 + off, name, UNICODE_LEN(len));
+
+	chgblob->NegotiateFlags = NTLMSSP_NEGOTIATE_UNICODE |
+		NTLMSSP_NEGOTIATE_NTLM |
+		NTLMSSP_REQUEST_TARGET |
+		NTLMSSP_TARGET_TYPE_SERVER |
+		NTLMSSP_NEGOTIATE_TARGET_INFO |
+		NTLMSSP_NEGOTIATE_128 |
+		NTLMSSP_NEGOTIATE_56;
+
+	/* initialize random server challenge */
+	get_random_bytes(server->cryptkey, sizeof(__u64));
+	memcpy(chgblob->Challenge, server->cryptkey,
+			CIFS_CRYPTO_KEY_SIZE);
+
+	rsp->SecurityBufferLength = sizeof(CHALLENGE_MESSAGE) +
+		UNICODE_LEN(len);
+
+	/* update target info list for NetBIOS settings */
+	for (type = NetBIOS_COMP_NAME; type <= NetBIOS_DOMAIN_NAME;
+			type++) {
+		attr.Type = type;
+		attr.Length = UNICODE_LEN(len);
+		off += UNICODE_LEN(len);
+		memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+		attrs++;
+		off += sizeof(TargetInfo);
+		memcpy(rsp->hdr.ProtocolId + off, name, UNICODE_LEN(len));
+		names++;
+	}
+
+	/* update target info list for DNS settings */
+	for (type = DNS_COMP_NAME; type <= DNS_DOMAIN_NAME; type++) {
+		attr.Type = type;
+		attr.Length = 0;
+
+		if (type == DNS_COMP_NAME)
+			off += UNICODE_LEN(len);
+		else
+			off += sizeof(TargetInfo);
+
+		memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+		attrs++;
+	}
+
+	attr.Type = 0;
+	attr.Length = 0;
+	off += sizeof(TargetInfo);
+	memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+	attrs++;
+
+	chgblob->TargetInfoArray.Length = sizeof(TargetInfo)*attrs +
+		(UNICODE_LEN(len))*names;
+	chgblob->TargetInfoArray.MaximumLength =
+		chgblob->TargetInfoArray.Length;
+	chgblob->TargetInfoArray.BufferOffset =
+		chgblob->TargetName.BufferOffset + UNICODE_LEN(len);
 }

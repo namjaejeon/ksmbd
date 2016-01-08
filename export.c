@@ -52,6 +52,7 @@ int cifssrv_num_shares;
 char *guestAccountName;
 char *server_string;
 char *workgroup;
+char *netbios_name;
 
 /**
  * __add_share() - helper function to add a share in global exported share list
@@ -59,9 +60,9 @@ char *workgroup;
  * @sharename:	name of share
  * @pathname:	path of share point
  *
- * Return:      0 on success, error number on error
+ * Return:      true on success, false on error
  */
-static int __add_share(struct cifssrv_share *share, char *sharename,
+static bool __add_share(struct cifssrv_share *share, char *sharename,
 		       char *pathname)
 {
 	struct kstat stat;
@@ -72,14 +73,14 @@ static int __add_share(struct cifssrv_share *share, char *sharename,
 		err = kern_path(pathname, 0, &share->vfspath);
 		if (err) {
 			cifssrv_err("share add failed for %s\n", pathname);
-			return err;
+			return false;
 		} else {
 			err = vfs_getattr(&share->vfspath, &stat);
 			if (err) {
 				path_put(&share->vfspath);
 				cifssrv_err("share add failed for %s\n",
 					    pathname);
-				return err;
+				return false;
 			}
 		}
 	}
@@ -91,7 +92,7 @@ static int __add_share(struct cifssrv_share *share, char *sharename,
 	INIT_LIST_HEAD(&share->list);
 	list_add(&share->list, &cifssrv_share_list);
 	cifssrv_num_shares++;
-	return 0;
+	return true;
 }
 
 /**
@@ -128,7 +129,7 @@ static int add_share(char *sharename, char *pathname)
 	init_params(share);
 
 	ret = __add_share(share, sharename, pathname);
-	if (ret) {
+	if (!ret) {
 		free_share(share);
 		kfree(share);
 	}
@@ -222,11 +223,9 @@ static int add_user(char *name, char *pass)
  */
 static void cifssrv_user_free(void)
 {
-	struct cifssrv_usr *usr;
-	struct list_head *tmp, *t;
+	struct cifssrv_usr *usr, *tmp;
 
-	list_for_each_safe(tmp, t, &cifssrv_usr_list) {
-		usr = list_entry(tmp, struct cifssrv_usr, list);
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
 		list_del(&usr->list);
 		kfree(usr->name);
 		kfree(usr);
@@ -405,9 +404,9 @@ struct cifssrv_share *find_matching_share(__u16 tid)
  * check_sharepath() - check if a share path is already exported
  * @path:	share path to check
  *
- * Return:      0 if share is already exported, otherwise 1
+ * Return:      false if share is already exported, otherwise true
  */
-static int check_sharepath(char *path)
+static bool check_sharepath(char *path)
 {
 	struct cifssrv_share *share;
 	struct list_head *tmp;
@@ -421,48 +420,39 @@ static int check_sharepath(char *path)
 			targetlen = strlen(share->path);
 			if (srclen == targetlen) {
 				if (!strncmp(path, share->path, srclen))
-					return 0;
+					return false;
 			}
 		}
 	}
 
-	return 1;
+	return true;
 }
 
 /**
- * check_user() - check if a user name is already added
+ * getUser() - check if a user name is already added
  * @name:	user name to be checked
  * @pass:	user password
  *
- * Return:      0 if user is already added, otherwise 1
+ * Return:      false if user entry exists, otherwise true
  */
-static int check_user(char *name, char *pass)
+static bool getUser(char *name, char *pass)
 {
 	struct cifssrv_usr *usr;
-	struct list_head *tmp;
-	int srclen, targetlen;
 
-	srclen = strlen(name);
-
-	list_for_each(tmp, &cifssrv_usr_list) {
-		usr = list_entry(tmp, struct cifssrv_usr, list);
-		targetlen = strlen(usr->name);
-		if (srclen == targetlen) {
-			if (!strncmp(name, usr->name, srclen)) {
-				if (!strlen(pass)) {
-					list_del(&usr->list);
-					kfree(usr->name);
-					kfree(usr);
-					return 0;
-				}
-				memcpy(usr->passkey, pass,
-					CIFS_NTHASH_SIZE);
-				return 0;
-			}
+	usr = cifssrv_is_user_present(name);
+	if (usr) {
+		if (!strlen(pass)) {
+			list_del(&usr->list);
+			kfree(usr->name);
+			kfree(usr);
+			return false;
 		}
+		memcpy(usr->passkey, pass,
+				CIFS_NTHASH_SIZE);
+		return false;
 	}
 
-	return 1;
+	return true;
 }
 
 /**
@@ -589,6 +579,20 @@ static int update_global(char *param_buf,
 		if (!workgroup)
 			return -ENOMEM;
 		strncpy(workgroup, data_buf , data_sz);
+		break;
+	}
+	case NETBIOSNAME:
+        {
+		if (strcasecmp(param_buf, "netbios name")) {
+			cifssrv_err("[%s] invalid parameter\n", param_buf);
+			break;
+		}
+
+		kfree(netbios_name);
+		netbios_name = kzalloc(data_sz+1, GFP_KERNEL);
+		if (!netbios_name)
+			return -ENOMEM;
+		strncpy(netbios_name, data_buf , data_sz);
 		break;
 	}
 	default:
@@ -947,26 +951,26 @@ static ssize_t share_store(struct kobject *kobj,
 			   struct kobj_attribute *kobj_attr,
 			   const char *buf, size_t len)
 {
-	char *str1[1], *str2[1];
+	char *share[1], *path[1];
 	int rc;
 
-	rc = init_2_strings(buf, str1, str2, len);
+	rc = init_2_strings(buf, share, path, len);
 	if (rc)
 		return rc;
 
 	/* check if sharepath is already exported */
-	rc = check_sharepath(*str2);
+	rc = check_sharepath(*path);
 	if (!rc) {
-		cifssrv_err("path %s is already exported\n", *str2);
-		kfree(*str1);
-		kfree(*str2);
+		cifssrv_err("path %s is already exported\n", *path);
+		kfree(*share);
+		kfree(*path);
 		return -EEXIST;
 	}
 
-	rc = add_share(*str1, *str2);
+	rc = add_share(*share, *path);
 	if (rc) {
-		kfree(*str1);
-		kfree(*str2);
+		kfree(*share);
+		kfree(*path);
 		return rc;
 	}
 
@@ -986,13 +990,11 @@ static ssize_t user_show(struct kobject *kobj,
 			 char *buf)
 
 {
-	struct cifssrv_usr *usr;
-	struct list_head *tmp;
+	struct cifssrv_usr *usr, *tmp;
 	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
 	char *tbuf = buf;
 
-	list_for_each(tmp, &cifssrv_usr_list) {
-		usr = list_entry(tmp, struct cifssrv_usr, list);
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
 		len = snprintf(tbuf, limit, "%s\n", usr->name);
 		if (len < 0) {
 			total = len;
@@ -1019,10 +1021,10 @@ static ssize_t user_store(struct kobject *kobj,
 			  struct kobj_attribute *kobj_attr,
 			  const char *buf, size_t len)
 {
-	char *str1[1], *str2[1];
+	char *usrname[1], *passwd[1];
 	int rc;
 
-	rc = init_2_strings(buf, str1, str2, len);
+	rc = init_2_strings(buf, usrname, passwd, len);
 	if (rc) {
 		if (rc == -EINVAL) {
 			cifssrv_err("[%s] <usr:pass> format err\n", __func__);
@@ -1032,21 +1034,19 @@ static ssize_t user_store(struct kobject *kobj,
 	}
 
 	/* check if user is already present*/
-	rc = check_user(*str1, *str2);
-	if (!rc)
-		goto EXIT2;
-
-	rc = add_user(*str1, *str2);
-	if (!rc)
-		goto EXIT1;
-
-EXIT2:
-	kfree(*str1);
-EXIT1:
-	kfree(*str2);
-
-	if (rc == -ENOMEM)
-		return -ENOMEM;
+	rc = getUser(*usrname, *passwd);
+	if (!rc) {
+		kfree(*usrname);
+		kfree(*passwd);
+	} else {
+		rc = add_user(*usrname, *passwd);
+		kfree(*passwd);
+		if (rc) {
+			kfree(*usrname);
+			if (rc == -ENOMEM)
+				return -ENOMEM;
+		}
+	}
 
 	return len;
 }
@@ -1067,12 +1067,13 @@ static ssize_t debug_store(struct kobject *kobj,
 	long int value;
 
 	if (kstrtol(buf, 10, &value))
-		goto out;
+		return len;
+
 	if (value > 0)
 		cifssrv_debug_enable = value;
 	else if (value == 0)
 		cifssrv_debug_enable = 0;
-out:
+
 	return len;
 }
 
@@ -1312,13 +1313,13 @@ static ssize_t config_store(struct kobject *kobj,
 	param_buf = kmalloc(SHARE_MAX_NAME_LEN, GFP_KERNEL);
 	if (!param_buf) {
 		ret = -ENOMEM;
-		goto EXIT1;
+		goto mem_param_fail;
 	}
 
 	data_buf = kmalloc(SHARE_MAX_DATA_LEN, GFP_KERNEL);
 	if (!data_buf) {
 		ret = -ENOMEM;
-		goto EXIT2;
+		goto mem_data_fail;
 	}
 
 	while (!end) {
@@ -1334,7 +1335,7 @@ static ssize_t config_store(struct kobject *kobj,
 						GFP_KERNEL);
 				if (!share) {
 					ret = -ENOMEM;
-					goto EXIT3;
+					goto mem_share_fail;
 				}
 
 				share->sharename = kzalloc(share_sz+1,
@@ -1342,7 +1343,7 @@ static ssize_t config_store(struct kobject *kobj,
 				if (!share->sharename) {
 					ret = -ENOMEM;
 					kfree(share);
-					goto EXIT3;
+					goto mem_share_fail;
 				}
 				strncpy(share->sharename, share_buf, share_sz);
 				init_params(share);
@@ -1365,7 +1366,7 @@ static ssize_t config_store(struct kobject *kobj,
 						ret = -ENOMEM;
 						free_share(share);
 						kfree(share);
-						goto EXIT3;
+						goto mem_share_fail;
 					}
 			} while (!is_share && !end);
 
@@ -1384,7 +1385,7 @@ static ssize_t config_store(struct kobject *kobj,
 					ret = __add_share(share,
 							share->sharename,
 							share->path);
-					if (ret) {
+					if (!ret) {
 						free_share(share);
 						kfree(share);
 					}
@@ -1406,18 +1407,18 @@ static ssize_t config_store(struct kobject *kobj,
 						data_buf, param_sz, data_sz) ==
 							-ENOMEM) {
 						ret = -ENOMEM;
-						goto EXIT3;
+						goto mem_share_fail;
 				}
 			} while (!is_share && !end);
 		}
 
 	}
 
-EXIT3:
+mem_share_fail:
 	kfree(data_buf);
-EXIT2:
+mem_data_fail:
 	kfree(param_buf);
-EXIT1:
+mem_param_fail:
 	kfree(share_buf);
 
 	return ret;
@@ -1462,51 +1463,51 @@ static ssize_t util_store(struct kobject *kobj,
 {
 	struct nls_table *local_nls;
 	char genkey[CIFS_NTHASH_SIZE];
-	char *str1[1], *str2[1];
+	char *usrname[1], *passwd[1];
 	long int sz;
 	int rc;
 
 	local_nls = load_nls_default();
 
-	rc = init_2_strings(buf, str1, str2, len);
+	rc = init_2_strings(buf, usrname, passwd, len);
 	if (rc) {
 		unload_nls(local_nls);
 		return rc;
 	}
 
-	if (kstrtol(*str1, 10, &sz)) {
+	if (kstrtol(*usrname, 10, &sz)) {
 		unload_nls(local_nls);
-		kfree(*str1);
-		kfree(*str2);
+		kfree(*usrname);
+		kfree(*passwd);
 		return 0;
 	}
 
-	if (strlen(*str2) != sz) {
+	if (strlen(*passwd) != sz) {
 		cifssrv_err("[%s:%d] pwd corrupted\n", __func__, __LINE__);
-		goto EXIT;
+		goto skip;
 	}
 
 	if (sz > MAX_NT_PWD_LEN) {
 		cifssrv_err(
 			"[%s:%d] pwd len %ld bytes exceed NT limit %d bytes\n",
 				__func__, __LINE__, sz, MAX_NT_PWD_LEN);
-		goto EXIT;
+		goto skip;
 	}
 
 	memset(genkey, '\0', CIFS_NTHASH_SIZE);
 
-	rc = smb_E_md4hash(*str2, genkey, local_nls);
+	rc = smb_E_md4hash(*passwd, genkey, local_nls);
 	if (rc) {
 		cifssrv_err("%s Can't generate NT hash, error: %d\n",
 				__func__, rc);
-		goto EXIT;
+		goto skip;
 	}
 	memcpy(key, genkey, CIFS_NTHASH_SIZE);
 
-EXIT:
+skip:
 	unload_nls(local_nls);
-	kfree(*str1);
-	kfree(*str2);
+	kfree(*usrname);
+	kfree(*passwd);
 	return len;
 }
 
@@ -1523,13 +1524,8 @@ static ssize_t stat_store(struct kobject *kobj,
 		struct kobj_attribute *kobj_attr,
 		const char *buf, size_t len)
 {
-	int i = 0;
-
-	if (!strncmp("CLIENT_STAT", buf, strlen("CLIENT_STAT"))) {
-		while (buf[i++] != ':')
-			;
-		strncpy(statIP, &buf[i], MAX_ADDRBUFLEN);
-	}
+	if (len > 1 && len < MAX_ADDRBUFLEN)
+		strncpy(statIP, buf, len);
 
 	return len;
 }
@@ -1571,12 +1567,16 @@ static ssize_t stat_show(struct kobject *kobj,
 			return cum;
 		cum += ret;
 	} else {
+		int len1, len2;
+
+		len1 = strlen(statIP);
+
 		list_for_each(tmp, &cifssrv_connection_list) {
 			server = list_entry(tmp, struct tcp_server_info, list);
+			len2 = strlen(server->peeraddr);
 
-			if (!strncmp(statIP, server->peeraddr,
-			    strlen(server->peeraddr))) {
-
+			if (len1 == len2 &&
+				!strncmp(statIP, server->peeraddr, len1)) {
 				if (server->connection_type == 0) {
 					ret = snprintf(buf+cum, limit - cum,
 						"Connection type = SMB1\n");
@@ -1759,13 +1759,13 @@ static int cifssrv_add_IPC_share(void)
 	char *ipc;
 	int len, rc;
 
-	len = strlen("IPC$") + 1;
+	len = strlen(STR_IPC) + 1;
 
 	ipc = kmalloc(len, GFP_KERNEL);
 	if (!ipc)
 		return -ENOMEM;
 
-	memcpy(ipc, "IPC$", len - 1);
+	memcpy(ipc, STR_IPC, len - 1);
 	ipc[len - 1] = '\0';
 
 	rc = add_share(ipc, NULL);
@@ -1784,27 +1784,29 @@ static int cifssrv_add_IPC_share(void)
 int cifssrv_init_global_params(void)
 {
 	int len;
-	/* Add default values of Server name & Domain name*/
 
-	len = strlen("CIFSSRV SERVER");
-
-	server_string = kmalloc(len + 1, GFP_KERNEL);
+	len = strlen(STR_SRV_NAME);
+	server_string = kzalloc(len + 1, GFP_KERNEL);
 	if (!server_string)
 		return -ENOMEM;
+	memcpy(server_string, STR_SRV_NAME, len);
 
-	memcpy(server_string, "CIFSSRV SERVER", len);
-	server_string[len] = '\0';
-
-	len = strlen("WORKGROUP");
-
-	workgroup = kmalloc(len + 1, GFP_KERNEL);
+	len = strlen(STR_WRKGRP);
+	workgroup = kzalloc(len + 1, GFP_KERNEL);
 	if (!workgroup) {
 		kfree(server_string);
 		return -ENOMEM;
 	}
+	memcpy(workgroup, STR_WRKGRP, len);
 
-	memcpy(workgroup, "WORKGROUP", len);
-	workgroup[len] = '\0';
+	len = strlen(TGT_Name);
+	netbios_name = kzalloc(len + 1, GFP_KERNEL);
+	if (!netbios_name) {
+		kfree(server_string);
+		kfree(workgroup);
+		return -ENOMEM;
+	}
+	memcpy(netbios_name, TGT_Name, len);
 
 	return 0;
 }
@@ -1817,6 +1819,7 @@ void cifssrv_free_global_params(void)
 	kfree(server_string);
 	kfree(workgroup);
 	kfree(guestAccountName);
+	kfree(netbios_name);
 }
 
 /**

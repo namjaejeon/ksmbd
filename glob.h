@@ -77,6 +77,7 @@ extern bool durable_enable;
 extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
+extern char *netbios_name;
 
 #define SMB1_VERSION_STRING     "1.0"
 #define SMB20_VERSION_STRING    "2.0"
@@ -97,9 +98,13 @@ extern struct fidtable_desc global_fidtable;
 #define LOCKING_ANDX_LARGE_FILES     0x10
 
 /*
- *  * max peer IPv4 addr size (including '\0')
+ *  * max peer IPv4/IPv6 addr size (including '\0')
  *   */
-#define MAX_ADDRBUFLEN	(16)
+#ifdef IPV6_SUPPORTED
+#define MAX_ADDRBUFLEN 128
+#else
+#define MAX_ADDRBUFLEN 16
+#endif
 
 /*
  *  * Size of encrypted user password in bytes
@@ -379,6 +384,7 @@ inc_rfc1001_len(void *buf, int count)
 #define NTFS_TIME_OFFSET ((u64)(369*365 + 89) * 24 * 3600 * 10000000)
 #define IS_SMB2(x) (x->vals->protocol_id == SMB20_PROT_ID || \
 		x->vals->protocol_id == SMB21_PROT_ID)
+#define UNICODE_LEN(x)	((x) * 2)
 
 /* Convert the Unix UTC into NT UTC. */
 static inline u64

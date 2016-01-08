@@ -23,6 +23,7 @@
 
 #include "glob.h"
 #include "smb1pdu.h"
+#include "smb2pdu.h"
 
 #define SMB_PORT		445
 #define MAX_CONNECTIONS		64
@@ -60,6 +61,9 @@ extern spinlock_t connect_list_lock;
 
 #define CIFSSRV_MAJOR_VERSION 1
 #define CIFSSRV_MINOR_VERSION 0
+#define STR_IPC	"IPC$"
+#define STR_SRV_NAME	"CIFSSRV SERVER"
+#define STR_WRKGRP	"WORKGROUP"
 
 extern int cifssrv_num_shares;
 extern char *guestAccountName;
@@ -103,6 +107,7 @@ enum global_params {
 	GUESTACCOUNT            =       1365,
 	SERVERSTRING            =       1358,
 	WORKGROUP               =       1008,
+	NETBIOSNAME		=	1205
 };
 
 enum share_params {
@@ -205,6 +210,26 @@ struct cifssrv_tcon {
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
 int validate_clip(char *cip, struct cifssrv_share *share);
-int proc_v2(struct tcp_server_info *server, char *pv2, struct cifssrv_usr *usr,
-		char *dname, int blen, struct nls_table *local_nls);
+int process_ntlmv2(struct tcp_server_info *server, char *pv2,
+		struct cifssrv_usr *usr, char *dname, int blen,
+		struct nls_table *local_nls);
+void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+		struct smb2_sess_setup_rsp *rsp,
+		struct tcp_server_info *server);
+
+static inline struct cifssrv_usr *cifssrv_is_user_present(char *name)
+{
+	struct cifssrv_usr *usr, *tmp;
+
+	if (!name)
+		return NULL;
+
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
+		cifssrv_debug("comparing with user %s\n", usr->name);
+		if (!strcmp(name, usr->name))
+			return usr;
+	}
+
+	return NULL;
+}
 #endif /* __CIFSSRV_EXPORT_H */

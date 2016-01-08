@@ -1260,8 +1260,7 @@ int handle_wkstagetinfo_info10(struct tcp_server_info *server,
 	int out_buffersize;
 	int offset, len;
 	char *data;
-	struct cifssrv_usr *usr;
-	struct list_head *tmp;
+	struct cifssrv_usr *usr, *tmp;
 	int user_valid = false;
 
 	resp = (LANMAN_WKSTAGEINFO_RESP *)out_data;
@@ -1282,8 +1281,7 @@ int handle_wkstagetinfo_info10(struct tcp_server_info *server,
 
 	/* Add user name */
 	info10->UserName = offset;
-	list_for_each(tmp, &cifssrv_usr_list) {
-		usr = list_entry(tmp, struct cifssrv_usr, list);
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
 		if (server->vuid  == usr->vuid) {
 			user_valid = true;
 			break;
