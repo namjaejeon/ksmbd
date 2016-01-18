@@ -156,7 +156,7 @@ int smb_send_rsp(struct smb_work *work)
 	int val = 1;
 
 	spin_lock(&server->request_lock);
-	if (work->added_in_request_list) {
+	if (work->added_in_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
 		work->added_in_request_list = 0;
 	}

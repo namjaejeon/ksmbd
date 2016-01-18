@@ -2067,25 +2067,35 @@ int smb_echo(struct smb_work *smb_work)
 	ECHO_REQ *req = (ECHO_REQ *)smb_work->buf;
 	ECHO_RSP *rsp = (ECHO_RSP *)smb_work->rsp_buf;
 	__u16 data_count;
+	int i;
 
 	cifssrv_debug("SMB_COM_ECHO called with echo count %u\n",
 			le16_to_cpu(req->EchoCount));
 
-	if (le16_to_cpu(req->EchoCount) > 1) {
-		/* TODO: send echo reponse these many times */
-		cifssrv_err("need to send SMB_COM_ECHO response %u times\n",
-				le16_to_cpu(req->EchoCount));
-	}
+	if (le16_to_cpu(req->EchoCount) > 1)
+		smb_work->multiRsp = 1;
 
 	data_count = cpu_to_le16(req->ByteCount);
 	/* send echo response to server */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 1;
-	rsp->SequenceNumber = cpu_to_le16(1);
 	rsp->ByteCount = cpu_to_le16(data_count);
 
 	memcpy(rsp->Data, req->Data, data_count);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2) + data_count);
+
+	/* Send req->EchoCount - 1 number of ECHO response now &
+	   if SMB CANCEL for Echo comes don't send response */
+	for (i = 1; i < le16_to_cpu(req->EchoCount) &&
+	     !smb_work->send_no_response; i++) {
+		rsp->SequenceNumber = cpu_to_le16(i);
+		smb_send_rsp(smb_work);
+	}
+
+	/* Last echo response */
+	rsp->SequenceNumber = cpu_to_le16(i);
+	smb_work->multiRsp = 0;
+
 	return 0;
 }
 

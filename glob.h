@@ -342,8 +342,8 @@ struct smb_work {
 	bool large_buf:1;		/* if valid response, is pointer
 							to large buf */
 	bool rsp_large_buf:1;
-	bool multiRsp:1;		/* multiple trans2 responses
-							for one request  */
+	bool multiRsp:1;		/* multiple responses
+					   for one request e.g. SMB ECHO */
 	bool multiEnd:1;		/* both received */
 	bool send_no_response:1;	/* no response for cancelled request */
 	bool added_in_request_list:1;	/* added in server->requests list */
