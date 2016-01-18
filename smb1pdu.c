@@ -6474,3 +6474,67 @@ out:
 		return rsp->AndXCommand; /* More processing required */
 	}
 }
+
+/**
+ * smb_setattr() - set file attributes
+ * @smb_work:	smb work containing setattr command
+ *
+ * Return:	0 on success, otherwise error
+ */
+int smb_setattr(struct smb_work *smb_work)
+{
+	struct tcp_server_info *server = smb_work->server;
+	SETATTR_REQ *req;
+	SETATTR_RSP *rsp;
+	struct path path;
+	struct kstat stat;
+	struct iattr attrs;
+	int err = 0;
+	char *name;
+	__u16 dos_attr;
+
+	req = (SETATTR_REQ *)smb_work->buf;
+	rsp = (SETATTR_RSP *)smb_work->rsp_buf;
+	name = smb_get_name(req->fileName, PATH_MAX, smb_work);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
+
+	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	if (err) {
+		cifssrv_debug("look up failed err %d\n", err);
+		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		err = 0;
+		goto out;
+	}
+	generic_fillattr(path.dentry->d_inode, &stat);
+	path_put(&path);
+	attrs.ia_valid = 0;
+	attrs.ia_mode = 0;
+
+	dos_attr = le16_to_cpu(req->attr);
+	if (!dos_attr)
+		attrs.ia_mode = stat.mode | S_IWUSR;
+
+	if (dos_attr & ATTR_READONLY)
+		attrs.ia_mode = stat.mode & ~S_IWUGO;
+
+	if (attrs.ia_mode)
+		attrs.ia_valid |= ATTR_MODE;
+
+	err = smb_vfs_setattr(server, name, 0, &attrs);
+	if (err)
+		goto out;
+
+	rsp->hdr.Status.CifsError = NT_STATUS_OK;
+	rsp->hdr.WordCount = 0;
+	rsp->ByteCount = 0;
+
+out:
+	smb_put_name(name);
+	if (err) {
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
+		return err;
+	}
+
+	return 0;
+}

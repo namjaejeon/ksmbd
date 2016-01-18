@@ -1850,6 +1850,22 @@ struct cifs_posix_acl { /* access conrol list  (ACL) */
 	   struct cifs_posix_ace default_ace_arraay[] */
 } __attribute__((packed));  /* level 0x204 */
 
+typedef struct smb_com_setattr_req {
+	struct smb_hdr hdr; /* wct = 8 */
+	__le16 attr;
+	__le16 time_low;
+	__le16 time_high;
+	__le16 reserved[5]; /* must be zero */
+	__u16  ByteCount;
+	__u8   BufferFormat; /* 4 = ASCII */
+	unsigned char fileName[1];
+} __attribute__((packed)) SETATTR_REQ;
+
+typedef struct smb_com_setattr_rsp {
+	struct smb_hdr hdr;     /* wct = 0 */
+	__u16 ByteCount;        /* bct = 0 */
+} __attribute__((packed)) SETATTR_RSP;
+
 /* function prototypes */
 extern int init_smb_rsp_hdr(struct smb_work *swork);
 extern int get_smb_cmd_val(struct smb_work *smb_work);
@@ -1884,4 +1900,5 @@ extern int smb_query_info(struct smb_work *smb_work);
 extern int smb_closedir(struct smb_work *smb_work);
 extern int smb_open_andx(struct smb_work *smb_work);
 extern int smb_write(struct smb_work *smb_work);
+extern int smb_setattr(struct smb_work *smb_work);
 #endif /* __CIFSSRV_SMB1PDU_H */

@@ -54,6 +54,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_DELETE]		= { .proc = smb_unlink, },
 	[SMB_COM_RENAME]		= { .proc = smb_rename, },
 	[SMB_COM_QUERY_INFORMATION]	= { .proc = smb_query_info, },
+	[SMB_COM_SETATTR]		= { .proc = smb_setattr, },
 	[SMB_COM_LOCKING_ANDX]		= { .proc = smb_locking_andx, },
 	[SMB_COM_TRANSACTION]		= { .proc = smb_trans, },
 	[SMB_COM_ECHO]			= { .proc = smb_echo, },
