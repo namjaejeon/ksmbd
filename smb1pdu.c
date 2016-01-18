@@ -150,6 +150,16 @@ int smb_allocate_rsp_buf(struct smb_work *smb_work)
 	if (cmd == SMB_COM_TRANSACTION)
 		need_large_buf = true;
 
+	if (cmd == SMB_COM_ECHO) {
+		int resp_size;
+		ECHO_REQ *req = (ECHO_REQ *)smb_work->buf;
+
+		/* size of ECHO_RSP + Bytecount - Size of Data in ECHO_RSP */
+		resp_size = sizeof(ECHO_RSP) + req->ByteCount - 1;
+		if (resp_size > MAX_CIFS_SMALL_BUFFER_SIZE)
+			need_large_buf = true;
+	}
+
 	if (need_large_buf) {
 		smb_work->rsp_large_buf = true;
 		smb_work->rsp_buf = mempool_alloc(cifssrv_rsp_poolp, GFP_NOFS);
