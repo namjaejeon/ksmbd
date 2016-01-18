@@ -6377,11 +6377,21 @@ int smb_open_andx(struct smb_work *smb_work)
 			goto out;
 	}
 
-	mode |= S_IRWXUGO;
-	if (le16_to_cpu(req->FileAttributes) & ATTR_READONLY)
-		mode &= ~S_IWUGO;
+	if (file_present && !(stat.mode & S_IWUGO)) {
+		if ((open_flags & O_ACCMODE) == O_WRONLY ||
+				(open_flags & O_ACCMODE) == O_RDWR) {
+			cifssrv_debug("readonly file(%s)\n", name);
+			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+			memset(&rsp->hdr.WordCount, 0, 3);
+			goto free_path;
+		}
+	}
 
 	if (!file_present && (open_flags & O_CREAT)) {
+		mode |= S_IRWXUGO;
+		if (le16_to_cpu(req->FileAttributes) & ATTR_READONLY)
+			mode &= ~S_IWUGO;
+
 		mode |= S_IFREG;
 		err = smb_vfs_create(name, mode);
 		if (err)
@@ -6458,6 +6468,8 @@ out:
 		server->stats.open_files_count++;
 
 	smb_put_name(name);
+	if (!rsp->hdr.WordCount)
+		return err;
 
 	/* this is an ANDx command ? */
 	if (req->AndXCommand == 0xFF) {

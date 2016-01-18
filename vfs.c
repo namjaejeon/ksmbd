@@ -461,7 +461,7 @@ int smb_vfs_unlink(const char *name)
 
 	err = kern_path(name, 0, &path);
 	if (err) {
-		cifssrv_err("cannot get linux path for %s, err = %d\n",
+		cifssrv_debug("cannot get linux path for %s, err = %d\n",
 				name, err);
 		return err;
 	}
@@ -478,7 +478,7 @@ int smb_vfs_unlink(const char *name)
 	err = vfs_unlink(path.dentry->d_parent->d_inode, path.dentry);
 #endif
 	if (err)
-		cifssrv_err("unlink failed for %s, err %d\n", name, err);
+		cifssrv_debug("unlink failed for %s, err %d\n", name, err);
 
 skip:
 	mutex_unlock(&path.dentry->d_parent->d_inode->i_mutex);
