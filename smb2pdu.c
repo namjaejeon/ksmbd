@@ -629,12 +629,13 @@ static struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
  * @maxlen:	maxlen of source string
  * @smb_work:	smb work containing smb request buffer
  *
- * Return:      matching converted filename on success, otherwise NULL
+ * Return:      matching converted filename on success, otherwise error ptr
  */
 char *
 smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
+	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
 	char *name, *unixname;
 	char *wild_card_pos;
 
@@ -644,9 +645,13 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 
 	name = smb_strndup_from_utf16(src, maxlen, 1,
 			smb_work->server->local_nls);
-	if (!name) {
-		cifssrv_err("failed to allocate memory\n");
-		return NULL;
+	if (IS_ERR(name)) {
+		cifssrv_err("failed to get name %ld\n", PTR_ERR(name));
+		if (PTR_ERR(name) == -ENOMEM)
+			rsp_hdr->Status = NT_STATUS_NO_MEMORY;
+		else
+			rsp_hdr->Status = NT_STATUS_OBJECT_NAME_INVALID;
+		return name;
 	}
 
 	/* change it to absolute unix name */
@@ -662,7 +667,8 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	kfree(name);
 	if (!unixname) {
 		cifssrv_err("can not convert absolute name\n");
-		return NULL;
+		rsp_hdr->Status = NT_STATUS_NO_MEMORY;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	cifssrv_debug("absoulte name = %s\n", unixname);
@@ -893,10 +899,10 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				authblob->UserName.Length, true,
 				server->local_nls);
 
-		if (!dup_name) {
+		if (IS_ERR(dup_name)) {
 			cifssrv_err("%s-%d cannot allocate memory\n",
 					__func__, __LINE__);
-			rc = -ENOMEM;
+			rc = PTR_ERR(dup_name);
 			goto out_err;
 		}
 
@@ -959,10 +965,10 @@ int smb2_sess_setup(struct smb_work *smb_work)
 					authblob->DomainName.BufferOffset,
 					authblob->DomainName.Length, true,
 					server->local_nls);
-				if (!ntdomain) {
+				if (IS_ERR(ntdomain)) {
 					cifssrv_err("%s-%d cannot allocate memory\n",
 							__func__, __LINE__);
-					rc = -ENOMEM;
+					rc = PTR_ERR(ntdomain);
 					goto out_err;
 				}
 
@@ -1051,9 +1057,9 @@ int smb2_tree_connect(struct smb_work *smb_work)
 
 	treename = smb_strndup_from_utf16(req->Buffer, req->PathLength,
 					  true, server->local_nls);
-	if (!treename) {
+	if (IS_ERR(treename)) {
 		cifssrv_err("treename is NULL\n");
-		rc = -ENOMEM;
+		rc = PTR_ERR(treename);
 		goto out_err;
 	}
 	name = extract_sharename(treename);
@@ -1522,9 +1528,8 @@ int smb2_open(struct smb_work *smb_work)
 		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
 	}
 
-	if (!name) {
-		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-		rc = -ENOMEM;
+	if (IS_ERR(name)) {
+		rc = PTR_ERR(name);
 		goto err_out1;
 	}
 
@@ -2291,7 +2296,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		le32_to_cpu(req->FileNameLength), 1,
 				smb_work->server->local_nls);
 
-	if (!srch_ptr) {
+	if (IS_ERR(srch_ptr)) {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
 		cifssrv_debug("Search Pattern not found\n");
@@ -3772,7 +3777,7 @@ int smb2_create_link(struct smb_work *smb_work, struct file *filp)
 	link_name = smb2_get_name(file_info->FileName,
 			le32_to_cpu(file_info->FileNameLength),
 			smb_work);
-	if (!link_name || S_ISDIR(file_inode(filp)->i_mode)) {
+	if (IS_ERR(link_name) || S_ISDIR(file_inode(filp)->i_mode)) {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
 		goto out;
@@ -3818,7 +3823,8 @@ int smb2_create_link(struct smb_work *smb_work, struct file *filp)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 
 out:
-	smb_put_name(link_name);
+	if (!IS_ERR(link_name))
+		smb_put_name(link_name);
 	kfree(pathname);
 	return rc;
 }
@@ -3873,9 +3879,8 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 	new_name = smb2_get_name(file_info->FileName,
 			le32_to_cpu(file_info->FileNameLength),
 			smb_work);
-	if (!new_name) {
-		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		rc = -EINVAL;
+	if (IS_ERR(new_name)) {
+		rc = PTR_ERR(new_name);
 		goto out;
 	}
 
@@ -3930,7 +3935,8 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 out:
 	kfree(pathname);
 	kfree(tmp_name);
-	smb_put_name(new_name);
+	if (!IS_ERR(new_name))
+		smb_put_name(new_name);
 	return rc;
 }
 

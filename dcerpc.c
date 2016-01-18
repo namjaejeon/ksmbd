@@ -617,8 +617,8 @@ int srvsvc_net_share_enum_all(struct tcp_server_info *server, char *data,
 	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
 	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
 			server->local_nls);
-	if (!server_unc)
-		return -ENOMEM;
+	if (IS_ERR(server_unc))
+		return PTR_ERR(server_unc);
 
 	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
 			handle.handle_info.actual_count);
@@ -791,8 +791,8 @@ int srvsvc_net_share_info(struct tcp_server_info *server, char *data,
 	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
 	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
 			server->local_nls);
-	if (!server_unc)
-		return -ENOMEM;
+	if (IS_ERR(server_unc))
+		return PTR_ERR(server_unc);
 
 	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
 			handle.handle_info.actual_count);
@@ -810,8 +810,8 @@ int srvsvc_net_share_info(struct tcp_server_info *server, char *data,
 	share_name_ptr = (char *)((char *)istr_info + sizeof(UNISTR_INFO));
 	share_name = smb_strndup_from_utf16(share_name_ptr, 256, 1,
 				server->local_nls);
-	if (!share_name)
-		return -ENOMEM;
+	if (IS_ERR(share_name))
+		return PTR_ERR(share_name);
 
 	ptr = (char *)((char *)istr_info + infolevel_len + sizeof(UNISTR_INFO));
 	cifssrv_debug("Share name is %s\n", share_name);
@@ -936,8 +936,8 @@ int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
 	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
 	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
 			server->local_nls);
-	if (!server_unc)
-		return -ENOMEM;
+	if (IS_ERR(server_unc))
+		return PTR_ERR(server_unc);
 
 	cifssrv_debug("server_unc = %s unc size = %d\n", server_unc,
 			handle.handle_info.actual_count);

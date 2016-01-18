@@ -122,6 +122,10 @@ cp_convert:
 		*target = '?';
 		len = 1;
 	}
+
+	if (!(*target & 0x80) && (*target <= 0x1f || *target == '|'))
+		return -EINVAL;
+
 	goto out;
 }
 
@@ -185,6 +189,8 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 
 		/* put converted char into 'to' buffer */
 		charlen = cifs_mapchar(&to[outlen], ftmp, codepage, mapchar);
+		if (charlen < 0)
+			return charlen;
 		outlen += charlen;
 	}
 
@@ -260,13 +266,13 @@ success:
  * put it in a new buffer. Returns a pointer to the new string or NULL on
  * error.
  *
- * Return:	destination string buffer or NULL on error
+ * Return:	destination string buffer or error ptr
  */
 char *
 smb_strndup_from_utf16(const char *src, const int maxlen,
 			const bool is_unicode, const struct nls_table *codepage)
 {
-	int len;
+	int len, ret;
 	char *dst;
 
 	if (is_unicode) {
@@ -274,15 +280,19 @@ smb_strndup_from_utf16(const char *src, const int maxlen,
 		len += nls_nullsize(codepage);
 		dst = kmalloc(len, GFP_KERNEL);
 		if (!dst)
-			return NULL;
-		smb_from_utf16(dst, (__le16 *) src, len, maxlen, codepage,
+			return ERR_PTR(-ENOMEM);
+		ret = smb_from_utf16(dst, (__le16 *) src, len, maxlen, codepage,
 			       false);
+		if (ret < 0) {
+			kfree(dst);
+			return ERR_PTR(-EINVAL);
+		}
 	} else {
 		len = strnlen(src, maxlen);
 		len++;
 		dst = kmalloc(len, GFP_KERNEL);
 		if (!dst)
-			return NULL;
+			return ERR_PTR(-ENOMEM);
 		strlcpy(dst, src, len);
 	}
 

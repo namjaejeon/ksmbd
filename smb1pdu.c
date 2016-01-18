@@ -442,9 +442,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 				req->PasswordLength, 256, true,
 				server->local_nls);
 
-	if (!treename) {
+	if (IS_ERR(treename)) {
 		cifssrv_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
-		rc = -ENOMEM;
+		rc = PTR_ERR(treename);
 		goto out_err;
 	}
 	name = extract_sharename(treename);
@@ -597,10 +597,8 @@ int smb_rename(struct smb_work *smb_work)
 	int rc = 0;
 
 	abs_oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work);
-	if (!abs_oldname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(abs_oldname))
+		return PTR_ERR(abs_oldname);
 
 	if (is_unicode) {
 		oldname_len = smb_utf16_bytes((__le16 *)req->OldFileName,
@@ -614,9 +612,8 @@ int smb_rename(struct smb_work *smb_work)
 
 	abs_newname = smb_get_name(&req->OldFileName[oldname_len + 2],
 			PATH_MAX, smb_work);
-	if (!abs_newname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		rc = -ENOMEM;
+	if (IS_ERR(abs_newname)) {
+		rc = PTR_ERR(abs_newname);
 		goto out;
 	}
 
@@ -654,10 +651,8 @@ int smb_rename(struct smb_work *smb_work)
 	rsp->ByteCount = 0;
 out:
 	kfree(tmp_name);
-	if (abs_oldname)
-		smb_put_name(abs_oldname);
-	if (abs_newname)
-		smb_put_name(abs_newname);
+	smb_put_name(abs_oldname);
+	smb_put_name(abs_newname);
 	return rc;
 }
 
@@ -758,9 +753,9 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			(pSMB->req_no_secext.CaseInsensitivePassword +
 			 offset + 1), 256, true, server->local_nls);
 
-	if (!name) {
+	if (IS_ERR(name)) {
 		cifssrv_err("cannot allocate memory\n");
-		rc = -ENOMEM;
+		rc = PTR_ERR(name);
 		goto out_err;
 	}
 
@@ -808,11 +803,11 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 			ntdomain = smb_strndup_from_utf16(ptrci + offset + 1,
 					256, true, server->local_nls);
-			if (!ntdomain) {
+			if (IS_ERR(ntdomain)) {
 				cifssrv_err(
 					"%s-%d cannot allocate memory\n",
 						__func__, __LINE__);
-				rc = -ENOMEM;
+				rc = PTR_ERR(ntdomain);
 				goto out_err;
 			}
 
@@ -1177,10 +1172,10 @@ int smb_trans(struct smb_work *smb_work)
 	name = smb_strndup_from_utf16(req->Data + setup_bytes_count, 256, 1,
 			server->local_nls);
 
-	if (!name) {
+	if (IS_ERR(name)) {
 		cifssrv_err("failed to allocate memory\n");
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
+		return PTR_ERR(name);
 	}
 
 	cifssrv_debug("Obtained string name = %s setupcount = %d\n",
@@ -1319,9 +1314,9 @@ int create_andx_pipe(struct smb_work *smb_work)
 		name = smb_strndup_from_utf16(req->fileName, 256, 1,
 				smb_work->server->local_nls);
 
-	if (!name) {
+	if (IS_ERR(name)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
+		return PTR_ERR(name);
 	}
 
 	if (strcmp(name, "\\srvsvc") != 0) {
@@ -1401,7 +1396,9 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		cifssrv_debug("GOT Create Directory via CREATE ANDX\n");
 		create_directory = 1;
 	}
-	if (!(le32_to_cpu(req->CreateOptions) & FILE_NON_DIRECTORY_FILE_LE)) {
+	if (le32_to_cpu(req->CreateOptions) &&
+			!(le32_to_cpu(req->CreateOptions) &
+				FILE_NON_DIRECTORY_FILE_LE)) {
 		cifssrv_debug("GOT Opendir via CREATE ANDX\n");
 		open_directory = 1;
 	}
@@ -1423,10 +1420,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 			name = smb_get_name(req->fileName, PATH_MAX,
 					smb_work);
 
-		if (!name) {
-			rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-			return -ENOMEM;
-		}
+		if (IS_ERR(name))
+			return PTR_ERR(name);
 	}
 
 	err = smb_kern_path(name, 0, &path, (req->hdr.Flags & SMBFLG_CASELESS)
@@ -2609,10 +2604,8 @@ int smb_set_acl(struct smb_work *smb_work)
 	int rc = 0, acl_type = 0, value_len;
 
 	fname = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!fname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(fname))
+		return PTR_ERR(fname);
 
 	buf = vmalloc(XATTR_SIZE_MAX);
 	if (!buf) {
@@ -2897,10 +2890,8 @@ int query_path_info(struct smb_work *smb_work)
 	req_params = (TRANSACTION2_QPI_REQ_PARAMS *)(smb_work->buf +
 		     req->ParameterOffset + 4);
 	name = smb_get_name(req_params->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	rc = smb_kern_path(name, 0, &path, 0);
 	if (rc) {
@@ -3460,21 +3451,27 @@ err_out:
  * @maxlen:	maxlen of src string to be used for parsing
  * @smb_work:	smb work containing smb header flag
  *
- * Return:	pointer to filename string on success, otherwise NULL
+ * Return:	pointer to filename string on success, otherwise error ptr
  */
 char *
 smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	bool is_unicode = req_hdr->Flags2 & SMBFLG2_UNICODE;
 	char *name, *unixname;
 	char *wild_card_pos;
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
 			smb_work->server->local_nls);
-	if (!name) {
-		cifssrv_err("failed to allocate memory\n");
-		return NULL;
+	if (IS_ERR(name)) {
+		cifssrv_debug("failed to get name %ld\n", PTR_ERR(name));
+		if (PTR_ERR(name) == -ENOMEM)
+			rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
+		else
+			rsp_hdr->Status.CifsError =
+				NT_STATUS_OBJECT_NAME_INVALID;
+		return name;
 	}
 
 	/* change it to absolute unix name */
@@ -3490,7 +3487,8 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	kfree(name);
 	if (!unixname) {
 		cifssrv_err("can not convert absolute name\n");
-		return NULL;
+		rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	cifssrv_debug("absoulte name = %s\n", unixname);
@@ -3505,7 +3503,7 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
  * @single_entry_search:	single entry to be searched in dir
  * @srch_ptr:	update search pointer in dir for searching dir entries
  *
- * Return:	pointer to dir name string on success, otherwise NULL
+ * Return:	pointer to dir name string on success, otherwise error ptr
  */
 char *
 smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
@@ -3520,10 +3518,10 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
 			smb_work->server->local_nls);
-	if (!name) {
+	if (IS_ERR(name)) {
 		cifssrv_err("failed to allocate memory\n");
 		rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
-		return ERR_PTR(-ENOMEM);
+		return name;
 	}
 
 	/* change it to absolute unix name */
@@ -3577,7 +3575,8 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
  */
 void smb_put_name(void *name)
 {
-	kfree(name);
+	if (!IS_ERR(name))
+		kfree(name);
 }
 
 /**
@@ -3672,10 +3671,8 @@ int smb_posix_open(struct smb_work *smb_work)
 	int err;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_kern_path(name, 0, &path, 0);
 	if (err) {
@@ -3841,10 +3838,8 @@ int smb_posix_unlink(struct smb_work *smb_work)
 	int rc = 0;
 
 	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	rc = smb_vfs_unlink(name);
 	if (rc < 0)
@@ -3899,10 +3894,8 @@ int smb_set_time_pathinfo(struct smb_work *smb_work)
 	int err = 0;
 
 	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	info = (FILE_BASIC_INFO *)(((char *) &req->hdr.Protocol) +
 			le16_to_cpu(req->DataOffset));
@@ -3978,10 +3971,8 @@ int smb_set_unix_pathinfo(struct smb_work *smb_work)
 	int err = 0;
 
 	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	unix_info =  (FILE_UNIX_BASIC_INFO *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
@@ -4039,10 +4030,8 @@ int smb_set_ea(struct smb_work *smb_work)
 	int rc = 0;
 
 	fname = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!fname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(fname))
+		return PTR_ERR(fname);
 
 	eabuf = (struct fealist *)(((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
@@ -4129,10 +4118,8 @@ int smb_set_file_size_pinfo(struct smb_work *smb_work)
 	int rc = 0;
 
 	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
@@ -4615,9 +4602,9 @@ int find_next(struct smb_work *smb_work)
 	/*Currently no usage of ResumeFilename*/
 	name = req_params->ResumeFileName;
 	name = smb_strndup_from_utf16(name, 256, 1, server->local_nls);
-	if (!name) {
+	if (IS_ERR(name)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
+		return PTR_ERR(name);
 	}
 	cifssrv_debug("FileName after unicode conversion %s\n", name);
 	kfree(name);
@@ -5763,9 +5750,9 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	newname = smb_strndup_from_utf16(info->target_name,
 			le32_to_cpu(info->target_name_len), true,
 			server->local_nls);
-	if (!newname) {
+	if (IS_ERR(newname)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
+		return PTR_ERR(newname);
 	}
 
 	cifssrv_debug("rename fid %u -> %s\n", req->Fid, newname);
@@ -5897,10 +5884,8 @@ int smb_mkdir(struct smb_work *smb_work)
 	int err;
 
 	name = smb_get_name(req->DirName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_vfs_mkdir(name, mode);
 	if (err) {
@@ -5933,10 +5918,8 @@ int smb_rmdir(struct smb_work *smb_work)
 	int err;
 
 	name = smb_get_name(req->DirName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_vfs_rmdir(name);
 	if (err) {
@@ -5973,10 +5956,8 @@ int smb_unlink(struct smb_work *smb_work)
 	int err;
 
 	name = smb_get_name(req->fileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_vfs_unlink(name);
 	if (err) {
@@ -6046,10 +6027,8 @@ int smb_nt_rename(struct smb_work *smb_work)
 	int oldname_len, err;
 
 	oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work);
-	if (!oldname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(oldname))
+		return PTR_ERR(oldname);
 
 	if (is_unicode) {
 		oldname_len = smb_utf16_bytes((__le16 *)req->OldFileName,
@@ -6063,9 +6042,8 @@ int smb_nt_rename(struct smb_work *smb_work)
 
 	newname = smb_get_name(&req->OldFileName[oldname_len + 2],
 			PATH_MAX, smb_work);
-	if (!oldname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		err = -ENOMEM;
+	if (IS_ERR(newname)) {
+		err = PTR_ERR(newname);
 		goto out;
 	}
 	cifssrv_debug("oldname %s, newname %s, oldname_len %d, unicode %d\n",
@@ -6082,10 +6060,8 @@ int smb_nt_rename(struct smb_work *smb_work)
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SAME_DEVICE;
 
 out:
-	if (newname)
-		smb_put_name(newname);
-	if (oldname)
-		smb_put_name(oldname);
+	smb_put_name(newname);
+	smb_put_name(oldname);
 	return err;
 }
 
@@ -6103,17 +6079,14 @@ int smb_creat_hardlink(struct smb_work *smb_work)
 	int err;
 
 	newname = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!newname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(newname))
+		return PTR_ERR(newname);
 
 	oldname_offset = ((char *)&req->hdr.Protocol) +
 				le16_to_cpu(req->DataOffset);
 	oldname = smb_get_name(oldname_offset, PATH_MAX, smb_work);
-	if (!oldname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		err = -ENOMEM;
+	if (IS_ERR(oldname)) {
+		err = PTR_ERR(oldname);
 		goto out;
 	}
 	cifssrv_debug("oldname %s, newname %s\n", oldname, newname);
@@ -6139,10 +6112,8 @@ int smb_creat_hardlink(struct smb_work *smb_work)
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 out:
-	if (newname)
-		smb_put_name(newname);
-	if (oldname)
-		smb_put_name(oldname);
+	smb_put_name(newname);
+	smb_put_name(oldname);
 	return err;
 }
 
@@ -6161,19 +6132,17 @@ int smb_creat_symlink(struct smb_work *smb_work)
 	int err;
 
 	symname = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!symname) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(symname))
+		return PTR_ERR(symname);
 
 	name_offset = ((char *)&req->hdr.Protocol) +
 		le16_to_cpu(req->DataOffset);
 	name = smb_strndup_from_utf16(name_offset, PATH_MAX, is_unicode,
 			smb_work->server->local_nls);
-	if (!name) {
+	if (IS_ERR(name)) {
 		smb_put_name(symname);
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
+		return PTR_ERR(name);
 	}
 	cifssrv_debug("name %s, symname %s\n", name, symname);
 
@@ -6226,10 +6195,8 @@ int smb_query_info(struct smb_work *smb_work)
 	int err, i;
 
 	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_kern_path(name, LOOKUP_FOLLOW, &path, 0);
 	if (err) {
@@ -6260,8 +6227,7 @@ int smb_query_info(struct smb_work *smb_work)
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 
 out:
-	if (name)
-		smb_put_name(name);
+	smb_put_name(name);
 	return err;
 }
 
@@ -6389,10 +6355,8 @@ int smb_open_andx(struct smb_work *smb_work)
 		name = smb_get_name(req->fileName, PATH_MAX,
 				smb_work);
 
-	if (!name) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	if (IS_ERR(name))
+		return PTR_ERR(name);
 
 	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
 	if (err)
@@ -6510,4 +6474,3 @@ out:
 		return rsp->AndXCommand; /* More processing required */
 	}
 }
-
