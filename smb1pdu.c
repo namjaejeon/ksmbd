@@ -1412,14 +1412,42 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		cifssrv_err("path lookup relative to RootDirectoryFid\n");
 		return -EOPNOTSUPP;
 	} else {
-		/* one byte pad before unicode file name start */
-		if (req->hdr.Flags2 & SMBFLG2_UNICODE)
-			name = smb_get_name(req->fileName + 1, PATH_MAX,
-					smb_work);
-		else
-			name = smb_get_name(req->fileName, PATH_MAX,
-					smb_work);
+		const char *src;
+		char *pos;
+		bool is_unicode;
 
+		if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
+			src = req->fileName + 1;
+			is_unicode = true;
+		} else {
+			src = req->fileName;
+			is_unicode = false;
+		}
+
+		name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
+				server->local_nls);
+		if (IS_ERR(name)) {
+			if (PTR_ERR(name) == -ENOMEM) {
+				cifssrv_err("failed to allocate memory\n");
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_NO_MEMORY;
+			}
+			return PTR_ERR(name);
+		}
+
+		pos = strrchr(name, '\\');
+		if (pos) {
+			pos++;
+			if ((strnlen(pos, PATH_MAX) == 1) && (*pos == '*')) {
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_NAME_INVALID;
+				kfree(name);
+				return -EINVAL;
+			}
+			kfree(name);
+		}
+
+		name = smb_get_name(src, PATH_MAX, smb_work);
 		if (IS_ERR(name))
 			return PTR_ERR(name);
 	}
@@ -5961,7 +5989,12 @@ int smb_unlink(struct smb_work *smb_work)
 
 	err = smb_vfs_unlink(name);
 	if (err) {
-		rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
+		if (err == -EISDIR)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_FILE_IS_A_DIRECTORY;
+		else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		goto out;
 	}
 

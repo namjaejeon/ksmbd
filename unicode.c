@@ -123,7 +123,15 @@ cp_convert:
 		len = 1;
 	}
 
-	if (!(*target & 0x80) && (*target <= 0x1f || *target == '|'))
+	if (!(*target & 0x80) &&
+		(*target <= 0x1f ||
+		*target == '/' ||
+		*target == '?' ||
+		*target == '"' ||
+		*target == ':' ||
+		*target == '<' ||
+		*target == '>' ||
+		*target == '|'))
 		return -EINVAL;
 
 	goto out;
