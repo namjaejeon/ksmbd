@@ -243,9 +243,10 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	/* Not setting server guid rsp->ServerGUID, as it
 	 *          * not used by client for identifying server*/
 	rsp->Capabilities = 0;
+	/* Default Max Message Size till SMB2.0, 64K*/
 	rsp->MaxTransactSize = SMBMaxBufSize;
-	rsp->MaxReadSize = CIFS_DEFAULT_IOSIZE;
-	rsp->MaxWriteSize = CIFS_DEFAULT_IOSIZE;
+	rsp->MaxReadSize = SMBMaxBufSize;
+	rsp->MaxWriteSize = SMBMaxBufSize;
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 	rsp->ServerStartTime = 0;
 
@@ -747,6 +748,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
+	unsigned int limit;
 
 	req = (struct smb2_negotiate_req *)smb_work->buf;
 	rsp = (struct smb2_negotiate_rsp *)smb_work->rsp_buf;
@@ -774,6 +776,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 	/* For stats */
 	server->connection_type = server->dialect;
 	rsp->Capabilities = 0;
+	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
+	limit = SMBMaxBufSize;
 
 	if (server->dialect == SMB30_PROT_ID) {
 		init_smb3_0_server(server);
@@ -785,9 +789,13 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->Capabilities |= server->capabilities;
 	}
 
-	if (server->dialect != SMB20_PROT_ID)
+	if (server->dialect > SMB20_PROT_ID) {
 		memcpy(server->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
+		/* With LargeMTU above SMB2.0, default message limit is 1MB */
+		limit = CIFS_DEFAULT_IOSIZE;
+	}
+
 	rsp->StructureSize = cpu_to_le16(65);
 	rsp->SecurityMode = 0;
 	rsp->DialectRevision = cpu_to_le16(server->dialect);
@@ -795,8 +803,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 	/* Not setting server guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
 	rsp->MaxTransactSize = SMBMaxBufSize;
-	rsp->MaxReadSize = CIFS_DEFAULT_IOSIZE;
-	rsp->MaxWriteSize = CIFS_DEFAULT_IOSIZE;
+	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
+	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 	rsp->ServerStartTime = 0;
 
