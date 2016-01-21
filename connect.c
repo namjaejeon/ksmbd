@@ -92,7 +92,7 @@ bool server_unresponsive(struct tcp_server_info *server)
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
 	if (time_after(jiffies, server->last_active + 2 * SMB_ECHO_INTERVAL)) {
-		cifssrv_err("No response from client in 120 secs\n");
+		cifssrv_debug("No response from client in 120 secs\n");
 		return true;
 	}
 	return false;

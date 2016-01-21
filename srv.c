@@ -523,6 +523,31 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 }
 
 /**
+ * server_cleanup() - shutdown/release the socket and free server resources
+ * @server:	 - server instance for which socket is to be cleaned
+ *
+ * During the thread termination, the corresponding server instance
+ * resources(sock/memory) are released and finally the server object is freed.
+ */
+static void server_cleanup(struct tcp_server_info *server)
+{
+	kernel_sock_shutdown(server->sock, SHUT_RDWR);
+	sock_release(server->sock);
+	server->sock = NULL;
+
+	if (server->bigbuf)
+		mempool_free(server->bigbuf, cifssrv_req_poolp);
+	if (server->smallbuf)
+		mempool_free(server->smallbuf, cifssrv_sm_req_poolp);
+	if (server->wbuf)
+		vfree(server->wbuf);
+
+	destroy_fidtable(server);
+	list_del(&server->list);
+	kfree(server);
+}
+
+/**
  * tcp_sess_kthread() - session thread to listen on new smb requests
  * @p:     TCP server instance of connection
  *
@@ -638,26 +663,14 @@ static int tcp_sess_kthread(void *p)
 		}
 	}
 
-	if (kernel_sock_shutdown(server->sock, SHUT_RDWR))
-		cifssrv_err("failed to shutdown socket cleanly\n");
-
-	if (server->bigbuf)
-		mempool_free(server->bigbuf, cifssrv_req_poolp);
-	if (server->smallbuf)
-		mempool_free(server->smallbuf, cifssrv_sm_req_poolp);
-	if (server->wbuf)
-		vfree(server->wbuf);
-
-	sock_release(server->sock);
-	destroy_fidtable(server);
-	list_del(&server->list);
-	kfree(server);
+	server_cleanup(server);
 	module_put(THIS_MODULE);
 
-	cifssrv_err("%s: exiting\n", current->comm);
+	cifssrv_debug("%s: exiting\n", current->comm);
 
 	return 0;
 }
+
 
 /**
  * connect_tcp_sess() - create a new tcp session on mount

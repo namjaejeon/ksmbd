@@ -917,7 +917,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		cifssrv_debug("session setup request for user %s\n", dup_name);
 		usr = cifssrv_is_user_present(dup_name);
 		if (!usr) {
-			cifssrv_err("user not present in database\n");
+			cifssrv_debug("user not present in database\n");
 			kfree(dup_name);
 			rc = -EINVAL;
 			goto out_err;
@@ -1266,7 +1266,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifssrv_err("%s : request\n", __func__);
+	cifssrv_debug("%s : request\n", __func__);
 	sess = list_entry(server->cifssrv_sess.next,
 			struct cifssrv_sess, cifssrv_ses_list);
 
