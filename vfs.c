@@ -129,8 +129,8 @@ int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
 
-	ret = smb_vfs_locks_mandatory_area(FLOCK_VERIFY_READ, filp,
-			*pos, count);
+	ret = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
+			F_RDLCK);
 	if (ret == -EAGAIN) {
 		cifssrv_err("%s: unable to read due to lock\n",
 				__func__);
@@ -205,8 +205,8 @@ int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
 	}
 	filp = fp->filp;
 
-	err = smb_vfs_locks_mandatory_area(FLOCK_VERIFY_WRITE, filp,
-			*pos, count);
+	err = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
+			F_WRLCK);
 	if (err == -EAGAIN) {
 		cifssrv_err("%s: unable to write due to lock\n",
 				__func__);
@@ -782,13 +782,15 @@ int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
 			mutex_unlock(&ofile_list_lock);
 		} else {
 			inode = file_inode(filp);
-			err = smb_vfs_locks_mandatory_area(
-					FLOCK_VERIFY_WRITE, filp,
-					size < inode->i_size ? size :
-					inode->i_size, (size <
-						inode->i_size ?
-						inode->i_size - size
-						: size - inode->i_size));
+			if (size < inode->i_size) {
+				err = smb_vfs_locks_mandatory_area(filp, size,
+						inode->i_size - 1, F_WRLCK);
+			} else {
+				err = smb_vfs_locks_mandatory_area(filp,
+						inode->i_size, size - 1,
+						F_WRLCK);
+			}
+
 			if (err == -EAGAIN) {
 				cifssrv_err("failed due to lock\n");
 				return err;
@@ -953,15 +955,15 @@ int smb_vfs_lock(struct file *filp, int cmd,
 
 /**
  * smb_vfs_locks_mandatory_area() - vfs helper for smb byte range file locking
- * @read_write:	lock type i.e. read or write
  * @filp:	the file to apply the lock to
- * @offset:	lock start byte offset
- * @count:	byte range count
+ * @start:	lock start byte offset
+ * @end:	lock end byte offset
+ * @type:	byte range type read/write
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_locks_mandatory_area(int read_write, struct file *filp,
-				 loff_t offset, size_t count)
+int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start, loff_t end,
+		unsigned char type)
 {
 	struct file_lock fl;
 	int error;
@@ -980,9 +982,9 @@ int smb_vfs_locks_mandatory_area(int read_write, struct file *filp,
 	fl.fl_pid = current->tgid;
 	fl.fl_file = filp;
 	fl.fl_flags = FL_POSIX | FL_ACCESS;
-	fl.fl_type = (read_write == FLOCK_VERIFY_WRITE) ? F_WRLCK : F_RDLCK;
-	fl.fl_start = offset;
-	fl.fl_end = offset + count - 1;
+	fl.fl_type = type;
+	fl.fl_start = start;
+	fl.fl_end = end;
 	error = posix_lock_file(filp, &fl, NULL);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	posix_unblock_lock(&fl);

@@ -464,8 +464,8 @@ int smb_kern_path(char *name, unsigned int flags, struct path *path,
 int smb_search_dir(char *dirname, char *filename);
 void smb_vfs_set_fadvise(struct file *filp, int option);
 int smb_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int smb_vfs_locks_mandatory_area(int read_write, struct file *filp,
-		loff_t offset, size_t count);
+int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start,
+		loff_t end, unsigned char type);
 int smb_vfs_readdir(struct file *file, filldir_t filler, void *buf);
 
 /* smb1ops functions */
