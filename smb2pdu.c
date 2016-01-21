@@ -1469,9 +1469,11 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (req->CreateContextsOffset != 0 && durable_enable) {
-		context = smb2_find_context_vals(req, "DHnQ");
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_DURABLE_HANDLE_REQUEST);
 		recon_state =
-		  (struct create_durable *)smb2_find_context_vals(req, "DHnC");
+		  (struct create_durable *)smb2_find_context_vals(req,
+				SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
 
 		if (recon_state != NULL) {
 
@@ -1505,7 +1507,7 @@ int smb2_open(struct smb_work *smb_work)
 
 	/* Parse non-durable handle create contexts */
 	if (req->CreateContextsOffset != 0) {
-		context = smb2_find_context_vals(req, "ExtA");
+		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER);
 		if (context != NULL) {
 			rsp->hdr.Status = NT_STATUS_EAS_NOT_SUPPORTED;
 			rc = -EOPNOTSUPP;

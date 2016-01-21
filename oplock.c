@@ -1485,7 +1485,7 @@ __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq)
 		cc = (struct create_context *)((char *)cc + next);
 		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
 		if (le16_to_cpu(cc->NameLength) != 4 ||
-				strncmp(name, "RqLs", 4)) {
+				strncmp(name, SMB2_CREATE_REQUEST_LEASE, 4)) {
 			next = le32_to_cpu(cc->Next);
 			continue;
 		}
