@@ -162,4 +162,6 @@ void init_smb3_0_server(struct tcp_server_info *server)
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
 	if (lease_enable)
 		server->capabilities = SMB2_GLOBAL_CAP_LEASING;
+
+	server->capabilities |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
