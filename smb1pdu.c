@@ -2580,15 +2580,15 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 	aclbuf->access_entry_count = 0;
 
 	/* check if POSIX_ACL_XATTR_ACCESS exists */
-	value_len = smb_vfs_getxattr(path->dentry, POSIX_ACL_XATTR_ACCESS, buf,
-			XATTR_SIZE_MAX);
+	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_ACCESS,
+			buf, XATTR_SIZE_MAX);
 	if (value_len > 0)
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
 
 	/* check if POSIX_ACL_XATTR_DEFAULT exists */
-	value_len = smb_vfs_getxattr(path->dentry, POSIX_ACL_XATTR_DEFAULT, buf,
-			XATTR_SIZE_MAX);
+	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_DEFAULT,
+			buf, XATTR_SIZE_MAX);
 	if (value_len > 0)
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_DEFAULT);
@@ -2666,11 +2666,11 @@ int smb_set_acl(struct smb_work *smb_work)
 
 	value_len = rc;
 	if (acl_type == ACL_TYPE_ACCESS) {
-		rc = smb_vfs_setxattr(fname, NULL, POSIX_ACL_XATTR_ACCESS, buf,
-				value_len, 0);
+		rc = smb_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_ACCESS,
+				buf, value_len, 0);
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
-		rc = smb_vfs_setxattr(fname, NULL, POSIX_ACL_XATTR_DEFAULT, buf,
-				value_len, 0);
+		rc = smb_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_DEFAULT,
+				buf, value_len, 0);
 	}
 
 	if (rc < 0) {
