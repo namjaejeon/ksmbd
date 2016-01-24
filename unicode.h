@@ -38,7 +38,9 @@
 #include <linux/types.h>
 #include <linux/nls.h>
 
+#if 0
 #define  UNIUPR_NOLOWER		/* Example to not expand lower case tables */
+#endif
 
 /*
  * Windows maps these to the user defined 16 bit Unicode range since they are

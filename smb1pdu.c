@@ -1421,16 +1421,36 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		cifssrv_err("path lookup relative to RootDirectoryFid\n");
 		return -EOPNOTSUPP;
 	} else {
-		const char *src;
+		char *src;
 		char *pos;
 		bool is_unicode;
+		int len = req->NameLength;
+
+		/* here allocated UNI length for both ASCII & UNI
+		to avoid unnecessary if/else check */
+		src = kzalloc(len + 2, GFP_KERNEL);
+		if (!src) {
+			cifssrv_err("failed to allocate memory\n");
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_NO_MEMORY;
+			return -ENOMEM;
+		}
 
 		if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
-			src = req->fileName + 1;
+			memcpy(src, req->fileName + 1, len);
 			is_unicode = true;
+
+			if (req->hdr.Flags & SMBFLG_CASELESS)
+				UniStrlwr((wchar_t *)src);
 		} else {
-			src = req->fileName;
+			memcpy(src, req->fileName, len);
 			is_unicode = false;
+
+			if (req->hdr.Flags & SMBFLG_CASELESS) {
+				char *ptr = (char *)src;
+				for (; *ptr; ptr++)
+					*ptr = tolower(*ptr);
+			}
 		}
 
 		name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
@@ -1440,7 +1460,11 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				cifssrv_err("failed to allocate memory\n");
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_NO_MEMORY;
-			}
+			} else
+				rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_INVALID;
+
+			kfree(src);
 			return PTR_ERR(name);
 		}
 
@@ -1451,14 +1475,18 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_OBJECT_NAME_INVALID;
 				kfree(name);
+				kfree(src);
 				return -EINVAL;
 			}
 			kfree(name);
 		}
 
 		name = smb_get_name(src, PATH_MAX, smb_work);
-		if (IS_ERR(name))
+		if (IS_ERR(name)) {
+			kfree(src);
 			return PTR_ERR(name);
+		}
+		kfree(src);
 	}
 
 	err = smb_kern_path(name, 0, &path, (req->hdr.Flags & SMBFLG_CASELESS)
@@ -1489,8 +1517,13 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	if (open_flags < 0) {
 		cifssrv_debug("create_dispostion returned %d\n", err);
-		if (file_present)
+		if (file_present) {
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_COLLISION;
+			memset(&rsp->hdr.WordCount, 0, 3);
+
 			goto free_path;
+		}
 		else
 			goto out;
 	} else {
@@ -1644,6 +1677,9 @@ out:
 		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 
 	smb_put_name(name);
+
+	if (!rsp->hdr.WordCount)
+		return err;
 
 	/* this is an ANDx command ? */
 	if (req->AndXCommand == 0xFF) {
