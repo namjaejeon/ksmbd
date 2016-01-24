@@ -583,18 +583,14 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 	struct oplock_info *opinfo, *tmp;
 	struct smb_work *work;
 	bool ack_required = 0;
-	bool lease_granted = 0;
 
 	if (!(fp && fp->ofile) && !openfile)
 		return;
 
 	if (openfile)
 		ofile = openfile;
-	else {
+	else
 		ofile = fp->ofile;
-		if (fp->lease_granted)
-			lease_granted = 1;
-	}
 
 	list_for_each_entry_safe(opinfo, tmp,
 			&ofile->op_read_list, op_list) {
@@ -623,7 +619,7 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		/* upgrade lease state of current client */
-		if (lease_granted && opinfo->leased &&
+		if ((fp && fp->lease_granted) && opinfo->leased &&
 				!memcmp(server->ClientGUID,
 					opinfo->server->ClientGUID,
 					SMB2_CLIENT_GUID_SIZE) &&
