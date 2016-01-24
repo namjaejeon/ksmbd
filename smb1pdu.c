@@ -1998,8 +1998,14 @@ int smb_write(struct smb_work *smb_work)
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
 
-	err = smb_vfs_write(server, req->Fid, data_buf, count, &pos,
-			    0, &nbytes);
+	cifssrv_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
+	if (!count) {
+		err = smb_vfs_truncate(server, NULL, req->Fid, pos);
+		nbytes = 0;
+	} else
+		err = smb_vfs_write(server, req->Fid, data_buf, count, &pos,
+				0, &nbytes);
+
 out:
 	rsp->hdr.WordCount = 1;
 	rsp->Written = cpu_to_le16(nbytes & 0xFFFF);
