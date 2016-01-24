@@ -3116,8 +3116,15 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		basic_info = (FILE_BASIC_INFO *)(ptr + 4);
-		basic_info->CreationTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		basic_info->CreationTime = cpu_to_le64(min3(
+					cifs_UnixTimeToNT(st.ctime),
+					cifs_UnixTimeToNT(st.mtime),
+					cifs_UnixTimeToNT(st.atime)));
+
+		if (!le64_to_cpu(basic_info->CreationTime))
+			basic_info->CreationTime = cpu_to_le64(min(
+						cifs_UnixTimeToNT(st.ctime),
+						cifs_UnixTimeToNT(st.mtime)));
 		basic_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
 		basic_info->LastWriteTime =
