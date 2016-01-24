@@ -1705,8 +1705,16 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 free_path:
 	path_put(&path);
 out:
-	if (err)
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
+	if (err) {
+		if (err == -ENOSPC)
+			rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+		else if (err == -EMFILE)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_TOO_MANY_OPENED_FILES;
+		else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_UNEXPECTED_IO_ERROR;
+	}
 
 	smb_put_name(conv_name);
 
@@ -6585,6 +6593,9 @@ out:
 	if (err) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+		else if (err == -EMFILE)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_TOO_MANY_OPENED_FILES;
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_UNEXPECTED_IO_ERROR;

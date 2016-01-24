@@ -141,6 +141,9 @@ static int grow_fidtable(struct fidtable_desc *ftab_desc, int num)
 	num = roundup_pow_of_two(num + 1);
 	num *= (1024 / sizeof(struct cifssrv_file *));
 
+	if (num >= CIFSSRV_BITMAP_SIZE + 1)
+		return -EMFILE;
+
 	new_ftab = alloc_fidtable(num);
 	spin_lock(&ftab_desc->fidtable_lock);
 	if (!new_ftab) {
