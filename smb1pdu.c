@@ -3588,7 +3588,6 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 
 	/* change it to absolute unix name */
 	convert_delimiter(name);
-
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
 
@@ -3648,7 +3647,13 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
 		*wild_card_pos = '\0';
 		*single_entry_search = false;
 	} else {
-		pattern_pos = strrchr(name, '/') + 1;
+		pattern_pos = strrchr(name, '/');
+
+		if (pattern_pos == NULL)
+			pattern_pos = name;
+		else
+			pattern_pos += 1;
+
 		pattern_len = strlen(pattern_pos);
 		if (pattern_len == 0) {
 			rsp_hdr->Status.CifsError = NT_STATUS_INVALID_PARAMETER;
