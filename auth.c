@@ -43,14 +43,13 @@ int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 		struct cifssrv_usr *usr, char *dname, int blen,
 		struct nls_table *local_nls)
 {
-	struct ntlmv2_resp *v2data;
-	struct crypto_shash *hmacmd5 = NULL;
-	struct sdesc *sdeschmacmd5 = NULL;
+	struct ntlmv2_resp *v2data = (struct ntlmv2_resp *)pv2;
+	struct crypto_shash *hmacmd5;
+	struct sdesc *sdeschmacmd5;
 	__le16 *user = NULL;
 	wchar_t *domain = NULL;
 	char *construct = NULL;
-	int len;
-	int rc = 0;
+	int len, ret;
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
 
@@ -69,85 +68,78 @@ int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 	sdeschmacmd5->shash.tfm = hmacmd5;
 	sdeschmacmd5->shash.flags = 0x0;
 
-	v2data = (struct ntlmv2_resp *)pv2;
-
-	rc = crypto_shash_setkey(hmacmd5, usr->passkey, CIFS_ENCPWD_SIZE);
-	if (rc) {
+	ret = crypto_shash_setkey(hmacmd5, usr->passkey, CIFS_ENCPWD_SIZE);
+	if (ret) {
 		cifssrv_debug("%s: Could not set NT Hash as a key\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	rc = crypto_shash_init(&sdeschmacmd5->shash);
-	if (rc) {
+	ret = crypto_shash_init(&sdeschmacmd5->shash);
+	if (ret) {
 		cifssrv_debug("%s: could not init hmacmd5\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
 	/* convert user_name to unicode */
 	len = strlen(usr->name);
-	user = kzalloc(2 + (len * 2), GFP_KERNEL);
+	user = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!user) {
-		rc = -ENOMEM;
-		goto EXIT;
+		ret = -ENOMEM;
+		goto exit;
 	}
 
 	if (len) {
 		len = smb_strtoUTF16(user, usr->name, len, local_nls);
 		UniStrupr(user);
-	} else
-		memset(user, '\0', 2);
+	}
 
-	rc = crypto_shash_update(&sdeschmacmd5->shash, (char *)user, 2 * len);
-	if (rc) {
+	ret = crypto_shash_update(&sdeschmacmd5->shash,	(char *)user,
+							UNICODE_LEN(len));
+	if (ret) {
 		cifssrv_debug("%s: Could not update with user\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
 	/* convert domainName to unicode and uppercase */
 	len = strlen(dname);
-	domain = kzalloc(2 + (len * 2), GFP_KERNEL);
+	domain = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!domain) {
 		cifssrv_debug("%s:%d memory allocation failed\n",
 				__func__, __LINE__);
-		rc = -ENOMEM;
-		goto EXIT;
+		ret = -ENOMEM;
+		goto exit;
 	}
 
 	len = smb_strtoUTF16((__le16 *)domain, dname, len,
 			local_nls);
 
-	rc = crypto_shash_update(&sdeschmacmd5->shash, (char *)domain, 2 * len);
-	if (rc) {
+	ret = crypto_shash_update(&sdeschmacmd5->shash,
+					(char *)domain, UNICODE_LEN(len));
+	if (ret) {
 		cifssrv_debug("%s: Could not update with domain\n",
 				__func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	rc = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_hash);
-	if (rc) {
+	ret = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_hash);
+	if (ret) {
 		cifssrv_debug("%s: Could not generate md5 hash\n",
 				__func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	rc = crypto_shash_setkey(hmacmd5, ntlmv2_hash, CIFS_HMAC_MD5_HASH_SIZE);
-	if (rc) {
+	ret = crypto_shash_setkey(hmacmd5, ntlmv2_hash,
+						CIFS_HMAC_MD5_HASH_SIZE);
+	if (ret) {
 		cifssrv_debug("%s: Could not set NTLMV2 Hash as a key\n",
 				__func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	rc = crypto_shash_init(&sdeschmacmd5->shash);
-	if (rc) {
+	ret = crypto_shash_init(&sdeschmacmd5->shash);
+	if (ret) {
 		cifssrv_debug("%s: could not init hmacmd5\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
 	len = 8 + blen;
@@ -155,40 +147,35 @@ int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 	if (!construct) {
 		cifssrv_debug("%s:%d memory allocation failed\n",
 				__func__, __LINE__);
-		rc = -EINVAL;
-		goto EXIT;
+		ret = -ENOMEM;
+		goto exit;
 	}
 
 	memcpy(construct, server->cryptkey, CIFS_CRYPTO_KEY_SIZE);
-	memcpy(construct+8, (char *)(&v2data->blob_signature), blen);
+	memcpy(construct + 8, (char *)(&v2data->blob_signature), blen);
 
-	rc = crypto_shash_update(&sdeschmacmd5->shash, construct, len);
-	if (rc) {
+	ret = crypto_shash_update(&sdeschmacmd5->shash, construct, len);
+	if (ret) {
 		cifssrv_debug("%s: Could not update with response\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	rc = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_rsp);
-	if (rc) {
+	ret = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_rsp);
+	if (ret) {
 		cifssrv_debug("%s: Could not generate md5 hash\n", __func__);
-		rc = -EINVAL;
-		goto EXIT;
+		goto exit;
 	}
 
-	if (!memcmp(v2data->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE))
-		rc = 0;
-	else
-		rc = 1;
+	ret = memcmp(v2data->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 
-EXIT:
+exit:
 	crypto_free_shash(hmacmd5);
 	kfree(sdeschmacmd5);
 	kfree(user);
 	kfree(domain);
 	kfree(construct);
 
-	return rc;
+	return ret;
 }
 
 /**
