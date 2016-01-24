@@ -1094,7 +1094,7 @@ out:
  *
  * Return:	id on success, otherwise error
  */
-int get_pipe_id(struct tcp_server_info *server)
+int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 {
 	int id;
 
@@ -1108,6 +1108,14 @@ int get_pipe_id(struct tcp_server_info *server)
 
 	server->pipe_desc->id = id;
 	server->pipe_desc->pkt_type = -1;
+	switch (pipe_type) {
+	case SRVSVC:
+		server->pipe_desc->pipe_type = SRVSVC;
+		break;
+	case WINREG:
+		server->pipe_desc->pipe_type = WINREG;
+		break;
+	}
 
 	return id;
 }

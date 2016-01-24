@@ -495,7 +495,7 @@ struct andx_block {
 
 typedef struct locking_andx_range {
 	__le16 Pid;
-	 __le16 Pad;
+	__le16 Pad;
 	__le32 OffsetHigh;
 	__le32 OffsetLow;
 	__le32 LengthHigh;

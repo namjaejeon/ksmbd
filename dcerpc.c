@@ -20,6 +20,7 @@
 
 #include"dcerpc.h"
 #include"export.h"
+#include"winreg.h"
 
 /**
  * process_rpc() - process a RPC request
@@ -74,11 +75,22 @@ int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
 		cifssrv_debug("Pipe Not opened\n");
 		return -EINVAL;
 	}
-
 	switch (server->pipe_desc->pkt_type) {
 	case RPC_REQUEST:
-		nbytes = rpc_read_srvsvc_data(server,
+		switch (server->pipe_desc->pipe_type) {
+		case SRVSVC:
+			nbytes = rpc_read_srvsvc_data(server,
 				data_buf, size);
+			break;
+		case WINREG:
+			nbytes = rpc_read_winreg_data(server,
+				data_buf, size);
+			break;
+		default:
+			cifssrv_debug("rpc pipe = %d Not Implemented\n",
+				server->pipe_desc->pipe_type);
+			return -EINVAL;
+		}
 		break;
 	case RPC_BIND:
 		nbytes = rpc_read_bind_data(server, data_buf);
@@ -92,6 +104,178 @@ int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
 	return nbytes;
 }
 
+
+
+int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
+								int buf_len)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp = (RPC_REQUEST_RSP *)outdata;
+	int offset = 0;
+
+	if (server->pipe_desc->opnum == WINREG_OPENHKCR) {
+		OPENHKCR_RSP *winreg_rsp;
+
+		winreg_rsp = (OPENHKCR_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+						sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_OPENHKCU) {
+		OPENHKCU_RSP *winreg_rsp;
+
+		winreg_rsp = (OPENHKCU_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+						sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_OPENHKLM) {
+		OPENHKLM_RSP *winreg_rsp;
+
+		winreg_rsp = (OPENHKLM_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+						sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_OPENHKU) {
+		OPENHKU_RSP *winreg_rsp;
+
+		winreg_rsp = (OPENHKU_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+				sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+
+	}
+
+	if (server->pipe_desc->opnum == WINREG_GETVERSION) {
+		GET_VERSION_RSP *winreg_rsp;
+
+		winreg_rsp = (GET_VERSION_RSP *)server->pipe_desc->data;
+
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+
+		memcpy(outdata + offset, &winreg_rsp->version, sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_DELETEKEY) {
+		DELETE_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (DELETE_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_CREATEKEY) {
+		CREATE_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (CREATE_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+						sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->ref_id, sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->action_taken,
+								sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_FLUSHKEY) {
+		FLUSH_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (FLUSH_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_OPENKEY) {
+		OPEN_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (OPEN_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+				sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_CLOSEKEY) {
+		CLOSE_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (CLOSE_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_handle,
+				sizeof(KEY_HANDLE));
+		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	rpc_request_rsp->hdr.frag_len = offset;
+	rpc_request_rsp->alloc_hint = offset - sizeof(RPC_REQUEST_RSP);
+
+	cifssrv_debug("offset = %d size of RPC_REQUEST_RSP = %zd\n",
+	offset, sizeof(RPC_REQUEST_RSP));
+	cifssrv_debug("frag len = %d alloc_hint = %d\n",
+	rpc_request_rsp->hdr.frag_len, rpc_request_rsp->alloc_hint);
+
+	return offset;
+}
+
 /**
  * rpc_read_bind_data() - create RPC response buffer for RPC_BIND request
  * @server:     TCP server instance of connection
@@ -103,6 +287,7 @@ int rpc_read_bind_data(struct tcp_server_info *server, char *out_data)
 {
 	RPC_HDR *hdr = (RPC_HDR *)out_data;
 	int offset = 0;
+	int pipe_type = server->pipe_desc->pipe_type;
 	RPC_BIND_RSP *rpc_bind_rsp;
 
 	rpc_bind_rsp = (RPC_BIND_RSP *)server->pipe_desc->data;
@@ -129,8 +314,20 @@ int rpc_read_bind_data(struct tcp_server_info *server, char *out_data)
 	memcpy(out_data + offset, rpc_bind_rsp->transfer, sizeof(RPC_IFACE));
 	offset += sizeof(RPC_IFACE);
 
-	hdr->frag_len = offset;
+	if (pipe_type == WINREG) {
+		memcpy(out_data + offset, &rpc_bind_rsp->auth,
+							sizeof(RPC_AUTH_INFO));
+		offset += sizeof(RPC_AUTH_INFO);
 
+		memcpy(out_data + offset, rpc_bind_rsp->Buffer,
+						rpc_bind_rsp->BufferLength);
+		offset += rpc_bind_rsp->BufferLength;
+
+		kfree(rpc_bind_rsp->Buffer);
+	}
+
+	hdr->frag_len = offset;
+	hdr->auth_len = rpc_bind_rsp->BufferLength;
 	kfree(rpc_bind_rsp->addr.sec_addr);
 	kfree(rpc_bind_rsp->transfer);
 	kfree(rpc_bind_rsp);
@@ -391,6 +588,7 @@ int pipe_data_copy(struct tcp_server_info *server, char *buf)
 {
 	int offset = 0, i, str_len, num_shares;
 	SRVSVC_SHARE_INFO_CTR *sharectr;
+
 	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
 		sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
 		num_shares = sharectr->info.num_entries;
@@ -454,7 +652,7 @@ int pipe_data_copy(struct tcp_server_info *server, char *buf)
  *
  * Return:      0 on success or error number
  */
-int init_srvsvc_share_info1(struct tcp_server_info *server,
+static int init_srvsvc_share_info1(struct tcp_server_info *server,
 				RPC_REQUEST_REQ *rpc_request_req)
 {
 	int num_shares = 0, cnt = 0, len = 0;
@@ -472,7 +670,6 @@ int init_srvsvc_share_info1(struct tcp_server_info *server,
 	sharectr = (SRVSVC_SHARE_INFO_CTR *)
 			kzalloc(sizeof(SRVSVC_SHARE_INFO_CTR), GFP_KERNEL);
 	if (!sharectr) {
-		cifssrv_err("failed to allocate memory\n");
 		return -ENOMEM;
 	}
 	server->pipe_desc->data = (char *)sharectr;
@@ -481,15 +678,13 @@ int init_srvsvc_share_info1(struct tcp_server_info *server,
 				sizeof(PTR_INFO1)), GFP_KERNEL);
 
 	if (!sharectr->ptrs) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(sharectr);
 		return -ENOMEM;
 	}
 	sharectr->shares = kzalloc((num_shares * sizeof(SRVSVC_SHARE_INFO1)),
-				   GFP_KERNEL);
+					GFP_KERNEL);
 
 	if (!sharectr->shares) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(sharectr->ptrs);
 		kfree(sharectr);
 		return -ENOMEM;
@@ -604,7 +799,7 @@ int init_srvsvc_share_info1(struct tcp_server_info *server,
  *
  * Return:      0 on success or error number
  */
-int srvsvc_net_share_enum_all(struct tcp_server_info *server, char *data,
+static int srvsvc_net_share_enum_all(struct tcp_server_info *server, char *data,
 				RPC_REQUEST_REQ *rpc_request_req)
 {
 	SRVSVC_REQ *req = (SRVSVC_REQ *)data;
@@ -669,7 +864,6 @@ int init_srvsvc_share_info2(struct tcp_server_info *server,
 	shareinfo = (SRVSVC_SHARE_GETINFO *)
 			kzalloc(sizeof(SRVSVC_SHARE_GETINFO), GFP_KERNEL);
 	if (!shareinfo) {
-		cifssrv_err("failed to allocate memory\n");
 		return -ENOMEM;
 	}
 
@@ -677,7 +871,6 @@ int init_srvsvc_share_info2(struct tcp_server_info *server,
 	shareinfo->ptrs = kzalloc((num_shares *
 				sizeof(PTR_INFO1)), GFP_KERNEL);
 	if (!shareinfo->ptrs) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(shareinfo);
 		return -ENOMEM;
 	}
@@ -685,7 +878,6 @@ int init_srvsvc_share_info2(struct tcp_server_info *server,
 	shareinfo->shares = kzalloc((num_shares * sizeof(SRVSVC_SHARE_INFO1)),
 				   GFP_KERNEL);
 	if (!shareinfo->shares) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(shareinfo->ptrs);
 		kfree(shareinfo);
 		return -ENOMEM;
@@ -787,6 +979,7 @@ int srvsvc_net_share_info(struct tcp_server_info *server, char *data,
 	int infolevel_len;
 	UNISTR_INFO *istr_info;
 	char *ptr, *share_name_ptr, *share_name;
+
 	handle = req->server_unc_handle;
 	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
 	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
@@ -852,7 +1045,6 @@ int init_wkssvc_share_info2(struct tcp_server_info *server,
 	shareinfo = (WKSSVC_SHARE_GETINFO *)
 			kzalloc(sizeof(WKSSVC_SHARE_GETINFO), GFP_KERNEL);
 	if (!shareinfo) {
-		cifssrv_err("failed to allocate memory\n");
 		return -ENOMEM;
 	}
 	server->pipe_desc->data = (char *)shareinfo;
@@ -860,7 +1052,6 @@ int init_wkssvc_share_info2(struct tcp_server_info *server,
 				   GFP_KERNEL);
 
 	if (!shareinfo->shares) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(shareinfo);
 		return -ENOMEM;
 	}
@@ -932,6 +1123,7 @@ int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
 	int server_unc_len = 0;
 	int ret = 0;
 	int *info_level;
+
 	handle = req->server_unc_handle;
 	server_unc_ptr = (char *)(data + sizeof(SERVER_HANDLE));
 	server_unc = smb_strndup_from_utf16(server_unc_ptr, 256, 1,
@@ -974,7 +1166,7 @@ int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
  *
  * Return:      0 on success or error number
  */
-int rpc_request(struct tcp_server_info *server, char *in_data)
+static int srvsvc_rpc_request(struct tcp_server_info *server, char *in_data)
 {
 	RPC_REQUEST_REQ *rpc_request_req = (RPC_REQUEST_REQ *)in_data;
 	int opnum;
@@ -982,11 +1174,10 @@ int rpc_request(struct tcp_server_info *server, char *in_data)
 	int ret = 0;
 
 	opnum = cpu_to_le16(rpc_request_req->opnum);
-
 	server->pipe_desc->opnum = opnum;
 	switch (opnum) {
 	case SRV_NET_SHARE_ENUM_ALL:
-		cifssrv_debug("GOT SRV_NET_SHARE_ENUM_ALL\n");
+		cifssrv_debug("Got SRV_NET_SHARE_ENUM_ALL\n");
 		data = in_data + sizeof(RPC_REQUEST_REQ);
 		ret = srvsvc_net_share_enum_all(server, data, rpc_request_req);
 		break;
@@ -1004,7 +1195,87 @@ int rpc_request(struct tcp_server_info *server, char *in_data)
 		cifssrv_debug("WKSSVC pipe opnum not supported = %d\n", opnum);
 		return -EOPNOTSUPP;
 	}
+	return ret;
+}
 
+int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
+{
+	RPC_REQUEST_REQ *rpc_request_req = (RPC_REQUEST_REQ *)in_data;
+	int opnum;
+	char *data;
+	int ret = 0;
+
+	opnum = cpu_to_le16(rpc_request_req->opnum);
+	server->pipe_desc->opnum = opnum;
+	data = in_data + sizeof(RPC_REQUEST_REQ);
+	cifssrv_debug("Opnum %d\n", opnum);
+
+	switch (opnum) {
+	case WINREG_OPENHKCR:
+		cifssrv_debug("Got WINREG_OPENHKCR\n");
+		ret = winreg_open_HKCR(server, rpc_request_req, data);
+		break;
+	case WINREG_OPENHKCU:
+		cifssrv_debug("Got WINREG_OPENHKCU\n");
+		ret = winreg_open_HKCU(server, rpc_request_req, data);
+		break;
+	case WINREG_OPENHKLM:
+		cifssrv_debug("Got WINREG_OPENHKLM\n");
+		ret = winreg_open_HKLM(server, rpc_request_req, data);
+		break;
+	case WINREG_OPENHKU:
+		cifssrv_debug("Got WINREG_OPENHKU\n");
+		ret = winreg_open_HKU(server, rpc_request_req, data);
+		break;
+	case WINREG_GETVERSION:
+		cifssrv_debug("Got WINREG_GETVERSION\n");
+		ret = winreg_get_version(server, rpc_request_req, data);
+		break;
+	case WINREG_DELETEKEY:
+		cifssrv_debug("Got WINREG_DELETEKEY\n");
+		ret = winreg_delete_key(server, rpc_request_req, data);
+		break;
+	case WINREG_FLUSHKEY:
+		cifssrv_debug("Got WINREG_FLUSHKEY\n");
+		ret = winreg_flush_key(server, rpc_request_req, data);
+		break;
+	case WINREG_OPENKEY:
+		cifssrv_debug("Got WINREG_OPENKEY\n");
+		ret = winreg_open_key(server, rpc_request_req, data);
+		break;
+	case WINREG_CREATEKEY:
+		cifssrv_debug("Got WINREG_CREATEKEY\n");
+		ret = winreg_create_key(server, rpc_request_req, data);
+		break;
+	case WINREG_CLOSEKEY:
+		cifssrv_debug("Got WINREG_CLOSEKEY\n");
+		ret = winreg_close_key(server, rpc_request_req, data);
+		break;
+	default:
+		cifssrv_debug("WINREG pipe opnum not supported = %d\n", opnum);
+		return -EOPNOTSUPP;
+	}
+	return ret;
+}
+
+int rpc_request(struct tcp_server_info *server, char *in_data)
+{
+	int ret = 0;
+
+	cifssrv_debug("server pipe request %d\n", server->pipe_desc->pipe_type);
+	switch (server->pipe_desc->pipe_type) {
+	case SRVSVC:
+		cifssrv_debug("SRVSVC pipe\n");
+		ret = srvsvc_rpc_request(server, in_data);
+		break;
+	case WINREG:
+		cifssrv_debug("WINREG pipe\n");
+		ret = winreg_rpc_request(server, in_data);
+		break;
+	default:
+		cifssrv_debug("pipe not supported\n");
+		return -EOPNOTSUPP;
+	}
 	return ret;
 }
 
@@ -1024,22 +1295,26 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	RPC_IFACE *transfer;
 	RPC_BIND_RSP *rpc_bind_rsp;
 	int version_maj;
+	int pipe_type;
+	int num_ctx;
+	int i = 0;
+	int offset = 0;
+
 	rpc_context = (RPC_CONTEXT *)(((char *)in_data) + sizeof(RPC_BIND_REQ));
 	transfer = (RPC_IFACE *)(((char *)in_data) + sizeof(RPC_BIND_REQ) +
 				   sizeof(RPC_CONTEXT));
 	rpc_bind_rsp = kzalloc(sizeof(RPC_BIND_RSP), GFP_KERNEL);
 	if (!rpc_bind_rsp) {
-		cifssrv_err("failed to allocate memory\n");
 		return -ENOMEM;
 	}
 
 	version_maj = rpc_context->abstract.version_maj;
+	pipe_type = server->pipe_desc->pipe_type;
 
 	server->pipe_desc->data = (char *)rpc_bind_rsp;
 
 	rpc_bind_rsp->addr.sec_addr = kmalloc(256, GFP_KERNEL);
 	if (!rpc_bind_rsp->addr.sec_addr) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(rpc_bind_rsp);
 		return -ENOMEM;
 	}
@@ -1064,15 +1339,65 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	/* Using hard coded assoc_gid value, same as as used by Samba*/
 	rpc_bind_rsp->bind_info.assoc_gid = 0x53f0;
 
+	num_ctx = rpc_bind_req->num_contexts;
+
 	cifssrv_debug("max_tsize = %u max_rsize = %u\n",
 		       rpc_bind_req->max_tsize, rpc_bind_req->max_rsize);
-
+	cifssrv_debug("RPC authentication length %d\n",
+						rpc_bind_req->hdr.auth_len);
 	/* Update pipe name*/
-	if (version_maj == 3)
-		pipe_name = "\\PIPE\\srvsvc";
-	else if (version_maj == 1)
-		pipe_name = "\\PIPE\\wkssvc";
-	else {
+	if (pipe_type == SRVSVC) {
+		if (version_maj == 3)
+			pipe_name = "\\PIPE\\srvsvc";
+		else if (version_maj == 1)
+			pipe_name = "\\PIPE\\wkssvc";
+	} else if (pipe_type == WINREG) {
+		pipe_name = "\\PIPE\\winreg";
+		rpc_bind_rsp->BufferLength = 0;
+		if (rpc_bind_req->hdr.auth_len != 0) {
+			NEGOTIATE_MESSAGE *negblob;
+			CHALLENGE_MESSAGE *chgblob;
+			__le16 name[8];
+
+			while (i < num_ctx) {
+				offset  = offset + sizeof(RPC_CONTEXT);
+				i++;
+			}
+			rpc_bind_rsp->auth.auth_type = 10;
+			rpc_bind_rsp->auth.auth_level = 6;
+			rpc_bind_rsp->auth.auth_pad_len = 0;
+			rpc_bind_rsp->auth.auth_reserved = 0;
+			rpc_bind_rsp->auth.auth_ctx_id = 1;
+			negblob = (NEGOTIATE_MESSAGE *)(((char *)in_data) +
+						sizeof(RPC_BIND_REQ) +
+						offset + sizeof(RPC_AUTH_INFO));
+			if (*(__le64 *)negblob->Signature ==
+							NTLMSSP_SIGNATURE_VAL)
+				cifssrv_debug("%s NTLMSSP present\n", __func__);
+			else
+				cifssrv_debug("%s NTLMSSP not present\n",
+								__func__);
+			if (negblob->MessageType == NtLmNegotiate) {
+				cifssrv_debug("%s negotiate phase\n", __func__);
+				chgblob = kzalloc(sizeof(CHALLENGE_MESSAGE),
+								GFP_KERNEL);
+				len = smb_strtoUTF16(name, netbios_name,
+							strlen(netbios_name),
+					server->local_nls);
+				rpc_bind_rsp->Buffer = kzalloc(
+					sizeof(CHALLENGE_MESSAGE) +
+					sizeof(TargetInfo)*5 +
+					UNICODE_LEN(len)*4, GFP_KERNEL);
+				rpc_bind_rsp->BufferLength =
+				build_ntlmssp_challenge_blob(chgblob,
+					rpc_bind_rsp->Buffer, 0, server);
+				memcpy(rpc_bind_rsp->Buffer, chgblob,
+						sizeof(CHALLENGE_MESSAGE));
+				kfree(chgblob);
+			}
+		}
+
+	} else {
 		cifssrv_err("invalid version %d\n", version_maj);
 		kfree(rpc_bind_rsp->addr.sec_addr);
 		kfree(rpc_bind_rsp);
@@ -1096,7 +1421,6 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	rpc_bind_rsp->transfer = kmalloc(sizeof(RPC_IFACE), GFP_KERNEL);
 
 	if (!rpc_bind_rsp->transfer) {
-		cifssrv_err("failed to allocate memory\n");
 		kfree(rpc_bind_rsp->addr.sec_addr);
 		kfree(rpc_bind_rsp);
 		return -ENOMEM;
@@ -1106,7 +1430,6 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 		       rpc_context->num_transfer_syntaxes);
 
 	memcpy(rpc_bind_rsp->transfer, transfer, sizeof(RPC_IFACE));
-
 	return 0;
 }
 

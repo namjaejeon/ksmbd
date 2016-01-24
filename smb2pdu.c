@@ -889,10 +889,11 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				rsp->SecurityBufferOffset);
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
-		build_ntlmssp_challenge_blob(chgblob, rsp, server);
+		rsp->SecurityBufferLength = build_ntlmssp_challenge_blob(
+					chgblob, (__u8 *)rsp->hdr.ProtocolId,
+			rsp->SecurityBufferOffset, server);
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
-		rsp->SecurityBufferLength += chgblob->TargetInfoArray.Length;
 		/* Note: here total size -1 is done as
 		   an adjustment for 0 size blob */
 		inc_rfc1001_len(rsp, rsp->SecurityBufferLength-1);
@@ -1366,12 +1367,33 @@ int smb2_session_logoff(struct smb_work *smb_work)
 static int create_smb2_pipe(struct smb_work *smb_work)
 {
 	struct smb2_create_rsp *rsp;
+	struct smb2_create_req *req;
 	int id;
+	unsigned int pipe_type;
+	char *name =  NULL;
 
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
+	req = (struct smb2_create_req *)smb_work->buf;
+	name = smb_strndup_from_utf16(req->Buffer, req->NameLength, 1,
+				smb_work->server->local_nls);
+
+	if (strcmp(name, "winreg") == 0) {
+		cifssrv_debug("pipe: %s\n", name);
+		pipe_type = WINREG;
+	} else if (strcmp(name, "srvsvc") == 0) {
+		cifssrv_debug("pipe: %s\n", name);
+		pipe_type = SRVSVC;
+	} else if (strcmp(name, "wkssvc") == 0) {
+		cifssrv_debug("pipe: %s\n", name);
+		pipe_type = SRVSVC;
+	} else {
+		cifssrv_debug("pipe %s not supported\n", name);
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		return -EOPNOTSUPP;
+	}
 
 	/* Assigning temporary fid for pipe */
-	id = get_pipe_id(smb_work->server);
+	id = get_pipe_id(smb_work->server, pipe_type);
 	if (id < 0) {
 		cifssrv_debug("id is not correct\n");
 		return id;
@@ -1394,6 +1416,7 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	rsp->CreateContextsLength = 0;
 
 	inc_rfc1001_len(rsp, 88); /* StructureSize - 1*/
+	kfree(name);
 	return 0;
 }
 

@@ -198,8 +198,8 @@ EXIT:
  * @server:	TCP server instance of connection
  *
  */
-void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct smb2_sess_setup_rsp *rsp,
+unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+		__u8 *rsp, int BufferOffset,
 		struct tcp_server_info *server) {
 	TargetInfo attr;
 	int len, off;
@@ -207,6 +207,7 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	int names = 0;
 	__le16 type;
 	__le16 name[8];
+	unsigned int BufferLength;
 
 	*(__le64 *)chgblob->Signature = NTLMSSP_SIGNATURE_VAL;
 	chgblob->MessageType = NtLmChallenge;
@@ -217,10 +218,10 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	chgblob->TargetName.MaximumLength = chgblob->TargetName.Length;
 	chgblob->TargetName.BufferOffset = sizeof(CHALLENGE_MESSAGE);
 
-	off = rsp->SecurityBufferOffset +
+	off = BufferOffset +
 		chgblob->TargetName.BufferOffset;
 	/* start from rsp->hdr.ProtocolId */
-	memcpy((char *)&rsp->hdr + 4 + off, name, UNICODE_LEN(len));
+	memcpy(rsp + off, name, UNICODE_LEN(len));
 
 	chgblob->NegotiateFlags = NTLMSSP_NEGOTIATE_UNICODE |
 		NTLMSSP_NEGOTIATE_NTLM |
@@ -235,7 +236,7 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	memcpy(chgblob->Challenge, server->cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
 
-	rsp->SecurityBufferLength = sizeof(CHALLENGE_MESSAGE) +
+	BufferLength = sizeof(CHALLENGE_MESSAGE) +
 		UNICODE_LEN(len);
 
 	/* update target info list for NetBIOS settings */
@@ -244,10 +245,10 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		attr.Type = type;
 		attr.Length = UNICODE_LEN(len);
 		off += UNICODE_LEN(len);
-		memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+		memcpy(rsp + off, &attr, sizeof(TargetInfo));
 		attrs++;
 		off += sizeof(TargetInfo);
-		memcpy(rsp->hdr.ProtocolId + off, name, UNICODE_LEN(len));
+		memcpy(rsp + off, name, UNICODE_LEN(len));
 		names++;
 	}
 
@@ -261,14 +262,14 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		else
 			off += sizeof(TargetInfo);
 
-		memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+		memcpy(rsp + off, &attr, sizeof(TargetInfo));
 		attrs++;
 	}
 
 	attr.Type = 0;
 	attr.Length = 0;
 	off += sizeof(TargetInfo);
-	memcpy(rsp->hdr.ProtocolId + off, &attr, sizeof(TargetInfo));
+	memcpy(rsp + off, &attr, sizeof(TargetInfo));
 	attrs++;
 
 	chgblob->TargetInfoArray.Length = sizeof(TargetInfo)*attrs +
@@ -277,4 +278,8 @@ void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		chgblob->TargetInfoArray.Length;
 	chgblob->TargetInfoArray.BufferOffset =
 		chgblob->TargetName.BufferOffset + UNICODE_LEN(len);
+
+	BufferLength += chgblob->TargetInfoArray.Length;
+	cifssrv_debug("NTLMSSP SecurityBufferLength %d\n", BufferLength);
+	return BufferLength;
 }

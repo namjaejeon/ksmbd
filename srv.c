@@ -411,8 +411,8 @@ again:
 		command = rc;
 		goto again;
 	} else if (rc < 0)
-		cifssrv_debug("error while processing cmd %u\n", command);
-
+		cifssrv_debug("error(%d) while processing cmd %u\n",
+							rc, command);
 	if (smb_work->send_no_response) {
 		spin_lock(&server->request_lock);
 		if (smb_work->added_in_request_list) {

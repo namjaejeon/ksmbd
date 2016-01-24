@@ -105,6 +105,15 @@ typedef struct _TARGET_INFO {
 	__le16 Length;
 } __attribute__((packed)) TargetInfo;
 
+typedef struct _NTLM_VERSION {
+	__u8  maj_version;
+	__u8  min_version;
+	__u16 build_number;
+	__u8  reserved1;
+	__u16 reserved2;
+	__u8  curr_revision;
+} __attribute__((packed)) NTLM_VERSION;
+
 typedef struct _NEGOTIATE_MESSAGE {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
 	__le32 MessageType;     /* NtLmNegotiate = 1 */

@@ -1304,6 +1304,7 @@ int create_andx_pipe(struct smb_work *smb_work)
 	OPEN_REQ *req = (OPEN_REQ *)smb_work->buf;
 	OPEN_EXT_RSP *rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
 	int id;
+	unsigned int pipe_type;
 	char *name;
 
 	/* one byte pad before unicode file name start */
@@ -1319,14 +1320,22 @@ int create_andx_pipe(struct smb_work *smb_work)
 		return PTR_ERR(name);
 	}
 
-	if (strcmp(name, "\\srvsvc") != 0) {
+	if ((strcmp(name, "\\srvsvc") == 0) ||
+					(strcmp(name, "\\wkssvc") == 0)) {
+		cifssrv_debug("pipe: %s\n", name);
+		pipe_type = SRVSVC;
+	} else if (strcmp(name, "\\winreg") == 0) {
+		cifssrv_debug("pipe: %s\n", name);
+		pipe_type = WINREG;
+	} else {
 		cifssrv_debug("pipe %s not supported\n", name);
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
 		return -EOPNOTSUPP;
 	}
 
+
 	/* Assigning temporary fid for pipe */
-	id = get_pipe_id(smb_work->server);
+	id = get_pipe_id(smb_work->server, pipe_type);
 	if (id < 0)
 		return id;
 

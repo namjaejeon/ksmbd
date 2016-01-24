@@ -104,7 +104,7 @@ struct cifssrv_sess {
 	Ex- "path" & "PATH" should be treated as same.
 		And ascii sum of "path" = 429 */
 enum global_params {
-	GUESTACCOUNT            =       1365,
+	GUESTACCOUNT            =       1333,
 	SERVERSTRING            =       1358,
 	WORKGROUP               =       1008,
 	NETBIOSNAME		=	1205
@@ -207,14 +207,16 @@ struct cifssrv_tcon {
  */
 
 /* functions */
+
+extern int cifssrv_init_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
 int validate_clip(char *cip, struct cifssrv_share *share);
 int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 		struct cifssrv_usr *usr, char *dname, int blen,
 		struct nls_table *local_nls);
-void build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct smb2_sess_setup_rsp *rsp,
+unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+		__u8 *rsp, int BufferOffset,
 		struct tcp_server_info *server);
 
 static inline struct cifssrv_usr *cifssrv_is_user_present(char *name)

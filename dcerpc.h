@@ -22,11 +22,13 @@
 #define __CIFSSRV_DCERPC_H
 
 #include"glob.h"
-
+#include"ntlmssp.h"
 /* these are win32 error codes. There are only a few places where
  *    these matter for Samba, primarily in the NT printing code */
-#define WERR_OK 0x00000000
-#define WERR_INVALID_NAME 0x0000007B
+#define WERR_OK			0x00000000
+#define WERR_BAD_FILE		0x00000002
+#define WERR_ACCESS_DENIED	0x00000005
+#define WERR_INVALID_NAME	0x0000007B
 
 /* DCE/RPC packet types */
 
@@ -99,7 +101,6 @@ struct GUID {
 	__u8  node[6];
 };
 
-
 /* RPC interface */
 typedef struct rpc_iface_info {
 	struct GUID uuid;  /* 16 bytes of rpc interface identification */
@@ -123,6 +124,14 @@ typedef struct rpc_bind_req {
 	__u8   reserved1;
 	__u16  reserved2;
 } __attribute__((packed)) RPC_BIND_REQ;
+
+typedef struct auth_info {
+	__u8   auth_type;
+	__u8   auth_level;
+	__u8   auth_pad_len;
+	__u8   auth_reserved;
+	__u32  auth_ctx_id;
+} __attribute__((packed)) RPC_AUTH_INFO;
 
 /* Request RPC  */
 typedef struct rpc_request_req {
@@ -166,6 +175,9 @@ typedef struct rpc_bind_rsp {
 	RPC_ADDR_INFO addr;
 	RPC_RESULTS results;
 	RPC_IFACE *transfer;
+	RPC_AUTH_INFO auth;
+	__u32 BufferLength;
+	__u8 *Buffer;
 } RPC_BIND_RSP;
 
 /* SRVSVC structures */
@@ -307,7 +319,10 @@ int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size);
 int rpc_bind(struct tcp_server_info *server, char *data);
 int rpc_request(struct tcp_server_info *server, char *data);
 int rpc_read_bind_data(struct tcp_server_info *server, char *data);
+int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
+							int buf_len);
 
+int winreg_rpc_request(struct tcp_server_info *server, char *in_data);
 /* SRVSVC pipe function */
 
 int rpc_read_srvsvc_data(struct tcp_server_info *server,
