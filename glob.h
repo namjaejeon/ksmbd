@@ -408,7 +408,8 @@ cifs_NTtimeToUnix(__le64 ntutc)
 }
 
 char *
-smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work);
+smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
+	bool converted);
 void smb_put_name(void *name);
 bool is_smb_request(struct tcp_server_info *server, unsigned char type);
 int switch_req_buf(struct tcp_server_info *server);

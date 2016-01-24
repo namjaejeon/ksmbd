@@ -596,7 +596,7 @@ int smb_rename(struct smb_work *smb_work)
 	bool file_present = true;
 	int rc = 0;
 
-	abs_oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work);
+	abs_oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(abs_oldname))
 		return PTR_ERR(abs_oldname);
 
@@ -611,7 +611,7 @@ int smb_rename(struct smb_work *smb_work)
 	}
 
 	abs_newname = smb_get_name(&req->OldFileName[oldname_len + 2],
-			PATH_MAX, smb_work);
+			PATH_MAX, smb_work, false);
 	if (IS_ERR(abs_newname)) {
 		rc = PTR_ERR(abs_newname);
 		goto out;
@@ -1381,6 +1381,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	struct kstat stat;
 	int oplock_flags, file_info, open_flags, access_flags;
 	char *name;
+	char *conv_name;
 	bool file_present = true, extended_reply;
 	__u64 alloc_size = 0, create_time;
 	__u16 fid;
@@ -1388,6 +1389,11 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	int err;
 	int create_directory = 0;
 	int open_directory = 0;
+	char *src;
+	char *root;
+	bool is_unicode;
+	bool is_relative_root = false;
+
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 	if (le16_to_cpu(req->hdr.Tid) == 1) {
@@ -1412,100 +1418,125 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		open_directory = 1;
 	}
 
+	/*
+	 * Filename is relative to this root directory FID, instead of
+	 * tree connect point. Find root dir name from this FID and
+	 * prepend root dir name in filename.
+	 */
 	if (req->RootDirectoryFid) {
-		/*
-		 * Filename is relative to this root directory FID, instead of
-		 * tree connect point. Find root dir name from this FID and
-		 * prepend root dir name in filename.
-		 */
-		cifssrv_err("path lookup relative to RootDirectoryFid\n");
-		return -EOPNOTSUPP;
-	} else {
-		char *src;
-		char *pos;
-		bool is_unicode;
-		int len = req->NameLength;
+		struct cifssrv_file *fp;
 
-		/* here allocated UNI length for both ASCII & UNI
-		to avoid unnecessary if/else check */
-		src = kzalloc(len + 2, GFP_KERNEL);
-		if (!src) {
+		cifssrv_debug("path lookup relative to RootDirectoryFid\n");
+
+		is_relative_root = true;
+		fp = get_id_from_fidtable(server, req->RootDirectoryFid);
+		if (fp)
+			root = (char *)fp->filp->f_dentry->d_name.name;
+		else {
+			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+			memset(&rsp->hdr.WordCount, 0, 3);
+			return -EINVAL;
+		}
+	}
+
+	/* here allocated +2 (UNI '\0') length for both ASCII & UNI
+	   to avoid unnecessary if/else check */
+	src = kzalloc(req->NameLength + 2, GFP_KERNEL);
+	if (!src) {
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_NO_MEMORY;
+
+		return -ENOMEM;
+	}
+
+	if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
+		memcpy(src, req->fileName + 1, req->NameLength);
+		is_unicode = true;
+
+		if (req->hdr.Flags & SMBFLG_CASELESS)
+			UniStrlwr((wchar_t *)src);
+	} else {
+		memcpy(src, req->fileName, req->NameLength);
+		is_unicode = false;
+
+		if (req->hdr.Flags & SMBFLG_CASELESS) {
+			char *ptr = (char *)src;
+
+			for (; *ptr; ptr++)
+				*ptr = tolower(*ptr);
+		}
+	}
+
+	name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
+			server->local_nls);
+	kfree(src);
+
+	if (IS_ERR(name)) {
+		if (PTR_ERR(name) == -ENOMEM) {
 			cifssrv_err("failed to allocate memory\n");
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_NO_MEMORY;
+		} else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_INVALID;
+
+		return PTR_ERR(name);
+	}
+
+	if (is_relative_root) {
+		int org_len = strnlen(name, PATH_MAX);
+		int add_len = strnlen(root, PATH_MAX);
+		char *full_name;
+
+		/* +3 for: '\'<root>'\' & '\0' */
+		full_name = kzalloc(org_len + add_len + 3, GFP_KERNEL);
+		if (!full_name) {
+			kfree(name);
+			rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 			return -ENOMEM;
 		}
 
-		if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
-			memcpy(src, req->fileName + 1, len);
-			is_unicode = true;
-
-			if (req->hdr.Flags & SMBFLG_CASELESS)
-				UniStrlwr((wchar_t *)src);
-		} else {
-			memcpy(src, req->fileName, len);
-			is_unicode = false;
-
-			if (req->hdr.Flags & SMBFLG_CASELESS) {
-				char *ptr = (char *)src;
-				for (; *ptr; ptr++)
-					*ptr = tolower(*ptr);
-			}
-		}
-
-		name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
-				server->local_nls);
-		if (IS_ERR(name)) {
-			if (PTR_ERR(name) == -ENOMEM) {
-				cifssrv_err("failed to allocate memory\n");
-				rsp->hdr.Status.CifsError =
-					NT_STATUS_NO_MEMORY;
-			} else
-				rsp->hdr.Status.CifsError =
-				NT_STATUS_OBJECT_NAME_INVALID;
-
-			kfree(src);
-			return PTR_ERR(name);
-		}
-
-		pos = strrchr(name, '\\');
-		if (pos) {
-			pos++;
-			if ((strnlen(pos, PATH_MAX) == 1) && (*pos == '*')) {
-				rsp->hdr.Status.CifsError =
-					NT_STATUS_OBJECT_NAME_INVALID;
-				kfree(name);
-				kfree(src);
-				return -EINVAL;
-			}
-			kfree(name);
-		}
-
-		name = smb_get_name(src, PATH_MAX, smb_work);
-		if (IS_ERR(name)) {
-			kfree(src);
-			return PTR_ERR(name);
-		}
-		kfree(src);
+		snprintf(full_name, add_len + 3, "\\%s\\", root);
+		strncat(full_name, name, org_len);
+		kfree(name);
+		name = full_name;
 	}
 
-	err = smb_kern_path(name, 0, &path, (req->hdr.Flags & SMBFLG_CASELESS)
-			&& !create_directory);
+	root = strrchr(name, '\\');
+	if (root) {
+		root++;
+		if ((strnlen(root, PATH_MAX) == 1) && (*root == '*')) {
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_INVALID;
+			kfree(name);
+			return -EINVAL;
+		}
+	}
+
+	conv_name = smb_get_name(name, PATH_MAX, smb_work, true);
+	kfree(name);
+	if (IS_ERR(conv_name))
+		return PTR_ERR(conv_name);
+
+	err = smb_kern_path(conv_name, 0, &path,
+			(req->hdr.Flags & SMBFLG_CASELESS) &&
+			!create_directory);
 	if (err) {
 		file_present = false;
 		cifssrv_debug("can not get linux path for %s, err = %d\n",
-				name, err);
+				conv_name, err);
 	} else {
 		err = vfs_getattr(&path, &stat);
 		if (err) {
-			cifssrv_err("can not stat %s, err = %d\n", name, err);
+			cifssrv_err("can not stat %s, err = %d\n",
+				conv_name, err);
 			goto free_path;
 		}
 	}
 
 	if (file_present && !open_directory && S_ISDIR(stat.mode)) {
 		cifssrv_debug("Can't open dir %s, request is to open file\n",
-			       name);
+			       conv_name);
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_IS_A_DIRECTORY;
 		goto free_path;
 	}
@@ -1554,18 +1585,19 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 		if (!create_directory) {
 			mode |= S_IFREG;
-			err = smb_vfs_create(name, mode);
+			err = smb_vfs_create(conv_name, mode);
 			if (err)
 				goto out;
 		} else {
-			err = smb_vfs_mkdir(name, mode);
+			err = smb_vfs_mkdir(conv_name, mode);
 			if (err) {
-				cifssrv_err("Can't create directory %s", name);
+				cifssrv_err("Can't create directory %s",
+					conv_name);
 				goto out;
 			}
 		}
 
-		err = smb_kern_path(name, 0, &path, 0);
+		err = smb_kern_path(conv_name, 0, &path, 0);
 		if (err) {
 			cifssrv_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -1676,7 +1708,7 @@ out:
 	if (err)
 		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 
-	smb_put_name(name);
+	smb_put_name(conv_name);
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -2676,7 +2708,7 @@ int smb_set_acl(struct smb_work *smb_work)
 	char *fname, *buf = NULL;
 	int rc = 0, acl_type = 0, value_len;
 
-	fname = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	fname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(fname))
 		return PTR_ERR(fname);
 
@@ -2962,7 +2994,7 @@ int query_path_info(struct smb_work *smb_work)
 
 	req_params = (TRANSACTION2_QPI_REQ_PARAMS *)(smb_work->buf +
 		     req->ParameterOffset + 4);
-	name = smb_get_name(req_params->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req_params->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -3523,11 +3555,13 @@ err_out:
  * @src:	source filename, mostly in unicode format
  * @maxlen:	maxlen of src string to be used for parsing
  * @smb_work:	smb work containing smb header flag
+ * @converted:	src string already converted to local characterset
  *
  * Return:	pointer to filename string on success, otherwise error ptr
  */
 char *
-smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
+smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
+		bool converted)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
@@ -3535,16 +3569,21 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	char *name, *unixname;
 	char *wild_card_pos;
 
-	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
-			smb_work->server->local_nls);
-	if (IS_ERR(name)) {
-		cifssrv_debug("failed to get name %ld\n", PTR_ERR(name));
-		if (PTR_ERR(name) == -ENOMEM)
-			rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
-		else
-			rsp_hdr->Status.CifsError =
-				NT_STATUS_OBJECT_NAME_INVALID;
-		return name;
+	if (converted)
+		name = (char *)src;
+	else {
+		name = smb_strndup_from_utf16(src, maxlen, is_unicode,
+				smb_work->server->local_nls);
+		if (IS_ERR(name)) {
+			cifssrv_debug("failed to get name %ld\n",
+				PTR_ERR(name));
+			if (PTR_ERR(name) == -ENOMEM)
+				rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
+			else
+				rsp_hdr->Status.CifsError =
+					NT_STATUS_OBJECT_NAME_INVALID;
+			return name;
+		}
 	}
 
 	/* change it to absolute unix name */
@@ -3557,7 +3596,9 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 		*wild_card_pos = '\0';
 
 	unixname = convert_to_unix_name(name, req_hdr->Tid);
-	kfree(name);
+
+	if (!converted)
+		kfree(name);
 	if (!unixname) {
 		cifssrv_err("can not convert absolute name\n");
 		rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
@@ -3743,7 +3784,7 @@ int smb_posix_open(struct smb_work *smb_work)
 	bool file_present = true;
 	int err;
 
-	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -3910,7 +3951,7 @@ int smb_posix_unlink(struct smb_work *smb_work)
 	char *name;
 	int rc = 0;
 
-	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -3966,7 +4007,7 @@ int smb_set_time_pathinfo(struct smb_work *smb_work)
 	char *name;
 	int err = 0;
 
-	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -4043,7 +4084,7 @@ int smb_set_unix_pathinfo(struct smb_work *smb_work)
 	char *name;
 	int err = 0;
 
-	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -4102,7 +4143,7 @@ int smb_set_ea(struct smb_work *smb_work)
 	char *fname, *attr_name = NULL, *value;
 	int rc = 0;
 
-	fname = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	fname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(fname))
 		return PTR_ERR(fname);
 
@@ -4190,7 +4231,7 @@ int smb_set_file_size_pinfo(struct smb_work *smb_work)
 	loff_t newsize;
 	int rc = 0;
 
-	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -5956,7 +5997,7 @@ int smb_mkdir(struct smb_work *smb_work)
 	char *name;
 	int err;
 
-	name = smb_get_name(req->DirName, PATH_MAX, smb_work);
+	name = smb_get_name(req->DirName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -5990,7 +6031,7 @@ int smb_rmdir(struct smb_work *smb_work)
 	char *name;
 	int err;
 
-	name = smb_get_name(req->DirName, PATH_MAX, smb_work);
+	name = smb_get_name(req->DirName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -6028,7 +6069,7 @@ int smb_unlink(struct smb_work *smb_work)
 	char *name;
 	int err;
 
-	name = smb_get_name(req->fileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->fileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -6104,7 +6145,7 @@ int smb_nt_rename(struct smb_work *smb_work)
 	char *oldname, *newname;
 	int oldname_len, err;
 
-	oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work);
+	oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(oldname))
 		return PTR_ERR(oldname);
 
@@ -6119,7 +6160,7 @@ int smb_nt_rename(struct smb_work *smb_work)
 	}
 
 	newname = smb_get_name(&req->OldFileName[oldname_len + 2],
-			PATH_MAX, smb_work);
+			PATH_MAX, smb_work, false);
 	if (IS_ERR(newname)) {
 		err = PTR_ERR(newname);
 		goto out;
@@ -6156,13 +6197,13 @@ int smb_creat_hardlink(struct smb_work *smb_work)
 	char *oldname, *newname, *oldname_offset;
 	int err;
 
-	newname = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	newname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(newname))
 		return PTR_ERR(newname);
 
 	oldname_offset = ((char *)&req->hdr.Protocol) +
 				le16_to_cpu(req->DataOffset);
-	oldname = smb_get_name(oldname_offset, PATH_MAX, smb_work);
+	oldname = smb_get_name(oldname_offset, PATH_MAX, smb_work, false);
 	if (IS_ERR(oldname)) {
 		err = PTR_ERR(oldname);
 		goto out;
@@ -6209,7 +6250,7 @@ int smb_creat_symlink(struct smb_work *smb_work)
 	bool is_unicode = req->hdr.Flags2 & SMBFLG2_UNICODE;
 	int err;
 
-	symname = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	symname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(symname))
 		return PTR_ERR(symname);
 
@@ -6272,7 +6313,7 @@ int smb_query_info(struct smb_work *smb_work)
 	__u16 attr = 0;
 	int err, i;
 
-	name = smb_get_name(req->FileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
@@ -6428,10 +6469,10 @@ int smb_open_andx(struct smb_work *smb_work)
 
 	if (req->hdr.Flags2 & SMBFLG2_UNICODE)
 		name = smb_get_name(req->fileName + 1, PATH_MAX,
-				smb_work);
+				smb_work, false);
 	else
 		name = smb_get_name(req->fileName, PATH_MAX,
-				smb_work);
+				smb_work, false);
 
 	if (IS_ERR(name))
 		return PTR_ERR(name);
@@ -6585,7 +6626,7 @@ int smb_setattr(struct smb_work *smb_work)
 
 	req = (SETATTR_REQ *)smb_work->buf;
 	rsp = (SETATTR_RSP *)smb_work->rsp_buf;
-	name = smb_get_name(req->fileName, PATH_MAX, smb_work);
+	name = smb_get_name(req->fileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
