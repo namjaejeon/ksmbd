@@ -43,7 +43,6 @@ __u16 vid = 1;
 __u16 tid = 1;
 int cifssrv_debug_enable;
 int cifssrv_caseless_search;
-static char key[CIFS_NTHASH_SIZE];
 static char statIP[MAX_ADDRBUFLEN];
 static inline void free_share(struct cifssrv_share *share);
 
@@ -1425,93 +1424,6 @@ mem_param_fail:
 }
 
 /**
- * util_show() - show util setting - password hash
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing password hash
- *
- * Return:      output buffer length
- */
-static ssize_t util_show(struct kobject *kobj,
-			 struct kobj_attribute *kobj_attr,
-			 char *buf)
-{
-	if (!strlen(key))
-		return 0;
-
-	memcpy(buf, "<", 1);
-	memcpy(buf+1, key, CIFS_NTHASH_SIZE);
-	memcpy(buf+1+CIFS_NTHASH_SIZE, ">", 1);
-
-	memset(key, 0, CIFS_NTHASH_SIZE);
-
-	return CIFS_NTHASH_SIZE+2;
-}
-
-/**
- * util_store() - update util settings - password hash
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing util setting
- * @len:	buf length of util setting
- *
- * Return:      util setting buf length
- */
-static ssize_t util_store(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  const char *buf, size_t len)
-{
-	struct nls_table *local_nls;
-	char genkey[CIFS_NTHASH_SIZE];
-	char *usrname[1], *passwd[1];
-	long int sz;
-	int rc;
-
-	local_nls = load_nls_default();
-
-	rc = init_2_strings(buf, usrname, passwd, len);
-	if (rc) {
-		unload_nls(local_nls);
-		return rc;
-	}
-
-	if (kstrtol(*usrname, 10, &sz)) {
-		unload_nls(local_nls);
-		kfree(*usrname);
-		kfree(*passwd);
-		return 0;
-	}
-
-	if (strlen(*passwd) != sz) {
-		cifssrv_err("[%s:%d] pwd corrupted\n", __func__, __LINE__);
-		goto skip;
-	}
-
-	if (sz > MAX_NT_PWD_LEN) {
-		cifssrv_err(
-			"[%s:%d] pwd len %ld bytes exceed NT limit %d bytes\n",
-				__func__, __LINE__, sz, MAX_NT_PWD_LEN);
-		goto skip;
-	}
-
-	memset(genkey, '\0', CIFS_NTHASH_SIZE);
-
-	rc = smb_E_md4hash(*passwd, genkey, local_nls);
-	if (rc) {
-		cifssrv_err("%s Can't generate NT hash, error: %d\n",
-				__func__, rc);
-		goto skip;
-	}
-	memcpy(key, genkey, CIFS_NTHASH_SIZE);
-
-skip:
-	unload_nls(local_nls);
-	kfree(*usrname);
-	kfree(*passwd);
-	return len;
-}
-
-/**
  * stat_store() - update client stat IP
  * @kobj:	kobject of the modules
  * @kobj_attr:	kobject attribute of the modules
@@ -1681,7 +1593,6 @@ SMB_ATTR(user);
 SMB_ATTR(debug);
 SMB_ATTR(caseless_search);
 SMB_ATTR(config);
-SMB_ATTR(util);
 SMB_ATTR(stat);
 
 static struct attribute *cifssrv_sysfs_attrs[] = {
@@ -1690,7 +1601,6 @@ static struct attribute *cifssrv_sysfs_attrs[] = {
 	&debug_attr.attr,
 	&caseless_search_attr.attr,
 	&config_attr.attr,
-	&util_attr.attr,
 	&stat_attr.attr,
 	NULL,
 };
