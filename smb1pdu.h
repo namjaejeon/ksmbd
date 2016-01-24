@@ -523,6 +523,14 @@ typedef struct smb_com_lock_req {
 	LOCKING_ANDX_RANGE Locks[1];
 } __attribute__((packed)) LOCK_REQ;
 
+typedef struct smb_com_lock_rsp {
+	struct smb_hdr hdr;     /* wct = 2 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__u16 ByteCount;
+} __attribute__((packed)) LOCK_RSP;
+
 /* tree connect Flags */
 #define DISCONNECT_TID          0x0001
 #define TCON_EXTENDED_SIGNATURES 0x0004

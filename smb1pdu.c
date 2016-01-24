@@ -1058,6 +1058,7 @@ __u32 smb_get_dos_attr(struct kstat *stat)
 int smb_locking_andx(struct smb_work *smb_work)
 {
 	LOCK_REQ *req;
+	LOCK_RSP *rsp;
 	struct cifssrv_file *fp;
 	struct tcp_server_info *server = smb_work->server;
 	struct ofile_info *ofile;
@@ -1069,10 +1070,14 @@ int smb_locking_andx(struct smb_work *smb_work)
 		return -ENOSYS;
 
 	req = (LOCK_REQ *)smb_work->buf;
+	rsp = (LOCK_RSP *)smb_work->rsp_buf;
+
 	if (!(req->LockType & LOCKING_ANDX_OPLOCK_RELEASE)) {
 		cifssrv_err("LockType %d not supported in smb_locking_andx\n",
 			    req->LockType);
-		return -EINVAL;
+		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
+		rsp->ByteCount = 0;
+		return 0;
 	}
 	cifssrv_debug("got oplock brk for fid %d level OplockLevel = %d\n",
 		      req->Fid, req->OplockLevel);
