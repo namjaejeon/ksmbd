@@ -2618,7 +2618,7 @@ no_more_files:
 }
 
 /**
- * smb2_query_dir() - handler for smb2 query info command
+ * smb2_query_info() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
  *
  * Return:	0 on success, otherwise error

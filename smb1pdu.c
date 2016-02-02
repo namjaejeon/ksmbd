@@ -1743,7 +1743,7 @@ out:
 }
 
 /**
- * smb_nt_create_andx() - ipc pipe close request handler
+ * smb_close_pipe() - ipc pipe close request handler
  * @smb_work:	smb work containing close command
  *
  * Return:	0 on success, otherwise error
@@ -1772,7 +1772,7 @@ int smb_close_pipe(struct smb_work *smb_work)
 }
 
 /**
- * smb_nt_create_andx() - ipc pipe close request handler
+ * smb_close() - ipc pipe close request handler
  * @smb_work:	smb work containing close command
  *
  * Return:	0 on success, otherwise error
