@@ -504,6 +504,10 @@ extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 		unsigned int to_read);
 
 extern void handle_smb_work(struct work_struct *work);
+extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
+		struct cifssrv_sess *sess);
+extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
+			unsigned int tid);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,

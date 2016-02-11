@@ -598,33 +598,6 @@ void smb2_invalidate_prev_session(uint64_t sess_id)
 }
 
 /**
- * get_cifssrv_tcon() - get tcon for a tree id
- * @sess:	session containing tree connect list
- * @tid:	tree id of desired tcon
- *
- * Return:      matching tcon on success, otherwise NULL
- */
-static struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
-			unsigned int tid)
-{
-	struct cifssrv_tcon *tcon;
-	struct list_head *tmp;
-
-	if (sess->tcon_count == 0) {
-		cifssrv_debug("NO tree connected\n");
-		return NULL;
-	}
-
-	list_for_each(tmp, &sess->tcon_list) {
-		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
-		if (tcon->share->tid == tid)
-			return tcon;
-	}
-
-	return NULL;
-}
-
-/**
  * smb2_get_name() - get filename string from on the wire smb format
  * @src:	source buffer
  * @maxlen:	maxlen of source string
@@ -1133,18 +1106,11 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		goto out_err;
 	}
 
-	tcon = kmalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
-	if (!tcon) {
-		cifssrv_err("cannot allocate memory\n");
-		rc = -ENOMEM;
+	tcon = construct_cifssrv_tcon(share, sess);
+	if (PTR_ERR(tcon)) {
+		rc = PTR_ERR(tcon);
 		goto out_err;
 	}
-
-	tcon->share = share;
-	tcon->sess = sess;
-	INIT_LIST_HEAD(&tcon->tcon_list);
-	list_add(&tcon->tcon_list, &sess->tcon_list);
-	sess->tcon_count++;
 
 	rsp->hdr.TreeId = tcon->share->tid;
 

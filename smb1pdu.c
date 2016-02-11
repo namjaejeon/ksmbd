@@ -254,33 +254,6 @@ char *extract_sharename(const char *treename)
 }
 
 /**
- * get_cifssrv_tcon() - get tree connection information for a tree id
- * @sess:	session containing tree list
- * @tid:	match tree connection with tree id
- *
- * Return:      matching tree connection on success, otherwise error
- */
-struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
-			unsigned int tid)
-{
-	struct cifssrv_tcon *tcon;
-	struct list_head *tmp;
-
-	if (sess->tcon_count == 0) {
-		cifssrv_debug("NO tree connected\n");
-		return NULL;
-	}
-
-	list_for_each(tmp, &sess->tcon_list) {
-		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
-		if (tcon->share->tid == tid)
-			return tcon;
-	}
-
-	return NULL;
-}
-
-/**
  * get_smb_session() - get session information for matching uid
  * @server:	TCP server instance of connection
  * @vuid:	match session with this uid
@@ -520,18 +493,11 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 		goto out_err;
 	}
 
-	tcon = kmalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
-	if (tcon == NULL) {
-		cifssrv_err("cannot allocate memory\n");
-		rc = -ENOMEM;
+	tcon = construct_cifssrv_tcon(share, sess);
+	if (PTR_ERR(tcon)) {
+		rc = PTR_ERR(tcon);
 		goto out_err;
 	}
-
-	tcon->share = share;
-	tcon->sess = sess;
-	INIT_LIST_HEAD(&tcon->tcon_list);
-	list_add(&tcon->tcon_list, &sess->tcon_list);
-	sess->tcon_count++;
 
 	rsp->WordCount = 7;
 	rsp->OptionalSupport = 0;
