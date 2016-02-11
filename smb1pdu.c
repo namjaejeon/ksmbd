@@ -5470,18 +5470,39 @@ int smb_set_dispostion(struct smb_work *smb_work)
 	struct smb_com_transaction2_sfi_req *req;
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	char *disp_info;
-	bool del_file;
-	int err = 0;
+	struct cifssrv_file *fp;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
 	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
 	disp_info =  (char *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
-	del_file = *disp_info;
 
-	err = set_del_on_close(server, req->Fid, del_file);
-	if (err)
-		goto out;
+	fp = get_id_from_fidtable(server, req->Fid);
+	if (!fp) {
+		cifssrv_debug("Invalid id for close: %d\n", req->Fid);
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	if (*disp_info) {
+		if (!fp->is_nt_open) {
+			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+			return -EPERM;
+		}
+
+		if (!(fp->filp->f_path.dentry->d_inode->i_mode & S_IWUGO)) {
+			rsp->hdr.Status.CifsError = NT_STATUS_CANNOT_DELETE;
+			return -EPERM;
+		}
+
+		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
+				!is_dir_empty(fp)) {
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_DIRECTORY_NOT_EMPTY;
+			return -ENOTEMPTY;
+		}
+		fp->delete_on_close = 1;
+	}
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
@@ -5503,15 +5524,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 
-out:
-	if (err == -ENOTEMPTY)
-		rsp->hdr.Status.CifsError = NT_STATUS_DIRECTORY_NOT_EMPTY;
-	else if (err == -EPERM)
-		rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
-	else if (err)
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-
-	return err;
+	return 0;
 }
 
 /**

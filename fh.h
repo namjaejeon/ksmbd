@@ -133,8 +133,6 @@ struct cifssrv_file *
 get_id_from_fidtable(struct tcp_server_info *server, uint64_t id);
 int close_id(struct tcp_server_info *server, uint64_t id);
 bool is_dir_empty(struct cifssrv_file *fp);
-int set_del_on_close(struct tcp_server_info *server,
-		unsigned int id, bool disp);
 int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type);
 int close_pipe_id(struct tcp_server_info *server, int id);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);

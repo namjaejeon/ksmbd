@@ -945,39 +945,6 @@ bool is_dir_empty(struct cifssrv_file *fp)
 }
 
 /**
- * set_del_on_close() - set flag to delete file on close
- * @server:	TCP server instance of connection
- * @id:		fid entry
- * @disp:	dispostion set to delete file on close
- *
- * Return:	0 on success, otherwise error
- */
-int set_del_on_close(struct tcp_server_info *server,
-		     unsigned int id, bool disp)
-{
-	struct cifssrv_file *fp;
-
-	fp = get_id_from_fidtable(server, id);
-	if (!fp) {
-		cifssrv_debug("Invalid id for close: %d\n", id);
-		return -EINVAL;
-	}
-
-	if (disp) {
-		if (!fp->is_nt_open)
-			return -EPERM;
-
-		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
-				!is_dir_empty(fp))
-			return -ENOTEMPTY;
-		else
-			fp->delete_on_close = 1;
-	}
-
-	return 0;
-}
-
-/**
  * smb_kern_path() - lookup a file and get path info
  * @name:	name of file for lookup
  * @flags:	lookup flags
