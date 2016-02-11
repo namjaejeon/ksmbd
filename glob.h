@@ -430,6 +430,8 @@ extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct smb_work *smb_work);
 extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
 				char *shortname);
+extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
+
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
