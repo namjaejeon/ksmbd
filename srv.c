@@ -77,7 +77,7 @@ struct smb_hdr *cifssrv_buf_get(void)
 	 */
 	buf_size = sizeof(struct smb2_hdr);
 #endif
-	hdr = mempool_alloc(cifssrv_req_poolp, GFP_NOFS);
+	hdr = mempool_alloc(cifssrv_req_poolp, GFP_NOFS | __GFP_ZERO);
 
 	/* clear the first few header bytes */
 	if (hdr)
@@ -95,7 +95,7 @@ struct smb_hdr *cifssrv_buf_get(void)
 struct smb_hdr *smb_small_buf_get(void)
 {
 	/* No need to memset smallbuf as we will fill hdr anyway */
-	return mempool_alloc(cifssrv_sm_req_poolp, GFP_NOFS);
+	return mempool_alloc(cifssrv_sm_req_poolp, GFP_NOFS | __GFP_ZERO);
 }
 
 /**

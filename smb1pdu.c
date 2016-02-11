@@ -3317,7 +3317,15 @@ int smb_trans2(struct smb_work *smb_work)
 	int err = 0;
 	u16 sub_command = req->SubCommand;
 
-	WARN_ON(req->SetupCount != 1);
+	/* at least one setup word for TRANS2 command
+			MS-CIFS, SMB COM TRANSACTION */
+	if (req->SetupCount < 1) {
+		cifssrv_err("Wrong setup count in SMB_TRANS2"
+				" - indicates wrong request\n");
+		rsp_hdr->Status.CifsError = NT_STATUS_UNSUCCESSFUL;
+		return -EINVAL;
+	}
+
 	switch (sub_command) {
 	case TRANS2_FIND_FIRST:
 		err = find_first(smb_work);
