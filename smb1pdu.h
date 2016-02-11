@@ -90,6 +90,7 @@
 #define TRANS2_SET_PATH_INFORMATION   0x06
 #define TRANS2_QUERY_FILE_INFORMATION 0x07
 #define TRANS2_SET_FILE_INFORMATION   0x08
+#define TRANS2_CREATE_DIRECTORY       0x0d
 #define TRANS2_GET_DFS_REFERRAL       0x10
 #define TRANS2_REPORT_DFS_INCOSISTENCY 0x11
 
@@ -1482,6 +1483,7 @@ extern int set_path_info(struct smb_work *smb_work);
 extern int set_fs_info(struct smb_work *smb_work);
 extern int query_file_info(struct smb_work *smb_work);
 extern int set_file_info(struct smb_work *smb_work);
+extern int create_dir(struct smb_work *smb_work);
 extern int get_dfs_referral(struct smb_work *smb_work);
 
 /* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/

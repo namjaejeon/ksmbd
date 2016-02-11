@@ -3347,6 +3347,10 @@ int smb_trans2(struct smb_work *smb_work)
 		err = set_file_info(smb_work);
 		break;
 
+	case TRANS2_CREATE_DIRECTORY:
+		err = create_dir(smb_work);
+		break;
+
 	case TRANS2_GET_DFS_REFERRAL:
 		err = get_dfs_referral(smb_work);
 		break;
@@ -6032,6 +6036,48 @@ int set_file_info(struct smb_work *smb_work)
 }
 
 /**
+ * create_dir() - trans2 create directory dispatcher
+ * @smb_work:   smb work containing set file info command buffer
+ *
+ * Return:      0 on success, otherwise error
+ */
+int create_dir(struct smb_work *smb_work)
+{
+	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	mode_t mode = S_IALLUGO;
+	char *name;
+	int err;
+
+	/* WordCount should be 15 as per request format */
+	if (req->hdr.WordCount != 15) {
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
+		cifssrv_err("word count mismatch: expected 15 got %d\n",
+				req->hdr.WordCount);
+		return -EINVAL;
+	}
+
+	name = smb_get_name(smb_work->buf + req->ParameterOffset + 4,
+			PATH_MAX, smb_work, false);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
+
+	err = smb_vfs_mkdir(name, mode);
+	if (err) {
+		if (err == -EEXIST)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_COLLISION;
+		else
+			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
+	} else
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+
+	memset(&rsp->hdr.WordCount, 0, 3);
+	smb_put_name(name);
+	return err;
+}
+
+/**
  * get_dfs_referral() - handler for smb dfs referral command
  * @smb_work:	smb work containing get dfs referral command buffer
  *
@@ -6055,7 +6101,7 @@ int smb_mkdir(struct smb_work *smb_work)
 {
 	CREATE_DIRECTORY_REQ *req = (CREATE_DIRECTORY_REQ *)smb_work->buf;
 	CREATE_DIRECTORY_RSP *rsp = (CREATE_DIRECTORY_RSP *)smb_work->rsp_buf;
-	mode_t mode = S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH;
+	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
 
