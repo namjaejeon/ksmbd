@@ -72,6 +72,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_NT_CANCEL]		= { .proc = smb_nt_cancel, },
 	[SMB_COM_NT_RENAME]		= { .proc = smb_nt_rename, },
 	[SMB_COM_WRITE]			= { .proc = smb_write, },
+	[SMB_COM_CHECK_DIRECTORY]	= { .proc = smb_checkdir, },
 };
 
 /**

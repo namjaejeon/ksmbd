@@ -60,6 +60,7 @@
 #define SMB_COM_QUERY_INFORMATION     0x08 /* aka getattr */
 #define SMB_COM_SETATTR               0x09 /* trivial response */
 #define SMB_COM_WRITE                 0x0b
+#define SMB_COM_CHECK_DIRECTORY       0x10 /* trivial response */
 #define SMB_COM_LOCKING_ANDX          0x24 /* trivial response */
 #define SMB_COM_COPY                  0x29 /* trivial rsp, fail filename ignrd*/
 #define SMB_COM_ECHO                  0x2B /* echo request */
@@ -156,6 +157,7 @@
 #define SMB_COM_RENAME                0x07 /* trivial response */
 #define SMB_COM_QUERY_INFORMATION     0x08 /* aka getattr */
 #define SMB_COM_SETATTR               0x09 /* trivial response */
+#define SMB_COM_CHECK_DIRECTORY       0x10 /* trivial response */
 #define SMB_COM_LOCKING_ANDX          0x24 /* trivial response */
 #define SMB_COM_TRANSACTION	      0x25
 #define SMB_COM_COPY                  0x29 /* trivial rsp, fail filename ignrd*/
@@ -1637,6 +1639,18 @@ typedef struct smb_com_create_directory_rsp {
 	__u16 ByteCount;	/* bct = 0 */
 } __attribute__((packed)) CREATE_DIRECTORY_RSP;
 
+typedef struct smb_com_check_directory_req {
+	struct smb_hdr hdr;	/* wct = 0 */
+	__le16 ByteCount;
+	__u8 BufferFormat;	/* 4 = ASCII */
+	unsigned char DirName[1];
+} __attribute__((packed)) CHECK_DIRECTORY_REQ;
+
+typedef struct smb_com_check_directory_rsp {
+	struct smb_hdr hdr;	/* wct = 0 */
+	__u16 ByteCount;	/* bct = 0 */
+} __attribute__((packed)) CHECK_DIRECTORY_RSP;
+
 typedef struct smb_com_delete_directory_req {
 	struct smb_hdr hdr;     /* wct = 0 */
 	__le16 ByteCount;
@@ -1911,4 +1925,5 @@ extern int smb_closedir(struct smb_work *smb_work);
 extern int smb_open_andx(struct smb_work *smb_work);
 extern int smb_write(struct smb_work *smb_work);
 extern int smb_setattr(struct smb_work *smb_work);
+extern int smb_checkdir(struct smb_work *smb_work);
 #endif /* __CIFSSRV_SMB1PDU_H */

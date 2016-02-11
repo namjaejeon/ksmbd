@@ -6135,6 +6135,78 @@ out:
 }
 
 /**
+ * smb_checkdir() - handler to verify whether a specified
+ * path resolves to a valid directory or not
+ *
+ * @smb_work:   smb work containing creat directory command buffer
+ *
+ * Return:      0 on success, otherwise error
+ */
+int smb_checkdir(struct smb_work *smb_work)
+{
+	CHECK_DIRECTORY_REQ *req = (CHECK_DIRECTORY_REQ *)smb_work->buf;
+	CHECK_DIRECTORY_RSP *rsp = (CHECK_DIRECTORY_RSP *)smb_work->rsp_buf;
+	struct path path;
+	struct kstat stat;
+	char *name;
+	int err;
+
+	name = smb_get_name(req->DirName, PATH_MAX, smb_work, false);
+	if (IS_ERR(name))
+		return PTR_ERR(name);
+
+	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	if (err) {
+		if (err == -ENOENT) {
+			/*
+			 * If the parent directory is valid but not the
+			 * last component - then returns
+			 * NT_STATUS_OBJECT_NAME_NOT_FOUND
+			 * for that case and NT_STATUS_OBJECT_PATH_NOT_FOUND
+			 * if the path is invalid.
+			 */
+			if (smb_kern_path(name, LOOKUP_PARENT, &path,
+					req->hdr.Flags & SMBFLG_CASELESS))
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_PATH_NOT_FOUND;
+			else
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_NAME_NOT_FOUND;
+
+		} else if (err == -ENOMEM)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_INSUFFICIENT_RESOURCES;
+		else if (err == -EACCES)
+			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+		else if (err == -EIO)
+			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
+		else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_PATH_SYNTAX_BAD;
+
+		cifssrv_debug("look up failed err %d\n", err);
+		goto out;
+	}
+
+	generic_fillattr(path.dentry->d_inode, &stat);
+
+	if (!S_ISDIR(stat.mode)) {
+		rsp->hdr.Status.CifsError = NT_STATUS_NOT_A_DIRECTORY;
+		goto out;
+	}
+
+	/* checkdir success, return response to server */
+	rsp->hdr.Status.CifsError = NT_STATUS_OK;
+	rsp->hdr.WordCount = 0;
+	rsp->ByteCount = 0;
+
+out:
+	path_put(&path);
+	smb_put_name(name);
+	return err;
+}
+
+/**
  * smb_rmdir() - handler for smb rmdir
  * @smb_work:	smb work containing delete directory command buffer
  *
