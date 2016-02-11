@@ -55,10 +55,6 @@ struct fidtable_desc global_fidtable;
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
 unsigned int alloc_roundup_size = 1048576;
 
-#ifndef CONFIG_CIFS_SMB2_SERVER
-static int is_smb2_rsp(struct smb_work *smb_work) { return 0; };
-#endif
-
 /**
  * cifssrv_buf_get() - get large response buffer
  *

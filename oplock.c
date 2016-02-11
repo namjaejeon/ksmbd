@@ -21,7 +21,9 @@
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
+#ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
+#endif
 #include "oplock.h"
 
 bool oplocks_enable = true;

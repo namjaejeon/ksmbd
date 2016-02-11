@@ -200,8 +200,6 @@ struct sdesc {
 	char ctx[];
 };
 
-struct smb_work;
-
 struct smb_version_values {
 	char            *version_string;
 	__u16           protocol_id;
@@ -220,19 +218,6 @@ struct smb_version_values {
 	__u16           signing_enabled;
 	__u16           signing_required;
 	size_t          create_lease_size;
-};
-
-struct smb_version_ops {
-	int (*get_cmd_val)(struct smb_work *swork);
-	int (*init_rsp_hdr)(struct smb_work *swork);
-	void (*set_rsp_status)(struct smb_work *swork, unsigned int err);
-	int (*allocate_rsp_buf)(struct smb_work *smb_work);
-	void (*set_rsp_credits)(struct smb_work *swork);
-	int (*check_user_session)(struct smb_work *work);
-};
-
-struct smb_version_cmds {
-	int (*proc)(struct smb_work *swork);
 };
 
 struct cifssrv_stats {
@@ -349,6 +334,20 @@ struct smb_work {
 	bool send_no_response:1;	/* no response for cancelled request */
 	bool added_in_request_list:1;	/* added in server->requests list */
 };
+
+struct smb_version_ops {
+	int (*get_cmd_val)(struct smb_work *swork);
+	int (*init_rsp_hdr)(struct smb_work *swork);
+	void (*set_rsp_status)(struct smb_work *swork, unsigned int err);
+	int (*allocate_rsp_buf)(struct smb_work *smb_work);
+	void (*set_rsp_credits)(struct smb_work *swork);
+	int (*check_user_session)(struct smb_work *work);
+};
+
+struct smb_version_cmds {
+	int (*proc)(struct smb_work *swork);
+};
+
 
 #define cifssrv_debug(fmt, ...)					\
 	do {							\
@@ -476,28 +475,16 @@ int smb_vfs_readdir(struct file *file, filldir_t filler, void *buf);
 extern void init_smb1_server(struct tcp_server_info *server);
 
 /* smb2ops functions */
-#ifdef CONFIG_CIFS_SMB2_SERVER
 extern void init_smb2_0_server(struct tcp_server_info *server);
 extern void init_smb2_1_server(struct tcp_server_info *server);
 extern void init_smb3_0_server(struct tcp_server_info *server);
 extern int is_smb2_neg_cmd(struct smb_work *smb_work);
+extern bool is_chained_smb2_message(struct smb_work *smb_work);
+extern void init_smb2_neg_rsp(struct smb_work *smb_work);
 extern int is_smb2_rsp(struct smb_work *smb_work);
-#else
-static inline void init_smb2_0_server(struct tcp_server_info *server) { }
-static inline void init_smb2_1_server(struct tcp_server_info *server) { }
-static inline void init_smb3_0_server(struct tcp_server_info *server) { }
-static inline int is_smb2_neg_cmd(struct smb_work *smb_work) { return 0; }
-static inline bool is_chained_smb2_message(struct smb_work *smb_work)
-{
-	return 0;
-}
 
-static inline void init_smb2_neg_rsp(struct smb_work *smb_work)
-{
-}
-
-#endif
-
+struct cifssrv_sess;
+struct cifssrv_share;
 /* functions */
 extern int connect_tcp_sess(struct socket *sock);
 extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
@@ -518,19 +505,12 @@ extern int smb_send_rsp(struct smb_work *smb_work);
 bool server_unresponsive(struct tcp_server_info *server);
 /* trans2 functions */
 
-int smb_trans2(struct smb_work *smb_work);
 int query_fs_info(struct smb_work *smb_work);
 void create_trans2_reply(struct smb_work *smb_work, __u16 count);
-int smb_nt_create_andx(struct smb_work *smb_work);
 char *convert_to_unix_name(char *name, int tid);
 void convert_delimiter(char *path);
 int find_first(struct smb_work *smb_work);
 int find_next(struct smb_work *smb_work);
-int smb_close(struct smb_work *smb_work);
-int smb_read_andx(struct smb_work *smb_work);
-int smb_write_andx(struct smb_work *smb_work);
-int smb_echo(struct smb_work *smb_work);
-int smb_flush(struct smb_work *smb_work);
 int smb_populate_readdir_entry(struct tcp_server_info *server, int info_level,
 		char **p, int reclen, char *namestr, int *space_remaining,
 		int *last_entry_offset, struct kstat *kstat, int *data_count,

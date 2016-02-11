@@ -21,9 +21,12 @@
 #ifndef __CIFSSRV_EXPORT_H
 #define __CIFSSRV_EXPORT_H
 
-#include "glob.h"
 #include "smb1pdu.h"
+#include "ntlmssp.h"
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
+#endif
 
 #define SMB_PORT		445
 #define MAX_CONNECTIONS		64
@@ -218,20 +221,6 @@ int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		__u8 *rsp, int BufferOffset,
 		struct tcp_server_info *server);
+extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 
-static inline struct cifssrv_usr *cifssrv_is_user_present(char *name)
-{
-	struct cifssrv_usr *usr, *tmp;
-
-	if (!name)
-		return NULL;
-
-	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
-		cifssrv_debug("comparing with user %s\n", usr->name);
-		if (!strcmp(name, usr->name))
-			return usr;
-	}
-
-	return NULL;
-}
 #endif /* __CIFSSRV_EXPORT_H */

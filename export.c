@@ -399,6 +399,21 @@ struct cifssrv_share *find_matching_share(__u16 tid)
 	return NULL;
 }
 
+struct cifssrv_usr *cifssrv_is_user_present(char *name)
+{
+	struct cifssrv_usr *usr, *tmp;
+
+	if (!name)
+		return NULL;
+
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
+		cifssrv_debug("comparing with user %s\n", usr->name);
+		if (!strcmp(name, usr->name))
+			return usr;
+	}
+	return NULL;
+}
+
 /**
  * check_sharepath() - check if a share path is already exported
  * @path:	share path to check

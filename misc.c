@@ -336,3 +336,26 @@ int negotiate_dialect(void *buf)
 	}
 	return BAD_PROT_ID;
 }
+
+#ifndef CONFIG_CIFS_SMB2_SERVER
+void init_smb2_0_server(struct tcp_server_info *server) { }
+void init_smb2_1_server(struct tcp_server_info *server) { }
+void init_smb3_0_server(struct tcp_server_info *server) { }
+int is_smb2_neg_cmd(struct smb_work *smb_work)
+{
+	return 0;
+}
+
+bool is_chained_smb2_message(struct smb_work *smb_work)
+{
+	return 0;
+}
+
+void init_smb2_neg_rsp(struct smb_work *smb_work)
+{
+}
+int is_smb2_rsp(struct smb_work *smb_work)
+{
+	return 0;
+};
+#endif
