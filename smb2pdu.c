@@ -2598,8 +2598,10 @@ no_more_files:
 		free_page((unsigned long)(dirdesc_fp->readdir_data.dirent));
 		dirdesc_fp->readdir_data.dirent = NULL;
 	} else {
-		dirdesc_fp->readdir_data.used = r_data.used;
-		dirdesc_fp->readdir_data.full = r_data.full;
+		if (dirdesc_fp) {
+			dirdesc_fp->readdir_data.used = r_data.used;
+			dirdesc_fp->readdir_data.full = r_data.full;
+		}
 	}
 
 	if (smb_work->next_smb2_rcv_hdr_off)

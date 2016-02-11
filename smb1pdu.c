@@ -5226,7 +5226,8 @@ int smb_populate_readdir_entry(struct tcp_server_info *server, int info_level,
 		dinfo->ChangeTime = cpu_to_le64(
 				cifs_UnixTimeToNT(kstat->mtime));
 		dinfo->EndOfFile = cpu_to_le64(kstat->size);
-		dinfo->AllocationSize = cpu_to_le64(kstat->blksize << 9);
+		dinfo->AllocationSize =
+			cpu_to_le64(((__le64)kstat->blksize) << 9);
 		dinfo->ExtFileAttributes = S_ISDIR(kstat->mode) ?
 			ATTR_DIRECTORY : ATTR_NORMAL;
 		dinfo->FileNameLength = cpu_to_le32(name_len);
