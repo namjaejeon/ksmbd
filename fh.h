@@ -79,6 +79,7 @@ struct cifssrv_file {
 	/* oplock info */
 	struct ofile_info *ofile;
 	bool delete_on_close;
+	bool is_nt_open;
 	bool lease_granted;
 	char LeaseKey[16];
 	bool is_durable;

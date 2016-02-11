@@ -893,8 +893,12 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		goto err_out;
 	}
 
-	if (option & FILE_DELETE_ON_CLOSE_LE)
-		fp->delete_on_close = 1;
+	if (rcv_hdr->Command == SMB_COM_NT_CREATE_ANDX) {
+		if (option & FILE_DELETE_ON_CLOSE_LE)
+			fp->delete_on_close = 1;
+
+		fp->is_nt_open = 1;
+	}
 
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode))
 		*oplock = OPLOCK_NONE;
@@ -967,6 +971,9 @@ int set_del_on_close(struct tcp_server_info *server,
 	}
 
 	if (disp) {
+		if (!fp->is_nt_open)
+			return -EPERM;
+
 		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
 				!is_dir_empty(fp))
 			return -ENOTEMPTY;

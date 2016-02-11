@@ -5490,6 +5490,8 @@ int smb_set_dispostion(struct smb_work *smb_work)
 out:
 	if (err == -ENOTEMPTY)
 		rsp->hdr.Status.CifsError = NT_STATUS_DIRECTORY_NOT_EMPTY;
+	else if (err == -EPERM)
+		rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
 	else if (err)
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 
