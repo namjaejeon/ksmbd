@@ -64,6 +64,17 @@ int get_smb_cmd_val(struct smb_work *smb_work)
 }
 
 /**
+ * is_smbreq_unicode() - check if the smb command is request is unicode or not
+ * @hdr:	pointer to smb_hdr in the the request part
+ *
+ * Return: check flags and return true if request is unicode, else false
+ */
+static inline int is_smbreq_unicode(struct smb_hdr *hdr)
+{
+	return hdr->Flags2 & SMBFLG2_UNICODE;
+}
+
+/**
  * set_smb_rsp_status() - set error type in smb response header
  * @smb_work:	smb work containing smb response header
  * @err:	error code to set in response
@@ -589,7 +600,7 @@ int smb_rename(struct smb_work *smb_work)
 	RENAME_REQ *req = (RENAME_REQ *)smb_work->buf;
 	RENAME_RSP *rsp = (RENAME_RSP *)smb_work->rsp_buf;
 	struct tcp_server_info *server = smb_work->server;
-	bool is_unicode = req->hdr.Flags2 & SMBFLG2_UNICODE;
+	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	char *abs_oldname, *abs_newname, *tmp_name = NULL;
 	int oldname_len;
 	struct path path;
@@ -1313,7 +1324,7 @@ int create_andx_pipe(struct smb_work *smb_work)
 	char *name;
 
 	/* one byte pad before unicode file name start */
-	if (req->hdr.Flags2 & SMBFLG2_UNICODE)
+	if (is_smbreq_unicode(&req->hdr))
 		name = smb_strndup_from_utf16(req->fileName + 1, 256, 1,
 				smb_work->server->local_nls);
 	else
@@ -1463,7 +1474,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		return -ENOMEM;
 	}
 
-	if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
+	if (is_smbreq_unicode(&req->hdr)) {
 		memcpy(src, req->fileName + 1, req->NameLength);
 		is_unicode = true;
 
@@ -2864,7 +2875,7 @@ int smb_readlink(struct smb_work *smb_work, struct path *path)
 	memset(ptr, 0, 4);
 	ptr += 4;
 
-	if (req->hdr.Flags2 & SMBFLG2_UNICODE) {
+	if (is_smbreq_unicode(&req->hdr)) {
 		name_len = smb_strtoUTF16((__le16 *)ptr,
 				buf, PATH_MAX, smb_work->server->local_nls);
 		name_len++;     /* trailing null */
@@ -3619,7 +3630,7 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	bool is_unicode = req_hdr->Flags2 & SMBFLG2_UNICODE;
+	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *wild_card_pos;
 
@@ -3678,7 +3689,7 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	bool is_unicode = req_hdr->Flags2 & SMBFLG2_UNICODE;
+	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *wild_card_pos, *pattern_pos, *pattern = NULL;
 	int pattern_len;
@@ -6327,15 +6338,19 @@ int smb_nt_rename(struct smb_work *smb_work)
 {
 	NT_RENAME_REQ *req = (NT_RENAME_REQ *)smb_work->buf;
 	RENAME_RSP *rsp = (RENAME_RSP *)smb_work->rsp_buf;
-	bool is_unicode = req->hdr.Flags2 & SMBFLG2_UNICODE;
 	char *oldname, *newname;
 	int oldname_len, err;
+
+	if (le16_to_cpu(req->Flags) != CREATE_HARD_LINK) {
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
 
 	oldname = smb_get_name(req->OldFileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(oldname))
 		return PTR_ERR(oldname);
 
-	if (is_unicode) {
+	if (is_smbreq_unicode(&req->hdr)) {
 		oldname_len = smb_utf16_bytes((__le16 *)req->OldFileName,
 				PATH_MAX, smb_work->server->local_nls);
 		oldname_len += nls_nullsize(smb_work->server->local_nls);
@@ -6348,23 +6363,17 @@ int smb_nt_rename(struct smb_work *smb_work)
 	newname = smb_get_name(&req->OldFileName[oldname_len + 2],
 			PATH_MAX, smb_work, false);
 	if (IS_ERR(newname)) {
-		err = PTR_ERR(newname);
-		goto out;
+		smb_put_name(oldname);
+		return PTR_ERR(newname);
 	}
 	cifssrv_debug("oldname %s, newname %s, oldname_len %d, unicode %d\n",
-			oldname, newname, oldname_len, is_unicode);
-
-	if (le16_to_cpu(req->Flags) != CREATE_HARD_LINK) {
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		err = -EINVAL;
-		goto out;
-	}
+			oldname, newname, oldname_len,
+			is_smbreq_unicode(&req->hdr));
 
 	err = smb_vfs_link(oldname, newname);
 	if (err < 0)
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SAME_DEVICE;
 
-out:
 	smb_put_name(newname);
 	smb_put_name(oldname);
 	return err;
@@ -6433,7 +6442,7 @@ int smb_creat_symlink(struct smb_work *smb_work)
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
 	TRANSACTION2_SPI_RSP *rsp = (TRANSACTION2_SPI_RSP *)smb_work->rsp_buf;
 	char *name, *symname, *name_offset;
-	bool is_unicode = req->hdr.Flags2 & SMBFLG2_UNICODE;
+	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	int err;
 
 	symname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
@@ -6653,7 +6662,7 @@ int smb_open_andx(struct smb_work *smb_work)
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
-	if (req->hdr.Flags2 & SMBFLG2_UNICODE)
+	if (is_smbreq_unicode(&req->hdr))
 		name = smb_get_name(req->fileName + 1, PATH_MAX,
 				smb_work, false);
 	else
