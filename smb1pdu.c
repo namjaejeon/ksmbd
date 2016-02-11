@@ -1413,6 +1413,14 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		return -EINVAL;
 	}
 
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
+		if (le32_to_cpu(req->DesiredAccess) &&
+				!(le32_to_cpu(req->DesiredAccess) & DELETE)) {
+			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+			return -EPERM;
+		}
+	}
+
 	if (le32_to_cpu(req->CreateOptions) & FILE_DIRECTORY_FILE_LE) {
 		cifssrv_debug("GOT Create Directory via CREATE ANDX\n");
 		create_directory = 1;
