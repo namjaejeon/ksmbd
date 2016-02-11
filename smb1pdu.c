@@ -1398,6 +1398,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	char *root;
 	bool is_unicode;
 	bool is_relative_root = false;
+	struct cifssrv_file *fp;
 
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
@@ -1616,6 +1617,15 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (err)
 		goto free_path;
 
+	fp = get_id_from_fidtable(server, fid);
+	if (fp) {
+		if (le32_to_cpu(req->DesiredAccess) & DELETE)
+			fp->is_nt_open = 1;
+		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
+				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
+			fp->delete_on_close = 1;
+	}
+
 	/* open success, send back response */
 	err = vfs_getattr(&path, &stat);
 	if (err) {
@@ -1680,16 +1690,14 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	rsp->DeviceState = 0;
 	rsp->DirectoryFlag = S_ISDIR(stat.mode) ? 1 : 0;
 	if (extended_reply) {
-		struct cifssrv_file *tmpfp;
 		struct inode *inode;
 		rsp->hdr.WordCount = 50;
 		memset(&ext_rsp->VolId, 0, 16);
-		tmpfp = get_id_from_fidtable(server, fid);
-		if (tmpfp) {
-			inode = file_inode(tmpfp->filp);
+		if (fp) {
+			inode = file_inode(fp->filp);
 			ext_rsp->fid = inode->i_ino;
 			if (S_ISDIR(inode->i_mode) ||
-			    (tmpfp->filp->f_mode & FMODE_WRITE))
+			    (fp->filp->f_mode & FMODE_WRITE))
 				ext_rsp->MaxAccess = FILE_GENERIC_ALL;
 			else
 				ext_rsp->MaxAccess = FILE_GENERIC_READ|

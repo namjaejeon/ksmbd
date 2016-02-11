@@ -893,13 +893,6 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		goto err_out;
 	}
 
-	if (rcv_hdr->Command == SMB_COM_NT_CREATE_ANDX) {
-		if (option & FILE_DELETE_ON_CLOSE_LE)
-			fp->delete_on_close = 1;
-
-		fp->is_nt_open = 1;
-	}
-
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode))
 		*oplock = OPLOCK_NONE;
 
