@@ -646,6 +646,29 @@ int pipe_data_copy(struct tcp_server_info *server, char *buf)
 }
 
 /**
+ * dcerpc_header_init() - initialize the header for rpc response
+ * @header: pointer to header in response packet
+ * @packet_type : DCE/RPC Packet type
+ * @flags : DCE/RPC flags
+ * @call_id: call_id from RPC request
+ *
+ */
+void dcerpc_header_init(RPC_HDR *header, int packet_type,
+				int flags, int call_id)
+{
+	header->major = RPC_MAJOR_VER;
+	header->minor = RPC_MINOR_VER;
+	header->pkt_type = packet_type;
+	header->flags = flags;
+	header->pack_type[0] = 0x10;
+	header->pack_type[1] = 0;
+	header->pack_type[2] = 0;
+	header->pack_type[3] = 0;
+	header->auth_len = 0;
+	header->call_id  = call_id;
+}
+
+/**
  * init_srvsvc_share_info1() - initialize srvsvc pipe share information
  * @server:		TCP server instance of connection
  * @rpc_request_req:	rpc request
@@ -692,19 +715,10 @@ static int init_srvsvc_share_info1(struct tcp_server_info *server,
 
 	rpc_request_rsp = &sharectr->rpc_request_rsp;
 
-	rpc_request_rsp->hdr.major = 5;
-	rpc_request_rsp->hdr.minor = 0;
-	rpc_request_rsp->hdr.pkt_type = 2;
-	rpc_request_rsp->hdr.flags = 0x3;
-	rpc_request_rsp->hdr.pack_type[0] = 0x10;
-	rpc_request_rsp->hdr.pack_type[1] = 0;
-	rpc_request_rsp->hdr.pack_type[2] = 0;
-	rpc_request_rsp->hdr.pack_type[3] = 0;
-	rpc_request_rsp->hdr.auth_len = 0;
-	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
-
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
 	rpc_request_rsp->context_id = rpc_request_req->context_id;
-	rpc_request_rsp->cancel_count = 0;
 
 	sharectr->info.info_level = cpu_to_le32(1);
 	sharectr->info.switch_value = cpu_to_le32(1);
@@ -885,19 +899,10 @@ int init_srvsvc_share_info2(struct tcp_server_info *server,
 
 	rpc_request_rsp = &shareinfo->rpc_request_rsp;
 
-	rpc_request_rsp->hdr.major = 5;
-	rpc_request_rsp->hdr.minor = 0;
-	rpc_request_rsp->hdr.pkt_type = 2;
-	rpc_request_rsp->hdr.flags = 0x3;
-	rpc_request_rsp->hdr.pack_type[0] = 0x10;
-	rpc_request_rsp->hdr.pack_type[1] = 0;
-	rpc_request_rsp->hdr.pack_type[2] = 0;
-	rpc_request_rsp->hdr.pack_type[3] = 0;
-	rpc_request_rsp->hdr.auth_len = 0;
-	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
-
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
 	rpc_request_rsp->context_id = rpc_request_req->context_id;
-	rpc_request_rsp->cancel_count = 0;
 
 	shareinfo->status = cpu_to_le32(WERR_INVALID_NAME);
 	shareinfo->info_level = cpu_to_le32(1);
@@ -1058,19 +1063,10 @@ int init_wkssvc_share_info2(struct tcp_server_info *server,
 
 	rpc_request_rsp = &shareinfo->rpc_request_rsp;
 
-	rpc_request_rsp->hdr.major = 5;
-	rpc_request_rsp->hdr.minor = 0;
-	rpc_request_rsp->hdr.pkt_type = 2;
-	rpc_request_rsp->hdr.flags = 0x3;
-	rpc_request_rsp->hdr.pack_type[0] = 0x10;
-	rpc_request_rsp->hdr.pack_type[1] = 0;
-	rpc_request_rsp->hdr.pack_type[2] = 0;
-	rpc_request_rsp->hdr.pack_type[3] = 0;
-	rpc_request_rsp->hdr.auth_len = 0;
-	rpc_request_rsp->hdr.call_id  = rpc_request_req->hdr.call_id;
-
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
 	rpc_request_rsp->context_id = rpc_request_req->context_id;
-	rpc_request_rsp->cancel_count = 0;
 
 	shareinfo->info_level = cpu_to_le32(100);
 	shareinfo->refid = cpu_to_le32(1);
@@ -1320,18 +1316,11 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	}
 
 	/* Initialize header */
-	rpc_bind_rsp->hdr.major = 5;
-	rpc_bind_rsp->hdr.minor = 0;
-	rpc_bind_rsp->hdr.pkt_type = 12;
-	rpc_bind_rsp->hdr.flags = 0x3;
-	rpc_bind_rsp->hdr.pack_type[0] = 0x10;
-	rpc_bind_rsp->hdr.pack_type[1] = 0;
-	rpc_bind_rsp->hdr.pack_type[2] = 0;
-	rpc_bind_rsp->hdr.pack_type[3] = 0;
-	rpc_bind_rsp->hdr.auth_len = 0;
-	rpc_bind_rsp->hdr.call_id  = rpc_bind_req->hdr.call_id;
+	dcerpc_header_init(&rpc_bind_rsp->hdr, RPC_BINDACK,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_bind_req->hdr.call_id);
 	cifssrv_debug("incoming call id = %u frag_len = %u\n",
-		      rpc_bind_req->hdr.call_id, rpc_bind_req->hdr.frag_len);
+			rpc_bind_req->hdr.call_id, rpc_bind_req->hdr.frag_len);
 
 	/* Update bind info */
 	rpc_bind_rsp->bind_info.max_tsize = rpc_bind_req->max_tsize;

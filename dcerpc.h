@@ -30,8 +30,14 @@
 #define WERR_ACCESS_DENIED	0x00000005
 #define WERR_INVALID_NAME	0x0000007B
 
-/* DCE/RPC packet types */
+#define RPC_MAJOR_VER	0x5
+#define RPC_MINOR_VER	0x0
 
+/* DCE/RPC Flags */
+#define RPC_FLAG_FIRST	0x01
+#define RPC_FLAG_LAST	0x02
+
+/* DCE/RPC packet types */
 enum RPC_PKT_TYPE {
 	RPC_REQUEST	= 0x00,    /* Ordinary request. */
 	RPC_PING	= 0x01,
@@ -316,6 +322,8 @@ typedef struct netwkstageinfo10 {
 int process_rpc(struct tcp_server_info *server, char *data);
 int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size);
 
+void dcerpc_header_init(RPC_HDR *header, int packet_type,
+					int flags, int call_id);
 int rpc_bind(struct tcp_server_info *server, char *data);
 int rpc_request(struct tcp_server_info *server, char *data);
 int rpc_read_bind_data(struct tcp_server_info *server, char *data);
