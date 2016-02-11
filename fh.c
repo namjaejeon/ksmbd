@@ -1073,7 +1073,7 @@ int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 
 	id = cifssrv_get_unused_id(&server->fidtable);
 	if (id < 0)
-		return -EINVAL;
+		return -EMFILE;
 
 	server->pipe_desc = kzalloc(sizeof(struct cifssrv_pipe), GFP_KERNEL);
 	if (!server->pipe_desc)

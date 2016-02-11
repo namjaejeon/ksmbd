@@ -1336,14 +1336,8 @@ int create_andx_pipe(struct smb_work *smb_work)
 		return PTR_ERR(name);
 	}
 
-	if ((strcmp(name, "\\srvsvc") == 0) ||
-					(strcmp(name, "\\wkssvc") == 0)) {
-		cifssrv_debug("pipe: %s\n", name);
-		pipe_type = SRVSVC;
-	} else if (strcmp(name, "\\winreg") == 0) {
-		cifssrv_debug("pipe: %s\n", name);
-		pipe_type = WINREG;
-	} else {
+	pipe_type = get_pipe_type(name);
+	if (pipe_type == INVALID_PIPE) {
 		cifssrv_debug("pipe %s not supported\n", name);
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
 		return -EOPNOTSUPP;
@@ -1352,8 +1346,15 @@ int create_andx_pipe(struct smb_work *smb_work)
 
 	/* Assigning temporary fid for pipe */
 	id = get_pipe_id(smb_work->server, pipe_type);
-	if (id < 0)
+	if (id < 0) {
+		if (id == -EMFILE)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_TOO_MANY_OPENED_FILES;
+		else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_NO_MEMORY;
 		return id;
+	}
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 42;
@@ -1377,8 +1378,8 @@ int create_andx_pipe(struct smb_work *smb_work)
 	rsp->GuestAccess = cpu_to_le32(FILE_GENERIC_READ);
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (100 + rsp->ByteCount));
+	kfree(name);
 	return 0;
-
 }
 
 /**

@@ -101,6 +101,13 @@ enum cifssrv_pipe_type {
 	WINREG	=	2,
 };
 
+struct cifssrv_pipe_table {
+	char pipename[32];
+	unsigned int pipetype;
+};
+
+#define INVALID_PIPE   0xFFFFFFFF
+
 struct cifssrv_pipe {
 	int id;
 	char *data;
@@ -134,6 +141,7 @@ get_id_from_fidtable(struct tcp_server_info *server, uint64_t id);
 int close_id(struct tcp_server_info *server, uint64_t id);
 bool is_dir_empty(struct cifssrv_file *fp);
 int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type);
+unsigned int get_pipe_type(char *pipename);
 int close_pipe_id(struct tcp_server_info *server, int id);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);

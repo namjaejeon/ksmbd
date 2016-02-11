@@ -22,6 +22,34 @@
 #include"export.h"
 #include"winreg.h"
 
+struct cifssrv_pipe_table cifssrv_pipes[] = {
+	{"srvsvc", SRVSVC},
+	{"wkssvc", SRVSVC},
+	{"winreg", WINREG},
+};
+unsigned int npipes = sizeof(cifssrv_pipes)/sizeof(cifssrv_pipes[0]);
+
+/**
+ * get_pipe_type() - get the type of the pipe from the string name
+ * @name:      string name for representation of pipe, need to be searched
+ *             in the supported table
+ * Return:     the pipe type number if found in the table,
+ *             else invalid pipe type
+ */
+unsigned int get_pipe_type(char *pipename)
+{
+	int i;
+	unsigned int pipetype = INVALID_PIPE;
+
+	for (i = 0; i < npipes; i++) {
+		if (!strcmp(cifssrv_pipes[i].pipename, pipename)) {
+			pipetype = cifssrv_pipes[i].pipetype;
+			break;
+		}
+	}
+	return pipetype;
+}
+
 /**
  * process_rpc() - process a RPC request
  * @server:     TCP server instance of connection

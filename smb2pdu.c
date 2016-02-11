@@ -1370,23 +1370,19 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	struct smb2_create_req *req;
 	int id;
 	unsigned int pipe_type;
-	char *name =  NULL;
+	char *name;
 
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
 	req = (struct smb2_create_req *)smb_work->buf;
 	name = smb_strndup_from_utf16(req->Buffer, req->NameLength, 1,
 				smb_work->server->local_nls);
+	if (IS_ERR(name)) {
+		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+		return PTR_ERR(name);
+	}
 
-	if (strcmp(name, "winreg") == 0) {
-		cifssrv_debug("pipe: %s\n", name);
-		pipe_type = WINREG;
-	} else if (strcmp(name, "srvsvc") == 0) {
-		cifssrv_debug("pipe: %s\n", name);
-		pipe_type = SRVSVC;
-	} else if (strcmp(name, "wkssvc") == 0) {
-		cifssrv_debug("pipe: %s\n", name);
-		pipe_type = SRVSVC;
-	} else {
+	pipe_type = get_pipe_type(name);
+	if (pipe_type == INVALID_PIPE) {
 		cifssrv_debug("pipe %s not supported\n", name);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return -EOPNOTSUPP;
@@ -1395,9 +1391,13 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	/* Assigning temporary fid for pipe */
 	id = get_pipe_id(smb_work->server, pipe_type);
 	if (id < 0) {
-		cifssrv_debug("id is not correct\n");
+		if (id == -EMFILE)
+			rsp->hdr.Status = NT_STATUS_TOO_MANY_OPENED_FILES;
+		else
+			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		return id;
 	}
+
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
 	rsp->Reserved = 0;
