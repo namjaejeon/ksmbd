@@ -6120,16 +6120,13 @@ int smb_mkdir(struct smb_work *smb_work)
 	err = smb_vfs_mkdir(name, mode);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
-		goto out;
+	} else {
+		/* mkdir success, return response to server */
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		rsp->hdr.WordCount = 0;
+		rsp->ByteCount = 0;
 	}
 
-	/* mkdir success, return response to server */
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
-	rsp->hdr.WordCount = 0;
-	rsp->ByteCount = 0;
-	return err;
-
-out:
 	smb_put_name(name);
 	return err;
 }
@@ -6237,16 +6234,13 @@ int smb_rmdir(struct smb_work *smb_work)
 					NT_STATUS_DIRECTORY_NOT_EMPTY;
 		else
 			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
-		goto out;
+	} else {
+		/* rmdir success, return response to server */
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		rsp->hdr.WordCount = 0;
+		rsp->ByteCount = 0;
 	}
 
-	/* mkdir success, return response to server */
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
-	rsp->hdr.WordCount = 0;
-	rsp->ByteCount = 0;
-	return err;
-
-out:
 	smb_put_name(name);
 	return err;
 }
@@ -6276,15 +6270,12 @@ int smb_unlink(struct smb_work *smb_work)
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_OBJECT_NAME_NOT_FOUND;
-		goto out;
+	} else {
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		rsp->hdr.WordCount = 0;
+		rsp->ByteCount = 0;
 	}
 
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
-	rsp->hdr.WordCount = 0;
-	rsp->ByteCount = 0;
-	return err;
-
-out:
 	smb_put_name(name);
 	return err;
 }
