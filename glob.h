@@ -54,6 +54,7 @@
 #include "unicode.h"
 #include "fh.h"
 #include <crypto/hash.h>
+#include "smberr.h"
 
 extern struct kmem_cache *cifssrv_req_cachep;
 extern mempool_t *cifssrv_req_poolp;

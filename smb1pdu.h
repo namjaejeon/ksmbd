@@ -1727,6 +1727,10 @@ typedef struct smb_com_findclose_req {
 #define SMBOPEN_DENY_WRITE    0x0020
 #define SMBOPEN_DENY_READ     0x0030
 #define SMBOPEN_DENY_NONE     0x0040
+#define SMBOPEN_SHARING_MODE  (SMBOPEN_DENY_ALL |	\
+				SMBOPEN_DENY_WRITE |	\
+				SMBOPEN_DENY_READ |	\
+				SMBOPEN_DENY_NONE)
 #define SMBOPEN_READ          0x0000
 #define SMBOPEN_WRITE         0x0001
 #define SMBOPEN_READWRITE     0x0002

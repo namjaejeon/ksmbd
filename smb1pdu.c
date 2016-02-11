@@ -1563,7 +1563,34 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (file_present && !open_directory && S_ISDIR(stat.mode)) {
 		cifssrv_debug("Can't open dir %s, request is to open file\n",
 			       conv_name);
-		rsp->hdr.Status.CifsError = NT_STATUS_FILE_IS_A_DIRECTORY;
+		if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
+					SMBFLG2_ERR_STATUS)) {
+			rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+			rsp->hdr.Status.DosError.Error = ERRfilexists;
+		} else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_COLLISION;
+
+		memset(&rsp->hdr.WordCount, 0, 3);
+
+		goto free_path;
+	}
+
+	if (file_present && (open_directory || create_directory) &&
+			!S_ISDIR(stat.mode)) {
+		cifssrv_debug("Can't open file %s, request is to open dir\n",
+				conv_name);
+		if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
+					SMBFLG2_ERR_STATUS)) {
+			ntstatus_to_dos(NT_STATUS_NOT_A_DIRECTORY,
+					&rsp->hdr.Status.DosError.ErrorClass,
+					&rsp->hdr.Status.DosError.Error);
+		} else
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_NOT_A_DIRECTORY;
+
+		memset(&rsp->hdr.WordCount, 0, 3);
+
 		goto free_path;
 	}
 
@@ -1575,8 +1602,14 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (open_flags < 0) {
 		cifssrv_debug("create_dispostion returned %d\n", err);
 		if (file_present) {
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_OBJECT_NAME_COLLISION;
+			if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
+						SMBFLG2_ERR_STATUS)) {
+				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+				rsp->hdr.Status.DosError.Error = ERRfilexists;
+			} else
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_NAME_COLLISION;
+
 			memset(&rsp->hdr.WordCount, 0, 3);
 
 			goto free_path;
@@ -6084,10 +6117,16 @@ int create_dir(struct smb_work *smb_work)
 
 	err = smb_vfs_mkdir(name, mode);
 	if (err) {
-		if (err == -EEXIST)
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_OBJECT_NAME_COLLISION;
-		else
+		if (err == -EEXIST) {
+			if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
+						SMBFLG2_ERR_STATUS)) {
+				ntstatus_to_dos(NT_STATUS_OBJECT_NAME_COLLISION,
+					&rsp->hdr.Status.DosError.ErrorClass,
+					&rsp->hdr.Status.DosError.Error);
+			} else
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_NAME_COLLISION;
+		} else
 			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
 	} else
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
@@ -6131,7 +6170,16 @@ int smb_mkdir(struct smb_work *smb_work)
 
 	err = smb_vfs_mkdir(name, mode);
 	if (err) {
-		rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
+		if (err == -EEXIST) {
+			if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
+						SMBFLG2_ERR_STATUS)) {
+				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+				rsp->hdr.Status.DosError.Error = ERRnoaccess;
+			} else
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_OBJECT_NAME_COLLISION;
+		} else
+			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
 	} else {
 		/* mkdir success, return response to server */
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
@@ -6662,6 +6710,17 @@ int smb_open_andx(struct smb_work *smb_work)
 	int err;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
+
+	/* check for sharing mode flag */
+	if ((le32_to_cpu(req->Mode) & SMBOPEN_SHARING_MODE) >
+			SMBOPEN_DENY_NONE) {
+		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+		rsp->hdr.Status.DosError.Error = ERRbadaccess;
+		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
+
+		memset(&rsp->hdr.WordCount, 0, 3);
+		return -EINVAL;
+	}
 
 	if (is_smbreq_unicode(&req->hdr))
 		name = smb_get_name(req->fileName + 1, PATH_MAX,
