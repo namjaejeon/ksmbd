@@ -6165,42 +6165,49 @@ int smb_checkdir(struct smb_work *smb_work)
 			 * for that case and NT_STATUS_OBJECT_PATH_NOT_FOUND
 			 * if the path is invalid.
 			 */
-			if (smb_kern_path(name, LOOKUP_PARENT, &path,
-					req->hdr.Flags & SMBFLG_CASELESS))
+			err = smb_kern_path(name, LOOKUP_PARENT, &path,
+					req->hdr.Flags & SMBFLG_CASELESS);
+		}
+		if (err) {
+			cifssrv_debug("look up failed err %d\n", err);
+			switch (err) {
+			case -ENOENT:
 				rsp->hdr.Status.CifsError =
-					NT_STATUS_OBJECT_PATH_NOT_FOUND;
-			else
+				NT_STATUS_OBJECT_NAME_NOT_FOUND;
+				break;
+			case -ENOMEM:
 				rsp->hdr.Status.CifsError =
-					NT_STATUS_OBJECT_NAME_NOT_FOUND;
-
-		} else if (err == -ENOMEM)
-			rsp->hdr.Status.CifsError =
 				NT_STATUS_INSUFFICIENT_RESOURCES;
-		else if (err == -EACCES)
-			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
-		else if (err == -EIO)
-			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
-		else
-			rsp->hdr.Status.CifsError =
+				break;
+			case -EACCES:
+				rsp->hdr.Status.CifsError =
+				NT_STATUS_ACCESS_DENIED;
+				break;
+			case -EIO:
+				rsp->hdr.Status.CifsError =
+				NT_STATUS_DATA_ERROR;
+				break;
+			default:
+				rsp->hdr.Status.CifsError =
 				NT_STATUS_OBJECT_PATH_SYNTAX_BAD;
-
-		cifssrv_debug("look up failed err %d\n", err);
-		goto out;
+				break;
+			}
+			smb_put_name(name);
+			return err;
+		}
 	}
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	if (!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_A_DIRECTORY;
-		goto out;
+	} else {
+		/* checkdir success, return response to server */
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		rsp->hdr.WordCount = 0;
+		rsp->ByteCount = 0;
 	}
 
-	/* checkdir success, return response to server */
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
-	rsp->hdr.WordCount = 0;
-	rsp->ByteCount = 0;
-
-out:
 	path_put(&path);
 	smb_put_name(name);
 	return err;
