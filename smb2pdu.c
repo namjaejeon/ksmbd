@@ -1107,7 +1107,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	}
 
 	tcon = construct_cifssrv_tcon(share, sess);
-	if (PTR_ERR(tcon)) {
+	if (IS_ERR(tcon)) {
 		rc = PTR_ERR(tcon);
 		goto out_err;
 	}
