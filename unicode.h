@@ -38,8 +38,10 @@
 #include <linux/types.h>
 #include <linux/nls.h>
 
-#if 0
 #define  UNIUPR_NOLOWER		/* Example to not expand lower case tables */
+
+#if defined(CONFIG_CIFS_SERVER) || defined(CONFIG_CIFS_SERVER_MODULE)
+#undef  UNIUPR_NOLOWER
 #endif
 
 /*

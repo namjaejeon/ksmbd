@@ -286,7 +286,9 @@ insert_id_in_fidtable(struct tcp_server_info *server, unsigned int id,
 	}
 
 	fp->filp = filp;
+#ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess_id = server->sess_id;
+#endif
 
 	spin_lock(&server->fidtable.fidtable_lock);
 	ftab = server->fidtable.ftab;
