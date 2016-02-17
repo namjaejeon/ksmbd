@@ -23,8 +23,11 @@
 #include"winreg.h"
 
 struct cifssrv_pipe_table cifssrv_pipes[] = {
+	{"\\srvsvc", SRVSVC},
 	{"srvsvc", SRVSVC},
+	{"\\wkssvc", SRVSVC},
 	{"wkssvc", SRVSVC},
+	{"\\winreg", WINREG},
 	{"winreg", WINREG},
 };
 unsigned int npipes = sizeof(cifssrv_pipes)/sizeof(cifssrv_pipes[0]);
@@ -140,10 +143,16 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 	RPC_REQUEST_RSP *rpc_request_rsp = (RPC_REQUEST_RSP *)outdata;
 	int offset = 0;
 
-	if (server->pipe_desc->opnum == WINREG_OPENHKCR) {
-		OPENHKCR_RSP *winreg_rsp;
+	if (server->pipe_desc->opnum == WINREG_OPENHKCR ||
+			server->pipe_desc->opnum == WINREG_OPENHKCU ||
+			server->pipe_desc->opnum == WINREG_OPENHKLM ||
+			server->pipe_desc->opnum == WINREG_OPENHKU ||
+			server->pipe_desc->opnum == WINREG_OPENKEY ||
+			server->pipe_desc->opnum == WINREG_CLOSEKEY) {
 
-		winreg_rsp = (OPENHKCR_RSP *)server->pipe_desc->data;
+		OPENHKEY_RSP *winreg_rsp;
+
+		winreg_rsp = (OPENHKEY_RSP *)server->pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -153,53 +162,6 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
 		offset += sizeof(__u32);
 		kfree(winreg_rsp);
-	}
-
-	if (server->pipe_desc->opnum == WINREG_OPENHKCU) {
-		OPENHKCU_RSP *winreg_rsp;
-
-		winreg_rsp = (OPENHKCU_RSP *)server->pipe_desc->data;
-		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
-						sizeof(RPC_REQUEST_RSP));
-		offset += sizeof(RPC_REQUEST_RSP);
-		memcpy(outdata + offset, &winreg_rsp->key_handle,
-						sizeof(KEY_HANDLE));
-		offset += sizeof(KEY_HANDLE);
-		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
-		offset += sizeof(__u32);
-		kfree(winreg_rsp);
-	}
-
-	if (server->pipe_desc->opnum == WINREG_OPENHKLM) {
-		OPENHKLM_RSP *winreg_rsp;
-
-		winreg_rsp = (OPENHKLM_RSP *)server->pipe_desc->data;
-		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
-						sizeof(RPC_REQUEST_RSP));
-		offset += sizeof(RPC_REQUEST_RSP);
-		memcpy(outdata + offset, &winreg_rsp->key_handle,
-						sizeof(KEY_HANDLE));
-		offset += sizeof(KEY_HANDLE);
-		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
-		offset += sizeof(__u32);
-		kfree(winreg_rsp);
-	}
-
-	if (server->pipe_desc->opnum == WINREG_OPENHKU) {
-		OPENHKU_RSP *winreg_rsp;
-
-		winreg_rsp = (OPENHKU_RSP *)server->pipe_desc->data;
-		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
-						sizeof(RPC_REQUEST_RSP));
-		offset += sizeof(RPC_REQUEST_RSP);
-		memcpy(outdata + offset, &winreg_rsp->key_handle,
-				sizeof(KEY_HANDLE));
-		offset += sizeof(KEY_HANDLE);
-
-		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
-		offset += sizeof(__u32);
-		kfree(winreg_rsp);
-
 	}
 
 	if (server->pipe_desc->opnum == WINREG_GETVERSION) {
@@ -218,10 +180,15 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_DELETEKEY) {
-		DELETE_KEY_RSP *winreg_rsp;
+	if (server->pipe_desc->opnum == WINREG_DELETEKEY ||
+			server->pipe_desc->opnum == WINREG_FLUSHKEY ||
+			server->pipe_desc->opnum == WINREG_SETVALUE ||
+			server->pipe_desc->opnum ==
+					WINREG_NOTIFYCHANGEKEYVALUE ||
+			server->pipe_desc->opnum == WINREG_DELETEVALUE) {
+		WINREG_COMMON_RSP *winreg_rsp;
 
-		winreg_rsp = (DELETE_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (WINREG_COMMON_RSP *)server->pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -296,7 +263,7 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 	rpc_request_rsp->hdr.frag_len = offset;
 	rpc_request_rsp->alloc_hint = offset - sizeof(RPC_REQUEST_RSP);
 
-	cifssrv_debug("offset = %d size of RPC_REQUEST_RSP = %zd\n",
+	cifssrv_debug("offset = %d size of RPC_REQUEST_RSP = %d\n",
 	offset, sizeof(RPC_REQUEST_RSP));
 	cifssrv_debug("frag len = %d alloc_hint = %d\n",
 	rpc_request_rsp->hdr.frag_len, rpc_request_rsp->alloc_hint);
@@ -1237,19 +1204,17 @@ int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
 	switch (opnum) {
 	case WINREG_OPENHKCR:
 		cifssrv_debug("Got WINREG_OPENHKCR\n");
-		ret = winreg_open_HKCR(server, rpc_request_req, data);
-		break;
+		/* fall through */
 	case WINREG_OPENHKCU:
 		cifssrv_debug("Got WINREG_OPENHKCU\n");
-		ret = winreg_open_HKCU(server, rpc_request_req, data);
-		break;
+		/* fall through */
 	case WINREG_OPENHKLM:
 		cifssrv_debug("Got WINREG_OPENHKLM\n");
-		ret = winreg_open_HKLM(server, rpc_request_req, data);
-		break;
+		/* fall through */
 	case WINREG_OPENHKU:
 		cifssrv_debug("Got WINREG_OPENHKU\n");
-		ret = winreg_open_HKU(server, rpc_request_req, data);
+		ret = winreg_open_root_key(server,
+				opnum, rpc_request_req, data);
 		break;
 	case WINREG_GETVERSION:
 		cifssrv_debug("Got WINREG_GETVERSION\n");
@@ -1285,7 +1250,6 @@ int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
 int rpc_request(struct tcp_server_info *server, char *in_data)
 {
 	int ret = 0;
-
 	cifssrv_debug("server pipe request %d\n", server->pipe_desc->pipe_type);
 	switch (server->pipe_desc->pipe_type) {
 	case SRVSVC:
@@ -1323,14 +1287,12 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	int num_ctx;
 	int i = 0;
 	int offset = 0;
-
 	rpc_context = (RPC_CONTEXT *)(((char *)in_data) + sizeof(RPC_BIND_REQ));
 	transfer = (RPC_IFACE *)(((char *)in_data) + sizeof(RPC_BIND_REQ) +
 				   sizeof(RPC_CONTEXT));
 	rpc_bind_rsp = kzalloc(sizeof(RPC_BIND_RSP), GFP_KERNEL);
-	if (!rpc_bind_rsp) {
+	if (!rpc_bind_rsp)
 		return -ENOMEM;
-	}
 
 	version_maj = rpc_context->abstract.version_maj;
 	pipe_type = server->pipe_desc->pipe_type;
@@ -1348,7 +1310,7 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
 				rpc_bind_req->hdr.call_id);
 	cifssrv_debug("incoming call id = %u frag_len = %u\n",
-			rpc_bind_req->hdr.call_id, rpc_bind_req->hdr.frag_len);
+		      rpc_bind_req->hdr.call_id, rpc_bind_req->hdr.frag_len);
 
 	/* Update bind info */
 	rpc_bind_rsp->bind_info.max_tsize = rpc_bind_req->max_tsize;
@@ -1375,7 +1337,6 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 			NEGOTIATE_MESSAGE *negblob;
 			CHALLENGE_MESSAGE *chgblob;
 			__le16 name[8];
-
 			while (i < num_ctx) {
 				offset  = offset + sizeof(RPC_CONTEXT);
 				i++;

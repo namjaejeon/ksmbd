@@ -23,41 +23,44 @@
 
 #include "dcerpc.h"
 
-#define WINREG_OPENHKCR		0x00
-#define WINREG_OPENHKCU		0x01
-#define WINREG_OPENHKLM		0x02
-#define WINREG_OPENHKPD		0x03
-#define WINREG_OPENHKU		0x04
-#define WINREG_CLOSEKEY		0x05
-#define WINREG_CREATEKEY	0x06
-#define WINREG_DELETEKEY	0x07
-#define WINREG_FLUSHKEY		0x0b
-#define WINREG_OPENKEY		0x0f
-#define WINREG_GETVERSION	0x1a
+/* WINREG opnum values */
+#define WINREG_OPENHKCR			0x00
+#define WINREG_OPENHKCU			0x01
+#define WINREG_OPENHKLM			0x02
+#define WINREG_OPENHKPD			0x03
+#define WINREG_OPENHKU			0x04
+#define WINREG_CLOSEKEY			0x05
+#define WINREG_CREATEKEY		0x06
+#define WINREG_DELETEKEY		0x07
+#define WINREG_DELETEVALUE		0x08
+#define WINREG_ENUMKEY			0x09
+#define WINREG_ENUMVALUE		0x0a
+#define WINREG_FLUSHKEY			0x0b
+#define WINREG_NOTIFYCHANGEKEYVALUE	0x0e
+#define WINREG_OPENKEY			0x0f
+#define WINREG_QUERYINFOKEY		0x10
+#define WINREG_QUERYVALUE		0x11
+#define WINREG_SETVALUE			0x16
+#define WINREG_GETVERSION		0x1a
 
-union registry_datatype {
-	__u32   reg_dword;
-	__le32  reg_dword_le;
-	__be32  reg_dword_be;
-	__u64   reg_qword;
-	__le64  reg_qword_le;
-	bool    reg_binary;
-};
-
+/* Registry structure*/
 struct registry_value {
-	char registry_value_name[40];
-	union registry_datatype key_value;
+	char value_name[40];
+	__u32 value_type;
+	__u32 value_size;
+	char *value_buffer;
+	struct registry_value *neighbour;
 };
 
 struct registry_node {
-	char key_name[256];
+	char key_name[40];
 	struct registry_value *value_list;
 	struct registry_node *child;
 	struct registry_node *neighbour;
-	int access;
+	__u8 open_status;
+	__u8 access_status;
 };
 
-/* Winreg open root key request structure */
 typedef struct handle_to_key {
 	__u32 addr;
 	__u32 time_hi;
@@ -66,92 +69,96 @@ typedef struct handle_to_key {
 	__u32 reserved;
 } __attribute__((packed)) KEY_HANDLE;
 
-typedef struct key_class {
-	__u16 name_len;
-	__u16 name_size;
-	__u32 keyclass;
-} __attribute__((packed)) KEY_CLASS;
-
-typedef struct key_info {
+typedef struct name_info {
 	__u16 key_packet_len;
 	__u16 key_packet_size;
 	__u32 ref_id;
 	UNISTR_INFO str_info;
 	__u8  Buffer[0];
+} __attribute__((packed)) NAME_INFO;
+
+typedef struct data_info {
+	__u32 ref_id;
+	__u32 info;
+} __attribute__((packed)) DATA_INFO;
+
+typedef struct buffer_info {
+	__u32 ref_id;
+	UNISTR_INFO data_info;
+} __attribute__((packed)) BUFFER_INFO;
+
+typedef struct class_name {
+	__u16 len;
+	__u16 size;
+	__u32 name;
+} __attribute__((packed)) CLASSNAME_INFO;
+
+typedef struct key_info {
+	__u32 ptr_num_subkeys;
+	__u32 ptr_max_subkeylen;
+	__u32 ptr_max_classlen;
+	__u32 ptr_num_values;
+	__u32 ptr_num_valnamelen;
+	__u32 ptr_max_valbufsize;
+	__u32 ptr_secdescsize;
+	__u64 last_changed_time;
 } __attribute__((packed)) KEY_INFO;
 
-typedef struct openhkcu_req {
-	__le64 access_mask;
-	__u16 ptr_sys_name;
-} __attribute__((packed)) OPENHKCU_REQ;
+typedef struct query_info {
+	DATA_INFO type_info;
+	__u32 data_ref_id;
+	UNISTR_INFO data_info;
+	__u8 *Buffer;
+	DATA_INFO size_info;
+	DATA_INFO length_info;
+} __attribute__((packed)) QUERY_INFO;
 
-typedef struct openhkcr_req {
-	__le64 access_mask;
-	__u16 ptr_sys_name;
-} __attribute__((packed)) OPENHKCR_REQ;
+typedef struct value_buffer {
+	__u32 value_type;
+	__u32 buffer_count;
+	__u8 Buffer[0];
+} __attribute__((packed)) VALUE_BUFFER;
 
-typedef	struct openhklm_req {
-	__le64 access_mask;
-	__u16 ptr_sys_name;
-} __attribute__((packed)) OPENHKLM_REQ;
+/* Winreg response structure */
+typedef struct enum_key_rsp {
+	RPC_REQUEST_RSP rpc_request_rsp;
+	CLASSNAME_INFO key_name;
+	__u32 key_class_ref_id;
+	NAME_INFO key_class;
+	__u32 last_changed_time_ref_id;
+	__u64 last_changed_time;
+	__u32 werror;
+} __attribute__((packed)) ENUM_KEY_RSP;
 
-typedef struct openhku_req {
-	__le64 access_mask;
-	__u16 ptr_sys_name;
-} __attribute__((packed)) OPENHKU_REQ;
+typedef struct query_value_rsp {
+	RPC_REQUEST_RSP rpc_request_rsp;
+	QUERY_INFO *query_val_info;
+	__u32 werror;
+} __attribute__((packed)) QUERY_VALUE_RSP;
 
-/* Winreg open root key response structure */
+typedef struct query_info_key_rsp {
+	RPC_REQUEST_RSP rpc_request_rsp;
+	CLASSNAME_INFO class_info;
+	KEY_INFO key_info;
+	__u32 werror;
+} __attribute__((packed)) QUERY_INFO_KEY_RSP;
+
 typedef struct getversion_rsp {
 	RPC_REQUEST_RSP rpc_request_rsp;
 	__u32 version;
 	__u32 werror;
 } __attribute__((packed)) GET_VERSION_RSP;
 
-typedef struct openhkcu_rsp {
+typedef struct openhkey_rsp {
 	RPC_REQUEST_RSP rpc_request_rsp;
 	KEY_HANDLE key_handle;
 	__u32 werror;
-} __attribute__((packed)) OPENHKCU_RSP;
+} __attribute__((packed)) OPENHKEY_RSP;
 
-typedef struct openhkcr_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	KEY_HANDLE key_handle;
-	__u32 werror;
-} __attribute__((packed)) OPENHKCR_RSP;
-
-typedef	struct openhklm_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	KEY_HANDLE key_handle;
-	__u32 werror;
-} __attribute__((packed)) OPENHKLM_RSP;
-
-typedef	struct openhku_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	KEY_HANDLE key_handle;
-	__u32 werror;
-} __attribute__((packed)) OPENHKU_RSP;
-
-typedef struct open_key_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	KEY_HANDLE key_handle;
-	__u32	werror;
-} __attribute__((packed)) OPEN_KEY_RSP;
-
-typedef struct delete_key_rsp {
+typedef struct winreg_common_rsp {
 	RPC_REQUEST_RSP rpc_request_rsp;
 	__u32	werror;
-} __attribute__((packed)) DELETE_KEY_RSP;
-
-typedef struct flush_key_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	__u32   werror;
-} __attribute__((packed)) FLUSH_KEY_RSP;
-
-typedef struct close_key_rsp {
-	RPC_REQUEST_RSP rpc_request_rsp;
-	KEY_HANDLE key_handle;
-	__u32   werror;
-} __attribute__((packed)) CLOSE_KEY_RSP;
+} __attribute__((packed)) WINREG_COMMON_RSP;
 
 typedef struct create_key_rsp {
 	RPC_REQUEST_RSP rpc_request_rsp;
@@ -166,7 +173,6 @@ typedef struct create_key_rsp {
 #define REG_CREATED_NEW_KEY		0x00000001
 #define REG_OPENED_EXISTING_KEY		0x00000002
 
-
 #define WINREG_KEY_WOW64_32KEY		0x00000200
 #define WINREG_KEY_WOW64_64KEY		0x00000100
 #define WINREG_KEY_CREATE_LINK		0x00000020
@@ -176,13 +182,7 @@ typedef struct create_key_rsp {
 #define WINREG_KEY_SET_VALUE		0x00000002
 #define WINREG_KEY_QUERY_VALUE		0x00000001
 
-int winreg_open_HKCR(struct tcp_server_info *server,
-			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_open_HKCU(struct tcp_server_info *server,
-			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_open_HKLM(struct tcp_server_info *server,
-			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_open_HKU(struct tcp_server_info *server,
+int winreg_open_root_key(struct tcp_server_info *server, int opnum,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
 int winreg_open_key(struct tcp_server_info *server,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
@@ -198,8 +198,28 @@ int winreg_open_key(struct tcp_server_info *server,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
 int winreg_flush_key(struct tcp_server_info *server,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_set_value(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_delete_value(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_query_value(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_query_info_key(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_notify_change_key_value(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_enum_key(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
+int winreg_enum_value(struct tcp_server_info *server,
+			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
 
-int dcerpc_packet_setup(RPC_REQUEST_RSP *rpc_request_rsp,
-					RPC_REQUEST_REQ *rpc_request_req);
-
+struct registry_node *init_root_key(char *name);
+int init_predefined_registry(void);
+void free_registry(struct registry_node *key_addr);
+struct registry_node *search_registry(char *name,
+						struct registry_node *key_addr);
+struct registry_node *create_key(char *name, struct registry_node *key_addr);
+struct registry_value *search_value(char *name, struct registry_node *key_addr);
+struct registry_value *set_value(char *name, VALUE_BUFFER *buffer_info,
+					struct registry_node *key_addr);
 #endif /* __CIFSSRV_WINREG_H  */
