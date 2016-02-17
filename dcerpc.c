@@ -214,47 +214,146 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		offset += sizeof(__u32);
 		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
 		offset += sizeof(__u32);
-
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_FLUSHKEY) {
-		FLUSH_KEY_RSP *winreg_rsp;
+	if (server->pipe_desc->opnum == WINREG_ENUMKEY) {
+		ENUM_KEY_RSP *winreg_rsp;
 
-		winreg_rsp = (FLUSH_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (ENUM_KEY_RSP *)server->pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->key_name,
+						sizeof(CLASSNAME_INFO));
+		offset += sizeof(CLASSNAME_INFO);
+		memcpy(outdata + offset, &winreg_rsp->key_class_ref_id,
+							sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->key_class,
+						sizeof(NAME_INFO));
+		offset += sizeof(NAME_INFO);
+		memcpy(outdata + offset, &winreg_rsp->last_changed_time_ref_id,
+								sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->last_changed_time,
+						sizeof(__u64));
+		offset += sizeof(__u64);
 		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
 		offset += sizeof(__u32);
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_OPENKEY) {
-		OPEN_KEY_RSP *winreg_rsp;
+	if (server->pipe_desc->opnum == WINREG_ENUMVALUE) {
+		ENUM_VALUE_RSP *winreg_rsp;
 
-		winreg_rsp = (OPEN_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (ENUM_VALUE_RSP *)server->pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
-		memcpy(outdata + offset, &winreg_rsp->key_handle,
-				sizeof(KEY_HANDLE));
-		offset += sizeof(KEY_HANDLE);
+		memcpy(outdata + offset, &winreg_rsp->name_len, sizeof(__u16));
+		offset += sizeof(__u16);
+		memcpy(outdata + offset, &winreg_rsp->name_size,
+								sizeof(__u16));
+		offset += sizeof(__u16);
+		memcpy(outdata + offset, &winreg_rsp->name_ref_id,
+								sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->name_str_info,
+							sizeof(UNISTR_INFO));
+		offset += sizeof(UNISTR_INFO);
+		memcpy(outdata + offset, &winreg_rsp->type_info,
+							sizeof(DATA_INFO));
+		offset += sizeof(DATA_INFO);
+		memcpy(outdata + offset, &winreg_rsp->value_ptr,
+								sizeof(__u32));
+		offset += sizeof(__u32);
+		memcpy(outdata + offset, &winreg_rsp->size_info,
+							sizeof(DATA_INFO));
+		offset += sizeof(DATA_INFO);
+		memcpy(outdata + offset, &winreg_rsp->length_info,
+							sizeof(DATA_INFO));
+		offset += sizeof(DATA_INFO);
+		memcpy(outdata + offset, &winreg_rsp->werror,
+							sizeof(__u32));
+		offset += sizeof(__u32);
+		kfree(winreg_rsp);
+	}
+
+	if (server->pipe_desc->opnum == WINREG_QUERYINFOKEY) {
+		QUERY_INFO_KEY_RSP *winreg_rsp;
+
+		winreg_rsp = (QUERY_INFO_KEY_RSP *)server->pipe_desc->data;
+		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
+						sizeof(RPC_REQUEST_RSP));
+		offset += sizeof(RPC_REQUEST_RSP);
+		memcpy(outdata + offset, &winreg_rsp->class_info,
+						sizeof(CLASSNAME_INFO));
+		offset += sizeof(CLASSNAME_INFO);
+		memcpy(outdata + offset, &winreg_rsp->key_info,
+							sizeof(KEY_INFO));
+		offset += sizeof(KEY_INFO);
 		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
 		offset += sizeof(__u32);
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_CLOSEKEY) {
-		CLOSE_KEY_RSP *winreg_rsp;
+	if (server->pipe_desc->opnum == WINREG_QUERYVALUE) {
+		QUERY_VALUE_RSP *winreg_rsp;
 
-		winreg_rsp = (CLOSE_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (QUERY_VALUE_RSP *)server->pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
-						sizeof(RPC_REQUEST_RSP));
+					sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
-		memcpy(outdata + offset, &winreg_rsp->key_handle,
-				sizeof(KEY_HANDLE));
-		offset += sizeof(KEY_HANDLE);
+
+		if (winreg_rsp->query_val_info == NULL) {
+			memset(outdata + offset, 0, (sizeof(__u32)*4));
+			offset += (sizeof(__u32)*4);
+		} else {
+			memcpy(outdata + offset,
+				&winreg_rsp->query_val_info->type_info,
+				sizeof(DATA_INFO));
+			offset += sizeof(DATA_INFO);
+			memcpy(outdata + offset,
+				&winreg_rsp->query_val_info->data_ref_id,
+				sizeof(__u32));
+			offset += sizeof(__u32);
+			memcpy(outdata + offset,
+				&winreg_rsp->query_val_info->data_info,
+				sizeof(UNISTR_INFO));
+			offset += sizeof(UNISTR_INFO);
+			if (winreg_rsp->query_val_info->size_info.info <
+								sizeof(__u32)) {
+				memcpy(outdata + offset,
+					winreg_rsp->query_val_info->Buffer,
+					sizeof(__u32));
+				offset += sizeof(__u32);
+			} else if ((winreg_rsp->query_val_info->size_info.info
+								%2) == 1) {
+				memcpy(outdata + offset,
+				winreg_rsp->query_val_info->Buffer,
+				(winreg_rsp->query_val_info->size_info.info+1));
+				offset +=
+				(winreg_rsp->query_val_info->size_info.info+1);
+			} else {
+				memcpy(outdata + offset,
+				winreg_rsp->query_val_info->Buffer,
+				winreg_rsp->query_val_info->size_info.info);
+				offset +=
+				winreg_rsp->query_val_info->size_info.info;
+			}
+			memcpy(outdata + offset,
+				&winreg_rsp->query_val_info->size_info,
+				sizeof(DATA_INFO));
+			offset += sizeof(DATA_INFO);
+			memcpy(outdata + offset,
+				&winreg_rsp->query_val_info->length_info,
+				sizeof(DATA_INFO));
+			offset += sizeof(DATA_INFO);
+			kfree(winreg_rsp->query_val_info->Buffer);
+			kfree(winreg_rsp->query_val_info);
+		}
+
 		memcpy(outdata + offset, &winreg_rsp->werror, sizeof(__u32));
 		offset += sizeof(__u32);
 		kfree(winreg_rsp);
@@ -1239,6 +1338,35 @@ int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
 	case WINREG_CLOSEKEY:
 		cifssrv_debug("Got WINREG_CLOSEKEY\n");
 		ret = winreg_close_key(server, rpc_request_req, data);
+		break;
+	case WINREG_ENUMKEY:
+		cifssrv_debug("Got WINREG_CLOSEKEY\n");
+		ret = winreg_enum_key(server, rpc_request_req, data);
+		break;
+	case WINREG_ENUMVALUE:
+		cifssrv_debug("Got WINREG_ENUMVALUE\n");
+		ret = winreg_enum_value(server, rpc_request_req, data);
+		break;
+	case WINREG_QUERYINFOKEY:
+		cifssrv_debug("Got WINREG_QUERYINFOKEY\n");
+		ret = winreg_query_info_key(server, rpc_request_req, data);
+		break;
+	case WINREG_NOTIFYCHANGEKEYVALUE:
+		cifssrv_debug("Got WINREG_NOTIFYCHANGEKEYVALUE\n");
+		ret = winreg_notify_change_key_value(server, rpc_request_req,
+									data);
+		break;
+	case WINREG_SETVALUE:
+		cifssrv_debug("Got WINREG_SETVALUE\n");
+		ret = winreg_set_value(server, rpc_request_req, data);
+		break;
+	case WINREG_QUERYVALUE:
+		cifssrv_debug("Got WINREG_QUERYVALUE\n");
+		ret = winreg_query_value(server, rpc_request_req, data);
+		break;
+	case WINREG_DELETEVALUE:
+		cifssrv_debug("Got WINREG_DELETEVALUE\n");
+		ret = winreg_delete_value(server, rpc_request_req, data);
 		break;
 	default:
 		cifssrv_debug("WINREG pipe opnum not supported = %d\n", opnum);

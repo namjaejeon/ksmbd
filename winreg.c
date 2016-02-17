@@ -118,9 +118,9 @@ int winreg_open_root_key(struct tcp_server_info *server, int opnum,
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	OPENHKEY_RSP *winreg_rsp = kzalloc(sizeof(OPENHKEY_RSP), GFP_KERNEL);
 
-	if (!winreg_rsp) {
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
@@ -159,10 +159,9 @@ int winreg_get_version(struct tcp_server_info *server,
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	GET_VERSION_RSP *winreg_rsp =
 				kzalloc(sizeof(GET_VERSION_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
@@ -199,17 +198,16 @@ int winreg_delete_key(struct tcp_server_info *server,
 	relative_name = smb_strndup_from_utf16(name_info->Buffer,
 			name_info->key_packet_len, 1, server->local_nls);
 	if (IS_ERR(relative_name))
-		return relative_name;
+		return PTR_ERR(relative_name);
 	name = kzalloc(sizeof(strlen(relative_name)), GFP_KERNEL);
 	strcpy(name, relative_name);
 	ret = search_registry(relative_name, (struct registry_node *)key_addr);
 	cifssrv_debug("ret %x\n", (__u32)ret);
 
 	winreg_rsp = kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	if (base_key == NULL || base_key->open_status == 0 ||
 				relative_name == NULL) {
@@ -257,10 +255,9 @@ int winreg_flush_key(struct tcp_server_info *server,
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	WINREG_COMMON_RSP *winreg_rsp =
 				kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
@@ -292,14 +289,13 @@ int winreg_create_key(struct tcp_server_info *server,
 	relative_name = smb_strndup_from_utf16(name_info->Buffer,
 			name_info->key_packet_len, 1, server->local_nls);
 	if (IS_ERR(relative_name))
-		return relative_name;
+		return PTR_ERR(relative_name);
 	ret = create_key(relative_name, (struct registry_node *)key_addr);
 
 	winreg_rsp = kzalloc(sizeof(CREATE_KEY_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	winreg_rsp->key_handle.addr = (__u32)ret;
@@ -336,14 +332,13 @@ int winreg_open_key(struct tcp_server_info *server,
 	relative_name = smb_strndup_from_utf16(name_info->Buffer,
 			name_info->key_packet_len, 1, server->local_nls);
 	if (IS_ERR(relative_name))
-		return relative_name;
+		return PTR_ERR(relative_name);
 	ret = search_registry(relative_name, (struct registry_node *)key_addr);
 
 	winreg_rsp = kzalloc(sizeof(OPENHKEY_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 
 	if (base_key == NULL || base_key->open_status == 0
@@ -383,10 +378,9 @@ int winreg_close_key(struct tcp_server_info *server,
 	base_key = (struct registry_node *)key_addr;
 
 	winreg_rsp = kzalloc(sizeof(OPENHKEY_RSP), GFP_KERNEL);
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	if (base_key == NULL || base_key->open_status == 0) {
@@ -412,10 +406,9 @@ int winreg_enum_key(struct tcp_server_info *server,
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	ENUM_KEY_RSP *winreg_rsp = kzalloc(sizeof(ENUM_KEY_RSP), GFP_KERNEL);
 
-	if (!winreg_rsp) {
-		cifssrv_err("failed to allocate memory\n");
+	if (!winreg_rsp)
 		return -ENOMEM;
-	}
+
 	server->pipe_desc->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	winreg_rsp->key_name.size = 1024;
@@ -432,6 +425,401 @@ int winreg_enum_key(struct tcp_server_info *server,
 	return 0;
 }
 
+int winreg_query_info_key(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	QUERY_INFO_KEY_RSP *winreg_rsp =
+				kzalloc(sizeof(QUERY_INFO_KEY_RSP), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	winreg_rsp->werror = cpu_to_le32(WERR_OK);
+	cifssrv_debug("flush_key\n");
+	return 0;
+}
+
+int winreg_notify_change_key_value(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	WINREG_COMMON_RSP *winreg_rsp =
+				kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	winreg_rsp->werror = cpu_to_le32(WERR_NOT_SUPPORTED);
+	cifssrv_debug("flush_key\n");
+	return 0;
+}
+int winreg_set_value(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	struct registry_value *ret;
+	int offset = 0;
+	int value_len = 0;
+	int key_addr;
+	struct registry_node *base_key;
+	char *value_name;
+	KEY_HANDLE *key_handle;
+	NAME_INFO *name_info;
+	VALUE_BUFFER *value_buffer;
+	WINREG_COMMON_RSP *winreg_rsp;
+
+	key_handle = (KEY_HANDLE *)in_data;
+	offset += sizeof(KEY_HANDLE);
+	name_info = (NAME_INFO *)(((char *)in_data) + offset);
+
+	key_addr = key_handle->addr;
+	base_key = (struct registry_node *)key_addr;
+
+	value_name = smb_strndup_from_utf16(name_info->Buffer,
+			name_info->key_packet_len, 1, server->local_nls);
+	if (IS_ERR(value_name))
+		return PTR_ERR(value_name);
+	value_len = name_info->key_packet_len;
+	value_len = ((value_len + 3) & ~3);
+	offset += (sizeof(NAME_INFO) + value_len);
+
+	value_buffer =  (VALUE_BUFFER *)(((char *)in_data) + offset);
+	offset += (sizeof(__u32)*2);
+	winreg_rsp = kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	if (base_key == NULL || base_key->open_status == 0) {
+		winreg_rsp->werror = cpu_to_le32(WERR_INVALID_PARAMETER);
+	} else {
+		ret = set_value(value_name, value_buffer,
+			(struct registry_node *)key_handle->addr);
+		if (IS_ERR(ret))
+			return -ENOMEM;
+		winreg_rsp->werror = cpu_to_le32(WERR_OK);
+	}
+	kfree(value_name);
+	return 0;
+}
+
+int winreg_delete_value(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	struct registry_value *ret;
+	int offset = 0;
+	int key_addr;
+	struct registry_node *base_key;
+	struct registry_value *value;
+	struct registry_value *prev_value;
+	char *value_name;
+	KEY_HANDLE *key_handle;
+	NAME_INFO *name_info;
+	WINREG_COMMON_RSP *winreg_rsp;
+
+	key_handle = (KEY_HANDLE *)in_data;
+	offset += sizeof(KEY_HANDLE);
+	name_info = (NAME_INFO *)(((char *)in_data) + offset);
+
+	key_addr = key_handle->addr;
+	base_key = (struct registry_node *)key_addr;
+
+	value_name = smb_strndup_from_utf16(name_info->Buffer,
+			name_info->key_packet_len, 1, server->local_nls);
+	if (IS_ERR(value_name))
+		return PTR_ERR(value_name);
+	winreg_rsp = kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	if (base_key == NULL || base_key->open_status == 0) {
+		winreg_rsp->werror = cpu_to_le32(WERR_INVALID_PARAMETER);
+	} else {
+		ret = search_value(value_name,
+					(struct registry_node *)key_addr);
+		if (IS_ERR(ret))
+			winreg_rsp->werror = cpu_to_le32(WERR_OK);
+		else {
+			value = base_key->value_list;
+			prev_value = NULL;
+			while ((strcmp(value->value_name, value_name) != 0)) {
+				prev_value = value;
+				value = value->neighbour;
+			}
+			if (prev_value == NULL) {
+				value = base_key->value_list->neighbour;
+				kfree(base_key->value_list->value_buffer);
+				kfree(base_key->value_list);
+				base_key->value_list = value;
+			} else {
+				prev_value->neighbour = value->neighbour;
+				kfree(value->value_buffer);
+				kfree(value);
+			}
+			winreg_rsp->werror = cpu_to_le32(WERR_OK);
+		}
+	}
+	kfree(value_name);
+	cifssrv_debug("delete_value\n");
+	return 0;
+}
+
+int winreg_query_value(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	struct registry_value *ret;
+	int offset = 0;
+	int value_len = 0;
+	int key_addr;
+	struct registry_node *base_key;
+	struct registry_value *value;
+	char *value_name;
+	QUERY_VALUE_RSP *winreg_rsp;
+	KEY_HANDLE *key_handle;
+	NAME_INFO *name_info;
+	BUFFER_INFO *buffer_info;
+	__u32 *ptr_check;
+	QUERY_INFO *query_info;
+
+	winreg_rsp = kzalloc(sizeof(QUERY_VALUE_RSP), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+
+	key_handle = (KEY_HANDLE *)in_data;
+	offset += sizeof(KEY_HANDLE);
+	name_info = (NAME_INFO *)(((char *)in_data) + offset);
+
+	key_addr = key_handle->addr;
+	base_key = (struct registry_node *)key_addr;
+
+	value_name = smb_strndup_from_utf16(name_info->Buffer,
+			name_info->key_packet_len, 1, server->local_nls);
+	if (IS_ERR(value_name))
+		return PTR_ERR(value_name);
+	cifssrv_debug("base key addr %x, value name %s\n", key_addr,
+								value_name);
+
+	ret = search_value(value_name, (struct registry_node *)key_addr);
+	if (IS_ERR(ret)) {
+		if ((strcmp(value_name, "") == 0) ||
+			(strcmp(value_name, "Default") == 0))
+			goto err_invalid_param;
+		else
+			goto err_bad_file;
+	}
+	value = (struct registry_value *)ret;
+
+	value_len = name_info->key_packet_len;
+	value_len = ((value_len + 3) & ~3);
+	offset += (sizeof(NAME_INFO) + value_len);
+
+	ptr_check = (__u32 *)((in_data) + offset);
+	if (*ptr_check == 0)
+		goto err_invalid_param;
+
+	offset += (sizeof(DATA_INFO));
+
+	buffer_info = (BUFFER_INFO *)(in_data + offset);
+
+	if (buffer_info->ref_id != 0)
+		offset += (sizeof(__u32)*4);
+	else
+		offset += (sizeof(__u32));
+
+	ptr_check = (__u32 *)((in_data) + offset);
+	if (*ptr_check == 0)
+		goto err_invalid_param;
+
+	offset += (sizeof(DATA_INFO));
+
+	ptr_check = (__u32 *)((in_data) + offset);
+	if (*ptr_check == 0)
+		goto err_invalid_param;
+
+	offset += (sizeof(DATA_INFO));
+	query_info = kzalloc(sizeof(QUERY_INFO), GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	winreg_rsp->query_val_info = query_info;
+	query_info->type_info.info = value->value_type;
+	query_info->type_info.ref_id = cpu_to_le32(0x00020010);
+	query_info->size_info.info = value->value_size;
+	query_info->size_info.ref_id = cpu_to_le32(0x00020018);
+	query_info->length_info.info = value->value_size;
+	query_info->length_info.ref_id = cpu_to_le32(0x0002001c);
+	query_info->data_info.max_count = value->value_size;
+	query_info->data_info.actual_count = value->value_size;
+	query_info->data_info.offset = 0;
+	query_info->data_ref_id = cpu_to_le32(0x00020014);
+
+	if (query_info->size_info.info < sizeof(__u32))
+		query_info->Buffer = kzalloc(sizeof(__u32), GFP_KERNEL);
+	else
+		query_info->Buffer = kzalloc(value->value_size + 1, GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	memcpy(query_info->Buffer, value->value_buffer, value->value_size);
+	if (buffer_info->ref_id != 0) {
+		cifssrv_debug("client buffer size %d value buffer size %d\n",
+			buffer_info->data_info.max_count, value->value_size);
+		if (buffer_info->data_info.max_count >= value->value_size)
+			winreg_rsp->werror = cpu_to_le32(WERR_OK);
+		else
+			winreg_rsp->werror = cpu_to_le32(WERR_MORE_DATA);
+	} else {
+		winreg_rsp->werror = cpu_to_le32(WERR_OK);
+	}
+	kfree(value_name);
+	return 0;
+
+err_invalid_param:
+	kfree(value_name);
+	winreg_rsp->werror = cpu_to_le32(WERR_INVALID_PARAMETER);
+	return 0;
+
+err_bad_file:
+	kfree(value_name);
+	winreg_rsp->werror = cpu_to_le32(WERR_BAD_FILE);
+	return 0;
+
+}
+
+int winreg_enum_value(struct tcp_server_info *server,
+				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+{
+	RPC_REQUEST_RSP *rpc_request_rsp;
+	ENUM_VALUE_RSP *winreg_rsp = kzalloc(sizeof(ENUM_VALUE_RSP),
+								GFP_KERNEL);
+	if (!winreg_rsp)
+		return -ENOMEM;
+
+	server->pipe_desc->data = (char *)winreg_rsp;
+	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
+	winreg_rsp->name_ref_id = 0x00020014;
+	winreg_rsp->type_info.ref_id = 0x00020018;
+	winreg_rsp->length_info.ref_id = 0x00020020;
+	winreg_rsp->size_info.ref_id = 0x00020024;
+	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
+				RPC_FLAG_FIRST | RPC_FLAG_LAST,
+				rpc_request_req->hdr.call_id);
+	rpc_request_rsp->context_id = rpc_request_req->context_id;
+	winreg_rsp->werror = cpu_to_le32(WERR_NO_MORE_DATA);
+	cifssrv_debug("enum_value\n");
+	return 0;
+}
+
+struct registry_value *search_value(char *name, struct registry_node *key_addr)
+{
+	struct registry_node *base_key_addr =  (struct registry_node *)key_addr;
+	struct registry_value *value;
+
+	cifssrv_debug("value name %s\n", name);
+	if (strcmp(name, "") == 0)
+		strcpy(name, "Default");
+	if (base_key_addr->value_list == NULL)
+		return ERR_PTR(-EINVAL);
+
+	value = base_key_addr->value_list;
+	while ((value != NULL) && (strcmp(value->value_name, name) != 0))
+			value = value->neighbour;
+	if (value == NULL)
+		return ERR_PTR(-EINVAL);
+	else
+		return value;
+
+}
+
+struct registry_value *set_value(char *name, VALUE_BUFFER *buffer_info,
+					struct registry_node *key_addr)
+{
+	struct registry_node *base_key_addr = (struct registry_node *)key_addr;
+	struct registry_value *value;
+	struct registry_value *ret = NULL;
+
+	if (strcmp(name, "") == 0)
+		strcpy(name, "Default");
+	if (base_key_addr->value_list == NULL) {
+		value = kzalloc(sizeof(struct registry_value), GFP_KERNEL);
+		if (!value)
+			return ERR_PTR(-ENOMEM);
+
+		strcpy(value->value_name, name);
+		value->value_type = buffer_info->value_type;
+		value->value_size = buffer_info->buffer_count;
+		cifssrv_debug("type %d, size %d, name %s\n",
+			value->value_type, value->value_size,
+				value->value_name);
+		value->value_buffer = kzalloc(value->value_size, GFP_KERNEL);
+		if (!value->value_buffer)
+			return ERR_PTR(-ENOMEM);
+
+		memcpy(value->value_buffer, buffer_info->Buffer,
+							value->value_size);
+		value->neighbour = NULL;
+		base_key_addr->value_list = value;
+	} else {
+		ret = search_value(name, key_addr);
+		if (IS_ERR(ret)) {
+			value = kzalloc(sizeof(struct registry_value),
+								GFP_KERNEL);
+			if (!value)
+				return ERR_PTR(-ENOMEM);
+
+			strcpy(value->value_name, name);
+			value->value_type = buffer_info->value_type;
+			value->value_size = buffer_info->buffer_count;
+			value->value_buffer = kzalloc(value->value_size,
+								GFP_KERNEL);
+			if (!value->value_buffer)
+				return ERR_PTR(-ENOMEM);
+
+			memcpy(value->value_buffer, buffer_info->Buffer,
+							value->value_size);
+			value->neighbour = base_key_addr->value_list;
+			base_key_addr->value_list = value;
+		} else {
+			value = (struct registry_value *)ret;
+			value->value_size = buffer_info->buffer_count;
+			value->value_type = buffer_info->value_type;
+			memcpy(value->value_buffer, buffer_info->Buffer,
+							value->value_size);
+		}
+	}
+	return ret;
+}
 
 void free_registry(struct registry_node *key_addr)
 {

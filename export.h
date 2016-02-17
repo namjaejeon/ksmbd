@@ -212,6 +212,7 @@ struct cifssrv_tcon {
 /* functions */
 
 extern int cifssrv_init_registry(void);
+extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
 int validate_clip(char *cip, struct cifssrv_share *share);

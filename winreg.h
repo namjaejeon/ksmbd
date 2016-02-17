@@ -130,6 +130,20 @@ typedef struct enum_key_rsp {
 	__u32 werror;
 } __attribute__((packed)) ENUM_KEY_RSP;
 
+typedef struct enum_value_rsp {
+	RPC_REQUEST_RSP rpc_request_rsp;
+	__u16 name_len;
+	__u16 name_size;
+	__u32 name_ref_id;
+	UNISTR_INFO name_str_info;
+	__u16 *Buffer;
+	DATA_INFO type_info;
+	__u32 value_ptr;
+	DATA_INFO size_info;
+	DATA_INFO length_info;
+	__u32 werror;
+} __attribute__((packed)) ENUM_VALUE_RSP;
+
 typedef struct query_value_rsp {
 	RPC_REQUEST_RSP rpc_request_rsp;
 	QUERY_INFO *query_val_info;

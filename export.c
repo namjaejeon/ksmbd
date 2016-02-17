@@ -1775,6 +1775,14 @@ int cifssrv_export_init(void)
 		return rc;
 	}
 
+	rc = cifssrv_init_registry();
+	if (rc) {
+		cifssrv_free_global_params();
+		exit_sysfs_parser();
+		cifssrv_share_free();
+		return rc;
+	}
+
 	return 0;
 }
 
@@ -1784,6 +1792,7 @@ int cifssrv_export_init(void)
  */
 void cifssrv_export_exit(void)
 {
+	cifssrv_free_registry();
 	exit_sysfs_parser();
 	cifssrv_free_global_params();
 	cifssrv_user_free();
