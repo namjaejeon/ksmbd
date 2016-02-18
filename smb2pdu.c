@@ -1289,7 +1289,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifssrv_err("%s : request\n", __func__);
+	cifssrv_debug("%s : request\n", __func__);
 	sess = list_entry(server->cifssrv_sess.next,
 		struct cifssrv_sess, cifssrv_ses_list);
 
