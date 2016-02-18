@@ -1371,7 +1371,6 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	umode_t mode = 0;
 	int err;
 	int create_directory = 0;
-	int open_directory = 0;
 	char *src;
 	char *root;
 	bool is_unicode;
@@ -1402,12 +1401,6 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (le32_to_cpu(req->CreateOptions) & FILE_DIRECTORY_FILE_LE) {
 		cifssrv_debug("GOT Create Directory via CREATE ANDX\n");
 		create_directory = 1;
-	}
-	if (le32_to_cpu(req->CreateOptions) &&
-			!(le32_to_cpu(req->CreateOptions) &
-				FILE_NON_DIRECTORY_FILE_LE)) {
-		cifssrv_debug("GOT Opendir via CREATE ANDX\n");
-		open_directory = 1;
 	}
 
 	/*
@@ -1526,7 +1519,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		}
 	}
 
-	if (file_present && !open_directory && S_ISDIR(stat.mode)) {
+	if (file_present && (req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE) &&
+			S_ISDIR(stat.mode)) {
 		cifssrv_debug("Can't open dir %s, request is to open file\n",
 			       conv_name);
 		if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
@@ -1542,8 +1536,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		goto free_path;
 	}
 
-	if (file_present && (open_directory || create_directory) &&
-			!S_ISDIR(stat.mode)) {
+	if (file_present && create_directory && !S_ISDIR(stat.mode)) {
 		cifssrv_debug("Can't open file %s, request is to open dir\n",
 				conv_name);
 		if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
