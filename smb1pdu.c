@@ -1409,8 +1409,6 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	 * prepend root dir name in filename.
 	 */
 	if (req->RootDirectoryFid) {
-		struct cifssrv_file *fp;
-
 		cifssrv_debug("path lookup relative to RootDirectoryFid\n");
 
 		is_relative_root = true;
@@ -1490,7 +1488,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	root = strrchr(name, '\\');
 	if (root) {
 		root++;
-		if ((strnlen(root, PATH_MAX) == 1) && (*root == '*')) {
+		if ((root[0] == '*' || root[0] == '/') && (root[1] == '\0')) {
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_OBJECT_NAME_INVALID;
 			kfree(name);

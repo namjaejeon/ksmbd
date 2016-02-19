@@ -123,18 +123,25 @@ cp_convert:
 		len = 1;
 	}
 
-	if (!(*target & 0x80) &&
-		(*target <= 0x1f ||
-		*target == '/' ||
-		*target == '?' ||
-		*target == '"' ||
-		*target == ':' ||
-		*target == '<' ||
-		*target == '>' ||
-		*target == '|'))
-		return -EINVAL;
-
 	goto out;
+}
+
+/*
+ * is_char_allowed() - check for valid character
+ * @ch:		input character to be checked
+ *
+ * Return:	1 if char is allowed, otherwise 0
+ */
+static inline int is_char_allowed(char *ch)
+{
+	/* check for control chars, wildcards etc. */
+	if (!(*ch & 0x80) &&
+			(*ch <= 0x1f ||
+			 *ch == '?' || *ch == '"' || *ch == ':' ||
+			 *ch == '<' || *ch == '>' || *ch == '|'))
+		return 0;
+
+	return 1;
 }
 
 /*
@@ -197,8 +204,8 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 
 		/* put converted char into 'to' buffer */
 		charlen = cifs_mapchar(&to[outlen], ftmp, codepage, mapchar);
-		if (charlen < 0)
-			return charlen;
+		if (!is_char_allowed(&to[outlen]))
+			return -EINVAL;
 		outlen += charlen;
 	}
 
