@@ -18,6 +18,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/types.h>
+#include <linux/parser.h>
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
@@ -102,10 +104,10 @@ static void init_params(struct cifssrv_share *share)
 {
 	set_attr_available(&share->config.attr);
 	set_attr_browsable(&share->config.attr);
-	clr_attr_guestok(&share->config.attr);
-	clr_attr_guestonly(&share->config.attr);
+	clear_attr_guestok(&share->config.attr);
+	clear_attr_guestonly(&share->config.attr);
 	set_attr_oplocks(&share->config.attr);
-	clr_attr_writeable(&share->config.attr);
+	clear_attr_writeable(&share->config.attr);
 	share->config.max_connections = 0;
 }
 
@@ -172,6 +174,26 @@ static void cifssrv_share_free(void)
 		free_share(share);
 		kfree(share);
 	}
+}
+
+/**
+ * cleanup_bad_share() - remove a bad share, added while config parse error
+ * @badshare:	share name to be removed
+ */
+static void cleanup_bad_share(struct cifssrv_share *badshare)
+{
+	struct cifssrv_share *share;
+	struct list_head *tmp, *t;
+
+	list_for_each_safe(tmp, t, &cifssrv_share_list) {
+		share = list_entry(tmp, struct cifssrv_share, list);
+		if (share != badshare)
+			continue;
+		list_del(&share->list);
+		cifssrv_num_shares--;
+	}
+	free_share(badshare);
+	kfree(badshare);
 }
 
 /**
@@ -470,13 +492,14 @@ static bool getUser(char *name, char *pass)
 }
 
 /**
- * check_share() - check if a share name is already exported
+ * check_share() - check if a share name is already exported,if not
+ *		allocate a new empty share
  * @share_buf:	buffer containing share name
  * @share_sz:	share name length
  *
  * Return:      share name if already exported, otherwise NULL
  */
-static struct cifssrv_share *check_share(char *share_buf, int share_sz)
+static struct cifssrv_share *check_share(char *share_name, int *alloc_share)
 {
 	struct cifssrv_share *share;
 	struct list_head *tmp;
@@ -485,436 +508,352 @@ static struct cifssrv_share *check_share(char *share_buf, int share_sz)
 	list_for_each(tmp, &cifssrv_share_list) {
 		share = list_entry(tmp, struct cifssrv_share, list);
 		srclen = strlen(share->sharename);
-		if (srclen == share_sz) {
+		if (srclen == strlen(share_name)) {
 			if (strncasecmp(share->sharename,
-					share_buf, srclen) == 0)
+					share_name, srclen) == 0) {
 				return share;
-		}
-	}
-
-	return NULL;
-}
-
-/**
- * valstr() - get hash value from a string i.e. config parameter name
- * @str:	config parameter name e.g. ALLOWHOSTS
- *
- * calculate hash value from config parameter name and compare them with hash
- * value of known config param instead of string compare with each param.
- *
- * Return:      hash value of str
- */
-static inline int valstr(char *str)
-{
-	int val = 0;
-
-	while (*str) {
-		if (*str >= 'A' && *str <= 'Z')
-			val += *str + 32;
-		else
-			val += *str;
-
-		str++;
-	}
-
-	return val;
-}
-
-/**
- * getval() - check if a config setting is enabled or disabled
- * @str:	may contain yes, true or 1 etc.
- *
- * Return:      1 if config is enabled, 0 if disabled, otherwise -1
- */
-static int getval(char *str)
-{
-	if (!strcasecmp(str, "yes") ||
-		!strcasecmp(str, "true") ||
-		!strcmp(str, "1"))
-		return 1;
-	else if (!strcasecmp(str, "no") ||
-		!strcasecmp(str, "false") ||
-		!strcmp(str, "0"))
-		return 0;
-	else
-		return -1;
-}
-
-/**
- * update_global() - update a global config setting
- * @param_buf:	config parameter name e.g. GUESTACCOUNT
- * @data_buf:	config parameter value
- * @param_sz:	config parameter name length
- * @data_sz:	config parameter value - data length
- *
- * Return:      0 on success, otherwise error
- */
-static int update_global(char *param_buf,
-				char *data_buf, int param_sz, int data_sz)
-{
-	switch (valstr(param_buf)) {
-	case GUESTACCOUNT:
-	{
-		if (strcasecmp(param_buf, "guest account")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(guestAccountName);
-		guestAccountName = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!guestAccountName)
-			return -ENOMEM;
-		strncpy(guestAccountName, data_buf , data_sz);
-		break;
-	}
-	case SERVERSTRING:
-	{
-		if (strcasecmp(param_buf, "server string")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(server_string);
-		server_string = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!server_string)
-			return -ENOMEM;
-		strncpy(server_string, data_buf , data_sz);
-		break;
-	}
-	case WORKGROUP:
-	{
-		if (strcasecmp(param_buf, "workgroup")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(workgroup);
-		workgroup = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!workgroup)
-			return -ENOMEM;
-		strncpy(workgroup, data_buf , data_sz);
-		break;
-	}
-	case NETBIOSNAME:
-        {
-		if (strcasecmp(param_buf, "netbios name")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(netbios_name);
-		netbios_name = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!netbios_name)
-			return -ENOMEM;
-		strncpy(netbios_name, data_buf , data_sz);
-		break;
-	}
-	default:
-		cifssrv_err("[%s] not supported value = %d\n",
-			     param_buf, valstr(param_buf));
-	}
-	return 0;
-}
-
-/**
- * update_share() - update a share config setting
- * @share:	share instance for updating config setting
- * @param_buf:	config parameter name e.g. ALLOWHOSTS
- * @data_buf:	config parameter value
- * @param_sz:	config parameter name length
- * @data_sz:	config parameter value - data length
- *
- * Return:      0 on success, otherwise error
- */
-static int update_share(struct cifssrv_share *share, char *param_buf,
-			char *data_buf, int param_sz, int data_sz)
-{
-	switch (valstr(param_buf)) {
-	case ALLOWHOSTS:
-	{
-		if (strcasecmp(param_buf, "allow hosts")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(share->config.allow_hosts);
-		share->config.allow_hosts = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.allow_hosts)
-			return -ENOMEM;
-
-		strncpy(share->config.allow_hosts, data_buf, data_sz);
-	}
-	break;
-	case AVAILABLE:
-	{
-		int val;
-
-		if (strcasecmp(param_buf, "available")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		val = getval(data_buf);
-		if (val == 0)
-			clr_attr_available(&share->config.attr);
-		else	/* default is also enabled */
-			set_attr_available(&share->config.attr);
-	}
-	break;
-	case BROWSABLE:
-	{
-		int val;
-
-		if (strcasecmp(param_buf, "browsable")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		val = getval(data_buf);
-		if (val == 0)
-			clr_attr_browsable(&share->config.attr);
-		else	/* default is also enabled */
-			set_attr_browsable(&share->config.attr);
-	}
-	break;
-	case COMMENT:
-	{
-		if (strcasecmp(param_buf, "comment")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(share->config.comment);
-		share->config.comment = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.comment)
-			return -ENOMEM;
-
-		strncpy(share->config.comment, data_buf, data_sz);
-	}
-	break;
-	case DENYHOSTS:
-	{
-		if (strcasecmp(param_buf, "deny hosts")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(share->config.deny_hosts);
-		share->config.deny_hosts = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.deny_hosts)
-			return -ENOMEM;
-
-		strncpy(share->config.deny_hosts, data_buf, data_sz);
-	}
-	break;
-	case GUESTOK:
-	{
-		int val;
-
-		if (strcasecmp(param_buf, "guest ok")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		val = getval(data_buf);
-		if (val == 1)
-			set_attr_guestok(&share->config.attr);
-		else	/* default is also disabled */
-			clr_attr_guestok(&share->config.attr);
-	}
-	break;
-	case GUESTONLY:
-	{
-		int val;
-
-		if (strcasecmp(param_buf, "guest only")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		val = getval(data_buf);
-		if (val == 1)
-			set_attr_guestonly(&share->config.attr);
-		else	/* default is also disabled */
-			clr_attr_guestonly(&share->config.attr);
-	}
-	break;
-	case INVALIDUSERS:
-	{
-		if (strcasecmp(param_buf, "invalid users")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		kfree(share->config.invalid_users);
-		share->config.invalid_users = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.invalid_users)
-			return -ENOMEM;
-
-		strncpy(share->config.invalid_users, data_buf, data_sz);
-	}
-	break;
-	case MAXCONNECTIONS:
-	{
-		int val;
-
-		if (strcasecmp(param_buf, "max connections")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
-
-		if (data_sz) {
-			if (!kstrtouint(data_buf, 10, &val)) {
-				if (val >= 0)
-					share->config.max_connections = val;
 			}
 		}
 	}
-	break;
-	case OPLOCKS:
-	{
-		int val;
 
-		if (strcasecmp(param_buf, "oplocks")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
+	share = kzalloc(sizeof(struct cifssrv_share), GFP_KERNEL);
+	if (!share)
+		return ERR_PTR(-ENOMEM);
 
-		val = getval(data_buf);
-		if (val == 0)
-			clr_attr_oplocks(&share->config.attr);
-		else	/* default is also enabled */
-			set_attr_oplocks(&share->config.attr);
-	}
-	break;
-	case PATH:
-	{
-		if (strcasecmp(param_buf, "path")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
+	init_params(share);
+	*alloc_share = 1;
+	return share;
+}
 
-		kfree(share->path);
-		share->path = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->path)
-			return -ENOMEM;
+enum {
+	Opt_guest,
+	Opt_servern,
+	Opt_domain,
+	Opt_netbiosname,
 
-		strncpy(share->path, data_buf, data_sz);
-	}
-	break;
-	case READLIST:
-	{
-		if (strcasecmp(param_buf, "read list")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
+	Opt_global_err
+};
 
-		kfree(share->config.read_list);
-		share->config.read_list = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.read_list)
-			return -ENOMEM;
+static const match_table_t cifssrv_global_tokens = {
+	{ Opt_guest, "guest account = %s" },
+	{ Opt_servern, "server string = %s" },
+	{ Opt_domain, "workgroup = %s" },
+	{ Opt_netbiosname, "netbios name = %s" },
 
-		strncpy(share->config.read_list, data_buf, data_sz);
-	}
-	break;
-	case VALIDUSERS:
-	{
-		if (strcasecmp(param_buf, "valid users")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
+	{ Opt_global_err, NULL }
+};
 
-		kfree(share->config.valid_users);
-		share->config.valid_users = kzalloc(data_sz+1, GFP_KERNEL);
-		if (!share->config.valid_users)
-			return -ENOMEM;
+enum {
+	Opt_sharename,
+	Opt_available,
+	Opt_browsable,
+	Opt_writeable,
+	Opt_guestok,
+	Opt_guestonly,
+	Opt_oplocks,
+	Opt_maxcon,
+	Opt_comment,
+	Opt_allowhost,
+	Opt_denyhost,
+	Opt_validusers,
+	Opt_invalidusers,
+	Opt_path,
+	Opt_readlist,
 
-		strncpy(share->config.valid_users, data_buf, data_sz);
-	}
-	break;
-	case WRITEABLE:
-	{
-		int val;
+	Opt_share_err
+};
 
-		if (strcasecmp(param_buf, "writeable")) {
-			cifssrv_err("[%s] invalid parameter\n", param_buf);
-			break;
-		}
+static const match_table_t cifssrv_share_tokens = {
+	{ Opt_sharename, "sharename = %s" },
+	{ Opt_available, "available = %s" },
+	{ Opt_browsable, "browsable = %s" },
+	{ Opt_writeable, "writeable = %s" },
+	{ Opt_guestok, "guest ok = %s" },
+	{ Opt_guestonly, "guest only = %s" },
+	{ Opt_oplocks, "oplocks = %s" },
+	{ Opt_maxcon, "max connections = %s" },
+	{ Opt_comment, "comment = %s" },
+	{ Opt_allowhost, "allow hosts = %s" },
+	{ Opt_denyhost, "deny hosts = %s" },
+	{ Opt_validusers, "valid users = %s" },
+	{ Opt_invalidusers, "invalid users = %s" },
+	{ Opt_path, "path = %s" },
+	{ Opt_readlist, "read list = %s" },
 
-		val = getval(data_buf);
-		if (val == 1)
-			set_attr_writeable(&share->config.attr);
-		else	/* default is also disabled */
-			clr_attr_writeable(&share->config.attr);
-	}
-	break;
-	default:
-		cifssrv_err("[%s] not supported\n", param_buf);
-	}
+	{ Opt_share_err, NULL }
+};
+
+/*
+ * cifssrv_get_config_str() - get a configuration string
+ * @arg:	configuration argument list
+ * @config:	destination to store output config string
+ *
+ * Return:      0 on success, otherwise -ENOMEM
+ */
+static int cifssrv_get_config_str(substring_t args[], char **config)
+{
+	kfree(*config);
+	*config = match_strdup(args);
+	if (!*config)
+		return -ENOMEM;
 
 	return 0;
 }
 
-/* utility function for next share */
-static void nxt_share(const char *src, int *pos, char *dst, int *dsz,
-		int *eof)
+/*
+ * cifssrv_get_config_val() - get a configuration string value
+ * @arg:	configuration argument list
+ * @val:	destination to store output val
+ *
+ * Return:      0 on success, otherwise error
+ */
+static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
 {
-	char c;
-	*dsz = 0;
+	char *str;
+	int ret = 0;
 
-	while (src[*pos] != '<')
-		(*pos)++;
+	str = match_strdup(args);
+	if (str == NULL)
+		return -ENOMEM;
 
-	*pos += 1;
-
-	if (src[(*pos)++] == '[') {
-		while ((c = src[(*pos)++]) != ']')
-			dst[(*dsz)++] = c;
+	if (!strcasecmp(str, "yes") ||
+			!strcasecmp(str, "true") ||
+			!strcmp(str, "1"))
+		*val = 1;
+	else if (!strcasecmp(str, "no") ||
+			!strcasecmp(str, "false") ||
+			!strcmp(str, "0"))
+		*val = 0;
+	else {
+		cifssrv_err("bad option value %s\n", str);
+		ret = -EINVAL;
 	}
 
-	if (src[(*pos)+1] == '#') {
-		*dsz = 0;
-		*eof = 1;
-	}
+	kfree(str);
+	return ret;
 }
 
-/* utility function for next parameter */
-static void nxt_param(const char *src, int *pos, char *param_buf,
-		      char *data_buf, int *param_sz, int *data_sz,
-		      int *share, int *eof)
+static int cifssrv_parse_global_options(char *configdata)
 {
-	*param_sz = 0;
-	*data_sz = 0;
-	*eof = 0;
+	char *data;
+	char *options;
+	char separator[2];
 
-	while (src[*pos] != '<')
-		(*pos)++;
+	separator[0] = '<';
+	separator[1] = 0;
 
-	*pos += 1;
+	if (!configdata)
+		goto config_err;
 
-	if (src[*pos] != '[') {
-		while (!((src[*pos] == ' ') && (src[(*pos)+1] == '=')) &&
-				(src[*pos] != '>'))
-			param_buf[(*param_sz)++] = src[(*pos)++];
+	options = configdata;
 
-		if (src[*pos] != '>')
-			while (!(src[*pos] >= 'A' && src[*pos] <= 'Z') &&
-				!(src[*pos] >= 'a' && src[*pos] <= 'z') &&
-				!(src[*pos] >= '0' && src[*pos] <= '9') &&
-				(src[*pos] != '/'))
-				(*pos)++;
+	while ((data = strsep(&options, separator)) != NULL) {
+		substring_t args[MAX_OPT_ARGS];
+		int token;
 
-		while (src[*pos] != '>')
-			data_buf[(*data_sz)++] = src[(*pos)++];
+		if (!*data)
+			continue;
 
-		if (src[(*pos)+1] == '#')
-			*eof = 1;
-
-		*share = 0;
-	} else {
-		*pos -= 1;
-		*share = 1;
+		token = match_token(data, cifssrv_global_tokens, args);
+		switch (token) {
+		case Opt_guest:
+			if (cifssrv_get_config_str(args, &guestAccountName))
+				goto out_nomem;
+			break;
+		case Opt_servern:
+			if (cifssrv_get_config_str(args, &server_string))
+				goto out_nomem;
+			break;
+		case Opt_domain:
+			if (cifssrv_get_config_str(args, &workgroup))
+				goto out_nomem;
+			break;
+		case Opt_netbiosname:
+			if (cifssrv_get_config_str(args, &netbios_name))
+				goto out_nomem;
+			break;
+		default:
+			cifssrv_err("[%s] not supported\n", data);
+			break;
+		}
 	}
+
+	return 0;
+
+out_nomem:
+	cifssrv_err("Could not allocate buffer\n");
+
+config_err:
+	return 1;
+}
+
+static int cifssrv_parse_share_options(const char *configdata)
+{
+	struct cifssrv_share *share = NULL;
+	char *data, *end;
+	char *configdata_copy = NULL, *options;
+	char separator[2];
+	char *string = NULL;
+	unsigned int val;
+	unsigned int new_share = 0;
+
+	separator[0] = '<';
+	separator[1] = 0;
+
+	if (!configdata)
+		goto config_err;
+
+	configdata_copy = kstrndup(configdata, PAGE_SIZE, GFP_KERNEL);
+	if (!configdata_copy)
+		goto config_err;
+
+	options = configdata_copy;
+	end = options + strlen(options);
+
+	while ((data = strsep(&options, separator)) != NULL) {
+		substring_t args[MAX_OPT_ARGS];
+		int token;
+
+		if (!*data)
+			continue;
+
+		token = match_token(data, cifssrv_share_tokens, args);
+		switch (token) {
+		case Opt_sharename:
+			string = match_strdup(args);
+			if (string == NULL)
+				goto out_nomem;
+			if (!strncmp(string, "global", 6)) {
+				kfree(string);
+				if (cifssrv_parse_global_options(options) != 0)
+					goto config_err;
+				options = end;
+			} else {
+				share = check_share(string, &new_share);
+				if (IS_ERR(share)) {
+					kfree(string);
+					share = NULL;
+					goto config_err;
+				}
+				share->sharename = string;
+			}
+			break;
+		case Opt_available:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+
+			if (val == 0)
+				clear_attr_available(&share->config.attr);
+			else
+				set_attr_available(&share->config.attr);
+			break;
+		case Opt_browsable:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 0)
+				clear_attr_browsable(&share->config.attr);
+			else
+				set_attr_browsable(&share->config.attr);
+			break;
+		case Opt_writeable:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_writeable(&share->config.attr);
+			else
+				clear_attr_writeable(&share->config.attr);
+			break;
+		case Opt_guestok:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_guestok(&share->config.attr);
+			else
+				clear_attr_guestok(&share->config.attr);
+			break;
+		case Opt_guestonly:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_guestonly(&share->config.attr);
+			else
+				clear_attr_guestonly(&share->config.attr);
+			break;
+		case Opt_oplocks:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 0)
+				clear_attr_oplocks(&share->config.attr);
+			else
+				set_attr_oplocks(&share->config.attr);
+			break;
+		case Opt_maxcon:
+			string = match_strdup(args);
+			if (string == NULL)
+				goto out_nomem;
+			if (!share || kstrtouint(string, 10, &val)) {
+				kfree(string);
+				goto config_err;
+			}
+			share->config.max_connections = val;
+			kfree(string);
+			break;
+		case Opt_comment:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.comment))
+				goto out_nomem;
+			break;
+		case Opt_allowhost:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.allow_hosts))
+				goto out_nomem;
+			break;
+		case Opt_denyhost:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.deny_hosts))
+				goto out_nomem;
+			break;
+		case Opt_validusers:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.valid_users))
+				goto out_nomem;
+			break;
+		case Opt_invalidusers:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.invalid_users))
+				goto out_nomem;
+			break;
+		case Opt_path:
+			if (!share || cifssrv_get_config_str(args,
+						&share->path))
+				goto out_nomem;
+			if (new_share && !__add_share(share, share->sharename,
+						share->path))
+				cifssrv_err("share add error %s:%s\n",
+						share->sharename, share->path);
+			break;
+		case Opt_readlist:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.read_list))
+				goto out_nomem;
+			break;
+		default:
+			cifssrv_err("[%s] not supported\n", data);
+			break;
+		}
+	}
+
+	kfree(configdata_copy);
+	return 0;
+
+out_nomem:
+	cifssrv_err("Could not allocate buffer\n");
+
+config_err:
+	if (new_share && share)
+		cleanup_bad_share(share);
+	kfree(configdata_copy);
+	return 1;
 }
 
 /**
@@ -1307,135 +1246,10 @@ static ssize_t config_store(struct kobject *kobj,
 		struct kobj_attribute *kobj_attr,
 		const char *buf, size_t len)
 {
-	struct cifssrv_share *share;
-	int cum = 0;
-	int is_share = 0;
-	char *share_buf;
-	char *param_buf;
-	char *data_buf;
-	int share_sz = 0;
-	int param_sz = 0;
-	int data_sz = 0;
-	int end = 0;
-	int new;
-	int ret = len;
+	if (cifssrv_parse_share_options(buf))
+		return -EINVAL;
 
-	share_buf = kmalloc(SHARE_MAX_NAME_LEN, GFP_KERNEL);
-	if (!share_buf)
-		return -ENOMEM;
-
-	param_buf = kmalloc(SHARE_MAX_NAME_LEN, GFP_KERNEL);
-	if (!param_buf) {
-		ret = -ENOMEM;
-		goto mem_param_fail;
-	}
-
-	data_buf = kmalloc(SHARE_MAX_DATA_LEN, GFP_KERNEL);
-	if (!data_buf) {
-		ret = -ENOMEM;
-		goto mem_data_fail;
-	}
-
-	while (!end) {
-		memset(share_buf, 0, SHARE_MAX_NAME_LEN);
-		nxt_share(buf, &cum, share_buf, &share_sz, &end);
-
-		if (share_sz && strcmp("global", share_buf)) {
-			new = 0;
-			share = check_share(share_buf, share_sz);
-
-			if (!share) {
-				share = kzalloc(sizeof(struct cifssrv_share),
-						GFP_KERNEL);
-				if (!share) {
-					ret = -ENOMEM;
-					goto mem_share_fail;
-				}
-
-				share->sharename = kzalloc(share_sz+1,
-							GFP_KERNEL);
-				if (!share->sharename) {
-					ret = -ENOMEM;
-					kfree(share);
-					goto mem_share_fail;
-				}
-				strncpy(share->sharename, share_buf, share_sz);
-				init_params(share);
-				new = 1;
-			}
-			do {
-				param_sz = 0;
-				data_sz = 0;
-
-				memset(param_buf, 0, SHARE_MAX_NAME_LEN);
-				memset(data_buf, 0, SHARE_MAX_DATA_LEN);
-
-				nxt_param(buf, &cum, param_buf, data_buf,
-					&param_sz, &data_sz, &is_share, &end);
-
-				if (param_sz)
-					if (update_share(share, param_buf,
-						data_buf, param_sz, data_sz) ==
-							-ENOMEM) {
-						ret = -ENOMEM;
-						free_share(share);
-						kfree(share);
-						goto mem_share_fail;
-					}
-			} while (!is_share && !end);
-
-			if (new) {
-				/* By this time path configuration should be
-				done for the [share] through config file;
-				if not then handle this */
-				if (!share->path) {
-					cifssrv_err(
-					"[share=%s] add failed; path missing\n",
-					share->sharename);
-
-					free_share(share);
-					kfree(share);
-				} else {
-					ret = __add_share(share,
-							share->sharename,
-							share->path);
-					if (!ret) {
-						free_share(share);
-						kfree(share);
-					}
-				}
-			}
-		} else{
-			/* global share*/
-			do {
-				param_sz = 0;
-				data_sz = 0;
-
-				memset(param_buf, 0, SHARE_MAX_NAME_LEN);
-				memset(data_buf, 0, SHARE_MAX_DATA_LEN);
-
-				nxt_param(buf, &cum, param_buf, data_buf,
-					&param_sz, &data_sz, &is_share, &end);
-				if (param_sz)
-					if (update_global(param_buf,
-						data_buf, param_sz, data_sz) ==
-							-ENOMEM) {
-						ret = -ENOMEM;
-						goto mem_share_fail;
-				}
-			} while (!is_share && !end);
-		}
-
-	}
-
-mem_share_fail:
-	kfree(data_buf);
-mem_data_fail:
-	kfree(param_buf);
-mem_param_fail:
-	kfree(share_buf);
-
-	return ret;
+	return len;
 }
 
 /**

@@ -102,34 +102,6 @@ struct cifssrv_sess {
 	uint64_t sess_id;
 };
 
-/* These values represents the lowercase ascii
-	values sum for individual parameters.
-	Ex- "path" & "PATH" should be treated as same.
-		And ascii sum of "path" = 429 */
-enum global_params {
-	GUESTACCOUNT            =       1333,
-	SERVERSTRING            =       1358,
-	WORKGROUP               =       1008,
-	NETBIOSNAME		=	1205
-};
-
-enum share_params {
-	ALLOWHOSTS		=	1136,
-	AVAILABLE		=	929,
-	BROWSABLE		=	961,
-	COMMENT			=	755,
-	DENYHOSTS		=	1025,
-	GUESTOK			=	802,
-	GUESTONLY		=	1034,
-	INVALIDUSERS		=	1337,
-	MAXCONNECTIONS		=	1545,
-	OPLOCKS			=	763,
-	PATH			=	429,
-	READLIST		=	772,
-	VALIDUSERS		=	1122,
-	WRITEABLE		=	959
-};
-
 enum share_attrs {
 	SH_AVAILABLE = 0,
 	SH_BROWSABLE,
@@ -144,7 +116,7 @@ static inline void set_attr_##name(unsigned long *val)		\
 {								\
 	set_bit(bit, val);					\
 }								\
-static inline void clr_attr_##name(unsigned long *val)		\
+static inline void clear_attr_##name(unsigned long *val)	\
 {								\
 	clear_bit(bit, val);					\
 }								\
@@ -157,12 +129,12 @@ static inline unsigned int get_attr_##name(unsigned long *val)	\
  * There could be 2 ways to add path to an export list.
  * One is static, via a conf file. Other is dynamic, via sysfs entry.
  */
-SHARE_ATTR(SH_AVAILABLE, available)
-SHARE_ATTR(SH_BROWSABLE, browsable)
-SHARE_ATTR(SH_GUESTOK, guestok)
-SHARE_ATTR(SH_GUESTONLY, guestonly)
-SHARE_ATTR(SH_OPLOCKS, oplocks)
-SHARE_ATTR(SH_WRITEABLE, writeable)
+SHARE_ATTR(SH_AVAILABLE, available)	/* default: enabled */
+SHARE_ATTR(SH_BROWSABLE, browsable)	/* default: enabled */
+SHARE_ATTR(SH_GUESTOK, guestok)		/* default: disabled */
+SHARE_ATTR(SH_GUESTONLY, guestonly)	/* default: disabled */
+SHARE_ATTR(SH_OPLOCKS, oplocks)		/* default: enabled */
+SHARE_ATTR(SH_WRITEABLE, writeable)	/* default: disabled */
 
 
 struct share_config {
