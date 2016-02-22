@@ -1737,7 +1737,8 @@ out:
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_UNEXPECTED_IO_ERROR;
-	}
+	} else
+		server->stats.open_files_count++;
 
 	smb_put_name(conv_name);
 
