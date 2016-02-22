@@ -525,6 +525,237 @@ static struct cifssrv_share *check_share(char *share_name, int *alloc_share)
 	return share;
 }
 
+/**
+ * share_show() - show a list of exported shares
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing share list output
+ *
+ * Return:      output buffer length
+ */
+static ssize_t share_show(struct kobject *kobj,
+			  struct kobj_attribute *kobj_attr,
+			  char *buf)
+{
+	struct cifssrv_share *share;
+	struct list_head *tmp;
+	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
+	char *tbuf = buf;
+
+	list_for_each(tmp, &cifssrv_share_list) {
+		share = list_entry(tmp, struct cifssrv_share, list);
+		if (share->path) {
+			len = snprintf(tbuf, limit, "%s:%s\n",
+				 share->sharename, share->path);
+			if (len < 0) {
+				total = len;
+				break;
+			}
+			tbuf += len;
+			total += len;
+			limit -= len;
+		}
+	}
+
+	return total;
+}
+
+/**
+ * share_store() - add a share path in exported share list
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing share path to be exported
+ * @len:	share name buf length
+ *
+ * Return:      share name buf length on success, otherwise error
+ */
+static ssize_t share_store(struct kobject *kobj,
+			   struct kobj_attribute *kobj_attr,
+			   const char *buf, size_t len)
+{
+	char *share[1], *path[1];
+	int rc;
+
+	rc = init_2_strings(buf, share, path, len);
+	if (rc)
+		return rc;
+
+	/* check if sharepath is already exported */
+	rc = check_sharepath(*path);
+	if (!rc) {
+		cifssrv_err("path %s is already exported\n", *path);
+		kfree(*share);
+		kfree(*path);
+		return -EEXIST;
+	}
+
+	rc = add_share(*share, *path);
+	if (rc) {
+		kfree(*share);
+		kfree(*path);
+		return rc;
+	}
+
+	return len;
+}
+
+/**
+ * user_show() - show a list of added user
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing user list output
+ *
+ * Return:      output buffer length
+ */
+static ssize_t user_show(struct kobject *kobj,
+			 struct kobj_attribute *kobj_attr,
+			 char *buf)
+
+{
+	struct cifssrv_usr *usr, *tmp;
+	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
+	char *tbuf = buf;
+
+	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
+		len = snprintf(tbuf, limit, "%s\n", usr->name);
+		if (len < 0) {
+			total = len;
+			break;
+		}
+		tbuf += len;
+		total += len;
+		limit -= len;
+	}
+
+	return total;
+}
+
+/**
+ * user_store() - add a user in valid user list
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing user name to be added
+ * @len:	user name buf length
+ *
+ * Return:      user name buf length on success, otherwise error
+ */
+static ssize_t user_store(struct kobject *kobj,
+			  struct kobj_attribute *kobj_attr,
+			  const char *buf, size_t len)
+{
+	char *usrname[1], *passwd[1];
+	int rc;
+
+	rc = init_2_strings(buf, usrname, passwd, len);
+	if (rc) {
+		if (rc == -EINVAL) {
+			cifssrv_err("[%s] <usr:pass> format err\n", __func__);
+			return len;
+		}
+		return rc;
+	}
+
+	/* check if user is already present*/
+	rc = getUser(*usrname, *passwd);
+	if (!rc) {
+		kfree(*usrname);
+		kfree(*passwd);
+	} else {
+		rc = add_user(*usrname, *passwd);
+		kfree(*passwd);
+		if (rc) {
+			kfree(*usrname);
+			if (rc == -ENOMEM)
+				return -ENOMEM;
+		}
+	}
+
+	return len;
+}
+
+/**
+ * debug_store() - enable debug prints
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing debug enable disable setting
+ * @len:	buf length of debug enable disable setting
+ *
+ * Return:      debug setting buf length
+ */
+static ssize_t debug_store(struct kobject *kobj,
+			   struct kobj_attribute *kobj_attr,
+			   const char *buf, size_t len)
+{
+	long int value;
+
+	if (kstrtol(buf, 10, &value))
+		return len;
+
+	if (value > 0)
+		cifssrv_debug_enable = value;
+	else if (value == 0)
+		cifssrv_debug_enable = 0;
+
+	return len;
+}
+
+/**
+ * debug_show() - show debug print enable disable setting
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing debug print setting
+ *
+ * Return:      output buffer length
+ */
+static ssize_t debug_show(struct kobject *kobj,
+			  struct kobj_attribute *kobj_attr,
+			  char *buf)
+
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_debug_enable);
+}
+
+/**
+ * caseless_search_store() - enable disable case insensitive search of files
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing case setting
+ * @len:	buf length of case setting
+ *
+ * Return:      case setting buf length
+ */
+static ssize_t caseless_search_store(struct kobject *kobj,
+				     struct kobj_attribute *kobj_attr,
+				     const char *buf, size_t len)
+{
+	long int value;
+
+	if (kstrtol(buf, 10, &value))
+		goto out;
+	if (value > 0)
+		cifssrv_caseless_search = 1;
+	else if (value == 0)
+		cifssrv_caseless_search = 0;
+out:
+	return len;
+}
+
+/**
+ * caseless_search_show() - show caseless search enable disable setting status
+ * @kobj:	kobject of the modules
+ * @kobj_attr:	kobject attribute of the modules
+ * @buf:	buffer containing caseless search setting
+ *
+ * Return:      output buffer length
+ */
+static ssize_t caseless_search_show(struct kobject *kobj,
+		struct kobj_attribute *kobj_attr,
+		char *buf)
+
+{
+	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_caseless_search);
+}
+
 enum {
 	Opt_guest,
 	Opt_servern,
@@ -857,234 +1088,135 @@ config_err:
 }
 
 /**
- * share_show() - show a list of exported shares
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing share list output
+ * show_share_config() - show cifssrv share config
+ * @buf:	destination buffer for config info
+ * @offset:	offset in destination buffer
+ * @share:	show config info of this share
  *
  * Return:      output buffer length
  */
-static ssize_t share_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
+static ssize_t show_share_config(char *buf, int offset,
+		struct cifssrv_share *share)
 {
-	struct cifssrv_share *share;
-	struct list_head *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
+	int cum = offset;
+	int ret = 0;
+	int limit = PAGE_SIZE - offset;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
-		if (share->path) {
-			len = snprintf(tbuf, limit, "%s:%s\n",
-				 share->sharename, share->path);
-			if (len < 0) {
-				total = len;
-				break;
-			}
-			tbuf += len;
-			total += len;
-			limit -= len;
-		}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum, "[%s]\n",
+				share->sharename);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.comment) {
+		ret = snprintf(buf+cum, limit - cum, "\tcomment = %s\n",
+				share->config.comment);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum, "\tpath = %s\n",
+				share->path);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.allow_hosts) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tallow hosts = %s\n",
+				share->config.allow_hosts);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.deny_hosts) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tdeny hosts = %s\n",
+				share->config.deny_hosts);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.invalid_users) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tinvalid users = %s\n",
+				share->config.invalid_users);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.read_list) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tread list = %s\n",
+				share->config.read_list);
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit && share->config.valid_users) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tvalid users = %s\n",
+				share->config.valid_users);
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tavailable = %d\n",
+				get_attr_available(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tbrowsable = %d\n",
+				get_attr_browsable(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tguest ok = %d\n",
+				get_attr_guestok(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tguest only = %d\n",
+				get_attr_guestonly(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum, "\toplocks = %d\n",
+				get_attr_oplocks(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\twriteable = %d\n",
+				get_attr_writeable(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
+	}
+	if (cum < limit) {
+		ret = snprintf(buf+cum, limit - cum,
+				"\tmax connections = %u\n",
+				share->config.max_connections);
+		if (ret < 0)
+			return cum;
+		cum += ret;
 	}
 
-	return total;
-}
-
-/**
- * share_store() - add a share path in exported share list
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing share path to be exported
- * @len:	share name buf length
- *
- * Return:      share name buf length on success, otherwise error
- */
-static ssize_t share_store(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   const char *buf, size_t len)
-{
-	char *share[1], *path[1];
-	int rc;
-
-	rc = init_2_strings(buf, share, path, len);
-	if (rc)
-		return rc;
-
-	/* check if sharepath is already exported */
-	rc = check_sharepath(*path);
-	if (!rc) {
-		cifssrv_err("path %s is already exported\n", *path);
-		kfree(*share);
-		kfree(*path);
-		return -EEXIST;
-	}
-
-	rc = add_share(*share, *path);
-	if (rc) {
-		kfree(*share);
-		kfree(*path);
-		return rc;
-	}
-
-	return len;
-}
-
-/**
- * user_show() - show a list of added user
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing user list output
- *
- * Return:      output buffer length
- */
-static ssize_t user_show(struct kobject *kobj,
-			 struct kobj_attribute *kobj_attr,
-			 char *buf)
-
-{
-	struct cifssrv_usr *usr, *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
-
-	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
-		len = snprintf(tbuf, limit, "%s\n", usr->name);
-		if (len < 0) {
-			total = len;
-			break;
-		}
-		tbuf += len;
-		total += len;
-		limit -= len;
-	}
-
-	return total;
-}
-
-/**
- * user_store() - add a user in valid user list
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing user name to be added
- * @len:	user name buf length
- *
- * Return:      user name buf length on success, otherwise error
- */
-static ssize_t user_store(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  const char *buf, size_t len)
-{
-	char *usrname[1], *passwd[1];
-	int rc;
-
-	rc = init_2_strings(buf, usrname, passwd, len);
-	if (rc) {
-		if (rc == -EINVAL) {
-			cifssrv_err("[%s] <usr:pass> format err\n", __func__);
-			return len;
-		}
-		return rc;
-	}
-
-	/* check if user is already present*/
-	rc = getUser(*usrname, *passwd);
-	if (!rc) {
-		kfree(*usrname);
-		kfree(*passwd);
-	} else {
-		rc = add_user(*usrname, *passwd);
-		kfree(*passwd);
-		if (rc) {
-			kfree(*usrname);
-			if (rc == -ENOMEM)
-				return -ENOMEM;
-		}
-	}
-
-	return len;
-}
-
-/**
- * debug_store() - enable debug prints
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing debug enable disable setting
- * @len:	buf length of debug enable disable setting
- *
- * Return:      debug setting buf length
- */
-static ssize_t debug_store(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   const char *buf, size_t len)
-{
-	long int value;
-
-	if (kstrtol(buf, 10, &value))
-		return len;
-
-	if (value > 0)
-		cifssrv_debug_enable = value;
-	else if (value == 0)
-		cifssrv_debug_enable = 0;
-
-	return len;
-}
-
-/**
- * debug_show() - show debug print enable disable setting
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing debug print setting
- *
- * Return:      output buffer length
- */
-static ssize_t debug_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_debug_enable);
-}
-
-/**
- * caseless_search_store() - enable disable case insensitive search of files
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing case setting
- * @len:	buf length of case setting
- *
- * Return:      case setting buf length
- */
-static ssize_t caseless_search_store(struct kobject *kobj,
-				     struct kobj_attribute *kobj_attr,
-				     const char *buf, size_t len)
-{
-	long int value;
-
-	if (kstrtol(buf, 10, &value))
-		goto out;
-	if (value > 0)
-		cifssrv_caseless_search = 1;
-	else if (value == 0)
-		cifssrv_caseless_search = 0;
-out:
-	return len;
-}
-
-/**
- * caseless_search_show() - show caseless search enable disable setting status
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing caseless search setting
- *
- * Return:      output buffer length
- */
-static ssize_t caseless_search_show(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_caseless_search);
+	return cum;
 }
 
 /**
@@ -1104,130 +1236,17 @@ static ssize_t config_show(struct kobject *kobj,
 	struct list_head *tmp;
 	int cum = 0;
 	int ret = 0;
-	int limit = PAGE_SIZE;
 
 	list_for_each(tmp, &cifssrv_share_list) {
 		share = list_entry(tmp, struct cifssrv_share, list);
+		/* no need to show IPC$ share details */
+		if (!share->path)
+			continue;
 
-		if (cum < limit && share->sharename) {
-			ret = snprintf(buf+cum, limit - cum, "[%s]\n",
-					share->sharename);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.comment &&
-			strlen(share->config.comment)) {
-			ret = snprintf(buf+cum, limit - cum, "\tcomment = %s\n",
-					share->config.comment);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->path) {
-			ret = snprintf(buf+cum, limit - cum, "\tpath = %s\n",
-					share->path);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.allow_hosts &&
-			strlen(share->config.allow_hosts)) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tallow hosts = %s\n",
-				       share->config.allow_hosts);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.deny_hosts &&
-			strlen(share->config.deny_hosts)) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tdeny hosts = %s\n",
-				       share->config.deny_hosts);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.invalid_users &&
-			strlen(share->config.invalid_users)) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tinvalid users = %s\n",
-				       share->config.invalid_users);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.read_list &&
-			strlen(share->config.read_list)) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tread list = %s\n",
-				       share->config.read_list);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit && share->config.valid_users &&
-			strlen(share->config.valid_users)) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tvalid users = %s\n",
-				       share->config.valid_users);
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tavailable = %d\n",
-				       get_attr_available(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tbrowsable = %d\n",
-				       get_attr_browsable(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tguest ok = %d\n",
-				       get_attr_guestok(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tguest only = %d\n",
-				       get_attr_guestonly(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum, "\toplocks = %d\n",
-					get_attr_oplocks(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\twriteable = %d\n",
-				       get_attr_writeable(&share->config.attr));
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
-		if (cum < limit) {
-			ret = snprintf(buf+cum, limit - cum,
-				       "\tmax connections = %u\n",
-				       share->config.max_connections);
-			if (ret < 0)
-				return cum;
-			cum += ret;
-		}
+		ret = show_share_config(buf, cum, share);
+		if (ret < 0)
+			return cum;
+		cum += ret;
 	}
 
 	return cum;
