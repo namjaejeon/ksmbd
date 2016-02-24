@@ -45,42 +45,6 @@
 #define SMB_NO_MORE_ANDX_COMMAND 0xFF
 #define SMB1_PROTO_NUMBER __constant_cpu_to_le32(0x424d53ff)
 
-/* SMB command codes:
- ** Note some commands have minimal (wct=0,bcc=0), or uninteresting, responses
- ** (ie which include no useful data other than the SMB error code itself).
- ** This can allow us to avoid response buffer allocations and copy in some
- ** cases.
- **/
-#define SMB_COM_CREATE_DIRECTORY      0x00 /* trivial response */
-#define SMB_COM_DELETE_DIRECTORY      0x01 /* trivial response */
-#define SMB_COM_CLOSE                 0x04 /* triv req/rsp, timestamp ignored */
-#define SMB_COM_FLUSH                 0x05 /* triv req/rsp */
-#define SMB_COM_DELETE                0x06 /* trivial response */
-#define SMB_COM_RENAME                0x07 /* trivial response */
-#define SMB_COM_QUERY_INFORMATION     0x08 /* aka getattr */
-#define SMB_COM_SETATTR               0x09 /* trivial response */
-#define SMB_COM_WRITE                 0x0b
-#define SMB_COM_CHECK_DIRECTORY       0x10 /* trivial response */
-#define SMB_COM_LOCKING_ANDX          0x24 /* trivial response */
-#define SMB_COM_COPY                  0x29 /* trivial rsp, fail filename ignrd*/
-#define SMB_COM_ECHO                  0x2B /* echo request */
-#define SMB_COM_OPEN_ANDX             0x2D /* Legacy open for old servers */
-#define SMB_COM_READ_ANDX             0x2E
-#define SMB_COM_WRITE_ANDX            0x2F
-#define SMB_COM_TRANSACTION2          0x32
-#define SMB_COM_TRANSACTION2_SECONDARY 0x33
-#define SMB_COM_FIND_CLOSE2           0x34 /* trivial response */
-#define SMB_COM_TREE_DISCONNECT       0x71 /* trivial response */
-#define SMB_COM_NEGOTIATE             0x72
-#define SMB_COM_SESSION_SETUP_ANDX    0x73
-#define SMB_COM_LOGOFF_ANDX           0x74 /* trivial response */
-#define SMB_COM_TREE_CONNECT_ANDX     0x75
-#define SMB_COM_NT_TRANSACT           0xA0
-#define SMB_COM_NT_TRANSACT_SECONDARY 0xA1
-#define SMB_COM_NT_CREATE_ANDX        0xA2
-#define SMB_COM_NT_CANCEL             0xA4 /* no response */
-#define SMB_COM_NT_RENAME             0xA5 /* trivial response */
-
 /* Transact2 subcommand codes */
 #define TRANS2_OPEN                   0x00
 #define TRANS2_FIND_FIRST             0x01
@@ -157,7 +121,9 @@
 #define SMB_COM_RENAME                0x07 /* trivial response */
 #define SMB_COM_QUERY_INFORMATION     0x08 /* aka getattr */
 #define SMB_COM_SETATTR               0x09 /* trivial response */
+#define SMB_COM_WRITE                 0x0b
 #define SMB_COM_CHECK_DIRECTORY       0x10 /* trivial response */
+#define SMB_COM_PROCESS_EXIT          0x11 /* trivial response */
 #define SMB_COM_LOCKING_ANDX          0x24 /* trivial response */
 #define SMB_COM_TRANSACTION	      0x25
 #define SMB_COM_COPY                  0x29 /* trivial rsp, fail filename ignrd*/
@@ -200,12 +166,6 @@
 #define CAP_DYNAMIC_REAUTH     0x20000000
 #define CAP_PERSISTENT_HANDLES 0x40000000
 #define CAP_EXTENDED_SECURITY  0x80000000
-
-/* SecurityMode bits */
-#define SECMODE_USER          0x01      /* off indicates share level security */
-#define SECMODE_PW_ENCRYPT    0x02
-#define SECMODE_SIGN_ENABLED  0x04      /* SMB security signatures enabled */
-#define SECMODE_SIGN_REQUIRED 0x08      /* SMB security signatures required */
 
 /* RFC 1002 session packet types */
 #define RFC1002_SESSION_MESSAGE 0x00
@@ -1274,6 +1234,11 @@ typedef struct {
 	__le32 EaSize;
 } __attribute__((packed)) FILE_EA_INFO;
 
+typedef struct {
+	__le32 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) ALT_NAME_INFO;
+
 typedef struct { /* data block encoding of response to level 263 QPathInfo */
 	__le64 CreationTime;
 	__le64 LastAccessTime;
@@ -1651,6 +1616,11 @@ typedef struct smb_com_check_directory_rsp {
 	__u16 ByteCount;	/* bct = 0 */
 } __attribute__((packed)) CHECK_DIRECTORY_RSP;
 
+typedef struct smb_com_process_exit_rsp {
+	struct smb_hdr hdr;	/* wct = 0 */
+	__u16 ByteCount;	/* bct = 0 */
+} __attribute__((packed)) PROCESS_EXIT_RSP;
+
 typedef struct smb_com_delete_directory_req {
 	struct smb_hdr hdr;     /* wct = 0 */
 	__le16 ByteCount;
@@ -1930,4 +1900,5 @@ extern int smb_open_andx(struct smb_work *smb_work);
 extern int smb_write(struct smb_work *smb_work);
 extern int smb_setattr(struct smb_work *smb_work);
 extern int smb_checkdir(struct smb_work *smb_work);
+extern int smb_process_exit(struct smb_work *smb_work);
 #endif /* __CIFSSRV_SMB1PDU_H */

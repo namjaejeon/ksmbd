@@ -3010,6 +3010,7 @@ int query_path_info(struct smb_work *smb_work)
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
+	struct tcp_server_info *server = smb_work->server;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
 	TRANSACTION2_QPI_REQ_PARAMS *req_params;
 	char *name;
@@ -3022,6 +3023,7 @@ int query_path_info(struct smb_work *smb_work)
 	FILE_STANDARD_INFO *standard_info;
 	FILE_INFO_STANDARD *infos;
 	FILE_EA_INFO *ea_info;
+	ALT_NAME_INFO *alt_name_info;
 	struct file_internal_info *iinfo;
 	char *ptr;
 
@@ -3231,6 +3233,31 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
 		ainfo->FileNameLength = 0;
+		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		break;
+	case SMB_QUERY_ALT_NAME_INFO:
+		cifssrv_debug("SMB_QUERY_ALT_NAME_INFO\n");
+		rsp_hdr->WordCount = 10;
+		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalDataCount = 20;
+		rsp->t2.Reserved = 0;
+		rsp->t2.ParameterCount = 2;
+		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterDisplacement = 0;
+		rsp->t2.DataCount = 20;
+		rsp->t2.DataOffset = 60;
+		rsp->t2.DataDisplacement = 0;
+		rsp->t2.SetupCount = 0;
+		rsp->t2.Reserved1 = 0;
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
+		rsp->ByteCount = 25;
+		rsp->Pad = 0;
+		/* lets set EA info */
+		ptr = (char *)&rsp->Pad + 1;
+		memset(ptr, 0, 4);
+		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
+		alt_name_info->FileNameLength = smb2_get_shortname(server,
+				name, alt_name_info->FileName);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -6227,6 +6254,28 @@ int smb_checkdir(struct smb_work *smb_work)
 	path_put(&path);
 	smb_put_name(name);
 	return err;
+}
+
+/**
+ * smb_process_exit() - handler for smb process exit
+ * @smb_work:	smb work containing process exit command buffer
+ *
+ * Return:	0 on success always
+ * This command is obsolete now. Starting with the LAN Manager 1.0 dialect,
+ * FIDs are no longer associated with PIDs.CIFS clients SHOULD NOT send
+ * SMB_COM_PROCESS_EXIT requests. Instead, CIFS clients SHOULD perform all
+ * process cleanup operations, sending individual file close operations
+ * as needed.Here it is implemented very minimally for sake
+ * of passing smbtorture testcases.
+ */
+int smb_process_exit(struct smb_work *smb_work)
+{
+	PROCESS_EXIT_RSP *rsp = (PROCESS_EXIT_RSP *)smb_work->rsp_buf;
+
+	rsp->hdr.Status.CifsError = NT_STATUS_OK;
+	rsp->hdr.WordCount = 0;
+	rsp->ByteCount = 0;
+	return 0;
 }
 
 /**
