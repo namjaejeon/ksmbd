@@ -32,6 +32,7 @@
 #define SMB21_PROT	2
 #define SMB2X_PROT	3	/* multi-protocol negotiate request */
 #define SMB30_PROT	4
+#define SMB302_PROT	5
 #define BAD_PROT	0xFFFF
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

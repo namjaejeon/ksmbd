@@ -750,26 +750,29 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 	server->dialect = negotiate_dialect(smb_work->buf);
 	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
-	if (server->dialect == BAD_PROT_ID) {
+
+	switch(server->dialect) {
+	case SMB302_PROT_ID:
+		init_smb3_02_server(server);
+		rsp->Capabilities |= server->capabilities;
+		break;
+	case SMB30_PROT_ID:
+		init_smb3_0_server(server);
+		rsp->Capabilities |= server->capabilities;
+		break;
+	case SMB21_PROT_ID:
+		init_smb2_1_server(server);
+		rsp->Capabilities |= server->capabilities;
+		break;
+	case BAD_PROT_ID:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return 0;
 	}
 
 	/* For stats */
 	server->connection_type = server->dialect;
-	rsp->Capabilities = 0;
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
 	limit = SMBMaxBufSize;
-
-	if (server->dialect == SMB30_PROT_ID) {
-		init_smb3_0_server(server);
-		rsp->Capabilities |= server->capabilities;
-	}
-
-	if (server->dialect == SMB21_PROT_ID) {
-		init_smb2_1_server(server);
-		rsp->Capabilities |= server->capabilities;
-	}
 
 	if (server->dialect > SMB20_PROT_ID) {
 		memcpy(server->ClientGUID, req->ClientGUID,

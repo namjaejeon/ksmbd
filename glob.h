@@ -84,13 +84,15 @@ extern char *netbios_name;
 #define SMB20_VERSION_STRING    "2.0"
 #define SMB21_VERSION_STRING    "2.1"
 #define SMB30_VERSION_STRING	"3.0"
+#define SMB302_VERSION_STRING	"3.02"
 
 /* Dialects */
-#define SMB20_PROT_ID 0x0202
-#define SMB21_PROT_ID 0x0210
-#define SMB30_PROT_ID 0x0300
-#define SMB2X_PROT_ID 0x02FF    /* multi-protocol negotiate request */
-#define BAD_PROT_ID   0xFFFF
+#define SMB20_PROT_ID	0x0202
+#define SMB21_PROT_ID	0x0210
+#define SMB30_PROT_ID	0x0300
+#define SMB302_PROT_ID	0x0302
+#define SMB2X_PROT_ID	0x02FF    /* multi-protocol negotiate request */
+#define BAD_PROT_ID	0xFFFF
 
 #define LOCKING_ANDX_SHARED_LOCK     0x01
 #define LOCKING_ANDX_OPLOCK_RELEASE  0x02
@@ -478,6 +480,7 @@ extern void init_smb1_server(struct tcp_server_info *server);
 extern void init_smb2_0_server(struct tcp_server_info *server);
 extern void init_smb2_1_server(struct tcp_server_info *server);
 extern void init_smb3_0_server(struct tcp_server_info *server);
+extern void init_smb3_02_server(struct tcp_server_info *server);
 extern int is_smb2_neg_cmd(struct smb_work *smb_work);
 extern bool is_chained_smb2_message(struct smb_work *smb_work);
 extern void init_smb2_neg_rsp(struct smb_work *smb_work);

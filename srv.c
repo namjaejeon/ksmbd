@@ -449,7 +449,8 @@ again:
 	if (server->need_neg && (server->dialect == SMB20_PROT_ID ||
 				server->dialect == SMB21_PROT_ID ||
 				server->dialect == SMB2X_PROT_ID ||
-				server->dialect == SMB30_PROT_ID)) {
+				server->dialect == SMB30_PROT_ID ||
+				server->dialect == SMB302_PROT_ID)) {
 		cifssrv_debug("Need to send the smb2 negotiate response\n");
 		init_smb2_neg_rsp(smb_work);
 		goto send;
