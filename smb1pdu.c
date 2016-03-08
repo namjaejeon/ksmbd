@@ -658,7 +658,8 @@ int smb_negotiate(struct smb_work *smb_work)
 			server->dialect == SMB21_PROT_ID ||
 			server->dialect == SMB2X_PROT_ID ||
 			server->dialect == SMB30_PROT_ID ||
-			server->dialect == SMB302_PROT_ID)
+			server->dialect == SMB302_PROT_ID ||
+			server->dialect == SMB311_PROT_ID)
 		return server->dialect;
 
 	server->connection_type = 0;

@@ -239,7 +239,6 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	rsp->SecurityMode = 0;
 	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
 	rsp->DialectRevision = cpu_to_le16(server->dialect);
-	rsp->Reserved = 0;
 	/* Not setting server guid rsp->ServerGUID, as it
 	 *          * not used by client for identifying server*/
 	rsp->Capabilities = 0;
@@ -252,7 +251,6 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = 0;
-	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp, 65);
 	server->tcp_status = CifsNeedNegotiate;
 	rsp->hdr.CreditRequest = cpu_to_le16(2);
@@ -752,6 +750,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 	cifssrv_debug("server->dialect 0x%x\n", server->dialect);
 
 	switch(server->dialect) {
+	case SMB311_PROT_ID:
+		init_smb3_11_server(server);
+		rsp->Capabilities |= server->capabilities;
+		break;
 	case SMB302_PROT_ID:
 		init_smb3_02_server(server);
 		rsp->Capabilities |= server->capabilities;
@@ -784,7 +786,6 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->StructureSize = cpu_to_le16(65);
 	rsp->SecurityMode = 0;
 	rsp->DialectRevision = cpu_to_le16(server->dialect);
-	rsp->Reserved = 0;
 	/* Not setting server guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
 	rsp->MaxTransactSize = SMBMaxBufSize;
@@ -795,7 +796,6 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = 0;
-	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp, 65);
 	server->tcp_status = CifsNeedNegotiate;
 	server->need_neg = false;

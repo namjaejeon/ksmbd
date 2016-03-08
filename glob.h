@@ -85,12 +85,14 @@ extern char *netbios_name;
 #define SMB21_VERSION_STRING    "2.1"
 #define SMB30_VERSION_STRING	"3.0"
 #define SMB302_VERSION_STRING	"3.02"
+#define SMB311_VERSION_STRING	"3.1.1"
 
 /* Dialects */
 #define SMB20_PROT_ID	0x0202
 #define SMB21_PROT_ID	0x0210
 #define SMB30_PROT_ID	0x0300
 #define SMB302_PROT_ID	0x0302
+#define SMB311_PROT_ID	0x0311
 #define SMB2X_PROT_ID	0x02FF    /* multi-protocol negotiate request */
 #define BAD_PROT_ID	0xFFFF
 
@@ -481,6 +483,7 @@ extern void init_smb2_0_server(struct tcp_server_info *server);
 extern void init_smb2_1_server(struct tcp_server_info *server);
 extern void init_smb3_0_server(struct tcp_server_info *server);
 extern void init_smb3_02_server(struct tcp_server_info *server);
+extern void init_smb3_11_server(struct tcp_server_info *server);
 extern int is_smb2_neg_cmd(struct smb_work *smb_work);
 extern bool is_chained_smb2_message(struct smb_work *smb_work);
 extern void init_smb2_neg_rsp(struct smb_work *smb_work);

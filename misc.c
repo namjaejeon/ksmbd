@@ -35,6 +35,7 @@ static struct {
 	{SMB2X_PROT, "\2SMB 2.???", SMB2X_PROT_ID},
 	{SMB30_PROT, "\2SMB 3.0", SMB30_PROT_ID},
 	{SMB302_PROT, "\2SMB 3.02", SMB302_PROT_ID},
+	{SMB311_PROT, "\2SMB 3.1.1", SMB311_PROT_ID},
 #endif
 };
 
@@ -281,7 +282,7 @@ int negotiate_dialect(void *buf)
 	char *dialects = NULL;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	start_index = SMB302_PROT;
+	start_index = SMB311_PROT;
 #else
 	start_index = CIFS_PROT;
 #endif
@@ -343,6 +344,7 @@ void init_smb2_0_server(struct tcp_server_info *server) { }
 void init_smb2_1_server(struct tcp_server_info *server) { }
 void init_smb3_0_server(struct tcp_server_info *server) { }
 void init_smb3_02_server(struct tcp_server_info *server) { }
+void init_smb3_11_server(struct tcp_server_info *server) { }
 int is_smb2_neg_cmd(struct smb_work *smb_work)
 {
 	return 0;
