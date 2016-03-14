@@ -3918,10 +3918,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			if (S_ISDIR(path.dentry->d_inode->i_mode))
-				rc = smb_vfs_rmdir(new_name);
-			else
-				rc = smb_vfs_unlink(new_name);
+			rc = smb_vfs_unlink(new_name);
 			if (rc) {
 				if (rc == -ENOTEMPTY)
 					rsp->hdr.Status =

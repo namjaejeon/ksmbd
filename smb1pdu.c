@@ -6297,7 +6297,7 @@ int smb_rmdir(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_vfs_rmdir(name);
+	err = smb_vfs_unlink(name);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =

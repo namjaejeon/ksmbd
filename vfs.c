@@ -419,72 +419,71 @@ int smb_vfs_fsync(struct tcp_server_info *server, uint64_t fid)
 }
 
 /**
- * smb_vfs_rmdir() - vfs helper for smb rmdir
- * @name:	file name
- *
- * Return:	0 on success, otherwise error
- */
-int smb_vfs_rmdir(const char *name)
-{
-	struct path path;
-	int err;
-
-	err = kern_path(name, LOOKUP_DIRECTORY, &path);
-	if (err) {
-		cifssrv_err("cannot get linux path for %s, err = %d\n",
-				name, err);
-		return err;
-	}
-
-	mutex_lock_nested(&path.dentry->d_parent->d_inode->i_mutex,
-			I_MUTEX_PARENT);
-	err = vfs_rmdir(path.dentry->d_parent->d_inode, path.dentry);
-	if (err && err != -ENOTEMPTY)
-		cifssrv_err("rmdir failed for (%s), err %d\n", name, err);
-
-	mutex_unlock(&path.dentry->d_parent->d_inode->i_mutex);
-	path_put(&path);
-
-	return err;
-}
-
-/**
- * smb_vfs_unlink() - vfs helper for smb unlink
- * @name:	file name
+ * smb_vfs_unlink() - vfs helper for smb rmdir or unlink
+ * @name:	absolute directory or file name
  *
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_unlink(const char *name)
 {
-	struct path path;
-	int err;
+	struct path parent;
+	struct dentry *dir, *dentry;
+	char *last;
+	int err = -ENOENT;
 
-	err = kern_path(name, 0, &path);
+	last = strrchr(name, '/');
+	if (last && last[1] != '\0')
+		last++;
+	else {
+		cifssrv_debug("can't get last component in path %s\n", name);
+		return -ENOENT;
+	}
+
+	err = kern_path(name, LOOKUP_PARENT, &parent);
 	if (err) {
-		cifssrv_debug("cannot get linux path for %s, err = %d\n",
-				name, err);
+		cifssrv_debug("can't get parent for %s, err %d\n", name, err);
 		return err;
 	}
 
-	dget(path.dentry);
-	mutex_lock_nested(&path.dentry->d_parent->d_inode->i_mutex,
-			I_MUTEX_PARENT);
-	if (path.dentry->d_inode->i_nlink == 0)
-		goto skip;
+	dir = parent.dentry;
+	if (!dir->d_inode)
+		goto out;
 
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+	dentry = lookup_one_len(last, dir, strlen(last));
+	if (IS_ERR(dentry)) {
+		err = PTR_ERR(dentry);
+		cifssrv_debug("%s: lookup failed, err %d\n", last, err);
+		goto out_err;
+	}
+
+	if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
+		dput(dentry);
+		err = -ENOENT;
+		goto out_err;
+	}
+
+	ihold(dentry->d_inode);
+	if (S_ISDIR(dentry->d_inode->i_mode)) {
+		err = vfs_rmdir(dir->d_inode, dentry);
+		if (err && err != -ENOTEMPTY)
+			cifssrv_debug("%s: rmdir failed, err %d\n", name, err);
+	} else {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	err = vfs_unlink(path.dentry->d_parent->d_inode, path.dentry, NULL);
+		err = vfs_unlink(dir->d_inode, dentry, NULL);
 #else
-	err = vfs_unlink(path.dentry->d_parent->d_inode, path.dentry);
+		err = vfs_unlink(dir->d_inode, dentry);
 #endif
-	if (err)
-		cifssrv_debug("unlink failed for %s, err %d\n", name, err);
+		if (err)
+			cifssrv_debug("%s: unlink failed, err %d\n", name, err);
+	}
+	iput(dentry->d_inode);
 
-skip:
-	mutex_unlock(&path.dentry->d_parent->d_inode->i_mutex);
-	dput(path.dentry);
-	path_put(&path);
-
+	dput(dentry);
+out_err:
+	mutex_unlock(&dir->d_inode->i_mutex);
+out:
+	path_put(&parent);
 	return err;
 }
 
