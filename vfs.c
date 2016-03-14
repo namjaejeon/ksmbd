@@ -994,15 +994,15 @@ int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start, loff_t end,
 	return error;
 }
 
-int smb_vfs_readdir(struct file *file, filldir_t filler, void *buf)
+int smb_vfs_readdir(struct file *file, filldir_t filler,
+			struct smb_readdir_data *rdata)
 {
-	struct smb_readdir_data *r_data = (struct smb_readdir_data *)buf;
 	int err;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	err = iterate_dir(file, &r_data->ctx);
+	err = iterate_dir(file, &rdata->ctx);
 #else
-	err = vfs_readdir(file, smb_filldir, r_data);
+	err = vfs_readdir(file, smb_filldir, rdata);
 #endif
 
 	return err;
