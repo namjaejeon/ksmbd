@@ -1921,8 +1921,7 @@ static inline void *fill_common_info(char **p, struct kstat *kstat)
 }
 
 /**
- * calc_nl_and_neo() - calculates name_len(nl) and next_entry_offset(neo)
- * @buf:		target buffer for file name
+ * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
  * @namestr:		source filename buffer
  * @len:		source buffer length
  * @size:		used buffer size
@@ -1932,28 +1931,34 @@ static inline void *fill_common_info(char **p, struct kstat *kstat)
  * @space_remaining:	space remaining in response buffer
  * @data_count:		used response buffer size
  *
- * Return:      false if next entry could not fit in current response buffer,
- *		otherwise true
+ * Return:	return error if next entry could not fit in current response
+ *		buffer,	otherwise return encode buffer.
  */
-static inline bool calc_nl_and_neo(char *buf, char *namestr, int len, int size,
+static char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *space_remaining, int *data_count)
 {
-	*name_len = smbConvertToUTF16((__le16 *)buf,
+	char *enc_buf;
+
+	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!enc_buf)
+		return NULL;
+
+	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
 			namestr, len, local_nls, 0);
-	(*name_len)++;/*for NULL character*/
+	(*name_len)++; /*for NULL character*/
 	*name_len *= 2;
-	*next_entry_offset = (size - 1 +
-			*name_len + 7) & ~7;
+
+	*next_entry_offset = (size - 1 + *name_len + 7) & ~7;
 
 	if (*next_entry_offset > *space_remaining) {
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
+		cifssrv_debug("space_remaining : %d next_entry_offset : %d"
+				" data_count : %d\n", *space_remaining,
 				*next_entry_offset, *data_count);
 		*space_remaining = 0;
-		return false;
+		return NULL;
 	}
-	return true;
+	return enc_buf;
 }
 
 /**
@@ -1978,24 +1983,19 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 {
 	int name_len;
 	int next_entry_offset;
+	char *utfname = NULL;
 
-	SEARCH_ID_FULL_DIR_INFO *dinfo;
-	FILE_DIRECTORY_INFO *fdinfo;
-	FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
-	FILE_BOTH_DIRECTORY_INFO *fbdinfo;
-	FILE_FULL_DIRECTORY_INFO *ffdinfo;
-	FILE_NAMES_INFO *fninfo;
-
-	char *name_size_check_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!name_size_check_buf)
-		return -ENOMEM;
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(FILE_FULL_DIRECTORY_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
@@ -2003,13 +2003,10 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
-		memcpy(ffdinfo->FileName, name_size_check_buf, name_len);
+		memcpy(ffdinfo->FileName, utfname, name_len);
 		ffdinfo->FileName[name_len - 2] = 0;
 		ffdinfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		ffdinfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2020,14 +2017,18 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 								+ name_len);
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
+	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(FILE_BOTH_DIRECTORY_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
-
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
 				fill_common_info(p, kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
@@ -2035,13 +2036,10 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 
-		memcpy(fbdinfo->FileName, name_size_check_buf, name_len);
+		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->FileName[name_len - 2] = 0;
 		fbdinfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2052,24 +2050,26 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 								+ name_len);
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
+	}
 	case FILE_DIRECTORY_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		FILE_DIRECTORY_INFO *fdinfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(FILE_DIRECTORY_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)fill_common_info(p, kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
-		memcpy(fdinfo->FileName, name_size_check_buf, name_len);
+		memcpy(fdinfo->FileName, utfname, name_len);
 		fdinfo->FileName[name_len - 2] = 0;
 		fdinfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		fdinfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2079,25 +2079,26 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 				(sizeof(FILE_DIRECTORY_INFO) - 1 + name_len));
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
-
+	}
 	case FILE_NAMES_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		FILE_NAMES_INFO *fninfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(FILE_NAMES_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
 
 		fninfo = (FILE_NAMES_INFO *)fill_common_info(p, kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
-		memcpy(fninfo->FileName, name_size_check_buf, name_len);
+		memcpy(fninfo->FileName, utfname, name_len);
 		fninfo->FileName[name_len - 2] = 0;
 		fninfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		fninfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2107,13 +2108,17 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 				(sizeof(FILE_NAMES_INFO) - 1 + name_len));
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
-
+	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		SEARCH_ID_FULL_DIR_INFO *dinfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(SEARCH_ID_FULL_DIR_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)fill_common_info(p, kstat);
@@ -2122,13 +2127,10 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		dinfo->Reserved = 0;
 		dinfo->UniqueId = cpu_to_le64(kstat->ino);
 
-		memcpy(dinfo->FileName, name_size_check_buf, name_len);
+		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->FileName[name_len - 2] = 0;
 		dinfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		dinfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2138,12 +2140,17 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 				sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 + name_len);
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
+	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
-		if (!calc_nl_and_neo(name_size_check_buf, namestr, PATH_MAX,
+	{
+		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
 					sizeof(FILE_ID_BOTH_DIRECTORY_INFO),
 					server->local_nls, &name_len,
 					&next_entry_offset,
-					space_remaining, data_count))
+					space_remaining, data_count);
+		if (!utfname)
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
@@ -2157,13 +2164,10 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
-		memcpy(fibdinfo->FileName, name_size_check_buf, name_len);
+		memcpy(fibdinfo->FileName, utfname, name_len);
 		fibdinfo->FileName[name_len - 2] = 0;
 		fibdinfo->FileName[name_len - 1] = 0;
 
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
 		fibdinfo->NextEntryOffset = next_entry_offset;
 		*last_entry_offset = *data_count;
 		*data_count = *data_count + next_entry_offset;
@@ -2173,13 +2177,17 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 			sizeof(FILE_ID_BOTH_DIRECTORY_INFO) - 1 + name_len);
 		*p =  (char *)(*p) + next_entry_offset;
 		break;
-
+	}
 	default:
-		kfree(name_size_check_buf);
 		cifssrv_err("%s: failed\n", __func__);
 		return -EOPNOTSUPP;
 	}
-	kfree(name_size_check_buf);
+	kfree(utfname);
+	cifssrv_debug("info_level : %d, space_remaining :%d,"
+			" next_offset : %d, data_count : %d\n",
+			info_level, *space_remaining,
+			next_entry_offset, *data_count);
+
 	return 0;
 }
 
