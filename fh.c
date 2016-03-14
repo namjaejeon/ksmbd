@@ -318,7 +318,7 @@ get_id_from_fidtable(struct tcp_server_info *server, uint64_t id)
 	ftab = server->fidtable.ftab;
 	if ((id < CIFSSRV_START_FID) || (id > ftab->max_fids - 1)) {
 		spin_unlock(&server->fidtable.fidtable_lock);
-		cifssrv_err("invalid fileid (%llu)\n", id);
+		cifssrv_debug("invalid fileid (%llu)\n", id);
 		return NULL;
 	}
 
