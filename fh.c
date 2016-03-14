@@ -363,6 +363,7 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 {
 	struct cifssrv_file *fp;
 	struct file *filp;
+	struct dentry *dir, *dentry;
 	int err;
 
 	fp = get_id_from_fidtable(server, id);
@@ -379,21 +380,31 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 		filp = fp->filp;
 
 	if (fp->delete_on_close) {
-		dget(filp->f_path.dentry);
-		if (S_ISDIR(filp->f_path.dentry->d_inode->i_mode))
-			err = vfs_rmdir(filp->f_path.dentry->d_parent->d_inode,
-					filp->f_path.dentry);
+		dentry = filp->f_path.dentry;
+		dir = dentry->d_parent;
+
+		dget(dentry);
+		mutex_lock(&dir->d_inode->i_mutex);
+		if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
+			err = -ENOENT;
+			goto out;
+		}
+
+		ihold(dentry->d_inode);
+		if (S_ISDIR(dentry->d_inode->i_mode))
+			err = vfs_rmdir(dir->d_inode, dentry);
 		else
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-			err = vfs_unlink(filp->f_path.dentry->d_parent->d_inode,
-					filp->f_path.dentry, NULL);
+			err = vfs_unlink(dir->d_inode, dentry, NULL);
 #else
-			err = vfs_unlink(filp->f_path.dentry->d_parent->d_inode,
-					filp->f_path.dentry);
+		err = vfs_unlink(dir->d_inode, dentry);
 #endif
+		iput(dentry->d_inode);
+out:
+		mutex_unlock(&dir->d_inode->i_mutex);
+		dput(dentry);
 		if (err)
 			cifssrv_debug("failed to delete, err %d\n", err);
-		dput(filp->f_path.dentry);
 	}
 
 	filp_close(filp, (struct files_struct *)filp);
