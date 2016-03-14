@@ -752,24 +752,21 @@ int smb2_negotiate(struct smb_work *smb_work)
 	switch(server->dialect) {
 	case SMB311_PROT_ID:
 		init_smb3_11_server(server);
-		rsp->Capabilities |= server->capabilities;
 		break;
 	case SMB302_PROT_ID:
 		init_smb3_02_server(server);
-		rsp->Capabilities |= server->capabilities;
 		break;
 	case SMB30_PROT_ID:
 		init_smb3_0_server(server);
-		rsp->Capabilities |= server->capabilities;
 		break;
 	case SMB21_PROT_ID:
 		init_smb2_1_server(server);
-		rsp->Capabilities |= server->capabilities;
 		break;
 	case BAD_PROT_ID:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return 0;
 	}
+	rsp->Capabilities = server->capabilities;
 
 	/* For stats */
 	server->connection_type = server->dialect;

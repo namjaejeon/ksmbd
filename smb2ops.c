@@ -148,9 +148,6 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
  */
 void init_smb2_0_server(struct tcp_server_info *server)
 {
-	if (!server)
-		return;
-
 	server->vals = &smb20_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
@@ -167,9 +164,6 @@ void init_smb2_0_server(struct tcp_server_info *server)
  */
 void init_smb2_1_server(struct tcp_server_info *server)
 {
-	if (!server)
-		return;
-
 	server->vals = &smb21_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
@@ -188,9 +182,6 @@ void init_smb2_1_server(struct tcp_server_info *server)
  */
 void init_smb3_0_server(struct tcp_server_info *server)
 {
-	if (!server)
-		return;
-
 	server->vals = &smb30_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
@@ -209,9 +200,6 @@ void init_smb3_0_server(struct tcp_server_info *server)
  */
 void init_smb3_02_server(struct tcp_server_info *server)
 {
-	if (!server)
-		return;
-
 	server->vals = &smb302_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
@@ -230,9 +218,6 @@ void init_smb3_02_server(struct tcp_server_info *server)
  */
 void init_smb3_11_server(struct tcp_server_info *server)
 {
-	if (!server)
-		return;
-
 	server->vals = &smb311_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
