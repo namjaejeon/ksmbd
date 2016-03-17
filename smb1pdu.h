@@ -44,6 +44,12 @@
 
 #define SMB1_CLIENT_GUID_SIZE (16)
 
+/* Service Type of TreeConnect*/
+#define SERVICE_DISK_SHARE	"A:"
+#define SERVICE_IPC_SHARE	"IPC"
+#define SERVICE_PRINTER_SHARE	"LPT1:"
+#define SERVICE_COMM		"COMM"
+
 #define SMB_NO_MORE_ANDX_COMMAND 0xFF
 #define SMB1_PROTO_NUMBER __constant_cpu_to_le32(0x424d53ff)
 

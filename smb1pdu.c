@@ -370,6 +370,23 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 	return 0;
 }
 
+void set_service_type(struct cifssrv_share *share, TCONX_RSP_EXT *rsp)
+{
+	int length;
+	char *buf = rsp->Service;
+
+	if (share->tid == 1) {
+		length = strlen(SERVICE_IPC_SHARE);
+		memcpy(buf, SERVICE_IPC_SHARE, length);
+	} else {
+		length = strlen(SERVICE_DISK_SHARE);
+		memcpy(buf, SERVICE_DISK_SHARE, length);
+	}
+	rsp->ByteCount = length + 1;
+	buf += length;
+	*buf = '\0';
+}
+
 /**
  * smb_tree_connect_andx() - tree connect request handler
  * @smb_work:	smb work containing tree connect request buffer
@@ -383,15 +400,11 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	TCONX_REQ *req;
 	TCONX_RSP_EXT *rsp;
-	char *buf;
 	int extra_byte = 0, rc;
-	bool tree_valid = false;
-	char *treename, *name;
+	char *treename = NULL, *name = NULL;
 	struct cifssrv_share *share;
-	struct list_head *tmp;
 	struct cifssrv_tcon *tcon;
 	struct cifssrv_sess *sess = NULL;
-	int reject = 0;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -432,7 +445,6 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 		goto out_err;
 	}
 	name = extract_sharename(treename);
-	kfree(treename);
 	if (IS_ERR(name)) {
 		rc = PTR_ERR(name);
 		goto out_err;
@@ -440,56 +452,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 
 	cifssrv_debug("tree connect request for tree %s\n", name);
 
-
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
-		cifssrv_debug("comparing with treename %s\n", share->sharename);
-		if (strcasecmp(share->sharename, name) == 0) {
-			rc = validate_clip(server->peeraddr, share);
-			if (rc <= 0) {
-				if (!rc) {
-					cifssrv_err(
-					"[host:%s] not allowed for [share:%s]\n"
-					, server->peeraddr, share->sharename);
-
-					reject = 1;
-					rc = -EINVAL;
-				}
-
-				kfree(name);
-				goto out_err;
-			}
-			if (get_attr_guestok(&share->config.attr) == 1) {
-				cifssrv_debug("guest login on to share %s\n",
-							share->sharename);
-				tree_valid = true;
-				break;
-			}
-			rc = validate_usr(sess->usr->name, share);
-			if (rc <= 0) {
-				if (!rc) {
-					cifssrv_err(
-					"[user:%s] not authorised for [share:%s]\n",
-					sess->usr->name, share->sharename);
-
-					reject = 1;
-					rc = -EINVAL;
-				}
-
-				kfree(name);
-				goto out_err;
-			}
-
-			tree_valid = true;
-			break;
-		}
-	}
-
-	kfree(name);
-
-	if (tree_valid ==  false) {
-		cifssrv_err("tree not exported on server\n");
-		rc = -EINVAL;
+	share = get_cifssrv_share(server, sess, name);
+	if (IS_ERR(share)) {
+		rc = PTR_ERR(share);
 		goto out_err;
 	}
 
@@ -509,11 +474,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	rsp->MaximalShareAccessRights = (FILE_READ_RIGHTS |
 					FILE_EXEC_RIGHTS | FILE_WRITE_RIGHTS);
 	rsp->GuestMaximalShareAccessRights = 0;
-	buf = rsp->Service;
-	memcpy(buf, "A:" , strlen("A:"));
-	rsp->ByteCount = strlen("A:") + 1;
-	buf += strlen("A:");
-	*buf = '\0';
+
+	set_service_type(share, rsp);
+
 	rsp_hdr->Tid = tcon->share->tid;
 
 	/* For each extra andx response, we have to add 1 byte,
@@ -544,14 +507,39 @@ out_err:
 	rsp->GuestMaximalShareAccessRights = 0;
 	rsp->ByteCount = 0;
 	cifssrv_debug("error while tree connect\n");
-	if (!sess || reject)
+	switch (rc) {
+	case -ENOENT:
+		rsp_hdr->Status.CifsError = NT_STATUS_BAD_NETWORK_PATH;
+		break;
+	case -ENOMEM:
+		rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
+		break;
+	case -EACCES:
 		rsp_hdr->Status.CifsError = NT_STATUS_ACCESS_DENIED;
-	else
-		rsp_hdr->Status.CifsError = NT_STATUS_BAD_NETWORK_NAME;
+		break;
+	case -EINVAL:
+		if (!req)
+			rsp_hdr->Status.CifsError =
+				NT_STATUS_INVALID_PARAMETER;
+		else if (!sess)
+			rsp_hdr->Status.CifsError =
+				NT_STATUS_NO_SUCH_LOGON_SESSION;
+		else if (IS_ERR(treename) || IS_ERR(name))
+			rsp_hdr->Status.CifsError = NT_STATUS_BAD_NETWORK_NAME;
+		else /* default also invalid parameter, repeat of !req*/
+			rsp_hdr->Status.CifsError =
+				NT_STATUS_INVALID_PARAMETER;
+		break;
+	default:
+		rsp_hdr->Status.CifsError = NT_STATUS_OK;
+	}
+
 	/* Clean session if there is no tree attached */
 	if (!sess ||  !sess->tcon_count)
 		server->tcp_status = CifsExiting;
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
+	kfree(treename);
+	kfree(name);
 	return rc;
 }
 

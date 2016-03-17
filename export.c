@@ -331,13 +331,13 @@ static int chktkn(char *userslist, char *str2)
 }
 
 /**
- * validate_clip() - check if a client is allowed or denied access of a share
- * @cip:	client ip to be checked
+ * validate_host() - check if a client is allowed or denied access of a share
+ * @cip:	host ip to be checked
  * @share:	share config containing allowed and denied list of client ip
  *
  * Return:      1 if cip is allowed access to share, otherwise 0
  */
-int validate_clip(char *cip, struct cifssrv_share *share)
+int validate_host(char *cip, struct cifssrv_share *share)
 {
 	char *alist = share->config.allow_hosts;
 	char *dlist = share->config.deny_hosts;
@@ -354,22 +354,28 @@ int validate_clip(char *cip, struct cifssrv_share *share)
 		return 1;
 
 	allow = chktkn(alist, cip);
-	if (allow == -ENOMEM)
+	if (allow < 0)
 		return -ENOMEM;
+
+	/*
+	 * "allow hosts" list takes precedence over "deny hosts" list,
+	 *  No further checking needed
+	 */
+	if (allow > 0)
+		return 1;
 
 	deny = chktkn(dlist, cip);
-	if (deny == -ENOMEM)
+	if (deny < 0)
 		return -ENOMEM;
 
-	/* "allow hosts" list takes precedence over "deny hosts" list */
-	if (allow)
-		return 1;
-	else if (!asz && deny)
-		return 0;
-	else if (!asz && !deny)
-		return 1;
+	if (!asz && deny)
+		return -EACCES;
 
-	return 0;
+	/*
+	 * Default is always allowed - So, when there is no allowed list
+	 * and no entry in Deny, then switch to default behaviour
+	 */
+	return 1;
 }
 
 /**
@@ -377,7 +383,7 @@ int validate_clip(char *cip, struct cifssrv_share *share)
  * @usr:	user to be checked
  * @share:	share config containing allowed and denied list of users
  *
- * Return:      1 if usr is allowed access to share, otherwise 0
+ * Return:      1 if usr is allowed access to share, otherwise error
  */
 int validate_usr(char *usr, struct cifssrv_share *share)
 {
@@ -385,20 +391,60 @@ int validate_usr(char *usr, struct cifssrv_share *share)
 	char *ilist = share->config.invalid_users;
 	int ret;
 
+	/* if "guest = ok, no checking of users required "*/
+	if (get_attr_guestok(&share->config.attr)) {
+		cifssrv_debug("guest login on to share %s\n",
+				share->sharename);
+		return 1;
+	}
+
 	/* name should not be present in "invalid users" */
 	ret = chktkn(ilist, usr);
-	if (ret == -ENOMEM)
+	if (ret < 0)
 		return -ENOMEM;
+	if (ret > 0)
+		return -EACCES;
 
-	if (!ret) {
-		/* if "valid users" list is empty then any user can login */
-		if (!vlist)
-			return 1;
+	/* if "valid users" list is empty then any user can login */
+	if (!vlist)
+		return 1;
 
-		/* user exists in "valid users" list? */
-		return chktkn(vlist, usr);
+	/* user exists in "valid users" list? */
+	return chktkn(vlist, usr);
+}
+
+struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
+		struct cifssrv_sess *sess,
+		char *sharename)
+{
+	struct list_head *tmp;
+	struct cifssrv_share *share;
+	int rc;
+
+	list_for_each(tmp, &cifssrv_share_list) {
+		share = list_entry(tmp, struct cifssrv_share, list);
+		cifssrv_debug("comparing(%s) with treename %s\n",
+				sharename, share->sharename);
+		if (!strcasecmp(share->sharename, sharename)) {
+			rc = validate_host(server->peeraddr, share);
+			if (rc < 0) {
+				cifssrv_err(
+				"[host:%s] not allowed for [share:%s]\n"
+				, server->peeraddr, share->sharename);
+				return ERR_PTR(rc);
+			}
+			rc = validate_usr(sess->usr->name, share);
+			if (rc < 0) {
+				cifssrv_err(
+				"[user:%s] not authorised for [share:%s]\n",
+				sess->usr->name, share->sharename);
+				return ERR_PTR(rc);
+			}
+			return share;
+		}
 	}
-	return 0;
+	cifssrv_err("Tree(%s) not exported on server\n", sharename);
+	return ERR_PTR(-ENOENT);
 }
 
 /**

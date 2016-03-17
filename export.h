@@ -187,7 +187,7 @@ extern int cifssrv_init_registry(void);
 extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
-int validate_clip(char *cip, struct cifssrv_share *share);
+int validate_host(char *cip, struct cifssrv_share *share);
 int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 		struct cifssrv_usr *usr, char *dname, int blen,
 		struct nls_table *local_nls);
@@ -195,5 +195,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		__u8 *rsp, int BufferOffset,
 		struct tcp_server_info *server);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
+struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
+		struct cifssrv_sess *sess,
+		char *sharename);
 
 #endif /* __CIFSSRV_EXPORT_H */
