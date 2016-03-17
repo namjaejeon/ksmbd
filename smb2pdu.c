@@ -1086,6 +1086,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 
 out_err:
 	rsp->StructureSize = cpu_to_le16(16);
+	rsp->Capabilities = 0;
 	rsp->Reserved = 0;
 	rsp->ShareFlags = 0;
 	inc_rfc1001_len(rsp, 16);
