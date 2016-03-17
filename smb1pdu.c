@@ -1416,7 +1416,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		is_relative_root = true;
 		fp = get_id_from_fidtable(server, req->RootDirectoryFid);
 		if (fp)
-			root = (char *)fp->filp->f_dentry->d_name.name;
+			root = (char *)fp->filp->f_path.dentry->d_name.name;
 		else {
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 			memset(&rsp->hdr.WordCount, 0, 3);
