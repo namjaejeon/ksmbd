@@ -67,18 +67,19 @@ static bool __add_share(struct cifssrv_share *share, char *sharename,
 		       char *pathname)
 {
 	struct kstat stat;
+	struct path share_path;
 	int err;
 
 	/* pathname will be NULL for IPC$ share */
 	if (pathname != NULL) {
-		err = kern_path(pathname, 0, &share->vfspath);
+		err = kern_path(pathname, 0, &share_path);
 		if (err) {
 			cifssrv_err("share add failed for %s\n", pathname);
 			return false;
 		} else {
-			err = vfs_getattr(&share->vfspath, &stat);
+			err = vfs_getattr(&share_path, &stat);
+			path_put(&share_path);
 			if (err) {
-				path_put(&share->vfspath);
 				cifssrv_err("share add failed for %s\n",
 					    pathname);
 				return false;
@@ -146,10 +147,8 @@ static inline void free_share(struct cifssrv_share *share)
 {
 	kfree(share->sharename);
 
-	if (share->path) {
-		path_put(&share->vfspath);
+	if (share->path)
 		kfree(share->path);
-	}
 
 	kfree(share->config.comment);
 	kfree(share->config.allow_hosts);

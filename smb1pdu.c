@@ -363,6 +363,7 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 		return -EINVAL;
 	}
 
+	path_put(&tcon->share_path);
 	/* delete tcon from sess tcon list and decrease sess tcon count */
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;

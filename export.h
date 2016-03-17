@@ -153,7 +153,6 @@ struct cifssrv_share {
 	__u16	tid;
 	int	tcount;
 	char    *sharename;
-	struct path vfspath;
 	struct share_config config;
 	/* global list of shares */
 	struct list_head list;
@@ -164,6 +163,7 @@ struct cifssrv_share {
 struct cifssrv_tcon {
 	struct cifssrv_share *share;
 	struct cifssrv_sess *sess;
+	struct path share_path;
 	struct list_head tcon_list;
 };
 

@@ -106,10 +106,18 @@ struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 				struct cifssrv_sess *sess)
 {
 	struct cifssrv_tcon *tcon;
+	int err;
 
 	tcon = kmalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
 	if (!tcon)
 		return ERR_PTR(-ENOMEM);
+
+	err = kern_path(share->path, 0, &tcon->share_path);
+	if (err) {
+		cifssrv_err("kern_path() failed for shares(%s)\n", share->path);
+		kfree(tcon);
+		return ERR_PTR(-ENOENT);
+	}
 
 	tcon->share = share;
 	tcon->sess = sess;
