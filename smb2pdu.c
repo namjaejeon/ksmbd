@@ -1031,10 +1031,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	struct cifssrv_share *share;
 	struct cifssrv_tcon *tcon;
 	char *treename = NULL, *name = NULL;
-	struct list_head *tmp;
 	int rc = 0;
-	bool tree_valid = false;
-	int reject = 0;
 
 	req = (struct smb2_tree_connect_req *)smb_work->buf;
 	rsp = (struct smb2_tree_connect_rsp *)smb_work->rsp_buf;
@@ -1056,64 +1053,17 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		goto out_err;
 	}
 	name = extract_sharename(treename);
-	if (!name) {
-		kfree(treename);
+	if (IS_ERR(name)) {
+		rc = PTR_ERR(name);
 		goto out_err;
 	}
 
 	cifssrv_debug("tree connect request for tree %s treename %s\n",
 		      name, treename);
-	kfree(treename);
 
-	if (!strncmp(name, "IPC", 3))
-		cifssrv_debug("request for IPC, mark it invalid\n");
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
-		cifssrv_debug("comparing with treename %s\n", share->sharename);
-		if (strcasecmp(share->sharename, name) == 0) {
-			rc = validate_clip(server->peeraddr, share);
-			if (rc <= 0) {
-				if (!rc) {
-					cifssrv_err(
-					"[host:%s] not allowed for [share:%s]\n"
-					, server->peeraddr, share->sharename);
-
-					reject = 1;
-					rc = -EINVAL;
-				}
-
-				kfree(name);
-				goto out_err;
-			}
-			if (get_attr_guestok(&share->config.attr) == 1) {
-				cifssrv_debug("guest login on to share %s\n",
-							share->sharename);
-				tree_valid = true;
-				break;
-			}
-			rc = validate_usr(sess->usr->name, share);
-			if (rc <= 0) {
-				if (!rc) {
-					cifssrv_err(
-					"[user:%s] not authorised for [share:%s]\n",
-					sess->usr->name, share->sharename);
-
-					reject = 1;
-					rc = -EINVAL;
-				}
-
-				kfree(name);
-				goto out_err;
-			}
-			tree_valid = true;
-			break;
-		}
-	}
-	kfree(name);
-
-	if (tree_valid ==  false) {
-		cifssrv_err("tree not exported on server\n");
-		rc = -EINVAL;
+	share = get_cifssrv_share(server, sess, name);
+	if (IS_ERR(share)) {
+		rc = PTR_ERR(share);
 		goto out_err;
 	}
 
@@ -1127,30 +1077,39 @@ int smb2_tree_connect(struct smb_work *smb_work)
 
 	if (tcon->share->tid == 1) {
 		cifssrv_debug("IPC share path request\n");
-		rsp->ShareType = 0x02;
+		rsp->ShareType = SMB2_SHARE_TYPE_PIPE;
 		rsp->MaximalAccess = cpu_to_le32(0x001f00a9);
 	} else {
-		rsp->ShareType = 0x01;
+		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
 		rsp->MaximalAccess = cpu_to_le32(0x001f01ff);
 	}
 
-	rsp->StructureSize = cpu_to_le16(16);
-	rsp->Reserved = 0;
-	rsp->ShareFlags = 0;
-	rsp->Capabilities = 0;
-	inc_rfc1001_len(rsp, 16);
-	return 0;
-
 out_err:
-	cifssrv_debug("error while tree connect\n");
 	rsp->StructureSize = cpu_to_le16(16);
 	rsp->Reserved = 0;
 	rsp->ShareFlags = 0;
 	inc_rfc1001_len(rsp, 16);
-	if (reject)
+	switch (rc) {
+	case -ENOENT:
+		rsp->hdr.Status = NT_STATUS_BAD_NETWORK_PATH;
+		break;
+	case -ENOMEM:
+		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+		break;
+	case -EACCES:
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-	else
-		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		break;
+	case -EINVAL:
+		if (IS_ERR(treename) || IS_ERR(name))
+			rsp->hdr.Status = NT_STATUS_BAD_NETWORK_NAME;
+		else
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		break;
+	default:
+		rsp->hdr.Status = NT_STATUS_OK;
+	}
+	kfree(treename);
+	kfree(name);
 	return rc;
 }
 
