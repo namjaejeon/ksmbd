@@ -449,8 +449,10 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 		case SMB2_QUERY_INFO_HE:
 			req = (struct smb2_query_info_req *)smb_work->buf;
 			if (req->InfoType == SMB2_O_INFO_FILE &&
+					(req->FileInfoClass ==
+					FILE_FULL_EA_INFORMATION ||
 					req->FileInfoClass ==
-					FILE_FULL_EA_INFORMATION) {
+					FILE_ALL_INFORMATION)) {
 				need_large_buf = true;
 			}
 			break;
