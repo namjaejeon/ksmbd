@@ -896,22 +896,29 @@ struct registry_node *search_registry(char *name,
 	return key;
 }
 
-struct registry_node *create_key(char *name, struct registry_node *key_addr)
+struct registry_node *create_key(char *key_name, struct registry_node *key_addr)
 {
 	struct registry_node *base_key_addr = key_addr;
 	struct registry_node *key = base_key_addr;
 	struct registry_node *child;
 	struct registry_node *prev_key;
 	char *token;
+	char *name, *kname;
 
-	cifssrv_debug("key name %s\n", name);
+	cifssrv_debug("key name %s\n", key_name);
+	name = kname = kstrdup(key_name, GFP_KERNEL);
+	if (!name)
+		return ERR_PTR(-ENOMEM);
+
 	token = strsep(&name, "\\");
 	while (token) {
 		if (key->child == NULL) {
 			child = kzalloc(sizeof(struct registry_node),
 								GFP_KERNEL);
-			if (!child)
+			if (!child) {
+				kfree(kname);
 				return ERR_PTR(-ENOMEM);
+			}
 			strcpy(child->key_name, token);
 			child->value_list = NULL;
 			child->child = NULL;
@@ -928,8 +935,10 @@ struct registry_node *create_key(char *name, struct registry_node *key_addr)
 			if (key == NULL) {
 				child = kzalloc(sizeof(struct registry_node),
 								GFP_KERNEL);
-				if (!child)
+				if (!child) {
+					kfree(kname);
 					return ERR_PTR(-ENOMEM);
+				}
 				strcpy(child->key_name, token);
 				child->value_list = NULL;
 				child->child = NULL;
@@ -944,5 +953,6 @@ struct registry_node *create_key(char *name, struct registry_node *key_addr)
 		}
 		token = strsep(&name, "\\");
 	}
+	kfree(kname);
 	return key;
 }
