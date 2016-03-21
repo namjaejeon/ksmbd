@@ -11,7 +11,7 @@ config CIFS_SERVER
 	select CRYPTO_DES
 	select CRYPTO_SHA256
 	help
-		This config provides support for adding Samba server inside the kernel.
+	  This config provides support for in-kernel CIFS/SMB3 server.
 	
 config CIFS_SMB2_SERVER
         bool "SMB2 server support"
@@ -19,6 +19,6 @@ config CIFS_SMB2_SERVER
         select NLS
 
         help
-          This enables experimental support for the SMB2 (Server Message Block
-          version 2) protocol.
+	  This enables experimental support for the SMB2 (Server Message Block
+	  version 2) protocol.
 
