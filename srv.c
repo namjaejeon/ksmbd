@@ -112,6 +112,9 @@ struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 	if (!tcon)
 		return ERR_PTR(-ENOMEM);
 
+	if (!share->path)
+		goto out;
+
 	err = kern_path(share->path, 0, &tcon->share_path);
 	if (err) {
 		cifssrv_err("kern_path() failed for shares(%s)\n", share->path);
@@ -119,6 +122,7 @@ struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 		return ERR_PTR(-ENOENT);
 	}
 
+out:
 	tcon->share = share;
 	tcon->sess = sess;
 	INIT_LIST_HEAD(&tcon->tcon_list);
