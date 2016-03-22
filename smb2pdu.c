@@ -4590,7 +4590,9 @@ int smb2_ioctl(struct smb_work *smb_work)
 
 	switch (cnt_code) {
 	case FSCTL_DFS_GET_REFERRALS:
-		rsp->hdr.Status = FSCTL_DFS_GET_REFERRALS;
+	case FSCTL_DFS_GET_REFERRALS_EX:
+		/* Not support for DFS yet */
+		rsp->hdr.Status = NT_STATUS_FS_DRIVER_REQUIRED;
 		goto out;
 	case FSCTL_PIPE_TRANSCEIVE:
 		if (rsp->hdr.TreeId == 1) {
