@@ -424,7 +424,7 @@ int smb_vfs_fsync(struct tcp_server_info *server, uint64_t fid)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_unlink(const char *name)
+int smb_vfs_unlink(char *name)
 {
 	struct path parent;
 	struct dentry *dir, *dentry;
@@ -432,14 +432,16 @@ int smb_vfs_unlink(const char *name)
 	int err = -ENOENT;
 
 	last = strrchr(name, '/');
-	if (last && last[1] != '\0')
+	if (last && last[1] != '\0') {
+		*last = '\0';
 		last++;
+	}
 	else {
 		cifssrv_debug("can't get last component in path %s\n", name);
 		return -ENOENT;
 	}
 
-	err = kern_path(name, LOOKUP_PARENT, &parent);
+	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
 		cifssrv_debug("can't get parent for %s, err %d\n", name, err);
 		return err;
