@@ -443,7 +443,7 @@ int smb_vfs_unlink(char *name)
 
 	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
-		cifssrv_debug("can't get parent for %s, err %d\n", name, err);
+		cifssrv_debug("can't get %s, err %d\n", name, err);
 		return err;
 	}
 
@@ -609,12 +609,12 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_rename(struct tcp_server_info *server, const char *abs_oldname,
-		const char *abs_newname, __u16 oldfid)
+int smb_vfs_rename(struct tcp_server_info *server, char *abs_oldname,
+		char *abs_newname, __u16 oldfid)
 {
 	struct path oldpath_p, newpath_p;
 	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap;
-	const char *oldname = NULL, *newname = NULL;
+	char *oldname = NULL, *newname = NULL;
 	struct file *filp = NULL;
 	struct cifssrv_file *fp;
 	int err;
@@ -622,25 +622,30 @@ int smb_vfs_rename(struct tcp_server_info *server, const char *abs_oldname,
 	if (abs_oldname) {
 		/* normal case: rename with source filename */
 		oldname = strrchr(abs_oldname, '/');
-		if (oldname && oldname[1] != '\0')
+		if (oldname && oldname[1] != '\0') {
+			*oldname = '\0';
 			oldname++;
+		}
 		else {
 			cifssrv_err("can't get last component in path %s\n",
 					abs_oldname);
 			return -ENOENT;
 		}
 
-		err = kern_path(abs_oldname, LOOKUP_PARENT, &oldpath_p);
+		err = kern_path(abs_oldname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+				&oldpath_p);
 		if (err) {
 			cifssrv_err("cannot get linux path for %s, err %d\n",
-					oldname, err);
+					abs_oldname, err);
 			return -ENOENT;
 		}
 		dold_p = oldpath_p.dentry;
 
 		newname = strrchr(abs_newname, '/');
-		if (newname && newname[1] != '\0')
+		if (newname && newname[1] != '\0') {
+			*newname = '\0';
 			newname++;
+		}
 		else {
 			cifssrv_err("can't get last component in path %s\n",
 					abs_newname);
@@ -648,10 +653,11 @@ int smb_vfs_rename(struct tcp_server_info *server, const char *abs_oldname,
 			goto out1;
 		}
 
-		err = kern_path(abs_newname, LOOKUP_PARENT, &newpath_p);
+		err = kern_path(abs_newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+				&newpath_p);
 		if (err) {
 			cifssrv_err("cannot get linux path for %s, err = %d\n",
-					newname, err);
+					abs_newname, err);
 			goto out1;
 		}
 		dnew_p = newpath_p.dentry;
@@ -666,18 +672,21 @@ int smb_vfs_rename(struct tcp_server_info *server, const char *abs_oldname,
 		dold_p = filp->f_path.dentry->d_parent;
 
 		newname = strrchr(abs_newname, '/');
-		if (newname && newname[1] != '\0')
+		if (newname && newname[1] != '\0') {
+			*newname = '\0';
 			newname++;
+		}
 		else {
 			cifssrv_err("can't get last component in path %s\n",
 					abs_newname);
 			return -ENOMEM;
 		}
 
-		err = kern_path(abs_newname, LOOKUP_PARENT, &newpath_p);
+		err = kern_path(abs_newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+				&newpath_p);
 		if (err) {
 			cifssrv_err("cannot get linux path for %s, err = %d\n",
-					newname, err);
+					abs_newname, err);
 			return err;
 		}
 		dnew_p = newpath_p.dentry;

@@ -456,8 +456,8 @@ int smb_vfs_unlink(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
-int smb_vfs_rename(struct tcp_server_info *server, const char *oldname,
-		const char *newname, __u16 oldfid);
+int smb_vfs_rename(struct tcp_server_info *server, char *oldname,
+		char *newname, __u16 oldfid);
 int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
 		__u16 fid, loff_t size);
 int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
