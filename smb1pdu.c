@@ -6182,14 +6182,15 @@ int smb_checkdir(struct smb_work *smb_work)
 	CHECK_DIRECTORY_RSP *rsp = (CHECK_DIRECTORY_RSP *)smb_work->rsp_buf;
 	struct path path;
 	struct kstat stat;
-	char *name;
+	char *name, *last;
 	int err;
+	bool caseless_lookup = req->hdr.Flags & SMBFLG_CASELESS;
 
 	name = smb_get_name(req->DirName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	err = smb_kern_path(name, 0, &path, caseless_lookup);
 	if (err) {
 		if (err == -ENOENT) {
 			/*
@@ -6199,8 +6200,18 @@ int smb_checkdir(struct smb_work *smb_work)
 			 * for that case and NT_STATUS_OBJECT_PATH_NOT_FOUND
 			 * if the path is invalid.
 			 */
-			err = smb_kern_path(name, LOOKUP_PARENT, &path,
-					req->hdr.Flags & SMBFLG_CASELESS);
+			last = strrchr(name, '/');
+			if (last && last[1] != '\0') {
+				*last = '\0';
+				last++;
+
+				err = smb_kern_path(name, LOOKUP_FOLLOW |
+						LOOKUP_DIRECTORY, &path,
+						caseless_lookup);
+			} else {
+				cifssrv_debug("can't lookup parent %s\n", name);
+				err = -ENOENT;
+			}
 		}
 		if (err) {
 			cifssrv_debug("look up failed err %d\n", err);
