@@ -529,5 +529,7 @@ int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 int smb_filldir(void *__buf, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
 #endif
+int smb_get_shortname(struct tcp_server_info *server, char *longname,
+		char *shortname);
 
 #endif /* __CIFSSRV_GLOB_H */

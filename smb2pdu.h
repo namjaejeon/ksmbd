@@ -903,13 +903,6 @@ struct smb2_fs_full_size_info {
 #define FILEID_GLOBAL_TX_DIRECTORY_INFORMATION 50
 #define FILE_STANDARD_LINK_INFORMATION	54
 
-/*for shortname implementation */
-static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
-#define MANGLE_BASE       (sizeof(basechars)/sizeof(char)-1)
-#define MAGIC_CHAR '~'
-#define PERIOD '.'
-#define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
-
 #define OP_BREAK_STRUCT_SIZE_20		24
 #define OP_BREAK_STRUCT_SIZE_21		36
 

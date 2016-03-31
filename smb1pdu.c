@@ -26,6 +26,89 @@
 #include "dcerpc.h"
 #include "oplock.h"
 
+/*for shortname implementation */
+static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
+#define MANGLE_BASE       (sizeof(basechars)/sizeof(char)-1)
+#define MAGIC_CHAR '~'
+#define PERIOD '.'
+#define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
+
+/**
+ * smb_get_shortname() - get shortname from long filename
+ * @server:	TCP server instance of connection
+ * @longname:	source long filename
+ * @shortname:	destination short filename
+ *
+ * Return:	0 or shortname length
+ */
+int smb_get_shortname(struct tcp_server_info *server, char *longname,
+		char *shortname)
+{
+	char *p, *sp;
+	char base[9], extension[4];
+	char out[13] = {0};
+	int baselen = 0;
+	int extlen = 0, len = 0;
+	unsigned int csum = 0;
+	unsigned char *ptr;
+	bool dot_present = true;
+
+	p = longname;
+	if ((*p == '.') || (!(strcmp(p, "..")))) {
+		/*no mangling required */
+		shortname = NULL;
+		return 0;
+	}
+	p = strrchr(longname, '.');
+	if (p == longname) { /*name starts with a dot*/
+		sp = "___";
+		memcpy(extension, sp, 3);
+		extension[3] = '\0';
+	} else {
+		if (p != NULL) {
+			p++;
+			while (*p && extlen < 3) {
+				if (*p != '.')
+					extension[extlen++] = toupper(*p);
+				p++;
+			}
+			extension[extlen] = '\0';
+		} else
+			dot_present = false;
+	}
+
+	p = longname;
+	if (*p == '.')
+		*p++ = 0;
+	while (*p && (baselen < 5)) {
+		if (*p != '.')
+			base[baselen++] = toupper(*p);
+		p++;
+	}
+
+	base[baselen] = MAGIC_CHAR;
+	memcpy(out, base, baselen+1);
+
+	ptr = longname;
+	len = strlen(longname);
+	for (; len > 0; len--, ptr++)
+		csum += *ptr;
+
+	csum = csum % (MANGLE_BASE * MANGLE_BASE);
+	out[baselen+1] = mangle(csum/MANGLE_BASE);
+	out[baselen+2] = mangle(csum);
+	out[baselen+3] = PERIOD;
+
+	if (dot_present)
+		memcpy(&out[baselen+4], extension, 4);
+	else
+		out[baselen+4] = '\0';
+	smbConvertToUTF16((__le16 *)shortname, out, PATH_MAX,
+			server->local_nls, 0);
+	len = strlen(out) * 2;
+	return len;
+}
+
 /**
  * smb_NTtimeToUnix() - convert NTFS time to unix style time format
  * @ntutc:	NTFS style time
@@ -3247,7 +3330,7 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
-		alt_name_info->FileNameLength = smb2_get_shortname(server,
+		alt_name_info->FileNameLength = smb_get_shortname(server,
 				name, alt_name_info->FileName);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
