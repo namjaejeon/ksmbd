@@ -517,11 +517,6 @@ char *convert_to_unix_name(char *name, int tid);
 void convert_delimiter(char *path);
 int find_first(struct smb_work *smb_work);
 int find_next(struct smb_work *smb_work);
-int smb_populate_readdir_entry(struct tcp_server_info *server, int info_level,
-		char **p, int reclen, char *namestr, int *space_remaining,
-		int *last_entry_offset, struct kstat *kstat, int *data_count,
-		int *dir_entry_bytes_count,
-		int *num_dir_entries_searched);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
@@ -531,5 +526,11 @@ int smb_filldir(void *__buf, const char *name, int namlen,
 #endif
 int smb_get_shortname(struct tcp_server_info *server, char *longname,
 		char *shortname);
+char *read_next_entry(struct kstat *kstat, struct smb_dirent *de, char *dpath);
+void *fill_common_info(char **p, struct kstat *kstat);
+char *convname_updatenextoffset(char *namestr, int len, int size,
+		const struct nls_table *local_nls, int *name_len,
+		int *next_entry_offset, int *buf_len, int *data_count,
+		int alignment);
 
 #endif /* __CIFSSRV_GLOB_H */

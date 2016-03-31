@@ -75,7 +75,6 @@ struct cifssrv_file {
 	/* if ls is happening on directory, below is valid*/
 	struct smb_readdir_data	readdir_data;
 	int		dirent_offset;
-	int		search_over;
 	/* oplock info */
 	struct ofile_info *ofile;
 	bool delete_on_close;

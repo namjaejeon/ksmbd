@@ -3772,14 +3772,12 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
  * @src:	source dir name, mostly in unicode format
  * @maxlen:	maxlen of src string to be used for parsing
  * @smb_work:	smb work containing smb header flag
- * @single_entry_search:	single entry to be searched in dir
  * @srch_ptr:	update search pointer in dir for searching dir entries
  *
  * Return:	pointer to dir name string on success, otherwise error ptr
  */
-char *
-smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
-		 int *single_entry_search, char **srch_ptr)
+static char *smb_get_dir_name(const char *src, const int maxlen,
+		struct smb_work *smb_work, char **srch_ptr)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
@@ -3802,10 +3800,9 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
 
-	if (wild_card_pos != NULL) {
+	if (wild_card_pos != NULL)
 		*wild_card_pos = '\0';
-		*single_entry_search = false;
-	} else {
+	else {
 		pattern_pos = strrchr(name, '/');
 
 		if (pattern_pos == NULL)
@@ -3831,7 +3828,6 @@ smb_get_dir_name(const char *src, const int maxlen, struct smb_work *smb_work,
 		*(pattern + pattern_len) = '\0';
 		*pattern_pos = '\0';
 		*srch_ptr = pattern;
-		*single_entry_search = true;
 	}
 
 	unixname = convert_to_unix_name(name, req_hdr->Tid);
@@ -4553,10 +4549,309 @@ int smb_filldir(void *__buf, const char *name, int namlen,
 }
 
 /**
+ * read_next_entry() - read next directory entry and return absolute name
+ * @kstat:	stat of next dirent
+ * @de:		directory entry
+ * @dirpath:	directory path name
+ *
+ * Return:      on success return absolute path of directory entry,
+ *              otherwise NULL
+ */
+char *read_next_entry(struct kstat *kstat,
+		struct smb_dirent *de, char *dirpath)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dirpath);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de->namelen + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name) {
+		cifssrv_err("Name memory failed for length %d,"
+				" buf_name_len %d\n", dir_pathlen, de->namelen);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	memcpy(name, dirpath, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
+	name[file_pathlen] = '\0';
+
+	rc = smb_kern_path(name, 0, &path, 1);
+	if (rc) {
+		cifssrv_err("look up failed for (%s) with rc=%d\n", name, rc);
+		kfree(name);
+		return ERR_PTR(rc);
+	}
+
+	generic_fillattr(path.dentry->d_inode, kstat);
+	memcpy(name, de->name, de->namelen);
+	name[de->namelen] = '\0';
+	path_put(&path);
+	return name;
+}
+
+/**
+ * fill_common_info() - convert unix stat information to smb stat format
+ * @p:          destination buffer
+ * @kstat:      file stat information
+ */
+void *fill_common_info(char **p, struct kstat *kstat)
+{
+	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
+	info->FileIndex = 0;
+	info->CreationTime = cpu_to_le64(
+			cifs_UnixTimeToNT(kstat->ctime));
+	info->LastAccessTime = cpu_to_le64(
+			cifs_UnixTimeToNT(kstat->atime));
+	info->LastWriteTime = cpu_to_le64(
+			cifs_UnixTimeToNT(kstat->mtime));
+	info->ChangeTime = cpu_to_le64(
+			cifs_UnixTimeToNT(kstat->mtime));
+	info->EndOfFile = cpu_to_le64(kstat->size);
+	info->AllocationSize = cpu_to_le64(kstat->blocks << 9);
+	info->ExtFileAttributes = S_ISDIR(kstat->mode) ?
+		ATTR_DIRECTORY : ATTR_NORMAL;
+
+	return info;
+}
+
+/**
+ * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
+ * @namestr:            source filename buffer
+ * @len:                source buffer length
+ * @size:               used buffer size
+ * @local_nls           code page table
+ * @name_len:           file name length after conversion
+ * @next_entry_offset:  offset of dentry
+ * @buf_len:            response buffer length
+ * @data_count:         used response buffer size
+ *
+ * Return:      return error if next entry could not fit in current response
+ *              buffer, otherwise return encode buffer.
+ */
+char *convname_updatenextoffset(char *namestr, int len, int size,
+		const struct nls_table *local_nls, int *name_len,
+		int *next_entry_offset, int *buf_len, int *data_count,
+		int alignment)
+{
+	char *enc_buf;
+
+	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!enc_buf)
+		return NULL;
+
+	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
+			namestr, len, local_nls, 0);
+	(*name_len)++; /*for NULL character*/
+	*name_len *= 2;
+
+	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
+
+	if (*next_entry_offset > *buf_len) {
+		cifssrv_debug("buf_len : %d next_entry_offset : %d"
+				" data_count : %d\n", *buf_len,
+				*next_entry_offset, *data_count);
+		*buf_len = -1;
+		kfree(enc_buf);
+		return NULL;
+	}
+	return enc_buf;
+}
+
+/**
+ * smb_populate_readdir_entry() - encode directory entry in smb response buffer
+ * @server:	TCP server instance of connection
+ * @info_level:	smb information level
+ * @p:		smb response buffer pointer
+ * @reclen:	smb record length
+ * @namestr:	dirent name string
+ * @buf_len:	response buffer length
+ * @last_entry_offset:	offset of last entry in directory
+ * @kstat:	dirent stat information
+ * @data_count:	used buffer size
+ * @num_entry:	number of dirents searched so far
+ *
+ * if directory has many entries, find first can't read it fully.
+ * find next might be called multiple times to read remaining dir entries
+ *
+ * Return:	0 on success, otherwise error
+ */
+static int smb_populate_readdir_entry(struct tcp_server_info *server,
+		int info_level, char **p, int reclen, char *namestr,
+		int *buf_len, int *last_entry_offset, struct kstat *kstat,
+		int *data_count, int *num_entry)
+{
+	int name_len;
+	int next_entry_offset;
+	char *utfname = NULL;
+
+	switch (info_level) {
+	case SMB_FIND_FILE_DIRECTORY_INFO:
+	{
+		FILE_DIRECTORY_INFO *fdinfo = NULL;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
+				sizeof(FILE_DIRECTORY_INFO),
+				server->local_nls, &name_len,
+				&next_entry_offset,
+				buf_len, data_count, 3);
+		if (!utfname)
+			break;
+
+		fdinfo = (FILE_DIRECTORY_INFO *)
+			fill_common_info(p, kstat);
+		fdinfo->FileNameLength = cpu_to_le32(name_len);
+		memcpy(fdinfo->FileName, utfname, name_len);
+		fdinfo->FileName[name_len - 2] = 0;
+		fdinfo->FileName[name_len - 1] = 0;
+		fdinfo->NextEntryOffset = next_entry_offset;
+		memset((char *)fdinfo + sizeof(FILE_DIRECTORY_INFO) - 1 +
+				name_len, '\0', next_entry_offset -
+				(sizeof(FILE_DIRECTORY_INFO) - 1 + name_len));
+		*p =  (char *)(*p) + next_entry_offset;
+		break;
+	}
+	case SMB_FIND_FILE_FULL_DIRECTORY_INFO:
+	{
+		FILE_FULL_DIRECTORY_INFO *ffdinfo = NULL;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
+				sizeof(FILE_FULL_DIRECTORY_INFO),
+				server->local_nls, &name_len,
+				&next_entry_offset,
+				buf_len, data_count, 3);
+		if (!utfname)
+			break;
+
+		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
+			fill_common_info(p, kstat);
+		ffdinfo->FileNameLength = cpu_to_le32(name_len);
+		ffdinfo->EaSize = 0;
+		memcpy(ffdinfo->FileName, utfname, name_len);
+		ffdinfo->FileName[name_len - 2] = 0;
+		ffdinfo->FileName[name_len - 1] = 0;
+		ffdinfo->NextEntryOffset = next_entry_offset;
+		memset((char *)ffdinfo + sizeof(FILE_FULL_DIRECTORY_INFO) - 1 +
+				name_len, '\0', next_entry_offset -
+				(sizeof(FILE_FULL_DIRECTORY_INFO) - 1 +
+				 name_len));
+		*p =  (char *)(*p) + next_entry_offset;
+		break;
+	}
+	case SMB_FIND_FILE_BOTH_DIRECTORY_INFO:
+	{
+		FILE_BOTH_DIRECTORY_INFO *fbdinfo = NULL;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
+				sizeof(FILE_BOTH_DIRECTORY_INFO),
+				server->local_nls, &name_len,
+				&next_entry_offset,
+				buf_len, data_count, 3);
+		if (!utfname)
+			break;
+
+		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
+			fill_common_info(p, kstat);
+		fbdinfo->FileNameLength = cpu_to_le32(name_len);
+		fbdinfo->EaSize = 0;
+		fbdinfo->ShortNameLength = 0;
+		fbdinfo->Reserved = 0;
+		memset(fbdinfo->ShortName, '\0', 24);
+		memcpy(fbdinfo->FileName, utfname, name_len);
+		fbdinfo->FileName[name_len - 2] = 0;
+		fbdinfo->FileName[name_len - 1] = 0;
+		fbdinfo->NextEntryOffset = next_entry_offset;
+		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
+				name_len, '\0', next_entry_offset -
+				sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
+				name_len);
+		*p =  (char *)(*p) + next_entry_offset;
+		break;
+	}
+	case SMB_FIND_FILE_ID_FULL_DIR_INFO:
+	{
+		SEARCH_ID_FULL_DIR_INFO *dinfo = NULL;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
+				sizeof(SEARCH_ID_FULL_DIR_INFO),
+				server->local_nls, &name_len,
+				&next_entry_offset,
+				buf_len, data_count, 3);
+		if (!utfname)
+			break;
+
+		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
+			fill_common_info(p, kstat);
+		dinfo->FileNameLength = cpu_to_le32(name_len);
+		dinfo->EaSize = 0;
+		dinfo->Reserved = 0;
+		dinfo->UniqueId = cpu_to_le64(kstat->ino);
+		memcpy(dinfo->FileName, utfname, name_len);
+		dinfo->FileName[name_len - 2] = 0;
+		dinfo->FileName[name_len - 1] = 0;
+		dinfo->NextEntryOffset = next_entry_offset;
+		memset((char *)dinfo + sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 +
+				name_len, '\0', next_entry_offset -
+				sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 + name_len);
+		*p =  (char *)(*p) + next_entry_offset;
+		break;
+	}
+	case SMB_FIND_FILE_UNIX:
+	{
+		FILE_UNIX_INFO *finfo = NULL;
+		FILE_UNIX_BASIC_INFO *unix_info;
+
+		utfname = convname_updatenextoffset(namestr, PATH_MAX,
+				sizeof(FILE_UNIX_INFO),
+				server->local_nls, &name_len,
+				&next_entry_offset,
+				buf_len, data_count, 3);
+		if (!utfname)
+			break;
+
+		finfo = (FILE_UNIX_INFO *)(*p);
+		finfo->ResumeKey = 0;
+		unix_info = (FILE_UNIX_BASIC_INFO *)((char *)finfo + 8);
+		init_unix_info(unix_info, kstat);
+		memcpy(finfo->FileName, utfname, name_len);
+		finfo->FileName[name_len - 2] = 0;
+		finfo->FileName[name_len - 1] = 0;
+		finfo->NextEntryOffset = next_entry_offset;
+		memset((char *)finfo + sizeof(FILE_UNIX_INFO) - 1 + name_len,
+				'\0', next_entry_offset -
+				(sizeof(FILE_UNIX_INFO) - 1 + name_len));
+		*p =  (char *)(*p) + next_entry_offset;
+		break;
+	}
+	default:
+		cifssrv_err("%s: failed\n", __func__);
+		return -EOPNOTSUPP;
+	}
+
+	if (utfname) {
+		*last_entry_offset = *data_count;
+		*data_count += next_entry_offset;
+		*buf_len -= next_entry_offset;
+		(*num_entry)++;
+		kfree(utfname);
+	}
+
+	cifssrv_debug("info_level : %d, buf_len :%d,"
+			" next_offset : %d, data_count : %d\n",
+			info_level, *buf_len,
+			next_entry_offset, *data_count);
+	return 0;
+}
+
+
+/**
  * find_first() - smb readdir command
  * @smb_work:	smb work containing find first request params
  *
- * Return:	0 on success, otherwise -EINVAL
+ * Return:	0 on success, otherwise error
  */
 int find_first(struct smb_work *smb_work)
 {
@@ -4564,32 +4859,25 @@ int find_first(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
-	int params_count = sizeof(T2_FFIRST_RSP_PARMS);
 	TRANSACTION2_FFIRST_REQ_PARAMS *req_params;
 	T2_FFIRST_RSP_PARMS *params = NULL;
-	int rc = 0, reclen = 0, err = 0;
-	__u16 sid;
-	int space_remaining;
-	int dir_entry_bytes_count = 0;
 	struct path path;
-	struct smb_dirent *buf_p;
-	struct cifssrv_file *dirdesc_fp;
-	unsigned int used_count = 0, max_outbuf;
-	int flags = O_RDONLY|O_LARGEFILE;
+	struct smb_dirent *de;
+	struct cifssrv_file *dir_fp;
 	struct kstat kstat;
-	int info_level;
-	char *p = NULL;
+	int params_count = sizeof(T2_FFIRST_RSP_PARMS);
 	int data_alignment_offset = 0;
 	int data_count = 0;
-	int num_dir_entries_searched = 0;
-	int file_pathlen = 0;
-	char *namestr = NULL;
-	char *dir_path_name = NULL;
-	int dir_path_len = 0;
+	int num_entry = 0;
 	int last_entry_offset = 0;
 	int oplock = 0;
+	int rc = 0, reclen = 0;
+	int out_buf_len;
+	__u16 sid;
+	char *bufptr = NULL;
+	char *namestr = NULL;
+	char *dirpath = NULL;
 	char *srch_ptr = NULL;
-	int srch_ptr_len = 0, single_entry_search = false;
 	struct smb_readdir_data r_data = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
@@ -4603,188 +4891,151 @@ int find_first(struct smb_work *smb_work)
 	}
 
 	req_params = (TRANSACTION2_FFIRST_REQ_PARAMS *)(smb_work->buf +
-				req->ParameterOffset + 4);
-	info_level = req_params->InformationLevel;
-
-	dir_path_name = smb_get_dir_name(req_params->FileName, PATH_MAX,
-			smb_work, &single_entry_search, &srch_ptr);
-	if (IS_ERR(dir_path_name)) {
+			req->ParameterOffset + 4);
+	dirpath = smb_get_dir_name(req_params->FileName, PATH_MAX,
+			smb_work, &srch_ptr);
+	if (IS_ERR(dirpath)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		rc = PTR_ERR(dir_path_name);
-		return rc;
+		rc = PTR_ERR(dirpath);
+		goto err_out;
 	}
-	dir_path_len = strlen(dir_path_name);
-	if (single_entry_search)
-		srch_ptr_len = strlen(srch_ptr);
 
-	cifssrv_debug("complete dir path = %s\n",  dir_path_name);
-	rc = smb_kern_path(dir_path_name, LOOKUP_FOLLOW, &path, 0);
+	cifssrv_debug("complete dir path = %s\n",  dirpath);
+	rc = smb_kern_path(dirpath, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+			&path, 0);
 	if (rc < 0) {
-		cifssrv_err("cannot create vfs root path <%s> %d\n",
-				dir_path_name, rc);
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
-		smb_put_name(dir_path_name);
-		kfree(srch_ptr);
-		return rc;
+		cifssrv_debug("cannot create vfs root path <%s> %d\n",
+				dirpath, rc);
+		goto err_out;
 	}
 
-	rc = smb_dentry_open(smb_work, &path, flags, &sid, &oplock, 0, 1);
+	rc = smb_dentry_open(smb_work, &path, O_RDONLY|O_LARGEFILE, &sid,
+			&oplock, 0, 1);
 	if (rc) {
-		cifssrv_err("dir dentry open failed with rc=%d\n", rc);
+		cifssrv_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
-		smb_put_name(dir_path_name);
-		kfree(srch_ptr);
-		return rc;
+		goto err_out;
 	}
-	dirdesc_fp = get_id_from_fidtable(server, sid);
-	if (!dirdesc_fp) {
-		cifssrv_err("error invalid sid\n");
+
+	dir_fp = get_id_from_fidtable(server, sid);
+	if (!dir_fp) {
+		cifssrv_debug("error invalid sid\n");
+		path_put(&path);
 		rc = -EINVAL;
-		goto out;
+		goto err_out;
 	}
 
-	dirdesc_fp->search_over = 0;
-	r_data.used = 0;
-	r_data.full = 0;
-	err = smb_vfs_readdir(dirdesc_fp->filp, smb_filldir, &r_data);
-	if (err < 0 || r_data.used == 0) {
-		cifssrv_debug("err %d dir buf used = %u\n", err, r_data.used);
-		dirdesc_fp->search_over = 1;
-	}
-	used_count = r_data.used;
+	dir_fp->readdir_data.dirent = r_data.dirent;
+	dir_fp->readdir_data.used = 0;
+	dir_fp->readdir_data.full = 0;
+	dir_fp->dirent_offset = 0;
 
-	if (sizeof(T2_FFIRST_RSP_PARMS) % 4 != 0)
-		data_alignment_offset = 4 - sizeof(T2_FFIRST_RSP_PARMS) % 4;
+	if (params_count % 4)
+		data_alignment_offset = 4 - params_count % 4;
 
-	max_outbuf = le16_to_cpu(req_params->SearchCount) *
-				 sizeof(FILE_UNIX_INFO);
-	if (max_outbuf > MAX_CIFS_LOOKUP_BUFFER_SIZE)
-		max_outbuf = MAX_CIFS_LOOKUP_BUFFER_SIZE;
+	bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) + params_count
+			+ data_alignment_offset);
 
-	space_remaining = (max_outbuf -
-				(sizeof(TRANSACTION2_RSP) + params_count +
-				 data_alignment_offset));
+	out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
+				sizeof(FILE_UNIX_INFO)),
+			MAX_CIFS_LOOKUP_BUFFER_SIZE) -
+		(sizeof(TRANSACTION2_RSP) +
+		 params_count + data_alignment_offset);
 
-	p = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) + params_count +
-			data_alignment_offset);
+	do {
+		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
+			dir_fp->dirent_offset = 0;
+			r_data.used = 0;
+			r_data.full = 0;
+			rc = smb_vfs_readdir(dir_fp->filp, smb_filldir,
+					&r_data);
+			if (rc < 0) {
+				cifssrv_debug("err : %d\n", rc);
+				goto err_out;
+			}
 
-refill:
-	buf_p = (struct smb_dirent *)r_data.dirent;
-	cifssrv_debug("dentry_bytes_cnt = %d used_cnt = %d search_over = %d\n",
-			dir_entry_bytes_count, used_count,
-			dirdesc_fp->search_over);
+			dir_fp->readdir_data.used = r_data.used;
+			dir_fp->readdir_data.full = r_data.full;
+			if (!dir_fp->readdir_data.used) {
+				free_page((unsigned long)
+						(dir_fp->readdir_data.dirent));
+				dir_fp->readdir_data.dirent = NULL;
+				break;
+			}
 
-	while (dir_entry_bytes_count < used_count && space_remaining > 0 &&
-			!dirdesc_fp->search_over) {
-		reclen = ALIGN(sizeof(struct smb_dirent) + buf_p->namelen,
+			de = (struct smb_dirent *)
+				((char *)dir_fp->readdir_data.dirent);
+		} else {
+			de = (struct smb_dirent *)
+				((char *)dir_fp->readdir_data.dirent +
+				 dir_fp->dirent_offset);
+		}
+
+		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
 				sizeof(__le64));
+		dir_fp->dirent_offset += reclen;
 
-		cifssrv_debug("namelen %d, offset %lld, d_type %u, ino %llu, "
-				"buf used %d, reclen %d,"
-				" dir_entry_bytes_count = %d\n",
-				buf_p->namelen, buf_p->offset, buf_p->d_type,
-				buf_p->ino, used_count, reclen,
-				dir_entry_bytes_count);
+		namestr = read_next_entry(&kstat, de, dirpath);
+		if (IS_ERR(namestr)) {
+			rc = PTR_ERR(namestr);
+			cifssrv_debug("Err while dirent read rc = %d\n", rc);
+			rc = 0;
+			continue;
+		}
 
-		file_pathlen = dir_path_len +  buf_p->namelen;
-		namestr = kmalloc(file_pathlen + 1, GFP_KERNEL);
-		if (!namestr)
-			goto out;
-
-		if (single_entry_search) {
+		cifssrv_debug("filename string = %s\n", namestr);
+		if (srch_ptr) {
 			cifssrv_debug("Single entry requested\n");
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-			if (srch_ptr_len != buf_p->namelen ||
-				strncasecmp(buf_p->name, srch_ptr,
-					buf_p->namelen)) {
+			if (strlen(srch_ptr) != de->namelen ||
+				strncasecmp(de->name, srch_ptr,
+					de->namelen)) {
 #else
-			if (srch_ptr_len != buf_p->namelen ||
-				strnicmp(buf_p->name, srch_ptr,
-					buf_p->namelen)) {
+			if (strlen(srch_ptr) != de->namelen ||
+					strnicmp(de->name, srch_ptr,
+						de->namelen)) {
 #endif
-				dir_entry_bytes_count += reclen;
-				goto next;
+					kfree(namestr);
+					continue;
 			}
 		}
 
-		memcpy(namestr, dir_path_name, dir_path_len);
-		memcpy(namestr + dir_path_len, buf_p->name, buf_p->namelen);
-		namestr[file_pathlen] = '\0';
-
-		cifssrv_debug("filename string = %s\n", namestr);
-
-		rc = smb_kern_path(namestr, 0, &path, 1);
-		if (rc) {
-			cifssrv_err("look up failed rc=%d\n", rc);
-			kfree(namestr);
-			goto out;
-		}
-
-		generic_fillattr(path.dentry->d_inode, &kstat);
-		memcpy(namestr, buf_p->name, buf_p->namelen);
-		namestr[buf_p->namelen] = '\0';
-
-		rc = smb_populate_readdir_entry(server, info_level, &p, reclen,
-				namestr, &space_remaining, &last_entry_offset,
-				&kstat, &data_count, &dir_entry_bytes_count,
-				&num_dir_entries_searched);
-		if (rc) {
-			cifssrv_err("smb readdir populate failed rc=%d\n", rc);
-			kfree(namestr);
-			path_put(&path);
-			goto out;
-		}
-
-		path_put(&path);
-next:
-		buf_p = (struct smb_dirent *)((char *)buf_p + reclen);
+		rc = smb_populate_readdir_entry(server,
+				req_params->InformationLevel, &bufptr, reclen,
+				namestr, &out_buf_len, &last_entry_offset,
+				&kstat, &data_count, &num_entry);
 		kfree(namestr);
-	}
+		if (rc)
+			goto err_out;
 
-	if (dir_entry_bytes_count == used_count && space_remaining != 0 &&
-			!dirdesc_fp->search_over) {
-		r_data.used = 0;
-		r_data.full = 0;
-		err = smb_vfs_readdir(dirdesc_fp->filp, smb_filldir, &r_data);
-		if (err < 0 || r_data.used == 0) {
-			cifssrv_debug("err = %d dir buf used = %u\n",
-					err, r_data.used);
-			dirdesc_fp->search_over = 1;
-		} else {
-			dir_entry_bytes_count = 0;
-			used_count = r_data.used;
-			cifssrv_debug("Going to refill\n");
-			goto refill;
-		}
-	}
+		if (srch_ptr)
+			break;
+	} while (out_buf_len >= 0);
 
-	if (single_entry_search && data_count == 0) {
+	if (out_buf_len < 0)
+		dir_fp->dirent_offset -= reclen;
+
+	if (srch_ptr && data_count == 0) {
 		rsp->hdr.Status.CifsError =
 			NT_STATUS_NO_SUCH_FILE;
 		rc = -EINVAL;
-		goto out;
+		goto err_out;
 	}
 
 	params = (T2_FFIRST_RSP_PARMS *)((char *)rsp +
 			sizeof(TRANSACTION2_RSP));
 	params->SearchHandle = cpu_to_le16(sid);
-	params->SearchCount = cpu_to_le16(num_dir_entries_searched);
+	params->SearchCount = cpu_to_le16(num_entry);
 
-	if (!dirdesc_fp->search_over) {
+	if (out_buf_len < 0) {
 		cifssrv_debug("%s continue search\n", __func__);
 		params->EndofSearch = cpu_to_le16(0);
 		params->LastNameOffset = cpu_to_le16(last_entry_offset);
-		dirdesc_fp->dirent_offset = dir_entry_bytes_count;
-		dirdesc_fp->readdir_data.dirent = r_data.dirent;
-		dirdesc_fp->readdir_data.used = r_data.used;
-		dirdesc_fp->readdir_data.full = r_data.full;
 	} else {
 		cifssrv_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
-		free_page((unsigned long)(r_data.dirent));
-		path_put(&(dirdesc_fp->filp->f_path));
+		path_put(&(dir_fp->filp->f_path));
 		close_id(server, sid);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
@@ -4798,31 +5049,36 @@ next:
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(data_count);
 	rsp->t2.DataOffset = sizeof(TRANSACTION2_RSP) + params_count +
-				data_alignment_offset - 4;
+		data_alignment_offset - 4;
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->Pad = 0;
 	rsp->ByteCount = cpu_to_le16(data_count) + params_count + 1 /*pad*/ +
-				data_alignment_offset;
+		data_alignment_offset;
 	memset((char *)rsp + sizeof(TRANSACTION2_RSP) + params_count, '\0', 2);
-	/*zeroizing the 2 bytes padding after trans2 params */
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + data_count + params_count + 1 +
 				data_alignment_offset));
-	/* 2*wct + data_count + trans2 ffirstparams count(10) + padding(1+2)*/
+	kfree(srch_ptr);
+	smb_put_name(dirpath);
+	return 0;
 
-out:
-	if (rc) {
-		if (rsp->hdr.Status.CifsError == 0)
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_UNEXPECTED_IO_ERROR;
-		free_page((unsigned long)(r_data.dirent));
-		path_put(&(dirdesc_fp->filp->f_path));
+err_out:
+	if (dir_fp && dir_fp->readdir_data.dirent) {
+		path_put(&(dir_fp->filp->f_path));
 		close_id(server, sid);
+		if (dir_fp->readdir_data.dirent)  {
+			free_page((unsigned long)(dir_fp->readdir_data.dirent));
+			dir_fp->readdir_data.dirent = NULL;
+		}
 	}
 
+	if (rsp->hdr.Status.CifsError == 0)
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_UNEXPECTED_IO_ERROR;
+
 	kfree(srch_ptr);
-	smb_put_name(dir_path_name);
+	smb_put_name(dirpath);
 	return 0;
 }
 
@@ -4843,28 +5099,22 @@ int find_next(struct smb_work *smb_work)
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
 	TRANSACTION2_FNEXT_REQ_PARAMS *req_params;
 	T2_FNEXT_RSP_PARMS *params = NULL;
-	int params_count = sizeof(T2_FNEXT_RSP_PARMS);
-	int info_level;
-	__u16 sid;
-	char *name = NULL;
-	struct cifssrv_file *dirdesc_fp;
-	int data_alignment_offset = 0;
-	int dir_entry_bytes_count;
-	char *dir_path_name = NULL, pathname[256];
-	struct smb_dirent *buf_p;
-	unsigned int used_count = 0, max_outbuf;
-	int space_remaining;
-	char *p = NULL;
-	int reclen;
-	int rc = 0, err = 0;
-	int file_pathlen;
-	char *namestr = NULL;
-	struct path path;
+	struct smb_dirent *de;
+	struct cifssrv_file *dir_fp;
 	struct kstat kstat;
-	int last_entry_offset = 0;
+	int params_count = sizeof(T2_FNEXT_RSP_PARMS);
+	int data_alignment_offset = 0;
 	int data_count = 0;
-	int num_dir_entries_searched = 0;
-	int dir_path_len;
+	int num_entry = 0;
+	int last_entry_offset = 0;
+	int rc = 0, reclen = 0;
+	int out_buf_len;
+	__u16 sid;
+	char *bufptr = NULL;
+	char *namestr = NULL;
+	char *dirpath = NULL;
+	char *name = NULL;
+	char *pathname = NULL;
 	struct smb_readdir_data r_data = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
@@ -4872,14 +5122,12 @@ int find_next(struct smb_work *smb_work)
 	};
 
 	req_params = (TRANSACTION2_FNEXT_REQ_PARAMS *)(smb_work->buf +
-				req->ParameterOffset + 4);
-
-	info_level = req_params->InformationLevel;
+			req->ParameterOffset + 4);
 	sid = cpu_to_le16(req_params->SearchHandle);
 
 	/*Currently no usage of ResumeFilename*/
 	name = req_params->ResumeFileName;
-	name = smb_strndup_from_utf16(name, 256, 1, server->local_nls);
+	name = smb_strndup_from_utf16(name, NAME_MAX, 1, server->local_nls);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 		return PTR_ERR(name);
@@ -4887,138 +5135,109 @@ int find_next(struct smb_work *smb_work)
 	cifssrv_debug("FileName after unicode conversion %s\n", name);
 	kfree(name);
 
-	dirdesc_fp = get_id_from_fidtable(server, sid);
-	if (!dirdesc_fp) {
-		cifssrv_err("error invalid sid\n");
+	dir_fp = get_id_from_fidtable(server, sid);
+	if (!dir_fp) {
+		cifssrv_debug("error invalid sid\n");
 		rc = -EINVAL;
-		goto out;
+		goto err_out;
 	}
 
-	r_data.dirent = dirdesc_fp->readdir_data.dirent;
-	r_data.used = dirdesc_fp->readdir_data.used;
-	r_data.full = dirdesc_fp->readdir_data.full;
-	used_count = r_data.used;
-	dir_entry_bytes_count = dirdesc_fp->dirent_offset;
-	dir_path_name = d_path(&(dirdesc_fp->filp->f_path),
-				pathname, sizeof(pathname));
-	if (IS_ERR(dir_path_name)) {
-		rc = PTR_ERR(dir_path_name);
-		goto out;
+	r_data.dirent = dir_fp->readdir_data.dirent;
+	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!pathname) {
+		cifssrv_debug("Failed to allocate memory\n");
+		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
+		rc = -ENOMEM;
+		goto err_out;
 	}
 
-	dir_path_len = strlen(dir_path_name);
-	cifssrv_debug("dir_path_name = %s size = %d\n",
-			dir_path_name, dir_path_len);
+	dirpath = d_path(&(dir_fp->filp->f_path), pathname, PATH_MAX);
+	if (IS_ERR(dirpath)) {
+		rc = PTR_ERR(dirpath);
+		goto err_out;
+	}
 
-	if (params_count % 4 != 0)
+	cifssrv_debug("dirpath = %s\n", dirpath);
+
+	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
-	max_outbuf = le16_to_cpu(req_params->SearchCount) *
-				 sizeof(FILE_UNIX_INFO);
-	if (max_outbuf > MAX_CIFS_LOOKUP_BUFFER_SIZE)
-		max_outbuf = MAX_CIFS_LOOKUP_BUFFER_SIZE;
-
-	space_remaining = max_outbuf -
-				(sizeof(TRANSACTION2_RSP) + params_count +
-				 data_alignment_offset);
-
-	p = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
+	bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
 			params_count + data_alignment_offset);
 
-fill:
-	buf_p = (struct smb_dirent *)((char *)r_data.dirent +
-			dir_entry_bytes_count);
-	cifssrv_debug("dir_entry_bytes_count %d\n", dir_entry_bytes_count);
-	cifssrv_debug("buf used %d\n", r_data.used);
+	out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
+				sizeof(FILE_UNIX_INFO)),
+			MAX_CIFS_LOOKUP_BUFFER_SIZE) -
+		(sizeof(TRANSACTION2_RSP) + params_count +
+		 data_alignment_offset);
 
-	while (dir_entry_bytes_count < used_count &&
-			space_remaining > 0 && !dirdesc_fp->search_over) {
-		reclen = ALIGN(sizeof(struct smb_dirent) + buf_p->namelen,
-				sizeof(__le64));
-		cifssrv_debug("namelen %d, offset %lld, d_type %u, ino %llu, "
-				"buf used %d, reclen %d,"
-				" dir_entry_bytes_count = %d\n",
-				buf_p->namelen, buf_p->offset, buf_p->d_type,
-				buf_p->ino, used_count, reclen,
-				dir_entry_bytes_count);
+	do {
+		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
+			dir_fp->dirent_offset = 0;
+			r_data.used = 0;
+			r_data.full = 0;
+			rc = smb_vfs_readdir(dir_fp->filp, smb_filldir,
+					&r_data);
+			if (rc < 0) {
+				cifssrv_debug("err : %d\n", rc);
+				goto err_out;
+			}
 
-		file_pathlen = dir_path_len +  buf_p->namelen + 1;/*1 for '/'*/
-		namestr = kmalloc(file_pathlen + 1, GFP_KERNEL);
-		if (!namestr) {
-			cifssrv_err("memory allocation failed for namestr\n");
-			rc = -ENOMEM;
-			goto out;
+			dir_fp->readdir_data.used = r_data.used;
+			dir_fp->readdir_data.full = r_data.full;
+			if (!dir_fp->readdir_data.used) {
+				free_page((unsigned long)
+						(dir_fp->readdir_data.dirent));
+				dir_fp->readdir_data.dirent = NULL;
+				break;
+			}
+
+			de = (struct smb_dirent *)
+				((char *)dir_fp->readdir_data.dirent);
+		} else {
+			de = (struct smb_dirent *)
+				((char *)dir_fp->readdir_data.dirent +
+				 dir_fp->dirent_offset);
 		}
-		memcpy(namestr, dir_path_name, dir_path_len);
-		memset(namestr + dir_path_len, '/', 1);
-		memcpy(namestr + dir_path_len + 1, buf_p->name, buf_p->namelen);
-		namestr[file_pathlen] = '\0';
+
+		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
+				sizeof(__le64));
+		dir_fp->dirent_offset += reclen;
+
+		namestr = read_next_entry(&kstat, de, dirpath);
+		if (IS_ERR(namestr)) {
+			rc = PTR_ERR(namestr);
+			cifssrv_debug("Err while dirent read rc = %d\n", rc);
+			rc = 0;
+			continue;
+		}
 
 		cifssrv_debug("filename string = %s\n", namestr);
-
-		rc = smb_kern_path(namestr, LOOKUP_FOLLOW, &path, 0);
-		if (rc) {
-			cifssrv_err("look up failed rc=%d\n", rc);
-			kfree(namestr);
-			goto out;
-		}
-
-		generic_fillattr(path.dentry->d_inode, &kstat);
-		memcpy(namestr, buf_p->name, buf_p->namelen);
-		namestr[buf_p->namelen] = '\0';
-
-		rc = smb_populate_readdir_entry(server, info_level, &p, reclen,
-				namestr, &space_remaining, &last_entry_offset,
-				&kstat, &data_count, &dir_entry_bytes_count,
-				&num_dir_entries_searched);
-		if (rc) {
-			cifssrv_err("smb readdir populate failed rc=%d\n", rc);
-			path_put(&path);
-			kfree(namestr);
-			goto out;
-		}
-
-		buf_p = (struct smb_dirent *)((char *)buf_p + reclen);
-		path_put(&path);
+		rc = smb_populate_readdir_entry(server,
+				req_params->InformationLevel, &bufptr, reclen,
+				namestr, &out_buf_len, &last_entry_offset,
+				&kstat, &data_count, &num_entry);
 		kfree(namestr);
-	}
+		if (rc)
+			goto err_out;
 
-	if (dir_entry_bytes_count == used_count &&
-			!dirdesc_fp->search_over && space_remaining != 0) {
-		cifssrv_debug("used_count = %u dir_entry_bytes_count = %u\n",
-				used_count, dir_entry_bytes_count);
-		r_data.used = 0;
-		r_data.full = 0;
-		err = smb_vfs_readdir(dirdesc_fp->filp, smb_filldir, &r_data);
-		if (err < 0 || r_data.used == 0) {
-			r_data.used = 0;
-			cifssrv_debug("err = %d dir buf used = %u\n",
-					err, r_data.used);
-			dirdesc_fp->search_over = 1;
-		} else {
-			dir_entry_bytes_count = 0;
-			used_count = r_data.used;
-			cifssrv_debug("Going to fill\n");
-			goto fill;
-		}
-	}
+	} while (out_buf_len >= 0);
+
+	if (out_buf_len < 0)
+		dir_fp->dirent_offset -= reclen;
 
 	params = (T2_FNEXT_RSP_PARMS *)((char *)rsp + sizeof(TRANSACTION2_RSP));
-	params->SearchCount = cpu_to_le16(num_dir_entries_searched);
+	params->SearchCount = cpu_to_le16(num_entry);
 
-	if (!dirdesc_fp->search_over) {
+	if (out_buf_len < 0) {
 		cifssrv_debug("%s continue search\n", __func__);
 		params->EndofSearch = cpu_to_le16(0);
 		params->LastNameOffset = cpu_to_le16(last_entry_offset);
-		dirdesc_fp->dirent_offset = dir_entry_bytes_count;
-		dirdesc_fp->readdir_data.used = r_data.used;
-		dirdesc_fp->readdir_data.full = r_data.full;
 	} else {
 		cifssrv_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
-		free_page((unsigned long)(r_data.dirent));
-		path_put(&(dirdesc_fp->filp->f_path));
+		path_put(&(dir_fp->filp->f_path));
 		close_id(server, sid);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
@@ -5042,323 +5261,26 @@ fill:
 		data_alignment_offset;
 	memset((char *)rsp + sizeof(TRANSACTION2_RSP) +
 			cpu_to_le16(params_count), '\0', data_alignment_offset);
-	/*zeroizing the 2 bytes padding after trans2 params */
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + data_count + params_count + 1 +
 				data_alignment_offset));
-	/* 2*wct + data_count + trans2 params count(8) + padding(1) +
-	   data_alignment_offset*/
+	kfree(pathname);
+	return 0;
 
-out:
-	if (rc) {
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
-		if (dirdesc_fp) {
-			free_page((unsigned long)(r_data.dirent));
-			path_put(&(dirdesc_fp->filp->f_path));
+err_out:
+	if (dir_fp && dir_fp->readdir_data.dirent) {
+		if (dir_fp->readdir_data.dirent)  {
+			free_page((unsigned long)(dir_fp->readdir_data.dirent));
+			dir_fp->readdir_data.dirent = NULL;
 		}
+		path_put(&(dir_fp->filp->f_path));
 		close_id(server, sid);
 	}
-	return rc;
-}
 
-/**
- * smb_populate_readdir_entry() - encode directory entry in smb response buffer
- * @server:	TCP server instance of connection
- * @info_level:	smb information level
- * @p:		smb response buffer pointer
- * @reclen:	smb record length
- * @namestr:	dirent name string
- * @space_remaining:	remaining space in readdir response buffer
- * @last_entry_offset:	offset of last entry in directory
- * @kstat:	dirent stat information
- * @data_count:	used buffer size
- * @dir_entry_bytes_count:	dirent size
- * @num_dir_entries_searched:	number of dirents searched so far
- *
- * if directory has many entries, find first can't read it fully.
- * find next might be called multiple times to read remaining dir entries
- *
- * Return:	0 on success, otherwise error
- */
-int smb_populate_readdir_entry(struct tcp_server_info *server, int info_level,
-		char **p, int reclen, char *namestr, int *space_remaining,
-		int *last_entry_offset, struct kstat *kstat, int *data_count,
-		int *dir_entry_bytes_count, int *num_dir_entries_searched)
-{
-	char *name_size_check_buf = NULL;
-	int name_len = 0;
-	int next_entry_offset = 0;
-	FILE_UNIX_BASIC_INFO *unix_info;
-	FILE_DIRECTORY_INFO *fdinfo = NULL;
-	FILE_FULL_DIRECTORY_INFO *ffdinfo = NULL;
-	FILE_BOTH_DIRECTORY_INFO *fbdinfo = NULL;
-	SEARCH_ID_FULL_DIR_INFO *dinfo = NULL;
-	FILE_UNIX_INFO *finfo = NULL;
-	name_size_check_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!name_size_check_buf)
-		return -ENOMEM;
+	if (rsp->hdr.Status.CifsError == 0)
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_UNEXPECTED_IO_ERROR;
 
-	switch (info_level) {
-	case SMB_FIND_FILE_DIRECTORY_INFO:
-		name_len = smbConvertToUTF16((__le16 *)name_size_check_buf,
-				namestr, PATH_MAX, server->local_nls, 0);
-		name_len++;/*for NULL character*/
-		name_len *= 2;
-		next_entry_offset = (sizeof(FILE_DIRECTORY_INFO) - 1 +
-				name_len + 3) & ~3;
-
-		if (next_entry_offset > *space_remaining) {
-			cifssrv_debug("space_remaining %d next_entry_offset %d"
-					" data_count=%d\n", *space_remaining,
-					next_entry_offset, *data_count);
-			*last_entry_offset = *data_count;
-			*space_remaining = 0;
-			break;
-		}
-
-		fdinfo = (FILE_DIRECTORY_INFO *)(*p);
-		fdinfo->FileIndex = 0;
-		fdinfo->CreationTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->ctime));
-		fdinfo->LastAccessTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->atime));
-		fdinfo->LastWriteTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		fdinfo->ChangeTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		fdinfo->EndOfFile = cpu_to_le64(kstat->size);
-		fdinfo->AllocationSize = cpu_to_le64(kstat->blocks << 9);
-		fdinfo->ExtFileAttributes = S_ISDIR(kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
-		fdinfo->FileNameLength = cpu_to_le32(name_len);
-
-		memcpy(fdinfo->FileName, name_size_check_buf, name_len);
-		fdinfo->FileName[name_len - 2] = 0;
-		fdinfo->FileName[name_len - 1] = 0;
-
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
-		fdinfo->NextEntryOffset = next_entry_offset;
-		*last_entry_offset = *data_count;
-		*data_count = *data_count + next_entry_offset;
-		*space_remaining -= next_entry_offset;
-		*dir_entry_bytes_count += reclen;
-		(*num_dir_entries_searched)++;
-		memset((char *)fdinfo + sizeof(FILE_DIRECTORY_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				(sizeof(FILE_DIRECTORY_INFO) - 1 + name_len));
-		*p =  (char *)(*p) + next_entry_offset;
-		break;
-
-	case SMB_FIND_FILE_FULL_DIRECTORY_INFO:
-		name_len = smbConvertToUTF16((__le16 *)name_size_check_buf,
-				namestr, PATH_MAX, server->local_nls, 0);
-		name_len++;	/*for NULL character*/
-		name_len *= 2;
-		next_entry_offset = (sizeof(FILE_FULL_DIRECTORY_INFO) - 1 +
-				name_len + 3) & ~3;
-
-		if (next_entry_offset > *space_remaining) {
-			cifssrv_debug("space_remaining %d next_entry_offset %d"
-					" data_count=%d\n", *space_remaining,
-					next_entry_offset, *data_count);
-			*last_entry_offset = *data_count;
-			*space_remaining = 0;
-			break;
-		}
-
-		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)(*p);
-		ffdinfo->FileIndex = 0;
-		ffdinfo->CreationTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->ctime));
-		ffdinfo->LastAccessTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->atime));
-		ffdinfo->LastWriteTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		ffdinfo->ChangeTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		ffdinfo->EndOfFile = cpu_to_le64(kstat->size);
-		ffdinfo->AllocationSize = cpu_to_le64(kstat->blocks << 9);
-		ffdinfo->ExtFileAttributes = S_ISDIR(kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
-		ffdinfo->FileNameLength = cpu_to_le32(name_len);
-		ffdinfo->EaSize = 0;
-
-		memcpy(ffdinfo->FileName, name_size_check_buf, name_len);
-		ffdinfo->FileName[name_len - 2] = 0;
-		ffdinfo->FileName[name_len - 1] = 0;
-
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
-		ffdinfo->NextEntryOffset = next_entry_offset;
-		*last_entry_offset = *data_count;
-		*data_count = *data_count + next_entry_offset;
-		*space_remaining -= next_entry_offset;
-		*dir_entry_bytes_count += reclen;
-		(*num_dir_entries_searched)++;
-		memset((char *)ffdinfo + sizeof(FILE_FULL_DIRECTORY_INFO) - 1 +
-			name_len, '\0', next_entry_offset -
-			(sizeof(FILE_FULL_DIRECTORY_INFO) - 1 + name_len));
-		*p =  (char *)(*p) + next_entry_offset;
-		break;
-
-	case SMB_FIND_FILE_BOTH_DIRECTORY_INFO:
-		name_len = smbConvertToUTF16((__le16 *)name_size_check_buf,
-				namestr, PATH_MAX, server->local_nls, 0);
-		name_len++;/*for NULL character*/
-		name_len *= 2;
-		next_entry_offset = (sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
-				name_len + 3) & ~3;
-
-		if (next_entry_offset > *space_remaining) {
-			cifssrv_debug("space_remaining %d next_entry_offset %d"
-					" data_count=%d\n", *space_remaining,
-					next_entry_offset, *data_count);
-			*last_entry_offset = *data_count;
-			*space_remaining = 0;
-			break;
-		}
-
-		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)(*p);
-		fbdinfo->FileIndex = 0;
-		fbdinfo->CreationTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->ctime));
-		fbdinfo->LastAccessTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->atime));
-		fbdinfo->LastWriteTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		fbdinfo->ChangeTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		fbdinfo->EndOfFile = cpu_to_le64(kstat->size);
-		fbdinfo->AllocationSize = cpu_to_le64(kstat->blocks << 9);
-		fbdinfo->ExtFileAttributes = S_ISDIR(kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
-		fbdinfo->FileNameLength = cpu_to_le32(name_len);
-		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = 0;
-		fbdinfo->Reserved = 0;
-		memset(fbdinfo->ShortName, '\0', 24);
-
-		memcpy(fbdinfo->FileName, name_size_check_buf, name_len);
-		fbdinfo->FileName[name_len - 2] = 0;
-		fbdinfo->FileName[name_len - 1] = 0;
-
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
-		fbdinfo->NextEntryOffset = next_entry_offset;
-		*data_count = *data_count + next_entry_offset;
-		*space_remaining -= next_entry_offset;
-		*dir_entry_bytes_count += reclen;
-		(*num_dir_entries_searched)++;
-		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
-			name_len, '\0', next_entry_offset -
-			sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 + name_len);
-		*p =  (char *)(*p) + next_entry_offset;
-		break;
-
-	case SMB_FIND_FILE_ID_FULL_DIR_INFO:
-		name_len = smbConvertToUTF16((__le16 *)name_size_check_buf,
-				namestr, PATH_MAX, server->local_nls, 0);
-		name_len++;/*for NULL character*/
-		name_len *= 2;
-		next_entry_offset = (sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 +
-				name_len + 3) & ~3;
-
-		if (next_entry_offset > *space_remaining) {
-			cifssrv_debug("space_remaining %d next_entry_offset %d"
-					" data_count=%d\n", *space_remaining,
-					next_entry_offset, *data_count);
-			*last_entry_offset = *data_count;
-			*space_remaining = 0;
-			break;
-		}
-
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)(*p);
-		dinfo->FileIndex = 0;
-		dinfo->CreationTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->ctime));
-		dinfo->LastAccessTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->atime));
-		dinfo->LastWriteTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		dinfo->ChangeTime = cpu_to_le64(
-				cifs_UnixTimeToNT(kstat->mtime));
-		dinfo->EndOfFile = cpu_to_le64(kstat->size);
-		dinfo->AllocationSize =
-			cpu_to_le64(((__le64)kstat->blksize) << 9);
-		dinfo->ExtFileAttributes = S_ISDIR(kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
-		dinfo->FileNameLength = cpu_to_le32(name_len);
-		dinfo->EaSize = 0;
-		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(kstat->ino);
-
-		memcpy(dinfo->FileName, name_size_check_buf, name_len);
-		dinfo->FileName[name_len - 2] = 0;
-		dinfo->FileName[name_len - 1] = 0;
-
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count=%d\n", *space_remaining,
-				next_entry_offset, *data_count);
-		dinfo->NextEntryOffset = next_entry_offset;
-		*last_entry_offset = *data_count;
-		*data_count = *data_count + next_entry_offset;
-		*space_remaining -= next_entry_offset;
-		*dir_entry_bytes_count += reclen;
-		(*num_dir_entries_searched)++;
-		memset((char *)dinfo + sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 + name_len);
-		*p =  (char *)(*p) + next_entry_offset;
-		break;
-	case SMB_FIND_FILE_UNIX:
-		name_len = smbConvertToUTF16((__le16 *)name_size_check_buf,
-				namestr, PATH_MAX, server->local_nls, 0);
-		name_len++;/*for NULL character*/
-		name_len *= 2;
-		next_entry_offset = (sizeof(FILE_UNIX_INFO) - 1 +
-				name_len + 3) & ~3;
-
-		if (next_entry_offset > *space_remaining) {
-			cifssrv_debug("space_remaining %d next_entry_offset %d"
-					" data_count %d\n", *space_remaining,
-					next_entry_offset, *data_count);
-			*last_entry_offset = *data_count;
-			*space_remaining = 0;
-			break;
-		}
-
-		finfo = (FILE_UNIX_INFO *)(*p);
-		finfo->ResumeKey = 0;
-		unix_info = (FILE_UNIX_BASIC_INFO *)((char *)finfo + 8);
-		init_unix_info(unix_info, kstat);
-
-		memcpy(finfo->FileName, name_size_check_buf, name_len);
-		finfo->FileName[name_len - 2] = 0;
-		finfo->FileName[name_len - 1] = 0;
-
-		cifssrv_debug("space_remaining %d next_entry_offset %d"
-				" data_count %d\n", *space_remaining,
-				next_entry_offset, *data_count);
-		finfo->NextEntryOffset = next_entry_offset;
-		*last_entry_offset = *data_count;
-		*data_count = *data_count + next_entry_offset;
-		*space_remaining -= next_entry_offset;
-		*dir_entry_bytes_count += reclen;
-		(*num_dir_entries_searched)++;
-		memset((char *)finfo + sizeof(FILE_UNIX_INFO) - 1 + name_len,
-				'\0', next_entry_offset -
-				(sizeof(FILE_UNIX_INFO) - 1 + name_len));
-		*p =  (char *)(*p) + next_entry_offset;
-		break;
-	default:
-		kfree(name_size_check_buf);
-		return -1;
-		break;
-	}
-	kfree(name_size_check_buf);
+	kfree(pathname);
 	return 0;
 }
 
