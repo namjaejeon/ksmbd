@@ -4355,6 +4355,16 @@ int smb2_cancel(struct smb_work *smb_work)
 
 }
 
+static inline void smb_flock_init(struct file_lock *fl, struct file *f)
+{
+	fl->fl_owner = (struct files_struct *)f;
+	fl->fl_pid = current->tgid;
+	fl->fl_file = f;
+	fl->fl_flags = FL_POSIX;
+	fl->fl_ops = NULL;
+	fl->fl_lmops = NULL;
+}
+
 /**
  * smb2_lock() - handler for smb2 file lock command
  * @smb_work:	smb work containing lock command buffer
@@ -4368,20 +4378,19 @@ int smb2_lock(struct smb_work *smb_work)
 	struct smb2_lock_element *lock_ele;
 	struct cifssrv_file *fp;
 	struct tcp_server_info *server = smb_work->server;
-	struct file_lock *flock;
+	struct file_lock *flock = NULL;
 	struct file *filp;
-	int16_t lock_count;
-	int flags;
+	int lock_count;
+	int flags = 0;
 	unsigned int cmd = 0;
-	bool pending = false;
-	int err = 0;
+	int err = 0, i;
 
 	req = (struct smb2_lock_req *)smb_work->buf;
 	rsp = (struct smb2_lock_rsp *)smb_work->rsp_buf;
 
 	if (le16_to_cpu(req->StructureSize) != 48) {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		return 0;
+		goto out;
 	}
 
 	cifssrv_debug("Recieved lock request\n");
@@ -4391,9 +4400,9 @@ int smb2_lock(struct smb_work *smb_work)
 		cifssrv_debug("Invalid file id for lock : %llu\n",
 				le64_to_cpu(req->VolatileFileId));
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto out;
 	}
+
 	filp = fp->filp;
 	lock_count = le16_to_cpu(req->LockCount);
 	lock_ele = req->locks;
@@ -4401,146 +4410,129 @@ int smb2_lock(struct smb_work *smb_work)
 	cifssrv_debug("lock count is %d\n", lock_count);
 	if (!lock_count)  {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto out;
 	}
+
 	if (fp->persistent_id != le64_to_cpu(req->PersistentFileId)) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto out;
 	}
+
 	flock = locks_alloc_lock();
 	if (!flock) {
 		rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto out;
 	}
 
 	locks_init_lock(flock);
 
-	while (lock_count > 0) {
-		flags = lock_ele->Flags;
+	for (i = 0; i < lock_count; i++) {
+		flags = le32_to_cpu(lock_ele[i].Flags);
+
+		smb_flock_init(flock, filp);
+
+		flock->fl_start = le64_to_cpu(lock_ele[i].Offset);
+		flock->fl_end = flock->fl_start +
+			le64_to_cpu(lock_ele[i].Length) - 1;
+		if (flock->fl_end < flock->fl_start) {
+			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
+			goto out;
+		}
+
 		/* Checking for wrong flag combination during lock request*/
 		switch (flags) {
 		case SMB2_LOCKFLAG_SHARED:
+			cifssrv_debug("received shared request\n");
+			if (!(filp->f_mode & FMODE_READ)) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLKW;
+			flock->fl_type = F_RDLCK;
+			flock->fl_flags |= FL_SLEEP;
+			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE:
+			cifssrv_debug("received exclusive request\n");
+			if (!(filp->f_mode & FMODE_WRITE)) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLKW;
+			flock->fl_type = F_WRLCK;
+			flock->fl_flags |= FL_SLEEP;
+			break;
 		case SMB2_LOCKFLAG_SHARED|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
+			cifssrv_debug("received shared & fail immediately request\n");
+			if (!(filp->f_mode & FMODE_READ)) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLK;
+			flock->fl_type = F_RDLCK;
+			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
+			cifssrv_debug("received exclusive & fail immediately request\n");
+			if (!(filp->f_mode & FMODE_WRITE)) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLK;
+			flock->fl_type = F_WRLCK;
 		case SMB2_LOCKFLAG_UNLOCK:
+			cifssrv_debug("received unlock request\n");
+			flock->fl_type = F_UNLCK;
 			break;
 		default:
 			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-			smb2_set_err_rsp(smb_work);
-			locks_free_lock(flock);
-			return 0;
-		}
-		flock->fl_start = le64_to_cpu(lock_ele->Offset);
-		flock->fl_end = flock->fl_start +
-			le64_to_cpu(lock_ele->Length) - 1;
-		if (flock->fl_end < flock->fl_start) {
-			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
-			smb2_set_err_rsp(smb_work);
-			locks_free_lock(flock);
-			return 0;
+			goto out;
 		}
 
-		if ((flags & SMB2_LOCKFLAG_UNLOCK) == 0) {
-			cifssrv_debug("recieved locking requests\n");
-
-			flock->fl_owner = (struct files_struct *)filp;
-			flock->fl_pid = current->tgid;
-			flock->fl_file = filp;
-			flock->fl_flags = FL_POSIX;
-			if ((flags & SMB2_LOCKFLAG_FAIL_IMMEDIATELY) == 0)
-				flock->fl_flags |= FL_SLEEP;
-			flock->fl_ops = NULL;
-			flock->fl_lmops = NULL;
-			if (flags & SMB2_LOCKFLAG_SHARED) {
-				flock->fl_type = F_RDLCK;
-				if (!(filp->f_mode & FMODE_READ)) {
-					rsp->hdr.Status =
-						NT_STATUS_ACCESS_DENIED;
-					smb2_set_err_rsp(smb_work);
-					locks_free_lock(flock);
-					return 0;
-				}
-			} else if (flags & SMB2_LOCKFLAG_EXCLUSIVE) {
-				flock->fl_type = F_WRLCK;
-				if (!(filp->f_mode & FMODE_WRITE)) {
-					rsp->hdr.Status =
-						NT_STATUS_ACCESS_DENIED;
-					smb2_set_err_rsp(smb_work);
-					locks_free_lock(flock);
-					return 0;
-				}
-			}
-			if ((flags & SMB2_LOCKFLAG_FAIL_IMMEDIATELY) != 0)
-				cmd = F_SETLK;
-			else
-				cmd = F_SETLKW;
-			for (;;) {
-				err = smb_vfs_lock(filp, cmd, flock);
-				if (err == FILE_LOCK_DEFERRED) {
-					cifssrv_debug("would have to wait"
-					" for getting lock\n");
-					pending = true;
-					rsp->hdr.Status	=
-						NT_STATUS_PENDING;
-					rsp->StructureSize = cpu_to_le16(4);
-					rsp->Reserved = 0;
-					inc_rfc1001_len(rsp, 4);
-					smb_send_rsp(smb_work);
-					err = wait_event_interruptible(
-					      flock->fl_wait, !flock->fl_next);
-					if (!err) {
-						lock_count--;
-						continue;
-					}
-				} else if (!err) {
-					cifssrv_err("successful in taking"
-						" lock\n");
-					rsp->hdr.Status =
-						NT_STATUS_OK;
-					break;
-				} else {
-					rsp->hdr.Status =
-						NT_STATUS_LOCK_NOT_GRANTED;
-					smb2_set_err_rsp(smb_work);
-					locks_free_lock(flock);
-					return 0;
-				}
-			}
-			lock_ele++;
-		} else if ((flags & SMB2_LOCKFLAG_UNLOCK) != 0) {
-			cifssrv_debug("recieved unlock request\n");
-			flock->fl_owner = (struct files_struct *)filp;
-			flock->fl_pid = current->tgid;
-			flock->fl_file = filp;
-			flock->fl_flags = FL_POSIX;
-			flock->fl_ops = NULL;
-			flock->fl_lmops = NULL;
-			flock->fl_type = F_UNLCK;
-			err = smb_vfs_lock(filp, cmd, flock);
+retry:
+		err = smb_vfs_lock(filp, cmd, flock);
+		if (flags & SMB2_LOCKFLAG_UNLOCK) {
 			if (!err)
 				cifssrv_debug("File unlocked\n");
 			else if (err == -ENOENT) {
 				rsp->hdr.Status = NT_STATUS_NOT_LOCKED;
-				smb2_set_err_rsp(smb_work);
-				locks_free_lock(flock);
-				return 0;
+				goto out;
 			}
-			lock_ele++;
+		} else {
+			if (err == FILE_LOCK_DEFERRED) {
+				cifssrv_debug("would have to wait for getting"
+						" lock\n");
+				rsp->hdr.Status = NT_STATUS_PENDING;
+				rsp->StructureSize = cpu_to_le16(4);
+				rsp->Reserved = 0;
+				inc_rfc1001_len(rsp, 4);
+				smb_send_rsp(smb_work);
+				init_smb2_rsp(smb_work);
+				err = wait_event_interruptible(flock->fl_wait,
+						!flock->fl_next);
+				if (!err)
+					goto retry;
+			} else if (!err)
+				cifssrv_debug("successful in taking lock\n");
+			else {
+				rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
+				goto out;
+			}
 		}
-
-		lock_count--;
 	}
 
 	locks_free_lock(flock);
 	rsp->StructureSize = cpu_to_le16(4);
+	cifssrv_debug("successful in taking lock\n");
+	rsp->hdr.Status = NT_STATUS_OK;
 	rsp->Reserved = 0;
-	if (!pending)
-		inc_rfc1001_len(rsp, 4);
+	inc_rfc1001_len(rsp, 4);
 	return err;
+
+out:
+	cifssrv_err("failed in taking lock(flags : %x)\n", flags);
+	smb2_set_err_rsp(smb_work);
+	if (flock)
+		locks_free_lock(flock);
+	return 0;
 }
 
 /**
