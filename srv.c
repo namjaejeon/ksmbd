@@ -108,7 +108,7 @@ struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 	struct cifssrv_tcon *tcon;
 	int err;
 
-	tcon = kmalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
+	tcon = kzalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
 	if (!tcon)
 		return ERR_PTR(-ENOMEM);
 

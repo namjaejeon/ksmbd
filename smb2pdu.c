@@ -1217,7 +1217,8 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	}
 
 	/* delete tcon from sess tcon list and decrease sess tcon count */
-	path_put(&tcon->share_path);
+	if (tcon->share->sharename)
+		path_put(&tcon->share_path);
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
 	kfree(tcon);
