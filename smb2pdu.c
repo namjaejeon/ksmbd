@@ -4291,6 +4291,7 @@ int smb2_lock(struct smb_work *smb_work)
 			}
 			cmd = F_SETLK;
 			flock->fl_type = F_WRLCK;
+			break;
 		case SMB2_LOCKFLAG_UNLOCK:
 			cifssrv_debug("received unlock request\n");
 			flock->fl_type = F_UNLCK;
