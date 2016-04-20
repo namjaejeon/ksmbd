@@ -266,9 +266,9 @@ release:
 /**
  * cifssrv_start_forker_thread() - start forker thread
  *
- * start forker thread(cifssrv_forkerd) at module init time to listen
+ * start forker thread(kcifssrvd/0) at module init time to listen
  * on port 445 for new SMB connection requests. It creates per connection
- * server threads(cifssrvd/x)
+ * server threads(kcifssrvd/x)
  *
  * Return:	0 on success or error number
  */
@@ -276,7 +276,7 @@ int cifssrv_start_forker_thread(void)
 {
 	int rc;
 
-	cifssrv_forkerd = kthread_run(cifssrv_do_fork, NULL, "cifssrv_forkerd");
+	cifssrv_forkerd = kthread_run(cifssrv_do_fork, NULL, "kcifssrvd/0");
 	if (IS_ERR(cifssrv_forkerd)) {
 		rc = PTR_ERR(cifssrv_forkerd);
 		return rc;

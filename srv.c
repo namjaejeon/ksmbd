@@ -773,7 +773,7 @@ int connect_tcp_sess(struct socket *sock)
 	}
 
 	server->handler = kthread_run(tcp_sess_kthread, server,
-						"cifssrvd/%d", conn_num++);
+						"kcifssrvd/%d", conn_num++);
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
