@@ -2,6 +2,7 @@
  *   fs/cifssrv/glob.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -278,6 +279,10 @@ struct tcp_server_info {
 	struct fidtable_desc fidtable;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	struct cifssrv_pipe *pipe_desc;
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	wait_queue_head_t pipe_q;
+	int ev_state;
+#endif
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
 	int max_credits;
@@ -501,6 +506,8 @@ extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 		struct cifssrv_sess *sess);
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 			unsigned int tid);
+extern struct tcp_server_info *validate_server_handle(struct tcp_server_info
+		*handle);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
@@ -532,5 +539,13 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment);
+
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+/* netlink functions */
+int cifssrv_net_init(void);
+void cifssrv_net_exit(void);
+int cifssrv_sendmsg(struct tcp_server_info *server, uint32_t etype,
+		uint32_t data_size, uint8_t *data, uint32_t out_buflen);
+#endif
 
 #endif /* __CIFSSRV_GLOB_H */

@@ -2,6 +2,7 @@
  *   fs/cifssrv/fh.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -26,6 +27,9 @@
 #include <linux/fs.h>
 
 #include "glob.h"
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+#include "netlink.h"
+#endif
 
 /* Windows style file permissions for extended response */
 #define	FILE_GENERIC_ALL	0x1F01FF
@@ -116,6 +120,10 @@ struct cifssrv_pipe {
 	char *buf;
 	int datasize;
 	int sent;
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	struct cifssrv_uevent ev;
+	char *rsp_buf;
+#endif
 };
 
 #define CIFSSRV_NR_OPEN_DEFAULT BITS_PER_LONG

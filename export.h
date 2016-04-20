@@ -2,6 +2,7 @@
  *   fs/cifssrv/export.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -34,7 +35,6 @@
 extern int cifssrv_debug_enable;
 
 /* Global list containing exported points */
-extern struct list_head tcp_sess_list;
 extern struct list_head cifssrv_usr_list;
 extern struct list_head cifssrv_share_list;
 extern struct list_head cifssrv_connection_list;

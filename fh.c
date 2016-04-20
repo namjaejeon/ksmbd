@@ -2,6 +2,7 @@
  *   fs/cifssrv/fh.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -1094,6 +1095,16 @@ int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 
 	server->pipe_desc->id = id;
 	server->pipe_desc->pkt_type = -1;
+
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	server->pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
+			GFP_KERNEL);
+	if (!server->pipe_desc->rsp_buf) {
+		kfree(server->pipe_desc);
+		return -ENOMEM;
+	}
+#endif
+
 	switch (pipe_type) {
 	case SRVSVC:
 		server->pipe_desc->pipe_type = SRVSVC;
@@ -1121,6 +1132,9 @@ int close_pipe_id(struct tcp_server_info *server, int id)
 	if (rc < 0)
 		return rc;
 
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	kfree(server->pipe_desc->rsp_buf);
+#endif
 	kfree(server->pipe_desc);
 	server->pipe_desc = NULL;
 

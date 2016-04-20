@@ -2,6 +2,7 @@
  *   fs/cifssrv/srv.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -48,7 +49,8 @@ unsigned int smb_min_small = 30;
 unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
 int conn_num = 1;
-LIST_HEAD(tcp_sess_list);
+static LIST_HEAD(tcp_sess_list);
+static DEFINE_SPINLOCK(tcp_sess_list_lock);
 
 struct fidtable_desc global_fidtable;
 
@@ -155,6 +157,28 @@ struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 		if (tcon->share->tid == tid)
 			return tcon;
 	}
+	return NULL;
+}
+
+/**
+ * validate_server_handle() - check for valid tcp server handle
+ * @handle:     TCP server handle to be validated
+ *
+ * Return:      matching tcp server handle, otherwise NULL
+ */
+struct tcp_server_info *validate_server_handle(struct tcp_server_info *handle)
+{
+	struct tcp_server_info *server;
+
+	spin_lock(&tcp_sess_list_lock);
+	list_for_each_entry(server, &tcp_sess_list, tcp_sess)
+	{
+		if (handle == server) {
+			spin_unlock(&tcp_sess_list_lock);
+			return server;
+		}
+	}
+	spin_unlock(&tcp_sess_list_lock);
 	return NULL;
 }
 
@@ -575,11 +599,18 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	INIT_LIST_HEAD(&server->cifssrv_sess);
 	INIT_LIST_HEAD(&server->requests);
 	spin_lock_init(&server->request_lock);
-	list_add(&server->tcp_sess, &tcp_sess_list);
 	server->capabilities = SERVER_CAPS;
 	init_waitqueue_head(&server->oplock_q);
-
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	init_waitqueue_head(&server->pipe_q);
+	server->ev_state = NETLINK_REQ_INIT;
+#endif
 	rc = init_fidtable(&server->fidtable);
+	if (!rc) {
+		spin_lock(&tcp_sess_list_lock);
+		list_add(&server->tcp_sess, &tcp_sess_list);
+		spin_unlock(&tcp_sess_list_lock);
+	}
 
 	return rc;
 }
@@ -707,7 +738,9 @@ static int tcp_sess_kthread(void *p)
 		schedule_timeout(HZ);
 
 	unload_nls(server->local_nls);
+	spin_lock(&tcp_sess_list_lock);
 	list_del(&server->tcp_sess);
+	spin_unlock(&tcp_sess_list_lock);
 
 	if (server->sess_count) {
 		struct cifssrv_sess *sess;
@@ -777,7 +810,9 @@ int connect_tcp_sess(struct socket *sock)
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
+		spin_lock(&tcp_sess_list_lock);
 		list_del(&server->tcp_sess);
+		spin_unlock(&tcp_sess_list_lock);
 		rc = PTR_ERR(server->handler);
 		kfree(server);
 		return rc;
@@ -920,6 +955,9 @@ static int __init init_smb_server(void)
 	if (rc)
 		goto err3;
 
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	cifssrv_net_init();
+#endif
 	return 0;
 
 err3:
@@ -938,6 +976,10 @@ err1:
  */
 static void __exit exit_smb_server(void)
 {
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	cifssrv_net_exit();
+#endif
+
 	cifssrv_stop_forker_thread();
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
