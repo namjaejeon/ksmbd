@@ -1293,7 +1293,7 @@ int smb_trans(struct smb_work *smb_work)
 			cifssrv_debug("Incoming id = %d opened pipe id = %d\n",
 					id, server->pipe_desc->id);
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
-		return ret;
+		goto out;
 	}
 	buf_len = le16_to_cpu(req->MaxDataCount);
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE

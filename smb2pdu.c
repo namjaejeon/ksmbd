@@ -4460,14 +4460,6 @@ int smb2_ioctl(struct smb_work *smb_work)
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
 
-	if (rsp->hdr.TreeId == 1 && (!server->pipe_desc ||
-				id != server->pipe_desc->id)) {
-		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
-		smb2_set_err_rsp(smb_work);
-		return ret;
-	}
-
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->maxoutputresp);
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
@@ -4484,7 +4476,12 @@ int smb2_ioctl(struct smb_work *smb_work)
 	case FSCTL_PIPE_TRANSCEIVE:
 		if (rsp->hdr.TreeId != 1) {
 			cifssrv_debug("Not Pipe transceive\n");
-			break;
+			goto out;
+		}
+
+		if (!server->pipe_desc || id != server->pipe_desc->id) {
+			cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
+			goto out;
 		}
 
 		ret = process_rpc(server, data_buf);
