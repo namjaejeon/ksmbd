@@ -544,8 +544,9 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 /* netlink functions */
 int cifssrv_net_init(void);
 void cifssrv_net_exit(void);
-int cifssrv_sendmsg(struct tcp_server_info *server, uint32_t etype,
-		uint32_t data_size, uint8_t *data, uint32_t out_buflen);
+int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
+		unsigned int data_size, unsigned char *data,
+		unsigned int out_buflen);
 #endif
 
 #endif /* __CIFSSRV_GLOB_H */
