@@ -67,7 +67,7 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 	int rc;
 
-	if (unlikely(!server || !server->pipe_desc))
+	if (unlikely(!server || !server->pipe_desc || !pid))
 		return -EINVAL;
 
 	skb = alloc_skb(len, GFP_KERNEL);
