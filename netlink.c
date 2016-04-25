@@ -129,8 +129,8 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		return rc;
 
 	/* wait if need response from userspace */
-	if (etype != CIFSSRV_KEVENT_CREATE_PIPE ||
-			etype != CIFSSRV_KEVENT_DESTROY_PIPE)
+	if (!(etype == CIFSSRV_KEVENT_CREATE_PIPE ||
+			etype == CIFSSRV_KEVENT_DESTROY_PIPE))
 		rc = cifssrv_nlsk_poll(server);
 
 	server->ev_state = NETLINK_REQ_COMPLETED;

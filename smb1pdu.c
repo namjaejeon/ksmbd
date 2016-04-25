@@ -1904,17 +1904,13 @@ int smb_close_pipe(struct smb_work *smb_work)
 		return -EINVAL;
 	}
 
-	rc = close_pipe_id(server, id);
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	if (!rc) {
-		rc = cifssrv_sendmsg(smb_work->server,
-				CIFSSRV_KEVENT_DESTROY_PIPE, 0, NULL, 0);
-		if (rc)
-			cifssrv_err("failed to send event, err %d\n", rc);
-		rc = 0;
-	}
+	rc = cifssrv_sendmsg(smb_work->server,
+			CIFSSRV_KEVENT_DESTROY_PIPE, 0, NULL, 0);
+	if (rc)
+		cifssrv_err("failed to send event, err %d\n", rc);
 #endif
+	rc = close_pipe_id(server, id);
 	return rc;
 }
 

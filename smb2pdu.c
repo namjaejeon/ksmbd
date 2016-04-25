@@ -2441,21 +2441,20 @@ static int smb2_close_pipe(struct smb_work *smb_work)
 	rsp->Attributes = 0;
 	inc_rfc1001_len(rsp, 60);
 
-	rc = close_pipe_id(server, id);
-	if (rc < 0) {
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
-		smb2_set_err_rsp(smb_work);
-	}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	if (!rc) {
 		rc = cifssrv_sendmsg(smb_work->server,
 				CIFSSRV_KEVENT_DESTROY_PIPE, 0, NULL, 0);
 		if (rc)
 			cifssrv_err("failed to send event, err %d\n", rc);
-		rc = 0;
 	}
 #endif
+	rc = close_pipe_id(server, id);
+	if (rc < 0) {
+		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		smb2_set_err_rsp(smb_work);
+	}
+
 	return 0;
 }
 
