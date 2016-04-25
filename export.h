@@ -191,8 +191,9 @@ int validate_host(char *cip, struct cifssrv_share *share);
 int process_ntlmv2(struct tcp_server_info *server, char *pv2,
 		struct cifssrv_usr *usr, char *dname, int blen,
 		struct nls_table *local_nls);
+unsigned int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
+		int blob_len, struct tcp_server_info *server);
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		__u8 *rsp, int BufferOffset,
 		struct tcp_server_info *server);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,

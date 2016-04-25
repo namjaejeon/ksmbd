@@ -758,8 +758,8 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
 	neg_rsp->ByteCount = CIFS_CRYPTO_KEY_SIZE;
 	/* initialize random server challenge */
-	get_random_bytes(server->cryptkey, sizeof(__u64));
-	memcpy((neg_rsp->u.EncryptionKey), server->cryptkey,
+	get_random_bytes(server->ntlmssp.cryptkey, sizeof(__u64));
+	memcpy((neg_rsp->u.EncryptionKey), server->ntlmssp.cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
 
 	/* Null terminated domain name in unicode */
@@ -826,7 +826,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	/* Match passkey with client response */
 	memset(p21, '\0', 21);
 	memcpy(p21, usr->passkey, CIFS_NTHASH_SIZE);
-	rc = E_P24(p21, server->cryptkey, key);
+	rc = E_P24(p21, server->ntlmssp.cryptkey, key);
 	if (rc) {
 		cifssrv_err("%s password processing failed\n", __func__);
 		goto out_err;

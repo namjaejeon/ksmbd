@@ -23,14 +23,9 @@
 #define __CIFSSRV_NTLMSSP_H
 
 #define NTLMSSP_SIGNATURE "NTLMSSP"
-#define NTLMSSP_SIGNATURE_VAL	__constant_cpu_to_le64(0x5053534d4c544e)
 
 /* Security blob target info data */
 #define TGT_Name        "CIFSSRV"
-#define NetBIOS_COMP_NAME	0x0001
-#define NetBIOS_DOMAIN_NAME	0x0002
-#define DNS_COMP_NAME		0x0003
-#define DNS_DOMAIN_NAME		0x0004
 
 /* Message Types */
 #define NtLmNegotiate     cpu_to_le32(1)
@@ -103,6 +98,7 @@ typedef struct _SECURITY_BUFFER {
 typedef struct _TARGET_INFO {
 	__le16 Type;
 	__le16 Length;
+	__u8 Content[0];
 } __attribute__((packed)) TargetInfo;
 
 typedef struct _NTLM_VERSION {

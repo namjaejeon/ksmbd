@@ -821,8 +821,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	struct cifssrv_usr *usr;
 	char *dup_name = NULL;
 	int rc = 0;
-	char key[CIFS_AUTH_RESP_SIZE];
-	unsigned char p21[21];
 
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
 	rsp = (struct smb2_sess_setup_rsp *)smb_work->rsp_buf;
@@ -833,7 +831,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		return 0;
 	}
 
-	cifssrv_debug("%s: Recieved request for session setup\n", __func__);
+	cifssrv_debug("Received request for session setup\n");
 	if (req->StructureSize != 25) {
 		cifssrv_err("malformed packet\n");
 		smb_work->send_no_response = 1;
@@ -852,36 +850,32 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	}
 
 	/* Check for previous session */
-
 	if (le64_to_cpu(req->PreviousSessionId) != 0)
 		smb2_invalidate_prev_session(
 			le64_to_cpu(req->PreviousSessionId));
 
 	negblob = (NEGOTIATE_MESSAGE *)(req->hdr.ProtocolId +
-			req->SecurityBufferOffset);
-
-	if (*(__le64 *)negblob->Signature == NTLMSSP_SIGNATURE_VAL) {
-		cifssrv_debug("%s NTLMSSP present\n", __func__);
-		if (negblob->NegotiateFlags == NTLMSSP_NEGOTIATE_56) {
-			/* TBD: area for session sign/seal */
-		}
-	}
+			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (negblob->MessageType == NtLmNegotiate) {
-		cifssrv_debug("%s negotiate phase\n", __func__);
+		cifssrv_debug("negotiate phase\n");
+
+		rc = decode_ntlmssp_negotiate_blob(negblob,
+			le16_to_cpu(req->SecurityBufferLength), server);
+		if (rc)
+			goto out_err;
 
 		chgblob = (CHALLENGE_MESSAGE *)(rsp->hdr.ProtocolId +
 				rsp->SecurityBufferOffset);
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
 		rsp->SecurityBufferLength = build_ntlmssp_challenge_blob(
-					chgblob, (__u8 *)rsp->hdr.ProtocolId,
-			rsp->SecurityBufferOffset, server);
+					chgblob, server);
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
 		/* Note: here total size -1 is done as
 		   an adjustment for 0 size blob */
-		inc_rfc1001_len(rsp, rsp->SecurityBufferLength-1);
+		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		cifssrv_debug("%s authenticate phase\n", __func__);
 
@@ -913,9 +907,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 		if (authblob->NtChallengeResponse.Length ==
 				CIFS_AUTH_RESP_SIZE) {
+			unsigned char p21[21];
+			char key[CIFS_AUTH_RESP_SIZE];
+
 			memset(p21, '\0', 21);
 			memcpy(p21, usr->passkey, CIFS_NTHASH_SIZE);
-			rc = E_P24(p21, server->cryptkey, key);
+			rc = E_P24(p21, server->ntlmssp.cryptkey, key);
 			if (rc) {
 				cifssrv_err("%s password processing failed\n",
 						__func__);

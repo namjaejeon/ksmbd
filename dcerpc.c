@@ -1478,16 +1478,13 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 			negblob = (NEGOTIATE_MESSAGE *)(((char *)in_data) +
 						sizeof(RPC_BIND_REQ) +
 						offset + sizeof(RPC_AUTH_INFO));
-			if (*(__le64 *)negblob->Signature ==
-							NTLMSSP_SIGNATURE_VAL)
+			if (!memcmp(negblob->Signature, "NTLMSSP", 8))
 				cifssrv_debug("%s NTLMSSP present\n", __func__);
 			else
 				cifssrv_debug("%s NTLMSSP not present\n",
 								__func__);
 			if (negblob->MessageType == NtLmNegotiate) {
 				cifssrv_debug("%s negotiate phase\n", __func__);
-				chgblob = kzalloc(sizeof(CHALLENGE_MESSAGE),
-								GFP_KERNEL);
 				len = smb_strtoUTF16(name, netbios_name,
 							strlen(netbios_name),
 					server->local_nls);
@@ -1495,12 +1492,11 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 					sizeof(CHALLENGE_MESSAGE) +
 					sizeof(TargetInfo)*5 +
 					UNICODE_LEN(len)*4, GFP_KERNEL);
+				chgblob = (CHALLENGE_MESSAGE *)
+						rpc_bind_rsp->Buffer;
 				rpc_bind_rsp->BufferLength =
-				build_ntlmssp_challenge_blob(chgblob,
-					rpc_bind_rsp->Buffer, 0, server);
-				memcpy(rpc_bind_rsp->Buffer, chgblob,
-						sizeof(CHALLENGE_MESSAGE));
-				kfree(chgblob);
+					build_ntlmssp_challenge_blob(chgblob,
+					server);
 			}
 		}
 

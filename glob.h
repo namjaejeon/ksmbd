@@ -232,6 +232,15 @@ struct cifssrv_stats {
 	long int max_timed_request;
 };
 
+/* per smb session structure/fields */
+struct ntlmssp_auth {
+	bool sesskey_per_smbsess; /* whether session key is per smb session */
+	__u32 client_flags; /* sent by client in type 1 ntlmsssp exchange */
+	__u32 server_flags; /* sent by server in type 2 ntlmssp exchange */
+	unsigned char ciphertext[CIFS_CPHTXT_SIZE]; /* sent to server */
+	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
+};
+
 struct tcp_server_info {
 	struct socket *sock;
 	int srv_count; /* reference counter */
@@ -258,7 +267,7 @@ struct tcp_server_info {
 	char    *wbuf;
 	struct nls_table *local_nls;
 	unsigned int total_read;
-	char cryptkey[CIFS_CRYPTO_KEY_SIZE];
+	struct ntlmssp_auth ntlmssp;
 	/* This session will become part of global tcp session list */
 	struct list_head tcp_sess;
 	/* smb session 1 per user */
