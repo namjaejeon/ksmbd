@@ -4235,14 +4235,6 @@ int smb2_lock(struct smb_work *smb_work)
 
 		smb_flock_init(flock, filp);
 
-		flock->fl_start = le64_to_cpu(lock_ele[i].Offset);
-		flock->fl_end = flock->fl_start +
-			le64_to_cpu(lock_ele[i].Length) - 1;
-		if (flock->fl_end < flock->fl_start) {
-			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
-			goto out;
-		}
-
 		/* Checking for wrong flag combination during lock request*/
 		switch (flags) {
 		case SMB2_LOCKFLAG_SHARED:
@@ -4289,6 +4281,14 @@ int smb2_lock(struct smb_work *smb_work)
 			break;
 		default:
 			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		flock->fl_start = le64_to_cpu(lock_ele[i].Offset);
+		flock->fl_end = flock->fl_start +
+			le64_to_cpu(lock_ele[i].Length) - 1;
+		if (flock->fl_end < flock->fl_start) {
+			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
 		}
 
