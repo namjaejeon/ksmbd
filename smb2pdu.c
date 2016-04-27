@@ -816,10 +816,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	struct smb2_sess_setup_rsp *rsp;
 	struct cifssrv_sess *sess;
 	NEGOTIATE_MESSAGE *negblob;
-	CHALLENGE_MESSAGE *chgblob;
-	AUTHENTICATE_MESSAGE *authblob;
 	struct cifssrv_usr *usr;
-	char *dup_name = NULL;
 	int rc = 0;
 
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
@@ -858,8 +855,9 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (negblob->MessageType == NtLmNegotiate) {
-		cifssrv_debug("negotiate phase\n");
+		CHALLENGE_MESSAGE *chgblob;
 
+		cifssrv_debug("negotiate phase\n");
 		rc = decode_ntlmssp_negotiate_blob(negblob,
 			le16_to_cpu(req->SecurityBufferLength), server);
 		if (rc)
@@ -877,110 +875,40 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		   an adjustment for 0 size blob */
 		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
 	} else if (negblob->MessageType == NtLmAuthenticate) {
-		cifssrv_debug("%s authenticate phase\n", __func__);
+		AUTHENTICATE_MESSAGE *authblob;
+		char *username;
 
+		cifssrv_debug("authenticate phase\n");
 		authblob = (AUTHENTICATE_MESSAGE *)(req->hdr.ProtocolId +
 				req->SecurityBufferOffset);
 
-		dup_name = smb_strndup_from_utf16((const char *)authblob +
+		username = smb_strndup_from_utf16((const char *)authblob +
 				authblob->UserName.BufferOffset,
 				authblob->UserName.Length, true,
 				server->local_nls);
 
-		if (IS_ERR(dup_name)) {
-			cifssrv_err("%s-%d cannot allocate memory\n",
-					__func__, __LINE__);
-			rc = PTR_ERR(dup_name);
+		if (IS_ERR(username)) {
+			cifssrv_err("cannot allocate memory\n");
+			rc = PTR_ERR(username);
 			goto out_err;
 		}
 
-		cifssrv_debug("session setup request for user %s\n", dup_name);
-		usr = cifssrv_is_user_present(dup_name);
+		cifssrv_debug("session setup request for user %s\n", username);
+		usr = cifssrv_is_user_present(username);
 		if (!usr) {
 			cifssrv_debug("user not present in database\n");
-			kfree(dup_name);
+			kfree(username);
 			rc = -EINVAL;
 			goto out_err;
 		}
+		kfree(username);
 
-		kfree(dup_name);
-
-		if (authblob->NtChallengeResponse.Length ==
-				CIFS_AUTH_RESP_SIZE) {
-			unsigned char p21[21];
-			char key[CIFS_AUTH_RESP_SIZE];
-
-			memset(p21, '\0', 21);
-			memcpy(p21, usr->passkey, CIFS_NTHASH_SIZE);
-			rc = E_P24(p21, server->ntlmssp.cryptkey, key);
-			if (rc) {
-				cifssrv_err("%s password processing failed\n",
-						__func__);
-				goto out_err;
-			}
-
-			if (strncmp((const char *)authblob +
-						authblob->NtChallengeResponse.
-						BufferOffset, key,
-						CIFS_AUTH_RESP_SIZE) != 0) {
-				cifssrv_debug("ntlmv1 authentication failed\n");
-				rc = -EINVAL;
-				goto out_err;
-			} else
-				cifssrv_debug("ntlmv1 authentication pass\n");
-		} else {
-			char *srvname;
-
-			srvname = kstrndup(netbios_name, strlen(netbios_name),
-					GFP_KERNEL);
-			if (!srvname) {
-				cifssrv_err("%s-%d cannot allocate memory\n",
-						__func__, __LINE__);
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			rc = process_ntlmv2(server, (char *)authblob +
-				authblob->NtChallengeResponse.
-				BufferOffset, usr, srvname,
-				authblob->NtChallengeResponse.Length -
-				CIFS_ENCPWD_SIZE, server->local_nls);
-
-			kfree(srvname);
-
-			if (rc) {
-				char *ntdomain;
-
-				ntdomain = smb_strndup_from_utf16(
-					(const char *)authblob +
-					authblob->DomainName.BufferOffset,
-					authblob->DomainName.Length, true,
-					server->local_nls);
-				if (IS_ERR(ntdomain)) {
-					cifssrv_err("%s-%d cannot allocate memory\n",
-							__func__, __LINE__);
-					rc = PTR_ERR(ntdomain);
-					goto out_err;
-				}
-
-				rc = process_ntlmv2(server, (char *)authblob +
-					authblob->NtChallengeResponse.
-					BufferOffset, usr, ntdomain,
-					authblob->NtChallengeResponse.Length -
-					CIFS_ENCPWD_SIZE, server->local_nls);
-
-				if (rc) {
-					cifssrv_debug("ntlmv2 authentication"
-							"failed\n");
-					rc = -EINVAL;
-					kfree(ntdomain);
-					goto out_err;
-				}
-
-				kfree(ntdomain);
-			}
-
-			cifssrv_debug("ntlmv2 authentication pass\n");
+		rc = decode_ntlmssp_authenticate_blob(authblob,
+			le16_to_cpu(req->SecurityBufferLength), usr, server);
+		if (rc) {
+			cifssrv_debug("authentication failed\n");
+			rc = -EINVAL;
+			goto out_err;
 		}
 
 		sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);

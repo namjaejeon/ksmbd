@@ -96,8 +96,6 @@ struct cifssrv_sess {
 	struct list_head cifssrv_ses_global_list;
 	struct list_head tcon_list;
 	int	tcon_count;
-	/* security related stuff below */
-	char pass[CIFS_AUTH_RESP_SIZE];
 	int valid;
 	uint64_t sess_id;
 };
@@ -188,12 +186,15 @@ extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
 int validate_host(char *cip, struct cifssrv_share *share);
-int process_ntlmv2(struct tcp_server_info *server, char *pv2,
-		struct cifssrv_usr *usr, char *dname, int blen,
-		struct nls_table *local_nls);
-unsigned int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
+int process_ntlm(struct tcp_server_info *server, char *pw_buf, char *passkey);
+int process_ntlmv2(struct tcp_server_info *server, struct ntlmv2_resp *ntlmv2,
+		int blen, char *domain_name, struct cifssrv_usr *usr);
+int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
 		int blob_len, struct tcp_server_info *server);
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+		struct tcp_server_info *server);
+int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
+		int blob_len, struct cifssrv_usr *usr,
 		struct tcp_server_info *server);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,

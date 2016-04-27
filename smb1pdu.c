@@ -786,9 +786,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_sess *sess;
 	struct cifssrv_usr *usr;
-	char *name, key[CIFS_AUTH_RESP_SIZE];
+	char *name;
 	int offset, rc;
-	unsigned char p21[21];
 
 	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)smb_work->buf;
 	SESSION_SETUP_ANDX *response = (SESSION_SETUP_ANDX *)smb_work->rsp_buf;
@@ -823,62 +822,44 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 	kfree(name);
 
-	/* Match passkey with client response */
-	memset(p21, '\0', 21);
-	memcpy(p21, usr->passkey, CIFS_NTHASH_SIZE);
-	rc = E_P24(p21, server->ntlmssp.cryptkey, key);
-	if (rc) {
-		cifssrv_err("%s password processing failed\n", __func__);
-		goto out_err;
-	}
+	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
+		CIFS_AUTH_RESP_SIZE) {
+		rc = process_ntlm(server,
+			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
+			pSMB->req_no_secext.CaseInsensitivePasswordLength,
+			usr->passkey);
+		if (rc) {
+			cifssrv_err("ntlm authentication failed for user %s\n",
+				usr->name);
+			goto out_err;
+		}
+	} else {
+		char *ntdomain;
 
-	offset =  pSMB->req_no_secext.CaseInsensitivePasswordLength;
-	if (strncmp(pSMB->req_no_secext.CaseInsensitivePassword +
-		    pSMB->req_no_secext.CaseInsensitivePasswordLength,
-				key, CIFS_AUTH_RESP_SIZE) != 0) {
-		if (pSMB->req_no_secext.CaseSensitivePasswordLength >
-				CIFS_AUTH_RESP_SIZE) {
-			char *ntdomain;
-			char *ptrci;
-			int lenci;
-			int lencs;
+		offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
+			pSMB->req_no_secext.CaseSensitivePasswordLength +
+			((strlen(usr->name) + 1) * 2);
 
-			ptrci =
-			(char *)pSMB->req_no_secext.CaseInsensitivePassword;
-
-			lenci =
-			pSMB->req_no_secext.CaseInsensitivePasswordLength;
-
-			lencs =
-			pSMB->req_no_secext.CaseSensitivePasswordLength;
-
-			offset = lenci + lencs + ((strlen(usr->name) + 1) * 2);
-
-			ntdomain = smb_strndup_from_utf16(ptrci + offset + 1,
-					256, true, server->local_nls);
-			if (IS_ERR(ntdomain)) {
-				cifssrv_err(
-					"%s-%d cannot allocate memory\n",
-						__func__, __LINE__);
-				rc = PTR_ERR(ntdomain);
-				goto out_err;
-			}
-
-			rc = process_ntlmv2(server, ptrci + lenci, usr,
-					ntdomain, lencs - CIFS_ENCPWD_SIZE,
-					server->local_nls);
-			if (!rc) {
-				cifssrv_debug("authentication success\n");
-				goto done;
-			}
+		ntdomain = smb_strndup_from_utf16(
+			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
+			offset + 1, 256, true, server->local_nls);
+		if (IS_ERR(ntdomain)) {
+			cifssrv_err("cannot allocate memory\n");
+			rc = PTR_ERR(ntdomain);
+			goto out_err;
 		}
 
-		cifssrv_err("authentication failed for user %s\n", usr->name);
-		rc = -EINVAL;
-		goto out_err;
+		rc = process_ntlmv2(server, (struct ntlmv2_resp *)
+			pSMB->req_no_secext.CaseInsensitivePassword +
+			pSMB->req_no_secext.CaseInsensitivePasswordLength,
+			pSMB->req_no_secext.CaseSensitivePasswordLength -
+			CIFS_ENCPWD_SIZE, ntdomain, usr);
+		if (rc) {
+			cifssrv_err("authentication failed for user %s\n",
+				usr->name);
+			goto out_err;
+		}
 	}
-
-done:
 
 	/* verify that any session is not already added although
 	   we have set max vcn as 1 */
@@ -893,7 +874,6 @@ done:
 	}
 
 	sess->usr = usr;
-	memcpy(sess->pass, key, CIFS_AUTH_RESP_SIZE);
 	INIT_LIST_HEAD(&sess->cifssrv_ses_list);
 	INIT_LIST_HEAD(&sess->tcon_list);
 	sess->tcon_count = 0;

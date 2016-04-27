@@ -241,6 +241,18 @@ struct ntlmssp_auth {
 	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
+/* crypto hashing related structure/fields, not specific to a sec mech */
+struct cifs_secmech {
+	struct crypto_shash *hmacmd5; /* hmac-md5 hash function */
+	struct crypto_shash *md5; /* md5 hash function */
+	struct crypto_shash *hmacsha256; /* hmac-sha256 hash function */
+	struct crypto_shash *cmacaes; /* block-cipher based MAC function */
+	struct sdesc *sdeschmacmd5;  /* ctxt to generate ntlmv2 hash, CR1 */
+	struct sdesc *sdescmd5; /* ctxt to generate cifs/smb signature */
+	struct sdesc *sdeschmacsha256;  /* ctxt to generate smb2 signature */
+	struct sdesc *sdesccmacaes;  /* ctxt to generate smb3 signature */
+};
+
 struct tcp_server_info {
 	struct socket *sock;
 	int srv_count; /* reference counter */
@@ -304,6 +316,7 @@ struct tcp_server_info {
 	char ClientGUID[SMB2_CLIENT_GUID_SIZE];
 	__u64 sess_id;
 #endif
+	struct cifs_secmech secmech;
 };
 
 struct trans_state {

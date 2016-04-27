@@ -29,154 +29,265 @@
 #include "glob.h"
 #include "export.h"
 
-/**
- * int process_ntlmv2() - NTLMv2 authentication handler
- * @server:	TCP server instance of connection
- * @pv2:	NTLMv2 challenge response
- * @usr:	user details
- * @dname:	domain name
- * @blen:	NTLMv2 blob length
- * @local_nls:	nls table to convert char to unicode
- *
- * Return:	0 on success, error number on error
- */
-int process_ntlmv2(struct tcp_server_info *server, char *pv2,
-		struct cifssrv_usr *usr, char *dname, int blen,
-		struct nls_table *local_nls)
+static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 {
-	struct ntlmv2_resp *v2data = (struct ntlmv2_resp *)pv2;
-	struct crypto_shash *hmacmd5;
-	struct sdesc *sdeschmacmd5;
-	__le16 *user = NULL;
-	wchar_t *domain = NULL;
-	char *construct = NULL;
-	int len, ret;
-	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
-	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
+	int rc;
+	unsigned int size;
 
-	hmacmd5 = crypto_alloc_shash("hmac(md5)", 0, 0);
-	if (IS_ERR(hmacmd5)) {
+	/* check if already allocated */
+	if (server->secmech.sdeschmacmd5)
+		return 0;
+
+	server->secmech.hmacmd5 = crypto_alloc_shash("hmac(md5)", 0, 0);
+	if (IS_ERR(server->secmech.hmacmd5)) {
 		cifssrv_debug("could not allocate crypto hmacmd5\n");
-		return PTR_ERR(hmacmd5);
+		rc = PTR_ERR(server->secmech.hmacmd5);
+		server->secmech.hmacmd5 = NULL;
+		return rc;
 	}
 
-	len = sizeof(struct shash_desc) + crypto_shash_descsize(hmacmd5);
-	sdeschmacmd5 = kmalloc(len, GFP_KERNEL);
-	if (!sdeschmacmd5) {
-		crypto_free_shash(hmacmd5);
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.hmacmd5);
+	server->secmech.sdeschmacmd5 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdeschmacmd5) {
+		crypto_free_shash(server->secmech.hmacmd5);
+		server->secmech.hmacmd5 = NULL;
 		return -ENOMEM;
 	}
-	sdeschmacmd5->shash.tfm = hmacmd5;
-	sdeschmacmd5->shash.flags = 0x0;
+	server->secmech.sdeschmacmd5->shash.tfm = server->secmech.hmacmd5;
+	server->secmech.sdeschmacmd5->shash.flags = 0x0;
 
-	ret = crypto_shash_setkey(hmacmd5, usr->passkey, CIFS_ENCPWD_SIZE);
-	if (ret) {
-		cifssrv_debug("%s: Could not set NT Hash as a key\n", __func__);
-		goto exit;
+	return 0;
+}
+
+static int calc_ntlmv2_hash(struct tcp_server_info *server, char *username,
+		char *passkey, char *ntlmv2_hash, char *dname)
+{
+	int ret, len;
+	wchar_t *domain;
+	__le16 *uniname;
+
+	if (!server->secmech.sdeschmacmd5) {
+		cifssrv_debug("can't generate ntlmv2 hash\n");
+		return -1;
 	}
 
-	ret = crypto_shash_init(&sdeschmacmd5->shash);
+	ret = crypto_shash_setkey(server->secmech.hmacmd5, passkey,
+			CIFS_ENCPWD_SIZE);
 	if (ret) {
-		cifssrv_debug("%s: could not init hmacmd5\n", __func__);
-		goto exit;
+		cifssrv_debug("Could not set NT Hash as a key\n");
+		return ret;
+	}
+
+	ret = crypto_shash_init(&server->secmech.sdeschmacmd5->shash);
+	if (ret) {
+		cifssrv_debug("could not init hmacmd5\n");
+		return ret;
 	}
 
 	/* convert user_name to unicode */
-	len = strlen(usr->name);
-	user = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
-	if (!user) {
+	len = strlen(username);
+	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
+	if (!uniname) {
 		ret = -ENOMEM;
-		goto exit;
+		return ret;
 	}
 
 	if (len) {
-		len = smb_strtoUTF16(user, usr->name, len, local_nls);
-		UniStrupr(user);
+		len = smb_strtoUTF16(uniname, username, len, server->local_nls);
+		UniStrupr(uniname);
 	}
 
-	ret = crypto_shash_update(&sdeschmacmd5->shash,	(char *)user,
-							UNICODE_LEN(len));
+	ret = crypto_shash_update(&server->secmech.sdeschmacmd5->shash,
+			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
-		cifssrv_debug("%s: Could not update with user\n", __func__);
-		goto exit;
+		cifssrv_debug("Could not update with user\n");
+		return ret;
 	}
 
-	/* convert domainName to unicode and uppercase */
+	/* Convert domain name or server name to unicode and uppercase */
 	len = strlen(dname);
 	domain = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!domain) {
-		cifssrv_debug("%s:%d memory allocation failed\n",
-				__func__, __LINE__);
+		cifssrv_debug("memory allocation failed\n");
 		ret = -ENOMEM;
-		goto exit;
+		return ret;
 	}
 
-	len = smb_strtoUTF16((__le16 *)domain, dname, len,
-			local_nls);
+	len = smb_strtoUTF16((__le16 *)domain, dname, len, server->local_nls);
 
-	ret = crypto_shash_update(&sdeschmacmd5->shash,
+	ret = crypto_shash_update(&server->secmech.sdeschmacmd5->shash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
-		cifssrv_debug("%s: Could not update with domain\n",
-				__func__);
-		goto exit;
+		cifssrv_debug("Could not update with domain\n");
+		return ret;
 	}
 
-	ret = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_hash);
+	ret = crypto_shash_final(&server->secmech.sdeschmacmd5->shash,
+			ntlmv2_hash);
 	if (ret) {
-		cifssrv_debug("%s: Could not generate md5 hash\n",
-				__func__);
-		goto exit;
+		cifssrv_debug("Could not generate md5 hash\n");
 	}
 
-	ret = crypto_shash_setkey(hmacmd5, ntlmv2_hash,
+	return ret;
+}
+
+/**
+ * process_ntlmv() - NTLM authentication handler
+ * @server:	TCP server instance of connection
+ * @pw_buf:	NTLM challenge response
+ * @passkey:	user password
+ *
+ * Return:	0 on success, error number on error
+ */
+int process_ntlm(struct tcp_server_info *server, char *pw_buf, char *passkey)
+{
+	int rc;
+	unsigned char p21[21];
+	char key[CIFS_AUTH_RESP_SIZE];
+
+	memset(p21, '\0', 21);
+	memcpy(p21, passkey, CIFS_NTHASH_SIZE);
+	rc = E_P24(p21, server->ntlmssp.cryptkey, key);
+	if (rc) {
+		cifssrv_err("password processing failed\n");
+		return rc;
+	}
+
+	if (strncmp(pw_buf, key, CIFS_AUTH_RESP_SIZE) != 0) {
+		cifssrv_debug("ntlmv1 authentication failed\n");
+		rc = -EINVAL;
+	} else
+		cifssrv_debug("ntlmv1 authentication pass\n");
+
+	return rc;
+}
+
+/**
+ * process_ntlmv2() - NTLMv2 authentication handler
+ * @server:		TCP server instance of connection
+ * @ntlmv2:		NTLMv2 challenge response
+ * @blen:		NTLMv2 blob length
+ * @domain_name:	domain name
+ * @usr:		user details
+ *
+ * Return:	0 on success, error number on error
+ */
+int process_ntlmv2(struct tcp_server_info *server, struct ntlmv2_resp *ntlmv2,
+		int blen, char *domain_name, struct cifssrv_usr *usr)
+{
+	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
+	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
+	char *construct;
+	int rc, len;
+
+	rc = crypto_hmacmd5_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		goto out;
+	}
+
+	if (domain_name == netbios_name)
+		rc = calc_ntlmv2_hash(server, usr->name, usr->passkey,
+			ntlmv2_hash, netbios_name);
+	else
+		rc = calc_ntlmv2_hash(server, usr->name, usr->passkey,
+			ntlmv2_hash, domain_name);
+
+	if (rc) {
+		cifssrv_debug("could not get v2 hash rc %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_setkey(server->secmech.hmacmd5, ntlmv2_hash,
 						CIFS_HMAC_MD5_HASH_SIZE);
-	if (ret) {
-		cifssrv_debug("%s: Could not set NTLMV2 Hash as a key\n",
-				__func__);
-		goto exit;
+	if (rc) {
+		cifssrv_debug("Could not set NTLMV2 Hash as a key\n");
+		goto out;
 	}
 
-	ret = crypto_shash_init(&sdeschmacmd5->shash);
-	if (ret) {
-		cifssrv_debug("%s: could not init hmacmd5\n", __func__);
-		goto exit;
+	rc = crypto_shash_init(&server->secmech.sdeschmacmd5->shash);
+	if (rc) {
+		cifssrv_debug("Could not init hmacmd5\n");
+		goto out;
 	}
 
-	len = 8 + blen;
+	len = CIFS_CRYPTO_KEY_SIZE + blen;
 	construct = kzalloc(len, GFP_KERNEL);
 	if (!construct) {
-		cifssrv_debug("%s:%d memory allocation failed\n",
-				__func__, __LINE__);
-		ret = -ENOMEM;
-		goto exit;
+		cifssrv_debug("Memory allocation failed\n");
+		rc = -ENOMEM;
+		goto out;
 	}
 
 	memcpy(construct, server->ntlmssp.cryptkey, CIFS_CRYPTO_KEY_SIZE);
-	memcpy(construct + 8, (char *)(&v2data->blob_signature), blen);
+	memcpy(construct + CIFS_CRYPTO_KEY_SIZE,
+		(char *)(&ntlmv2->blob_signature), blen);
 
-	ret = crypto_shash_update(&sdeschmacmd5->shash, construct, len);
-	if (ret) {
-		cifssrv_debug("%s: Could not update with response\n", __func__);
-		goto exit;
+	rc = crypto_shash_update(&server->secmech.sdeschmacmd5->shash,
+			construct, len);
+	if (rc) {
+		cifssrv_debug("Could not update with response\n");
+		goto out;
 	}
 
-	ret = crypto_shash_final(&sdeschmacmd5->shash, ntlmv2_rsp);
-	if (ret) {
-		cifssrv_debug("%s: Could not generate md5 hash\n", __func__);
-		goto exit;
+	rc = crypto_shash_final(&server->secmech.sdeschmacmd5->shash,
+			ntlmv2_rsp);
+	if (rc) {
+		cifssrv_debug("Could not generate md5 hash\n");
+		goto out;
 	}
 
-	ret = memcmp(v2data->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
+	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
+out:
+	return rc;
+}
 
-exit:
-	crypto_free_shash(hmacmd5);
-	kfree(sdeschmacmd5);
-	kfree(user);
-	kfree(domain);
-	kfree(construct);
+/**
+ * decode_ntlmssp_authenticate_blob() - helper function to construct
+ * authenticate blob
+ * @authblob:	authenticate blob source pointer
+ * @usr:	user details
+ * @server:	TCP server instance of connection
+ *
+ * Return:	0 on success, error number on error
+ */
+int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
+		int blob_len, struct cifssrv_usr *usr,
+		struct tcp_server_info *server)
+{
+	char *domain_name;
 
-	return ret;
+	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
+		cifssrv_debug("negotiate blob len %d too small\n", blob_len);
+		return -EINVAL;
+	}
+
+	if (memcmp(authblob->Signature, "NTLMSSP", 8)) {
+		cifssrv_debug("blob signature incorrect %s\n",
+				authblob->Signature);
+		return -EINVAL;
+	}
+
+	/* process NTLM authentication */
+	if (authblob->NtChallengeResponse.Length == CIFS_AUTH_RESP_SIZE) {
+		return process_ntlm(server, (char *)authblob +
+			authblob->NtChallengeResponse.BufferOffset,
+			usr->passkey);
+	}
+
+	/* TODO : use domain name that imported from configuration file */
+	domain_name = smb_strndup_from_utf16(
+			(const char *)authblob +
+			authblob->DomainName.BufferOffset,
+			authblob->DomainName.Length, true,
+			server->local_nls);
+
+	/* process NTLMv2 authentication */
+	return process_ntlmv2(server, (struct ntlmv2_resp *)((char *)authblob +
+		authblob->NtChallengeResponse.BufferOffset),
+		authblob->NtChallengeResponse.Length - CIFS_ENCPWD_SIZE,
+		domain_name, usr);
 }
 
 /**
@@ -186,7 +297,7 @@ exit:
  * @server:	TCP server instance of connection
  *
  */
-unsigned int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
+int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
 		int blob_len, struct tcp_server_info *server)
 {
 	if (blob_len < sizeof(NEGOTIATE_MESSAGE)) {
