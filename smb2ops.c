@@ -118,6 +118,18 @@ struct smb_version_ops smb2_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
+	.is_sign_req		=	smb2_is_sign_req,
+	.check_sign_req		=	smb2_check_sign_req,
+	.set_sign_rsp		=	smb2_set_sign_rsp
+};
+
+struct smb_version_ops smb3_0_server_ops = {
+	.get_cmd_val		=	get_smb2_cmd_val,
+	.init_rsp_hdr		=	init_smb2_rsp_hdr,
+	.set_rsp_status		=	set_smb2_rsp_status,
+	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
+	.set_rsp_credits        =       smb2_set_rsp_credits,
+	.check_user_session	=	smb2_check_user_session,
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
@@ -184,7 +196,7 @@ void init_smb2_1_server(struct tcp_server_info *server)
 void init_smb3_0_server(struct tcp_server_info *server)
 {
 	server->vals = &smb30_server_values;
-	server->ops = &smb2_0_server_ops;
+	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
@@ -202,7 +214,7 @@ void init_smb3_0_server(struct tcp_server_info *server)
 void init_smb3_02_server(struct tcp_server_info *server)
 {
 	server->vals = &smb302_server_values;
-	server->ops = &smb2_0_server_ops;
+	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
@@ -220,7 +232,7 @@ void init_smb3_02_server(struct tcp_server_info *server)
 void init_smb3_11_server(struct tcp_server_info *server)
 {
 	server->vals = &smb311_server_values;
-	server->ops = &smb2_0_server_ops;
+	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);

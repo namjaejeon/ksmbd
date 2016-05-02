@@ -80,6 +80,7 @@ extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
+extern char NEGOTIATE_GSS_HEADER[74];
 
 #define SMB1_VERSION_STRING     "1.0"
 #define SMB20_VERSION_STRING    "2.0"
@@ -130,7 +131,9 @@ extern char *netbios_name;
 /*
  *  * Size of the session key (crypto key encrypted with the password
  *   */
-#define CIFS_SESS_KEY_SIZE (16)
+#define SMB2_NTLMV2_SESSKEY_SIZE (16)
+#define SMB2_SIGNATURE_SIZE (16)
+#define SMB2_HMACSHA256_SIZE (32)
 
 /*
  *  * Size of the smb3 signing key
@@ -317,6 +320,7 @@ struct tcp_server_info {
 	__u64 sess_id;
 #endif
 	struct cifs_secmech secmech;
+	char sess_key[SMB2_NTLMV2_SESSKEY_SIZE];
 };
 
 struct trans_state {
@@ -373,6 +377,9 @@ struct smb_version_ops {
 	int (*allocate_rsp_buf)(struct smb_work *smb_work);
 	void (*set_rsp_credits)(struct smb_work *swork);
 	int (*check_user_session)(struct smb_work *work);
+	int (*is_sign_req)(struct smb_work *work, unsigned int command);
+	int (*check_sign_req)(struct smb_work *work);
+	void (*set_sign_rsp)(struct smb_work *work);
 };
 
 struct smb_version_cmds {

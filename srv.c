@@ -414,7 +414,7 @@ void handle_smb_work(struct work_struct *work)
 {
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct tcp_server_info *server = smb_work->server;
-	unsigned int command;
+	unsigned int command = 0;
 	int rc;
 	bool server_valid = false;
 	struct smb_version_cmds *cmds;
@@ -480,6 +480,17 @@ again:
 	}
 
 	mutex_unlock(&server->srv_mutex);
+
+	if (server->sign && server->ops->is_sign_req &&
+			server->ops->is_sign_req(smb_work, command)) {
+		rc = server->ops->check_sign_req(smb_work);
+		if (!rc) {
+			server->ops->set_rsp_status(smb_work,
+							NT_STATUS_DATA_ERROR);
+			goto send;
+		}
+	}
+
 	rc = cmds->proc(smb_work);
 	mutex_lock(&server->srv_mutex);
 	if (server->need_neg && (server->dialect == SMB20_PROT_ID ||
@@ -518,6 +529,10 @@ send:
 	 */
 	if (is_smb2_rsp(smb_work))
 		server->ops->set_rsp_credits(smb_work);
+
+	if (server->sign && server->ops->is_sign_req &&
+			server->ops->is_sign_req(smb_work, command))
+		server->ops->set_sign_rsp(smb_work);
 
 	smb_send_rsp(smb_work);
 

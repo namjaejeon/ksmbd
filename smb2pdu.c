@@ -795,8 +795,17 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = 0;
-	inc_rfc1001_len(rsp, 65);
+	if (req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) {
+		rsp->SecurityBufferLength = 74;
+		memcpy(((char *)rsp->hdr.ProtocolId)+rsp->SecurityBufferOffset,
+				NEGOTIATE_GSS_HEADER, 74);
+		inc_rfc1001_len(rsp, 64 + 74);
+		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+		server->sign = true;
+	} else {
+		rsp->SecurityBufferLength = 0;
+		inc_rfc1001_len(rsp, 65);
+	}
 	server->tcp_status = CifsNeedNegotiate;
 	server->need_neg = false;
 	return 0;
@@ -4817,4 +4826,65 @@ int smb2_notify(struct smb_work *smb_work)
 	rsp->Buffer[0] = 0;
 	inc_rfc1001_len(rsp_org, 9);
 	return 0;
+}
+
+/**
+ * smb2_is_sign_req() - handler for checking packet signing status
+ * @work:smb work containing notify command buffer
+ *
+ * Return:	1 if packed is signed, 0 otherwise
+ */
+int smb2_is_sign_req(struct smb_work *work, unsigned int command)
+{
+	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+
+	if ((rcv_hdr2->Flags & SMB2_FLAGS_SIGNED) &&
+			command != SMB2_SESSION_SETUP_HE)
+		return 1;
+	return 0;
+}
+
+/**
+ * smb2_check_sign_req() - handler for req packet sign processing
+ * @work:   smb work containing notify command buffer
+ *
+ * Return:	1 on success, 0 otherwise
+ */
+int smb2_check_sign_req(struct smb_work *work)
+{
+	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+	struct tcp_server_info *server = work->server;
+	char signature_req[SMB2_SIGNATURE_SIZE];
+	char signature[SMB2_HMACSHA256_SIZE];
+
+	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
+	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+	if (sign_smbpdu(server, rcv_hdr2->ProtocolId,
+			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
+		return 0;
+
+	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
+		cifssrv_debug("bad smb2 signature\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+/**
+ * smb2_set_sign_rsp() - handler for rsp packet sign procesing
+ * @work:   smb work containing notify command buffer
+ *
+ */
+void smb2_set_sign_rsp(struct smb_work *work)
+{
+	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
+	struct tcp_server_info *server = work->server;
+	char signature[32];
+
+	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	if (!sign_smbpdu(server, rsp_hdr->ProtocolId,
+			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
+		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }

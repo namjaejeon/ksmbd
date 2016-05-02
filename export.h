@@ -196,6 +196,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 		int blob_len, struct cifssrv_usr *usr,
 		struct tcp_server_info *server);
+int sign_smbpdu(struct tcp_server_info *server, char *buf, int sz, char *sig);
+int compute_sess_key(struct tcp_server_info *server, char *hash, char *hmac);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess,

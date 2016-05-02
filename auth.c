@@ -29,6 +29,54 @@
 #include "glob.h"
 #include "export.h"
 
+/* Fixed format data defining GSS header and fixed string
+ * "not_defined_in_RFC4178@please_ignore".
+ * So sec blob data in neg phase could be generated statically.
+ */
+char NEGOTIATE_GSS_HEADER[74] =  {
+	0x60, 0x48, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05,
+	0x05, 0x02, 0xa0, 0x3e, 0x30, 0x3c, 0xa0, 0x0e,
+	0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04,
+	0x01, 0x82, 0x37, 0x02, 0x02, 0x0a, 0xa3, 0x2a,
+	0x30, 0x28, 0xa0, 0x26, 0x1b, 0x24, 0x6e, 0x6f,
+	0x74, 0x5f, 0x64, 0x65, 0x66, 0x69, 0x6e, 0x65,
+	0x64, 0x5f, 0x69, 0x6e, 0x5f, 0x52, 0x46, 0x43,
+	0x34, 0x31, 0x37, 0x38, 0x40, 0x70, 0x6c, 0x65,
+	0x61, 0x73, 0x65, 0x5f, 0x69, 0x67, 0x6e, 0x6f,
+	0x72, 0x65
+};
+
+static int crypto_hmacsha256_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.hmacsha256)
+		return 0;
+
+	server->secmech.hmacsha256 = crypto_alloc_shash("hmac(sha256)", 0, 0);
+	if (IS_ERR(server->secmech.hmacsha256)) {
+		cifssrv_debug("could not allocate crypto hmacsha256\n");
+		rc = PTR_ERR(server->secmech.hmacsha256);
+		server->secmech.hmacsha256 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.hmacsha256);
+	server->secmech.sdeschmacsha256 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdeschmacsha256) {
+		crypto_free_shash(server->secmech.hmacsha256);
+		server->secmech.hmacsha256 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdeschmacsha256->shash.tfm = server->secmech.hmacsha256;
+	server->secmech.sdeschmacsha256->shash.flags = 0x0;
+
+	return 0;
+}
+
 static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 {
 	int rc;
@@ -238,6 +286,12 @@ int process_ntlmv2(struct tcp_server_info *server, struct ntlmv2_resp *ntlmv2,
 		goto out;
 	}
 
+	rc = compute_sess_key(server, ntlmv2_hash, ntlmv2_rsp);
+	if (rc) {
+		cifssrv_debug("%s: Could not generate sess key\n", __func__);
+		goto out;
+	}
+
 	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 out:
 	return rc;
@@ -312,11 +366,6 @@ int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
 	}
 
 	server->ntlmssp.client_flags = negblob->NegotiateFlags;
-
-	if (negblob->NegotiateFlags & NTLMSSP_NEGOTIATE_56) {
-		/* TBD: area for session sign/seal */
-	}
-
 	return 0;
 }
 
@@ -391,4 +440,98 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	blob_len += chgblob->TargetInfoArray.Length;
 	cifssrv_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;
+}
+
+/**
+ * sign_smbpdu() - function to generate packet signing
+ * @server:	TCP server instance of connection
+ * @buf:	source pointer to client request packet
+ * @sz:		size of client request packet
+ * @sig:	signature value generated for client request packet
+ *
+ */
+int sign_smbpdu(struct tcp_server_info *server, char *buf, int sz, char *sig)
+{
+	int rc;
+
+	rc = crypto_hmacsha256_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_setkey(server->secmech.hmacsha256, server->sess_key,
+			SMB2_NTLMV2_SESSKEY_SIZE);
+	if (rc) {
+		cifssrv_debug("hmacsha256 update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_init(&server->secmech.sdeschmacsha256->shash);
+	if (rc) {
+		cifssrv_debug("hmacsha256 init error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+					buf, sz);
+	if (rc) {
+		cifssrv_debug("hmacsha256 update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_final(&server->secmech.sdeschmacsha256->shash, sig);
+	if (rc)
+		cifssrv_debug("hmacsha256 generation error %d\n", rc);
+
+out:
+	return rc;
+}
+
+/**
+ * compute_sess_key() - function to generate session key
+ * @server:	TCP server instance of connection
+ * @hash:	source hash value to be used for find session key
+ * @hmac:	source hmac value to be used for finding session key
+ *
+ */
+int compute_sess_key(struct tcp_server_info *server, char *hash, char *hmac)
+{
+	int rc;
+
+	rc = crypto_hmacmd5_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_setkey(server->secmech.hmacmd5, hash,
+			CIFS_HMAC_MD5_HASH_SIZE);
+	if (rc) {
+		cifssrv_debug("hmacmd5 set key fail error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_init(&server->secmech.sdeschmacmd5->shash);
+	if (rc) {
+		cifssrv_debug("could not init hmacmd5 error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacmd5->shash, hmac,
+			SMB2_NTLMV2_SESSKEY_SIZE);
+	if (rc) {
+		cifssrv_debug("Could not update with response error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_final(&server->secmech.sdeschmacmd5->shash,
+			server->sess_key);
+	if (rc) {
+		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		goto out;
+	}
+
+out:
+	return rc;
 }
