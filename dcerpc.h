@@ -24,8 +24,8 @@
 
 #include"glob.h"
 #include"ntlmssp.h"
-/* these are win32 error codes. There are only a few places where
- *    these matter for Samba, primarily in the NT printing code */
+/* these are win32 error codes.
+ */
 #define WERR_OK			0x00000000
 #define WERR_BAD_FILE		0x00000002
 #define WERR_ACCESS_DENIED	0x00000005

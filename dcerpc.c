@@ -1444,7 +1444,7 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	/* Update bind info */
 	rpc_bind_rsp->bind_info.max_tsize = rpc_bind_req->max_tsize;
 	rpc_bind_rsp->bind_info.max_rsize = rpc_bind_req->max_rsize;
-	/* Using hard coded assoc_gid value, same as as used by Samba*/
+	/* Using hard coded assoc_gid value*/
 	rpc_bind_rsp->bind_info.assoc_gid = 0x53f0;
 
 	num_ctx = rpc_bind_req->num_contexts;

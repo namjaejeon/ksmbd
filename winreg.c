@@ -28,7 +28,7 @@ struct registry_node *reg_openhklm;
 struct registry_node *reg_openhku;
 
 /* Predefined registry*/
-unsigned int npre_def_keys = 16;
+unsigned int npre_def_keys = 14;
 
 char *pre_def_key[] = {
 	"SYSTEM\\CurrentControlSet\\Services",
@@ -45,8 +45,6 @@ char *pre_def_key[] = {
 	"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Perflib\\009",
 	"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Group Policy",
 	"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon",
-	"SOFTWARE\\Samba\\smbconf",
-	"SOFTWARE\\Samba\\Group Policy",
 };
 
 int cifssrv_init_registry(void)
