@@ -3719,7 +3719,6 @@ int smb2_read_pipe(struct smb_work *smb_work)
 	struct smb2_read_rsp *rsp;
 	unsigned int read_len;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	unsigned int rsp_buflen = NETLINK_CIFSSRV_MAX_PAYLOAD;
 	struct cifssrv_uevent *ev;
 #endif
 	req = (struct smb2_read_req *)smb_work->buf;
@@ -3748,7 +3747,7 @@ int smb2_read_pipe(struct smb_work *smb_work)
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
-			sizeof(read_len), (char *)read_len, rsp_buflen);
+			0, NULL, read_len);
 	if (ret)
 		cifssrv_err("failed to send event, err %d\n", ret);
 	else {

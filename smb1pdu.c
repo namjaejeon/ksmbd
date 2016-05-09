@@ -1990,7 +1990,7 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
-			sizeof(count), (char *)count, rsp_buflen);
+			0, NULL, rsp_buflen);
 	if (ret)
 		cifssrv_err("failed to send event, err %d\n", ret);
 	else {
