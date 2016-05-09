@@ -1285,24 +1285,6 @@ int smb_trans(struct smb_work *smb_work)
 	case TRANSACT_DCERPCCMD:
 
 		cifssrv_debug("GOT TRANSACT_DCERPCCMD\n");
-		ret = process_rpc(server, pipedata);
-		if (ret == -EOPNOTSUPP) {
-			rsp->hdr.Status.CifsError =
-					NT_STATUS_NOT_SUPPORTED;
-			goto out;
-		} else if (ret) {
-			rsp->hdr.Status.CifsError =
-					NT_STATUS_INVALID_PARAMETER;
-			goto out;
-		}
-
-		nbytes = process_rpc_rsp(server,
-				(char *)rsp + sizeof(TRANS_RSP), buf_len);
-		if (nbytes < 0) {
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_INVALID_PARAMETER;
-			goto out;
-		}
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_IOCTL_PIPE,
 				le16_to_cpu(req->DataCount), pipedata,
@@ -1327,8 +1309,26 @@ int smb_trans(struct smb_work *smb_work)
 					server->pipe_desc->rsp_buf, nbytes);
 			server->ev_state = NETLINK_REQ_COMPLETED;
 		}
-#endif
+#else
+		ret = process_rpc(server, pipedata);
+		if (ret == -EOPNOTSUPP) {
+			rsp->hdr.Status.CifsError =
+					NT_STATUS_NOT_SUPPORTED;
+			goto out;
+		} else if (ret) {
+			rsp->hdr.Status.CifsError =
+					NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
 
+		nbytes = process_rpc_rsp(server,
+				(char *)rsp + sizeof(TRANS_RSP), buf_len);
+		if (nbytes < 0) {
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+#endif
 		break;
 
 	default:
@@ -1981,13 +1981,6 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 	count = min_t(unsigned int, le16_to_cpu(req->MaxCount), rsp_buflen);
 	data_buf = (char *) (&rsp->ByteCount) + sizeof(rsp->ByteCount);
 
-	nbytes = process_rpc_rsp(smb_work->server, data_buf, count);
-	if (nbytes <= 0) {
-		cifssrv_debug(" Read bytes zero from pipe\n");
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
-		return -EINVAL;
-	}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
 			0, NULL, rsp_buflen);
@@ -2005,6 +1998,13 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 
 		memcpy(data_buf, server->pipe_desc->rsp_buf, nbytes);
 		server->ev_state = NETLINK_REQ_COMPLETED;
+	}
+#else
+	nbytes = process_rpc_rsp(smb_work->server, data_buf, count);
+	if (nbytes <= 0) {
+		cifssrv_debug(" Read bytes zero from pipe\n");
+		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
+		return -EINVAL;
 	}
 #endif
 
@@ -2197,15 +2197,6 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 	if (server->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
-	ret = process_rpc(server, req->Data);
-	if (ret == -EOPNOTSUPP) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
-		return ret;
-	} else if (ret) {
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
-		return ret;
-	}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_WRITE_PIPE,
 			count, req->Data, 0);
@@ -2224,6 +2215,15 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 
 		count = ev->u.w_pipe_rsp.write_count;
 		server->ev_state = NETLINK_REQ_COMPLETED;
+	}
+#else
+	ret = process_rpc(server, req->Data);
+	if (ret == -EOPNOTSUPP) {
+		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
+		return ret;
+	} else if (ret) {
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+		return ret;
 	}
 #endif
 

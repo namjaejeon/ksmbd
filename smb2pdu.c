@@ -3737,14 +3737,6 @@ int smb2_read_pipe(struct smb_work *smb_work)
 		return ret;
 	}
 
-	nbytes = process_rpc_rsp(smb_work->server, data_buf, read_len);
-	if (nbytes <= 0) {
-		cifssrv_err("Pipe data not present\n");
-		rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
-		smb2_set_err_rsp(smb_work);
-		return -EINVAL;
-	}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
 			0, NULL, read_len);
@@ -3762,6 +3754,14 @@ int smb2_read_pipe(struct smb_work *smb_work)
 
 		memcpy(data_buf, server->pipe_desc->rsp_buf, nbytes);
 		server->ev_state = NETLINK_REQ_COMPLETED;
+	}
+#else
+	nbytes = process_rpc_rsp(smb_work->server, data_buf, read_len);
+	if (nbytes <= 0) {
+		cifssrv_err("Pipe data not present\n");
+		rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
+		smb2_set_err_rsp(smb_work);
+		return -EINVAL;
 	}
 #endif
 
@@ -3931,17 +3931,6 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 				le16_to_cpu(req->DataOffset));
 	}
 
-	ret = process_rpc(server, data_buf);
-	if (ret == -EOPNOTSUPP) {
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		smb2_set_err_rsp(smb_work);
-		return ret;
-	} else if (ret) {
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
-		smb2_set_err_rsp(smb_work);
-		return ret;
-	}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_WRITE_PIPE,
 			length, data_buf, 0);
@@ -3962,6 +3951,17 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 
 		length = ev->u.w_pipe_rsp.write_count;
 		server->ev_state = NETLINK_REQ_COMPLETED;
+	}
+#else
+	ret = process_rpc(server, data_buf);
+	if (ret == -EOPNOTSUPP) {
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		smb2_set_err_rsp(smb_work);
+		return ret;
+	} else if (ret) {
+		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		smb2_set_err_rsp(smb_work);
+		return ret;
 	}
 #endif
 
@@ -4416,29 +4416,6 @@ int smb2_ioctl(struct smb_work *smb_work)
 			goto out;
 		}
 
-		ret = process_rpc(server, data_buf);
-		if (ret == -EOPNOTSUPP) {
-			rsp->hdr.Status =
-				NT_STATUS_NOT_SUPPORTED;
-			goto out;
-		} else if (ret) {
-			rsp->hdr.Status =
-				NT_STATUS_INVALID_PARAMETER;
-			goto out;
-		}
-
-		nbytes = process_rpc_rsp(server, (char *)rsp->Buffer,
-				out_buf_len);
-		if (nbytes > out_buf_len) {
-			rsp->hdr.Status =
-				NT_STATUS_BUFFER_OVERFLOW;
-			nbytes = out_buf_len;
-		} else if (nbytes < 0) {
-			rsp->hdr.Status =
-				NT_STATUS_INVALID_PARAMETER;
-			goto out;
-		}
-
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_IOCTL_PIPE,
 				le32_to_cpu(req->inputcount), data_buf,
@@ -4473,7 +4450,31 @@ int smb2_ioctl(struct smb_work *smb_work)
 					nbytes);
 			server->ev_state = NETLINK_REQ_COMPLETED;
 		}
+#else
+		ret = process_rpc(server, data_buf);
+		if (ret == -EOPNOTSUPP) {
+			rsp->hdr.Status =
+				NT_STATUS_NOT_SUPPORTED;
+			goto out;
+		} else if (ret) {
+			rsp->hdr.Status =
+				NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		nbytes = process_rpc_rsp(server, (char *)rsp->Buffer,
+				out_buf_len);
+		if (nbytes > out_buf_len) {
+			rsp->hdr.Status =
+				NT_STATUS_BUFFER_OVERFLOW;
+			nbytes = out_buf_len;
+		} else if (nbytes < 0) {
+			rsp->hdr.Status =
+				NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
 #endif
+
 		break;
 
 	default:
