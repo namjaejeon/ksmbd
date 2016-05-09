@@ -49,12 +49,12 @@ static int cifssrv_nlsk_poll(struct tcp_server_info *server)
 			server->ev_state == NETLINK_REQ_RECV,
 			msecs_to_jiffies(NETLINK_RRQ_RECV_TIMEOUT));
 
-	if (rc) {
+	if (rc < 0) {
 		cifssrv_err("failed to get NETLINK response\n");
 		return -ETIMEDOUT;
 	}
 
-	return rc;
+	return 0;
 }
 
 int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
@@ -177,6 +177,7 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 		memcpy(server->pipe_desc->rsp_buf, ev->buffer, ev->buflen);
 
 	server->ev_state = NETLINK_REQ_RECV;
+	wake_up_interruptible(&server->pipe_q);
 	return 0;
 }
 
