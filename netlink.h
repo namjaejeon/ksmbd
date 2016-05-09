@@ -34,17 +34,17 @@ enum cifssrv_uevent_e {
 
 	/* down events: userspace to kernel space */
 	CIFSSRV_UEVENT_INIT_CONNECTION    = 10,
-	CIFSSRV_UEVENT_EXIT_CONNECTION,
 	CIFSSRV_UEVENT_READ_PIPE_RSP,
 	CIFSSRV_UEVENT_WRITE_PIPE_RSP,
 	CIFSSRV_UEVENT_IOCTL_PIPE_RSP,
+	CIFSSRV_UEVENT_EXIT_CONNECTION,
 
 	/* up events: kernel space to userspace */
 	CIFSSRV_KEVENT_CREATE_PIPE     = 100,
-	CIFSSRV_KEVENT_DESTROY_PIPE,
 	CIFSSRV_KEVENT_READ_PIPE,
 	CIFSSRV_KEVENT_WRITE_PIPE,
 	CIFSSRV_KEVENT_IOCTL_PIPE,
+	CIFSSRV_KEVENT_DESTROY_PIPE,
 };
 
 struct cifssrv_uevent {
@@ -97,7 +97,7 @@ struct cifssrv_uevent {
 			unsigned int	out_buflen;
 		} i_pipe;
 	} k;
-	unsigned char buffer[0];
+	char buffer[0];
 };
 
 #endif /* __CIFSSRV_NETLINK_H */

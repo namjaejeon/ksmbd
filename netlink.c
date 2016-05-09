@@ -68,6 +68,11 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	if (unlikely(!server || !server->pipe_desc))
 		return -EINVAL;
 
+	if (unlikely(data_size > NETLINK_CIFSSRV_MAX_PAYLOAD)) {
+		cifssrv_err("too big(%u) message\n", data_size);
+		return -EOVERFLOW;
+	}
+
 	skb = alloc_skb(len, GFP_KERNEL);
 	if (unlikely(!skb)) {
 		cifssrv_err("ignored event (%u): len %d\n", etype, len);
@@ -114,6 +119,7 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		memcpy(ev->buffer, data, data_size);
 	}
 
+	cifssrv_debug("sending event(%u) to server %p\n", etype, server);
 	mutex_lock(&nlsk_mutex);
 	server->ev_state = NETLINK_REQ_SENT;
 	rc = nlmsg_unicast(cifssrv_nlsk, skb, pid);
@@ -123,10 +129,10 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 				". Check cifssrvd daemon\n",
 				etype);
 
-	cifssrv_debug("send event(%u) to server %p, rc %d\n",
-			etype, server, rc);
-	if (unlikely(rc))
+	if (unlikely(rc)) {
+		cifssrv_err("failed to send message, err %d\n", rc);
 		return rc;
+	}
 
 	/* wait if need response from userspace */
 	if (!(etype == CIFSSRV_KEVENT_CREATE_PIPE ||
@@ -187,7 +193,7 @@ static int cifssrv_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
 	int err = 0;
 
-	cifssrv_debug("got (%u) event from (pid %u)\n",
+	cifssrv_debug("received (%u) event from (pid %u)\n",
 			nlh->nlmsg_type, nlh->nlmsg_pid);
 
 	switch (nlh->nlmsg_type) {
