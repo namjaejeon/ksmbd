@@ -42,14 +42,10 @@ static int cifssrv_nlsk_poll(struct tcp_server_info *server)
 {
 	int rc;
 
-	if (unlikely(server->ev_state != NETLINK_REQ_SENT)) {
-		cifssrv_err("invalid event state %d\n", server->ev_state);
-		return -EINVAL;
-	}
-
 	rc = wait_event_interruptible_timeout(server->pipe_q,
 			server->ev_state == NETLINK_REQ_RECV,
 			msecs_to_jiffies(NETLINK_RRQ_RECV_TIMEOUT));
+
 	if (unlikely(rc <= 0)) {
 		rc = (rc == 0) ? -ETIMEDOUT : rc;
 		cifssrv_err("failed to get NETLINK response, err %d\n", rc);
@@ -118,8 +114,10 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		memcpy(ev->buffer, data, data_size);
 	}
 
+	mutex_lock(&nlsk_mutex);
 	server->ev_state = NETLINK_REQ_SENT;
 	rc = nlmsg_unicast(cifssrv_nlsk, skb, pid);
+	mutex_unlock(&nlsk_mutex);
 	if (unlikely(rc == -ESRCH))
 		cifssrv_err("Cannot notify userspace of event %u "
 				". Check cifssrvd daemon\n",
@@ -167,18 +165,19 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 
 	if (unlikely(ev->error)) {
 		cifssrv_err("pipe io failed, err %d\n", ev->error);
-		return ev->error;
+		goto out;
 	}
 
 	if (unlikely(ev->buflen > NETLINK_CIFSSRV_MAX_PAYLOAD)) {
 		cifssrv_err("too big response buffer %u\n", ev->buflen);
-		return -EINVAL;
+		goto out;
 	}
 
 	memcpy((char *)&server->pipe_desc->ev, (char *)ev, sizeof(*ev));
 	if (ev->buflen)
 		memcpy(server->pipe_desc->rsp_buf, ev->buffer, ev->buflen);
 
+out:
 	server->ev_state = NETLINK_REQ_RECV;
 	wake_up_interruptible(&server->pipe_q);
 	return 0;
