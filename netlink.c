@@ -42,16 +42,18 @@ static int cifssrv_nlsk_poll(struct tcp_server_info *server)
 {
 	int rc;
 
-	if (server->ev_state != NETLINK_REQ_SENT)
+	if (unlikely(server->ev_state != NETLINK_REQ_SENT)) {
+		cifssrv_err("invalid event state %d\n", server->ev_state);
 		return -EINVAL;
+	}
 
 	rc = wait_event_interruptible_timeout(server->pipe_q,
 			server->ev_state == NETLINK_REQ_RECV,
 			msecs_to_jiffies(NETLINK_RRQ_RECV_TIMEOUT));
-
-	if (rc < 0) {
-		cifssrv_err("failed to get NETLINK response\n");
-		return -ETIMEDOUT;
+	if (unlikely(rc <= 0)) {
+		rc = (rc == 0) ? -ETIMEDOUT : rc;
+		cifssrv_err("failed to get NETLINK response, err %d\n", rc);
+		return rc;
 	}
 
 	return 0;
@@ -71,7 +73,7 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		return -EINVAL;
 
 	skb = alloc_skb(len, GFP_KERNEL);
-	if (!skb) {
+	if (unlikely(!skb)) {
 		cifssrv_err("ignored event (%u): len %d\n", etype, len);
 		return -ENOMEM;
 	}
@@ -118,14 +120,14 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 
 	server->ev_state = NETLINK_REQ_SENT;
 	rc = nlmsg_unicast(cifssrv_nlsk, skb, pid);
-	if (rc == -ESRCH)
+	if (unlikely(rc == -ESRCH))
 		cifssrv_err("Cannot notify userspace of event %u "
 				". Check cifssrvd daemon\n",
 				etype);
 
 	cifssrv_debug("send event(%u) to server %p, rc %d\n",
 			etype, server, rc);
-	if (rc)
+	if (unlikely(rc))
 		return rc;
 
 	/* wait if need response from userspace */
@@ -157,12 +159,13 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 
 	ev = nlmsg_data(nlh);
 	server = validate_server_handle(cifssrv_ptr(ev->server_handle));
-	if (!server || !server->pipe_desc || !server->pipe_desc->rsp_buf) {
+	if (unlikely(!server || !server->pipe_desc ||
+				!server->pipe_desc->rsp_buf)) {
 		cifssrv_err("invalid server handle\n");
 		return -EINVAL;
 	}
 
-	if (ev->error) {
+	if (unlikely(ev->error)) {
 		cifssrv_err("pipe io failed, err %d\n", ev->error);
 		return ev->error;
 	}
@@ -244,7 +247,7 @@ int cifssrv_net_init(void)
 	};
 
 	cifssrv_nlsk = netlink_kernel_create(&init_net, NETLINK_CIFSSRV, &cfg);
-	if (!cifssrv_nlsk) {
+	if (unlikely(!cifssrv_nlsk)) {
 		cifssrv_err("failed to create cifssrv netlink socket\n");
 		return -ENOMEM;
 	}
