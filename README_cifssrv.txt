@@ -49,19 +49,19 @@ mail address:
    f. Large MTU
    g. NTLM/NTLMv2
    h. Auto negotiation
+   i. HMAC-SHA256 Signing
 
  - Planned
    a. SMB direct(RDMA)
    b. Multi-channel
-   c. HMAC-SHA256 Signing (on-going)
-   d. Secure negotiate (on-going)
-   e. Signing Update (on-going)
-   f. Preautentication integrity(SMB 3.1.1) (on-going)
-   g. Durable handle v2
-   h. Kerberos
-   i. persistent handles
-   j. directory lease
-   k. SMB encryption
+   c. Secure negotiate (on-going)
+   d. Signing Update (on-going)
+   e. Preautentication integrity(SMB 3.1.1) (on-going)
+   f. Durable handle v2
+   g. Kerberos
+   h. persistent handles
+   i. directory lease
+   j. SMB encryption
 
 ================================================================================
 * DESIGN
