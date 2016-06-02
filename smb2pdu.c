@@ -769,22 +769,23 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return 0;
 	}
-	rsp->Capabilities = server->capabilities;
+	rsp->Capabilities = server->srv_cap;
 
 	/* For stats */
 	server->connection_type = server->dialect;
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
 	limit = SMBMaxBufSize;
 
+	server->cli_cap = req->Capabilities;
 	if (server->dialect > SMB20_PROT_ID) {
 		memcpy(server->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
 		/* With LargeMTU above SMB2.0, default message limit is 1MB */
 		limit = CIFS_DEFAULT_IOSIZE;
+		server->cli_sec_mode = req->SecurityMode;
 	}
 
 	rsp->StructureSize = cpu_to_le16(65);
-	rsp->SecurityMode = 0;
 	rsp->DialectRevision = cpu_to_le16(server->dialect);
 	/* Not setting server guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
@@ -803,9 +804,11 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
 	} else {
+		rsp->SecurityMode = 0;
 		rsp->SecurityBufferLength = 0;
 		inc_rfc1001_len(rsp, 65);
 	}
+	server->srv_sec_mode = rsp->SecurityMode;
 	server->tcp_status = CifsNeedNegotiate;
 	server->need_neg = false;
 	return 0;
@@ -1666,7 +1669,7 @@ reconnect:
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode)) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
 	} else if (oplock == SMB2_OPLOCK_LEVEL_LEASE) {
-		if (!(server->capabilities & SMB2_GLOBAL_CAP_LEASING)
+		if (!(server->srv_cap & SMB2_GLOBAL_CAP_LEASING)
 				|| stat.nlink != 1)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 		else {
@@ -4476,7 +4479,44 @@ int smb2_ioctl(struct smb_work *smb_work)
 #endif
 
 		break;
+	case FSCTL_VALIDATE_NEGOTIATE_INFO:
+	{
+		struct validate_negotiate_info_req *neg_req;
+		struct validate_negotiate_info_rsp *neg_rsp;
+		int ret, start_index;
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
+		start_index = SMB311_PROT;
+#else
+		start_index = CIFS_PROT;
+#endif
+
+		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
+		ret = find_matching_smb2_dialect(start_index, neg_req->Dialects,
+					le16_to_cpu(neg_req->DialectCount));
+		if (ret == BAD_PROT_ID || ret != server->dialect)
+			goto out;
+
+		if (strncmp(neg_req->Guid, server->ClientGUID,
+				SMB2_CLIENT_GUID_SIZE))
+			goto out;
+
+		if (neg_req->SecurityMode != server->cli_sec_mode)
+			goto out;
+
+		if (neg_req->Capabilities != server->cli_cap)
+			goto out;
+
+		nbytes = sizeof(struct validate_negotiate_info_rsp);
+		neg_rsp = (struct validate_negotiate_info_rsp *)&rsp->Buffer[0];
+		neg_rsp->Dialect = server->dialect;
+		neg_rsp->SecurityMode = server->srv_sec_mode;
+		neg_rsp->Capabilities = server->srv_cap;
+
+		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFF);
+		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFF);
+		break;
+	}
 	default:
 		cifssrv_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
@@ -4484,11 +4524,10 @@ int smb2_ioctl(struct smb_work *smb_work)
 		goto out;
 	}
 	rsp->CntCode = cpu_to_le32(cnt_code);
-	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->inputcount = cpu_to_le32(0);
 	rsp->inputoffset = cpu_to_le32(112);
-	rsp->outputcount = cpu_to_le32(nbytes);
 	rsp->outputoffset = cpu_to_le32(112);
+	rsp->outputcount = cpu_to_le32(nbytes);
 	rsp->StructureSize = cpu_to_le16(49);
 	rsp->Reserved = cpu_to_le16(0);
 	rsp->flags = cpu_to_le32(0);

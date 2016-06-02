@@ -2063,7 +2063,7 @@ int smb_read_andx(struct smb_work *smb_work)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
 
 	count = le16_to_cpu(req->MaxCount);
-	if (server->capabilities & CAP_LARGE_READ_X)
+	if (server->srv_cap & CAP_LARGE_READ_X)
 		count |= le32_to_cpu(req->MaxCountHigh) << 16;
 
 	if (count > CIFS_DEFAULT_IOSIZE) {
@@ -2194,7 +2194,7 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 	}
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (server->capabilities & CAP_LARGE_WRITE_X)
+	if (server->srv_cap & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
@@ -2280,7 +2280,7 @@ int smb_write_andx(struct smb_work *smb_work)
 	writethrough = (le16_to_cpu(req->WriteMode) == 1);
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (server->capabilities & CAP_LARGE_WRITE_X)
+	if (server->srv_cap & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 	if (count > CIFS_DEFAULT_IOSIZE) {

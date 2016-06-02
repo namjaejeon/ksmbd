@@ -267,12 +267,14 @@ struct tcp_server_info {
 	char *hostname;
 	struct mutex srv_mutex;
 	enum statusEnum tcp_status;
-	__u16 sec_mode;
+	__u16 cli_sec_mode;
+	__u16 srv_sec_mode;
 	bool sign;
 	__u16 dialect; /* dialect index that server chose */
 	bool oplocks:1;
 	unsigned int maxReq;
-	unsigned int capabilities;
+	unsigned int cli_cap;
+	unsigned int srv_cap;
 	bool	need_neg;
 	bool    large_buf;
 	struct kvec *iov;

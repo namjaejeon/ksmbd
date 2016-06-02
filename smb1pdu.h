@@ -1879,6 +1879,8 @@ extern int get_smb_cmd_val(struct smb_work *smb_work);
 extern void set_smb_rsp_status(struct smb_work *smb_work, unsigned int err);
 extern int init_smb_rsp_hdr(struct smb_work *smb_work);
 extern int smb_allocate_rsp_buf(struct smb_work *smb_work);
+extern int find_matching_smb1_dialect(int start_index, char *cli_dialects,
+	__le16 byte_count);
 
 /* smb1 command handlers */
 extern int smb_rename(struct smb_work *smb_work);

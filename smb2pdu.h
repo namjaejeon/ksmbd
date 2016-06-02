@@ -607,6 +607,21 @@ struct smb2_ioctl_rsp {
 	__u8 Buffer[1];
 } __packed;
 
+struct validate_negotiate_info_req {
+	__le32 Capabilities;
+	__u8   Guid[SMB2_CLIENT_GUID_SIZE];
+	__le16 SecurityMode;
+	__le16 DialectCount;
+	__le16 Dialects[1]; /* dialect (someday maybe list) client asked for */
+} __packed;
+
+struct validate_negotiate_info_rsp {
+	__le32 Capabilities;
+	__u8   Guid[SMB2_CLIENT_GUID_SIZE];
+	__le16 SecurityMode;
+	__le16 Dialect; /* Dialect in use for the connection */
+} __packed;
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
@@ -1047,6 +1062,8 @@ extern int smb2_check_user_session(struct smb_work *smb_work);
 extern int smb2_is_sign_req(struct smb_work *work, unsigned int command);
 extern int smb2_check_sign_req(struct smb_work *work);
 extern void smb2_set_sign_rsp(struct smb_work *work);
+extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
+	__le16 dialects_count);
 
 /* smb2 command handlers */
 extern int smb2_negotiate(struct smb_work *smb_work);

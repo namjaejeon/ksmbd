@@ -614,7 +614,7 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	INIT_LIST_HEAD(&server->cifssrv_sess);
 	INIT_LIST_HEAD(&server->requests);
 	spin_lock_init(&server->request_lock);
-	server->capabilities = SERVER_CAPS;
+	server->srv_cap = SERVER_CAPS;
 	init_waitqueue_head(&server->oplock_q);
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	init_waitqueue_head(&server->pipe_q);

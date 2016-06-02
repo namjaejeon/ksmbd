@@ -183,9 +183,9 @@ void init_smb2_1_server(struct tcp_server_info *server)
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
 	if (lease_enable)
-		server->capabilities = SMB2_GLOBAL_CAP_LEASING;
+		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->capabilities |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
 
 /**
@@ -201,9 +201,9 @@ void init_smb3_0_server(struct tcp_server_info *server)
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
 	if (lease_enable)
-		server->capabilities = SMB2_GLOBAL_CAP_LEASING;
+		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->capabilities |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
 
 /**
@@ -219,9 +219,9 @@ void init_smb3_02_server(struct tcp_server_info *server)
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
 	if (lease_enable)
-		server->capabilities = SMB2_GLOBAL_CAP_LEASING;
+		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->capabilities |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
 
 /**
@@ -237,7 +237,7 @@ void init_smb3_11_server(struct tcp_server_info *server)
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
 	if (lease_enable)
-		server->capabilities = SMB2_GLOBAL_CAP_LEASING;
+		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->capabilities |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
