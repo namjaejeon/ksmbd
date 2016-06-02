@@ -294,7 +294,7 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 					dialect_id = smb1_index;
 				else
 					dialect_id = protocols[i].prot_id;
-				break;
+				goto out;
 			}
 			bcount -= (++cli_count);
 			dialects += cli_count;
@@ -302,6 +302,7 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 		}
 	}
 
+out:
 	return dialect_id;
 }
 
