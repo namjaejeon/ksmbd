@@ -275,16 +275,18 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 		__le16 byte_count)
 {
 	int i, smb1_index, cli_count, bcount, dialect_id = BAD_PROT_ID;
+	char *dialects = NULL;
 
 	for (i = start_index; i >= CIFS_PROT; i--) {
 		smb1_index = 0;
 		bcount = le16_to_cpu(byte_count);
+		dialects = cli_dialects;
 
 		while (bcount) {
-			cli_count = strlen(cli_dialects);
+			cli_count = strlen(dialects);
 			cifssrv_debug("client requested dialect %s\n",
-					cli_dialects);
-			if (!strncmp(cli_dialects, protocols[i].name,
+					dialects);
+			if (!strncmp(dialects, protocols[i].name,
 						cli_count)) {
 				cifssrv_debug("selected %s dialect\n",
 						protocols[i].name);
@@ -295,7 +297,7 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 				break;
 			}
 			bcount -= (++cli_count);
-			cli_dialects += cli_count;
+			dialects += cli_count;
 			smb1_index++;
 		}
 	}
