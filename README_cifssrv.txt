@@ -50,18 +50,18 @@ mail address:
    g. NTLM/NTLMv2
    h. Auto negotiation
    i. HMAC-SHA256 Signing
+   j. Secure negotiate
+   k. Signing Update
 
  - Planned
    a. SMB direct(RDMA)
    b. Multi-channel
-   c. Secure negotiate (on-going)
-   d. Signing Update (on-going)
-   e. Preautentication integrity(SMB 3.1.1) (on-going)
-   f. Durable handle v2
-   g. Kerberos
-   h. persistent handles
-   i. directory lease
-   j. SMB encryption
+   c. Preautentication integrity(SMB 3.1.1) (on-going)
+   d. Durable handle v2
+   e. Kerberos
+   f. persistent handles
+   g. directory lease
+   h. SMB encryption
 
 ================================================================================
 * DESIGN
