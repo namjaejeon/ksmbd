@@ -21,6 +21,7 @@
 
 #include <linux/slab.h>
 #include "glob.h"
+#include "export.h"
 #include "smb2pdu.h"
 
 struct smb_version_values smb20_server_values = {
@@ -130,6 +131,10 @@ struct smb_version_ops smb3_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
+	.is_sign_req		=	smb2_is_sign_req,
+	.check_sign_req		=	smb3_check_sign_req,
+	.set_sign_rsp		=	smb3_set_sign_rsp,
+	.compute_signingkey	=	compute_smb30sigingkey
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {

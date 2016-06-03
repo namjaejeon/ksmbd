@@ -10,6 +10,7 @@ config CIFS_SERVER
 	select CRYPTO_ECB
 	select CRYPTO_DES
 	select CRYPTO_SHA256
+	select CRYPTO_CMAC
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
 	

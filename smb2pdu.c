@@ -923,6 +923,14 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			goto out_err;
 		}
 
+		if (server->sign && server->ops->compute_signingkey) {
+			rc = server->ops->compute_signingkey(server);
+			if (rc) {
+				cifssrv_debug("SMB3 session key generation failed\n");
+				goto out_err;
+			}
+		}
+
 		sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
 		if (sess == NULL) {
 			cifssrv_err("cannot allocate memory to session\n");
@@ -4878,7 +4886,9 @@ int smb2_is_sign_req(struct smb_work *work, unsigned int command)
 	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
 
 	if ((rcv_hdr2->Flags & SMB2_FLAGS_SIGNED) &&
-			command != SMB2_SESSION_SETUP_HE)
+			command != SMB2_NEGOTIATE_HE &&
+			command != SMB2_SESSION_SETUP_HE &&
+			command != SMB2_OPLOCK_BREAK_HE)
 		return 1;
 	return 0;
 }
@@ -4898,7 +4908,34 @@ int smb2_check_sign_req(struct smb_work *work)
 
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (sign_smbpdu(server, rcv_hdr2->ProtocolId,
+	if (smb2_sign_smbpdu(server, rcv_hdr2->ProtocolId,
+			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
+		return 0;
+
+	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
+		cifssrv_debug("bad smb2 signature\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+/**
+ * smb3_check_sign_req() - handler for req packet sign processing
+ * @work:   smb work containing notify command buffer
+ *
+ * Return:	1 on success, 0 otherwise
+ */
+int smb3_check_sign_req(struct smb_work *work)
+{
+	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+	struct tcp_server_info *server = work->server;
+	char signature_req[SMB2_SIGNATURE_SIZE];
+	char signature[SMB2_CMACAES_SIZE];
+
+	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
+	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+	if (smb3_sign_smbpdu(server, rcv_hdr2->ProtocolId,
 			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
 		return 0;
 
@@ -4919,11 +4956,29 @@ void smb2_set_sign_rsp(struct smb_work *work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
 	struct tcp_server_info *server = work->server;
-	char signature[32];
+	char signature[SMB2_HMACSHA256_SIZE];
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!sign_smbpdu(server, rsp_hdr->ProtocolId,
+	if (!smb2_sign_smbpdu(server, rsp_hdr->ProtocolId,
+			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
+		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+}
+
+/**
+ * smb3_set_sign_rsp() - handler for rsp packet sign procesing
+ * @work:   smb work containing notify command buffer
+ *
+ */
+void smb3_set_sign_rsp(struct smb_work *work)
+{
+	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
+	struct tcp_server_info *server = work->server;
+	char signature[SMB2_CMACAES_SIZE];
+
+	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	if (!smb3_sign_smbpdu(server, rsp_hdr->ProtocolId,
 			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }

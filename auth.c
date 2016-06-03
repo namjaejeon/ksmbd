@@ -108,6 +108,37 @@ static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 	return 0;
 }
 
+static int crypto_cmac_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.sdesccmacaes)
+		return 0;
+
+	server->secmech.cmacaes = crypto_alloc_shash("cmac(aes)", 0, 0);
+	if (IS_ERR(server->secmech.cmacaes)) {
+		cifssrv_debug("could not allocate crypto cmac-aes\n");
+		rc = PTR_ERR(server->secmech.cmacaes);
+		server->secmech.cmacaes = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.cmacaes);
+	server->secmech.sdesccmacaes = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdesccmacaes) {
+		crypto_free_shash(server->secmech.cmacaes);
+		server->secmech.cmacaes = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdesccmacaes->shash.tfm = server->secmech.cmacaes;
+	server->secmech.sdesccmacaes->shash.flags = 0x0;
+
+	return 0;
+}
+
 static int calc_ntlmv2_hash(struct tcp_server_info *server, char *username,
 		char *passkey, char *ntlmv2_hash, char *dname)
 {
@@ -443,14 +474,15 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 }
 
 /**
- * sign_smbpdu() - function to generate packet signing
+ * smb2_sign_smbpdu() - function to generate packet signing
  * @server:	TCP server instance of connection
  * @buf:	source pointer to client request packet
  * @sz:		size of client request packet
  * @sig:	signature value generated for client request packet
  *
  */
-int sign_smbpdu(struct tcp_server_info *server, char *buf, int sz, char *sig)
+int smb2_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+		char *sig)
 {
 	int rc;
 
@@ -483,6 +515,47 @@ int sign_smbpdu(struct tcp_server_info *server, char *buf, int sz, char *sig)
 	rc = crypto_shash_final(&server->secmech.sdeschmacsha256->shash, sig);
 	if (rc)
 		cifssrv_debug("hmacsha256 generation error %d\n", rc);
+
+out:
+	return rc;
+}
+
+/**
+ * smb3_sign_smbpdu() - function to generate packet signing
+ * @server:	TCP server instance of connection
+ * @buf:	source pointer to client request packet
+ * @sz:		size of client request packet
+ * @sig:	signature value generated for client request packet
+ *
+ */
+int smb3_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+		char *sig)
+{
+	int rc;
+
+	rc = crypto_shash_setkey(server->secmech.cmacaes,
+		server->smb3signingkey,	SMB2_CMACAES_SIZE);
+	if (rc) {
+		cifssrv_debug("cmaces update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_init(&server->secmech.sdesccmacaes->shash);
+	if (rc) {
+		cifssrv_debug("cmaces init error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdesccmacaes->shash,
+					buf, sz);
+	if (rc) {
+		cifssrv_debug("cmaces update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_final(&server->secmech.sdesccmacaes->shash, sig);
+	if (rc)
+		cifssrv_debug("cmaces generation error %d\n", rc);
 
 out:
 	return rc;
@@ -533,5 +606,88 @@ int compute_sess_key(struct tcp_server_info *server, char *hash, char *hmac)
 	}
 
 out:
+	return rc;
+}
+
+/**
+ * compute_smb30sigingkey() - function to generate session key
+ * @server:	TCP server instance of connection
+ *
+ */
+int compute_smb30sigingkey(struct tcp_server_info *server)
+{
+	unsigned char zero = 0x0;
+	int rc;
+	__u8 i[4] = {0, 0, 0, 1};
+	__u8 L[4] = {0, 0, 0, 128};
+
+	rc = crypto_hmacsha256_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_cmac_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc cmac rc %d\n", rc);
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_setkey(server->secmech.hmacsha256,
+			server->sess_key, SMB2_NTLMV2_SESSKEY_SIZE);
+	if (rc) {
+		cifssrv_debug("could not set with session key\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_init(&server->secmech.sdeschmacsha256->shash);
+	if (rc) {
+		cifssrv_debug("could not init sign hmac\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+			i, 4);
+	if (rc) {
+		cifssrv_debug("could not update with n\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+			"SMB2AESCMAC", 12);
+	if (rc) {
+		cifssrv_debug("could not update with label\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+			&zero, 1);
+	if (rc) {
+		cifssrv_debug("could not update with zero\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+			"SmbSign", 8);
+	if (rc) {
+		cifssrv_debug("could not update with context\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdeschmacsha256->shash,
+			L, 4);
+	if (rc) {
+		cifssrv_debug("could not update with L\n");
+		goto smb3signkey_ret;
+	}
+
+	rc = crypto_shash_final(&server->secmech.sdeschmacsha256->shash,
+			server->smb3signingkey);
+	if (rc) {
+		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		goto smb3signkey_ret;
+	}
+
+smb3signkey_ret:
 	return rc;
 }

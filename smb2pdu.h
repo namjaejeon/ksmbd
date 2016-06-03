@@ -1062,6 +1062,8 @@ extern int smb2_check_user_session(struct smb_work *smb_work);
 extern int smb2_is_sign_req(struct smb_work *work, unsigned int command);
 extern int smb2_check_sign_req(struct smb_work *work);
 extern void smb2_set_sign_rsp(struct smb_work *work);
+extern int smb3_check_sign_req(struct smb_work *work);
+extern void smb3_set_sign_rsp(struct smb_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 

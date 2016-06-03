@@ -134,6 +134,7 @@ extern char NEGOTIATE_GSS_HEADER[74];
 #define SMB2_NTLMV2_SESSKEY_SIZE (16)
 #define SMB2_SIGNATURE_SIZE (16)
 #define SMB2_HMACSHA256_SIZE (32)
+#define SMB2_CMACAES_SIZE (16)
 
 /*
  *  * Size of the smb3 signing key
@@ -323,6 +324,7 @@ struct tcp_server_info {
 #endif
 	struct cifs_secmech secmech;
 	char sess_key[SMB2_NTLMV2_SESSKEY_SIZE];
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
 };
 
 struct trans_state {
@@ -382,6 +384,7 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct smb_work *work, unsigned int command);
 	int (*check_sign_req)(struct smb_work *work);
 	void (*set_sign_rsp)(struct smb_work *work);
+	int (*compute_signingkey)(struct tcp_server_info *server);
 };
 
 struct smb_version_cmds {
