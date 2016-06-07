@@ -332,11 +332,12 @@ int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 				cifssrv_debug("selected %s dialect\n",
 						protocols[i].name);
 				dialect_id = protocols[i].prot_id;
-				break;
+				goto out;
 			}
 		}
 	}
 
+out:
 	return dialect_id;
 }
 
