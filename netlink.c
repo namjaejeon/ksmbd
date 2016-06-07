@@ -89,6 +89,8 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	case CIFSSRV_KEVENT_CREATE_PIPE:
 		ev->k.c_pipe.id = server->pipe_desc->id;
 		ev->k.c_pipe.type = server->pipe_desc->pipe_type;
+		strncpy(ev->k.c_pipe.codepage, server->local_nls->charset,
+				CIFSSRV_CODEPAGE_LEN - 1);
 		break;
 	case CIFSSRV_KEVENT_DESTROY_PIPE:
 		ev->k.d_pipe.id = server->pipe_desc->id;

@@ -29,6 +29,8 @@
 #define NETLINK_REQ_RECV        0x02
 #define NETLINK_REQ_COMPLETED   0x04
 
+#define CIFSSRV_CODEPAGE_LEN	32
+
 enum cifssrv_uevent_e {
 	CIFSSRV_UEVENT_UNKNOWN            = 0,
 
@@ -77,6 +79,7 @@ struct cifssrv_uevent {
 		struct msg_create_pipe {
 			__u64		id;
 			unsigned int	type;
+			char	codepage[CIFSSRV_CODEPAGE_LEN];
 		} c_pipe;
 		struct msg_destroy_pipe {
 			__u64		id;
