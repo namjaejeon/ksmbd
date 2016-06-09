@@ -4543,6 +4543,18 @@ int smb2_ioctl(struct smb_work *smb_work)
 	rsp->flags = cpu_to_le32(0);
 	rsp->Reserved2 = cpu_to_le32(0);
 	inc_rfc1001_len(rsp_org, 48 + nbytes);
+
+	if (!server->sign && cnt_code == FSCTL_VALIDATE_NEGOTIATE_INFO) {
+		if (server->ops->is_sign_req &&
+			server->ops->is_sign_req(smb_work, SMB2_IOCTL_HE)) {
+			ret = server->ops->compute_signingkey(server);
+			if (ret)
+				cifssrv_err("SMB3 sesskey generation failed\n");
+			else
+				server->ops->set_sign_rsp(smb_work);
+		}
+	}
+
 	return 0;
 
 out:
