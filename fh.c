@@ -385,7 +385,7 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 		dir = dentry->d_parent;
 
 		dget(dentry);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
 		inode_lock(dir->d_inode);
 #else
 		mutex_lock(&dir->d_inode->i_mutex);
@@ -406,7 +406,7 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 #endif
 		iput(dentry->d_inode);
 out:
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
+#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
 		inode_unlock(dir->d_inode);
 #else
 		mutex_unlock(&dir->d_inode->i_mutex);
