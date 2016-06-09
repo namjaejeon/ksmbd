@@ -789,6 +789,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->DialectRevision = cpu_to_le16(server->dialect);
 	/* Not setting server guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
+	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
@@ -4517,12 +4518,13 @@ int smb2_ioctl(struct smb_work *smb_work)
 
 		nbytes = sizeof(struct validate_negotiate_info_rsp);
 		neg_rsp = (struct validate_negotiate_info_rsp *)&rsp->Buffer[0];
-		neg_rsp->Dialect = server->dialect;
-		neg_rsp->SecurityMode = server->srv_sec_mode;
-		neg_rsp->Capabilities = server->srv_cap;
+		neg_rsp->Capabilities = cpu_to_le32(server->srv_cap);
+		memset(neg_rsp->Guid, 0, SMB2_CLIENT_GUID_SIZE);
+		neg_rsp->SecurityMode = cpu_to_le16(server->srv_sec_mode);
+		neg_rsp->Dialect = cpu_to_le16(server->dialect);
 
-		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFF);
-		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFF);
+		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 		break;
 	}
 	default:
