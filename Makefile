@@ -1,3 +1,5 @@
+ccflags-y	+= -DCONFIG_CIFSSRV_NETLINK_INTERFACE=y
+
 obj-$(CONFIG_CIFS_SERVER) += cifssrv.o
 
 cifssrv-y := 	export.o connect.o srv.o unicode.o encrypt.o auth.o \
