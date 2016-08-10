@@ -122,11 +122,14 @@ extern char NEGOTIATE_GSS_HEADER[74];
  *  * Size of the crypto key returned on the negotiate SMB in bytes
  *   */
 #define CIFS_CRYPTO_KEY_SIZE (8)
+#define CIFS_KEY_SIZE (40)
 
 /*
  *  * Size of the ntlm client response
  *   */
 #define CIFS_AUTH_RESP_SIZE (24)
+#define CIFS_SMB1_SIGNATURE_SIZE (8)
+#define CIFS_SMB1_SESSKEY_SIZE (16)
 
 /*
  *  * Size of the session key (crypto key encrypted with the password
@@ -323,8 +326,9 @@ struct tcp_server_info {
 	__u64 sess_id;
 #endif
 	struct cifs_secmech secmech;
-	char sess_key[SMB2_NTLMV2_SESSKEY_SIZE];
+	char sess_key[CIFS_KEY_SIZE];
 	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+	unsigned int sequence_number;
 };
 
 struct trans_state {
@@ -548,6 +552,8 @@ extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
 		const struct nls_table *codepage);
 extern int E_P24(unsigned char *p21, const unsigned char *c8,
 		unsigned char *p24);
+extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
+		int link_len);
 extern int smb_send_rsp(struct smb_work *smb_work);
 bool server_unresponsive(struct tcp_server_info *server);
 /* trans2 functions */

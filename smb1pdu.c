@@ -742,7 +742,8 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->hdr.WordCount = 17;
 	neg_rsp->DialectIndex = server->dialect;
 
-	neg_rsp->SecurityMode = SERVER_SECU;
+	server->sign = true;
+	neg_rsp->SecurityMode = SERVER_SECU | SECMODE_SIGN_ENABLED;
 	neg_rsp->MaxMpxCount = SERVER_MAX_MPX_COUNT;
 	neg_rsp->MaxNumberVcs = SERVER_MAX_VCS;
 	neg_rsp->MaxBufferSize = SMBMaxBufSize;
@@ -6458,6 +6459,7 @@ int smb_nt_cancel(struct smb_work *smb_work)
 			work->send_no_response = 1;
 			list_del_init(&work->request_entry);
 			work->added_in_request_list = 0;
+			server->sequence_number--;
 			break;
 		}
 	}
@@ -7018,4 +7020,75 @@ out:
 	}
 
 	return 0;
+}
+
+/**
+ * smb1_is_sign_req() - handler for checking packet signing status
+ * @work:	smb work containing notify command buffer
+ *
+ * Return:	1 if packed is signed, 0 otherwise
+ */
+int smb1_is_sign_req(struct smb_work *work, unsigned int command)
+{
+	struct smb_hdr *rcv_hdr1 = (struct smb_hdr *)work->buf;
+
+	if ((rcv_hdr1->Flags2 & SMBFLG2_SECURITY_SIGNATURE) &&
+			command != SMB_COM_SESSION_SETUP_ANDX)
+		return 1;
+	return 0;
+}
+
+/**
+ * smb1_check_sign_req() - handler for req packet sign processing
+ * @work:	smb work containing notify command buffer
+ *
+ * Return:	1 on success, 0 otherwise
+ */
+int smb1_check_sign_req(struct smb_work *work)
+{
+	struct smb_hdr *rcv_hdr1 = (struct smb_hdr *)work->buf;
+	struct tcp_server_info *server = work->server;
+	char signature_req[CIFS_SMB1_SIGNATURE_SIZE];
+	char signature[20];
+
+	memcpy(signature_req, rcv_hdr1->Signature.SecuritySignature,
+			CIFS_SMB1_SIGNATURE_SIZE);
+	rcv_hdr1->Signature.Sequence.SequenceNumber = ++server->sequence_number;
+	rcv_hdr1->Signature.Sequence.Reserved = 0;
+
+	if (smb1_sign_smbpdu(server, rcv_hdr1->Protocol,
+				be32_to_cpu(rcv_hdr1->smb_buf_length),
+				signature))
+		return 0;
+
+	if (memcmp(signature, signature_req, CIFS_SMB1_SIGNATURE_SIZE)) {
+		cifssrv_debug("bad smb1 sign\n");
+		return 0;
+	}
+
+	return 1;
+}
+
+/**
+ * smb1_set_sign_rsp() - handler for rsp packet sign procesing
+ * @work:	smb work containing notify command buffer
+ *
+ */
+void smb1_set_sign_rsp(struct smb_work *work)
+{
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
+	struct tcp_server_info *server = work->server;
+	char signature[20];
+
+	rsp_hdr->Flags2 |= SMBFLG2_SECURITY_SIGNATURE;
+	rsp_hdr->Signature.Sequence.SequenceNumber = ++server->sequence_number;
+	rsp_hdr->Signature.Sequence.Reserved = 0;
+	if (smb1_sign_smbpdu(server, rsp_hdr->Protocol,
+				be32_to_cpu(rsp_hdr->smb_buf_length),
+				signature))
+		memset(rsp_hdr->Signature.SecuritySignature,
+				0, CIFS_SMB1_SIGNATURE_SIZE);
+	else
+		memcpy(rsp_hdr->Signature.SecuritySignature,
+				signature, CIFS_SMB1_SIGNATURE_SIZE);
 }

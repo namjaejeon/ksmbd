@@ -46,6 +46,37 @@ char NEGOTIATE_GSS_HEADER[74] =  {
 	0x72, 0x65
 };
 
+static int crypto_md5_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.md5)
+		return 0;
+
+	server->secmech.md5 = crypto_alloc_shash("md5", 0, 0);
+	if (IS_ERR(server->secmech.md5)) {
+		cifssrv_debug("could not allocate crypto md5\n");
+		rc = PTR_ERR(server->secmech.md5);
+		server->secmech.md5 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.md5);
+	server->secmech.sdescmd5 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdescmd5) {
+		crypto_free_shash(server->secmech.md5);
+		server->secmech.md5 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdescmd5->shash.tfm = server->secmech.md5;
+	server->secmech.sdescmd5->shash.flags = 0x0;
+
+	return 0;
+}
+
 static int crypto_hmacsha256_alloc(struct tcp_server_info *server)
 {
 	int rc;
@@ -232,6 +263,11 @@ int process_ntlm(struct tcp_server_info *server, char *pw_buf, char *passkey)
 		cifssrv_err("password processing failed\n");
 		return rc;
 	}
+
+	smb_mdfour(server->sess_key, passkey, CIFS_SMB1_SESSKEY_SIZE);
+	memcpy(server->sess_key + CIFS_SMB1_SESSKEY_SIZE, key,
+		CIFS_AUTH_RESP_SIZE);
+	server->sequence_number = 1;
 
 	if (strncmp(pw_buf, key, CIFS_AUTH_RESP_SIZE) != 0) {
 		cifssrv_debug("ntlmv1 authentication failed\n");
@@ -471,6 +507,53 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	blob_len += chgblob->TargetInfoArray.Length;
 	cifssrv_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;
+}
+
+/**
+ * smb1_sign_smbpdu() - function to generate SMB1 packet signing
+ * @server:     TCP server instance of connection
+ * @buf:        source pointer to client request packet
+ * @sz:         size of client request packet
+ * @sig:        signature value generated for client request packet
+ *
+ */
+int smb1_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+		char *sig)
+{
+	int rc;
+
+	rc = crypto_md5_alloc(server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc md5 rc %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_init(&server->secmech.sdescmd5->shash);
+	if (rc) {
+		cifssrv_debug("md5 init error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdescmd5->shash,
+			server->sess_key, 40);
+	if (rc) {
+		cifssrv_debug("md5 update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_update(&server->secmech.sdescmd5->shash,
+			buf, sz);
+	if (rc) {
+		cifssrv_debug("md5 update error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_final(&server->secmech.sdescmd5->shash, sig);
+	if (rc)
+		cifssrv_debug("md5 generation error %d\n", rc);
+
+out:
+	return rc;
 }
 
 /**

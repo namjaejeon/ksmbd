@@ -127,7 +127,7 @@ E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 }
 
 /* produce a md4 message digest from data of length n bytes */
-static int
+int
 smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
 {
 	int rc;

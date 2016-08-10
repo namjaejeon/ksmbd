@@ -196,6 +196,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 		int blob_len, struct cifssrv_usr *usr,
 		struct tcp_server_info *server);
+int smb1_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+		char *sig);
 int smb2_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
 		char *sig);
 int smb3_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
