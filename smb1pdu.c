@@ -742,8 +742,11 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->hdr.WordCount = 17;
 	neg_rsp->DialectIndex = server->dialect;
 
-	server->sign = true;
-	neg_rsp->SecurityMode = SERVER_SECU | SECMODE_SIGN_ENABLED;
+	neg_rsp->SecurityMode = SERVER_SECU;
+	if (server_signing == AUTO || server_signing == MANDATORY) {
+		server->sign = true;
+		neg_rsp->SecurityMode |= SECMODE_SIGN_ENABLED;
+	}
 	neg_rsp->MaxMpxCount = SERVER_MAX_MPX_COUNT;
 	neg_rsp->MaxNumberVcs = SERVER_MAX_VCS;
 	neg_rsp->MaxBufferSize = SMBMaxBufSize;

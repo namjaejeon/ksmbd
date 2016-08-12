@@ -51,6 +51,9 @@ static inline void free_share(struct cifssrv_share *share);
 
 /* Number of shares defined on server */
 int cifssrv_num_shares;
+
+/* The parameters defined on configuration */
+int server_signing;
 char *guestAccountName;
 char *server_string;
 char *workgroup;
@@ -807,6 +810,7 @@ enum {
 	Opt_servern,
 	Opt_domain,
 	Opt_netbiosname,
+	Opt_signing,
 
 	Opt_global_err
 };
@@ -816,6 +820,7 @@ static const match_table_t cifssrv_global_tokens = {
 	{ Opt_servern, "server string = %s" },
 	{ Opt_domain, "workgroup = %s" },
 	{ Opt_netbiosname, "netbios name = %s" },
+	{ Opt_signing, "server signing = %s" },
 
 	{ Opt_global_err, NULL }
 };
@@ -894,13 +899,19 @@ static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
 		return -ENOMEM;
 
 	if (!strcasecmp(str, "yes") ||
-			!strcasecmp(str, "true") ||
-			!strcmp(str, "1"))
-		*val = 1;
+	    !strcasecmp(str, "true") ||
+	    !strcasecmp(str, "enable") ||
+	    !strcmp(str, "1"))
+		*val = ENABLE;
 	else if (!strcasecmp(str, "no") ||
-			!strcasecmp(str, "false") ||
-			!strcmp(str, "0"))
-		*val = 0;
+		 !strcasecmp(str, "false") ||
+		 !strcasecmp(str, "disable") ||
+		 !strcmp(str, "0"))
+		*val = DISABLE;
+	else if (!strcasecmp(str, "auto"))
+		*val = AUTO;
+	else if (!strcasecmp(str, "mandatory"))
+		*val = MANDATORY;
 	else {
 		cifssrv_err("bad option value %s\n", str);
 		ret = -EINVAL;
@@ -947,6 +958,10 @@ static int cifssrv_parse_global_options(char *configdata)
 			break;
 		case Opt_netbiosname:
 			if (cifssrv_get_config_str(args, &netbios_name))
+				goto out_nomem;
+			break;
+		case Opt_signing:
+			if (cifssrv_get_config_val(args, &server_signing) < 0)
 				goto out_nomem;
 			break;
 		default:
@@ -1619,6 +1634,8 @@ int cifssrv_init_global_params(void)
 		return -ENOMEM;
 	}
 	memcpy(netbios_name, TGT_Name, len);
+
+	server_signing = 0;
 
 	return 0;
 }

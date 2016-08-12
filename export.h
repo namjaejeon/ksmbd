@@ -69,9 +69,17 @@ extern spinlock_t connect_list_lock;
 #define STR_WRKGRP	"WORKGROUP"
 
 extern int cifssrv_num_shares;
+extern int server_signing;
 extern char *guestAccountName;
 
 extern unsigned int SMBMaxBufSize;
+
+enum {
+	DISABLE = 0,
+	ENABLE,
+	AUTO,
+	MANDATORY
+};
 
 struct cifssrv_usr {
 	char	*name;
