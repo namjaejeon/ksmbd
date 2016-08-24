@@ -90,6 +90,7 @@ extern char NEGOTIATE_GSS_HEADER[74];
 #define SMB311_VERSION_STRING	"3.1.1"
 
 /* Dialects */
+#define SMB10_PROT_ID	0x00
 #define SMB20_PROT_ID	0x0202
 #define SMB21_PROT_ID	0x0210
 #define SMB30_PROT_ID	0x0300
@@ -429,8 +430,7 @@ inc_rfc1001_len(void *buf, int count)
 
 /* misc functions */
 #define NTFS_TIME_OFFSET ((u64)(369*365 + 89) * 24 * 3600 * 10000000)
-#define IS_SMB2(x) (x->vals->protocol_id == SMB20_PROT_ID || \
-		x->vals->protocol_id == SMB21_PROT_ID)
+#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 #define UNICODE_LEN(x)	((x) * 2)
 
 /* Convert the Unix UTC into NT UTC. */

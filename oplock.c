@@ -236,14 +236,7 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 	if (!ofile || !opinfo)
 		return -EINVAL;
 
-	if (!IS_SMB2(opinfo->server)) {
-		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
-					(opinfo->lock_type == OPLOCK_BATCH))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
-			return -EINVAL;
-		}
-		opinfo->lock_type = OPLOCK_READ;
-	} else {
+	if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (!((opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) ||
 			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE))) {
@@ -263,6 +256,13 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 					SMB2_LEASE_HANDLE_CACHING;
 		}
 #endif
+	} else {
+		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
+			(opinfo->lock_type == OPLOCK_BATCH))) {
+			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			return -EINVAL;
+		}
+		opinfo->lock_type = OPLOCK_READ;
 	}
 
 	list_move(&opinfo->op_list, &ofile->op_read_list);
@@ -282,14 +282,7 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 	if (!ofile || !opinfo)
 		return -EINVAL;
 
-	if (!IS_SMB2(opinfo->server)) {
-		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
-					(opinfo->lock_type == OPLOCK_BATCH))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
-			return -EINVAL;
-		}
-		opinfo->lock_type = OPLOCK_NONE;
-	} else {
+	if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (!((opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) ||
 			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE))) {
@@ -305,6 +298,13 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
 		}
 #endif
+	} else {
+		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
+			(opinfo->lock_type == OPLOCK_BATCH))) {
+			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			return -EINVAL;
+		}
+		opinfo->lock_type = OPLOCK_NONE;
 	}
 
 	list_move(&opinfo->op_list, &ofile->op_none_list);
@@ -324,13 +324,7 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 	if (!ofile || !opinfo)
 		return -EINVAL;
 
-	if (!IS_SMB2(opinfo->server)) {
-		if (opinfo->lock_type != OPLOCK_READ) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
-			return -EINVAL;
-		}
-		opinfo->lock_type = OPLOCK_NONE;
-	} else {
+	if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (opinfo->lock_type != SMB2_OPLOCK_LEVEL_II) {
 			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
@@ -345,6 +339,12 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
 		}
 #endif
+	} else {
+		if (opinfo->lock_type != OPLOCK_READ) {
+			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			return -EINVAL;
+		}
+		opinfo->lock_type = OPLOCK_NONE;
 	}
 
 	list_move(&opinfo->op_list, &ofile->op_none_list);
@@ -472,13 +472,12 @@ void close_id_del_oplock(struct tcp_server_info *server,
 			 opinfo->lock_type == OPLOCK_BATCH ||
 			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
 			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
-		if (!IS_SMB2(opinfo->server))
-			opinfo->lock_type = OPLOCK_READ;
-		else {
+		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
 #endif
-		}
+		} else
+			opinfo->lock_type = OPLOCK_READ;
 
 		wake_up_interruptible(&server->oplock_q);
 
@@ -597,13 +596,7 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 
 	list_for_each_entry_safe(opinfo, tmp,
 			&ofile->op_read_list, op_list) {
-		if (!IS_SMB2(opinfo->server)) {
-			if (opinfo->lock_type != OPLOCK_READ) {
-				cifssrv_err("unexpected oplock(0x%x)\n",
-						opinfo->lock_type);
-				continue;
-			}
-		} else {
+		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			if (opinfo->leased && (opinfo->CurrentLeaseState &
 					(~(SMB2_LEASE_READ_CACHING |
@@ -618,6 +611,12 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 				continue;
 			}
 #endif
+		} else {
+			if (opinfo->lock_type != OPLOCK_READ) {
+				cifssrv_err("unexpected oplock(0x%x)\n",
+					opinfo->lock_type);
+				continue;
+			}
 		}
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -644,11 +643,7 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 		work->server = opinfo->server;
 		work->buf = (char *)opinfo;
 		ack_required = 0;
-		if (!IS_SMB2(opinfo->server)) {
-			ack_required = 1;
-			opinfo->state = OPLOCK_BREAKING;
-			smb1_send_oplock_break(&work->work);
-		} else {
+		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			if (opinfo->leased) {
 				/* send lease break */
@@ -668,6 +663,10 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 				smb2_send_oplock_break(&work->work);
 			}
 #endif
+		} else {
+			ack_required = 1;
+			opinfo->state = OPLOCK_BREAKING;
+			smb1_send_oplock_break(&work->work);
 		}
 
 		if (!ack_required)
@@ -774,15 +773,7 @@ static int grant_write_oplock(struct ofile_info *ofile,
 {
 	WARN_ON(!list_empty(&ofile->op_write_list));
 
-	if (!IS_SMB2(opinfo_new->server)) {
-		if (*oplock == REQ_BATCHOPLOCK) {
-			*oplock = OPLOCK_BATCH;
-			opinfo_new->lock_type = OPLOCK_BATCH;
-		} else {
-			*oplock = OPLOCK_EXCLUSIVE;
-			opinfo_new->lock_type = OPLOCK_EXCLUSIVE;
-		}
-	} else {
+	if (IS_SMB2(opinfo_new->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (*oplock == SMB2_OPLOCK_LEVEL_BATCH) {
 			*oplock = SMB2_OPLOCK_LEVEL_BATCH;
@@ -792,6 +783,14 @@ static int grant_write_oplock(struct ofile_info *ofile,
 			opinfo_new->lock_type = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
 		}
 #endif
+	} else {
+		if (*oplock == REQ_BATCHOPLOCK) {
+			*oplock = OPLOCK_BATCH;
+			opinfo_new->lock_type = OPLOCK_BATCH;
+		} else {
+			*oplock = OPLOCK_EXCLUSIVE;
+			opinfo_new->lock_type = OPLOCK_EXCLUSIVE;
+		}
 	}
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -822,14 +821,14 @@ static int grant_read_oplock(struct ofile_info *ofile,
 		struct oplock_info *opinfo_new, int *oplock,
 		struct cifssrv_file *fp, struct lease_ctx_info *lctx)
 {
-	if (!IS_SMB2(opinfo_new->server)) {
-		*oplock = OPLOCK_READ;
-		opinfo_new->lock_type = OPLOCK_READ;
-	} else {
+	if (IS_SMB2(opinfo_new->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		*oplock = SMB2_OPLOCK_LEVEL_II;
 		opinfo_new->lock_type = SMB2_OPLOCK_LEVEL_II;
 #endif
+	} else {
+		*oplock = OPLOCK_READ;
+		opinfo_new->lock_type = OPLOCK_READ;
 	}
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1037,35 +1036,7 @@ int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
 	cifssrv_debug("id old = %d(%d) was oplocked\n",
 			opinfo_old->fid, opinfo_old->lock_type);
 
-	if (!IS_SMB2(opinfo_old->server)) {
-		cifssrv_debug("oplock break for inode %lu\n",
-				inode->i_ino);
-		WARN_ON(!((opinfo_old->lock_type == OPLOCK_BATCH) ||
-					(opinfo_old->lock_type ==
-					 OPLOCK_EXCLUSIVE)));
-
-		/*
-		 * Don't wait for oplock break while grabbing mutex.
-		 * As server mutex is released here for sending oplock break,
-		 * take a dummy ref count on ofile to prevent it getting freed
-		 * from parallel close path. Decrement dummy ref count once
-		 * oplock break response is received.
-		 */
-		opinfo_old->state = OPLOCK_BREAKING;
-		atomic_inc(&ofile->op_count);
-		mutex_unlock(&ofile_list_lock);
-		err = smb1_oplock_break_to_levelII(ofile, opinfo_old);
-		mutex_lock(&ofile_list_lock);
-		atomic_dec(&ofile->op_count);
-		if (err) {
-			opinfo_old->state = OPLOCK_NOT_BREAKING;
-			mutex_unlock(&ofile_list_lock);
-			kfree(opinfo_new);
-			return err;
-		}
-
-		cifssrv_debug("oplock granted = %d\n", opinfo_old->lock_type);
-	} else {
+	if (IS_SMB2(opinfo_old->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		cifssrv_debug("oplock break for inode %lu\n",
 				inode->i_ino);
@@ -1108,6 +1079,34 @@ int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
 
 		cifssrv_debug("oplock granted = %d\n", opinfo_old->lock_type);
 #endif
+	} else {
+		cifssrv_debug("oplock break for inode %lu\n",
+				inode->i_ino);
+		WARN_ON(!((opinfo_old->lock_type == OPLOCK_BATCH) ||
+				(opinfo_old->lock_type ==
+					OPLOCK_EXCLUSIVE)));
+
+		/*
+		* Don't wait for oplock break while grabbing mutex.
+		* As server mutex is released here for sending oplock break,
+		* take a dummy ref count on ofile to prevent it getting freed
+		* from parallel close path. Decrement dummy ref count once
+		* oplock break response is received.
+		*/
+		opinfo_old->state = OPLOCK_BREAKING;
+		atomic_inc(&ofile->op_count);
+		mutex_unlock(&ofile_list_lock);
+		err = smb1_oplock_break_to_levelII(ofile, opinfo_old);
+		mutex_lock(&ofile_list_lock);
+		atomic_dec(&ofile->op_count);
+		if (err) {
+			opinfo_old->state = OPLOCK_NOT_BREAKING;
+			mutex_unlock(&ofile_list_lock);
+			kfree(opinfo_new);
+			return err;
+		}
+
+		cifssrv_debug("oplock granted = %d\n", opinfo_old->lock_type);
 	}
 
 	if (opinfo_old->state == OPLOCK_BREAKING) {
@@ -1150,27 +1149,7 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 	list_for_each_entry_safe(opinfo, tmp,
 			&ofile->op_write_list, op_list) {
 		opinfo->open_trunc = 1;
-		if (!IS_SMB2(opinfo->server)) {
-			cifssrv_debug("oplock break for inode %lu\n",
-					inode->i_ino);
-			WARN_ON(!((opinfo->lock_type == OPLOCK_BATCH) ||
-						(opinfo->lock_type ==
-						 OPLOCK_EXCLUSIVE)));
-
-			opinfo->state = OPLOCK_BREAKING;
-			atomic_inc(&ofile->op_count);
-			mutex_unlock(&ofile_list_lock);
-			err = smb1_oplock_break_to_levelII(ofile, opinfo);
-			mutex_lock(&ofile_list_lock);
-			atomic_dec(&ofile->op_count);
-			if (err) {
-				opinfo->state = OPLOCK_NOT_BREAKING;
-				mutex_unlock(&ofile_list_lock);
-				return;
-			}
-
-			cifssrv_debug("oplock granted %d\n", opinfo->lock_type);
-		} else {
+		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			cifssrv_debug("oplock break for inode %lu\n",
 					inode->i_ino);
@@ -1201,6 +1180,26 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 
 			cifssrv_debug("oplock granted %d\n", opinfo->lock_type);
 #endif
+		} else {
+			cifssrv_debug("oplock break for inode %lu\n",
+					inode->i_ino);
+			WARN_ON(!((opinfo->lock_type == OPLOCK_BATCH) ||
+					(opinfo->lock_type ==
+						OPLOCK_EXCLUSIVE)));
+
+			opinfo->state = OPLOCK_BREAKING;
+			atomic_inc(&ofile->op_count);
+			mutex_unlock(&ofile_list_lock);
+			err = smb1_oplock_break_to_levelII(ofile, opinfo);
+			mutex_lock(&ofile_list_lock);
+			atomic_dec(&ofile->op_count);
+			if (err) {
+				opinfo->state = OPLOCK_NOT_BREAKING;
+				mutex_unlock(&ofile_list_lock);
+				return;
+			}
+
+			cifssrv_debug("oplock granted %d\n", opinfo->lock_type);
 		}
 
 		if (opinfo->state == OPLOCK_BREAKING) {
