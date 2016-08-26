@@ -536,6 +536,7 @@ cifssrv_get_durable_state(uint64_t id)
 	ftab = global_fidtable.ftab;
 	if ((id < CIFSSRV_START_FID) || (id > ftab->max_fids - 1)) {
 		cifssrv_err("invalid persistentID (%llu)\n", id);
+		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;
 	}
 
