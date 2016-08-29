@@ -98,6 +98,7 @@ struct cifssrv_durable_state {
 enum cifssrv_pipe_type {
 	SRVSVC	=	1,
 	WINREG	=	2,
+	LANMAN	=	3,
 };
 
 struct cifssrv_pipe_table {
@@ -116,6 +117,14 @@ struct cifssrv_pipe {
 	char *buf;
 	int datasize;
 	int sent;
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	struct cifssrv_uevent ev;
+	char *rsp_buf;
+#endif
+};
+
+struct cifssrv_lanman_pipe {
+	int pipe_type;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent ev;
 	char *rsp_buf;

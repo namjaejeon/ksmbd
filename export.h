@@ -214,10 +214,10 @@ int compute_sess_key(struct tcp_server_info *server, char *hash, char *hmac);
 int compute_smb30sigingkey(struct tcp_server_info *server);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
-		struct cifssrv_sess *sess,
-		char *sharename);
+		struct cifssrv_sess *sess, char *sharename);
 extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 		struct cifssrv_sess *sess);
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 			unsigned int tid);
+struct cifssrv_usr *get_smb_session_user(struct tcp_server_info *server);
 #endif /* __CIFSSRV_EXPORT_H */

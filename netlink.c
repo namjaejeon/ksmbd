@@ -24,6 +24,7 @@
 #include <linux/types.h>
 
 #include "glob.h"
+#include "export.h"
 #include "netlink.h"
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
@@ -64,8 +65,9 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	struct cifssrv_uevent *ev;
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 	int rc;
+	struct cifssrv_usr *user;
 
-	if (unlikely(!server || !server->pipe_desc))
+	if (unlikely(!server || !(server->pipe_desc || server->lpipe_desc)))
 		return -EINVAL;
 
 	if (unlikely(data_size > NETLINK_CIFSSRV_MAX_PAYLOAD)) {
@@ -109,6 +111,16 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		ev->k.i_pipe.id = server->pipe_desc->id;
 		ev->k.i_pipe.type = server->pipe_desc->pipe_type;
 		ev->k.i_pipe.out_buflen = out_buflen;
+		break;
+	case CIFSSRV_KEVENT_LANMAN_PIPE:
+		ev->k.l_pipe.type = server->lpipe_desc->pipe_type;
+		ev->k.l_pipe.out_buflen = out_buflen;
+		strncpy(ev->k.l_pipe.codepage, server->local_nls->charset,
+				CIFSSRV_CODEPAGE_LEN - 1);
+		user = get_smb_session_user(server);
+		if (user)
+			strncpy(ev->k.l_pipe.username, user->name,
+					CIFSSRV_USERNAME_LEN - 1);
 		break;
 	default:
 		cifssrv_err("invalid event %u\n", etype);
@@ -165,8 +177,8 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 
 	ev = nlmsg_data(nlh);
 	server = validate_server_handle(cifssrv_ptr(ev->server_handle));
-	if (unlikely(!server || !server->pipe_desc ||
-				!server->pipe_desc->rsp_buf)) {
+	if (unlikely(!server || !(server->pipe_desc ||
+				server->lpipe_desc))) {
 		cifssrv_err("invalid server handle\n");
 		return -EINVAL;
 	}
@@ -181,9 +193,20 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 		goto out;
 	}
 
-	memcpy((char *)&server->pipe_desc->ev, (char *)ev, sizeof(*ev));
-	if (ev->buflen)
-		memcpy(server->pipe_desc->rsp_buf, ev->buffer, ev->buflen);
+	if (nlh->nlmsg_type == CIFSSRV_UEVENT_LANMAN_PIPE_RSP)
+		memcpy((char *)&server->lpipe_desc->ev, (char *)ev,
+				sizeof(*ev));
+	else
+		memcpy((char *)&server->pipe_desc->ev, (char *)ev, sizeof(*ev));
+
+	if (ev->buflen) {
+		if (nlh->nlmsg_type == CIFSSRV_UEVENT_LANMAN_PIPE_RSP)
+			memcpy(server->lpipe_desc->rsp_buf, ev->buffer,
+					ev->buflen);
+		else
+			memcpy(server->pipe_desc->rsp_buf, ev->buffer,
+					ev->buflen);
+	}
 
 out:
 	server->ev_state = NETLINK_REQ_RECV;
@@ -208,6 +231,7 @@ static int cifssrv_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	case CIFSSRV_UEVENT_READ_PIPE_RSP:
 	case CIFSSRV_UEVENT_WRITE_PIPE_RSP:
 	case CIFSSRV_UEVENT_IOCTL_PIPE_RSP:
+	case CIFSSRV_UEVENT_LANMAN_PIPE_RSP:
 		err = cifssrv_common_pipe_rsp(nlh);
 		break;
 	default:

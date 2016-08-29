@@ -1185,6 +1185,43 @@ int smb_locking_andx(struct smb_work *smb_work)
 	return 0;
 }
 
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+/**
+ * alloc_lanman_pipe_desc() - allocate lanman pipe buffers
+ * @server:	TCP server instance of connection
+ *
+ * Return:	0 on success, otherwise error
+ */
+int alloc_lanman_pipe_desc(struct tcp_server_info *server)
+{
+	server->lpipe_desc = kzalloc(sizeof(struct cifssrv_lanman_pipe),
+			GFP_KERNEL);
+	if (!server->lpipe_desc)
+		return -ENOMEM;
+
+	server->lpipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
+			GFP_KERNEL);
+	if (!server->lpipe_desc->rsp_buf) {
+		kfree(server->lpipe_desc);
+		return -ENOMEM;
+	}
+
+	server->lpipe_desc->pipe_type = LANMAN;
+	return 0;
+}
+
+/**
+ * free_lanman_pipe_desc() - free lanman pipe buffers
+ * @server:	TCP server instance of connection
+ *
+ */
+void free_lanman_pipe_desc(struct tcp_server_info *server)
+{
+	kfree(server->lpipe_desc->rsp_buf);
+	kfree(server->lpipe_desc);
+}
+#endif
+
 /**
  * smb_trans() - trans2 command dispatcher
  * @smb_work:	smb work containing trans2 command
@@ -1208,6 +1245,12 @@ int smb_trans(struct smb_work *smb_work)
 	int id, buf_len;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent *ev;
+#endif
+
+	buf_len = le16_to_cpu(req->MaxDataCount);
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	buf_len = min((int)(NETLINK_CIFSSRV_MAX_PAYLOAD - sizeof(TRANS_RSP)),
+			buf_len);
 #endif
 
 	if (req->SetupCount)
@@ -1255,6 +1298,46 @@ int smb_trans(struct smb_work *smb_work)
 	pipedata = req->Data + str_len_uni + 2 + setup_bytes_count;
 
 	if (!strncmp(pipe, "LANMAN", sizeof("LANMAN"))) {
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+		if (alloc_lanman_pipe_desc(server)) {
+			cifssrv_err("failed to allocate memory\n");
+			rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
+			kfree(name);
+			return 0;
+		}
+
+		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_LANMAN_PIPE,
+				le16_to_cpu(req->TotalParameterCount), pipedata,
+				buf_len);
+		if (ret) {
+			cifssrv_err("failed to send event, err %d\n", ret);
+			free_lanman_pipe_desc(server);
+			server->ev_state = NETLINK_REQ_COMPLETED;
+			goto out;
+		}
+
+		ev = &smb_work->server->lpipe_desc->ev;
+		nbytes = ev->u.l_pipe_rsp.data_count;
+		param_len = ev->u.l_pipe_rsp.param_count;
+		if (nbytes < 0) {
+			if (nbytes == -EOPNOTSUPP)
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_NOT_SUPPORTED;
+			else
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_INVALID_PARAMETER;
+
+			free_lanman_pipe_desc(server);
+			server->ev_state = NETLINK_REQ_COMPLETED;
+			goto out;
+		}
+
+		memcpy((char *)rsp + sizeof(TRANS_RSP),
+				server->lpipe_desc->rsp_buf, nbytes);
+		free_lanman_pipe_desc(server);
+		server->ev_state = NETLINK_REQ_COMPLETED;
+		goto resp_out;
+#else
 		nbytes = handle_lanman_pipe(server, pipedata,
 				(char *)rsp + sizeof(TRANS_RSP), &param_len);
 		if (nbytes < 0) {
@@ -1267,6 +1350,7 @@ int smb_trans(struct smb_work *smb_work)
 			goto out;
 		}
 		goto resp_out;
+#endif
 	}
 
 	id = le16_to_cpu(pipe_req->fid);
@@ -1279,11 +1363,7 @@ int smb_trans(struct smb_work *smb_work)
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 		goto out;
 	}
-	buf_len = le16_to_cpu(req->MaxDataCount);
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	buf_len = min((int)(NETLINK_CIFSSRV_MAX_PAYLOAD - sizeof(TRANS_RSP)),
-			buf_len);
-#endif
+
 	switch (subcommand) {
 
 	case TRANSACT_DCERPCCMD:

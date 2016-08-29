@@ -486,6 +486,24 @@ struct cifssrv_usr *cifssrv_is_user_present(char *name)
 }
 
 /**
+ * get_smb_session_user() - get logged in user information for a session
+ * @server:    TCP server instance of connection
+ *
+ * Return:      matching user for a session on success, otherwise NULL
+ */
+struct cifssrv_usr *get_smb_session_user(struct tcp_server_info *server)
+{
+	struct cifssrv_usr *usr;
+
+	list_for_each_entry(usr, &cifssrv_usr_list, list) {
+		if (server->vuid  == usr->vuid)
+			return usr;
+	}
+
+	return NULL;
+}
+
+/**
  * check_sharepath() - check if a share path is already exported
  * @path:	share path to check
  *

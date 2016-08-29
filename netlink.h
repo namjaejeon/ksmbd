@@ -30,6 +30,7 @@
 #define NETLINK_REQ_COMPLETED   0x04
 
 #define CIFSSRV_CODEPAGE_LEN	32
+#define CIFSSRV_USERNAME_LEN	33
 
 enum cifssrv_uevent_e {
 	CIFSSRV_UEVENT_UNKNOWN            = 0,
@@ -39,6 +40,7 @@ enum cifssrv_uevent_e {
 	CIFSSRV_UEVENT_READ_PIPE_RSP,
 	CIFSSRV_UEVENT_WRITE_PIPE_RSP,
 	CIFSSRV_UEVENT_IOCTL_PIPE_RSP,
+	CIFSSRV_UEVENT_LANMAN_PIPE_RSP,
 	CIFSSRV_UEVENT_EXIT_CONNECTION,
 
 	/* up events: kernel space to userspace */
@@ -46,6 +48,7 @@ enum cifssrv_uevent_e {
 	CIFSSRV_KEVENT_READ_PIPE,
 	CIFSSRV_KEVENT_WRITE_PIPE,
 	CIFSSRV_KEVENT_IOCTL_PIPE,
+	CIFSSRV_KEVENT_LANMAN_PIPE,
 	CIFSSRV_KEVENT_DESTROY_PIPE,
 };
 
@@ -72,6 +75,10 @@ struct cifssrv_uevent {
 		struct msg_ioctl_pipe_response {
 			unsigned int	data_count;
 		} i_pipe_rsp;
+		struct msg_lanman_pipe_response {
+			unsigned int	data_count;
+			unsigned int	param_count;
+		} l_pipe_rsp;
 	} u;
 
 	union {
@@ -99,6 +106,12 @@ struct cifssrv_uevent {
 			unsigned int	type;
 			unsigned int	out_buflen;
 		} i_pipe;
+		struct msg_lanman_pipe {
+			unsigned int	type;
+			unsigned int	out_buflen;
+			char	codepage[CIFSSRV_CODEPAGE_LEN];
+			char	username[CIFSSRV_USERNAME_LEN];
+		} l_pipe;
 	} k;
 	char buffer[0];
 };

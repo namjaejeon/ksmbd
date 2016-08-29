@@ -310,6 +310,7 @@ struct tcp_server_info {
 	struct fidtable_desc fidtable;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	struct cifssrv_pipe *pipe_desc;
+	struct cifssrv_lanman_pipe *lpipe_desc;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	wait_queue_head_t pipe_q;
 	int ev_state;
