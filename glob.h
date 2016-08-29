@@ -532,18 +532,12 @@ extern bool is_chained_smb2_message(struct smb_work *smb_work);
 extern void init_smb2_neg_rsp(struct smb_work *smb_work);
 extern int is_smb2_rsp(struct smb_work *smb_work);
 
-struct cifssrv_sess;
-struct cifssrv_share;
 /* functions */
 extern int connect_tcp_sess(struct socket *sock);
 extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 		unsigned int to_read);
 
 extern void handle_smb_work(struct work_struct *work);
-extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
-		struct cifssrv_sess *sess);
-extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
-			unsigned int tid);
 extern struct tcp_server_info *validate_server_handle(struct tcp_server_info
 		*handle);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,

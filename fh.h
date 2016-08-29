@@ -49,10 +49,6 @@
 #define cifssrv_find_next_zero_bit	find_next_zero_bit_le
 #define cifssrv_find_next_bit		find_next_bit_le
 
-
-struct tcp_server_info;
-struct smb_work;
-
 struct smb_readdir_data {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	struct dir_context ctx;

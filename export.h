@@ -216,5 +216,8 @@ extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess,
 		char *sharename);
-
+extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
+		struct cifssrv_sess *sess);
+extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
+			unsigned int tid);
 #endif /* __CIFSSRV_EXPORT_H */
