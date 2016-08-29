@@ -446,7 +446,7 @@ struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 			return share;
 		}
 	}
-	cifssrv_err("Tree(%s) not exported on server\n", sharename);
+	cifssrv_debug("Tree(%s) not exported on server\n", sharename);
 	return ERR_PTR(-ENOENT);
 }
 

@@ -1092,33 +1092,37 @@ out:
 int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 {
 	int id;
+	struct cifssrv_pipe *pipe_desc;
 
 	id = cifssrv_get_unused_id(&server->fidtable);
 	if (id < 0)
 		return -EMFILE;
 
-	server->pipe_desc = kzalloc(sizeof(struct cifssrv_pipe), GFP_KERNEL);
+	server->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifssrv_pipe),
+			GFP_KERNEL);
 	if (!server->pipe_desc)
 		return -ENOMEM;
 
-	server->pipe_desc->id = id;
-	server->pipe_desc->pkt_type = -1;
+	pipe_desc = server->pipe_desc[pipe_type];
+	pipe_desc->id = id;
+	pipe_desc->pkt_type = -1;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	server->pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
+	pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
 			GFP_KERNEL);
-	if (!server->pipe_desc->rsp_buf) {
-		kfree(server->pipe_desc);
+	if (!pipe_desc->rsp_buf) {
+		kfree(pipe_desc);
+		server->pipe_desc[pipe_type] = NULL;
 		return -ENOMEM;
 	}
 #endif
 
 	switch (pipe_type) {
 	case SRVSVC:
-		server->pipe_desc->pipe_type = SRVSVC;
+		pipe_desc->pipe_type = SRVSVC;
 		break;
 	case WINREG:
-		server->pipe_desc->pipe_type = WINREG;
+		pipe_desc->pipe_type = WINREG;
 		break;
 	}
 
@@ -1128,23 +1132,28 @@ int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 /**
  * close_pipe_id() - free id for pipe on a server thread
  * @server:	TCP server instance of connection
- * @id:		pipe id to be freed
+ * @pipe_type:	pipe type
  *
  * Return:	0 on success, otherwise error
  */
-int close_pipe_id(struct tcp_server_info *server, int id)
+int close_pipe_id(struct tcp_server_info *server, int pipe_type)
 {
+	struct cifssrv_pipe *pipe_desc;
 	int rc = 0;
 
-	rc = cifssrv_close_id(&server->fidtable, id);
+	pipe_desc = server->pipe_desc[pipe_type];
+	if (!pipe_desc)
+		return -EINVAL;
+
+	rc = cifssrv_close_id(&server->fidtable, pipe_desc->id);
 	if (rc < 0)
 		return rc;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	kfree(server->pipe_desc->rsp_buf);
+	kfree(pipe_desc->rsp_buf);
 #endif
-	kfree(server->pipe_desc);
-	server->pipe_desc = NULL;
+	kfree(pipe_desc);
+	server->pipe_desc[pipe_type] = NULL;
 
 	return rc;
 }

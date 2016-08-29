@@ -163,17 +163,19 @@ struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 /**
  * validate_server_handle() - check for valid tcp server handle
  * @handle:     TCP server handle to be validated
+ * @pipe_type:	pipe type
  *
  * Return:      matching tcp server handle, otherwise NULL
  */
-struct tcp_server_info *validate_server_handle(struct tcp_server_info *handle)
+struct tcp_server_info *validate_server_handle(struct tcp_server_info *handle,
+		unsigned int pipe_type)
 {
 	struct tcp_server_info *server;
 
 	spin_lock(&tcp_sess_list_lock);
 	list_for_each_entry(server, &tcp_sess_list, tcp_sess)
 	{
-		if (handle == server) {
+		if (handle == server && pipe_type < MAX_PIPE) {
 			spin_unlock(&tcp_sess_list_lock);
 			return server;
 		}

@@ -1300,7 +1300,7 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	err = cifssrv_sendmsg(smb_work->server,
-			CIFSSRV_KEVENT_CREATE_PIPE, 0, NULL, 0);
+			CIFSSRV_KEVENT_CREATE_PIPE, pipe_type, 0, NULL, 0);
 	if (err)
 		cifssrv_err("failed to send event, err %d\n", err);
 #endif
@@ -2372,19 +2372,17 @@ int smb2_query_info(struct smb_work *smb_work)
 static int smb2_close_pipe(struct smb_work *smb_work)
 {
 	struct tcp_server_info *server = smb_work->server;
-	int id;
+	struct cifssrv_pipe *pipe_desc;
+	uint64_t id;
 	int rc = 0;
 
 	struct smb2_close_req *req = (struct smb2_close_req *)smb_work->buf;
 	struct smb2_close_rsp *rsp = (struct smb2_close_rsp *)smb_work->rsp_buf;
 
-	id = req->VolatileFileId;
-
-	if (!server->pipe_desc || id != server->pipe_desc->id) {
+	id = le64_to_cpu(req->VolatileFileId);
+	pipe_desc = get_pipe_desc(server, id);
+	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
-		if (server->pipe_desc)
-			cifssrv_err("Incoming id = %d opened pipe id = %d\n",
-					id, server->pipe_desc->id);
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		smb2_set_err_rsp(smb_work);
 		return 0;
@@ -2404,12 +2402,13 @@ static int smb2_close_pipe(struct smb_work *smb_work)
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	if (!rc) {
 		rc = cifssrv_sendmsg(smb_work->server,
-				CIFSSRV_KEVENT_DESTROY_PIPE, 0, NULL, 0);
+				CIFSSRV_KEVENT_DESTROY_PIPE,
+				pipe_desc->pipe_type, 0, NULL, 0);
 		if (rc)
 			cifssrv_err("failed to send event, err %d\n", rc);
 	}
 #endif
-	rc = close_pipe_id(server, id);
+	rc = close_pipe_id(server, pipe_desc->pipe_type);
 	if (rc < 0) {
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		smb2_set_err_rsp(smb_work);
@@ -2727,6 +2726,8 @@ int smb2_info_file_pipe(struct smb_work *smb_work)
 	struct smb2_query_info_rsp *rsp;
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_file_standard_info *sinfo;
+	struct cifssrv_pipe *pipe_desc;
+	uint64_t id;
 
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
@@ -2741,12 +2742,10 @@ int smb2_info_file_pipe(struct smb_work *smb_work)
 	cifssrv_debug("smb2 query info IPC pipe\n");
 	/* Windows can sometime send query file info request on
 	 * pipe without opening it, checking error condition here */
-	if (!server->pipe_desc || req->VolatileFileId !=
-			server->pipe_desc->id) {
+	id = le64_to_cpu(req->VolatileFileId);
+	pipe_desc = get_pipe_desc(server, id);
+	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
-		if (server->pipe_desc)
-			cifssrv_debug("Incoming id = %llu opened pipe id = %d\n",
-				req->PersistentFileId, server->pipe_desc->id);
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		return -EINVAL;
 	}
@@ -3737,24 +3736,24 @@ int smb2_read_pipe(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	int ret = 0, nbytes = 0;
 	char *data_buf;
-	int id;
+	uint64_t id;
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp;
 	unsigned int read_len;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent *ev;
 #endif
+	struct cifssrv_pipe *pipe_desc;
 	req = (struct smb2_read_req *)smb_work->buf;
 	rsp = (struct smb2_read_rsp *)smb_work->rsp_buf;
 
 	read_len = le32_to_cpu(req->Length);
 	data_buf = (char *)(rsp->Buffer);
 	id = le64_to_cpu(req->VolatileFileId);
-	if (!server->pipe_desc || id != server->pipe_desc->id) {
+	pipe_desc = get_pipe_desc(server, id);
+
+	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
-		if (server->pipe_desc)
-			cifssrv_debug("Incoming id = %d opened pipe id = %d\n",
-					id, server->pipe_desc->id);
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		smb2_set_err_rsp(smb_work);
 		return ret;
@@ -3762,11 +3761,11 @@ int smb2_read_pipe(struct smb_work *smb_work)
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
-			0, NULL, read_len);
+			pipe_desc->pipe_type, 0, NULL, read_len);
 	if (ret)
 		cifssrv_err("failed to send event, err %d\n", ret);
 	else {
-		ev = &smb_work->server->pipe_desc->ev;
+		ev = &pipe_desc->ev;
 		nbytes = ev->u.r_pipe_rsp.read_count;
 		if (ev->error < 0 || !nbytes) {
 			cifssrv_err("Pipe data not present\n");
@@ -3775,11 +3774,12 @@ int smb2_read_pipe(struct smb_work *smb_work)
 			return -EINVAL;
 		}
 
-		memcpy(data_buf, server->pipe_desc->rsp_buf, nbytes);
+		memcpy(data_buf, pipe_desc->rsp_buf, nbytes);
 		server->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
-	nbytes = process_rpc_rsp(smb_work->server, data_buf, read_len);
+	nbytes = process_rpc_rsp(smb_work->server, data_buf, read_len,
+			pipe_desc->pipe_type);
 	if (nbytes <= 0) {
 		cifssrv_err("Pipe data not present\n");
 		rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -3914,23 +3914,24 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp;
 	struct tcp_server_info *server = smb_work->server;
-	int id = 0, err = 0, ret = 0;
+	uint64_t id = 0;
+	int err = 0, ret = 0;
 	char *data_buf;
 	size_t length;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent *ev;
 #endif
+	struct cifssrv_pipe *pipe_desc;
+
 	req = (struct smb2_write_req *)smb_work->buf;
 	rsp = (struct smb2_write_rsp *)smb_work->rsp_buf;
 
 	length = le32_to_cpu(req->Length);
 	id = le64_to_cpu(req->VolatileFileId);
+	pipe_desc = get_pipe_desc(server, id);
 
-	if (!server->pipe_desc || id != server->pipe_desc->id) {
+	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
-		if (server->pipe_desc)
-			cifssrv_debug("Incoming id = %d opened pipe id = %d\n",
-					id, server->pipe_desc->id);
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		smb2_set_err_rsp(smb_work);
 		return ret;
@@ -3956,11 +3957,11 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_WRITE_PIPE,
-			length, data_buf, 0);
+			pipe_desc->pipe_type, length, data_buf, 0);
 	if (ret)
 		cifssrv_err("failed to send event, err %d\n", ret);
 	else {
-		ev = &smb_work->server->pipe_desc->ev;
+		ev = &pipe_desc->ev;
 		ret = ev->error;
 		if (ret == -EOPNOTSUPP) {
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
@@ -3976,7 +3977,7 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 		server->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
-	ret = process_rpc(server, data_buf);
+	ret = process_rpc(server, data_buf, pipe_desc->pipe_type);
 	if (ret == -EOPNOTSUPP) {
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
@@ -4390,6 +4391,8 @@ int smb2_ioctl(struct smb_work *smb_work)
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent *ev;
 #endif
+	struct cifssrv_pipe *pipe_desc;
+
 	req = (struct smb2_ioctl_req *)smb_work->buf;
 	rsp = (struct smb2_ioctl_rsp *)smb_work->rsp_buf;
 	rsp_org = rsp;
@@ -4434,19 +4437,21 @@ int smb2_ioctl(struct smb_work *smb_work)
 			goto out;
 		}
 
-		if (!server->pipe_desc || id != server->pipe_desc->id) {
+		pipe_desc = get_pipe_desc(server, id);
+		if (!pipe_desc) {
 			cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
 			goto out;
 		}
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_IOCTL_PIPE,
+				pipe_desc->pipe_type,
 				le32_to_cpu(req->inputcount), data_buf,
 				out_buf_len);
 		if (ret)
 			cifssrv_err("failed to send event, err %d\n", ret);
 		else {
-			ev = &smb_work->server->pipe_desc->ev;
+			ev = &pipe_desc->ev;
 			nbytes = ev->u.i_pipe_rsp.data_count;
 			ret = ev->error;
 			if (ret == -EOPNOTSUPP) {
@@ -4469,12 +4474,12 @@ int smb2_ioctl(struct smb_work *smb_work)
 				goto out;
 			}
 
-			memcpy((char *)rsp->Buffer, server->pipe_desc->rsp_buf,
+			memcpy((char *)rsp->Buffer, pipe_desc->rsp_buf,
 					nbytes);
 			server->ev_state = NETLINK_REQ_COMPLETED;
 		}
 #else
-		ret = process_rpc(server, data_buf);
+		ret = process_rpc(server, data_buf, pipe_desc->pipe_type);
 		if (ret == -EOPNOTSUPP) {
 			rsp->hdr.Status =
 				NT_STATUS_NOT_SUPPORTED;
@@ -4486,7 +4491,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 		}
 
 		nbytes = process_rpc_rsp(server, (char *)rsp->Buffer,
-				out_buf_len);
+				out_buf_len, pipe_desc->pipe_type);
 		if (nbytes > out_buf_len) {
 			rsp->hdr.Status =
 				NT_STATUS_BUFFER_OVERFLOW;

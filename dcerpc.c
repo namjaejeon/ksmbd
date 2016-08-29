@@ -55,13 +55,44 @@ unsigned int get_pipe_type(char *pipename)
 }
 
 /**
+ * get_pipe_desc() - get matching pipe descriptor from pipe id
+ * @server:     TCP server instance of connection
+ * @id:		lookup pipe id
+ *
+ * Return:	matching pipe descriptor from opened pipe id
+ */
+struct cifssrv_pipe *get_pipe_desc(struct tcp_server_info *server,
+		unsigned int id)
+{
+	struct cifssrv_pipe *pipe_desc;
+	int i;
+
+	for (i = 0; i < MAX_PIPE; i++) {
+		/* fid is not created for LANMAN */
+		if (i == LANMAN)
+			continue;
+
+		pipe_desc = server->pipe_desc[i];
+		if (!pipe_desc)
+			continue;
+
+		if (pipe_desc->id == id)
+			return pipe_desc;
+	}
+
+	return NULL;
+}
+
+/**
  * process_rpc() - process a RPC request
  * @server:     TCP server instance of connection
  * @data:	RPC request packet - data
+ * @pipe_type:	rpc pipe type
  *
  * Return:      0 on success, error number on error
  */
-int process_rpc(struct tcp_server_info *server, char *data)
+int process_rpc(struct tcp_server_info *server, char *data,
+		int pipe_type)
 {
 	RPC_HDR *rpc_hdr;
 	int ret = 0;
@@ -73,11 +104,11 @@ int process_rpc(struct tcp_server_info *server, char *data)
 	switch (rpc_hdr->pkt_type) {
 	case RPC_REQUEST:
 		cifssrv_debug("GOT RPC_REQUEST\n");
-		ret = rpc_request(server, data);
+		ret = rpc_request(server, data, pipe_type);
 		break;
 	case RPC_BIND:
 		cifssrv_debug("GOT RPC_BIND\n");
-		ret = rpc_bind(server, data);
+		ret = rpc_bind(server, data, pipe_type);
 		break;
 	default:
 		cifssrv_debug("rpc type = %d Not Implemented\n",
@@ -86,7 +117,7 @@ int process_rpc(struct tcp_server_info *server, char *data)
 	}
 
 	if (!ret)
-		server->pipe_desc->pkt_type = rpc_hdr->pkt_type;
+		server->pipe_desc[pipe_type]->pkt_type = rpc_hdr->pkt_type;
 
 	return ret;
 }
@@ -96,20 +127,24 @@ int process_rpc(struct tcp_server_info *server, char *data)
  * @server:     TCP server instance of connection
  * @data_buf:	RPC response out buffer
  * @size:	response buffer size
+ * @pipe_type:	rpc pipe type
  *
  * Return:      response length on success, otherwise error number
  */
-int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
+int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size,
+			int pipe_type)
 {
+	struct cifssrv_pipe *pipe_desc;
 	int nbytes = 0;
 
-	if (server->pipe_desc == NULL) {
+	pipe_desc = server->pipe_desc[pipe_type];
+	if (!pipe_desc) {
 		cifssrv_debug("Pipe Not opened\n");
 		return -EINVAL;
 	}
-	switch (server->pipe_desc->pkt_type) {
+	switch (pipe_desc->pkt_type) {
 	case RPC_REQUEST:
-		switch (server->pipe_desc->pipe_type) {
+		switch (pipe_type) {
 		case SRVSVC:
 			nbytes = rpc_read_srvsvc_data(server,
 				data_buf, size);
@@ -120,7 +155,7 @@ int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
 			break;
 		default:
 			cifssrv_debug("rpc pipe = %d Not Implemented\n",
-				server->pipe_desc->pipe_type);
+					pipe_type);
 			return -EINVAL;
 		}
 		break;
@@ -129,7 +164,7 @@ int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size)
 		break;
 	default:
 		cifssrv_debug("rpc type = %d Not Implemented\n",
-				server->pipe_desc->pkt_type);
+				pipe_desc->pkt_type);
 		return -EINVAL;
 	}
 
@@ -143,17 +178,18 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 {
 	RPC_REQUEST_RSP *rpc_request_rsp = (RPC_REQUEST_RSP *)outdata;
 	int offset = 0;
+	struct cifssrv_pipe *pipe_desc = server->pipe_desc[WINREG];
 
-	if (server->pipe_desc->opnum == WINREG_OPENHKCR ||
-			server->pipe_desc->opnum == WINREG_OPENHKCU ||
-			server->pipe_desc->opnum == WINREG_OPENHKLM ||
-			server->pipe_desc->opnum == WINREG_OPENHKU ||
-			server->pipe_desc->opnum == WINREG_OPENKEY ||
-			server->pipe_desc->opnum == WINREG_CLOSEKEY) {
+	if (pipe_desc->opnum == WINREG_OPENHKCR ||
+			pipe_desc->opnum == WINREG_OPENHKCU ||
+			pipe_desc->opnum == WINREG_OPENHKLM ||
+			pipe_desc->opnum == WINREG_OPENHKU ||
+			pipe_desc->opnum == WINREG_OPENKEY ||
+			pipe_desc->opnum == WINREG_CLOSEKEY) {
 
 		OPENHKEY_RSP *winreg_rsp;
 
-		winreg_rsp = (OPENHKEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (OPENHKEY_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -165,10 +201,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_GETVERSION) {
+	if (pipe_desc->opnum == WINREG_GETVERSION) {
 		GET_VERSION_RSP *winreg_rsp;
 
-		winreg_rsp = (GET_VERSION_RSP *)server->pipe_desc->data;
+		winreg_rsp = (GET_VERSION_RSP *)pipe_desc->data;
 
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
@@ -181,15 +217,15 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_DELETEKEY ||
-			server->pipe_desc->opnum == WINREG_FLUSHKEY ||
-			server->pipe_desc->opnum == WINREG_SETVALUE ||
-			server->pipe_desc->opnum ==
+	if (pipe_desc->opnum == WINREG_DELETEKEY ||
+			pipe_desc->opnum == WINREG_FLUSHKEY ||
+			pipe_desc->opnum == WINREG_SETVALUE ||
+			pipe_desc->opnum ==
 					WINREG_NOTIFYCHANGEKEYVALUE ||
-			server->pipe_desc->opnum == WINREG_DELETEVALUE) {
+			pipe_desc->opnum == WINREG_DELETEVALUE) {
 		WINREG_COMMON_RSP *winreg_rsp;
 
-		winreg_rsp = (WINREG_COMMON_RSP *)server->pipe_desc->data;
+		winreg_rsp = (WINREG_COMMON_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -198,10 +234,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_CREATEKEY) {
+	if (pipe_desc->opnum == WINREG_CREATEKEY) {
 		CREATE_KEY_RSP *winreg_rsp;
 
-		winreg_rsp = (CREATE_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (CREATE_KEY_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -218,10 +254,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_ENUMKEY) {
+	if (pipe_desc->opnum == WINREG_ENUMKEY) {
 		ENUM_KEY_RSP *winreg_rsp;
 
-		winreg_rsp = (ENUM_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (ENUM_KEY_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -245,10 +281,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_ENUMVALUE) {
+	if (pipe_desc->opnum == WINREG_ENUMVALUE) {
 		ENUM_VALUE_RSP *winreg_rsp;
 
-		winreg_rsp = (ENUM_VALUE_RSP *)server->pipe_desc->data;
+		winreg_rsp = (ENUM_VALUE_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -281,10 +317,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_QUERYINFOKEY) {
+	if (pipe_desc->opnum == WINREG_QUERYINFOKEY) {
 		QUERY_INFO_KEY_RSP *winreg_rsp;
 
-		winreg_rsp = (QUERY_INFO_KEY_RSP *)server->pipe_desc->data;
+		winreg_rsp = (QUERY_INFO_KEY_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 						sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -299,10 +335,10 @@ int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 		kfree(winreg_rsp);
 	}
 
-	if (server->pipe_desc->opnum == WINREG_QUERYVALUE) {
+	if (pipe_desc->opnum == WINREG_QUERYVALUE) {
 		QUERY_VALUE_RSP *winreg_rsp;
 
-		winreg_rsp = (QUERY_VALUE_RSP *)server->pipe_desc->data;
+		winreg_rsp = (QUERY_VALUE_RSP *)pipe_desc->data;
 		memcpy(outdata + offset, &winreg_rsp->rpc_request_rsp,
 					sizeof(RPC_REQUEST_RSP));
 		offset += sizeof(RPC_REQUEST_RSP);
@@ -382,10 +418,10 @@ int rpc_read_bind_data(struct tcp_server_info *server, char *out_data)
 {
 	RPC_HDR *hdr = (RPC_HDR *)out_data;
 	int offset = 0;
-	int pipe_type = server->pipe_desc->pipe_type;
+	int pipe_type = server->pipe_desc[SRVSVC]->pipe_type;
 	RPC_BIND_RSP *rpc_bind_rsp;
 
-	rpc_bind_rsp = (RPC_BIND_RSP *)server->pipe_desc->data;
+	rpc_bind_rsp = (RPC_BIND_RSP *)server->pipe_desc[SRVSVC]->data;
 
 	memcpy(out_data, &rpc_bind_rsp->hdr, sizeof(RPC_HDR));
 	offset += sizeof(RPC_HDR);
@@ -448,15 +484,16 @@ int rpc_read_srvsvc_data(struct tcp_server_info *server, char *outdata,
 	SRVSVC_SHARE_GETINFO *shareinfo;
 	WKSSVC_SHARE_GETINFO *wkssvc_info;
 	char *buf = NULL;
+	struct cifssrv_pipe *pipe_desc = server->pipe_desc[SRVSVC];
 
 
-	sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
+	sharectr = (SRVSVC_SHARE_INFO_CTR *)pipe_desc->data;
 	memcpy(outdata, &sharectr->rpc_request_rsp, sizeof(RPC_REQUEST_RSP));
 	offset += sizeof(RPC_REQUEST_RSP);
 
 
-	if (server->pipe_desc->opnum == SRV_NET_SHARE_GETINFO) {
-		shareinfo = (SRVSVC_SHARE_GETINFO *)server->pipe_desc->data;
+	if (pipe_desc->opnum == SRV_NET_SHARE_GETINFO) {
+		shareinfo = (SRVSVC_SHARE_GETINFO *)pipe_desc->data;
 
 		memcpy(outdata + offset, &shareinfo->info_level,
 				sizeof(shareinfo->info_level));
@@ -511,17 +548,17 @@ out:
 		kfree(shareinfo);
 	}
 
-	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
-		sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
-		buf = server->pipe_desc->buf;
-		data_sent = server->pipe_desc->sent;
-		datasize = server->pipe_desc->datasize;
+	if (pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
+		sharectr = (SRVSVC_SHARE_INFO_CTR *)pipe_desc->data;
+		buf = pipe_desc->buf;
+		data_sent = pipe_desc->sent;
+		datasize = pipe_desc->datasize;
 		num_shares = sharectr->info.num_entries;
 		resume_handle = sharectr->resume_handle;
 
 		cifssrv_debug("num entries = %d\n", sharectr->info.num_entries);
 		if (resume_handle) {
-			memcpy(outdata, server->pipe_desc->buf + data_sent,
+			memcpy(outdata, pipe_desc->buf + data_sent,
 								resume_handle);
 			datasize = resume_handle;
 			goto finish;
@@ -530,7 +567,7 @@ out:
 		if (datasize > buf_len) {
 			memcpy(outdata, buf, buf_len);
 			resume_handle = datasize - buf_len;
-			server->pipe_desc->sent = buf_len;
+			pipe_desc->sent = buf_len;
 			sharectr->resume_handle = resume_handle;
 		} else {
 			memcpy(outdata, buf, datasize);
@@ -543,7 +580,7 @@ out:
 				       rpc_request_rsp->hdr.frag_len,
 				       rpc_request_rsp->alloc_hint);
 		if (resume_handle) {
-			server->pipe_desc->sent = buf_len;
+			pipe_desc->sent = buf_len;
 			cifssrv_debug("Pipe data is outstanding, "
 			"sent %d, remaining %d\n", buf_len, datasize - buf_len);
 			return datasize;
@@ -552,15 +589,15 @@ finish:
 		kfree(sharectr->shares);
 		kfree(sharectr->ptrs);
 		kfree(sharectr);
-		kfree(server->pipe_desc->buf);
-		server->pipe_desc->buf = NULL;
-		server->pipe_desc->sent = 0;
-		server->pipe_desc->datasize = 0;
+		kfree(pipe_desc->buf);
+		pipe_desc->buf = NULL;
+		pipe_desc->sent = 0;
+		pipe_desc->datasize = 0;
 		return datasize;
 	}
 
-	if (server->pipe_desc->opnum == 0) {
-		wkssvc_info = (WKSSVC_SHARE_GETINFO *)server->pipe_desc->data;
+	if (pipe_desc->opnum == 0) {
+		wkssvc_info = (WKSSVC_SHARE_GETINFO *)pipe_desc->data;
 
 		memcpy(outdata + offset, &wkssvc_info->info_level,
 				sizeof(wkssvc_info->info_level));
@@ -636,15 +673,17 @@ finish:
  * @server:     TCP server instance of connection
  * @data:	share control specific data
  * @num_shares:	number of shares points on given share control
+ * @pipe_type:	rpc pipe type
  *
  * Return:      data size used for share enumeration so far
  */
-int pipe_data_size(struct tcp_server_info *server, void *data, int num_shares)
+int pipe_data_size(struct tcp_server_info *server, void *data, int num_shares,
+		int pipe_type)
 {
 	int size = 0, i, string_len;
 	SRVSVC_SHARE_INFO_CTR *sharectr;
 
-	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
+	if (server->pipe_desc[pipe_type]->opnum == SRV_NET_SHARE_ENUM_ALL) {
 		sharectr = (SRVSVC_SHARE_INFO_CTR *)data;
 
 		size += sizeof(RPC_REQUEST_RSP);
@@ -676,16 +715,18 @@ int pipe_data_size(struct tcp_server_info *server, void *data, int num_shares)
  * pipe_data_copy() - copy share info data on rpc pipe
  * @server:     TCP server instance of connection
  * @buf:	buffer to copy share data
+ * @pipe_type:	rpc pipe type
  *
  * Return:      data size copied on buffer
  */
-int pipe_data_copy(struct tcp_server_info *server, char *buf)
+int pipe_data_copy(struct tcp_server_info *server, char *buf, int pipe_type)
 {
 	int offset = 0, i, str_len, num_shares;
 	SRVSVC_SHARE_INFO_CTR *sharectr;
 
-	if (server->pipe_desc->opnum == SRV_NET_SHARE_ENUM_ALL) {
-		sharectr = (SRVSVC_SHARE_INFO_CTR *)server->pipe_desc->data;
+	if (server->pipe_desc[pipe_type]->opnum == SRV_NET_SHARE_ENUM_ALL) {
+		sharectr = (SRVSVC_SHARE_INFO_CTR *)
+			server->pipe_desc[pipe_type]->data;
 		num_shares = sharectr->info.num_entries;
 
 		cifssrv_debug("num entries = %d\n", sharectr->info.num_entries);
@@ -783,6 +824,7 @@ static int init_srvsvc_share_info1(struct tcp_server_info *server,
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	SRVSVC_SHARE_INFO_CTR *sharectr;
 	char *buf = NULL;
+	struct cifssrv_pipe *pipe_desc = server->pipe_desc[SRVSVC];
 
 	num_shares = cifssrv_num_shares;
 	sharectr = (SRVSVC_SHARE_INFO_CTR *)
@@ -790,7 +832,7 @@ static int init_srvsvc_share_info1(struct tcp_server_info *server,
 	if (!sharectr) {
 		return -ENOMEM;
 	}
-	server->pipe_desc->data = (char *)sharectr;
+	pipe_desc->data = (char *)sharectr;
 
 	sharectr->ptrs = kzalloc((num_shares *
 				sizeof(PTR_INFO1)), GFP_KERNEL);
@@ -885,18 +927,19 @@ static int init_srvsvc_share_info1(struct tcp_server_info *server,
 	sharectr->resume_handle = 0;
 	sharectr->status = 0;
 
-	total_pipe_data = pipe_data_size(server, (void *)sharectr, num_shares);
+	total_pipe_data = pipe_data_size(server, (void *)sharectr, num_shares,
+			SRVSVC);
 	if (total_pipe_data == 0)
 		return 0;
 	buf =  kzalloc(total_pipe_data, GFP_KERNEL);
 	if (buf == NULL)
 		return -ENOMEM;
-	server->pipe_desc->buf = buf;
+	pipe_desc->buf = buf;
 
-	data_copied = pipe_data_copy(server, buf);
+	data_copied = pipe_data_copy(server, buf, SRVSVC);
 	cifssrv_debug("data_copied %d, total_pipe_data %d\n", data_copied,
 							total_pipe_data);
-	server->pipe_desc->datasize = data_copied;
+	pipe_desc->datasize = data_copied;
 	return 0;
 }
 
@@ -976,7 +1019,7 @@ int init_srvsvc_share_info2(struct tcp_server_info *server,
 		return -ENOMEM;
 	}
 
-	server->pipe_desc->data = (char *)shareinfo;
+	server->pipe_desc[SRVSVC]->data = (char *)shareinfo;
 	shareinfo->ptrs = kzalloc((num_shares *
 				sizeof(PTR_INFO1)), GFP_KERNEL);
 	if (!shareinfo->ptrs) {
@@ -1130,11 +1173,13 @@ int srvsvc_net_share_info(struct tcp_server_info *server, char *data,
  *			response on wkssvc pipe
  * @server:		TCP server instance of connection
  * @rpc_request_req:	rpc request
+ * @pipe_type:	rpc pipe type
  *
  * Return:      0 on success or error number
  */
 int init_wkssvc_share_info2(struct tcp_server_info *server,
-				RPC_REQUEST_REQ *rpc_request_req)
+				RPC_REQUEST_REQ *rpc_request_req,
+				int pipe_type)
 {
 	int len = 0;
 	WKSSVC_SHARE_INFO1 *share_info;
@@ -1147,7 +1192,7 @@ int init_wkssvc_share_info2(struct tcp_server_info *server,
 	if (!shareinfo) {
 		return -ENOMEM;
 	}
-	server->pipe_desc->data = (char *)shareinfo;
+	server->pipe_desc[pipe_type]->data = (char *)shareinfo;
 	shareinfo->shares = kzalloc(sizeof(WKSSVC_SHARE_INFO1),
 				   GFP_KERNEL);
 
@@ -1202,11 +1247,13 @@ int init_wkssvc_share_info2(struct tcp_server_info *server,
  * @server:		TCP server instance of connection
  * @data:		wkssvc request data
  * @rpc_request_req:	rpc request
+ * @pipe_type:	rpc pipe type
  *
  * Return:      0 on success or error number
  */
 int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
-				RPC_REQUEST_REQ *rpc_request_req)
+				RPC_REQUEST_REQ *rpc_request_req,
+				int pipe_type)
 {
 	SRVSVC_REQ *req = (SRVSVC_REQ *)data;
 	SERVER_HANDLE handle;
@@ -1235,7 +1282,8 @@ int wkkssvc_net_share_info(struct tcp_server_info *server, char *data,
 		cifssrv_debug("GOT WKSSVC pipe info level %u\n",
 			       le32_to_cpu(*info_level));
 
-		ret = init_wkssvc_share_info2(server, rpc_request_req);
+		ret = init_wkssvc_share_info2(server, rpc_request_req,
+				pipe_type);
 		break;
 
 	default:
@@ -1265,7 +1313,7 @@ static int srvsvc_rpc_request(struct tcp_server_info *server, char *in_data)
 	int ret = 0;
 
 	opnum = cpu_to_le16(rpc_request_req->opnum);
-	server->pipe_desc->opnum = opnum;
+	server->pipe_desc[SRVSVC]->opnum = opnum;
 	switch (opnum) {
 	case SRV_NET_SHARE_ENUM_ALL:
 		cifssrv_debug("Got SRV_NET_SHARE_ENUM_ALL\n");
@@ -1280,7 +1328,8 @@ static int srvsvc_rpc_request(struct tcp_server_info *server, char *in_data)
 	case WKSSVC_NET_SHARE_GETINFO:
 		cifssrv_debug("Got WKSSVC_SHARE_GETINFO\n");
 		data = in_data + sizeof(RPC_REQUEST_REQ);
-		ret = wkkssvc_net_share_info(server, data, rpc_request_req);
+		ret = wkkssvc_net_share_info(server, data, rpc_request_req,
+				SRVSVC);
 		break;
 	default:
 		cifssrv_debug("WKSSVC pipe opnum not supported = %d\n", opnum);
@@ -1297,7 +1346,7 @@ int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
 	int ret = 0;
 
 	opnum = cpu_to_le16(rpc_request_req->opnum);
-	server->pipe_desc->opnum = opnum;
+	server->pipe_desc[WINREG]->opnum = opnum;
 	data = in_data + sizeof(RPC_REQUEST_REQ);
 	cifssrv_debug("Opnum %d\n", opnum);
 
@@ -1376,11 +1425,11 @@ int winreg_rpc_request(struct tcp_server_info *server, char *in_data)
 	return ret;
 }
 
-int rpc_request(struct tcp_server_info *server, char *in_data)
+int rpc_request(struct tcp_server_info *server, char *in_data, int pipe_type)
 {
 	int ret = 0;
-	cifssrv_debug("server pipe request %d\n", server->pipe_desc->pipe_type);
-	switch (server->pipe_desc->pipe_type) {
+	cifssrv_debug("server pipe request %d\n", pipe_type);
+	switch (pipe_type) {
 	case SRVSVC:
 		cifssrv_debug("SRVSVC pipe\n");
 		ret = srvsvc_rpc_request(server, in_data);
@@ -1400,10 +1449,11 @@ int rpc_request(struct tcp_server_info *server, char *in_data)
  * rpc_bind() - rpc bind request handler
  * @server:	TCP server instance of connection
  * @in_data:	rpc bind request data
+ * @pipe_type:	rpc pipe type
  *
  * Return:      0 on success or error number
  */
-int rpc_bind(struct tcp_server_info *server, char *in_data)
+int rpc_bind(struct tcp_server_info *server, char *in_data, int pipe_type)
 {
 	RPC_BIND_REQ *rpc_bind_req = (RPC_BIND_REQ *)in_data;
 	char *pipe_name = NULL;
@@ -1412,7 +1462,6 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 	RPC_IFACE *transfer;
 	RPC_BIND_RSP *rpc_bind_rsp;
 	int version_maj;
-	int pipe_type;
 	int num_ctx;
 	int i = 0;
 	int offset = 0;
@@ -1424,9 +1473,7 @@ int rpc_bind(struct tcp_server_info *server, char *in_data)
 		return -ENOMEM;
 
 	version_maj = rpc_context->abstract.version_maj;
-	pipe_type = server->pipe_desc->pipe_type;
-
-	server->pipe_desc->data = (char *)rpc_bind_rsp;
+	server->pipe_desc[pipe_type]->data = (char *)rpc_bind_rsp;
 
 	rpc_bind_rsp->addr.sec_addr = kmalloc(256, GFP_KERNEL);
 	if (!rpc_bind_rsp->addr.sec_addr) {

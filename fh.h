@@ -96,9 +96,10 @@ struct cifssrv_durable_state {
 #endif
 
 enum cifssrv_pipe_type {
-	SRVSVC	=	1,
-	WINREG	=	2,
-	LANMAN	=	3,
+	SRVSVC,
+	WINREG,
+	LANMAN,
+	MAX_PIPE
 };
 
 struct cifssrv_pipe_table {
@@ -109,7 +110,7 @@ struct cifssrv_pipe_table {
 #define INVALID_PIPE   0xFFFFFFFF
 
 struct cifssrv_pipe {
-	int id;
+	unsigned int id;
 	char *data;
 	int pkt_type;
 	int pipe_type;
@@ -117,14 +118,6 @@ struct cifssrv_pipe {
 	char *buf;
 	int datasize;
 	int sent;
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	struct cifssrv_uevent ev;
-	char *rsp_buf;
-#endif
-};
-
-struct cifssrv_lanman_pipe {
-	int pipe_type;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent ev;
 	char *rsp_buf;
@@ -154,7 +147,9 @@ int close_id(struct tcp_server_info *server, uint64_t id);
 bool is_dir_empty(struct cifssrv_file *fp);
 int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type);
 unsigned int get_pipe_type(char *pipename);
-int close_pipe_id(struct tcp_server_info *server, int id);
+struct cifssrv_pipe *get_pipe_desc(struct tcp_server_info *server,
+		unsigned int id);
+int close_pipe_id(struct tcp_server_info *server, int pipe_type);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifssrv_file *

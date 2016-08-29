@@ -57,6 +57,7 @@ struct cifssrv_uevent {
 	int		error; /* carries interface or resource errors */
 	__u64		server_handle;
 	unsigned int	buflen;
+	unsigned int	pipe_type;
 	union {
 		/* messages u -> k */
 		unsigned int	nt_status;
@@ -85,29 +86,23 @@ struct cifssrv_uevent {
 		/* messages k -> u */
 		struct msg_create_pipe {
 			__u64		id;
-			unsigned int	type;
 			char	codepage[CIFSSRV_CODEPAGE_LEN];
 		} c_pipe;
 		struct msg_destroy_pipe {
 			__u64		id;
-			unsigned int	type;
 		} d_pipe;
 		struct msg_read_pipe {
 			__u64		id;
-			unsigned int	type;
 			unsigned int	out_buflen;
 		} r_pipe;
 		struct msg_write_pipe {
 			__u64		id;
-			unsigned int	type;
 		} w_pipe;
 		struct msg_ioctl_pipe {
 			__u64		id;
-			unsigned int	type;
 			unsigned int	out_buflen;
 		} i_pipe;
 		struct msg_lanman_pipe {
-			unsigned int	type;
 			unsigned int	out_buflen;
 			char	codepage[CIFSSRV_CODEPAGE_LEN];
 			char	username[CIFSSRV_USERNAME_LEN];

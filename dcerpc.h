@@ -324,13 +324,14 @@ typedef struct netwkstageinfo10 {
 
 /* DCERPC Functions */
 
-int process_rpc(struct tcp_server_info *server, char *data);
-int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size);
+int process_rpc(struct tcp_server_info *server, char *data, int pipe_type);
+int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size,
+		int pipe_type);
 
 void dcerpc_header_init(RPC_HDR *header, int packet_type,
 					int flags, int call_id);
-int rpc_bind(struct tcp_server_info *server, char *data);
-int rpc_request(struct tcp_server_info *server, char *data);
+int rpc_bind(struct tcp_server_info *server, char *data, int pipe_type);
+int rpc_request(struct tcp_server_info *server, char *data, int pipe_type);
 int rpc_read_bind_data(struct tcp_server_info *server, char *data);
 int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
 							int buf_len);

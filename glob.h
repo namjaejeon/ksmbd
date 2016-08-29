@@ -309,7 +309,7 @@ struct tcp_server_info {
 	wait_queue_head_t req_running_q;
 	struct fidtable_desc fidtable;
 	wait_queue_head_t oplock_q; /* Other server threads */
-	struct cifssrv_pipe *pipe_desc;
+	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
 	struct cifssrv_lanman_pipe *lpipe_desc;
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	wait_queue_head_t pipe_q;
@@ -540,7 +540,7 @@ extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 
 extern void handle_smb_work(struct work_struct *work);
 extern struct tcp_server_info *validate_server_handle(struct tcp_server_info
-		*handle);
+		*handle, unsigned int pipe_type);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
@@ -580,8 +580,8 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 int cifssrv_net_init(void);
 void cifssrv_net_exit(void);
 int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
-		unsigned int data_size, unsigned char *data,
-		unsigned int out_buflen);
+		int pipe_type, unsigned int data_size,
+		unsigned char *data, unsigned int out_buflen);
 #endif
 
 #endif /* __CIFSSRV_GLOB_H */

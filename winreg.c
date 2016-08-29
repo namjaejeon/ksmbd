@@ -114,7 +114,8 @@ int init_predefined_registry(void)
 }
 
 int winreg_open_root_key(struct tcp_server_info *server, int opnum,
-				RPC_REQUEST_REQ *rpc_request_req, char *in_data)
+				RPC_REQUEST_REQ *rpc_request_req,
+				char *in_data)
 {
 	RPC_REQUEST_RSP *rpc_request_rsp;
 	OPENHKEY_RSP *winreg_rsp = kzalloc(sizeof(OPENHKEY_RSP), GFP_KERNEL);
@@ -122,7 +123,7 @@ int winreg_open_root_key(struct tcp_server_info *server, int opnum,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -163,7 +164,7 @@ int winreg_get_version(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -209,7 +210,7 @@ int winreg_delete_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	if (base_key == NULL || base_key->open_status == 0 ||
 				relative_name == NULL) {
 		winreg_rsp->werror = cpu_to_le32(WERR_INVALID_PARAMETER);
@@ -259,7 +260,7 @@ int winreg_flush_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -297,7 +298,7 @@ int winreg_create_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	winreg_rsp->key_handle.addr = (__u32)ret;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
@@ -340,7 +341,7 @@ int winreg_open_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 
 	if (base_key == NULL || base_key->open_status == 0
 				|| relative_name == NULL) {
@@ -382,7 +383,7 @@ int winreg_close_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	if (base_key == NULL || base_key->open_status == 0) {
 		winreg_rsp->werror = cpu_to_le32(WERR_INVALID_PARAMETER);
@@ -410,7 +411,7 @@ int winreg_enum_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	winreg_rsp->key_name.size = 1024;
 	winreg_rsp->key_class_ref_id = 0X0002000c;
@@ -435,7 +436,7 @@ int winreg_query_info_key(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -455,7 +456,7 @@ int winreg_notify_change_key_value(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -501,7 +502,7 @@ int winreg_set_value(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -550,7 +551,7 @@ int winreg_delete_value(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -610,7 +611,7 @@ int winreg_query_value(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	dcerpc_header_init(&rpc_request_rsp->hdr, RPC_RESPONSE,
 				RPC_FLAG_FIRST | RPC_FLAG_LAST,
@@ -727,7 +728,7 @@ int winreg_enum_value(struct tcp_server_info *server,
 	if (!winreg_rsp)
 		return -ENOMEM;
 
-	server->pipe_desc->data = (char *)winreg_rsp;
+	server->pipe_desc[WINREG]->data = (char *)winreg_rsp;
 	rpc_request_rsp = &winreg_rsp->rpc_request_rsp;
 	winreg_rsp->name_ref_id = 0x00020014;
 	winreg_rsp->type_info.ref_id = 0x00020018;
