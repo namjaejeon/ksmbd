@@ -5090,7 +5090,7 @@ int find_first(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	rc = smb_dentry_open(smb_work, &path, O_RDONLY|O_LARGEFILE, &sid,
+	rc = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
 			&oplock, 0, 1);
 	if (rc) {
 		cifssrv_debug("dir dentry open failed with rc=%d\n", rc);

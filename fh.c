@@ -899,7 +899,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 			goto err_out;
 	}
 
-	filp = dentry_open(path, flags, current_cred());
+	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
 		cifssrv_err("dentry open failed, err %d\n", err);
