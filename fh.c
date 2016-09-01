@@ -395,7 +395,6 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 			goto out;
 		}
 
-		ihold(dentry->d_inode);
 		if (S_ISDIR(dentry->d_inode->i_mode))
 			err = vfs_rmdir(dir->d_inode, dentry);
 		else
@@ -404,7 +403,7 @@ int close_id(struct tcp_server_info *server, uint64_t id)
 #else
 		err = vfs_unlink(dir->d_inode, dentry);
 #endif
-		iput(dentry->d_inode);
+
 out:
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
 		inode_unlock(dir->d_inode);

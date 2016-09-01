@@ -476,7 +476,6 @@ int smb_vfs_unlink(char *name)
 		goto out_err;
 	}
 
-	ihold(dentry->d_inode);
 	if (S_ISDIR(dentry->d_inode->i_mode)) {
 		err = vfs_rmdir(dir->d_inode, dentry);
 		if (err && err != -ENOTEMPTY)
@@ -490,7 +489,6 @@ int smb_vfs_unlink(char *name)
 		if (err)
 			cifssrv_debug("%s: unlink failed, err %d\n", name, err);
 	}
-	iput(dentry->d_inode);
 
 	dput(dentry);
 out_err:
