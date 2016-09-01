@@ -2238,7 +2238,7 @@ int smb_write(struct smb_work *smb_work)
 	size_t count;
 	char *data_buf;
 	ssize_t nbytes = 0;
-	int err = EINVAL;
+	int err = 0;
 
 	if (req->hdr.WordCount != 5)
 		goto out;
@@ -2260,10 +2260,16 @@ out:
 	rsp->Written = cpu_to_le16(nbytes & 0xFFFF);
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	if (err)
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
-	else
+
+	if (!err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		return 0;
+	}
+
+	if (err == -ENOSPC || err == -EFBIG)
+		rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+	else
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 	return err;
 }
 
@@ -2377,7 +2383,6 @@ int smb_write_andx(struct smb_work *smb_work)
 		return smb_write_andx_pipe(smb_work);
 	}
 
-
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 14)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
@@ -2445,7 +2450,9 @@ int smb_write_andx(struct smb_work *smb_work)
 	}
 
 out:
-	if (err)
+	if (err == -ENOSPC || err == -EFBIG)
+		rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+	else
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 	return err;
 }

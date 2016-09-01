@@ -4098,6 +4098,8 @@ int smb2_write(struct smb_work *smb_work)
 out:
 	if (err == -EAGAIN)
 		rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
+	else if (err == -ENOSPC || err == -EFBIG)
+		rsp->hdr.Status = NT_STATUS_DISK_FULL;
 	else
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 
