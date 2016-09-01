@@ -227,7 +227,7 @@ int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
 	err = vfs_write(filp, buf, count, pos);
 	set_fs(old_fs);
 	if (err < 0) {
-		cifssrv_err("smb write failed, err = %d\n", err);
+		cifssrv_debug("smb write failed, err = %d\n", err);
 		return err;
 	}
 
@@ -298,7 +298,7 @@ int smb_vfs_setattr(struct tcp_server_info *server, const char *name,
 	if (name) {
 		err = kern_path(name, 0, &path);
 		if (err) {
-			cifssrv_err("lookup failed for %s, err = %d\n",
+			cifssrv_debug("lookup failed for %s, err = %d\n",
 					name, err);
 			return -ENOENT;
 		}
@@ -542,7 +542,7 @@ int smb_vfs_link(const char *oldname, const char *newname)
 	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry);
 #endif
 	if (err)
-		cifssrv_err("vfs_link failed err %d\n", err);
+		cifssrv_debug("vfs_link failed err %d\n", err);
 
 out3:
 	done_path_create(&newpath, dentry);
@@ -575,7 +575,7 @@ int smb_vfs_symlink(const char *name, const char *symname)
 
 	err = vfs_symlink(dentry->d_parent->d_inode, dentry, name);
 	if (err && (err != -EEXIST || err != -ENOSPC))
-		cifssrv_err("failed to create symlink, err %d\n", err);
+		cifssrv_debug("failed to create symlink, err %d\n", err);
 
 	done_path_create(&path, dentry);
 
