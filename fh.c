@@ -274,8 +274,8 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifssrv file pointer if success, otherwise NULL
  */
 struct cifssrv_file *
-insert_id_in_fidtable(struct tcp_server_info *server, unsigned int id,
-		      struct file *filp)
+insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
+		unsigned int id, struct file *filp)
 {
 	struct cifssrv_file *fp = NULL;
 	struct fidtable *ftab;
@@ -288,7 +288,7 @@ insert_id_in_fidtable(struct tcp_server_info *server, unsigned int id,
 
 	fp->filp = filp;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	fp->sess_id = server->sess_id;
+	fp->sess_id = sess_id;
 #endif
 
 	spin_lock(&server->fidtable.fidtable_lock);
@@ -781,7 +781,7 @@ int cifssrv_check_stat_info(struct kstat *durable_stat,
  *
  * Return:		0 if no mismatch, otherwise error
  */
-int cifssrv_durable_reconnect(struct tcp_server_info *curr_server,
+int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
 			  struct cifssrv_durable_state *durable_state,
 			  struct file **filp)
 {
@@ -789,10 +789,10 @@ int cifssrv_durable_reconnect(struct tcp_server_info *curr_server,
 	struct path *path;
 	int rc = 0;
 
-	rc = cifssrv_durable_verify_and_del_oplock(curr_server,
+	rc = cifssrv_durable_verify_and_del_oplock(curr_sess->server,
 						   durable_state->server,
 						   durable_state->volatile_id,
-						   filp);
+						   filp, curr_sess->sess_id);
 
 	if (rc < 0) {
 		*filp = NULL;
@@ -882,6 +882,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	int id, err = 0;
 	struct cifssrv_file *fp;
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)work->buf;
+	uint64_t sess_id;
 
 	/* first init id as invalid id - 0xFFFF ? */
 	*ret_id = 0xFFFF;
@@ -908,7 +909,8 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 
 	smb_vfs_set_fadvise(filp, option);
 
-	fp = insert_id_in_fidtable(server, id, filp);
+	sess_id = work->sess == NULL ? 0 : work->sess->sess_id;
+	fp = insert_id_in_fidtable(work->server, sess_id, id, filp);
 	if (fp == NULL) {
 		fput(filp);
 		cifssrv_err("id insert failed\n");

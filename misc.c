@@ -377,6 +377,22 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
+struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
+		uint64_t sess_id)
+{
+	struct cifssrv_sess *sess;
+	struct list_head *tmp, *t;
+
+	list_for_each_safe(tmp, t, &server->cifssrv_sess) {
+		sess = list_entry(tmp, struct cifssrv_sess, cifssrv_ses_list);
+		if (sess->sess_id == sess_id)
+			return sess;
+	}
+
+	cifssrv_err("User session(ID : %llu) not found\n", sess_id);
+	return NULL;
+}
+
 #ifndef CONFIG_CIFS_SMB2_SERVER
 void init_smb2_0_server(struct tcp_server_info *server) { }
 void init_smb2_1_server(struct tcp_server_info *server) { }

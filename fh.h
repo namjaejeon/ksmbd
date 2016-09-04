@@ -26,6 +26,7 @@
 #include <linux/fdtable.h>
 #include <linux/fs.h>
 
+
 #include "glob.h"
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 #include "netlink.h"
@@ -153,7 +154,7 @@ int close_pipe_id(struct tcp_server_info *server, int pipe_type);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifssrv_file *
-insert_id_in_fidtable(struct tcp_server_info *server,
+insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
 		unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct tcp_server_info *server,
 		unsigned int id);
@@ -176,9 +177,6 @@ cifssrv_update_durable_state(struct tcp_server_info *server,
 				struct file *filp);
 
 int cifssrv_delete_durable_state(uint64_t persistent_id);
-int cifssrv_durable_reconnect(struct tcp_server_info *curr_server,
-		struct cifssrv_durable_state *durable_state,
-		struct file **filp);
 void
 cifssrv_durable_disconnect(struct tcp_server_info *server,
 		unsigned int persistent_id, struct file *filp);

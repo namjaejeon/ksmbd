@@ -132,7 +132,8 @@ void create_durable_rsp_buf(char *buf);
 struct create_context *smb2_find_context_vals(void *open_req, char *str);
 int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 					  struct tcp_server_info *prev_server,
-					  int fid, struct file **filp);
+					  int fid, struct file **filp,
+					  uint64_t sess_id);
 #endif
 
 #endif /* __CIFSSRV_OPLOCK_H */

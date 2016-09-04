@@ -289,7 +289,6 @@ struct tcp_server_info {
 	char    *wbuf;
 	struct nls_table *local_nls;
 	unsigned int total_read;
-	struct ntlmssp_auth ntlmssp;
 	/* This session will become part of global tcp session list */
 	struct list_head tcp_sess;
 	/* smb session 1 per user */
@@ -325,12 +324,9 @@ struct tcp_server_info {
 	struct list_head list;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	char ClientGUID[SMB2_CLIENT_GUID_SIZE];
-	__u64 sess_id;
 #endif
 	struct cifs_secmech secmech;
-	char sess_key[CIFS_KEY_SIZE];
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	unsigned int sequence_number;
+	char ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
 struct trans_state {
@@ -378,6 +374,8 @@ struct smb_work {
 	bool multiEnd:1;		/* both received */
 	bool send_no_response:1;	/* no response for cancelled request */
 	bool added_in_request_list:1;	/* added in server->requests list */
+
+	struct cifssrv_sess *sess;
 };
 
 struct smb_version_ops {
@@ -390,7 +388,7 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct smb_work *work, unsigned int command);
 	int (*check_sign_req)(struct smb_work *work);
 	void (*set_sign_rsp)(struct smb_work *work);
-	int (*compute_signingkey)(struct tcp_server_info *server);
+	int (*compute_signingkey)(struct cifssrv_sess *sess);
 };
 
 struct smb_version_cmds {
@@ -462,6 +460,8 @@ void smb_put_name(void *name);
 bool is_smb_request(struct tcp_server_info *server, unsigned char type);
 int switch_req_buf(struct tcp_server_info *server);
 int negotiate_dialect(void *buf);
+struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
+		uint64_t sess_id);
 
 /* cifssrv export functions */
 extern int cifssrv_export_init(void);

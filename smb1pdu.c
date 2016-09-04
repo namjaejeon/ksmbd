@@ -762,8 +762,8 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
 	neg_rsp->ByteCount = CIFS_CRYPTO_KEY_SIZE;
 	/* initialize random server challenge */
-	get_random_bytes(server->ntlmssp.cryptkey, sizeof(__u64));
-	memcpy((neg_rsp->u.EncryptionKey), server->ntlmssp.cryptkey,
+	get_random_bytes(server->ntlmssp_cryptkey, sizeof(__u64));
+	memcpy((neg_rsp->u.EncryptionKey), server->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
 
 	/* Null terminated domain name in unicode */
@@ -788,8 +788,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	struct tcp_server_info *server = smb_work->server;
-	struct cifssrv_sess *sess;
-	struct cifssrv_usr *usr;
+	struct cifssrv_sess *sess = NULL;
 	char *name;
 	int offset, rc;
 
@@ -808,33 +807,42 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	name = smb_strndup_from_utf16(
 			(pSMB->req_no_secext.CaseInsensitivePassword +
 			 offset + 1), 256, true, server->local_nls);
-
 	if (IS_ERR(name)) {
 		cifssrv_err("cannot allocate memory\n");
 		rc = PTR_ERR(name);
 		goto out_err;
 	}
 
+	/* build smb session */
+	sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
+	if (sess == NULL) {
+		rc = -ENOMEM;
+		goto out_err;
+	}
+
+	sess->server = server;
+
 	cifssrv_debug("session setup request for user %s\n", name);
-	usr = cifssrv_is_user_present(name);
-	if (!usr) {
+	sess->usr = cifssrv_is_user_present(name);
+	if (!sess->usr) {
 		cifssrv_err("user not present in database\n");
 		kfree(name);
 		rc = -EINVAL;
 		goto out_err;
 	}
-
 	kfree(name);
+
+	memcpy(sess->ntlmssp.cryptkey, server->ntlmssp_cryptkey,
+			CIFS_CRYPTO_KEY_SIZE);
 
 	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
 		CIFS_AUTH_RESP_SIZE) {
-		rc = process_ntlm(server,
+		rc = process_ntlm(sess,
 			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
-			pSMB->req_no_secext.CaseInsensitivePasswordLength,
-			usr->passkey);
+			pSMB->req_no_secext.CaseInsensitivePasswordLength);
 		if (rc) {
 			cifssrv_err("ntlm authentication failed for user %s\n",
-				usr->name);
+				sess->usr->name);
 			goto out_err;
 		}
 	} else {
@@ -842,7 +850,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 		offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
 			pSMB->req_no_secext.CaseSensitivePasswordLength +
-			((strlen(usr->name) + 1) * 2);
+			((strlen(sess->usr->name) + 1) * 2);
 
 		ntdomain = smb_strndup_from_utf16(
 			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
@@ -853,14 +861,14 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			goto out_err;
 		}
 
-		rc = process_ntlmv2(server, (struct ntlmv2_resp *)
+		rc = process_ntlmv2(sess, (struct ntlmv2_resp *)
 			pSMB->req_no_secext.CaseInsensitivePassword +
 			pSMB->req_no_secext.CaseInsensitivePasswordLength,
 			pSMB->req_no_secext.CaseSensitivePasswordLength -
-			CIFS_ENCPWD_SIZE, ntdomain, usr);
+			CIFS_ENCPWD_SIZE, ntdomain);
 		if (rc) {
 			cifssrv_err("authentication failed for user %s\n",
-				usr->name);
+				sess->usr->name);
 			goto out_err;
 		}
 	}
@@ -869,27 +877,17 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	   we have set max vcn as 1 */
 	WARN_ON(server->sess_count);
 
-	/* build smb session */
-	sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
-	if (sess == NULL) {
-		cifssrv_err("cannot allocate memory to session\n");
-		rc = -ENOMEM;
-		goto out_err;
-	}
-
-	sess->usr = usr;
 	INIT_LIST_HEAD(&sess->cifssrv_ses_list);
 	INIT_LIST_HEAD(&sess->tcon_list);
 	sess->tcon_count = 0;
 	list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
-	usr->ucount++;
-	sess->server = server;
+	sess->usr->ucount++;
 	server->sess_count++;
+	sess->valid = 1;
 
 	/* Build response. We don't use extended security (yet), so wct is 3 */
 	rsp_hdr->WordCount = 3;
 	response->old_resp.Action = 0;
-
 
 	/* The names should be unicode */
 	response->old_resp.ByteCount = 0;
@@ -898,8 +896,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp_hdr, 6);
 
 	/* setup unique client id. TODO: create a list */
-	rsp_hdr->Uid = usr->vuid;
-	server->vuid = usr->vuid;
+	rsp_hdr->Uid = sess->usr->vuid;
+	server->vuid = sess->usr->vuid;
 
 	server->tcp_status = CifsGood;
 
@@ -921,6 +919,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 out_err:
 	rsp_hdr->Status.CifsError = NT_STATUS_LOGON_FAILURE;
+
+	kfree(sess);
 	return rc;
 }
 
@@ -1405,7 +1405,8 @@ int smb_trans(struct smb_work *smb_work)
 			server->ev_state = NETLINK_REQ_COMPLETED;
 		}
 #else
-		ret = process_rpc(server, pipedata, pipe_desc->pipe_type);
+		ret = process_rpc(smb_work->sess, pipedata,
+			pipe_desc->pipe_type);
 		if (ret == -EOPNOTSUPP) {
 			rsp->hdr.Status.CifsError =
 					NT_STATUS_NOT_SUPPORTED;
@@ -1566,7 +1567,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	int err;
 	int create_directory = 0;
 	char *src;
-	char *root;
+	char *root = NULL;
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct cifssrv_file *fp;
@@ -2328,7 +2329,7 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 		server->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
-	ret = process_rpc(server, req->Data, pipe_desc->pipe_type);
+	ret = process_rpc(smb_work->sess, req->Data, pipe_desc->pipe_type);
 	if (ret == -EOPNOTSUPP) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
 		return ret;
@@ -5051,7 +5052,7 @@ int find_first(struct smb_work *smb_work)
 	T2_FFIRST_RSP_PARMS *params = NULL;
 	struct path path;
 	struct smb_dirent *de;
-	struct cifssrv_file *dir_fp;
+	struct cifssrv_file *dir_fp = NULL;
 	struct kstat kstat;
 	int params_count = sizeof(T2_FFIRST_RSP_PARMS);
 	int data_alignment_offset = 0;
@@ -6572,7 +6573,7 @@ int smb_nt_cancel(struct smb_work *smb_work)
 			work->send_no_response = 1;
 			list_del_init(&work->request_entry);
 			work->added_in_request_list = 0;
-			server->sequence_number--;
+			smb_work->sess->sequence_number--;
 			break;
 		}
 	}
@@ -7160,16 +7161,16 @@ int smb1_is_sign_req(struct smb_work *work, unsigned int command)
 int smb1_check_sign_req(struct smb_work *work)
 {
 	struct smb_hdr *rcv_hdr1 = (struct smb_hdr *)work->buf;
-	struct tcp_server_info *server = work->server;
 	char signature_req[CIFS_SMB1_SIGNATURE_SIZE];
 	char signature[20];
 
 	memcpy(signature_req, rcv_hdr1->Signature.SecuritySignature,
 			CIFS_SMB1_SIGNATURE_SIZE);
-	rcv_hdr1->Signature.Sequence.SequenceNumber = ++server->sequence_number;
+	rcv_hdr1->Signature.Sequence.SequenceNumber =
+		++work->sess->sequence_number;
 	rcv_hdr1->Signature.Sequence.Reserved = 0;
 
-	if (smb1_sign_smbpdu(server, rcv_hdr1->Protocol,
+	if (smb1_sign_smbpdu(work->sess, rcv_hdr1->Protocol,
 				be32_to_cpu(rcv_hdr1->smb_buf_length),
 				signature))
 		return 0;
@@ -7190,13 +7191,13 @@ int smb1_check_sign_req(struct smb_work *work)
 void smb1_set_sign_rsp(struct smb_work *work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
-	struct tcp_server_info *server = work->server;
 	char signature[20];
 
 	rsp_hdr->Flags2 |= SMBFLG2_SECURITY_SIGNATURE;
-	rsp_hdr->Signature.Sequence.SequenceNumber = ++server->sequence_number;
+	rsp_hdr->Signature.Sequence.SequenceNumber =
+		++work->sess->sequence_number;
 	rsp_hdr->Signature.Sequence.Reserved = 0;
-	if (smb1_sign_smbpdu(server, rsp_hdr->Protocol,
+	if (smb1_sign_smbpdu(work->sess, rsp_hdr->Protocol,
 				be32_to_cpu(rsp_hdr->smb_buf_length),
 				signature))
 		memset(rsp_hdr->Signature.SecuritySignature,

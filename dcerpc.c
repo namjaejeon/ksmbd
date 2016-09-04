@@ -91,8 +91,7 @@ struct cifssrv_pipe *get_pipe_desc(struct tcp_server_info *server,
  *
  * Return:      0 on success, error number on error
  */
-int process_rpc(struct tcp_server_info *server, char *data,
-		int pipe_type)
+int process_rpc(struct cifssrv_sess *sess, char *data, int pipe_type)
 {
 	RPC_HDR *rpc_hdr;
 	int ret = 0;
@@ -104,11 +103,11 @@ int process_rpc(struct tcp_server_info *server, char *data,
 	switch (rpc_hdr->pkt_type) {
 	case RPC_REQUEST:
 		cifssrv_debug("GOT RPC_REQUEST\n");
-		ret = rpc_request(server, data, pipe_type);
+		ret = rpc_request(sess->server, data, pipe_type);
 		break;
 	case RPC_BIND:
 		cifssrv_debug("GOT RPC_BIND\n");
-		ret = rpc_bind(server, data, pipe_type);
+		ret = rpc_bind(sess, data, pipe_type);
 		break;
 	default:
 		cifssrv_debug("rpc type = %d Not Implemented\n",
@@ -117,7 +116,8 @@ int process_rpc(struct tcp_server_info *server, char *data,
 	}
 
 	if (!ret)
-		server->pipe_desc[pipe_type]->pkt_type = rpc_hdr->pkt_type;
+		sess->server->pipe_desc[pipe_type]->pkt_type =
+			rpc_hdr->pkt_type;
 
 	return ret;
 }
@@ -1453,7 +1453,7 @@ int rpc_request(struct tcp_server_info *server, char *in_data, int pipe_type)
  *
  * Return:      0 on success or error number
  */
-int rpc_bind(struct tcp_server_info *server, char *in_data, int pipe_type)
+int rpc_bind(struct cifssrv_sess *sess, char *in_data, int pipe_type)
 {
 	RPC_BIND_REQ *rpc_bind_req = (RPC_BIND_REQ *)in_data;
 	char *pipe_name = NULL;
@@ -1465,6 +1465,8 @@ int rpc_bind(struct tcp_server_info *server, char *in_data, int pipe_type)
 	int num_ctx;
 	int i = 0;
 	int offset = 0;
+	struct tcp_server_info *server = sess->server;
+
 	rpc_context = (RPC_CONTEXT *)(((char *)in_data) + sizeof(RPC_BIND_REQ));
 	transfer = (RPC_IFACE *)(((char *)in_data) + sizeof(RPC_BIND_REQ) +
 				   sizeof(RPC_CONTEXT));
@@ -1543,7 +1545,7 @@ int rpc_bind(struct tcp_server_info *server, char *in_data, int pipe_type)
 						rpc_bind_rsp->Buffer;
 				rpc_bind_rsp->BufferLength =
 					build_ntlmssp_challenge_blob(chgblob,
-					server);
+					sess);
 			}
 		}
 

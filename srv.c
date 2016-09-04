@@ -483,8 +483,9 @@ again:
 
 	mutex_unlock(&server->srv_mutex);
 
-	if (server->sign && server->ops->is_sign_req &&
-			server->ops->is_sign_req(smb_work, command)) {
+	if (smb_work->sess && smb_work->sess->sign &&
+		server->ops->is_sign_req &&
+		server->ops->is_sign_req(smb_work, command)) {
 		rc = server->ops->check_sign_req(smb_work);
 		if (!rc) {
 			server->ops->set_rsp_status(smb_work,
@@ -532,8 +533,9 @@ send:
 	if (is_smb2_rsp(smb_work))
 		server->ops->set_rsp_credits(smb_work);
 
-	if (server->sign && server->ops->is_sign_req &&
-			server->ops->is_sign_req(smb_work, command))
+	if (smb_work->sess && smb_work->sess->sign &&
+		server->ops->is_sign_req &&
+		server->ops->is_sign_req(smb_work, command))
 		server->ops->set_sign_rsp(smb_work);
 
 	smb_send_rsp(smb_work);
@@ -797,18 +799,18 @@ int connect_tcp_sess(struct socket *sock)
 {
 	struct sockaddr_storage caddr;
 	struct sockaddr *csin = (struct sockaddr *)&caddr;
-	int rc, cslen;
-	struct tcp_server_info *server = kzalloc(sizeof(struct tcp_server_info),
-								GFP_KERNEL);
-	if (server == NULL) {
-		cifssrv_err("cannot allocate memory for smbserver\n");
-		return -ENOMEM;
-	}
+	int rc = 0, cslen;
+	struct tcp_server_info *server;
 
 	if (kernel_getpeername(sock, csin, &cslen) < 0) {
 		cifssrv_err("client ip resolution failed\n");
-		kfree(server);
 		return -EINVAL;
+	}
+
+	server = kzalloc(sizeof(struct tcp_server_info), GFP_KERNEL);
+	if (server == NULL) {
+		rc = -ENOMEM;
+		goto out;
 	}
 
 	snprintf(server->peeraddr, sizeof(server->peeraddr), "%pI4",
@@ -819,11 +821,11 @@ int connect_tcp_sess(struct socket *sock)
 	if (rc) {
 		cifssrv_err("cannot init tcp server\n");
 		kfree(server);
-		return rc;
+		goto out;
 	}
 
 	server->handler = kthread_run(tcp_sess_kthread, server,
-						"kcifssrvd/%d", conn_num++);
+					"kcifssrvd/%d", conn_num++);
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
@@ -832,9 +834,10 @@ int connect_tcp_sess(struct socket *sock)
 		spin_unlock(&tcp_sess_list_lock);
 		rc = PTR_ERR(server->handler);
 		kfree(server);
-		return rc;
 	}
-	return 0;
+
+out:
+	return rc;
 }
 
 /**

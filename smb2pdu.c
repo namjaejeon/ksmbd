@@ -88,14 +88,24 @@ struct fs_type_info fs_type[] = {
  *
  * Return:      1 if valid session id, otherwise 0
  */
-static inline int check_session_id(struct tcp_server_info *server, __u64 id)
+static inline int check_session_id(struct tcp_server_info *server, uint64_t id)
 {
+	struct cifssrv_sess *sess;
+
 	WARN(server->sess_count > 1, "sess_count %d", server->sess_count);
 
-	if (id == 0 || id == -1 || server->sess_id != id)
+	if (id == 0 || id == -1)
 		return 0;
 
-	return 1;
+	sess = lookup_session_on_conn(server, id);
+	if (sess) {
+		if (sess->valid)
+			return 1;
+		else
+			cifssrv_err("Invalid user session\n");
+	}
+
+	return 0;
 }
 
 /**
@@ -545,10 +555,10 @@ int smb2_check_user_session(struct smb_work *smb_work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 	struct tcp_server_info *server = smb_work->server;
-	uint64_t incoming_sess_id;
 	struct cifssrv_sess *sess;
-	struct list_head *tmp, *t;
-	int found = 0;
+	int rc = 0;
+
+	smb_work->sess = NULL;
 
 	/*
 	 * ECHO, KEEP_ALIVE command does not require a session id,
@@ -557,35 +567,24 @@ int smb2_check_user_session(struct smb_work *smb_work)
 	 * session_id
 	 */
 	if (server->ops->get_cmd_val(smb_work) == SMB2_ECHO)
-		return 0;
+		return rc;
 
 	if (server->tcp_status != CifsGood)
-		return 0;
+		return rc;
 
-	incoming_sess_id = le64_to_cpu(req_hdr->SessionId);
-
+	rc = -EINVAL;
 	/* Check for validity of user session */
-	list_for_each_safe(tmp, t, &server->cifssrv_sess) {
-		sess = list_entry(tmp, struct cifssrv_sess,
-					cifssrv_ses_list);
-		if (sess->sess_id == incoming_sess_id) {
-			if (!sess->valid) {
-				cifssrv_err("Invalid user session\n");
-				return -EINVAL;
-			} else {
-				found = 1;
-				break;
-			}
+	sess = lookup_session_on_conn(server, le64_to_cpu(req_hdr->SessionId));
+	if (sess) {
+		if (sess->valid) {
+			smb_work->sess = sess;
+			rc = 1;
+		} else {
+			cifssrv_err("Invalid user session\n");
 		}
 	}
 
-	/* Check if user is found */
-	if (!found) {
-		cifssrv_err("User session not found\n");
-		return -EINVAL;
-	}
-
-	return 0;
+	return rc;
 }
 
 /**
@@ -799,27 +798,29 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 
 	if ((server_signing == AUTO || server_signing == DISABLE) &&
-		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) {
+			req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) {
 		rsp->SecurityBufferLength = 74;
 		memcpy(((char *)rsp->hdr.ProtocolId) +
-			rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
+				rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER,
+				74);
 		inc_rfc1001_len(rsp, 64 + 74);
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
 	} else if (server_signing == MANDATORY) {
 		rsp->SecurityBufferLength = 74;
 		memcpy(((char *)rsp->hdr.ProtocolId) +
-			rsp->SecurityBufferOffset,
+				rsp->SecurityBufferOffset,
 				NEGOTIATE_GSS_HEADER, 74);
 		inc_rfc1001_len(rsp, 64 + 74);
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_REQUIRED |
-					SMB2_NEGOTIATE_SIGNING_ENABLED;
+			SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
 	} else {
 		rsp->SecurityMode = 0;
 		rsp->SecurityBufferLength = 0;
 		inc_rfc1001_len(rsp, 65);
 	}
+
 	server->srv_sec_mode = rsp->SecurityMode;
 	server->tcp_status = CifsNeedNegotiate;
 	server->need_neg = false;
@@ -840,7 +841,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	struct smb2_sess_setup_rsp *rsp;
 	struct cifssrv_sess *sess;
 	NEGOTIATE_MESSAGE *negblob;
-	struct cifssrv_usr *usr;
 	int rc = 0;
 
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
@@ -866,8 +866,27 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
-		get_random_bytes(&server->sess_id, sizeof(__u64));
-		rsp->hdr.SessionId = server->sess_id;
+		sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
+		if (sess == NULL) {
+			rc = -ENOMEM;
+			goto out_err;
+		}
+
+		get_random_bytes(&sess->sess_id, sizeof(__u64));
+		cifssrv_debug("generate session ID : %llu\n", sess->sess_id);
+		rsp->hdr.SessionId = cpu_to_le64(sess->sess_id);
+		sess->server = server;
+		INIT_LIST_HEAD(&sess->cifssrv_ses_list);
+		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
+		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
+	} else {
+		sess = lookup_session_on_conn(server,
+			le64_to_cpu(req->hdr.SessionId));
+		if (!sess) {
+			rc = -ENOENT;
+			rsp->hdr.Status = NT_STATUS_USER_SESSION_DELETED;
+			goto out_err;
+		}
 	}
 
 	/* Check for previous session */
@@ -883,7 +902,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 		cifssrv_debug("negotiate phase\n");
 		rc = decode_ntlmssp_negotiate_blob(negblob,
-			le16_to_cpu(req->SecurityBufferLength), server);
+			le16_to_cpu(req->SecurityBufferLength), sess);
 		if (rc)
 			goto out_err;
 
@@ -892,7 +911,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
 		rsp->SecurityBufferLength = build_ntlmssp_challenge_blob(
-					chgblob, server);
+					chgblob, sess);
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
 		/* Note: here total size -1 is done as
@@ -914,62 +933,58 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		if (IS_ERR(username)) {
 			cifssrv_err("cannot allocate memory\n");
 			rc = PTR_ERR(username);
+			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
 
 		cifssrv_debug("session setup request for user %s\n", username);
-		usr = cifssrv_is_user_present(username);
-		if (!usr) {
+		sess->usr = cifssrv_is_user_present(username);
+		if (!sess->usr) {
 			cifssrv_debug("user not present in database\n");
 			kfree(username);
 			rc = -EINVAL;
+			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
 		kfree(username);
 
 		rc = decode_ntlmssp_authenticate_blob(authblob,
-			le16_to_cpu(req->SecurityBufferLength), usr, server);
+			le16_to_cpu(req->SecurityBufferLength), sess);
 		if (rc) {
 			cifssrv_debug("authentication failed\n");
 			rc = -EINVAL;
+			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
 
 		if (server->sign && server->ops->compute_signingkey) {
-			rc = server->ops->compute_signingkey(server);
+			rc = server->ops->compute_signingkey(sess);
 			if (rc) {
 				cifssrv_debug("SMB3 session key generation failed\n");
+				rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 				goto out_err;
 			}
 		}
 
-		sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
-		if (sess == NULL) {
-			cifssrv_err("cannot allocate memory to session\n");
-			rc = -ENOMEM;
-			goto out_err;
-		}
-
-		sess->usr = usr;
-		INIT_LIST_HEAD(&sess->cifssrv_ses_list);
 		INIT_LIST_HEAD(&sess->tcon_list);
 		sess->tcon_count = 0;
 		sess->valid = 1;
-		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
-		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
-		sess->server = server;
-		sess->sess_id = server->sess_id;
 		server->sess_count++;
 
 		server->tcp_status = CifsGood;
 	} else {
 		cifssrv_err("%s Invalid phase\n", __func__);
 		rc = -EINVAL;
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 	}
 
 out_err:
-	if (rc != 0)
-		rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
+	if (rc < 0 && sess) {
+		sess->valid = 0;
+		list_del(&sess->cifssrv_ses_list);
+		list_del(&sess->cifssrv_ses_global_list);
+		kfree(sess);
+	}
 
 	return rc;
 }
@@ -1628,7 +1643,8 @@ int smb2_open(struct smb_work *smb_work)
 reconnect:
 
 	if (durable_reconnect) {
-		rc = cifssrv_durable_reconnect(server, durable_state, &filp);
+		rc = cifssrv_durable_reconnect(smb_work->sess, durable_state,
+			&filp);
 		if (rc < 0) {
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 			goto err_out1;
@@ -1660,7 +1676,8 @@ reconnect:
 	}
 
 	cifssrv_debug("volatile_id returned: %d\n", volatile_id);
-	fp = insert_id_in_fidtable(server, volatile_id, filp);
+	fp = insert_id_in_fidtable(smb_work->server, smb_work->sess->sess_id,
+		volatile_id, filp);
 	if (fp == NULL) {
 		cifssrv_err("volatile_id insert failed\n");
 		cifssrv_close_id(&server->fidtable, volatile_id);
@@ -2451,7 +2468,7 @@ int smb2_close(struct smb_work *smb_work)
 		return smb2_close_pipe(smb_work);
 	}
 
-	sess_id = req->hdr.SessionId;
+	sess_id = le64_to_cpu(req->hdr.SessionId);
 	if (le32_to_cpu(req->hdr.Flags) &
 			SMB2_FLAGS_RELATED_OPERATIONS)
 		sess_id = smb_work->cur_local_sess_id;
@@ -3977,7 +3994,7 @@ static int smb2_write_pipe(struct smb_work *smb_work)
 		server->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
-	ret = process_rpc(server, data_buf, pipe_desc->pipe_type);
+	ret = process_rpc(smb_work->sess, data_buf, pipe_desc->pipe_type);
 	if (ret == -EOPNOTSUPP) {
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
@@ -4481,7 +4498,8 @@ int smb2_ioctl(struct smb_work *smb_work)
 			server->ev_state = NETLINK_REQ_COMPLETED;
 		}
 #else
-		ret = process_rpc(server, data_buf, pipe_desc->pipe_type);
+		ret = process_rpc(smb_work->sess, data_buf,
+			pipe_desc->pipe_type);
 		if (ret == -EOPNOTSUPP) {
 			rsp->hdr.Status =
 				NT_STATUS_NOT_SUPPORTED;
@@ -4562,10 +4580,11 @@ int smb2_ioctl(struct smb_work *smb_work)
 	rsp->Reserved2 = cpu_to_le32(0);
 	inc_rfc1001_len(rsp_org, 48 + nbytes);
 
-	if (!server->sign && cnt_code == FSCTL_VALIDATE_NEGOTIATE_INFO) {
+	if (!smb_work->sess->sign && cnt_code ==
+		FSCTL_VALIDATE_NEGOTIATE_INFO) {
 		if (server->ops->is_sign_req &&
 			server->ops->is_sign_req(smb_work, SMB2_IOCTL_HE)) {
-			ret = server->ops->compute_signingkey(server);
+			ret = server->ops->compute_signingkey(smb_work->sess);
 			if (ret)
 				cifssrv_err("SMB3 sesskey generation failed\n");
 			else
@@ -4934,13 +4953,12 @@ int smb2_is_sign_req(struct smb_work *work, unsigned int command)
 int smb2_check_sign_req(struct smb_work *work)
 {
 	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
-	struct tcp_server_info *server = work->server;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_HMACSHA256_SIZE];
 
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (smb2_sign_smbpdu(server, rcv_hdr2->ProtocolId,
+	if (smb2_sign_smbpdu(work->sess, rcv_hdr2->ProtocolId,
 			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
 		return 0;
 
@@ -4961,13 +4979,12 @@ int smb2_check_sign_req(struct smb_work *work)
 int smb3_check_sign_req(struct smb_work *work)
 {
 	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
-	struct tcp_server_info *server = work->server;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_CMACAES_SIZE];
 
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (smb3_sign_smbpdu(server, rcv_hdr2->ProtocolId,
+	if (smb3_sign_smbpdu(work->sess, rcv_hdr2->ProtocolId,
 			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
 		return 0;
 
@@ -4987,12 +5004,11 @@ int smb3_check_sign_req(struct smb_work *work)
 void smb2_set_sign_rsp(struct smb_work *work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
-	struct tcp_server_info *server = work->server;
 	char signature[SMB2_HMACSHA256_SIZE];
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!smb2_sign_smbpdu(server, rsp_hdr->ProtocolId,
+	if (!smb2_sign_smbpdu(work->sess, rsp_hdr->ProtocolId,
 			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
@@ -5005,12 +5021,11 @@ void smb2_set_sign_rsp(struct smb_work *work)
 void smb3_set_sign_rsp(struct smb_work *work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
-	struct tcp_server_info *server = work->server;
 	char signature[SMB2_CMACAES_SIZE];
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!smb3_sign_smbpdu(server, rsp_hdr->ProtocolId,
+	if (!smb3_sign_smbpdu(work->sess, rsp_hdr->ProtocolId,
 			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }

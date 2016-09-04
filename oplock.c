@@ -1741,7 +1741,8 @@ int smb_break_write_lease(struct ofile_info *ofile,
  */
 int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 					  struct tcp_server_info *prev_server,
-					  int fid, struct file **filp)
+					  int fid, struct file **filp,
+					  uint64_t sess_id)
 {
 	struct cifssrv_file *fp, *fp_curr;
 	struct ofile_info *ofile;
@@ -1753,7 +1754,7 @@ int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 	mutex_lock(&ofile_list_lock);
 
 	fp_curr = get_id_from_fidtable(curr_server, fid);
-	if (fp_curr && fp_curr->sess_id == curr_server->sess_id) {
+	if (fp_curr && fp_curr->sess_id == sess_id) {
 		mutex_unlock(&ofile_list_lock);
 		cifssrv_err("File already opened on current server\n");
 		rc = -EINVAL;

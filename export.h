@@ -105,7 +105,12 @@ struct cifssrv_sess {
 	struct list_head tcon_list;
 	int	tcon_count;
 	int valid;
+	unsigned int sequence_number;
 	uint64_t sess_id;
+	struct ntlmssp_auth ntlmssp;
+	char sess_key[CIFS_KEY_SIZE];
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+	bool sign;
 };
 
 enum share_attrs {
@@ -194,24 +199,23 @@ extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
 int validate_usr(char *usr, struct cifssrv_share *share);
 int validate_host(char *cip, struct cifssrv_share *share);
-int process_ntlm(struct tcp_server_info *server, char *pw_buf, char *passkey);
-int process_ntlmv2(struct tcp_server_info *server, struct ntlmv2_resp *ntlmv2,
-		int blen, char *domain_name, struct cifssrv_usr *usr);
+int process_ntlm(struct cifssrv_sess *sess, char *pw_buf);
+int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
+		int blen, char *domain_name);
 int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct tcp_server_info *server);
+		int blob_len, struct cifssrv_sess *sess);
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct tcp_server_info *server);
+		struct cifssrv_sess *sess);
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-		int blob_len, struct cifssrv_usr *usr,
-		struct tcp_server_info *server);
-int smb1_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+		int blob_len, struct cifssrv_sess *sess);
+int smb1_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		char *sig);
-int smb2_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		char *sig);
-int smb3_sign_smbpdu(struct tcp_server_info *server, char *buf, int sz,
+int smb3_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		char *sig);
-int compute_sess_key(struct tcp_server_info *server, char *hash, char *hmac);
-int compute_smb30sigingkey(struct tcp_server_info *server);
+int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
+int compute_smb30sigingkey(struct cifssrv_sess *sess);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess, char *sharename);
@@ -220,4 +224,7 @@ extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 			unsigned int tid);
 struct cifssrv_usr *get_smb_session_user(struct tcp_server_info *server);
+int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
+		struct cifssrv_durable_state *durable_state,
+		struct file **filp);
 #endif /* __CIFSSRV_EXPORT_H */
