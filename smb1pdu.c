@@ -1470,12 +1470,9 @@ int create_andx_pipe(struct smb_work *smb_work)
 {
 	OPEN_REQ *req = (OPEN_REQ *)smb_work->buf;
 	OPEN_EXT_RSP *rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
-	int id;
 	unsigned int pipe_type;
 	char *name;
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	int err;
-#endif
+	int rc = 0;
 
 	/* one byte pad before unicode file name start */
 	if (is_smbreq_unicode(&req->hdr))
@@ -1486,43 +1483,34 @@ int create_andx_pipe(struct smb_work *smb_work)
 				smb_work->server->local_nls);
 
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		return PTR_ERR(name);
+		rc = -ENOMEM;
+		goto out;
 	}
 
 	pipe_type = get_pipe_type(name);
 	if (pipe_type == INVALID_PIPE) {
 		cifssrv_debug("pipe %s not supported\n", name);
-		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
-		return -EOPNOTSUPP;
+		rc = -EOPNOTSUPP;
+		goto out;
 	}
-
 
 	/* Assigning temporary fid for pipe */
-	id = get_pipe_id(smb_work->server, pipe_type);
-	if (id < 0) {
-		if (id == -EMFILE)
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_TOO_MANY_OPENED_FILES;
-		else
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_NO_MEMORY;
-		return id;
-	}
+	rc = get_pipe_id(smb_work->server, pipe_type);
+	if (rc < 0)
+		goto out;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	err = cifssrv_sendmsg(smb_work->server,
+	rc = cifssrv_sendmsg(smb_work->server,
 			CIFSSRV_KEVENT_CREATE_PIPE, pipe_type, 0, NULL, 0);
-	if (err)
-		cifssrv_err("failed to send event, err %d\n", err);
+	if (rc)
+		cifssrv_err("failed to send event, err %d\n", rc);
 #endif
 
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 42;
 	rsp->AndXCommand = cpu_to_le16(0xff);
 	rsp->AndXReserved = 0;
 	rsp->OplockLevel = 0;
-	rsp->Fid = cpu_to_le16(id);
+	rsp->Fid = cpu_to_le16(rc);
 	rsp->CreateAction = cpu_to_le32(1);
 	rsp->CreationTime = 0;
 	rsp->LastAccessTime = 0;
@@ -1539,8 +1527,34 @@ int create_andx_pipe(struct smb_work *smb_work)
 	rsp->GuestAccess = cpu_to_le32(FILE_GENERIC_READ);
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (100 + rsp->ByteCount));
+
+out:
+	switch (rc) {
+	case 0:
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
+		break;
+	case -EINVAL:
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
+		break;
+	case -EOVERFLOW:
+		rsp->hdr.Status.CifsError = NT_STATUS_BUFFER_OVERFLOW;
+		break;
+	case -ETIMEDOUT:
+		rsp->hdr.Status.CifsError = NT_STATUS_IO_TIMEOUT;
+		break;
+	case -EOPNOTSUPP:
+		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
+		break;
+	case -EMFILE:
+		rsp->hdr.Status.CifsError = NT_STATUS_TOO_MANY_OPENED_FILES;
+		break;
+	default:
+		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
+		break;
+	}
+
 	kfree(name);
-	return 0;
+	return rc;
 }
 
 /**
