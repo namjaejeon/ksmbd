@@ -829,6 +829,7 @@ int connect_tcp_sess(struct socket *sock)
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
+		free_fidtable(server->fidtable.ftab);
 		spin_lock(&tcp_sess_list_lock);
 		list_del(&server->tcp_sess);
 		spin_unlock(&tcp_sess_list_lock);

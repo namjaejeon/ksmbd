@@ -142,6 +142,7 @@ struct fidtable_desc {
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
 void destroy_fidtable(struct tcp_server_info *server);
+void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
 get_id_from_fidtable(struct tcp_server_info *server, uint64_t id);
 int close_id(struct tcp_server_info *server, uint64_t id);
