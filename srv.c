@@ -407,6 +407,33 @@ static inline int check_server_state(struct smb_work *smb_work)
 }
 
 /**
+ * free_workitem_buffers() - free all allocated buffers from different pool
+ *			 for smb_work and free workitem itself
+ * @smb_work: smb work item
+ * Return: void
+ */
+static void free_workitem_buffers(struct smb_work *smb_work)
+{
+	if (smb_work->req_wbuf)
+		vfree(smb_work->buf);
+	else {
+		if (smb_work->large_buf)
+			mempool_free(smb_work->buf, cifssrv_req_poolp);
+		else
+			mempool_free(smb_work->buf, cifssrv_sm_req_poolp);
+	}
+
+	if (smb_work->rsp_large_buf)
+		mempool_free(smb_work->rsp_buf, cifssrv_rsp_poolp);
+	else
+		mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
+
+	if (smb_work->rdata_buf)
+		vfree(smb_work->rdata_buf);
+	kfree(smb_work);
+}
+
+/**
  * handle_smb_work() - process pending smb work requests
  * @smb_work:	smb work containing request command buffer
  *
@@ -542,23 +569,7 @@ send:
 
 nosend:
 	/* free buffers */
-	if (smb_work->req_wbuf)
-		vfree(smb_work->buf);
-	else {
-		if (smb_work->large_buf)
-			mempool_free(smb_work->buf, cifssrv_req_poolp);
-		else
-			mempool_free(smb_work->buf, cifssrv_sm_req_poolp);
-	}
-
-	if (smb_work->rsp_large_buf)
-		mempool_free(smb_work->rsp_buf, cifssrv_rsp_poolp);
-	else
-		mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
-
-	if (smb_work->rdata_buf)
-		vfree(smb_work->rdata_buf);
-	kfree(smb_work);
+	free_workitem_buffers(smb_work);
 
 	if (cifssrv_debug_enable) {
 		end_time = jiffies;
