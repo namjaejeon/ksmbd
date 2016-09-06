@@ -6726,9 +6726,9 @@ int smb_creat_symlink(struct smb_work *smb_work)
 				NT_STATUS_OBJECT_NAME_COLLISION;
 		else
 			rsp->hdr.Status.CifsError = NT_STATUS_NOT_SAME_DEVICE;
-	}
+	} else
+		rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
-	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
 	rsp->t2.TotalParameterCount = cpu_to_le16(2);
 	rsp->t2.TotalDataCount = 0;
