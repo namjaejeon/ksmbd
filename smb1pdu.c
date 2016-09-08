@@ -4079,8 +4079,11 @@ static __u32 smb_posix_convert_flags(__u32 flags)
 		posix_flags |= O_DIRECTORY;
 	if (flags & SMB_O_NOFOLLOW)
 		posix_flags |= O_NOFOLLOW;
+/*
+	* TODO : need to add special handling for Direct I/O.
 	if (flags & SMB_O_DIRECT)
 		posix_flags |= O_DIRECT;
+*/
 	if (flags & SMB_O_APPEND)
 		posix_flags |= O_APPEND;
 
