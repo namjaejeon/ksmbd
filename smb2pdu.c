@@ -867,7 +867,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
-		sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
+		sess = kzalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
 		if (sess == NULL) {
 			rc = -ENOMEM;
 			goto out_err;

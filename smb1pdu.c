@@ -815,7 +815,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	}
 
 	/* build smb session */
-	sess = kmalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
+	sess = kzalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
 	if (sess == NULL) {
 		rc = -ENOMEM;
 		goto out_err;
