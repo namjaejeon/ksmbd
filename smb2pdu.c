@@ -807,6 +807,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
 	} else if (server_signing == MANDATORY) {
+		global_signing = true;
 		rsp->SecurityBufferLength = 74;
 		memcpy(((char *)rsp->hdr.ProtocolId) +
 				rsp->SecurityBufferOffset,
@@ -956,6 +957,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
+
+		if ((req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
+		    (!(rsp->SessionFlags & SMB2_SESSION_FLAG_IS_GUEST ||
+			rsp->SessionFlags & SMB2_SESSION_FLAG_IS_NULL) &&
+			(server->sign || global_signing)))
+			sess->sign = true;
 
 		if (server->sign && server->ops->compute_signingkey) {
 			rc = server->ops->compute_signingkey(sess);

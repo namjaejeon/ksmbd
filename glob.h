@@ -82,6 +82,8 @@ extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 extern char NEGOTIATE_GSS_HEADER[74];
 
+extern bool global_signing;
+
 #define SMB1_VERSION_STRING     "1.0"
 #define SMB20_VERSION_STRING    "2.0"
 #define SMB21_VERSION_STRING    "2.1"

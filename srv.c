@@ -27,6 +27,7 @@
 #endif
 #include "oplock.h"
 
+bool global_signing;
 unsigned long server_start_time;
 
 struct kmem_cache *cifssrv_req_cachep;
