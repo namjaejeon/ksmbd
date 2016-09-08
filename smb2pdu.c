@@ -1263,6 +1263,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	list_del(&sess->cifssrv_ses_list);
 	list_del(&sess->cifssrv_ses_global_list);
 	kfree(sess);
+	smb_work->sess = NULL;
 
 	server->sess_count--;
 	/* let start_tcp_sess free server info now */
