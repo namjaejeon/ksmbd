@@ -943,7 +943,8 @@ void smb_vfs_set_fadvise(struct file *filp, int option)
 
 	if (option & FILE_WRITE_THROUGH_LE)
 		filp->f_flags |= O_SYNC;
-	else if (option & FILE_NO_INTERMEDIATE_BUFFERING_LE)
+	else if (option & FILE_NO_INTERMEDIATE_BUFFERING_LE &&
+		 filp->f_mapping->a_ops->direct_IO)
 		filp->f_flags |= O_DIRECT;
 	else if (option & FILE_SEQUENTIAL_ONLY_LE) {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
