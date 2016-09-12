@@ -803,6 +803,7 @@ static ssize_t caseless_search_store(struct kobject *kobj,
 		cifssrv_caseless_search = 1;
 	else if (value == 0)
 		cifssrv_caseless_search = 0;
+
 out:
 	return len;
 }

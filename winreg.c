@@ -146,6 +146,9 @@ int winreg_open_root_key(struct tcp_server_info *server, int opnum,
 		winreg_rsp->key_handle.addr = (__u32)reg_openhku;
 		reg_openhku->open_status = 1;
 		break;
+	default:
+		cifssrv_debug("opnum :%d is not supported\n", opnum);
+		return -EINVAL;
 	}
 	reg_openhkcr->open_status = 1;
 	winreg_rsp->key_handle.addr = (__u32)reg_openhkcr;
@@ -280,14 +283,12 @@ int winreg_create_key(struct tcp_server_info *server,
 	struct registry_node *ret;
 	int key_addr;
 	char *relative_name;
-	struct registry_node *base_key;
 
 	KEY_HANDLE *key_handle = (KEY_HANDLE *)in_data;
 	NAME_INFO *name_info = (NAME_INFO *)(((char *)in_data) +
 						sizeof(KEY_HANDLE));
 
 	key_addr = key_handle->addr;
-	base_key = (struct registry_node *)key_addr;
 	relative_name = smb_strndup_from_utf16(name_info->Buffer,
 			name_info->key_packet_len, 1, server->local_nls);
 	if (IS_ERR(relative_name))
@@ -497,7 +498,6 @@ int winreg_set_value(struct tcp_server_info *server,
 	offset += (sizeof(NAME_INFO) + value_len);
 
 	value_buffer =  (VALUE_BUFFER *)(((char *)in_data) + offset);
-	offset += (sizeof(__u32)*2);
 	winreg_rsp = kzalloc(sizeof(WINREG_COMMON_RSP), GFP_KERNEL);
 	if (!winreg_rsp)
 		return -ENOMEM;

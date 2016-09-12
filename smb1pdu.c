@@ -3208,6 +3208,7 @@ int smb_get_ea(struct smb_work *smb_work, struct path *path)
 		eabuf->list_len = cpu_to_le32(rsp_data_cnt);
 		goto done;
 	}
+
 	xattr_list_len = rc;
 	rc = 0;
 

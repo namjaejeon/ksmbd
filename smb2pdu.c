@@ -467,6 +467,8 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 				need_large_buf = true;
 			}
 			break;
+		default:
+			break;
 		}
 	}
 
@@ -765,6 +767,11 @@ int smb2_negotiate(struct smb_work *smb_work)
 		init_smb2_1_server(server);
 		break;
 	case BAD_PROT_ID:
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		return 0;
+	default:
+		cifssrv_err("Server dialect :%x not supported\n",
+							server->dialect);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return 0;
 	}

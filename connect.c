@@ -146,7 +146,6 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
 			total_read = -ESHUTDOWN;
 			break;
 		} else if (server->tcp_status == CifsNeedReconnect) {
-			/* cifs_reconnect(server); */
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS ||
@@ -156,7 +155,6 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
 			length = 0;
 			continue;
 		} else if (length <= 0) {
-			/* cifs_reconnect(server); */
 			usleep_range(1000, 2000);
 			total_read = -EAGAIN;
 			break;

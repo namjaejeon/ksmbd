@@ -353,7 +353,7 @@ smbConvertToUTF16(__le16 *target, const char *source, int srclen,
 		switch (src_char) {
 		case 0:
 			put_unaligned(0, &target[j]);
-			goto ctoUTF16_out;
+			return j;
 		case ':':
 			dst_char = cpu_to_le16(UNI_COLON);
 			break;
@@ -398,7 +398,6 @@ smbConvertToUTF16(__le16 *target, const char *source, int srclen,
 		put_unaligned(dst_char, &target[j]);
 	}
 
-ctoUTF16_out:
 	return j;
 }
 

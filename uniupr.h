@@ -19,6 +19,8 @@
  * uniupr.h - Unicode compressed case ranges
  *
 */
+#ifndef __CIFSSRV_UNIUPR_H
+#define __CIFSSRV_UNIUPR_H
 
 #ifndef UNIUPR_NOUPPER
 /*
@@ -275,3 +277,5 @@ const struct UniCaseRange CifsUniLowerRange[] = {
 	{0}
 };
 #endif
+
+#endif /* __CIFSSRV_UNIUPR_H */

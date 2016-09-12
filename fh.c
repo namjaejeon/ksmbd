@@ -1126,6 +1126,9 @@ int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
 	case WINREG:
 		pipe_desc->pipe_type = WINREG;
 		break;
+	default:
+		cifssrv_err("pipe type :%d not supported\n", pipe_type);
+		return -EINVAL;
 	}
 
 	return id;

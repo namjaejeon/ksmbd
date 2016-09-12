@@ -154,9 +154,8 @@ extern bool global_signing;
 #define CIFS_NTHASH_SIZE (16)
 
 /* We don't include wc in HEADER_SIZE */
-#define HEADER_SIZE(server) (server->vals->header_size - 1)
-#define MAX_HEADER_SIZE(server) (server->vals->max_header_size)
-
+#define HEADER_SIZE(server) ((server)->vals->header_size - 1)
+#define MAX_HEADER_SIZE(server) ((server)->vals->max_header_size)
 
 /* CreateOptions */
 /* flag is set, it must not be a file , valid for directory only */

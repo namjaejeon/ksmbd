@@ -111,10 +111,10 @@ UniStrcat(wchar_t *ucs1, const wchar_t *ucs2)
 	wchar_t *anchor = ucs1;	/* save a pointer to start of ucs1 */
 
 	while (*ucs1++)
-		;	/* To end of first string */
+	/*NULL*/;	/* To end of first string */
 	ucs1--;			/* Return to the null */
 	while ((*ucs1++ = *ucs2++))
-		;	/* copy string 2 over */
+	/*NULL*/;	/* copy string 2 over */
 	return anchor;
 }
 
@@ -163,7 +163,7 @@ UniStrcpy(wchar_t *ucs1, const wchar_t *ucs2)
 	wchar_t *anchor = ucs1;	/* save the start of result string */
 
 	while ((*ucs1++ = *ucs2++))
-		;
+	/*NULL*/;
 	return anchor;
 }
 
@@ -206,7 +206,7 @@ UniStrncat(wchar_t *ucs1, const wchar_t *ucs2, size_t n)
 	wchar_t *anchor = ucs1;	/* save pointer to string 1 */
 
 	while (*ucs1++)
-		;
+	/*NULL*/;
 	ucs1--;			/* point to null terminator of s1 */
 	while (n-- && (*ucs1 = *ucs2)) {	/* copy s2 after s1 */
 		ucs1++;
