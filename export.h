@@ -109,8 +109,8 @@ struct cifssrv_sess {
 	uint64_t sess_id;
 	struct ntlmssp_auth ntlmssp;
 	char sess_key[CIFS_KEY_SIZE];
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
 	bool sign;
+	struct list_head cifssrv_chann_list;
 };
 
 enum share_attrs {
@@ -212,10 +212,10 @@ int smb1_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		char *sig);
 int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		char *sig);
-int smb3_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
 		char *sig);
 int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
-int compute_smb30sigingkey(struct cifssrv_sess *sess);
+int compute_smb30signingkey(struct cifssrv_sess *sess, struct channel *chann);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess, char *sharename);

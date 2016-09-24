@@ -262,6 +262,12 @@ struct cifs_secmech {
 	struct sdesc *sdesccmacaes;  /* ctxt to generate smb3 signature */
 };
 
+struct channel {
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+	struct tcp_server_info *server;
+	struct list_head chann_list;
+};
+
 struct tcp_server_info {
 	struct socket *sock;
 	int srv_count; /* reference counter */
@@ -389,7 +395,8 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct smb_work *work, unsigned int command);
 	int (*check_sign_req)(struct smb_work *work);
 	void (*set_sign_rsp)(struct smb_work *work);
-	int (*compute_signingkey)(struct cifssrv_sess *sess);
+	int (*compute_signingkey)(struct cifssrv_sess *sess,
+		struct channel *chann);
 };
 
 struct smb_version_cmds {

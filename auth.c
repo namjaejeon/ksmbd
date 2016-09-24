@@ -609,32 +609,32 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int smb3_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
 		char *sig)
 {
 	int rc;
 
-	rc = crypto_shash_setkey(sess->server->secmech.cmacaes,
-		sess->smb3signingkey,	SMB2_CMACAES_SIZE);
+	rc = crypto_shash_setkey(chann->server->secmech.cmacaes,
+		chann->smb3signingkey,	SMB2_CMACAES_SIZE);
 	if (rc) {
 		cifssrv_debug("cmaces update error %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_init(&sess->server->secmech.sdesccmacaes->shash);
+	rc = crypto_shash_init(&chann->server->secmech.sdesccmacaes->shash);
 	if (rc) {
 		cifssrv_debug("cmaces init error %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_update(&sess->server->secmech.sdesccmacaes->shash,
+	rc = crypto_shash_update(&chann->server->secmech.sdesccmacaes->shash,
 					buf, sz);
 	if (rc) {
 		cifssrv_debug("cmaces update error %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_final(&sess->server->secmech.sdesccmacaes->shash,
+	rc = crypto_shash_final(&chann->server->secmech.sdesccmacaes->shash,
 		sig);
 	if (rc)
 		cifssrv_debug("cmaces generation error %d\n", rc);
@@ -692,11 +692,11 @@ out:
 }
 
 /**
- * compute_smb30sigingkey() - function to generate session key
+ * compute_smb30signingkey() - function to generate session key
  * @sess:	session of connection
  *
  */
-int compute_smb30sigingkey(struct cifssrv_sess *sess)
+int compute_smb30signingkey(struct cifssrv_sess *sess, struct channel *chann)
 {
 	unsigned char zero = 0x0;
 	int rc;
@@ -764,7 +764,7 @@ int compute_smb30sigingkey(struct cifssrv_sess *sess)
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacsha256->shash,
-			sess->smb3signingkey);
+			chann->smb3signingkey);
 	if (rc) {
 		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto smb3signkey_ret;

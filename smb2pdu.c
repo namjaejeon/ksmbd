@@ -108,6 +108,20 @@ static inline int check_session_id(struct tcp_server_info *server, uint64_t id)
 	return 0;
 }
 
+static inline struct channel *lookup_chann_list(struct cifssrv_sess *sess)
+{
+	struct channel *chann;
+	struct list_head *t;
+
+	list_for_each(t, &sess->cifssrv_chann_list) {
+		chann = list_entry(t, struct channel, chann_list);
+		if (chann && chann->server == sess->server)
+			return chann;
+	}
+
+	return NULL;
+}
+
 /**
  * smb2_set_err_rsp() - set error response code on smb response
  * @smb_work:	smb work containing response buffer
@@ -885,6 +899,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		rsp->hdr.SessionId = cpu_to_le64(sess->sess_id);
 		sess->server = server;
 		INIT_LIST_HEAD(&sess->cifssrv_ses_list);
+		INIT_LIST_HEAD(&sess->cifssrv_chann_list);
 		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
 		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
 	} else {
@@ -928,6 +943,24 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
+		struct channel *chann = NULL;
+
+		if (server->dialect >= SMB30_PROT_ID) {
+			chann = lookup_chann_list(sess);
+			if (!chann) {
+				chann = kmalloc(sizeof(struct channel),
+					GFP_KERNEL);
+				if (!chann) {
+					rc = -ENOMEM;
+					goto out_err;
+				}
+
+				chann->server = server;
+				INIT_LIST_HEAD(&chann->chann_list);
+				list_add(&chann->chann_list,
+					&sess->cifssrv_chann_list);
+			}
+		}
 
 		cifssrv_debug("authenticate phase\n");
 		authblob = (AUTHENTICATE_MESSAGE *)(req->hdr.ProtocolId +
@@ -971,12 +1004,17 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			(server->sign || global_signing)))
 			sess->sign = true;
 
-		if (server->sign && server->ops->compute_signingkey) {
-			rc = server->ops->compute_signingkey(sess);
-			if (rc) {
-				cifssrv_debug("SMB3 session key generation failed\n");
-				rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
-				goto out_err;
+		if (server->dialect >= SMB30_PROT_ID) {
+			if (server->sign && server->ops->compute_signingkey) {
+				rc = server->ops->compute_signingkey(sess,
+					chann);
+				if (rc) {
+					cifssrv_debug("SMB3 session key"
+						"generation failed\n");
+					rsp->hdr.Status =
+						NT_STATUS_LOGON_FAILURE;
+					goto out_err;
+				}
 			}
 		}
 
@@ -1227,6 +1265,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	struct cifssrv_sess *sess;
 	struct cifssrv_tcon *tcon;
 	struct list_head *tmp, *t;
+	struct channel *chann;
 
 	req = (struct smb2_logoff_req *)smb_work->buf;
 	rsp = (struct smb2_logoff_rsp *)smb_work->rsp_buf;
@@ -1272,6 +1311,16 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	}
 
 	WARN_ON(sess->tcon_count != 0);
+
+	if (server->dialect >= SMB30_PROT_ID) {
+		list_for_each_safe(tmp, t, &sess->cifssrv_chann_list) {
+			chann = list_entry(tmp, struct channel, chann_list);
+			if (chann) {
+				list_del(&chann->chann_list);
+				kfree(chann);
+			}
+		}
+	}
 
 	/* free all sessions, we have just 1 */
 	list_del(&sess->cifssrv_ses_list);
@@ -4599,7 +4648,11 @@ int smb2_ioctl(struct smb_work *smb_work)
 		FSCTL_VALIDATE_NEGOTIATE_INFO) {
 		if (server->ops->is_sign_req &&
 			server->ops->is_sign_req(smb_work, SMB2_IOCTL_HE)) {
-			ret = server->ops->compute_signingkey(smb_work->sess);
+			struct channel *chann;
+
+			chann = lookup_chann_list(smb_work->sess);
+			ret = server->ops->compute_signingkey(smb_work->sess,
+				chann);
 			if (ret)
 				cifssrv_err("SMB3 sesskey generation failed\n");
 			else
@@ -4994,13 +5047,18 @@ int smb2_check_sign_req(struct smb_work *work)
 int smb3_check_sign_req(struct smb_work *work)
 {
 	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+	struct channel *chann;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_CMACAES_SIZE];
 
+	chann = lookup_chann_list(work->sess);
+	if (!chann)
+		return 0;
+
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (smb3_sign_smbpdu(work->sess, rcv_hdr2->ProtocolId,
-			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
+	if (smb3_sign_smbpdu(chann, rcv_hdr2->ProtocolId,
+		be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
@@ -5036,11 +5094,16 @@ void smb2_set_sign_rsp(struct smb_work *work)
 void smb3_set_sign_rsp(struct smb_work *work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
+	struct channel *chann;
 	char signature[SMB2_CMACAES_SIZE];
+
+	chann = lookup_chann_list(work->sess);
+	if (!chann)
+		return;
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!smb3_sign_smbpdu(work->sess, rsp_hdr->ProtocolId,
+	if (!smb3_sign_smbpdu(chann, rsp_hdr->ProtocolId,
 			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
