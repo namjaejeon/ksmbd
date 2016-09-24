@@ -215,7 +215,8 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
 		char *sig);
 int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
-int compute_smb30signingkey(struct cifssrv_sess *sess, struct channel *chann);
+int compute_smb30signingkey(struct cifssrv_sess *sess,  __u8 *key,
+	unsigned int key_size);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess, char *sharename);

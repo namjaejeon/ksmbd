@@ -696,12 +696,18 @@ out:
  * @sess:	session of connection
  *
  */
-int compute_smb30signingkey(struct cifssrv_sess *sess, struct channel *chann)
+int compute_smb30signingkey(struct cifssrv_sess *sess, __u8 *key,
+	unsigned int key_size)
 {
 	unsigned char zero = 0x0;
 	int rc;
 	__u8 i[4] = {0, 0, 0, 1};
 	__u8 L[4] = {0, 0, 0, 128};
+	unsigned char prfhash[SMB2_HMACSHA256_SIZE];
+	unsigned char *hashptr = prfhash;
+
+	memset(prfhash, 0x0, SMB2_HMACSHA256_SIZE);
+	memset(key, 0x0, key_size);
 
 	rc = crypto_hmacsha256_alloc(sess->server);
 	if (rc) {
@@ -764,11 +770,13 @@ int compute_smb30signingkey(struct cifssrv_sess *sess, struct channel *chann)
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacsha256->shash,
-			chann->smb3signingkey);
+			hashptr);
 	if (rc) {
 		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto smb3signkey_ret;
 	}
+
+	memcpy(key, hashptr, key_size);
 
 smb3signkey_ret:
 	return rc;

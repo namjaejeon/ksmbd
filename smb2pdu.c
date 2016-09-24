@@ -1007,7 +1007,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		if (server->dialect >= SMB30_PROT_ID) {
 			if (server->sign && server->ops->compute_signingkey) {
 				rc = server->ops->compute_signingkey(sess,
-					chann);
+					chann->smb3signingkey,
+					SMB3_SIGN_KEY_SIZE);
 				if (rc) {
 					cifssrv_debug("SMB3 session key"
 						"generation failed\n");
@@ -4652,7 +4653,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 
 			chann = lookup_chann_list(smb_work->sess);
 			ret = server->ops->compute_signingkey(smb_work->sess,
-				chann);
+				chann->smb3signingkey, SMB3_SIGN_KEY_SIZE);
 			if (ret)
 				cifssrv_err("SMB3 sesskey generation failed\n");
 			else
