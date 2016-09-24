@@ -990,7 +990,9 @@ static int __init init_smb_server(void)
 		goto err3;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	cifssrv_net_init();
+	rc = cifssrv_net_init();
+	if (rc)
+		goto err3;
 #endif
 	return 0;
 
