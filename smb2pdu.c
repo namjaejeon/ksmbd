@@ -1053,7 +1053,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_tree_connect_req *req;
 	struct smb2_tree_connect_rsp *rsp;
-	struct cifssrv_sess *sess;
+	struct cifssrv_sess *sess = smb_work->sess;
 	struct cifssrv_share *share;
 	struct cifssrv_tcon *tcon;
 	char *treename = NULL, *name = NULL;
@@ -1068,9 +1068,6 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		return 0;
 	}
 
-	sess = list_entry(server->cifssrv_sess.next,
-			struct cifssrv_sess, cifssrv_ses_list);
-
 	treename = smb_strndup_from_utf16(req->Buffer, req->PathLength,
 					  true, server->local_nls);
 	if (IS_ERR(treename)) {
@@ -1078,6 +1075,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		rc = PTR_ERR(treename);
 		goto out_err;
 	}
+
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
 		rc = PTR_ERR(name);
@@ -1216,7 +1214,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_tree_disconnect_req *req;
 	struct smb2_tree_disconnect_rsp *rsp;
-	struct cifssrv_sess *sess;
+	struct cifssrv_sess *sess = smb_work->sess;
 	struct cifssrv_tcon *tcon;
 
 	req = (struct smb2_tree_disconnect_req *)smb_work->buf;
@@ -1231,8 +1229,6 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 4);
 
 	cifssrv_debug("%s : request\n", __func__);
-	sess = list_entry(server->cifssrv_sess.next,
-			struct cifssrv_sess, cifssrv_ses_list);
 
 	tcon = get_cifssrv_tcon(sess, req->hdr.TreeId);
 	if (tcon == NULL) {
@@ -1263,7 +1259,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_logoff_req *req;
 	struct smb2_logoff_rsp *rsp;
-	struct cifssrv_sess *sess;
+	struct cifssrv_sess *sess = smb_work->sess;
 	struct cifssrv_tcon *tcon;
 	struct list_head *tmp, *t;
 	struct channel *chann;
@@ -1281,8 +1277,6 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 4);
 
 	cifssrv_debug("%s : request\n", __func__);
-	sess = list_entry(server->cifssrv_sess.next,
-		struct cifssrv_sess, cifssrv_ses_list);
 
 	/* Got a valid session, set server state */
 	WARN_ON(sess->server != server || server->sess_count != 1);
