@@ -780,6 +780,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 	case SMB21_PROT_ID:
 		init_smb2_1_server(server);
 		break;
+	case SMB20_PROT_ID:
+		init_smb2_0_server(server);
+		break;
 	case BAD_PROT_ID:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return 0;
