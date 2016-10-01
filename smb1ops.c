@@ -50,6 +50,7 @@ struct smb_version_ops smb1_server_ops = {
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
 	.check_user_session = smb_check_user_session,
+	.get_cifssrv_tcon = smb_get_cifssrv_tcon,
 };
 
 struct smb_version_cmds smb1_server_cmds[256] = {

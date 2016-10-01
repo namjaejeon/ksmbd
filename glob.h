@@ -382,6 +382,7 @@ struct smb_work {
 	bool added_in_request_list:1;	/* added in server->requests list */
 
 	struct cifssrv_sess *sess;
+	struct cifssrv_tcon *tcon;
 };
 
 struct smb_version_ops {
@@ -391,6 +392,7 @@ struct smb_version_ops {
 	int (*allocate_rsp_buf)(struct smb_work *smb_work);
 	void (*set_rsp_credits)(struct smb_work *swork);
 	int (*check_user_session)(struct smb_work *work);
+	int (*get_cifssrv_tcon)(struct smb_work *smb_work);
 	int (*is_sign_req)(struct smb_work *work, unsigned int command);
 	int (*check_sign_req)(struct smb_work *work);
 	void (*set_sign_rsp)(struct smb_work *work);

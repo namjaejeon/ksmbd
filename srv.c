@@ -136,32 +136,6 @@ out:
 }
 
 /**
- * get_cifssrv_tcon() - get tree connection information for a tree id
- * @sess:	session containing tree list
- * @tid:	match tree connection with tree id
- *
- * Return:      matching tree connection on success, otherwise error
- */
-struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
-			unsigned int tid)
-{
-	struct cifssrv_tcon *tcon;
-	struct list_head *tmp;
-
-	if (sess->tcon_count == 0) {
-		cifssrv_debug("NO tree connected\n");
-		return NULL;
-	}
-
-	list_for_each(tmp, &sess->tcon_list) {
-		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
-		if (tcon->share->tid == tid)
-			return tcon;
-	}
-	return NULL;
-}
-
-/**
  * validate_server_handle() - check for valid tcp server handle
  * @handle:     TCP server handle to be validated
  * @pipe_type:	pipe type
@@ -485,6 +459,13 @@ void handle_smb_work(struct work_struct *work)
 			server->ops->set_rsp_status(smb_work,
 					NT_STATUS_USER_SESSION_DELETED);
 			goto send;
+		} else if (rc > 0) {
+			rc = server->ops->get_cifssrv_tcon(smb_work);
+			if (rc < 0) {
+				server->ops->set_rsp_status(smb_work,
+					NT_STATUS_NETWORK_NAME_DELETED);
+				goto send;
+			}
 		}
 	}
 

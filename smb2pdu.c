@@ -123,6 +123,41 @@ static inline struct channel *lookup_chann_list(struct cifssrv_sess *sess)
 }
 
 /**
+ * smb2_get_cifssrv_tcon() - get tree connection information for a tree id
+ * @sess:	session containing tree list
+ * @tid:	match tree connection with tree id
+ *
+ * Return:      matching tree connection on success, otherwise error
+ */
+int smb2_get_cifssrv_tcon(struct smb_work *smb_work)
+{
+	struct cifssrv_tcon *tcon;
+	struct list_head *tmp;
+	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
+	int rc = -1;
+
+	smb_work->tcon = NULL;
+	if (!smb_work->sess->tcon_count) {
+		cifssrv_debug("NO tree connected\n");
+		return 0;
+	}
+
+	list_for_each(tmp, &smb_work->sess->tcon_list) {
+		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
+		if (tcon->share->tid == le32_to_cpu(req_hdr->TreeId)) {
+			rc = 1;
+			smb_work->tcon = tcon;
+			break;
+		}
+	}
+
+	if (rc < 0)
+		cifssrv_err("Invalid tid %d\n", req_hdr->TreeId);
+
+	return rc;
+}
+
+/**
  * smb2_set_err_rsp() - set error response code on smb response
  * @smb_work:	smb work containing response buffer
  */
@@ -1236,7 +1271,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	struct smb2_tree_disconnect_req *req;
 	struct smb2_tree_disconnect_rsp *rsp;
 	struct cifssrv_sess *sess = smb_work->sess;
-	struct cifssrv_tcon *tcon;
+	struct cifssrv_tcon *tcon = smb_work->tcon;
 
 	req = (struct smb2_tree_disconnect_req *)smb_work->buf;
 	rsp = (struct smb2_tree_disconnect_rsp *)smb_work->rsp_buf;
@@ -1251,8 +1286,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 
 	cifssrv_debug("%s : request\n", __func__);
 
-	tcon = get_cifssrv_tcon(sess, req->hdr.TreeId);
-	if (tcon == NULL) {
+	if (!tcon) {
 		cifssrv_err("Invalid tid %d\n", req->hdr.TreeId);
 		rsp->hdr.Status = NT_STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(smb_work);

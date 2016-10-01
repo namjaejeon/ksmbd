@@ -374,6 +374,41 @@ int smb_check_user_session(struct smb_work *smb_work)
 }
 
 /**
+ * smb_get_cifssrv_tcon() - get tree connection information for a tree id
+ * @sess:	session containing tree list
+ * @tid:	match tree connection with tree id
+ *
+ * Return:      matching tree connection on success, otherwise error
+ */
+int smb_get_cifssrv_tcon(struct smb_work *smb_work)
+{
+	struct cifssrv_tcon *tcon;
+	struct list_head *tmp;
+	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
+	int rc = -1;
+
+	smb_work->tcon = NULL;
+	if (!smb_work->sess->tcon_count) {
+		cifssrv_debug("NO tree connected\n");
+		return 0;
+	}
+
+	list_for_each(tmp, &smb_work->sess->tcon_list) {
+		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
+		if (tcon->share->tid == le16_to_cpu(req_hdr->Tid)) {
+			rc = 1;
+			smb_work->tcon = tcon;
+			break;
+		}
+	}
+
+	if (rc < 0)
+		cifssrv_err("Invalid tid %d\n", req_hdr->Tid);
+
+	return rc;
+}
+
+/**
  * smb_session_disconnect() - LOGOFF request handler
  * @smb_work:	smb work containing log off request buffer
  *
@@ -431,11 +466,10 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	struct cifssrv_tcon *tcon;
+	struct cifssrv_tcon *tcon = smb_work->tcon;
 	struct cifssrv_sess *sess = smb_work->sess;
 
-	tcon = get_cifssrv_tcon(sess, req_hdr->Tid);
-	if (tcon == NULL) {
+	if (!tcon) {
 		cifssrv_err("Invalid tid %d\n", req_hdr->Tid);
 		rsp_hdr->Status.CifsError = NT_STATUS_NO_SUCH_USER;
 		return -EINVAL;
