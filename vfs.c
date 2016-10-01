@@ -29,6 +29,7 @@
 #include <linux/xattr.h>
 #endif
 
+#include "export.h"
 #include "glob.h"
 #include "oplock.h"
 
@@ -96,7 +97,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 
 /**
  * smb_vfs_read() - vfs helper for smb file read
- * @server:     TCP server instance of connection
+ * @sess:	TCP server session
  * @fid:	file id of open file
  * @buf:	buf containing read data
  * @count:	read byte count
@@ -104,7 +105,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
+int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
 		size_t count, loff_t *pos)
 {
 	struct file *filp;
@@ -119,7 +120,7 @@ int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
 	if (unlikely(count == 0))
 		return 0;
 
-	fp = get_id_from_fidtable(server, fid);
+	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
 		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
@@ -164,7 +165,7 @@ int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
 
 /**
  * smb_vfs_write() - vfs helper for smb file write
- * @server:     TCP server instance of connection
+ * @sess:	TCP server session
  * @fid:	file id of open file
  * @buf:	buf containing data for writing
  * @count:	read byte count
@@ -174,7 +175,7 @@ int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
+int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, char *buf,
 		size_t count, loff_t *pos,
 		bool sync, ssize_t *written)
 {
@@ -184,10 +185,10 @@ int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
 	struct cifssrv_file *fp;
 	int err;
 
-	fp = get_id_from_fidtable(server, fid);
+	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
-		cifssrv_err("failed to get filp for fid %llu server = 0x%p\n",
-				fid, server);
+		cifssrv_err("failed to get filp for fid %llu session = 0x%p\n",
+				fid, sess);
 		return -ENOENT;
 	}
 	filp = fp->filp;
@@ -206,7 +207,7 @@ int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
 		mutex_lock(&ofile_list_lock);
-		smb_breakII_oplock(server, fp, NULL);
+		smb_breakII_oplock(sess->server, fp, NULL);
 		mutex_unlock(&ofile_list_lock);
 	}
 
@@ -263,14 +264,14 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 
 /**
  * smb_vfs_setattr() - vfs helper for smb setattr
- * @server:     TCP server instance of connection
+ * @sess:	TCP server session
  * @name:	file name
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_setattr(struct tcp_server_info *server, const char *name,
+int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, struct iattr *attrs)
 {
 	struct file *filp;
@@ -292,7 +293,7 @@ int smb_vfs_setattr(struct tcp_server_info *server, const char *name,
 		inode = dentry->d_inode;
 	} else {
 
-		fp = get_id_from_fidtable(server, fid);
+		fp = get_id_from_fidtable(sess, fid);
 		if (!fp) {
 			cifssrv_err("failed to get filp for fid %u\n", fid);
 			return -ENOENT;
@@ -358,20 +359,20 @@ out:
 
 /**
  * smb_vfs_getattr() - vfs helper for smb getattr
- * @server:     TCP server instance of connection
+ * @sess:	TCP server session
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_getattr(struct tcp_server_info *server, __u16 fid,
+int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 		struct kstat *stat)
 {
 	struct file *filp;
 	struct cifssrv_file *fp;
 	int err;
 
-	fp = get_id_from_fidtable(server, fid);
+	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
 		cifssrv_err("failed to get filp for fid %u\n", fid);
 		return -ENOENT;
@@ -386,18 +387,18 @@ int smb_vfs_getattr(struct tcp_server_info *server, __u16 fid,
 
 /**
  * smb_vfs_fsync() - vfs helper for smb fsync
- * @server:     TCP server instance of connection
+ * @sess:	TCP server session
  * @fid:	file id of open file
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_fsync(struct tcp_server_info *server, uint64_t fid)
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid)
 {
 	struct file *filp;
 	struct cifssrv_file *fp;
 	int err;
 
-	fp = get_id_from_fidtable(server, fid);
+	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
 		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
@@ -601,14 +602,14 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
 
 /**
  * smb_vfs_rename() - vfs helper for smb rename
- * @server:		TCP server instance of connection
+ * @sess:		TCP server session
  * @abs_oldname:	old filename
  * @abs_newname:	new filename
  * @oldfid:		file id of old file
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_rename(struct tcp_server_info *server, char *abs_oldname,
+int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		char *abs_newname, __u16 oldfid)
 {
 	struct path oldpath_p, newpath_p;
@@ -662,7 +663,7 @@ int smb_vfs_rename(struct tcp_server_info *server, char *abs_oldname,
 		dnew_p = newpath_p.dentry;
 	} else {
 		/* rename by fid of source file instead of source filename */
-		fp = get_id_from_fidtable(server, oldfid);
+		fp = get_id_from_fidtable(sess, oldfid);
 		if (!fp) {
 			cifssrv_err("can't find filp for fid %u\n", oldfid);
 			return -ENOENT;
@@ -748,14 +749,14 @@ out1:
 
 /**
  * smb_vfs_truncate() - vfs helper for smb file truncate
- * @server:	TCP server instance of connection
+ * @sess:	TCP server session
  * @name:	old filename
  * @fid:	file id of old file
  * @size:	truncate to given size
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
+int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, loff_t size)
 {
 	struct path path;
@@ -777,7 +778,7 @@ int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
 					name, err);
 		path_put(&path);
 	} else {
-		fp = get_id_from_fidtable(server, fid);
+		fp = get_id_from_fidtable(sess, fid);
 		if (!fp) {
 			cifssrv_err("failed to get filp for fid %u\n", fid);
 			return -ENOENT;
@@ -787,7 +788,7 @@ int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
 			mutex_lock(&ofile_list_lock);
-			smb_breakII_oplock(server, fp, NULL);
+			smb_breakII_oplock(sess->server, fp, NULL);
 			mutex_unlock(&ofile_list_lock);
 		} else {
 			inode = file_inode(filp);

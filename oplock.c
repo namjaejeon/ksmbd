@@ -1341,7 +1341,7 @@ void smb2_send_oplock_break(struct work_struct *work)
 
 	mutex_lock(&server->srv_mutex);
 
-	fp = get_id_from_fidtable(server, opinfo->fid);
+	fp = get_id_from_fidtable(smb_work->sess, opinfo->fid);
 	if (!fp) {
 		mutex_unlock(&server->srv_mutex);
 		kfree(smb_work);
@@ -1732,15 +1732,15 @@ int smb_break_write_lease(struct ofile_info *ofile,
 /**
  * cifssrv_durable_verify_and_del_oplock() - Check if the file is already
  *					opened on current server
- * @curr_server:	current TCP server instance of connection
- * @prev_server:	previous TCP server instance of connection
+ * @curr_sess:		current TCP server session
+ * @prev_sess:		previous TCP server session
  * @fid:		file id of open file
  * @filp:		file pointer of open file
  *
  * Return:	0 on success, otherwise error
  */
-int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
-					  struct tcp_server_info *prev_server,
+int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
+					  struct cifssrv_sess *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id)
 {
@@ -1753,7 +1753,7 @@ int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 
 	mutex_lock(&ofile_list_lock);
 
-	fp_curr = get_id_from_fidtable(curr_server, fid);
+	fp_curr = get_id_from_fidtable(curr_sess, fid);
 	if (fp_curr && fp_curr->sess_id == sess_id) {
 		mutex_unlock(&ofile_list_lock);
 		cifssrv_err("File already opened on current server\n");
@@ -1761,7 +1761,7 @@ int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 		goto out;
 	}
 
-	fp = get_id_from_fidtable(prev_server, fid);
+	fp = get_id_from_fidtable(prev_sess, fid);
 	if (!fp) {
 		mutex_unlock(&ofile_list_lock);
 		cifssrv_err("File struct not found\n");
@@ -1777,7 +1777,7 @@ int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 		goto out;
 	}
 
-	opinfo = get_matching_opinfo(prev_server, ofile, fid, 0);
+	opinfo = get_matching_opinfo(prev_sess->server, ofile, fid, 0);
 	if (opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifssrv_err("Unexpected null oplock_info\n");
@@ -1804,9 +1804,9 @@ int cifssrv_durable_verify_and_del_oplock(struct tcp_server_info *curr_server,
 	}
 
 	/* Remove the oplock associated with previous server thread */
-	close_id_del_oplock(prev_server, fp, fid);
-	delete_id_from_fidtable(prev_server, fid);
-	cifssrv_close_id(&prev_server->fidtable, fid);
+	close_id_del_oplock(prev_sess->server, fp, fid);
+	delete_id_from_fidtable(prev_sess, fid);
+	cifssrv_close_id(&prev_sess->fidtable, fid);
 
 out:
 	return rc;

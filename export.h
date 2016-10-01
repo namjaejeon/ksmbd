@@ -104,7 +104,7 @@ struct cifssrv_sess {
 	struct list_head cifssrv_ses_list;
 	struct list_head cifssrv_ses_global_list;
 	struct list_head tcon_list;
-	int	tcon_count;
+	int tcon_count;
 	int valid;
 	unsigned int sequence_number;
 	uint64_t sess_id;
@@ -114,6 +114,7 @@ struct cifssrv_sess {
 	struct list_head cifssrv_chann_list;
 	bool is_anonymous;
 	bool is_guest;
+	struct fidtable_desc fidtable;
 };
 
 enum share_attrs {

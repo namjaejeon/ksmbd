@@ -1042,6 +1042,9 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		sess->tcon_count = 0;
 		sess->valid = 1;
 		server->sess_count++;
+		rc = init_fidtable(&sess->fidtable);
+		if (rc < 0)
+			goto out_err;
 
 		server->tcp_status = CifsGood;
 	} else {
@@ -1338,6 +1341,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	/* free all sessions, we have just 1 */
 	list_del(&sess->cifssrv_ses_list);
 	list_del(&sess->cifssrv_ses_global_list);
+	destroy_fidtable(sess);
 	kfree(sess);
 	smb_work->sess = NULL;
 
@@ -1381,7 +1385,7 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	}
 
 	/* Assigning temporary fid for pipe */
-	id = get_pipe_id(smb_work->server, pipe_type);
+	id = get_pipe_id(smb_work->sess, pipe_type);
 	if (id < 0) {
 		if (id == -EMFILE)
 			rsp->hdr.Status = NT_STATUS_TOO_MANY_OPENED_FILES;
@@ -1428,6 +1432,7 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 int smb2_open(struct smb_work *smb_work)
 {
 	struct tcp_server_info *server = smb_work->server;
+	struct cifssrv_sess *sess = smb_work->sess;
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
@@ -1512,7 +1517,7 @@ int smb2_open(struct smb_work *smb_work)
 			}
 
 			cifssrv_debug("Persistent-id from reconnect = %llu server = 0x%p\n",
-				     persistent_id, durable_state->server);
+				     persistent_id, durable_state->sess);
 			goto reconnect;
 		} else if (context != NULL &&
 			req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_BATCH) {
@@ -1720,7 +1725,7 @@ int smb2_open(struct smb_work *smb_work)
 reconnect:
 
 	if (durable_reconnect) {
-		rc = cifssrv_durable_reconnect(smb_work->sess, durable_state,
+		rc = cifssrv_durable_reconnect(sess, durable_state,
 			&filp);
 		if (rc < 0) {
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -1745,7 +1750,7 @@ reconnect:
 	}
 
 	/* Obtain Volatile-ID */
-	volatile_id = cifssrv_get_unused_id(&server->fidtable);
+	volatile_id = cifssrv_get_unused_id(&sess->fidtable);
 	if (volatile_id < 0) {
 		cifssrv_err("failed to get unused volatile_id for file\n");
 		rc = volatile_id;
@@ -1753,11 +1758,11 @@ reconnect:
 	}
 
 	cifssrv_debug("volatile_id returned: %d\n", volatile_id);
-	fp = insert_id_in_fidtable(smb_work->server, smb_work->sess->sess_id,
+	fp = insert_id_in_fidtable(smb_work->sess, sess->sess_id,
 		volatile_id, filp);
 	if (fp == NULL) {
 		cifssrv_err("volatile_id insert failed\n");
-		cifssrv_close_id(&server->fidtable, volatile_id);
+		cifssrv_close_id(&sess->fidtable, volatile_id);
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -1819,12 +1824,12 @@ reconnect:
 	if (durable_reopened == false) {
 		durable_open = durable_open &&
 				(oplock == SMB2_OPLOCK_LEVEL_BATCH);
-		rc = cifssrv_insert_in_global_table(server, volatile_id,
+		rc = cifssrv_insert_in_global_table(sess, volatile_id,
 						       filp, durable_open);
 
 		if (rc < 0) {
 			cifssrv_err("failed to get persistent_id for file\n");
-			cifssrv_close_id(&server->fidtable, volatile_id);
+			cifssrv_close_id(&sess->fidtable, volatile_id);
 			durable_open = false;
 			goto err_out;
 		} else {
@@ -1839,7 +1844,7 @@ reconnect:
 		    oplock == SMB2_OPLOCK_LEVEL_BATCH) {
 		/* During durable reconnect able to fetch/verify durable state
 		   but couldn't get batch oplock then we will not come here */
-		cifssrv_update_durable_state(server, persistent_id,
+		cifssrv_update_durable_state(sess, persistent_id,
 					     volatile_id, filp);
 		fp->is_durable = 1;
 		file_info = FILE_OPENED;
@@ -2183,7 +2188,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
 
-	dir_fp = get_id_from_fidtable(server, id);
+	dir_fp = get_id_from_fidtable(smb_work->sess, id);
 	if (!dir_fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		cifssrv_err("valatile id lookup fail: %llu\n", id);
@@ -2210,7 +2215,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 	srch_flag = req->Flags;
 	srch_ptr = smb_strndup_from_utf16(req->Buffer,
 			le32_to_cpu(req->FileNameLength), 1,
-			smb_work->server->local_nls);
+			server->local_nls);
 	if (IS_ERR(srch_ptr)) {
 		cifssrv_debug("Search Pattern not found\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -2502,7 +2507,7 @@ static int smb2_close_pipe(struct smb_work *smb_work)
 			cifssrv_err("failed to send event, err %d\n", rc);
 	}
 #endif
-	rc = close_pipe_id(server, pipe_desc->pipe_type);
+	rc = close_pipe_id(smb_work->sess, pipe_desc->pipe_type);
 	if (rc < 0) {
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		smb2_set_err_rsp(smb_work);
@@ -2597,7 +2602,7 @@ int smb2_close(struct smb_work *smb_work)
 	err = close_persistent_id(persistent_id);
 	if (err)
 		goto out;
-	err = close_id(server, volatile_id);
+	err = close_id(smb_work->sess, volatile_id);
 	if (err)
 		goto out;
 
@@ -2936,7 +2941,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		/* smb2 info file called for pipe */
 		return smb2_info_file_pipe(smb_work);
 	} else {
-		fp = get_id_from_fidtable(server, id);
+		fp = get_id_from_fidtable(smb_work->sess, id);
 		if (!fp) {
 			cifssrv_debug("Invalid id for file info : %llu\n", id);
 			return -EINVAL;
@@ -3584,7 +3589,6 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 	struct smb2_set_info_req *req = NULL;
 	struct smb2_set_info_rsp *rsp = NULL;
 	struct smb2_file_rename_info *file_info = NULL;
-	struct tcp_server_info *server = smb_work->server;
 	char *new_name = NULL, *abs_oldname = NULL, *old_name = NULL;
 	char *tmp_name = NULL, *pathname = NULL;
 	struct path path;
@@ -3667,7 +3671,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 		}
 	}
 
-	rc = smb_vfs_rename(server, NULL, new_name, old_fid);
+	rc = smb_vfs_rename(smb_work->sess, NULL, new_name, old_fid);
 	if (rc)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 
@@ -3690,7 +3694,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	struct smb2_set_info_req *req;
 	struct smb2_set_info_rsp *rsp;
 	struct cifssrv_file *fp;
-	struct tcp_server_info *server = smb_work->server;
+	struct cifssrv_sess *sess = smb_work->sess;
 	uint64_t id;
 	int rc = 0;
 	struct file *filp;
@@ -3700,7 +3704,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
 
 	id = le64_to_cpu(req->VolatileFileId);
-	fp = get_id_from_fidtable(server, id);
+	fp = get_id_from_fidtable(sess, id);
 	if (!fp) {
 		cifssrv_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
@@ -3735,7 +3739,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		if (attrs.ia_valid) {
-			rc = smb_vfs_setattr(server, NULL, id, &attrs);
+			rc = smb_vfs_setattr(sess, NULL, id, &attrs);
 			if (rc) {
 				cifssrv_debug("failed to set time\n");
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -3757,7 +3761,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
 		if (newsize != i_size_read(inode)) {
-			rc = smb_vfs_truncate(server, NULL, id, newsize);
+			rc = smb_vfs_truncate(sess, NULL, id, newsize);
 			if (rc) {
 				cifssrv_err("truncate failed! fid %llu err %d\n",
 						id, rc);
@@ -3902,7 +3906,6 @@ int smb2_read(struct smb_work *smb_work)
 {
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp, *rsp_org;
-	struct tcp_server_info *server = smb_work->server;
 	loff_t offset;
 	size_t length, mincount;
 	ssize_t nbytes = 0;
@@ -3953,7 +3956,7 @@ int smb2_read(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	nbytes = smb_vfs_read(server, id, &smb_work->rdata_buf, length,
+	nbytes = smb_vfs_read(smb_work->sess, id, &smb_work->rdata_buf, length,
 			&offset);
 	if (nbytes < 0) {
 		err = nbytes;
@@ -4110,7 +4113,6 @@ int smb2_write(struct smb_work *smb_work)
 {
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp, *rsp_org;
-	struct tcp_server_info *server = smb_work->server;
 	loff_t offset;
 	size_t length;
 	ssize_t nbytes;
@@ -4175,7 +4177,7 @@ int smb2_write(struct smb_work *smb_work)
 		writethrough = true;
 
 	cifssrv_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	err = smb_vfs_write(server, id, data_buf, length, &offset,
+	err = smb_vfs_write(smb_work->sess, id, data_buf, length, &offset,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
@@ -4230,7 +4232,7 @@ int smb2_flush(struct smb_work *smb_work)
 		goto out;
 	}
 
-	err = smb_vfs_fsync(smb_work->server,
+	err = smb_vfs_fsync(smb_work->sess,
 			(unsigned short)le64_to_cpu(req->VolatileFileId));
 	if (err)
 		goto out;
@@ -4309,7 +4311,6 @@ int smb2_lock(struct smb_work *smb_work)
 	struct smb2_lock_rsp *rsp;
 	struct smb2_lock_element *lock_ele;
 	struct cifssrv_file *fp;
-	struct tcp_server_info *server = smb_work->server;
 	struct file_lock *flock = NULL;
 	struct file *filp;
 	int lock_count;
@@ -4326,7 +4327,7 @@ int smb2_lock(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("Recieved lock request\n");
-	fp = get_id_from_fidtable(server,
+	fp = get_id_from_fidtable(smb_work->sess,
 			le64_to_cpu(req->VolatileFileId));
 	if (!fp) {
 		cifssrv_debug("Invalid file id for lock : %llu\n",
@@ -4710,7 +4711,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 			volatile_id, persistent_id, oplock);
 
 	mutex_lock(&ofile_list_lock);
-	fp = get_id_from_fidtable(server, volatile_id);
+	fp = get_id_from_fidtable(smb_work->sess, volatile_id);
 	if (!fp) {
 		mutex_unlock(&ofile_list_lock);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;

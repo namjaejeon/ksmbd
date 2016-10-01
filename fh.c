@@ -274,7 +274,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifssrv file pointer if success, otherwise NULL
  */
 struct cifssrv_file *
-insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
+insert_id_in_fidtable(struct cifssrv_sess *sess, uint64_t sess_id,
 		unsigned int id, struct file *filp)
 {
 	struct cifssrv_file *fp = NULL;
@@ -291,11 +291,11 @@ insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
 	fp->sess_id = sess_id;
 #endif
 
-	spin_lock(&server->fidtable.fidtable_lock);
-	ftab = server->fidtable.ftab;
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
 	BUG_ON(ftab->fileid[id] != NULL);
 	ftab->fileid[id] = fp;
-	spin_unlock(&server->fidtable.fidtable_lock);
+	spin_unlock(&sess->fidtable.fidtable_lock);
 
 	return ftab->fileid[id];
 }
@@ -310,21 +310,21 @@ insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
  * Return:      cifssrv file pointer if success, otherwise NULL
  */
 struct cifssrv_file *
-get_id_from_fidtable(struct tcp_server_info *server, uint64_t id)
+get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id)
 {
 	struct cifssrv_file *file;
 	struct fidtable *ftab;
 
-	spin_lock(&server->fidtable.fidtable_lock);
-	ftab = server->fidtable.ftab;
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
 	if ((id < CIFSSRV_START_FID) || (id > ftab->max_fids - 1)) {
-		spin_unlock(&server->fidtable.fidtable_lock);
+		spin_unlock(&sess->fidtable.fidtable_lock);
 		cifssrv_debug("invalid fileid (%llu)\n", id);
 		return NULL;
 	}
 
 	file = ftab->fileid[id];
-	spin_unlock(&server->fidtable.fidtable_lock);
+	spin_unlock(&sess->fidtable.fidtable_lock);
 	return file;
 }
 
@@ -335,18 +335,18 @@ get_id_from_fidtable(struct tcp_server_info *server, uint64_t id)
  *
  * delete a fid from fid table and free associated cifssrv file pointer
  */
-void delete_id_from_fidtable(struct tcp_server_info *server, unsigned int id)
+void delete_id_from_fidtable(struct cifssrv_sess *sess, unsigned int id)
 {
 	struct cifssrv_file *fp;
 	struct fidtable *ftab;
 
-	spin_lock(&server->fidtable.fidtable_lock);
-	ftab = server->fidtable.ftab;
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
 	kfree(fp);
 	ftab->fileid[id] = NULL;
-	spin_unlock(&server->fidtable.fidtable_lock);
+	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
 /**
@@ -360,20 +360,20 @@ void delete_id_from_fidtable(struct tcp_server_info *server, unsigned int id)
  *
  * Return:      0 on success, otherwise error number
  */
-int close_id(struct tcp_server_info *server, uint64_t id)
+int close_id(struct cifssrv_sess *sess, uint64_t id)
 {
 	struct cifssrv_file *fp;
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	int err;
 
-	fp = get_id_from_fidtable(server, id);
+	fp = get_id_from_fidtable(sess, id);
 	if (!fp) {
 		cifssrv_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
 	}
 
-	close_id_del_oplock(server, fp, id);
+	close_id_del_oplock(sess->server, fp, id);
 
 	if (fp->islink)
 		filp = fp->lfilp;
@@ -416,28 +416,28 @@ out:
 	}
 
 	filp_close(filp, (struct files_struct *)filp);
-	delete_id_from_fidtable(server, id);
-	cifssrv_close_id(&server->fidtable, id);
+	delete_id_from_fidtable(sess, id);
+	cifssrv_close_id(&sess->fidtable, id);
 	return 0;
 }
 
 /**
  * destroy_fidtable() - destroy a fid table for given cifssrv thread
- * @server:	TCP server instance of connection
+ * @sess:	TCP server session
  *
  * lookup fid from fid table, release oplock info and close associated filp.
  * delete fid, free associated cifssrv file pointer and clear fid bitmap entry
  * in fid table.
  */
-void destroy_fidtable(struct tcp_server_info *server)
+void destroy_fidtable(struct cifssrv_sess *sess)
 {
 	struct cifssrv_file *file;
 	struct fidtable *ftab;
 	int id;
 
-	spin_lock(&server->fidtable.fidtable_lock);
-	ftab = server->fidtable.ftab;
-	spin_unlock(&server->fidtable.fidtable_lock);
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
+	spin_unlock(&sess->fidtable.fidtable_lock);
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
@@ -447,10 +447,10 @@ void destroy_fidtable(struct tcp_server_info *server)
 				close_persistent_id(file->persistent_id);
 #endif
 
-			close_id(server, id);
+			close_id(sess, id);
 		}
 	}
-	server->fidtable.ftab = NULL;
+	sess->fidtable.ftab = NULL;
 	free_fidtable(ftab);
 }
 
@@ -469,7 +469,7 @@ void destroy_fidtable(struct tcp_server_info *server)
  *
  * Return:      persistent_id on success, otherwise error number
  */
-int cifssrv_insert_in_global_table(struct tcp_server_info *server,
+int cifssrv_insert_in_global_table(struct cifssrv_sess *sess,
 				   int volatile_id, struct file *filp,
 				   int durable_open)
 {
@@ -503,12 +503,12 @@ int cifssrv_insert_in_global_table(struct tcp_server_info *server,
 		return rc;
 	}
 
-	durable_state->server = server;
+	durable_state->sess = sess;
 	durable_state->volatile_id = volatile_id;
 	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
 	durable_state->refcount = 1;
 
-	cifssrv_debug("filp stored = 0x%p server = 0x%p\n", filp, server);
+	cifssrv_debug("filp stored = 0x%p sess = 0x%p\n", filp, sess);
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
@@ -551,7 +551,7 @@ cifssrv_get_durable_state(uint64_t id)
  * @volatile_id:	volatile id
  * @filp:		file pointer
  */
-void cifssrv_update_durable_state(struct tcp_server_info *server,
+void cifssrv_update_durable_state(struct cifssrv_sess *sess,
 			     unsigned int persistent_id,
 			     unsigned int volatile_id, struct file *filp)
 {
@@ -564,7 +564,7 @@ void cifssrv_update_durable_state(struct tcp_server_info *server,
 	durable_state =
 		(struct cifssrv_durable_state *)ftab->fileid[persistent_id];
 
-	durable_state->server = server;
+	durable_state->sess = sess;
 	durable_state->volatile_id = volatile_id;
 	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
 	durable_state->refcount++;
@@ -789,8 +789,8 @@ int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
 	struct path *path;
 	int rc = 0;
 
-	rc = cifssrv_durable_verify_and_del_oplock(curr_sess->server,
-						   durable_state->server,
+	rc = cifssrv_durable_verify_and_del_oplock(curr_sess,
+						   durable_state->sess,
 						   durable_state->volatile_id,
 						   filp, curr_sess->sess_id);
 
@@ -822,7 +822,7 @@ int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
  *		persistent fid of a server thread
  * @server:	TCP server instance of connection
  */
-void cifssrv_update_durable_stat_info(struct tcp_server_info *server)
+void cifssrv_update_durable_stat_info(struct cifssrv_sess *sess)
 {
 	struct cifssrv_file *fp;
 	struct fidtable *ftab;
@@ -832,11 +832,11 @@ void cifssrv_update_durable_stat_info(struct tcp_server_info *server)
 	struct file *filp;
 	uint64_t p_id;
 
-	if (durable_enable == false)
+	if (durable_enable == false || !sess)
 		return;
 
-	spin_lock(&server->fidtable.fidtable_lock);
-	ftab = server->fidtable.ftab;
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		fp = ftab->fileid[id];
@@ -855,7 +855,7 @@ void cifssrv_update_durable_stat_info(struct tcp_server_info *server)
 			spin_unlock(&global_fidtable.fidtable_lock);
 		}
 	}
-	spin_unlock(&server->fidtable.fidtable_lock);
+	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 #endif
 
@@ -887,7 +887,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	/* first init id as invalid id - 0xFFFF ? */
 	*ret_id = 0xFFFF;
 
-	id = cifssrv_get_unused_id(&server->fidtable);
+	id = cifssrv_get_unused_id(&work->sess->fidtable);
 	if (id < 0)
 		return id;
 
@@ -910,7 +910,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	smb_vfs_set_fadvise(filp, option);
 
 	sess_id = work->sess == NULL ? 0 : work->sess->sess_id;
-	fp = insert_id_in_fidtable(work->server, sess_id, id, filp);
+	fp = insert_id_in_fidtable(work->sess, sess_id, id, filp);
 	if (fp == NULL) {
 		fput(filp);
 		cifssrv_err("id insert failed\n");
@@ -934,7 +934,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	return 0;
 
 err_out:
-	cifssrv_close_id(&server->fidtable, id);
+	cifssrv_close_id(&work->sess->fidtable, id);
 	return err;
 }
 
@@ -1091,12 +1091,13 @@ out:
  *
  * Return:	id on success, otherwise error
  */
-int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
+int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 {
 	int id;
 	struct cifssrv_pipe *pipe_desc;
+	struct tcp_server_info *server = sess->server;
 
-	id = cifssrv_get_unused_id(&server->fidtable);
+	id = cifssrv_get_unused_id(&sess->fidtable);
 	if (id < 0)
 		return -EMFILE;
 
@@ -1141,16 +1142,17 @@ int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type)
  *
  * Return:	0 on success, otherwise error
  */
-int close_pipe_id(struct tcp_server_info *server, int pipe_type)
+int close_pipe_id(struct cifssrv_sess *sess, int pipe_type)
 {
 	struct cifssrv_pipe *pipe_desc;
+	struct tcp_server_info *server = sess->server;
 	int rc = 0;
 
 	pipe_desc = server->pipe_desc[pipe_type];
 	if (!pipe_desc)
 		return -EINVAL;
 
-	rc = cifssrv_close_id(&server->fidtable, pipe_desc->id);
+	rc = cifssrv_close_id(&sess->fidtable, pipe_desc->id);
 	if (rc < 0)
 		return rc;
 

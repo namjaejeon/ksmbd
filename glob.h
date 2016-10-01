@@ -313,7 +313,6 @@ struct tcp_server_info {
 	/* References which are made for this Server object*/
 	atomic_t r_count;
 	wait_queue_head_t req_running_q;
-	struct fidtable_desc fidtable;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
 	struct cifssrv_lanman_pipe *lpipe_desc;
@@ -491,16 +490,16 @@ extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct tcp_server_info *server, uint64_t fid, char **buf,
+int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
 		size_t count, loff_t *pos);
-int smb_vfs_write(struct tcp_server_info *server, uint64_t fid, char *buf,
+int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, char *buf,
 		size_t count, loff_t *pos,
 		bool fsync, ssize_t *written);
-int smb_vfs_getattr(struct tcp_server_info *server, __u16 fid,
+int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 		struct kstat *stat);
-int smb_vfs_setattr(struct tcp_server_info *server, const char *name,
+int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, struct iattr *attrs);
-int smb_vfs_fsync(struct tcp_server_info *server, uint64_t fid);
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
 		int fexist);
@@ -508,9 +507,9 @@ int smb_vfs_unlink(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
-int smb_vfs_rename(struct tcp_server_info *server, char *oldname,
+int smb_vfs_rename(struct cifssrv_sess *sess, char *oldname,
 		char *newname, __u16 oldfid);
-int smb_vfs_truncate(struct tcp_server_info *server, const char *name,
+int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, loff_t size);
 int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 int smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,

@@ -305,7 +305,8 @@ out:
 	cifssrv_debug("data sent = %d\n", total_len);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	cifssrv_update_durable_stat_info(server);
+	if (server->tcp_status == CifsGood && IS_SMB2(server))
+		cifssrv_update_durable_stat_info(work->sess);
 #endif
 
 	return 0;
@@ -637,12 +638,9 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	init_waitqueue_head(&server->pipe_q);
 	server->ev_state = NETLINK_REQ_INIT;
 #endif
-	rc = init_fidtable(&server->fidtable);
-	if (!rc) {
-		spin_lock(&tcp_sess_list_lock);
-		list_add(&server->tcp_sess, &tcp_sess_list);
-		spin_unlock(&tcp_sess_list_lock);
-	}
+	spin_lock(&tcp_sess_list_lock);
+	list_add(&server->tcp_sess, &tcp_sess_list);
+	spin_unlock(&tcp_sess_list_lock);
 
 	return rc;
 }
@@ -667,7 +665,6 @@ static void server_cleanup(struct tcp_server_info *server)
 	if (server->wbuf)
 		vfree(server->wbuf);
 
-	destroy_fidtable(server);
 	list_del(&server->list);
 	kfree(server);
 }
@@ -842,7 +839,6 @@ int connect_tcp_sess(struct socket *sock)
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
-		free_fidtable(server->fidtable.ftab);
 		spin_lock(&tcp_sess_list_lock);
 		list_del(&server->tcp_sess);
 		spin_unlock(&tcp_sess_list_lock);

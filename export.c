@@ -1403,7 +1403,7 @@ static ssize_t show_server_stat(char *buf)
 /**
  * show_client_stat() - show cifssrv client stat
  * @buf:	destination buffer for stat info
- * @server:	TCP server instance of connection
+ * @sess:	TCP server session
  *
  * Return:      output buffer length
  */
@@ -1504,7 +1504,7 @@ static ssize_t stat_show(struct kobject *kobj,
 			server = list_entry(tmp, struct tcp_server_info, list);
 			len2 = strlen(server->peeraddr);
 			if (len1 == len2 && !strncmp(statIP,
-						server->peeraddr, len1)) {
+				server->peeraddr, len1)) {
 				ret = show_client_stat(buf, server);
 				break;
 			}

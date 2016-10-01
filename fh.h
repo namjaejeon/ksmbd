@@ -26,7 +26,6 @@
 #include <linux/fdtable.h>
 #include <linux/fs.h>
 
-
 #include "glob.h"
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 #include "netlink.h"
@@ -49,6 +48,9 @@
 #define cifssrv_test_and_clear_bit	__test_and_clear_bit_le
 #define cifssrv_find_next_zero_bit	find_next_zero_bit_le
 #define cifssrv_find_next_bit		find_next_bit_le
+
+struct tcp_server_info;
+struct cifssrv_sess;
 
 struct smb_readdir_data {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
@@ -89,7 +91,7 @@ struct cifssrv_file {
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 struct cifssrv_durable_state {
-	struct tcp_server_info *server;
+	struct cifssrv_sess *sess;
 	int volatile_id;
 	struct kstat stat;
 	int refcount;
@@ -141,28 +143,28 @@ struct fidtable_desc {
 };
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
-void destroy_fidtable(struct tcp_server_info *server);
+void destroy_fidtable(struct cifssrv_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
-get_id_from_fidtable(struct tcp_server_info *server, uint64_t id);
-int close_id(struct tcp_server_info *server, uint64_t id);
+get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
+int close_id(struct cifssrv_sess *sess, uint64_t id);
 bool is_dir_empty(struct cifssrv_file *fp);
-int get_pipe_id(struct tcp_server_info *server, unsigned int pipe_type);
+int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);
 unsigned int get_pipe_type(char *pipename);
 struct cifssrv_pipe *get_pipe_desc(struct tcp_server_info *server,
 		unsigned int id);
-int close_pipe_id(struct tcp_server_info *server, int pipe_type);
+int close_pipe_id(struct cifssrv_sess *sess, int pipe_type);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifssrv_file *
-insert_id_in_fidtable(struct tcp_server_info *server, uint64_t sess_id,
+insert_id_in_fidtable(struct cifssrv_sess *sess, uint64_t sess_id,
 		unsigned int id, struct file *filp);
-void delete_id_from_fidtable(struct tcp_server_info *server,
+void delete_id_from_fidtable(struct cifssrv_sess *sess,
 		unsigned int id);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
-int cifssrv_insert_in_global_table(struct tcp_server_info *server,
+int cifssrv_insert_in_global_table(struct cifssrv_sess *sess,
 				   int volatile_id, struct file *filp,
 				   int durable_open);
 int close_persistent_id(uint64_t id);
@@ -172,7 +174,7 @@ void destroy_global_fidtable(void);
 struct cifssrv_durable_state *
 	cifssrv_get_durable_state(uint64_t persistent_id);
 void
-cifssrv_update_durable_state(struct tcp_server_info *server,
+cifssrv_update_durable_state(struct cifssrv_sess *sess,
 				unsigned int persistent_id,
 				unsigned int volatile_id,
 				struct file *filp);
@@ -182,7 +184,7 @@ void
 cifssrv_durable_disconnect(struct tcp_server_info *server,
 		unsigned int persistent_id, struct file *filp);
 
-void cifssrv_update_durable_stat_info(struct tcp_server_info *server);
+void cifssrv_update_durable_stat_info(struct cifssrv_sess *sess);
 #endif
 
 #endif /* __CIFSSRV_FSHANDLE_H */
