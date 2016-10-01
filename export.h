@@ -71,6 +71,7 @@ extern spinlock_t connect_list_lock;
 extern int cifssrv_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
+extern int maptoguest;
 
 extern unsigned int SMBMaxBufSize;
 
@@ -111,6 +112,8 @@ struct cifssrv_sess {
 	char sess_key[CIFS_KEY_SIZE];
 	bool sign;
 	struct list_head cifssrv_chann_list;
+	bool is_anonymous;
+	bool is_guest;
 };
 
 enum share_attrs {

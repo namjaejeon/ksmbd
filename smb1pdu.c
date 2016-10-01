@@ -802,7 +802,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 	/* check if valid user name is present in request or not */
 	offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
-		pSMB->req_no_secext.CaseSensitivePasswordLength;
+			pSMB->req_no_secext.CaseSensitivePasswordLength;
 
 	/* 1 byte for padding */
 	name = smb_strndup_from_utf16(
@@ -826,7 +826,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	cifssrv_debug("session setup request for user %s\n", name);
 	sess->usr = cifssrv_is_user_present(name);
 	if (!sess->usr) {
-		cifssrv_err("user not present in database\n");
+		cifssrv_err("user (%s) is not present in database or guest account is not set\n",
+			name);
 		kfree(name);
 		rc = -EINVAL;
 		goto out_err;
@@ -835,6 +836,9 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 	memcpy(sess->ntlmssp.cryptkey, server->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
+
+	if (sess->usr->guest)
+		goto no_password_check;
 
 	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
 		CIFS_AUTH_RESP_SIZE) {
@@ -854,7 +858,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			((strlen(sess->usr->name) + 1) * 2);
 
 		ntdomain = smb_strndup_from_utf16(
-			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
+			pSMB->req_no_secext.CaseInsensitivePassword +
 			offset + 1, 256, true, server->local_nls);
 		if (IS_ERR(ntdomain)) {
 			cifssrv_err("cannot allocate memory\n");
@@ -873,6 +877,8 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			goto out_err;
 		}
 	}
+
+no_password_check:
 
 	/* verify that any session is not already added although
 	   we have set max vcn as 1 */

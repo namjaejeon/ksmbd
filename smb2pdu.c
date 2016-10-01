@@ -981,7 +981,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		cifssrv_debug("session setup request for user %s\n", username);
 		sess->usr = cifssrv_is_user_present(username);
 		if (!sess->usr) {
-			cifssrv_debug("user not present in database\n");
+			cifssrv_debug("user (%s) is not present in database or guest account is not set\n",
+				username);
 			kfree(username);
 			rc = -EINVAL;
 			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
@@ -989,35 +990,50 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		}
 		kfree(username);
 
-		rc = decode_ntlmssp_authenticate_blob(authblob,
-			le16_to_cpu(req->SecurityBufferLength), sess);
-		if (rc) {
-			cifssrv_debug("authentication failed\n");
-			rc = -EINVAL;
-			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
-			goto out_err;
-		}
+		if (sess->usr->guest) {
+			if (server->sign) {
+				cifssrv_debug("Guest login not allowed when signing enabled\n");
+				rc = -EACCES;
+				rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
+				goto out_err;
+			}
 
-		if ((req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
-		    (!(rsp->SessionFlags & SMB2_SESSION_FLAG_IS_GUEST ||
-			rsp->SessionFlags & SMB2_SESSION_FLAG_IS_NULL) &&
-			(server->sign || global_signing)))
-			sess->sign = true;
+			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
+			sess->is_guest = true;
+			if (maptoguest) {
+				rsp->SessionFlags = SMB2_SESSION_FLAG_IS_NULL;
+				sess->is_anonymous = true;
+				sess->is_guest	= false;
+			}
+		} else {
+			rc = decode_ntlmssp_authenticate_blob(authblob,
+				le16_to_cpu(req->SecurityBufferLength), sess);
+			if (rc) {
+				cifssrv_debug("authentication failed\n");
+				rc = -EINVAL;
+				rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
+				goto out_err;
+			}
 
-		if (server->dialect >= SMB30_PROT_ID) {
-			if (server->sign && server->ops->compute_signingkey) {
-				rc = server->ops->compute_signingkey(sess,
-					chann->smb3signingkey,
-					SMB3_SIGN_KEY_SIZE);
-				if (rc) {
-					cifssrv_debug("SMB3 session key"
-						"generation failed\n");
-					rsp->hdr.Status =
-						NT_STATUS_LOGON_FAILURE;
-					goto out_err;
+			if ((req->SecurityMode &
+				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
+				(server->sign || global_signing)) {
+				if (server->dialect >= SMB30_PROT_ID &&
+					server->ops->compute_signingkey) {
+					rc = server->ops->compute_signingkey(
+						sess, chann->smb3signingkey,
+						SMB3_SIGN_KEY_SIZE);
+					if (rc) {
+						cifssrv_debug("SMB3 session key generation failed\n");
+						rsp->hdr.Status =
+							NT_STATUS_LOGON_FAILURE;
+						goto out_err;
+					}
 				}
+				sess->sign = true;
 			}
 		}
+
 
 		INIT_LIST_HEAD(&sess->tcon_list);
 		sess->tcon_count = 0;
@@ -1211,7 +1227,6 @@ int smb2_create_open_flags(bool file_present, __le32 access,
  */
 int smb2_tree_disconnect(struct smb_work *smb_work)
 {
-	struct tcp_server_info *server = smb_work->server;
 	struct smb2_tree_disconnect_req *req;
 	struct smb2_tree_disconnect_rsp *rsp;
 	struct cifssrv_sess *sess = smb_work->sess;

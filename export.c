@@ -53,6 +53,7 @@ static inline void free_share(struct cifssrv_share *share);
 int cifssrv_num_shares;
 
 /* The parameters defined on configuration */
+int maptoguest;
 int server_signing;
 char *guestAccountName;
 char *server_string;
@@ -214,25 +215,24 @@ static int add_user(char *name, char *pass)
 	if (!usr)
 		return -ENOMEM;
 
-	if (!strlen(pass)) {
-		cifssrv_err("[%s] Err: no password supplied\n", __func__);
-		kfree(usr);
-		return -EINVAL;
-	}
-	if (guestAccountName != NULL) {
+	if (guestAccountName) {
 		if (strcmp(guestAccountName, name) == 0) {
 			usr->vuid = 0;
 			usr->guest = true;
+			usr->name = guestAccountName;
 		} else{
 			usr->vuid = vid++;
 			usr->guest = false;
+			usr->name = name;
+			memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
 		}
 	} else{
 		usr->vuid = vid++;
 		usr->guest = false;
+		usr->name = name;
+		memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
 	}
-	usr->name = name;
-	memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
+
 	usr->gid = current_gid();
 	usr->uid = current_uid();
 	usr->sess_uid = 0;
@@ -395,6 +395,10 @@ int validate_usr(char *usr, struct cifssrv_share *share)
 	int ret;
 
 	/* if "guest = ok, no checking of users required "*/
+	/*
+	* if guest ok not set, but guestAccountname
+	* mapped with valid share path
+	*/
 	if (get_attr_guestok(&share->config.attr)) {
 		cifssrv_debug("guest login on to share %s\n",
 				share->sharename);
@@ -472,7 +476,7 @@ struct cifssrv_share *find_matching_share(__u16 tid)
 
 struct cifssrv_usr *cifssrv_is_user_present(char *name)
 {
-	struct cifssrv_usr *usr, *tmp;
+	struct cifssrv_usr *usr, *tmp, *guest_user = NULL;
 
 	if (!name)
 		return NULL;
@@ -481,8 +485,10 @@ struct cifssrv_usr *cifssrv_is_user_present(char *name)
 		cifssrv_debug("comparing with user %s\n", usr->name);
 		if (!strcmp(name, usr->name))
 			return usr;
+		else if (usr->guest && maptoguest)
+			guest_user = usr;
 	}
-	return NULL;
+	return guest_user;
 }
 
 /**
@@ -830,6 +836,7 @@ enum {
 	Opt_domain,
 	Opt_netbiosname,
 	Opt_signing,
+	Opt_maptoguest,
 
 	Opt_global_err
 };
@@ -840,6 +847,7 @@ static const match_table_t cifssrv_global_tokens = {
 	{ Opt_domain, "workgroup = %s" },
 	{ Opt_netbiosname, "netbios name = %s" },
 	{ Opt_signing, "server signing = %s" },
+	{ Opt_maptoguest, "map to guest = %s" },
 
 	{ Opt_global_err, NULL }
 };
@@ -920,11 +928,13 @@ static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
 	if (!strcasecmp(str, "yes") ||
 	    !strcasecmp(str, "true") ||
 	    !strcasecmp(str, "enable") ||
+	    !strcasecmp(str, "Bad User") ||
 	    !strcmp(str, "1"))
 		*val = ENABLE;
 	else if (!strcasecmp(str, "no") ||
 		 !strcasecmp(str, "false") ||
 		 !strcasecmp(str, "disable") ||
+		 !strcasecmp(str, "Never") ||
 		 !strcmp(str, "0"))
 		*val = DISABLE;
 	else if (!strcasecmp(str, "auto"))
@@ -966,6 +976,7 @@ static int cifssrv_parse_global_options(char *configdata)
 		case Opt_guest:
 			if (cifssrv_get_config_str(args, &guestAccountName))
 				goto out_nomem;
+			add_user(guestAccountName, NULL);
 			break;
 		case Opt_servern:
 			if (cifssrv_get_config_str(args, &server_string))
@@ -981,6 +992,10 @@ static int cifssrv_parse_global_options(char *configdata)
 			break;
 		case Opt_signing:
 			if (cifssrv_get_config_val(args, &server_signing) < 0)
+				goto out_nomem;
+			break;
+		case Opt_maptoguest:
+			if (cifssrv_get_config_val(args, &maptoguest) < 0)
 				goto out_nomem;
 			break;
 		default:
@@ -1655,7 +1670,7 @@ int cifssrv_init_global_params(void)
 	memcpy(netbios_name, TGT_Name, len);
 
 	server_signing = 0;
-
+	maptoguest = 0;
 	return 0;
 }
 
