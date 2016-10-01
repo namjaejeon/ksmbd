@@ -447,6 +447,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	/* free all sessions, we have just 1 */
 	list_del(&sess->cifssrv_ses_list);
+	destroy_fidtable(sess);
 	kfree(sess);
 	smb_work->sess = NULL;
 
