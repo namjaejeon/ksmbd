@@ -87,6 +87,7 @@ struct cifssrv_file {
 	bool is_durable;
 	uint64_t persistent_id;
 	uint64_t sess_id;
+	uint32_t tid;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -143,6 +144,7 @@ struct fidtable_desc {
 };
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
+void close_opens_from_fibtable(struct cifssrv_sess *sess, uint32_t tree_id);
 void destroy_fidtable(struct cifssrv_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
@@ -158,7 +160,7 @@ int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifssrv_file *
 insert_id_in_fidtable(struct cifssrv_sess *sess, uint64_t sess_id,
-		unsigned int id, struct file *filp);
+		uint32_t tree_id, unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifssrv_sess *sess,
 		unsigned int id);
 

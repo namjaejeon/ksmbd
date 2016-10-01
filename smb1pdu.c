@@ -481,6 +481,8 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
 	kfree(tcon);
+
+	close_opens_from_fibtable(sess, le16_to_cpu(req_hdr->Tid));
 	return 0;
 }
 

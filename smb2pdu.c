@@ -1299,6 +1299,8 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
 	kfree(tcon);
+
+	close_opens_from_fibtable(sess, le32_to_cpu(req->hdr.TreeId));
 	return 0;
 }
 
@@ -1793,7 +1795,7 @@ reconnect:
 
 	cifssrv_debug("volatile_id returned: %d\n", volatile_id);
 	fp = insert_id_in_fidtable(smb_work->sess, sess->sess_id,
-		volatile_id, filp);
+		le32_to_cpu(req->hdr.TreeId), volatile_id, filp);
 	if (fp == NULL) {
 		cifssrv_err("volatile_id insert failed\n");
 		cifssrv_close_id(&sess->fidtable, volatile_id);
