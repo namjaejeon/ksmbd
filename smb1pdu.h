@@ -1884,6 +1884,7 @@ extern int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 extern int smb1_is_sign_req(struct smb_work *work, unsigned int command);
 extern int smb1_check_sign_req(struct smb_work *work);
 extern void smb1_set_sign_rsp(struct smb_work *work);
+extern int smb_check_user_session(struct smb_work *smb_work);
 
 /* smb1 command handlers */
 extern int smb_rename(struct smb_work *smb_work);

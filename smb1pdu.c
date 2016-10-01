@@ -338,29 +338,39 @@ char *extract_sharename(const char *treename)
 }
 
 /**
- * get_smb_session() - get session information for matching uid
- * @server:	TCP server instance of connection
- * @vuid:	match session with this uid
+ * smb_check_user_session() - check for valid session for a user
+ * @smb_work:	smb work containing smb request buffer
  *
- * Return:      matching session on success, otherwise error
+ * Return:      0 on success, otherwise error
  */
-struct cifssrv_sess *get_smb_session(struct tcp_server_info *server, int vuid)
+int smb_check_user_session(struct smb_work *smb_work)
 {
+	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
+	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_sess *sess;
 	struct list_head *tmp;
+	int rc = 0;
+
+	smb_work->sess = NULL;
+
+	if (server->tcp_status != CifsGood)
+		return rc;
 
 	if (server->sess_count == 0) {
 		cifssrv_debug("NO sessions registered\n");
-		return NULL;
+		return rc;
 	}
 
 	list_for_each(tmp, &server->cifssrv_sess) {
 		sess = list_entry(tmp, struct cifssrv_sess, cifssrv_ses_list);
-		if (sess->usr->vuid == vuid)
-			return sess;
+		if (sess->usr->vuid == req_hdr->Uid) {
+			smb_work->sess = sess;
+			rc = 1;
+			break;
+		}
 	}
 
-	return NULL;
+	return rc;
 }
 
 /**
@@ -371,18 +381,9 @@ struct cifssrv_sess *get_smb_session(struct tcp_server_info *server, int vuid)
  */
 int smb_session_disconnect(struct smb_work *smb_work)
 {
-	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	struct tcp_server_info *server = smb_work->server;
-	struct cifssrv_sess *sess;
+	struct cifssrv_sess *sess = smb_work->sess;
 	struct list_head *tmp, *t;
-
-	sess = get_smb_session(server, req_hdr->Uid);
-	if (sess == NULL) {
-		cifssrv_err("Invalid vuid %d\n", req_hdr->Uid);
-		rsp_hdr->Status.CifsError = NT_STATUS_NO_SUCH_USER;
-		return -EINVAL;
-	}
 
 	/* Got a valid session, set server state */
 	WARN_ON(server->sess_count != 1);
@@ -430,16 +431,8 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_tcon *tcon;
-	struct cifssrv_sess *sess;
-
-	sess = get_smb_session(server, req_hdr->Uid);
-	if (sess == NULL) {
-		cifssrv_err("Invalid vuid %d\n", req_hdr->Uid);
-		rsp_hdr->Status.CifsError = NT_STATUS_NO_SUCH_USER;
-		return -EINVAL;
-	}
+	struct cifssrv_sess *sess = smb_work->sess;
 
 	tcon = get_cifssrv_tcon(sess, req_hdr->Tid);
 	if (tcon == NULL) {
@@ -491,7 +484,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	char *treename = NULL, *name = NULL;
 	struct cifssrv_share *share;
 	struct cifssrv_tcon *tcon;
-	struct cifssrv_sess *sess = NULL;
+	struct cifssrv_sess *sess = smb_work->sess;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -507,14 +500,6 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	} else {
 		req = (TCONX_REQ *)(&req_hdr->WordCount);
 		rsp = (TCONX_RSP_EXT *)(&rsp_hdr->WordCount);
-	}
-
-	/* is session id valid */
-	sess = get_smb_session(server, rsp_hdr->Uid);
-	if (sess == NULL) {
-		cifssrv_err("session not found for uid %d\n", rsp_hdr->Uid);
-		rc = -EINVAL;
-		goto out_err;
 	}
 
 	/* check if valid tree name is present in request or not */
