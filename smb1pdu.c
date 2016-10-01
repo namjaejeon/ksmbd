@@ -393,6 +393,12 @@ int smb_get_cifssrv_tcon(struct smb_work *smb_work)
 		return 0;
 	}
 
+	if (smb_work->server->ops->get_cmd_val(smb_work) ==
+		SMB_COM_TREE_CONNECT_ANDX) {
+		cifssrv_debug("skip to check tree connect request\n");
+		return 0;
+	}
+
 	list_for_each(tmp, &smb_work->sess->tcon_list) {
 		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
 		if (tcon->share->tid == le16_to_cpu(req_hdr->Tid)) {
