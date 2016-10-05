@@ -894,9 +894,9 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			goto out_err;
 		}
 
-		rc = process_ntlmv2(sess, (struct ntlmv2_resp *)
+		rc = process_ntlmv2(sess, (struct ntlmv2_resp *) ((char *)
 			pSMB->req_no_secext.CaseInsensitivePassword +
-			pSMB->req_no_secext.CaseInsensitivePasswordLength,
+			pSMB->req_no_secext.CaseInsensitivePasswordLength),
 			pSMB->req_no_secext.CaseSensitivePasswordLength -
 			CIFS_ENCPWD_SIZE, ntdomain);
 		if (rc) {
