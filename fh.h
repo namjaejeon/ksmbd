@@ -149,7 +149,7 @@ void destroy_fidtable(struct cifssrv_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
 get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
-int close_id(struct cifssrv_sess *sess, uint64_t id);
+int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id);
 bool is_dir_empty(struct cifssrv_file *fp);
 int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);
 unsigned int get_pipe_type(char *pipename);

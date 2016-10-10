@@ -2234,17 +2234,16 @@ int smb2_query_dir(struct smb_work *smb_work)
 	if (!dir_fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		cifssrv_err("valatile id lookup fail: %llu\n", id);
-		rc = -EINVAL;
+		rc = -ENOENT;
 		goto err_out;
 	}
 
-	if (dir_fp->is_durable &&
-			dir_fp->persistent_id !=
+	if (dir_fp->is_durable && dir_fp->persistent_id !=
 			le64_to_cpu(req->PersistentFileId)) {
 		cifssrv_err("persistent id mismatch : %llu, %llu\n",
 				dir_fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		rc = -EINVAL;
+		rc = -ENOENT;
 		goto err_out;
 	}
 
@@ -2641,10 +2640,12 @@ int smb2_close(struct smb_work *smb_work)
 	cifssrv_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
 
-	err = close_persistent_id(persistent_id);
+
+	err = close_id(smb_work->sess, volatile_id, persistent_id);
 	if (err)
 		goto out;
-	err = close_id(smb_work->sess, volatile_id);
+
+	err = close_persistent_id(persistent_id);
 	if (err)
 		goto out;
 
@@ -2986,9 +2987,17 @@ int smb2_info_file(struct smb_work *smb_work)
 		fp = get_id_from_fidtable(smb_work->sess, id);
 		if (!fp) {
 			cifssrv_debug("Invalid id for file info : %llu\n", id);
-			return -EINVAL;
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			return -ENOENT;
 		}
 
+		if (fp->is_durable && fp->persistent_id !=
+				le64_to_cpu(req->PersistentFileId)) {
+			cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			return -ENOENT;
+		}
 
 		filp = fp->filp;
 		generic_fillattr(filp->f_path.dentry->d_inode, &stat);
@@ -3749,8 +3758,17 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	fp = get_id_from_fidtable(sess, id);
 	if (!fp) {
 		cifssrv_debug("Invalid id for close: %llu\n", id);
-		return -EINVAL;
+		return -ENOENT;
 	}
+
+	if (fp->is_durable && fp->persistent_id !=
+			le64_to_cpu(req->PersistentFileId)) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
 
@@ -3998,8 +4016,9 @@ int smb2_read(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	nbytes = smb_vfs_read(smb_work->sess, id, &smb_work->rdata_buf, length,
-			&offset);
+	nbytes = smb_vfs_read(smb_work->sess, id,
+			le64_to_cpu(req->PersistentFileId),
+			&smb_work->rdata_buf, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
@@ -4034,6 +4053,8 @@ out:
 			rsp->hdr.Status = NT_STATUS_INVALID_DEVICE_REQUEST;
 		else if (err == -EAGAIN)
 			rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
+		else if (err == -ENOENT)
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		else
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 
@@ -4219,7 +4240,8 @@ int smb2_write(struct smb_work *smb_work)
 		writethrough = true;
 
 	cifssrv_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	err = smb_vfs_write(smb_work->sess, id, data_buf, length, &offset,
+	err = smb_vfs_write(smb_work->sess, id,
+		le64_to_cpu(req->PersistentFileId), data_buf, length, &offset,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
@@ -4238,6 +4260,8 @@ out:
 		rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
 	else if (err == -ENOSPC || err == -EFBIG)
 		rsp->hdr.Status = NT_STATUS_DISK_FULL;
+	else if (err == -ENOENT)
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 	else
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 
@@ -4374,6 +4398,14 @@ int smb2_lock(struct smb_work *smb_work)
 		goto out;
 	}
 
+	if (fp->is_durable && fp->persistent_id !=
+			le64_to_cpu(req->PersistentFileId)) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		goto out;
+	}
+
 	filp = fp->filp;
 	lock_count = le16_to_cpu(req->LockCount);
 	lock_ele = req->locks;
@@ -4381,11 +4413,6 @@ int smb2_lock(struct smb_work *smb_work)
 	cifssrv_debug("lock count is %d\n", lock_count);
 	if (!lock_count)  {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		goto out;
-	}
-
-	if (fp->persistent_id != le64_to_cpu(req->PersistentFileId)) {
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		goto out;
 	}
 

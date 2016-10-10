@@ -361,7 +361,7 @@ void delete_id_from_fidtable(struct cifssrv_sess *sess, unsigned int id)
  *
  * Return:      0 on success, otherwise error number
  */
-int close_id(struct cifssrv_sess *sess, uint64_t id)
+int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifssrv_file *fp;
 	struct file *filp;
@@ -372,6 +372,12 @@ int close_id(struct cifssrv_sess *sess, uint64_t id)
 	if (!fp) {
 		cifssrv_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
+	}
+
+	if (fp->is_durable && fp->persistent_id != p_id) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, p_id);
+		return -ENOENT;
 	}
 
 	close_id_del_oplock(sess->server, fp, id);
@@ -448,7 +454,7 @@ void close_opens_from_fibtable(struct cifssrv_sess *sess, uint32_t tree_id)
 				close_persistent_id(file->persistent_id);
 #endif
 
-			close_id(sess, id);
+			close_id(sess, id, file->persistent_id);
 		}
 	}
 }
@@ -479,7 +485,7 @@ void destroy_fidtable(struct cifssrv_sess *sess)
 				close_persistent_id(file->persistent_id);
 #endif
 
-			close_id(sess, id);
+			close_id(sess, id, file->persistent_id);
 		}
 	}
 	sess->fidtable.ftab = NULL;

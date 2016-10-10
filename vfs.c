@@ -105,8 +105,8 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
-		size_t count, loff_t *pos)
+int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+	char **buf, size_t count, loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes;
@@ -125,8 +125,14 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
 		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
 	}
-	filp = fp->filp;
 
+	if (fp->is_durable && fp->persistent_id != p_id) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, p_id);
+		return -ENOENT;
+	}
+
+	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
@@ -175,9 +181,8 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, char *buf,
-		size_t count, loff_t *pos,
-		bool sync, ssize_t *written)
+int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
 	struct file *filp;
 	loff_t	offset = *pos;
@@ -191,8 +196,14 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, char *buf,
 				fid, sess);
 		return -ENOENT;
 	}
-	filp = fp->filp;
 
+	if (fp->is_durable && fp->persistent_id != p_id) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+			fp->persistent_id, p_id);
+		return -ENOENT;
+	}
+
+	filp = fp->filp;
 	err = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
 			F_WRLCK);
 	if (err == -EAGAIN) {
@@ -298,6 +309,7 @@ int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 			cifssrv_err("failed to get filp for fid %u\n", fid);
 			return -ENOENT;
 		}
+
 		filp = fp->filp;
 		dentry = filp->f_path.dentry;
 		inode = dentry->d_inode;
@@ -377,8 +389,8 @@ int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 		cifssrv_err("failed to get filp for fid %u\n", fid);
 		return -ENOENT;
 	}
-	filp = fp->filp;
 
+	filp = fp->filp;
 	err = vfs_getattr(&filp->f_path, stat);
 	if (err)
 		cifssrv_err("getattr failed for fid %u, err %d\n", fid, err);
@@ -392,7 +404,7 @@ int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_fid)
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id)
 {
 	struct cifssrv_file *fp;
 	int err;
@@ -403,8 +415,11 @@ int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_fid)
 		return -ENOENT;
 	}
 
-	if (IS_SMB2(sess->server) && fp->persistent_id != p_fid)
+	if (fp->is_durable && fp->persistent_id != p_id) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, p_id);
 		return -ENOENT;
+	}
 
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
@@ -669,6 +684,7 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 			cifssrv_err("can't find filp for fid %u\n", oldfid);
 			return -ENOENT;
 		}
+
 		filp = fp->filp;
 		dold_p = filp->f_path.dentry->d_parent;
 
@@ -784,8 +800,8 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 			cifssrv_err("failed to get filp for fid %u\n", fid);
 			return -ENOENT;
 		}
-		filp = fp->filp;
 
+		filp = fp->filp;
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
 			mutex_lock(&ofile_list_lock);

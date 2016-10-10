@@ -492,16 +492,15 @@ extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, char **buf,
-		size_t count, loff_t *pos);
-int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, char *buf,
-		size_t count, loff_t *pos,
-		bool fsync, ssize_t *written);
+int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+	char **buf, size_t count, loff_t *pos);
+int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
 int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 		struct kstat *stat);
 int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, struct iattr *attrs);
-int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_fid);
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
 		int fexist);
