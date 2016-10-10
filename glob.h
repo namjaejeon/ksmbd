@@ -501,7 +501,7 @@ int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 		struct kstat *stat);
 int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 		__u16 fid, struct iattr *attrs);
-int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid);
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_fid);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
 		int fexist);

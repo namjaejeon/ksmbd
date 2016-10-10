@@ -4270,7 +4270,8 @@ int smb2_flush(struct smb_work *smb_work)
 			le64_to_cpu(req->VolatileFileId));
 
 	err = smb_vfs_fsync(smb_work->sess,
-			(unsigned short)le64_to_cpu(req->VolatileFileId));
+		le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
 	if (err)
 		goto out;
 

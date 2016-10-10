@@ -392,9 +392,8 @@ int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid)
+int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_fid)
 {
-	struct file *filp;
 	struct cifssrv_file *fp;
 	int err;
 
@@ -403,9 +402,11 @@ int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid)
 		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
 	}
-	filp = fp->filp;
 
-	err = vfs_fsync(filp, 0);
+	if (IS_SMB2(sess->server) && fp->persistent_id != p_fid)
+		return -ENOENT;
+
+	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifssrv_err("smb fsync failed, err = %d\n", err);
 

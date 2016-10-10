@@ -2562,7 +2562,7 @@ int smb_flush(struct smb_work *smb_work)
 
 	cifssrv_debug("SMB_COM_FLUSH called for fid %u\n", req->FileID);
 
-	err = smb_vfs_fsync(smb_work->sess, req->FileID);
+	err = smb_vfs_fsync(smb_work->sess, req->FileID, 0);
 	if (err)
 		goto out;
 
