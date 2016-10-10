@@ -1904,7 +1904,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (alloc_size && (file_info == F_CREATED ||
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
-			err = smb_vfs_truncate(sess, NULL, fid, alloc_size);
+			err = smb_vfs_truncate(sess, NULL, (uint64_t)fid,
+				alloc_size);
 			if (err) {
 				cifssrv_err("failed to expand file, err = %d\n",
 						err);
@@ -2297,7 +2298,8 @@ int smb_write(struct smb_work *smb_work)
 
 	cifssrv_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
 	if (!count) {
-		err = smb_vfs_truncate(smb_work->sess, NULL, req->Fid, pos);
+		err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+			pos);
 		nbytes = 0;
 	} else
 		err = smb_vfs_write(smb_work->sess, req->Fid, 0, data_buf,
@@ -5571,7 +5573,7 @@ int smb_set_unix_fileinfo(struct smb_work *smb_work)
 	if (err)
 		goto out;
 
-	err = smb_vfs_setattr(smb_work->sess, NULL, req->Fid, &attrs);
+	err = smb_vfs_setattr(smb_work->sess, NULL, (uint64_t)req->Fid, &attrs);
 	if (err)
 		goto out;
 
@@ -5626,7 +5628,8 @@ int smb_set_file_size_finfo(struct smb_work *smb_work)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	err = smb_vfs_truncate(smb_work->sess, NULL, req->Fid, newsize);
+	err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -5679,7 +5682,7 @@ int smb_set_alloc_size(struct smb_work *smb_work)
 	allocinfo =  (struct file_allocation_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(allocinfo->AllocationSize);
-	err = smb_vfs_getattr(smb_work->sess, req->Fid, &stat);
+	err = smb_vfs_getattr(smb_work->sess, (uint64_t)req->Fid, &stat);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -5695,7 +5698,8 @@ int smb_set_alloc_size(struct smb_work *smb_work)
 		newsize *= alloc_roundup_size;
 	}
 
-	err = smb_vfs_truncate(smb_work->sess, NULL, req->Fid, newsize);
+	err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -5841,7 +5845,7 @@ int smb_set_time_fileinfo(struct smb_work *smb_work)
 	if (!attrs.ia_valid)
 		goto done;
 
-	err = smb_vfs_setattr(smb_work->sess, NULL, req->Fid, &attrs);
+	err = smb_vfs_setattr(smb_work->sess, NULL, (uint64_t)req->Fid, &attrs);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -6185,7 +6189,8 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
 	if (le32_to_cpu(info->overwrite)) {
-		rc = smb_vfs_truncate(smb_work->sess, NULL, req->Fid, 0);
+		rc = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+			0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 			return rc;
@@ -6201,7 +6206,7 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("rename fid %u -> %s\n", req->Fid, newname);
-	rc = smb_vfs_rename(smb_work->sess, NULL, newname, req->Fid);
+	rc = smb_vfs_rename(smb_work->sess, NULL, newname, (uint64_t)req->Fid);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		goto out;

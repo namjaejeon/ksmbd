@@ -283,7 +283,7 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
-		__u16 fid, struct iattr *attrs)
+		uint64_t fid, struct iattr *attrs)
 {
 	struct file *filp;
 	struct dentry *dentry;
@@ -306,7 +306,7 @@ int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 
 		fp = get_id_from_fidtable(sess, fid);
 		if (!fp) {
-			cifssrv_err("failed to get filp for fid %u\n", fid);
+			cifssrv_err("failed to get filp for fid %llu\n", fid);
 			return -ENOENT;
 		}
 
@@ -360,7 +360,7 @@ int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 
 	if (!err) {
 		sync_inode_metadata(inode, 1);
-		cifssrv_debug("fid %u, setattr done\n", fid);
+		cifssrv_debug("fid %llu, setattr done\n", fid);
 	}
 
 out:
@@ -377,7 +377,7 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
+int smb_vfs_getattr(struct cifssrv_sess *sess, uint64_t fid,
 		struct kstat *stat)
 {
 	struct file *filp;
@@ -386,14 +386,14 @@ int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
 
 	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
-		cifssrv_err("failed to get filp for fid %u\n", fid);
+		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
 	}
 
 	filp = fp->filp;
 	err = vfs_getattr(&filp->f_path, stat);
 	if (err)
-		cifssrv_err("getattr failed for fid %u, err %d\n", fid, err);
+		cifssrv_err("getattr failed for fid %llu, err %d\n", fid, err);
 	return err;
 }
 
@@ -626,7 +626,7 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
-		char *abs_newname, __u16 oldfid)
+		char *abs_newname, uint64_t oldfid)
 {
 	struct path oldpath_p, newpath_p;
 	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap;
@@ -681,7 +681,7 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		/* rename by fid of source file instead of source filename */
 		fp = get_id_from_fidtable(sess, oldfid);
 		if (!fp) {
-			cifssrv_err("can't find filp for fid %u\n", oldfid);
+			cifssrv_err("can't find filp for fid %llu\n", oldfid);
 			return -ENOENT;
 		}
 
@@ -774,7 +774,7 @@ out1:
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
-		__u16 fid, loff_t size)
+		uint64_t fid, loff_t size)
 {
 	struct path path;
 	struct file *filp;
@@ -797,7 +797,7 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 	} else {
 		fp = get_id_from_fidtable(sess, fid);
 		if (!fp) {
-			cifssrv_err("failed to get filp for fid %u\n", fid);
+			cifssrv_err("failed to get filp for fid %llu\n", fid);
 			return -ENOENT;
 		}
 
@@ -825,7 +825,7 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		}
 		err = vfs_truncate(&filp->f_path, size);
 		if (err)
-			cifssrv_err("truncate failed for fid %u err %d\n",
+			cifssrv_err("truncate failed for fid %llu err %d\n",
 					fid, err);
 	}
 

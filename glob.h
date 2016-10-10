@@ -496,10 +496,10 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	char **buf, size_t count, loff_t *pos);
 int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
-int smb_vfs_getattr(struct cifssrv_sess *sess, __u16 fid,
+int smb_vfs_getattr(struct cifssrv_sess *sess, uint64_t fid,
 		struct kstat *stat);
 int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
-		__u16 fid, struct iattr *attrs);
+		uint64_t fid, struct iattr *attrs);
 int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
@@ -509,9 +509,9 @@ int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
 int smb_vfs_rename(struct cifssrv_sess *sess, char *oldname,
-		char *newname, __u16 oldfid);
+		char *newname, uint64_t oldfid);
 int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
-		__u16 fid, loff_t size);
+		uint64_t fid, loff_t size);
 int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 int smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 		char *xattr_buf, __u32 buf_len);
