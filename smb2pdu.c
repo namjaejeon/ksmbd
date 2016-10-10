@@ -4268,11 +4268,6 @@ int smb2_flush(struct smb_work *smb_work)
 
 	cifssrv_debug("SMB2_FLUSH called for fid %llu\n",
 			le64_to_cpu(req->VolatileFileId));
-	if (!find_matching_share((unsigned short)req->hdr.TreeId)) {
-		cifssrv_err("invalid TreeId %u\n", req->hdr.TreeId);
-		err = -ENXIO;
-		goto out;
-	}
 
 	err = smb_vfs_fsync(smb_work->sess,
 			(unsigned short)le64_to_cpu(req->VolatileFileId));

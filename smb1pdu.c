@@ -2060,11 +2060,6 @@ int smb_close(struct smb_work *smb_work)
 	int err = 0;
 
 	cifssrv_debug("SMB_COM_CLOSE called for fid %u\n", req->FileID);
-	if (!find_matching_share(req->hdr.Tid)) {
-		cifssrv_err("invalid Tid %u\n", req->hdr.Tid);
-		err = -ENXIO;
-		goto out;
-	}
 
 	if (le16_to_cpu(req->hdr.Tid) == 1) {
 		err = smb_close_pipe(smb_work);
@@ -2566,11 +2561,6 @@ int smb_flush(struct smb_work *smb_work)
 	int err;
 
 	cifssrv_debug("SMB_COM_FLUSH called for fid %u\n", req->FileID);
-	if (!find_matching_share(req->hdr.Tid)) {
-		cifssrv_err("invalid Tid %u\n", req->hdr.Tid);
-		err = -ENXIO;
-		goto out;
-	}
 
 	err = smb_vfs_fsync(smb_work->sess, req->FileID);
 	if (err)
@@ -6863,11 +6853,6 @@ int smb_closedir(struct smb_work *smb_work)
 	int err;
 
 	cifssrv_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
-	if (!find_matching_share(req->hdr.Tid)) {
-		cifssrv_err("invalid Tid %u\n", req->hdr.Tid);
-		err = -ENXIO;
-		goto out;
-	}
 
 	err = close_id(smb_work->sess, req->FileID);
 	if (err)
