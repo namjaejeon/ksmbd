@@ -189,6 +189,8 @@ void init_smb2_1_server(struct tcp_server_info *server)
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_credits = SMB2_MAX_CREDITS;
+
 	if (lease_enable)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
@@ -207,6 +209,8 @@ void init_smb3_0_server(struct tcp_server_info *server)
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_credits = SMB2_MAX_CREDITS;
+
 	if (lease_enable)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
@@ -225,6 +229,8 @@ void init_smb3_02_server(struct tcp_server_info *server)
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_credits = SMB2_MAX_CREDITS;
+
 	if (lease_enable)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
@@ -243,6 +249,8 @@ void init_smb3_11_server(struct tcp_server_info *server)
 	server->cmds = smb2_0_server_cmds;
 	server->max_cmds =
 		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_credits = SMB2_MAX_CREDITS;
+
 	if (lease_enable)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
