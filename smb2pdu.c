@@ -4706,6 +4706,80 @@ int smb2_ioctl(struct smb_work *smb_work)
 		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 		break;
 	}
+	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
+	{
+		struct network_interface_info_ioctl_rsp *nii_rsp;
+		struct socket *socket = server->sock;
+		struct net *net;
+		struct net_device *netdev;
+		struct ethtool_cmd cmd;
+		char interfacename[IFNAMSIZ];
+		unsigned int speed;
+		int err;
+		struct sockaddr_storage_rsp *sockaddr_storage;
+		struct sockaddr_storage caddr;
+		struct sockaddr *csin = (struct sockaddr *)&caddr;
+		const struct sockaddr_in *addr_in;
+		int cslen;
+		int next = 0;
+
+		for_each_net(net) {
+			net = sock_net(socket->sk);
+
+			rtnl_lock();
+			netdev = __dev_get_by_index(net, net->ifindex);
+			if (unlikely(!netdev)) {
+				cifssrv_err("failed to get net_device by ifindex\n");
+				rtnl_unlock();
+				goto out;
+			}
+
+			sprintf(interfacename, "%s", netdev->name);
+			rtnl_unlock();
+
+			memset(&cmd, 0, sizeof(cmd));
+			cmd.cmd = ETHTOOL_GSET;
+			err = netdev->ethtool_ops->get_settings(netdev, &cmd);
+			if (err < 0)
+				goto out;
+			speed = ethtool_cmd_speed(&cmd);
+
+			if (kernel_getpeername(socket, csin, &cslen) < 0) {
+				cifssrv_err("client ip resolution failed\n");
+				goto out;
+			}
+
+			nii_rsp = (struct network_interface_info_ioctl_rsp *)
+					&rsp->Buffer[next];
+			nii_rsp->Next = next;
+			nii_rsp->IfIndex = cpu_to_le32(net->ifindex);
+			/* TODO: specify the RDMA capabilities */
+			if (netdev->num_tx_queues > 1)
+				nii_rsp->Capability = RSS_CAPABLE;
+			nii_rsp->LinkSpeed = cpu_to_le32(speed);
+
+			/* TODO: interpret if indicating an IPv6 address */
+			sockaddr_storage = (struct sockaddr_storage_rsp *)
+						nii_rsp->SockAddr_Storage;
+			addr_in = (const struct sockaddr_in *)csin;
+			if (cpu_to_le32(addr_in->sin_family) == PF_INET)
+				sockaddr_storage->Family = INTERNETWORK;
+			sockaddr_storage->Family =
+				cpu_to_le32(addr_in->sin_family);
+			sockaddr_storage->addr4.Port =
+				cpu_to_le32(addr_in->sin_port);
+			sockaddr_storage->addr4.IPv4address =
+				cpu_to_le32(addr_in->sin_addr.s_addr);
+
+			nbytes =
+				sizeof(struct network_interface_info_ioctl_rsp);
+			rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+			rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+
+			next += 154;
+		}
+		break;
+	}
 	default:
 		cifssrv_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);

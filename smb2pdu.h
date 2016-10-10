@@ -622,6 +622,42 @@ struct validate_negotiate_info_rsp {
 	__le16 Dialect; /* Dialect in use for the connection */
 } __packed;
 
+struct smb_sockaddr_in {
+	__le16 Port;
+	__le32 IPv4address;
+	__u8 Reserved[8];
+} __packed;
+
+struct smb_sockaddr_in6 {
+	__le16 Port;
+	__le32 FlowInfo;
+	__u8 IPv6address[16];
+	__le32 ScopeId;
+} __packed;
+
+#define INTERNETWORK	0x0002
+#define INTERNETWORKV6	0x0017
+
+struct sockaddr_storage_rsp {
+	__le16 Family;
+	union {
+		struct smb_sockaddr_in addr4;
+		struct smb_sockaddr_in6 addr6;
+	};
+} __packed;
+
+#define RSS_CAPABLE	0x00000001
+#define RDMA_CAPABLE	0x00000002
+
+struct network_interface_info_ioctl_rsp {
+	__le32 Next; /* next interface. zero if this is last one */
+	__le32 IfIndex;
+	__le32 Capability; /* RSS or RDMA Capable */
+	__le32 Reserved;
+	__le64 LinkSpeed;
+	char	SockAddr_Storage[128];
+} __packed;
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
