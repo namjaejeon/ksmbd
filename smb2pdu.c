@@ -907,6 +907,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	struct smb2_sess_setup_rsp *rsp;
 	struct cifssrv_sess *sess;
 	NEGOTIATE_MESSAGE *negblob;
+	struct channel *chann = NULL;
 	int rc = 0;
 
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
@@ -987,7 +988,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
-		struct channel *chann = NULL;
 
 		if (server->dialect >= SMB30_PROT_ID) {
 			chann = lookup_chann_list(sess);
@@ -1096,10 +1096,23 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 out_err:
 	if (rc < 0 && sess) {
+		struct list_head *tmp, *t;
+
 		sess->valid = 0;
 		list_del(&sess->cifssrv_ses_list);
 		list_del(&sess->cifssrv_ses_global_list);
+		if (server->dialect >= SMB30_PROT_ID) {
+			list_for_each_safe(tmp, t, &sess->cifssrv_chann_list) {
+				chann = list_entry(tmp, struct channel,
+					chann_list);
+				if (chann) {
+					list_del(&chann->chann_list);
+					kfree(chann);
+				}
+			}
+		}
 		kfree(sess);
+		smb_work->sess = NULL;
 	}
 
 	return rc;
