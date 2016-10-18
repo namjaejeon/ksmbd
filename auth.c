@@ -89,37 +89,6 @@ static int crypto_md5_alloc(struct tcp_server_info *server)
 	return 0;
 }
 
-static int crypto_hmacsha256_alloc(struct tcp_server_info *server)
-{
-	int rc;
-	unsigned int size;
-
-	/* check if already allocated */
-	if (server->secmech.hmacsha256)
-		return 0;
-
-	server->secmech.hmacsha256 = crypto_alloc_shash("hmac(sha256)", 0, 0);
-	if (IS_ERR(server->secmech.hmacsha256)) {
-		cifssrv_debug("could not allocate crypto hmacsha256\n");
-		rc = PTR_ERR(server->secmech.hmacsha256);
-		server->secmech.hmacsha256 = NULL;
-		return rc;
-	}
-
-	size = sizeof(struct shash_desc) +
-		crypto_shash_descsize(server->secmech.hmacsha256);
-	server->secmech.sdeschmacsha256 = kmalloc(size, GFP_KERNEL);
-	if (!server->secmech.sdeschmacsha256) {
-		crypto_free_shash(server->secmech.hmacsha256);
-		server->secmech.hmacsha256 = NULL;
-		return -ENOMEM;
-	}
-	server->secmech.sdeschmacsha256->shash.tfm = server->secmech.hmacsha256;
-	server->secmech.sdeschmacsha256->shash.flags = 0x0;
-
-	return 0;
-}
-
 static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 {
 	int rc;
@@ -151,67 +120,52 @@ static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 	return 0;
 }
 
-static int crypto_cmac_alloc(struct tcp_server_info *server)
+/**
+ * compute_sess_key() - function to generate session key
+ * @sess:	session of connection
+ * @hash:	source hash value to be used for find session key
+ * @hmac:	source hmac value to be used for finding session key
+ *
+ */
+int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac)
 {
 	int rc;
-	unsigned int size;
 
-	/* check if already allocated */
-	if (server->secmech.sdesccmacaes)
-		return 0;
-
-	server->secmech.cmacaes = crypto_alloc_shash("cmac(aes)", 0, 0);
-	if (IS_ERR(server->secmech.cmacaes)) {
-		cifssrv_debug("could not allocate crypto cmac-aes\n");
-		rc = PTR_ERR(server->secmech.cmacaes);
-		server->secmech.cmacaes = NULL;
-		return rc;
+	rc = crypto_hmacmd5_alloc(sess->server);
+	if (rc) {
+		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		goto out;
 	}
 
-	size = sizeof(struct shash_desc) +
-		crypto_shash_descsize(server->secmech.cmacaes);
-	server->secmech.sdesccmacaes = kmalloc(size, GFP_KERNEL);
-	if (!server->secmech.sdesccmacaes) {
-		crypto_free_shash(server->secmech.cmacaes);
-		server->secmech.cmacaes = NULL;
-		return -ENOMEM;
-	}
-	server->secmech.sdesccmacaes->shash.tfm = server->secmech.cmacaes;
-	server->secmech.sdesccmacaes->shash.flags = 0x0;
-
-	return 0;
-}
-
-static int crypto_sha512_alloc(struct tcp_server_info *server)
-{
-	int rc;
-	unsigned int size;
-
-	/* check if already allocated */
-	if (server->secmech.sdescsha512)
-		return 0;
-
-	cifssrv_debug("Inside crypto_sha512_alloc\n");
-	server->secmech.sha512 = crypto_alloc_shash("sha512", 0, 0);
-	if (IS_ERR(server->secmech.sha512)) {
-		cifssrv_debug("could not allocate crypto sha512\n");
-		rc = PTR_ERR(server->secmech.sha512);
-		server->secmech.sha512 = NULL;
-		return rc;
+	rc = crypto_shash_setkey(sess->server->secmech.hmacmd5, hash,
+			CIFS_HMAC_MD5_HASH_SIZE);
+	if (rc) {
+		cifssrv_debug("hmacmd5 set key fail error %d\n", rc);
+		goto out;
 	}
 
-	size = sizeof(struct shash_desc) +
-		crypto_shash_descsize(server->secmech.sha512);
-	server->secmech.sdescsha512 = kmalloc(size, GFP_KERNEL);
-	if (!server->secmech.sdescsha512) {
-		crypto_free_shash(server->secmech.sha512);
-		server->secmech.sha512 = NULL;
-		return -ENOMEM;
+	rc = crypto_shash_init(&sess->server->secmech.sdeschmacmd5->shash);
+	if (rc) {
+		cifssrv_debug("could not init hmacmd5 error %d\n", rc);
+		goto out;
 	}
-	server->secmech.sdescsha512->shash.tfm = server->secmech.sha512;
-	server->secmech.sdescsha512->shash.flags = 0x0;
 
-	return 0;
+	rc = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
+		hmac, SMB2_NTLMV2_SESSKEY_SIZE);
+	if (rc) {
+		cifssrv_debug("Could not update with response error %d\n", rc);
+		goto out;
+	}
+
+	rc = crypto_shash_final(&sess->server->secmech.sdeschmacmd5->shash,
+			sess->sess_key);
+	if (rc) {
+		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		goto out;
+	}
+
+out:
+	return rc;
 }
 
 static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
@@ -600,6 +554,102 @@ out:
 	return rc;
 }
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
+
+static int crypto_hmacsha256_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.hmacsha256)
+		return 0;
+
+	server->secmech.hmacsha256 = crypto_alloc_shash("hmac(sha256)", 0, 0);
+	if (IS_ERR(server->secmech.hmacsha256)) {
+		cifssrv_debug("could not allocate crypto hmacsha256\n");
+		rc = PTR_ERR(server->secmech.hmacsha256);
+		server->secmech.hmacsha256 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.hmacsha256);
+	server->secmech.sdeschmacsha256 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdeschmacsha256) {
+		crypto_free_shash(server->secmech.hmacsha256);
+		server->secmech.hmacsha256 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdeschmacsha256->shash.tfm = server->secmech.hmacsha256;
+	server->secmech.sdeschmacsha256->shash.flags = 0x0;
+
+	return 0;
+}
+
+static int crypto_cmac_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.sdesccmacaes)
+		return 0;
+
+	server->secmech.cmacaes = crypto_alloc_shash("cmac(aes)", 0, 0);
+	if (IS_ERR(server->secmech.cmacaes)) {
+		cifssrv_debug("could not allocate crypto cmac-aes\n");
+		rc = PTR_ERR(server->secmech.cmacaes);
+		server->secmech.cmacaes = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.cmacaes);
+	server->secmech.sdesccmacaes = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdesccmacaes) {
+		crypto_free_shash(server->secmech.cmacaes);
+		server->secmech.cmacaes = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdesccmacaes->shash.tfm = server->secmech.cmacaes;
+	server->secmech.sdesccmacaes->shash.flags = 0x0;
+
+	return 0;
+}
+
+static int crypto_sha512_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.sdescsha512)
+		return 0;
+
+	cifssrv_debug("Inside crypto_sha512_alloc\n");
+	server->secmech.sha512 = crypto_alloc_shash("sha512", 0, 0);
+	if (IS_ERR(server->secmech.sha512)) {
+		cifssrv_debug("could not allocate crypto sha512\n");
+		rc = PTR_ERR(server->secmech.sha512);
+		server->secmech.sha512 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.sha512);
+	server->secmech.sdescsha512 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdescsha512) {
+		crypto_free_shash(server->secmech.sha512);
+		server->secmech.sha512 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdescsha512->shash.tfm = server->secmech.sha512;
+	server->secmech.sdescsha512->shash.flags = 0x0;
+
+	return 0;
+}
+
 /**
  * smb2_sign_smbpdu() - function to generate packet signing
  * @sess:	session of connection
@@ -690,53 +740,6 @@ out:
 	return rc;
 }
 
-/**
- * compute_sess_key() - function to generate session key
- * @sess:	session of connection
- * @hash:	source hash value to be used for find session key
- * @hmac:	source hmac value to be used for finding session key
- *
- */
-int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac)
-{
-	int rc;
-
-	rc = crypto_hmacmd5_alloc(sess->server);
-	if (rc) {
-		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_setkey(sess->server->secmech.hmacmd5, hash,
-			CIFS_HMAC_MD5_HASH_SIZE);
-	if (rc) {
-		cifssrv_debug("hmacmd5 set key fail error %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_init(&sess->server->secmech.sdeschmacmd5->shash);
-	if (rc) {
-		cifssrv_debug("could not init hmacmd5 error %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
-		hmac, SMB2_NTLMV2_SESSKEY_SIZE);
-	if (rc) {
-		cifssrv_debug("Could not update with response error %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_final(&sess->server->secmech.sdeschmacmd5->shash,
-			sess->sess_key);
-	if (rc) {
-		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
-		goto out;
-	}
-
-out:
-	return rc;
-}
 
 /**
  * compute_smb3xsigningkey() - function to generate session key
@@ -889,3 +892,4 @@ int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
 out:
 	return rc;
 }
+#endif

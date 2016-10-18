@@ -241,9 +241,11 @@ extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 			unsigned int tid);
 struct cifssrv_usr *get_smb_session_user(struct cifssrv_sess *sess);
+#ifdef CONFIG_CIFS_SMB2_SERVER
 int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
 		struct cifssrv_durable_state *durable_state,
 		struct file **filp);
+#endif
 struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);

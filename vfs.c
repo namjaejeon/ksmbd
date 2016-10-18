@@ -126,6 +126,7 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (fp->is_durable && fp->persistent_id != p_id) {
 		cifssrv_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, p_id);
@@ -136,6 +137,7 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		cifssrv_err("no right to read(%llu)\n", fid);
 		return -EACCES;
 	}
+#endif
 
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
@@ -202,6 +204,7 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (fp->is_durable && fp->persistent_id != p_id) {
 		cifssrv_err("persistent id mismatch : %llu, %llu\n",
 			fp->persistent_id, p_id);
@@ -212,6 +215,7 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		cifssrv_err("no right to write(%llu)\n", fid);
 		return -EACCES;
 	}
+#endif
 
 	filp = fp->filp;
 	err = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,

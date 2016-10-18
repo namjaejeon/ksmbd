@@ -277,6 +277,11 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 	int i, smb1_index, cli_count, bcount, dialect_id = BAD_PROT_ID;
 	char *dialects = NULL;
 
+	if (unlikely(start_index >= ARRAY_SIZE(protocols))) {
+		cifssrv_err("bad start_index %d\n", start_index);
+		return dialect_id;
+	}
+
 	for (i = start_index; i >= CIFS_PROT; i--) {
 		smb1_index = 0;
 		bcount = le16_to_cpu(byte_count);
@@ -306,6 +311,7 @@ out:
 	return dialect_id;
 }
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * find_matching_smb2_dialect() - find the greatest dialect between dialects
  * client and server support.
@@ -340,6 +346,7 @@ int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 out:
 	return dialect_id;
 }
+#endif
 
 /**
  * negotiate_dialect() - negotiate smb dialect with smb client
