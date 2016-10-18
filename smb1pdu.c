@@ -942,7 +942,9 @@ no_password_check:
 	rc = init_fidtable(&sess->fidtable);
 	if (rc < 0)
 		goto out_err;
+
 	sess->valid = 1;
+	smb_work->sess = sess;
 
 	/* Build response. We don't use extended security (yet), so wct is 3 */
 	rsp_hdr->WordCount = 3;
