@@ -132,6 +132,11 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
+	if (!(fp->access & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
+		cifssrv_err("no right to read(%llu)\n", fid);
+		return -EACCES;
+	}
+
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
 	if (S_ISDIR(inode->i_mode))
@@ -201,6 +206,11 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		cifssrv_err("persistent id mismatch : %llu, %llu\n",
 			fp->persistent_id, p_id);
 		return -ENOENT;
+	}
+
+	if (!(fp->access & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE))) {
+		cifssrv_err("no right to write(%llu)\n", fid);
+		return -EACCES;
 	}
 
 	filp = fp->filp;

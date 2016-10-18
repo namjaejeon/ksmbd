@@ -1917,6 +1917,7 @@ reconnect:
 	}
 
 	fp->persistent_id = persistent_id;
+	fp->access = req->DesiredAccess & ~(FILE_MAXIMAL_ACCESS_LE);
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -2271,6 +2272,11 @@ int smb2_query_dir(struct smb_work *smb_work)
 		goto err_out;
 	}
 
+	if (!(dir_fp->access & FILE_LIST_DIRECTORY_LE)) {
+		cifssrv_err("no right to enumerate directory (%llu)\n", id);
+		return -EACCES;
+	}
+
 	if (!S_ISDIR(file_inode(dir_fp->filp)->i_mode)) {
 		cifssrv_err("can't do query dir for a file\n");
 		rc = -EINVAL;
@@ -2513,7 +2519,9 @@ int smb2_query_info(struct smb_work *smb_work)
 	}
 
 	if (rc < 0) {
-		if (rsp->hdr.Status == 0)
+		if (rc == -EACCES)
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		else if (rsp->hdr.Status == 0)
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
 
@@ -3045,6 +3053,11 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_BASIC_INFORMATION:
 	{
 		struct smb2_file_all_info *basic_info;
+
+		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+			cifssrv_err("no right to read the attributes\n");
+			return -EACCES;
+		}
 		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
 		create_time = min3(cifs_UnixTimeToNT(stat.ctime),
 				cifs_UnixTimeToNT(stat.mtime),
@@ -3107,6 +3120,11 @@ int smb2_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *file_info;
 		char *filename;
 		int uni_filename_len;
+
+		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+			cifssrv_err("no right to read the attributes\n");
+			return -EACCES;
+		}
 
 		filename = (char *)filp->f_path.dentry->d_name.name;
 		cifssrv_debug("filename = %s\n", filename);
@@ -3227,6 +3245,12 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_NETWORK_OPEN_INFORMATION:
 	{
 		struct smb2_file_ntwrk_info *file_info;
+
+		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+			cifssrv_err("no right to read the attributes\n");
+			return -EACCES;
+		}
+
 		file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
 		create_time = min3(cifs_UnixTimeToNT(stat.ctime),
 				cifs_UnixTimeToNT(stat.mtime),
@@ -3268,6 +3292,12 @@ int smb2_info_file(struct smb_work *smb_work)
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
+		if (!(fp->access & FILE_READ_EA_LE)) {
+			cifssrv_err(
+				"no right to read the extented attributes\n");
+			return -EACCES;
+		}
+
 		rc = smb2_get_ea(smb_work, &filp->f_path, req, rsp, rsp_org);
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		if (rc < 0)
@@ -3508,6 +3538,20 @@ int smb2_set_info(struct smb_work *smb_work)
 	default:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 	}
+
+	if (rc < 0) {
+		if (rc == -EACCES)
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		else if (rsp->hdr.Status == 0)
+			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		smb2_set_err_rsp(smb_work);
+
+		cifssrv_debug("error while processing smb2 query rc = %d\n",
+			      rc);
+	}
+
+	rsp->StructureSize = cpu_to_le16(2);
+	inc_rfc1001_len(rsp, 2);
 	return rc;
 }
 
@@ -3802,6 +3846,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *file_info;
 		struct iattr attrs;
 
+		if (!(fp->access & FILE_WRITE_ATTRIBUTES_LE)) {
+			cifssrv_err("no right to write the attributes\n");
+			return -EACCES;
+		}
+
 		file_info = (struct smb2_file_all_info *)req->Buffer;
 		attrs.ia_valid = 0;
 		if (le64_to_cpu(file_info->LastAccessTime)) {
@@ -3840,6 +3889,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_eof_info *file_eof_info;
 		loff_t newsize;
 
+		if (!(fp->access & FILE_WRITE_DATA_LE)) {
+			cifssrv_err("no right to write data\n");
+			return -EACCES;
+		}
+
 		file_eof_info = (struct smb2_file_eof_info *)req->Buffer;
 
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
@@ -3865,14 +3919,23 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 
 	case FILE_RENAME_INFORMATION:
-	rc = smb2_rename(smb_work, filp, id);
-	break;
+		if (!(fp->access & FILE_DELETE_LE)) {
+			cifssrv_err("no right to delete\n");
+			return -EACCES;
+		}
+		rc = smb2_rename(smb_work, filp, id);
+		break;
 	case FILE_LINK_INFORMATION:
-	rc = smb2_create_link(smb_work, fp->filp);
-	break;
+		rc = smb2_create_link(smb_work, fp->filp);
+		break;
 	case FILE_DISPOSITION_INFORMATION:
 	{
 		struct smb2_file_disposition_info *file_info;
+
+		if (!(fp->access & FILE_DELETE_LE)) {
+			cifssrv_err("no right to delete\n");
+			return -EACCES;
+		}
 
 		file_info = (struct smb2_file_disposition_info *)req->Buffer;
 		if (file_info->DeletePending) {
@@ -3887,6 +3950,12 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 	case FILE_FULL_EA_INFORMATION:
 	{
+		if (!(fp->access & FILE_WRITE_EA_LE)) {
+			cifssrv_err(
+				"no right to write the extended attributes\n");
+			return -EACCES;
+		}
+
 		rc = smb2_set_ea(smb_work, &filp->f_path);
 		break;
 	}
@@ -3897,13 +3966,6 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		rc = -1;
 	}
 
-	if (rc) {
-		smb2_set_err_rsp(smb_work);
-		return rc;
-	}
-
-	rsp->StructureSize = cpu_to_le16(2);
-	inc_rfc1001_len(rsp, 2);
 	return 0;
 }
 
@@ -4079,6 +4141,8 @@ out:
 			rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
 		else if (err == -ENOENT)
 			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		else if (err == -EACCES)
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 
@@ -4286,6 +4350,8 @@ out:
 		rsp->hdr.Status = NT_STATUS_DISK_FULL;
 	else if (err == -ENOENT)
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+	else if (err == -EACCES)
+		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 	else
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 

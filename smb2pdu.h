@@ -325,11 +325,16 @@ struct smb2_tree_disconnect_rsp {
 
 /* Desired Access Flags */
 #define FILE_READ_DATA_LE		cpu_to_le32(0x00000001)
+#define FILE_LIST_DIRECTORY_LE		cpu_to_le32(0x00000001)
 #define FILE_WRITE_DATA_LE		cpu_to_le32(0x00000002)
+#define FILE_ADD_FILE_LE		cpu_to_le32(0x00000002)
 #define FILE_APPEND_DATA_LE		cpu_to_le32(0x00000004)
+#define FILE_ADD_SUBDIRECTORY_LE	cpu_to_le32(0x00000004)
 #define FILE_READ_EA_LE			cpu_to_le32(0x00000008)
 #define FILE_WRITE_EA_LE		cpu_to_le32(0x00000010)
 #define FILE_EXECUTE_LE			cpu_to_le32(0x00000020)
+#define FILE_TRAVERSE_LE		cpu_to_le32(0x00000020)
+#define FILE_DELETE_CHILD_LE		cpu_to_le32(0x00000040)
 #define FILE_READ_ATTRIBUTES_LE		cpu_to_le32(0x00000080)
 #define FILE_WRITE_ATTRIBUTES_LE	cpu_to_le32(0x00000100)
 #define FILE_DELETE_LE			cpu_to_le32(0x00010000)
