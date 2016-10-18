@@ -28,23 +28,22 @@
 #include "netlink.h"
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-#define NETLINK_CIFSSRV		31
 
-#define cifssrv_ptr(_handle) ((void *)(unsigned long)_handle)
-#define cifssrv_server_handle(_ptr) ((__u64)(unsigned long)_ptr)
-
+#define NETLINK_CIFSSRV			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
+#define cifssrv_ptr(_handle)		((void *)(unsigned long)_handle)
+#define cifssrv_sess_handle(_ptr)	((__u64)(unsigned long)_ptr)
 
 struct sock *cifssrv_nlsk;
 static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
-static int cifssrv_nlsk_poll(struct tcp_server_info *server)
+static int cifssrv_nlsk_poll(struct cifssrv_sess *sess)
 {
 	int rc;
 
-	rc = wait_event_interruptible_timeout(server->pipe_q,
-			server->ev_state == NETLINK_REQ_RECV,
+	rc = wait_event_interruptible_timeout(sess->pipe_q,
+			sess->ev_state == NETLINK_REQ_RECV,
 			msecs_to_jiffies(NETLINK_RRQ_RECV_TIMEOUT));
 
 	if (unlikely(rc <= 0)) {
@@ -56,7 +55,7 @@ static int cifssrv_nlsk_poll(struct tcp_server_info *server)
 	return 0;
 }
 
-int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
+int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen)
 {
@@ -66,7 +65,7 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 	int rc;
 	struct cifssrv_usr *user;
-	struct cifssrv_pipe *pipe_desc = server->pipe_desc[pipe_type];
+	struct cifssrv_pipe *pipe_desc = sess->pipe_desc[pipe_type];
 
 	if (unlikely(!pipe_desc))
 		return -EINVAL;
@@ -86,13 +85,13 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
 	ev = nlmsg_data(nlh);
 	memset(ev, 0, sizeof(*ev));
-	ev->server_handle = (__u64)(unsigned long)server;
+	ev->server_handle = cifssrv_sess_handle(sess);
 	ev->pipe_type = pipe_type;
 
 	switch (etype) {
 	case CIFSSRV_KEVENT_CREATE_PIPE:
 		ev->k.c_pipe.id = pipe_desc->id;
-		strncpy(ev->k.c_pipe.codepage, server->local_nls->charset,
+		strncpy(ev->k.c_pipe.codepage, sess->server->local_nls->charset,
 				CIFSSRV_CODEPAGE_LEN - 1);
 		break;
 	case CIFSSRV_KEVENT_DESTROY_PIPE:
@@ -111,9 +110,9 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		break;
 	case CIFSSRV_KEVENT_LANMAN_PIPE:
 		ev->k.l_pipe.out_buflen = out_buflen;
-		strncpy(ev->k.l_pipe.codepage, server->local_nls->charset,
+		strncpy(ev->k.l_pipe.codepage, sess->server->local_nls->charset,
 				CIFSSRV_CODEPAGE_LEN - 1);
-		user = get_smb_session_user(server);
+		user = get_smb_session_user(sess);
 		if (user)
 			strncpy(ev->k.l_pipe.username, user->name,
 					CIFSSRV_USERNAME_LEN - 1);
@@ -129,9 +128,9 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 		memcpy(ev->buffer, data, data_size);
 	}
 
-	cifssrv_debug("sending event(%u) to server %p\n", etype, server);
+	cifssrv_debug("sending event(%u) to sess %p\n", etype, sess);
 	mutex_lock(&nlsk_mutex);
-	server->ev_state = NETLINK_REQ_SENT;
+	sess->ev_state = NETLINK_REQ_SENT;
 	rc = nlmsg_unicast(cifssrv_nlsk, skb, pid);
 	mutex_unlock(&nlsk_mutex);
 	if (unlikely(rc == -ESRCH))
@@ -147,9 +146,9 @@ int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
 	/* wait if need response from userspace */
 	if (!(etype == CIFSSRV_KEVENT_CREATE_PIPE ||
 			etype == CIFSSRV_KEVENT_DESTROY_PIPE))
-		rc = cifssrv_nlsk_poll(server);
+		rc = cifssrv_nlsk_poll(sess);
 
-	server->ev_state = NETLINK_REQ_COMPLETED;
+	sess->ev_state = NETLINK_REQ_COMPLETED;
 	return rc;
 }
 
@@ -168,19 +167,23 @@ static int cifssrv_exit_connection(struct nlmsghdr *nlh)
 
 static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 {
-	struct tcp_server_info *server;
+	struct cifssrv_sess *sess;
 	struct cifssrv_uevent *ev;
 	struct cifssrv_pipe *pipe_desc;
 
 	ev = nlmsg_data(nlh);
-	server = validate_server_handle(cifssrv_ptr(ev->server_handle),
-			ev->pipe_type);
-	if (unlikely(!server)) {
-		cifssrv_err("invalid server handle\n");
+	if (unlikely(ev->pipe_type >= MAX_PIPE)) {
+		cifssrv_err("invalid pipe type %u\n", ev->pipe_type);
 		return -EINVAL;
 	}
 
-	pipe_desc = server->pipe_desc[ev->pipe_type];
+	sess = validate_sess_handle(cifssrv_ptr(ev->server_handle));
+	if (unlikely(!sess)) {
+		cifssrv_err("invalid session handle\n");
+		return -EINVAL;
+	}
+
+	pipe_desc = sess->pipe_desc[ev->pipe_type];
 	if (unlikely(!pipe_desc)) {
 		cifssrv_err("invalid pipe descriptor\n");
 		return -EINVAL;
@@ -201,8 +204,8 @@ static int cifssrv_common_pipe_rsp(struct nlmsghdr *nlh)
 		memcpy(pipe_desc->rsp_buf, ev->buffer, ev->buflen);
 
 out:
-	server->ev_state = NETLINK_REQ_RECV;
-	wake_up_interruptible(&server->pipe_q);
+	sess->ev_state = NETLINK_REQ_RECV;
+	wake_up_interruptible(&sess->pipe_q);
 	return 0;
 }
 

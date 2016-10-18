@@ -363,13 +363,15 @@ int smb_check_user_session(struct smb_work *smb_work)
 
 	list_for_each(tmp, &server->cifssrv_sess) {
 		sess = list_entry(tmp, struct cifssrv_sess, cifssrv_ses_list);
-		if (sess->usr->vuid == req_hdr->Uid) {
+		if (sess->usr->vuid == req_hdr->Uid && sess->valid) {
 			smb_work->sess = sess;
 			rc = 1;
 			break;
 		}
 	}
 
+	if (!smb_work->sess)
+		cifssrv_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
 	return rc;
 }
 
@@ -409,7 +411,7 @@ int smb_get_cifssrv_tcon(struct smb_work *smb_work)
 	}
 
 	if (rc < 0)
-		cifssrv_err("Invalid tid %d\n", req_hdr->Tid);
+		cifssrv_debug("Invalid tid %d\n", req_hdr->Tid);
 
 	return rc;
 }
@@ -453,6 +455,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	/* free all sessions, we have just 1 */
 	list_del(&sess->cifssrv_ses_list);
+	list_del(&sess->cifssrv_ses_global_list);
 	destroy_fidtable(sess);
 	kfree(sess);
 	smb_work->sess = NULL;
@@ -844,25 +847,45 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 		goto out_err;
 	}
 
-	/* build smb session */
-	sess = kzalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
-	if (sess == NULL) {
-		rc = -ENOMEM;
-		goto out_err;
-	}
+	if (!smb_work->sess) {
+		/* build smb session */
+		WARN_ON(smb_work->sess);
+		sess = kzalloc(sizeof(struct cifssrv_sess), GFP_KERNEL);
+		if (sess == NULL) {
+			rc = -ENOMEM;
+			goto out_err;
+		}
 
-	sess->server = server;
+		sess->server = server;
+		INIT_LIST_HEAD(&sess->cifssrv_ses_list);
+		INIT_LIST_HEAD(&sess->cifssrv_chann_list);
+		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
+		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
+		INIT_LIST_HEAD(&sess->tcon_list);
+		sess->tcon_count = 0;
 
-	cifssrv_debug("session setup request for user %s\n", name);
-	sess->usr = cifssrv_is_user_present(name);
-	if (!sess->usr) {
-		cifssrv_err("user (%s) is not present in database or guest account is not set\n",
-			name);
+		cifssrv_debug("session setup request for user %s\n", name);
+		sess->usr = cifssrv_is_user_present(name);
 		kfree(name);
-		rc = -EINVAL;
-		goto out_err;
+		if (!sess->usr) {
+			cifssrv_err("user not present in database\n");
+			rc = -EINVAL;
+			goto out_err;
+		}
+
+		rsp_hdr->Uid = sess->usr->vuid;
+		sess->sess_id = sess->usr->vuid;
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+		init_waitqueue_head(&sess->pipe_q);
+		sess->ev_state = NETLINK_REQ_INIT;
+#endif
+		cifssrv_debug("generate session ID : %llu, Uid : %u\n",
+				sess->sess_id, req_hdr->Uid);
+	} else {
+		sess = smb_work->sess;
+		cifssrv_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
+				sess, sess->sess_id, req_hdr->Uid);
 	}
-	kfree(name);
 
 	memcpy(sess->ntlmssp.cryptkey, server->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
@@ -914,10 +937,6 @@ no_password_check:
 	   we have set max vcn as 1 */
 	WARN_ON(server->sess_count);
 
-	INIT_LIST_HEAD(&sess->cifssrv_ses_list);
-	INIT_LIST_HEAD(&sess->tcon_list);
-	sess->tcon_count = 0;
-	list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
 	sess->usr->ucount++;
 	server->sess_count++;
 	rc = init_fidtable(&sess->fidtable);
@@ -958,9 +977,14 @@ no_password_check:
 	}
 
 out_err:
+	if (rc < 0 && sess) {
+		sess->valid = 0;
+		list_del(&sess->cifssrv_ses_list);
+		list_del(&sess->cifssrv_ses_global_list);
+		kfree(sess);
+		smb_work->sess = NULL;
+	}
 	rsp_hdr->Status.CifsError = NT_STATUS_LOGON_FAILURE;
-
-	kfree(sess);
 	return rc;
 }
 
@@ -1228,17 +1252,20 @@ int smb_locking_andx(struct smb_work *smb_work)
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 /**
  * alloc_lanman_pipe_desc() - allocate lanman pipe buffers
- * @server:	TCP server instance of connection
+ * @sess:	session info
  *
  * Return:	0 on success, otherwise error
  */
-int alloc_lanman_pipe_desc(struct tcp_server_info *server)
+int alloc_lanman_pipe_desc(struct cifssrv_sess *sess)
 {
 	struct cifssrv_pipe *pipe_desc;
 
-	server->pipe_desc[LANMAN] = kzalloc(sizeof(struct cifssrv_pipe),
+	if (unlikely(!sess))
+		return -EINVAL;
+
+	sess->pipe_desc[LANMAN] = kzalloc(sizeof(struct cifssrv_pipe),
 			GFP_KERNEL);
-	pipe_desc = server->pipe_desc[LANMAN];
+	pipe_desc = sess->pipe_desc[LANMAN];
 	if (!pipe_desc)
 		return -ENOMEM;
 
@@ -1246,7 +1273,7 @@ int alloc_lanman_pipe_desc(struct tcp_server_info *server)
 			GFP_KERNEL);
 	if (!pipe_desc->rsp_buf) {
 		kfree(pipe_desc);
-		server->pipe_desc[LANMAN] = NULL;
+		sess->pipe_desc[LANMAN] = NULL;
 		return -ENOMEM;
 	}
 
@@ -1256,17 +1283,17 @@ int alloc_lanman_pipe_desc(struct tcp_server_info *server)
 
 /**
  * free_lanman_pipe_desc() - free lanman pipe buffers
- * @server:	TCP server instance of connection
+ * @sess:	session info
  *
  */
-void free_lanman_pipe_desc(struct tcp_server_info *server)
+void free_lanman_pipe_desc(struct cifssrv_sess *sess)
 {
 	struct cifssrv_pipe *pipe_desc;
 
-	pipe_desc = server->pipe_desc[LANMAN];
+	pipe_desc = sess->pipe_desc[LANMAN];
 	kfree(pipe_desc->rsp_buf);
 	kfree(pipe_desc);
-	server->pipe_desc[LANMAN] = NULL;
+	sess->pipe_desc[LANMAN] = NULL;
 }
 #endif
 
@@ -1348,24 +1375,25 @@ int smb_trans(struct smb_work *smb_work)
 
 	if (!strncmp(pipe, "LANMAN", sizeof("LANMAN"))) {
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-		if (alloc_lanman_pipe_desc(server)) {
+		if (alloc_lanman_pipe_desc(smb_work->sess)) {
 			cifssrv_err("failed to allocate memory\n");
 			rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 			kfree(name);
 			return 0;
 		}
 
-		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_LANMAN_PIPE,
+		ret = cifssrv_sendmsg(smb_work->sess,
+				CIFSSRV_KEVENT_LANMAN_PIPE,
 				LANMAN, le16_to_cpu(req->TotalParameterCount),
 				pipedata, buf_len);
 		if (ret) {
 			cifssrv_err("failed to send event, err %d\n", ret);
-			free_lanman_pipe_desc(server);
-			server->ev_state = NETLINK_REQ_COMPLETED;
+			free_lanman_pipe_desc(smb_work->sess);
+			smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 			goto out;
 		}
 
-		pipe_desc = server->pipe_desc[LANMAN];
+		pipe_desc = smb_work->sess->pipe_desc[LANMAN];
 		ev = &pipe_desc->ev;
 		nbytes = ev->u.l_pipe_rsp.data_count;
 		param_len = ev->u.l_pipe_rsp.param_count;
@@ -1377,18 +1405,18 @@ int smb_trans(struct smb_work *smb_work)
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_INVALID_PARAMETER;
 
-			free_lanman_pipe_desc(server);
-			server->ev_state = NETLINK_REQ_COMPLETED;
+			free_lanman_pipe_desc(smb_work->sess);
+			smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 			goto out;
 		}
 
 		memcpy((char *)rsp + sizeof(TRANS_RSP),
 				pipe_desc->rsp_buf, nbytes);
-		free_lanman_pipe_desc(server);
-		server->ev_state = NETLINK_REQ_COMPLETED;
+		free_lanman_pipe_desc(smb_work->sess);
+		smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 		goto resp_out;
 #else
-		nbytes = handle_lanman_pipe(server, pipedata,
+		nbytes = handle_lanman_pipe(smb_work->sess, pipedata,
 				(char *)rsp + sizeof(TRANS_RSP), &param_len);
 		if (nbytes < 0) {
 			if (nbytes == -EOPNOTSUPP)
@@ -1404,7 +1432,7 @@ int smb_trans(struct smb_work *smb_work)
 	}
 
 	id = le16_to_cpu(pipe_req->fid);
-	pipe_desc = get_pipe_desc(server, id);
+	pipe_desc = get_pipe_desc(smb_work->sess, id);
 	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
 		if (pipe_desc)
@@ -1420,7 +1448,7 @@ int smb_trans(struct smb_work *smb_work)
 
 		cifssrv_debug("GOT TRANSACT_DCERPCCMD\n");
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-		ret = cifssrv_sendmsg(server, CIFSSRV_KEVENT_IOCTL_PIPE,
+		ret = cifssrv_sendmsg(smb_work->sess, CIFSSRV_KEVENT_IOCTL_PIPE,
 				pipe_desc->pipe_type,
 				le16_to_cpu(req->DataCount), pipedata,
 				buf_len);
@@ -1442,7 +1470,7 @@ int smb_trans(struct smb_work *smb_work)
 
 			memcpy((char *)rsp + sizeof(TRANS_RSP),
 					pipe_desc->rsp_buf, nbytes);
-			server->ev_state = NETLINK_REQ_COMPLETED;
+			smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 		}
 #else
 		ret = process_rpc(smb_work->sess, pipedata,
@@ -1457,7 +1485,7 @@ int smb_trans(struct smb_work *smb_work)
 			goto out;
 		}
 
-		nbytes = process_rpc_rsp(server,
+		nbytes = process_rpc_rsp(smb_work->sess,
 				(char *)rsp + sizeof(TRANS_RSP), buf_len,
 				pipe_desc->pipe_type);
 		if (nbytes < 0) {
@@ -1513,6 +1541,7 @@ int create_andx_pipe(struct smb_work *smb_work)
 	unsigned int pipe_type;
 	char *name;
 	int rc = 0;
+	__u16 fid;
 
 	/* one byte pad before unicode file name start */
 	if (is_smbreq_unicode(&req->hdr))
@@ -1538,19 +1567,23 @@ int create_andx_pipe(struct smb_work *smb_work)
 	rc = get_pipe_id(smb_work->sess, pipe_type);
 	if (rc < 0)
 		goto out;
+	else
+		fid = rc;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	rc = cifssrv_sendmsg(smb_work->server,
+	rc = cifssrv_sendmsg(smb_work->sess,
 			CIFSSRV_KEVENT_CREATE_PIPE, pipe_type, 0, NULL, 0);
-	if (rc)
+	if (rc) {
 		cifssrv_err("failed to send event, err %d\n", rc);
+		goto out;
+	}
 #endif
 
 	rsp->hdr.WordCount = 42;
 	rsp->AndXCommand = cpu_to_le16(0xff);
 	rsp->AndXReserved = 0;
 	rsp->OplockLevel = 0;
-	rsp->Fid = cpu_to_le16(rc);
+	rsp->Fid = cpu_to_le16(fid);
 	rsp->CreateAction = cpu_to_le32(1);
 	rsp->CreationTime = 0;
 	rsp->LastAccessTime = 0;
@@ -2047,13 +2080,12 @@ int smb_close_pipe(struct smb_work *smb_work)
 {
 	CLOSE_REQ *req = (CLOSE_REQ *)smb_work->buf;
 	CLOSE_RSP *rsp = (CLOSE_RSP *)smb_work->rsp_buf;
-	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_pipe *pipe_desc;
 	int id;
 	int rc = 0;
 
 	id = le16_to_cpu(req->FileID);
-	pipe_desc = get_pipe_desc(server, id);
+	pipe_desc = get_pipe_desc(smb_work->sess, id);
 	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
 		if (pipe_desc)
@@ -2064,7 +2096,7 @@ int smb_close_pipe(struct smb_work *smb_work)
 	}
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	rc = cifssrv_sendmsg(server,
+	rc = cifssrv_sendmsg(smb_work->sess,
 			CIFSSRV_KEVENT_DESTROY_PIPE, pipe_desc->pipe_type,
 			0, NULL, 0);
 	if (rc)
@@ -2130,7 +2162,6 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 {
 	READ_REQ *req = (READ_REQ *)smb_work->buf;
 	READ_RSP *rsp = (READ_RSP *)smb_work->rsp_buf;
-	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_pipe *pipe_desc;
 	char *data_buf;
 	int ret = 0, nbytes = 0;
@@ -2145,7 +2176,7 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 #endif
 
 	id = le16_to_cpu(req->Fid);
-	pipe_desc = get_pipe_desc(server, id);
+	pipe_desc = get_pipe_desc(smb_work->sess, id);
 	if (!pipe_desc) {
 		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
 		if (pipe_desc)
@@ -2159,7 +2190,7 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 	data_buf = (char *) (&rsp->ByteCount) + sizeof(rsp->ByteCount);
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_READ_PIPE,
+	ret = cifssrv_sendmsg(smb_work->sess, CIFSSRV_KEVENT_READ_PIPE,
 			pipe_desc->pipe_type,
 			0, NULL, rsp_buflen);
 	if (ret)
@@ -2175,10 +2206,10 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 		}
 
 		memcpy(data_buf, pipe_desc->rsp_buf, nbytes);
-		server->ev_state = NETLINK_REQ_COMPLETED;
+		smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
-	nbytes = process_rpc_rsp(smb_work->server, data_buf, count,
+	nbytes = process_rpc_rsp(smb_work->sess, data_buf, count,
 			pipe_desc->pipe_type);
 	if (nbytes <= 0) {
 		cifssrv_debug(" Read bytes zero from pipe\n");
@@ -2358,7 +2389,6 @@ out:
  */
 int smb_write_andx_pipe(struct smb_work *smb_work)
 {
-	struct tcp_server_info *server = smb_work->server;
 	WRITE_REQ *req = (WRITE_REQ *)smb_work->buf;
 	WRITE_RSP *rsp = (WRITE_RSP *)smb_work->rsp_buf;
 	struct cifssrv_pipe *pipe_desc;
@@ -2370,9 +2400,9 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 #endif
 
 	id = le16_to_cpu(req->Fid);
-	pipe_desc = get_pipe_desc(server, id);
+	pipe_desc = get_pipe_desc(smb_work->sess, id);
 	if (!pipe_desc) {
-		cifssrv_debug("Pipe not opened or invalid in Pipe id\n");
+		cifssrv_err("Pipe not opened or invalid in Pipe id %d\n", id);
 		if (pipe_desc)
 			cifssrv_debug("Incoming id = %d opened pipe id = %d\n",
 					id, pipe_desc->id);
@@ -2381,11 +2411,11 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 	}
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (server->srv_cap & CAP_LARGE_WRITE_X)
+	if (smb_work->server->srv_cap & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	ret = cifssrv_sendmsg(smb_work->server, CIFSSRV_KEVENT_WRITE_PIPE,
+	ret = cifssrv_sendmsg(smb_work->sess, CIFSSRV_KEVENT_WRITE_PIPE,
 			pipe_desc->pipe_type,
 			count, req->Data, 0);
 	if (ret)
@@ -2402,7 +2432,7 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 		}
 
 		count = ev->u.w_pipe_rsp.write_count;
-		server->ev_state = NETLINK_REQ_COMPLETED;
+		smb_work->sess->ev_state = NETLINK_REQ_COMPLETED;
 	}
 #else
 	ret = process_rpc(smb_work->sess, req->Data, pipe_desc->pipe_type);
@@ -5937,7 +5967,6 @@ done:
  */
 int query_file_info_pipe(struct smb_work *smb_work)
 {
-	struct tcp_server_info *server = smb_work->server;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
@@ -5958,7 +5987,7 @@ int query_file_info_pipe(struct smb_work *smb_work)
 	}
 
 	id = cpu_to_le16(req_params->Fid);
-	pipe_desc = get_pipe_desc(server, id);
+	pipe_desc = get_pipe_desc(smb_work->sess, id);
 
 	/* Windows can sometime send query file info request on
 	   pipe without opening it, checking error condition here */

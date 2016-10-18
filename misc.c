@@ -393,6 +393,28 @@ struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
 	return NULL;
 }
 
+/**
+ * validate_sess_handle() - check for valid session handle
+ * @sess:	handle to be validated
+ *
+ * Return:      matching session handle, otherwise NULL
+ */
+struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session)
+{
+	struct cifssrv_sess *sess;
+	struct list_head *tmp, *t;
+
+	list_for_each_safe(tmp, t, &cifssrv_session_list) {
+		sess = list_entry(tmp, struct cifssrv_sess,
+				cifssrv_ses_global_list);
+		if (sess == session)
+			return sess;
+	}
+
+	cifssrv_err("session(%p) not found\n", session);
+	return NULL;
+}
+
 #ifndef CONFIG_CIFS_SMB2_SERVER
 void init_smb2_0_server(struct tcp_server_info *server) { }
 void init_smb2_1_server(struct tcp_server_info *server) { }

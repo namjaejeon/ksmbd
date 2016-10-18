@@ -325,12 +325,6 @@ struct tcp_server_info {
 	atomic_t r_count;
 	wait_queue_head_t req_running_q;
 	wait_queue_head_t oplock_q; /* Other server threads */
-	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
-	struct cifssrv_lanman_pipe *lpipe_desc;
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	wait_queue_head_t pipe_q;
-	int ev_state;
-#endif
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
 	int max_credits;
@@ -506,6 +500,7 @@ extern int switch_rsp_buf(struct smb_work *smb_work);
 extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
 				char *shortname);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
+extern struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
@@ -565,8 +560,6 @@ extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 		unsigned int to_read);
 
 extern void handle_smb_work(struct work_struct *work);
-extern struct tcp_server_info *validate_server_handle(struct tcp_server_info
-		*handle, unsigned int pipe_type);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
@@ -605,7 +598,7 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 /* netlink functions */
 int cifssrv_net_init(void);
 void cifssrv_net_exit(void);
-int cifssrv_sendmsg(struct tcp_server_info *server, unsigned int etype,
+int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
 #endif

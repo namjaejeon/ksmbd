@@ -197,35 +197,35 @@ typedef struct create_key_rsp {
 #define WINREG_KEY_SET_VALUE		0x00000002
 #define WINREG_KEY_QUERY_VALUE		0x00000001
 
-int winreg_open_root_key(struct tcp_server_info *server, int opnum,
+int winreg_open_root_key(struct cifssrv_sess *sess, int opnum,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_open_key(struct tcp_server_info *server,
+int winreg_open_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_get_version(struct tcp_server_info *server,
+int winreg_get_version(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_delete_key(struct tcp_server_info *server,
+int winreg_delete_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_create_key(struct tcp_server_info *server,
+int winreg_create_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_close_key(struct tcp_server_info *server,
+int winreg_close_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_open_key(struct tcp_server_info *server,
+int winreg_open_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_flush_key(struct tcp_server_info *server,
+int winreg_flush_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_set_value(struct tcp_server_info *server,
+int winreg_set_value(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_delete_value(struct tcp_server_info *server,
+int winreg_delete_value(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_query_value(struct tcp_server_info *server,
+int winreg_query_value(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_query_info_key(struct tcp_server_info *server,
+int winreg_query_info_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_notify_change_key_value(struct tcp_server_info *server,
+int winreg_notify_change_key_value(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_enum_key(struct tcp_server_info *server,
+int winreg_enum_key(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
-int winreg_enum_value(struct tcp_server_info *server,
+int winreg_enum_value(struct cifssrv_sess *sess,
 			RPC_REQUEST_REQ *rpc_request_req, char *in_data);
 
 struct registry_node *init_root_key(char *name);

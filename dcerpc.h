@@ -24,6 +24,8 @@
 
 #include"glob.h"
 #include"ntlmssp.h"
+#include"export.h"
+
 /* these are win32 error codes.
  */
 #define WERR_OK			0x00000000
@@ -325,28 +327,28 @@ typedef struct netwkstageinfo10 {
 /* DCERPC Functions */
 
 int process_rpc(struct cifssrv_sess *sess, char *data, int pipe_type);
-int process_rpc_rsp(struct tcp_server_info *server, char *data_buf, int size,
+int process_rpc_rsp(struct cifssrv_sess *sess, char *data_buf, int size,
 		int pipe_type);
 
 void dcerpc_header_init(RPC_HDR *header, int packet_type,
 					int flags, int call_id);
 int rpc_bind(struct cifssrv_sess *sess, char *data, int pipe_type);
-int rpc_request(struct tcp_server_info *server, char *data, int pipe_type);
-int rpc_read_bind_data(struct tcp_server_info *server, char *data);
-int rpc_read_winreg_data(struct tcp_server_info *server, char *outdata,
+int rpc_request(struct cifssrv_sess *sess, char *data, int pipe_type);
+int rpc_read_bind_data(struct cifssrv_sess *sess, char *data);
+int rpc_read_winreg_data(struct cifssrv_sess *sess, char *outdata,
 							int buf_len);
 
-int winreg_rpc_request(struct tcp_server_info *server, char *in_data);
+int winreg_rpc_request(struct cifssrv_sess *sess, char *in_data);
 /* SRVSVC pipe function */
 
-int rpc_read_srvsvc_data(struct tcp_server_info *server,
+int rpc_read_srvsvc_data(struct cifssrv_sess *sess,
 					char *data, int buf_len);
 
 /* LANMAN pipe function */
 
-int handle_lanman_pipe(struct tcp_server_info *server,
+int handle_lanman_pipe(struct cifssrv_sess *sess,
 			char *in_data, char *out_data, int *param_len);
-int handle_wkstagetinfo(struct tcp_server_info *server,
+int handle_wkstagetinfo(struct cifssrv_sess *sess,
 			LANMAN_REQ *req, char *out_data);
 
 extern char *server_string;

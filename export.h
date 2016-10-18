@@ -117,6 +117,11 @@ struct cifssrv_sess {
 	struct fidtable_desc fidtable;
 	int state;
 	__u8 Preauth_HashValue[64];
+	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
+	wait_queue_head_t pipe_q;
+	int ev_state;
+#endif
 };
 
 enum share_attrs {
@@ -235,8 +240,12 @@ extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 		struct cifssrv_sess *sess);
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
 			unsigned int tid);
-struct cifssrv_usr *get_smb_session_user(struct tcp_server_info *server);
+struct cifssrv_usr *get_smb_session_user(struct cifssrv_sess *sess);
 int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
 		struct cifssrv_durable_state *durable_state,
 		struct file **filp);
+struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
+		unsigned int id);
+int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);
+int close_pipe_id(struct cifssrv_sess *sess, int pipe_type);
 #endif /* __CIFSSRV_EXPORT_H */

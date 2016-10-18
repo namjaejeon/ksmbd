@@ -136,30 +136,6 @@ out:
 }
 
 /**
- * validate_server_handle() - check for valid tcp server handle
- * @handle:     TCP server handle to be validated
- * @pipe_type:	pipe type
- *
- * Return:      matching tcp server handle, otherwise NULL
- */
-struct tcp_server_info *validate_server_handle(struct tcp_server_info *handle,
-		unsigned int pipe_type)
-{
-	struct tcp_server_info *server;
-
-	spin_lock(&tcp_sess_list_lock);
-	list_for_each_entry(server, &tcp_sess_list, tcp_sess)
-	{
-		if (handle == server && pipe_type < MAX_PIPE) {
-			spin_unlock(&tcp_sess_list_lock);
-			return server;
-		}
-	}
-	spin_unlock(&tcp_sess_list_lock);
-	return NULL;
-}
-
-/**
  * allocate_buffers() - allocate response buffer for smb requests
  * @server:     TCP server instance of connection
  *
@@ -615,10 +591,6 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	spin_lock_init(&server->request_lock);
 	server->srv_cap = SERVER_CAPS;
 	init_waitqueue_head(&server->oplock_q);
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-	init_waitqueue_head(&server->pipe_q);
-	server->ev_state = NETLINK_REQ_INIT;
-#endif
 	spin_lock(&tcp_sess_list_lock);
 	list_add(&server->tcp_sess, &tcp_sess_list);
 	spin_unlock(&tcp_sess_list_lock);

@@ -1134,18 +1134,17 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 {
 	int id;
 	struct cifssrv_pipe *pipe_desc;
-	struct tcp_server_info *server = sess->server;
 
 	id = cifssrv_get_unused_id(&sess->fidtable);
 	if (id < 0)
 		return -EMFILE;
 
-	server->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifssrv_pipe),
+	sess->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifssrv_pipe),
 			GFP_KERNEL);
-	if (!server->pipe_desc)
+	if (!sess->pipe_desc)
 		return -ENOMEM;
 
-	pipe_desc = server->pipe_desc[pipe_type];
+	pipe_desc = sess->pipe_desc[pipe_type];
 	pipe_desc->id = id;
 	pipe_desc->pkt_type = -1;
 
@@ -1154,7 +1153,7 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 			GFP_KERNEL);
 	if (!pipe_desc->rsp_buf) {
 		kfree(pipe_desc);
-		server->pipe_desc[pipe_type] = NULL;
+		sess->pipe_desc[pipe_type] = NULL;
 		return -ENOMEM;
 	}
 #endif
@@ -1176,7 +1175,7 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 
 /**
  * close_pipe_id() - free id for pipe on a server thread
- * @server:	TCP server instance of connection
+ * @sess:	session information
  * @pipe_type:	pipe type
  *
  * Return:	0 on success, otherwise error
@@ -1184,10 +1183,9 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 int close_pipe_id(struct cifssrv_sess *sess, int pipe_type)
 {
 	struct cifssrv_pipe *pipe_desc;
-	struct tcp_server_info *server = sess->server;
 	int rc = 0;
 
-	pipe_desc = server->pipe_desc[pipe_type];
+	pipe_desc = sess->pipe_desc[pipe_type];
 	if (!pipe_desc)
 		return -EINVAL;
 
@@ -1199,7 +1197,7 @@ int close_pipe_id(struct cifssrv_sess *sess, int pipe_type)
 	kfree(pipe_desc->rsp_buf);
 #endif
 	kfree(pipe_desc);
-	server->pipe_desc[pipe_type] = NULL;
+	sess->pipe_desc[pipe_type] = NULL;
 
 	return rc;
 }

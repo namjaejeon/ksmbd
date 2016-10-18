@@ -152,11 +152,7 @@ struct cifssrv_file *
 get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
 int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id);
 bool is_dir_empty(struct cifssrv_file *fp);
-int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);
 unsigned int get_pipe_type(char *pipename);
-struct cifssrv_pipe *get_pipe_desc(struct tcp_server_info *server,
-		unsigned int id);
-int close_pipe_id(struct cifssrv_sess *sess, int pipe_type);
 int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifssrv_file *

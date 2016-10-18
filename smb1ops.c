@@ -46,6 +46,7 @@ struct smb_version_ops smb1_server_ops = {
 	.init_rsp_hdr = init_smb_rsp_hdr,
 	.set_rsp_status = set_smb_rsp_status,
 	.allocate_rsp_buf = smb_allocate_rsp_buf,
+	.check_user_session = smb_check_user_session,
 	.is_sign_req = smb1_is_sign_req,
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
