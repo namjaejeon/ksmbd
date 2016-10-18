@@ -26,6 +26,8 @@
 #include "smbfsctl.h"
 #include "oplock.h"
 
+bool multi_channel_enable;
+
 struct fs_type_info fs_type[] = {
 	{ "ADFS",	0xadf5},
 	{ "AFFS",	0xadff},
@@ -664,6 +666,26 @@ void smb2_invalidate_prev_session(uint64_t sess_id)
 }
 
 /**
+ * smb2_get_session_global_list() - get existing session from global session
+ * list
+ * @sess_id:	session id to be invalidated
+ */
+struct cifssrv_sess *smb2_get_session_global_list(uint64_t sess_id)
+{
+	struct cifssrv_sess *sess;
+	struct list_head *tmp, *t;
+
+	list_for_each_safe(tmp, t, &cifssrv_session_list) {
+		sess = list_entry(tmp, struct cifssrv_sess,
+				cifssrv_ses_global_list);
+		if (sess->sess_id == sess_id && sess->valid)
+			return sess;
+	}
+
+	return NULL;
+}
+
+/**
  * smb2_get_name() - get filename string from on the wire smb format
  * @src:	source buffer
  * @maxlen:	maxlen of source string
@@ -948,14 +970,69 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
 		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
 	} else {
-		sess = lookup_session_on_conn(server,
-			le64_to_cpu(req->hdr.SessionId));
-		if (!sess) {
-			rc = -ENOENT;
-			rsp->hdr.Status = NT_STATUS_USER_SESSION_DELETED;
-			goto out_err;
+		struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
+
+		if (multi_channel_enable &&
+			req_hdr->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
+			sess = smb2_get_session_global_list(
+					le64_to_cpu(req->hdr.SessionId));
+			if (!sess) {
+				cifssrv_err(
+					"not found session from global list");
+				rc = -ENOENT;
+				rsp->hdr.Status =
+					NT_STATUS_USER_SESSION_DELETED;
+				goto out_err;
+			}
+
+			if (!(req_hdr->Flags & SMB2_FLAGS_SIGNED)) {
+				rc = -EINVAL;
+				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+				goto out_err;
+			}
+
+			if (sess->state & SMB2_SESSION_IN_PROGRESS) {
+				rc = -EINVAL;
+				rsp->hdr.Status =
+					NT_STATUS_REQUEST_NOT_ACCEPTED;
+				goto out_err;
+			}
+
+			if (sess->state & SMB2_SESSION_EXPIRED) {
+				rc = -EINVAL;
+				rsp->hdr.Status =
+					NT_STATUS_NETWORK_SESSION_EXPIRED;
+				goto out_err;
+			}
+
+			if (sess->is_anonymous || sess->is_guest) {
+				rc = -EINVAL;
+				rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+				goto out_err;
+			}
+
+			sess = lookup_session_on_conn(server,
+					le64_to_cpu(req->hdr.SessionId));
+			if (sess) {
+				rc = -EINVAL;
+				rsp->hdr.Status =
+					NT_STATUS_REQUEST_NOT_ACCEPTED;
+				goto out_err;
+			}
+		} else {
+			sess = lookup_session_on_conn(server,
+					le64_to_cpu(req->hdr.SessionId));
+			if (!sess) {
+				rc = -ENOENT;
+				rsp->hdr.Status =
+					NT_STATUS_USER_SESSION_DELETED;
+				goto out_err;
+			}
 		}
 	}
+
+	if (sess->state & SMB2_SESSION_EXPIRED)
+		sess->state = SMB2_SESSION_IN_PROGRESS;
 
 	/* Check for previous session */
 	if (le64_to_cpu(req->PreviousSessionId) != 0)
@@ -1088,6 +1165,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			goto out_err;
 
 		server->tcp_status = CifsGood;
+		sess->state = SMB2_SESSION_VALID;
 	} else {
 		cifssrv_err("%s Invalid phase\n", __func__);
 		rc = -EINVAL;

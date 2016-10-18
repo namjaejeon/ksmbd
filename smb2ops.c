@@ -215,6 +215,9 @@ void init_smb3_0_server(struct tcp_server_info *server)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
 	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+
+	if (multi_channel_enable)
+		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
@@ -235,6 +238,9 @@ void init_smb3_02_server(struct tcp_server_info *server)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
 	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+
+	if (multi_channel_enable)
+		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
@@ -255,4 +261,7 @@ void init_smb3_11_server(struct tcp_server_info *server)
 		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
 	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+
+	if (multi_channel_enable)
+		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }

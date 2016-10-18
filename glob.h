@@ -76,6 +76,7 @@ extern int cifssrv_caseless_search;
 extern bool oplocks_enable;
 extern bool lease_enable;
 extern bool durable_enable;
+extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;

@@ -115,6 +115,7 @@ struct cifssrv_sess {
 	bool is_anonymous;
 	bool is_guest;
 	struct fidtable_desc fidtable;
+	int state;
 };
 
 enum share_attrs {

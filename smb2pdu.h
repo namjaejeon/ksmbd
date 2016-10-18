@@ -205,6 +205,14 @@ struct smb2_negotiate_rsp {
 	__u8   Buffer[1];	/* variable length GSS security buffer */
 } __packed;
 
+/* Flags */
+#define SMB2_SESSION_REQ_FLAG_BINDING		0x01
+#define SMB2_SESSION_REQ_FLAG_ENCRYPT_DATA	0x04
+
+#define SMB2_SESSION_EXPIRED 0x1
+#define SMB2_SESSION_IN_PROGRESS 0x2
+#define SMB2_SESSION_VALID 0x3
+
 struct smb2_sess_setup_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 25 */
@@ -221,6 +229,7 @@ struct smb2_sess_setup_req {
 /* Currently defined SessionFlags */
 #define SMB2_SESSION_FLAG_IS_GUEST	0x0001
 #define SMB2_SESSION_FLAG_IS_NULL	0x0002
+#define SMB2_SESSION_FLAG_ENCRYPT_DATA	0x0004
 struct smb2_sess_setup_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 9 */
