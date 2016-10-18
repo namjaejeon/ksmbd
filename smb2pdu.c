@@ -1178,17 +1178,28 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	if (tcon->share->tid == 1) {
 		cifssrv_debug("IPC share path request\n");
 		rsp->ShareType = SMB2_SHARE_TYPE_PIPE;
-		rsp->MaximalAccess = cpu_to_le32(0x001f00a9);
+		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
+			FILE_EXECUTE_LE | FILE_READ_ATTRIBUTES_LE |
+			FILE_DELETE_LE | FILE_READ_CONTROL_LE |
+			FILE_WRITE_DAC_LE | FILE_WRITE_OWNER_LE |
+			FILE_SYNCHRONIZE_LE;
 	} else {
 		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
-		rsp->MaximalAccess = cpu_to_le32(0x001f01ff);
+		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
+			FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
+			FILE_WRITE_EA_LE | FILE_DELETE_CHILD |
+			FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
+			FILE_DELETE_LE | FILE_READ_CONTROL_LE |
+			FILE_WRITE_DAC_LE | FILE_WRITE_OWNER_LE |
+			FILE_SYNCHRONIZE_LE;
 	}
 
 out_err:
 	rsp->StructureSize = cpu_to_le16(16);
 	rsp->Capabilities = 0;
 	rsp->Reserved = 0;
-	rsp->ShareFlags = 0;
+	/* default manual caching */
+	rsp->ShareFlags = SMB2_SHAREFLAG_MANUAL_CACHING;
 	inc_rfc1001_len(rsp, 16);
 	switch (rc) {
 	case -ENOENT:
