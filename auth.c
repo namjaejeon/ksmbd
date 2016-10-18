@@ -46,6 +46,18 @@ char NEGOTIATE_GSS_HEADER[74] =  {
 	0x72, 0x65
 };
 
+char SESSION_NEGOTIATE_GSS_HEADER[31] = {
+	0xa1, 0x81, 0xbe, 0x30, 0x81, 0xbb, 0xa0, 0x03,
+	0x0a, 0x01, 0x01, 0xa1, 0x0c, 0x06, 0x0a, 0x2b,
+	0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02,
+	0x0a, 0xa2, 0x81, 0xa5, 0x04, 0x81, 0xa2
+};
+
+char SESSION_AUTHENTICATE_GSS_HEADER[9] = {
+	0xa1, 0x07, 0x30, 0x05, 0xa0, 0x03, 0x0a, 0x01,
+	0x00
+};
+
 static int crypto_md5_alloc(struct tcp_server_info *server)
 {
 	int rc;
@@ -166,6 +178,38 @@ static int crypto_cmac_alloc(struct tcp_server_info *server)
 	}
 	server->secmech.sdesccmacaes->shash.tfm = server->secmech.cmacaes;
 	server->secmech.sdesccmacaes->shash.flags = 0x0;
+
+	return 0;
+}
+
+static int crypto_sha512_alloc(struct tcp_server_info *server)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (server->secmech.sdescsha512)
+		return 0;
+
+	cifssrv_debug("Inside crypto_sha512_alloc\n");
+	server->secmech.sha512 = crypto_alloc_shash("sha512", 0, 0);
+	if (IS_ERR(server->secmech.sha512)) {
+		cifssrv_debug("could not allocate crypto sha512\n");
+		rc = PTR_ERR(server->secmech.sha512);
+		server->secmech.sha512 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(server->secmech.sha512);
+	server->secmech.sdescsha512 = kmalloc(size, GFP_KERNEL);
+	if (!server->secmech.sdescsha512) {
+		crypto_free_shash(server->secmech.sha512);
+		server->secmech.sha512 = NULL;
+		return -ENOMEM;
+	}
+	server->secmech.sdescsha512->shash.tfm = server->secmech.sha512;
+	server->secmech.sdescsha512->shash.flags = 0x0;
 
 	return 0;
 }
@@ -402,6 +446,8 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 			sess->server->local_nls);
 
 	/* process NTLMv2 authentication */
+	cifssrv_debug("decode_ntlmssp_authenticate_blob dname%s\n",
+			domain_name);
 	return process_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
 		authblob->NtChallengeResponse.BufferOffset),
 		authblob->NtChallengeResponse.Length - CIFS_ENCPWD_SIZE,
@@ -454,7 +500,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	flags = NTLMSSP_NEGOTIATE_UNICODE |
 		NTLMSSP_NEGOTIATE_NTLM | NTLMSSP_TARGET_TYPE_SERVER |
 		NTLMSSP_NEGOTIATE_TARGET_INFO |
-		NTLMSSP_NEGOTIATE_128 | NTLMSSP_NEGOTIATE_56;
+		NTLMSSP_NEGOTIATE_128 | NTLMSSP_NEGOTIATE_56 |
+		NTLMSSP_NEGOTIATE_VERSION;
 
 	if (sess->ntlmssp.client_flags & NTLMSSP_REQUEST_TARGET)
 		flags |= NTLMSSP_REQUEST_TARGET;
@@ -692,11 +739,11 @@ out:
 }
 
 /**
- * compute_smb30signingkey() - function to generate session key
+ * compute_smb3xsigningkey() - function to generate session key
  * @sess:	session of connection
  *
  */
-int compute_smb30signingkey(struct cifssrv_sess *sess, __u8 *key,
+int compute_smb3xsigningkey(struct cifssrv_sess *sess, __u8 *key,
 	unsigned int key_size)
 {
 	unsigned char zero = 0x0;
@@ -741,8 +788,14 @@ int compute_smb30signingkey(struct cifssrv_sess *sess, __u8 *key,
 		goto smb3signkey_ret;
 	}
 
-	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
-			"SMB2AESCMAC", 12);
+	if (sess->server->dialect == SMB311_PROT_ID)
+		rc = crypto_shash_update(&sess->server->
+				secmech.sdeschmacsha256->shash,
+				"SMBSigningKey", 14);
+	else
+		rc = crypto_shash_update(&sess->server->
+				secmech.sdeschmacsha256->shash,
+				"SMB2AESCMAC", 12);
 	if (rc) {
 		cifssrv_debug("could not update with label\n");
 		goto smb3signkey_ret;
@@ -755,8 +808,13 @@ int compute_smb30signingkey(struct cifssrv_sess *sess, __u8 *key,
 		goto smb3signkey_ret;
 	}
 
-	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
-			"SmbSign", 8);
+	if (sess->server->dialect == SMB311_PROT_ID)
+		rc = crypto_shash_update(&sess->server->
+			secmech.sdeschmacsha256->shash, sess->Preauth_HashValue,
+			64);
+	else
+		rc = crypto_shash_update(&sess->server->
+			secmech.sdeschmacsha256->shash, "SmbSign", 8);
 	if (rc) {
 		cifssrv_debug("could not update with context\n");
 		goto smb3signkey_ret;
@@ -779,5 +837,55 @@ int compute_smb30signingkey(struct cifssrv_sess *sess, __u8 *key,
 	memcpy(key, hashptr, key_size);
 
 smb3signkey_ret:
+	return rc;
+}
+
+int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
+	char *buf, __u8 *pi_hash)
+{
+	int rc = -1;
+	struct crypto_shash *c_shash;
+	struct sdesc *c_sdesc;
+	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)buf;
+	char *all_bytes_msg = rcv_hdr2->ProtocolId;
+	int msg_size = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+
+	if (hash_id == SMB2_PREAUTH_INTEGRITY_SHA512) {
+		rc = crypto_sha512_alloc(server);
+		if (rc) {
+			cifssrv_debug("could not alloc sha512 rc %d\n", rc);
+			goto out;
+		}
+
+		c_shash = server->secmech.sha512;
+		c_sdesc = server->secmech.sdescsha512;
+	} else
+		goto out;
+
+	rc = crypto_shash_init(&c_sdesc->shash);
+	if (rc) {
+		cifssrv_debug("could not init shashn");
+		goto out;
+	}
+
+	rc = crypto_shash_update(&c_sdesc->shash,
+				server->Preauth_HashValue, 64);
+	if (rc) {
+		cifssrv_debug("could not update with n\n");
+		goto out;
+	}
+
+	rc = crypto_shash_update(&c_sdesc->shash, all_bytes_msg, msg_size);
+	if (rc) {
+		cifssrv_debug("could not update with n\n");
+		goto out;
+	}
+
+	rc = crypto_shash_final(&c_sdesc->shash, pi_hash);
+	if (rc) {
+		cifssrv_debug("Could not generate hash err : %d\n", rc);
+		goto out;
+	}
+out:
 	return rc;
 }

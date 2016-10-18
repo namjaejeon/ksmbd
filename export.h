@@ -116,6 +116,7 @@ struct cifssrv_sess {
 	bool is_guest;
 	struct fidtable_desc fidtable;
 	int state;
+	__u8 Preauth_HashValue[64];
 };
 
 enum share_attrs {
@@ -220,7 +221,7 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
 		char *sig);
 int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
-int compute_smb30signingkey(struct cifssrv_sess *sess,  __u8 *key,
+int compute_smb3xsigningkey(struct cifssrv_sess *sess,  __u8 *key,
 	unsigned int key_size);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,

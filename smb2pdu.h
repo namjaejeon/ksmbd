@@ -186,6 +186,32 @@ struct smb2_negotiate_req {
 #define SMB2_NT_FIND			0x00100000
 #define SMB2_LARGE_FILES		0x00200000
 
+#define SMB311_SALT_SIZE			32
+/* Hash Algorithm Types */
+#define SMB2_PREAUTH_INTEGRITY_SHA512	cpu_to_le16(0x0001)
+
+struct smb2_preauth_neg_context {
+	__le16	ContextType; /* 1 */
+	__le16	DataLength;
+	__le32	Reserved;
+	__le16	HashAlgorithmCount; /* 1 */
+	__le16	SaltLength;
+	__le16	HashAlgorithms; /* HashAlgorithms[0] since only one defined */
+	__u8	Salt[SMB311_SALT_SIZE];
+} __packed;
+
+/* Encryption Algorithms Ciphers */
+#define SMB2_ENCRYPTION_AES128_CCM	cpu_to_le16(0x0001)
+#define SMB2_ENCRYPTION_AES128_GCM	cpu_to_le16(0x0002)
+
+struct smb2_encryption_neg_context {
+	__le16	ContextType; /* 2 */
+	__le16	DataLength;
+	__le32	Reserved;
+	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
+	__le16	Ciphers[2]; /* Ciphers[0] since only one used now */
+} __packed;
+
 struct smb2_negotiate_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize;	/* Must be 65 */
@@ -213,10 +239,14 @@ struct smb2_negotiate_rsp {
 #define SMB2_SESSION_IN_PROGRESS 0x2
 #define SMB2_SESSION_VALID 0x3
 
+/* Flags */
+#define SMB2_SESSION_REQ_FLAG_BINDING		0x01
+#define SMB2_SESSION_REQ_FLAG_ENCRYPT_DATA	0x04
+
 struct smb2_sess_setup_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 25 */
-	__u8   VcNumber;
+	__u8   Flags;
 	__u8   SecurityMode;
 	__le32 Capabilities;
 	__le32 Channel;
@@ -225,6 +255,9 @@ struct smb2_sess_setup_req {
 	__le64 PreviousSessionId;
 	__u8   Buffer[1];	/* variable length GSS security buffer */
 } __packed;
+
+/* Flags/Reserved for SMB3.1.1 */
+#define SMB2_SHAREFLAG_CLUSTER_RECONNECT	0x0001
 
 /* Currently defined SessionFlags */
 #define SMB2_SESSION_FLAG_IS_GUEST	0x0001
@@ -254,7 +287,7 @@ struct smb2_logoff_rsp {
 struct smb2_tree_connect_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize;	/* Must be 9 */
-	__le16 Reserved;
+	__le16 Reserved;	/* Flags in SMB3.1.1 */
 	__le16 PathOffset;
 	__le16 PathLength;
 	__u8   Buffer[1];	/* variable length */
@@ -1119,6 +1152,8 @@ extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 
 /* smb2 command handlers */
+extern int calc_preauth_integrity_hash(struct tcp_server_info *server,
+	int hash_id, char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);
 extern int smb2_tree_connect(struct smb_work *smb_work);

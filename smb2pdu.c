@@ -798,6 +798,143 @@ int smb2_get_dos_mode(struct kstat *stat)
 	return attr;
 }
 
+/* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes */
+#define OFFSET_OF_NEG_CONTEXT 0xd0  /* sizeof(struct smb2_negotiate_rsp) - 4 */
+
+#define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
+#define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
+
+static void
+build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, int hash_id)
+{
+	pneg_ctxt->ContextType = SMB2_PREAUTH_INTEGRITY_CAPABILITIES;
+	pneg_ctxt->DataLength = cpu_to_le16(38);
+	pneg_ctxt->HashAlgorithmCount = cpu_to_le16(1);
+	pneg_ctxt->Reserved = cpu_to_le32(0);
+	pneg_ctxt->SaltLength = cpu_to_le16(SMB311_SALT_SIZE);
+	get_random_bytes(pneg_ctxt->Salt, SMB311_SALT_SIZE);
+	pneg_ctxt->HashAlgorithms = cpu_to_le16(hash_id);
+}
+
+static void
+build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt, int cipher_id)
+{
+	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
+	pneg_ctxt->DataLength = cpu_to_le16(4);
+	pneg_ctxt->Reserved = cpu_to_le32(0);
+	pneg_ctxt->CipherCount = cpu_to_le16(1);
+	pneg_ctxt->Ciphers[0] = cpu_to_le16(cipher_id);
+}
+
+static void
+assemble_neg_contexts(struct tcp_server_info *server,
+	struct smb2_negotiate_rsp *rsp)
+{
+	/* +4 is to account for the RFC1001 len field */
+	char *pneg_ctxt = (char *)rsp +
+			le32_to_cpu(rsp->NegotiateContextOffset) + 4;
+
+	cifssrv_debug("assemble SMB2_PREAUTH_INTEGRITY_CAPABILITIES context\n");
+	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
+		server->Preauth_HashId);
+	rsp->NegotiateContextCount = cpu_to_le16(1);
+	inc_rfc1001_len(rsp, 4 + sizeof(struct smb2_preauth_neg_context));
+
+	if (server->CipherId) {
+		/* Add 2 to size to round to 8 byte boundary */
+		cifssrv_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
+		pneg_ctxt += 2 + sizeof(struct smb2_preauth_neg_context);
+		build_encrypt_ctxt(
+			(struct smb2_encryption_neg_context *)pneg_ctxt,
+			server->CipherId);
+		rsp->NegotiateContextCount = cpu_to_le16(2);
+		inc_rfc1001_len(rsp, 4 +
+				sizeof(struct smb2_encryption_neg_context));
+	}
+}
+
+static int
+decode_preauth_ctxt(struct tcp_server_info *server,
+	struct smb2_preauth_neg_context *pneg_ctxt)
+{
+	int err = NT_STATUS_NO_PREAUTH_INTEGRITY_HASH_OVERLAP;
+
+	if (pneg_ctxt->HashAlgorithms ==
+			SMB2_PREAUTH_INTEGRITY_SHA512) {
+		cifssrv_err("Debug 1\n");
+		server->Preauth_HashId = SMB2_PREAUTH_INTEGRITY_SHA512;
+		err = NT_STATUS_OK;
+	}
+	cifssrv_debug("err %x\n", err);
+	return err;
+}
+
+static void
+decode_encrypt_ctxt(struct tcp_server_info *server,
+	struct smb2_encryption_neg_context *pneg_ctxt)
+{
+	int i;
+	int cph_cnt = pneg_ctxt->CipherCount;
+
+	server->CipherId = 0;
+	for (i = 0; i < cph_cnt; i++) {
+		if (pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_GCM) {
+			cifssrv_debug("Cipher ID = SMB2_ENCRYPTION_AES128_GCM\n");
+			server->CipherId = SMB2_ENCRYPTION_AES128_GCM;
+			break;
+		} else if (pneg_ctxt->Ciphers[i] ==
+			SMB2_ENCRYPTION_AES128_CCM) {
+			cifssrv_debug("Cipher ID = SMB2_ENCRYPTION_AES128_CCM\n");
+			server->CipherId = SMB2_ENCRYPTION_AES128_CCM;
+			break;
+		}
+	}
+}
+
+static int
+deassemble_neg_contexts(struct tcp_server_info *server,
+	struct smb2_negotiate_req *req)
+{
+	int i = 0, status = 0;
+	/* +4 is to account for the RFC1001 len field */
+	char *pneg_ctxt = (char *)req +
+			le32_to_cpu(req->NegotiateContextOffset) + 4;
+	__le16 *ContextType = (__le16 *)pneg_ctxt;
+	int neg_ctxt_cnt = le16_to_cpu(req->NegotiateContextCount);
+
+	cifssrv_debug("negotiate context count = %d\n", neg_ctxt_cnt);
+	status = NT_STATUS_INVALID_PARAMETER;
+	while (i++ < neg_ctxt_cnt) {
+		if (*ContextType == SMB2_PREAUTH_INTEGRITY_CAPABILITIES) {
+			cifssrv_debug("deassemble SMB2_PREAUTH_INTEGRITY_CAPABILITIES context\n");
+			if (server->Preauth_HashId)
+				break;
+
+			status = decode_preauth_ctxt(server,
+				(struct smb2_preauth_neg_context *)pneg_ctxt);
+			pneg_ctxt = pneg_ctxt +
+				sizeof(struct smb2_preauth_neg_context) + 2;
+			ContextType = (__le16 *)pneg_ctxt;
+		} else if (*ContextType == SMB2_ENCRYPTION_CAPABILITIES) {
+			cifssrv_debug("deassemble SMB2_ENCRYPTION_CAPABILITIES context\n");
+			if (server->CipherId)
+				break;
+
+			decode_encrypt_ctxt(server,
+				(struct smb2_encryption_neg_context *)
+				pneg_ctxt + 4 +
+				sizeof(struct smb2_preauth_neg_context));
+		}
+
+		if (status != NT_STATUS_OK)
+			break;
+
+		/* Add 2 to size to round to 8 byte boundary */
+		pneg_ctxt += 2 + sizeof(struct smb2_preauth_neg_context);
+	}
+	return status;
+}
+
 /**
  * smb2_negotiate() - handler for smb2 negotiate command
  * @smb_work:	smb work containing smb request buffer
@@ -810,6 +947,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
 	unsigned int limit;
+	int err;
 
 	req = (struct smb2_negotiate_req *)smb_work->buf;
 	rsp = (struct smb2_negotiate_rsp *)smb_work->rsp_buf;
@@ -833,6 +971,16 @@ int smb2_negotiate(struct smb_work *smb_work)
 	switch(server->dialect) {
 	case SMB311_PROT_ID:
 		init_smb3_11_server(server);
+		rsp->NegotiateContextOffset = cpu_to_le32(208);
+		err = deassemble_neg_contexts(server, req);
+		if (err != NT_STATUS_OK) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			return -EINVAL;
+		}
+
+		calc_preauth_integrity_hash(server, server->Preauth_HashId,
+			smb_work->buf, server->Preauth_HashValue);
+		assemble_neg_contexts(server, rsp);
 		break;
 	case SMB302_PROT_ID:
 		init_smb3_02_server(server);
@@ -881,6 +1029,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 	rsp->ServerStartTime = 0;
+	rsp->NegotiateContextOffset = cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
+	cifssrv_debug("negotiate context count %d\n",
+				le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 
@@ -907,6 +1058,11 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->SecurityMode = 0;
 		rsp->SecurityBufferLength = 0;
 		inc_rfc1001_len(rsp, 65);
+	}
+
+	if (server->dialect == SMB311_PROT_ID) {
+		calc_preauth_integrity_hash(server, server->Preauth_HashId,
+			smb_work->rsp_buf, server->Preauth_HashValue);
 	}
 
 	server->srv_sec_mode = rsp->SecurityMode;
@@ -1034,6 +1190,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	if (sess->state & SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
 
+	if (server->dialect == SMB311_PROT_ID) {
+		memcpy(sess->Preauth_HashValue, server->Preauth_HashValue, 64);
+		calc_preauth_integrity_hash(server, server->Preauth_HashId,
+			smb_work->buf, sess->Preauth_HashValue);
+	}
+
 	/* Check for previous session */
 	if (le64_to_cpu(req->PreviousSessionId) != 0)
 		smb2_invalidate_prev_session(
@@ -1062,6 +1224,15 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		/* Note: here total size -1 is done as
 		   an adjustment for 0 size blob */
 		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
+
+		if (server->dialect >= SMB30_PROT_ID) {
+			memcpy(sess->Preauth_HashValue,
+				server->Preauth_HashValue, 64);
+			calc_preauth_integrity_hash(server,
+				server->Preauth_HashId, smb_work->rsp_buf,
+				sess->Preauth_HashValue);
+		}
+
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;

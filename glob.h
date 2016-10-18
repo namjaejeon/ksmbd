@@ -82,6 +82,8 @@ extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 extern char NEGOTIATE_GSS_HEADER[74];
+extern char SESSION_NEGOTIATE_GSS_HEADER[31];
+extern char SESSION_AUTHENTICATE_GSS_HEADER[9];
 
 extern bool global_signing;
 
@@ -257,16 +259,24 @@ struct cifs_secmech {
 	struct crypto_shash *md5; /* md5 hash function */
 	struct crypto_shash *hmacsha256; /* hmac-sha256 hash function */
 	struct crypto_shash *cmacaes; /* block-cipher based MAC function */
+	struct crypto_shash *sha512; /* sha512 hash function */
 	struct sdesc *sdeschmacmd5;  /* ctxt to generate ntlmv2 hash, CR1 */
 	struct sdesc *sdescmd5; /* ctxt to generate cifs/smb signature */
 	struct sdesc *sdeschmacsha256;  /* ctxt to generate smb2 signature */
 	struct sdesc *sdesccmacaes;  /* ctxt to generate smb3 signature */
+	struct sdesc *sdescsha512;  /* ctxt to generate preauth integrity */
 };
 
 struct channel {
 	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
 	struct tcp_server_info *server;
 	struct list_head chann_list;
+};
+
+struct preauth_session {
+	int SessionId;
+	int HashId;
+	int HashValue;
 };
 
 struct tcp_server_info {
@@ -334,6 +344,13 @@ struct tcp_server_info {
 #endif
 	struct cifs_secmech secmech;
 	char ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
+
+	int Preauth_HashId; /* PreAuth integrity Hash ID */
+	__u8 Preauth_HashValue[64]; /* PreAuth integrity Hash Value */
+	int CipherId;
+
+	struct list_head p_sess_table; /* PreAuthSession Table */
+
 };
 
 struct trans_state {

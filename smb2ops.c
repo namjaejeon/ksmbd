@@ -136,7 +136,7 @@ struct smb_version_ops smb3_0_server_ops = {
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.compute_signingkey	=	compute_smb30signingkey
+	.compute_signingkey	=	compute_smb3xsigningkey
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
