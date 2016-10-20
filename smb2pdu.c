@@ -1383,6 +1383,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	struct cifssrv_tcon *tcon;
 	char *treename = NULL, *name = NULL;
 	int rc = 0;
+	bool can_write;
 
 	req = (struct smb2_tree_connect_req *)smb_work->buf;
 	rsp = (struct smb2_tree_connect_rsp *)smb_work->rsp_buf;
@@ -1410,7 +1411,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	cifssrv_debug("tree connect request for tree %s treename %s\n",
 		      name, treename);
 
-	share = get_cifssrv_share(server, sess, name);
+	share = get_cifssrv_share(server, sess, name, &can_write);
 	if (IS_ERR(share)) {
 		rc = PTR_ERR(share);
 		goto out_err;
@@ -1421,6 +1422,8 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		rc = PTR_ERR(tcon);
 		goto out_err;
 	}
+
+	tcon->writeable = can_write;
 
 	rsp->hdr.TreeId = tcon->share->tid;
 
@@ -1918,9 +1921,11 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	/* set flags */
-	open_flags = smb2_create_open_flags(file_present, req->DesiredAccess,
-							req->CreateDisposition);
+	if (smb_work->tcon->writeable)
+		open_flags = smb2_create_open_flags(file_present,
+		req->DesiredAccess, req->CreateDisposition);
+	else
+		open_flags = O_RDONLY;
 
 	/*create file if not present */
 	mode |= S_IRWXUGO;
@@ -1960,9 +1965,15 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	} else if (!file_present && !(open_flags & O_CREAT)) {
 		kfree(name);
-		cifssrv_debug("%s: returning as file does not exist\n",
+		if (smb_work->tcon->writeable) {
+			cifssrv_debug("%s: returning as file does not exist\n",
 				__func__);
-		rsp->hdr.Status = cpu_to_le32(NT_STATUS_OBJECT_NAME_NOT_FOUND);
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		} else {
+			 cifssrv_debug("%s: returning as user does not have permission to write\n",
+				__func__);
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		}
 		smb2_set_err_rsp(smb_work);
 		return 0;
 	}

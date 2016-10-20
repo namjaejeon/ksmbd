@@ -528,6 +528,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	struct cifssrv_share *share;
 	struct cifssrv_tcon *tcon;
 	struct cifssrv_sess *sess = smb_work->sess;
+	bool can_write;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -567,7 +568,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 
 	cifssrv_debug("tree connect request for tree %s\n", name);
 
-	share = get_cifssrv_share(server, sess, name);
+	share = get_cifssrv_share(server, sess, name, &can_write);
 	if (IS_ERR(share)) {
 		rc = PTR_ERR(share);
 		goto out_err;
@@ -579,6 +580,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 		goto out_err;
 	}
 
+	tcon->writeable = can_write;
 	rsp->WordCount = 7;
 	rsp->OptionalSupport = 0;
 
@@ -1844,6 +1846,19 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	 * - check req->ImpersonationLevel
 	 */
 
+	if (!smb_work->tcon->writeable) {
+		if (!file_present) {
+			if (open_flags & O_CREAT) {
+				err = -EACCES;
+				cifssrv_debug("returning as user does not have permission to write\n");
+			} else {
+				err = -ENOENT;
+				cifssrv_debug("returning as file does not exist\n");
+			}
+		}
+		goto free_path;
+	}
+
 	cifssrv_debug("open_flags = 0x%x\n", open_flags);
 	if (!file_present && (open_flags & O_CREAT)) {
 
@@ -1977,18 +1992,30 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 free_path:
 	path_put(&path);
 out:
-	if (err) {
-		if (err == -ENOSPC)
-			rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
-		else if (err == -EMFILE)
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_TOO_MANY_OPENED_FILES;
-		else
-			rsp->hdr.Status.CifsError =
-				NT_STATUS_UNEXPECTED_IO_ERROR;
-	} else
+	switch (err) {
+	case 0:
 		server->stats.open_files_count++;
-
+		break;
+	case -ENOSPC:
+		rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+		break;
+	case -EMFILE:
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_TOO_MANY_OPENED_FILES;
+		break;
+	case -EINVAL:
+		rsp->hdr.Status.CifsError = NT_STATUS_NO_SUCH_USER;
+		break;
+	case -EACCES:
+		rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+		break;
+	case -ENOENT:
+		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		break;
+	default:
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_UNEXPECTED_IO_ERROR;
+	}
 	smb_put_name(conv_name);
 
 	if (!rsp->hdr.WordCount)
@@ -4220,6 +4247,19 @@ int smb_posix_open(struct smb_work *smb_work)
 	rsp_info_level = le16_to_cpu(psx_req->Level);
 	cifssrv_debug("posix_open_flags 0x%x\n", posix_open_flags);
 
+	if (!smb_work->tcon->writeable) {
+		if (!file_present) {
+			if (posix_open_flags & O_CREAT) {
+				err = -EACCES;
+				cifssrv_debug("returning as user does not have permission to write\n");
+			} else {
+				err = -ENOENT;
+				cifssrv_debug("returning as file does not exist\n");
+			}
+		}
+		goto free_path;
+	}
+
 	/* posix mkdir command */
 	if (posix_open_flags == (O_DIRECTORY | O_CREAT)) {
 		if (file_present) {
@@ -4321,15 +4361,27 @@ prepare_rsp:
 free_path:
 	path_put(&path);
 out:
-	if (err) {
-		if (err == -ENOSPC)
-			pSMB_rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
-		else
-			pSMB_rsp->hdr.Status.CifsError =
-				NT_STATUS_UNEXPECTED_IO_ERROR;
-	} else
+	switch (err) {
+	case 0:
 		server->stats.open_files_count++;
-
+		break;
+	case -ENOSPC:
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
+		break;
+	case -EINVAL:
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_NO_SUCH_USER;
+		break;
+	case -EACCES:
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
+		break;
+	case -ENOENT:
+		pSMB_rsp->hdr.Status.CifsError =
+			NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		break;
+	default:
+		pSMB_rsp->hdr.Status.CifsError =
+			NT_STATUS_UNEXPECTED_IO_ERROR;
+	}
 	smb_put_name(name);
 	return err;
 }

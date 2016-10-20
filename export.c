@@ -113,7 +113,8 @@ static void init_params(struct cifssrv_share *share)
 	clear_attr_guestok(&share->config.attr);
 	clear_attr_guestonly(&share->config.attr);
 	set_attr_oplocks(&share->config.attr);
-	clear_attr_writeable(&share->config.attr);
+	set_attr_readonly(&share->config.attr);
+	set_attr_writeok(&share->config.attr);
 	share->config.max_connections = 0;
 }
 
@@ -160,6 +161,7 @@ static inline void free_share(struct cifssrv_share *share)
 	kfree(share->config.deny_hosts);
 	kfree(share->config.invalid_users);
 	kfree(share->config.read_list);
+	kfree(share->config.write_list);
 	kfree(share->config.valid_users);
 }
 
@@ -329,6 +331,7 @@ static int chktkn(char *userslist, char *str2)
 			}
 		}
 		kfree(dup_orig);
+		return -ENOENT;
 	}
 	return 0;
 }
@@ -357,8 +360,10 @@ int validate_host(char *cip, struct cifssrv_share *share)
 		return 1;
 
 	allow = chktkn(alist, cip);
-	if (allow < 0)
-		return -ENOMEM;
+	if (allow == -ENOENT)
+		return -EACCES;
+	else if (allow < 0)
+		return allow;
 
 	/*
 	 * "allow hosts" list takes precedence over "deny hosts" list,
@@ -388,11 +393,18 @@ int validate_host(char *cip, struct cifssrv_share *share)
  *
  * Return:      1 if usr is allowed access to share, otherwise error
  */
-int validate_usr(char *usr, struct cifssrv_share *share)
+int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
+	bool *can_write)
 {
 	char *vlist = share->config.valid_users;
 	char *ilist = share->config.invalid_users;
+	char *wlist = share->config.write_list;
+	char *rlist = share->config.read_list;
 	int ret;
+
+	/* for share IPC$, does not support smb.conf share parameters*/
+	if (!share->path)
+		return 1;
 
 	/* if "guest = ok, no checking of users required "*/
 	/*
@@ -406,23 +418,34 @@ int validate_usr(char *usr, struct cifssrv_share *share)
 	}
 
 	/* name should not be present in "invalid users" */
-	ret = chktkn(ilist, usr);
-	if (ret < 0)
+	ret = chktkn(ilist, sess->usr->name);
+	if (ret == -ENOMEM)
 		return -ENOMEM;
 	if (ret > 0)
 		return -EACCES;
+
+	*can_write = (share->writeable == 1) ? true : false;
+	/* if user present in read list, sess will be readable */
+	ret = chktkn(rlist, sess->usr->name);
+	if (ret > 0)
+		*can_write = false;
+
+	/* if user present in write list, make user session writeable */
+	ret = chktkn(wlist, sess->usr->name);
+	if (ret > 0)
+		*can_write = true;
 
 	/* if "valid users" list is empty then any user can login */
 	if (!vlist)
 		return 1;
 
 	/* user exists in "valid users" list? */
-	return chktkn(vlist, usr);
+	return chktkn(vlist, sess->usr->name);
 }
 
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		struct cifssrv_sess *sess,
-		char *sharename)
+		char *sharename, bool *can_write)
 {
 	struct list_head *tmp;
 	struct cifssrv_share *share;
@@ -440,7 +463,7 @@ struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 				, server->peeraddr, share->sharename);
 				return ERR_PTR(rc);
 			}
-			rc = validate_usr(sess->usr->name, share);
+			rc = validate_usr(sess, share, can_write);
 			if (rc < 0) {
 				cifssrv_err(
 				"[user:%s] not authorised for [share:%s]\n",
@@ -868,6 +891,11 @@ enum {
 	Opt_invalidusers,
 	Opt_path,
 	Opt_readlist,
+	Opt_readonly,
+	Opt_writeok,
+	Opt_writelist,
+	Opt_hostallow,
+	Opt_hostdeny,
 
 	Opt_share_err
 };
@@ -888,6 +916,11 @@ static const match_table_t cifssrv_share_tokens = {
 	{ Opt_invalidusers, "invalid users = %s" },
 	{ Opt_path, "path = %s" },
 	{ Opt_readlist, "read list = %s" },
+	{ Opt_readonly, "read only = %s" },
+	{ Opt_writeok, "write ok = %s" },
+	{ Opt_writelist, "write list = %s" },
+	{ Opt_hostallow, "hosts allow = %s" },
+	{ Opt_hostdeny, "hosts deny = %s" },
 
 	{ Opt_share_err, NULL }
 };
@@ -1082,12 +1115,9 @@ static int cifssrv_parse_share_options(const char *configdata)
 				set_attr_browsable(&share->config.attr);
 			break;
 		case Opt_writeable:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share ||
+				cifssrv_get_config_val(args, &share->writeable))
 				goto config_err;
-			if (val == 1)
-				set_attr_writeable(&share->config.attr);
-			else
-				clear_attr_writeable(&share->config.attr);
 			break;
 		case Opt_guestok:
 			if (!share || cifssrv_get_config_val(args, &val))
@@ -1130,11 +1160,13 @@ static int cifssrv_parse_share_options(const char *configdata)
 				goto out_nomem;
 			break;
 		case Opt_allowhost:
+		case Opt_hostallow:
 			if (!share || cifssrv_get_config_str(args,
 						&share->config.allow_hosts))
 				goto out_nomem;
 			break;
 		case Opt_denyhost:
+		case Opt_hostdeny:
 			if (!share || cifssrv_get_config_str(args,
 						&share->config.deny_hosts))
 				goto out_nomem;
@@ -1161,6 +1193,27 @@ static int cifssrv_parse_share_options(const char *configdata)
 		case Opt_readlist:
 			if (!share || cifssrv_get_config_str(args,
 						&share->config.read_list))
+				goto out_nomem;
+			break;
+		case Opt_readonly:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_readonly(&share->config.attr);
+			else
+				clear_attr_readonly(&share->config.attr);
+			break;
+		case Opt_writeok:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_writeok(&share->config.attr);
+			else
+				clear_attr_writeok(&share->config.attr);
+			break;
+		case Opt_writelist:
+			if (!share || cifssrv_get_config_str(args,
+						&share->config.write_list))
 				goto out_nomem;
 			break;
 		default:
@@ -1198,117 +1251,139 @@ static ssize_t show_share_config(char *buf, int offset,
 	int limit = PAGE_SIZE - offset;
 
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum, "[%s]\n",
+		ret = snprintf(buf + cum, limit - cum, "[%s]\n",
 				share->sharename);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.comment) {
-		ret = snprintf(buf+cum, limit - cum, "\tcomment = %s\n",
+		ret = snprintf(buf + cum, limit - cum, "\tcomment = %s\n",
 				share->config.comment);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum, "\tpath = %s\n",
+		ret = snprintf(buf + cum, limit - cum, "\tpath = %s\n",
 				share->path);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.allow_hosts) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tallow hosts = %s\n",
 				share->config.allow_hosts);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.deny_hosts) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tdeny hosts = %s\n",
 				share->config.deny_hosts);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.invalid_users) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tinvalid users = %s\n",
 				share->config.invalid_users);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.read_list) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tread list = %s\n",
 				share->config.read_list);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit && share->config.valid_users) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tvalid users = %s\n",
 				share->config.valid_users);
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tavailable = %d\n",
 				get_attr_available(&share->config.attr));
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tbrowsable = %d\n",
 				get_attr_browsable(&share->config.attr));
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tguest ok = %d\n",
 				get_attr_guestok(&share->config.attr));
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tguest only = %d\n",
 				get_attr_guestonly(&share->config.attr));
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum, "\toplocks = %d\n",
+		ret = snprintf(buf + cum, limit - cum, "\toplocks = %d\n",
 				get_attr_oplocks(&share->config.attr));
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\twriteable = %d\n",
-				get_attr_writeable(&share->config.attr));
+				share->writeable);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 	}
+
 	if (cum < limit) {
-		ret = snprintf(buf+cum, limit - cum,
+		ret = snprintf(buf + cum, limit - cum,
 				"\tmax connections = %u\n",
 				share->config.max_connections);
 		if (ret < 0)
 			return cum;
 		cum += ret;
+	}
+
+	if (cum < limit && share->config.write_list) {
+		ret = snprintf(buf + cum, limit - cum,
+				"\twrite list = %s\n",
+				share->config.write_list);
+		if (ret < 0)
+			return cum;
 	}
 
 	return cum;

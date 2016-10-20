@@ -125,7 +125,9 @@ enum share_attrs {
 	SH_GUESTOK,
 	SH_GUESTONLY,
 	SH_OPLOCKS,
-	SH_WRITEABLE
+	SH_WRITEABLE,
+	SH_READONLY,
+	SH_WRITEOK
 };
 
 #define SHARE_ATTR(bit, name)					\
@@ -151,8 +153,8 @@ SHARE_ATTR(SH_BROWSABLE, browsable)	/* default: enabled */
 SHARE_ATTR(SH_GUESTOK, guestok)		/* default: disabled */
 SHARE_ATTR(SH_GUESTONLY, guestonly)	/* default: disabled */
 SHARE_ATTR(SH_OPLOCKS, oplocks)		/* default: enabled */
-SHARE_ATTR(SH_WRITEABLE, writeable)	/* default: disabled */
-
+SHARE_ATTR(SH_READONLY, readonly)	/* default: enabled */
+SHARE_ATTR(SH_WRITEOK, writeok)		/* default: enabled */
 
 struct share_config {
 	char *comment;
@@ -160,6 +162,7 @@ struct share_config {
 	char *deny_hosts;
 	char *invalid_users;
 	char *read_list;
+	char *write_list;
 	char *valid_users;
 	unsigned long attr;
 	unsigned int max_connections;
@@ -173,7 +176,7 @@ struct cifssrv_share {
 	struct share_config config;
 	/* global list of shares */
 	struct list_head list;
-
+	int writeable;
 };
 
 /* cifssrv_tcon is coupled with cifssrv_share */
@@ -182,6 +185,7 @@ struct cifssrv_tcon {
 	struct cifssrv_sess *sess;
 	struct path share_path;
 	struct list_head tcon_list;
+	int writeable;
 };
 
 /*
@@ -203,7 +207,8 @@ struct cifssrv_tcon {
 extern int cifssrv_init_registry(void);
 extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);
-int validate_usr(char *usr, struct cifssrv_share *share);
+int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
+	bool *can_write);
 int validate_host(char *cip, struct cifssrv_share *share);
 int process_ntlm(struct cifssrv_sess *sess, char *pw_buf);
 int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
@@ -225,7 +230,7 @@ int compute_smb3xsigningkey(struct cifssrv_sess *sess,  __u8 *key,
 	unsigned int key_size);
 extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
 struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
-		struct cifssrv_sess *sess, char *sharename);
+		struct cifssrv_sess *sess, char *sharename, bool *can_write);
 extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 		struct cifssrv_sess *sess);
 extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
