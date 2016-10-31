@@ -862,11 +862,10 @@ decode_preauth_ctxt(struct tcp_server_info *server,
 
 	if (pneg_ctxt->HashAlgorithms ==
 			SMB2_PREAUTH_INTEGRITY_SHA512) {
-		cifssrv_err("Debug 1\n");
 		server->Preauth_HashId = SMB2_PREAUTH_INTEGRITY_SHA512;
 		err = NT_STATUS_OK;
 	}
-	cifssrv_debug("err %x\n", err);
+
 	return err;
 }
 
@@ -1574,7 +1573,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	cifssrv_debug("%s : request\n", __func__);
 
 	if (!tcon) {
-		cifssrv_err("Invalid tid %d\n", req->hdr.TreeId);
+		cifssrv_debug("Invalid tid %d\n", req->hdr.TreeId);
 		rsp->hdr.Status = NT_STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(smb_work);
 		return 0;
@@ -1639,7 +1638,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	list_for_each_safe(tmp, t, &sess->tcon_list) {
 		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
 		if (tcon == NULL) {
-			cifssrv_err("Invalid tid %d\n", req->hdr.TreeId);
+			cifssrv_debug("Invalid tid %d\n", req->hdr.TreeId);
 			rsp->hdr.Status = NT_STATUS_NETWORK_NAME_DELETED;
 			smb2_set_err_rsp(smb_work);
 			return 0;
@@ -3446,7 +3445,6 @@ int smb2_info_file(struct smb_work *smb_work)
 		int uni_filename_len;
 
 		filename = (char *)filp->f_path.dentry->d_name.name;
-		cifssrv_err("filename = %s\n", filename);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
 		uni_filename_len = smb_get_shortname(server, filename,
