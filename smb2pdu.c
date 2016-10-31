@@ -3420,7 +3420,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->IndexNumber = cpu_to_le64(stat.ino);
 		file_info->EASize = 0;
 		file_info->AccessFlags = cpu_to_le32(0x00000080);
-		file_info->CurrentByteOffset = 0;
+		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
 		file_info->Mode = cpu_to_le32(0x00000010);
 		file_info->AlignmentRequirement = 0;
 		uni_filename_len = smbConvertToUTF16(

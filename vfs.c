@@ -170,8 +170,10 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		cifssrv_err("smb read failed for (%s), err = %zd\n",
 				name, nbytes);
 		vfree(rbuf);
-	} else
+	} else {
 		*buf = rbuf;
+		filp->f_pos = *pos;
+	}
 
 	return nbytes;
 }
@@ -243,6 +245,7 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return err;
 	}
 
+	filp->f_pos = *pos;
 	*written = err;
 	err = 0;
 	if (sync) {
