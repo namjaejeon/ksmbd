@@ -615,21 +615,22 @@ int smb2_check_user_session(struct smb_work *smb_work)
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_sess *sess;
-	int rc = 0;
+	int rc;
+	unsigned int cmd = server->ops->get_cmd_val(smb_work);
 
 	smb_work->sess = NULL;
 
 	/*
-	 * ECHO, KEEP_ALIVE command does not require a session id,
-	 * so no need to validate user session's for these commands.
-	 * CIFS Client when making ECHO SMB request is not filling
-	 * session_id
+	 * ECHO, KEEP_ALIVE, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command does not
+	 * require a session id, so no need to validate user session's for these
+	 * commands.
 	 */
-	if (server->ops->get_cmd_val(smb_work) == SMB2_ECHO)
-		return rc;
+	if (cmd == SMB2_ECHO || cmd == SMB2_NEGOTIATE ||
+			cmd == SMB2_SESSION_SETUP)
+		return 0;
 
 	if (server->tcp_status != CifsGood)
-		return rc;
+		return -EINVAL;
 
 	rc = -EINVAL;
 	/* Check for validity of user session */

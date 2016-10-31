@@ -349,18 +349,23 @@ int smb_check_user_session(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct cifssrv_sess *sess;
 	struct list_head *tmp;
-	int rc = 0;
+	int rc;
+	unsigned int cmd = server->ops->get_cmd_val(smb_work);
 
 	smb_work->sess = NULL;
 
+	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
+		return 0;
+
 	if (server->tcp_status != CifsGood)
-		return rc;
+		return -EINVAL;
 
 	if (server->sess_count == 0) {
 		cifssrv_debug("NO sessions registered\n");
-		return rc;
+		return 0;
 	}
 
+	rc = -EINVAL;
 	list_for_each(tmp, &server->cifssrv_sess) {
 		sess = list_entry(tmp, struct cifssrv_sess, cifssrv_ses_list);
 		if (sess->usr->vuid == req_hdr->Uid && sess->valid) {
