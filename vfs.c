@@ -117,14 +117,19 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	char namebuf[NAME_MAX];
 	int ret;
 
-	if (unlikely(count == 0))
-		return 0;
-
 	fp = get_id_from_fidtable(sess, fid);
 	if (!fp) {
 		cifssrv_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
 	}
+
+	filp = fp->filp;
+	inode = filp->f_path.dentry->d_inode;
+	if (S_ISDIR(inode->i_mode))
+		return -EISDIR;
+
+	if (unlikely(count == 0))
+		return 0;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (fp->is_durable && fp->persistent_id != p_id) {
@@ -138,11 +143,6 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -EACCES;
 	}
 #endif
-
-	filp = fp->filp;
-	inode = filp->f_path.dentry->d_inode;
-	if (S_ISDIR(inode->i_mode))
-		return -EISDIR;
 
 	ret = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
 			F_RDLCK);
