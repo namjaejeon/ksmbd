@@ -2884,7 +2884,7 @@ void unix_to_dos_time(struct timespec *ts, __le16 *time, __le16 *date)
  * @ace:	local - unix style Access Control Entry format
  * @cifs_ace:	cifs wire Access Control Entry format
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static void cifs_convert_ace(struct posix_acl_xattr_entry *ace,
 			     struct cifs_posix_ace *cifs_ace)
 #else
@@ -2918,7 +2918,7 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	__u16 count;
 	struct cifs_posix_ace *pACE;
 	struct cifs_posix_acl *cifs_acl = (struct cifs_posix_acl *)src;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	struct posix_acl_xattr_header *local_acl = (void *)trgt;
 #else
 	posix_acl_xattr_header *local_acl = (posix_acl_xattr_header *)trgt;
@@ -2956,12 +2956,12 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	} else if (size > buflen) {
 		return -ERANGE;
 	} else /* buffer big enough */ {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
 #endif
 		local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
 		for (i = 0; i < count; i++) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 			cifs_convert_ace(&ace[i], pACE);
 #else
 			cifs_convert_ace(&local_acl->a_entries[i], pACE);
@@ -2980,7 +2980,7 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
  *
  * Return:	0
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
 				     const struct posix_acl_xattr_entry *local_ace)
 #else
@@ -3017,7 +3017,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 {
 	__u16 rc = 0;
 	struct cifs_posix_acl *cifs_acl = (struct cifs_posix_acl *)parm_data;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	struct posix_acl_xattr_header *local_acl = (void *)pACL;
 	struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
 #else
@@ -3049,7 +3049,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 		return 0;
 	}
 	for (i = 0; i < count; i++, j++) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 8, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		rc = convert_ace_to_cifs_ace(&cifs_acl->ace_array[i], &ace[i]);
 #else
 		rc = convert_ace_to_cifs_ace(&cifs_acl->ace_array[j],
