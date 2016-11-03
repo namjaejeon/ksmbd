@@ -489,7 +489,8 @@ extern int cifssrv_export_init(void);
 extern void cifssrv_export_exit(void);
 
 /* cifssrv connect functions */
-extern int cifssrv_start_forker_thread(void);
+extern int cifssrv_create_socket(void);
+extern int cifssrv_start_forker_thread(struct socket *socket);
 extern void cifssrv_stop_forker_thread(void);
 
 /* cifssrv misc functions */

@@ -184,12 +184,11 @@ int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 }
 
 /**
- * cifssrv_do_fork() - forker thread to listen new SMB connection
- * @p:		arguments to forker thread
+ * cifssrv_create_socket - create socket for kcifssrvd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-static int cifssrv_do_fork(void *p)
+int cifssrv_create_socket(void)
 {
 	int ret;
 	struct socket *socket = NULL;
@@ -208,7 +207,7 @@ static int cifssrv_do_fork(void *p)
 	ret = kernel_setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
 			(char *)&opt, sizeof(opt));
 	if (ret < 0) {
-		cifssrv_err("failed to set socket options\n");
+		cifssrv_err("failed to set socket options(%d)\n", ret);
 		goto release;
 	}
 
@@ -230,9 +229,39 @@ static int cifssrv_do_fork(void *p)
 
 	ret = socket->ops->listen(socket, 64);
 	if (ret) {
-		cifssrv_err("port listen failure\n");
+		cifssrv_err("port listen failure(%d)\n", ret);
 		goto release;
 	}
+
+	ret = cifssrv_start_forker_thread(socket);
+	if (ret) {
+		cifssrv_err("failed to run forker thread(%d)\n", ret);
+		goto release;
+	}
+
+	return 0;
+
+release:
+	cifssrv_debug("releasing socket\n");
+	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
+	if (ret)
+		cifssrv_err("failed to shutdown socket cleanly\n");
+
+	sock_release(socket);
+
+	return ret;
+}
+
+/**
+ * cifssrv_do_fork() - forker thread to listen new SMB connection
+ * @p:		arguments to forker thread
+ *
+ * Return:	Returns a task_struct or ERR_PTR
+ */
+static int cifssrv_do_fork(void *p)
+{
+	struct socket *socket = p;
+	int ret;
 
 	while (!kthread_should_stop()) {
 		struct socket *newsock = NULL;
@@ -251,7 +280,6 @@ static int cifssrv_do_fork(void *p)
 		}
 	}
 
-release:
 	cifssrv_debug("releasing socket\n");
 	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
 	if (ret)
@@ -259,7 +287,7 @@ release:
 
 	sock_release(socket);
 
-	return ret;
+	return 0;
 }
 
 /**
@@ -271,13 +299,14 @@ release:
  *
  * Return:	0 on success or error number
  */
-int cifssrv_start_forker_thread(void)
+int cifssrv_start_forker_thread(struct socket *socket)
 {
 	int rc;
 
-	cifssrv_forkerd = kthread_run(cifssrv_do_fork, NULL, "kcifssrvd/0");
+	cifssrv_forkerd = kthread_run(cifssrv_do_fork, socket, "kcifssrvd/0");
 	if (IS_ERR(cifssrv_forkerd)) {
 		rc = PTR_ERR(cifssrv_forkerd);
+		cifssrv_forkerd = NULL;
 		return rc;
 	}
 
@@ -291,6 +320,7 @@ int cifssrv_start_forker_thread(void)
  */
 void cifssrv_stop_forker_thread(void)
 {
-	kthread_stop(cifssrv_forkerd);
+	if (cifssrv_forkerd)
+		kthread_stop(cifssrv_forkerd);
 }
 

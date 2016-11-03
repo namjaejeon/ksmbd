@@ -933,18 +933,19 @@ static int __init init_smb_server(void)
 	if (rc)
 		goto err2;
 #endif
-
-	rc = cifssrv_start_forker_thread();
+	rc = cifssrv_create_socket();
 	if (rc)
 		goto err3;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	rc = cifssrv_net_init();
 	if (rc)
-		goto err3;
+		goto err4;
 #endif
 	return 0;
 
+err4:
+	cifssrv_stop_forker_thread();
 err3:
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
