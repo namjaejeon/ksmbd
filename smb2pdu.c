@@ -26,6 +26,9 @@
 #include "smbfsctl.h"
 #include "oplock.h"
 
+#include <linux/inetdevice.h>
+#include <net/addrconf.h>
+
 bool multi_channel_enable;
 
 struct fs_type_info fs_type[] = {
@@ -5057,34 +5060,38 @@ int smb2_ioctl(struct smb_work *smb_work)
 	}
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
 	{
-		struct network_interface_info_ioctl_rsp *nii_rsp;
-		struct socket *socket = server->sock;
-		struct net *net;
+		struct network_interface_info_ioctl_rsp *nii_rsp = NULL;
 		struct net_device *netdev;
-		struct ethtool_cmd cmd;
-		char interfacename[IFNAMSIZ];
-		unsigned int speed;
-		int err;
 		struct sockaddr_storage_rsp *sockaddr_storage;
-		struct sockaddr_storage caddr;
-		struct sockaddr *csin = (struct sockaddr *)&caddr;
-		const struct sockaddr_in *addr_in;
-		int cslen;
-		int next = 0;
+		struct ethtool_cmd cmd;
+		int err;
+		unsigned int speed;
 
-		for_each_net(net) {
-			net = sock_net(socket->sk);
-
-			rtnl_lock();
-			netdev = __dev_get_by_index(net, net->ifindex);
+		rtnl_lock();
+		for_each_netdev(&init_net, netdev) {
 			if (unlikely(!netdev)) {
-				cifssrv_err("failed to get net_device by ifindex\n");
 				rtnl_unlock();
 				goto out;
 			}
 
-			sprintf(interfacename, "%s", netdev->name);
-			rtnl_unlock();
+			if (netdev->type == ARPHRD_LOOPBACK)
+				continue;
+
+			if (netdev->flags & IFF_UP)
+				continue;
+
+			nii_rsp = (struct network_interface_info_ioctl_rsp *)
+					&rsp->Buffer[nbytes];
+			nii_rsp->IfIndex = cpu_to_le32(netdev->ifindex);
+
+			/* TODO: specify the RDMA capabilities */
+			if (netdev->num_tx_queues > 1)
+				nii_rsp->Capability = RSS_CAPABLE;
+			else
+				nii_rsp->Capability = 0;
+
+			nii_rsp->Next = cpu_to_le32(152);
+			nii_rsp->Reserved = 0;
 
 			memset(&cmd, 0, sizeof(cmd));
 			cmd.cmd = ETHTOOL_GSET;
@@ -5092,41 +5099,71 @@ int smb2_ioctl(struct smb_work *smb_work)
 			if (err < 0)
 				goto out;
 			speed = ethtool_cmd_speed(&cmd);
+			nii_rsp->LinkSpeed = cpu_to_le64(speed * 1000000);
 
-			if (kernel_getpeername(socket, csin, &cslen) < 0) {
-				cifssrv_err("client ip resolution failed\n");
-				goto out;
-			}
-
-			nii_rsp = (struct network_interface_info_ioctl_rsp *)
-					&rsp->Buffer[next];
-			nii_rsp->Next = next;
-			nii_rsp->IfIndex = cpu_to_le32(net->ifindex);
-			/* TODO: specify the RDMA capabilities */
-			if (netdev->num_tx_queues > 1)
-				nii_rsp->Capability = RSS_CAPABLE;
-			nii_rsp->LinkSpeed = cpu_to_le32(speed);
-
-			/* TODO: interpret if indicating an IPv6 address */
 			sockaddr_storage = (struct sockaddr_storage_rsp *)
 						nii_rsp->SockAddr_Storage;
-			addr_in = (const struct sockaddr_in *)csin;
-			if (cpu_to_le32(addr_in->sin_family) == PF_INET)
-				sockaddr_storage->Family = INTERNETWORK;
-			sockaddr_storage->Family =
-				cpu_to_le32(addr_in->sin_family);
-			sockaddr_storage->addr4.Port =
-				cpu_to_le32(addr_in->sin_port);
-			sockaddr_storage->addr4.IPv4address =
-				cpu_to_le32(addr_in->sin_addr.s_addr);
 
-			nbytes =
+			memset(sockaddr_storage, 0, 128);
+
+			if (server->family == PF_INET) {
+				struct in_device *idev;
+
+				sockaddr_storage->Family =
+					cpu_to_le16(INTERNETWORK);
+				sockaddr_storage->addr4.Port = 0;
+
+				idev = __in_dev_get_rtnl(netdev);
+				if (!idev)
+					continue;
+				for_primary_ifa(idev) {
+					sockaddr_storage->addr4.IPv4address =
+						cpu_to_le32(ifa->ifa_address);
+					break;
+				} endfor_ifa(idev);
+			} else {
+				struct inet6_dev *idev6;
+				struct inet6_ifaddr *ifa;
+				__u8 *ipv6_addr =
+					sockaddr_storage->addr6.IPv6address;
+
+				sockaddr_storage->Family =
+					cpu_to_le16(INTERNETWORKV6);
+				sockaddr_storage->addr6.Port = 0;
+				sockaddr_storage->addr6.FlowInfo = 0;
+
+				idev6 = __in6_dev_get(netdev);
+				if (!idev6)
+					continue;
+
+				list_for_each_entry(ifa, &idev6->addr_list,
+						if_list) {
+					if (ifa->flags & (IFA_F_TENTATIVE |
+							IFA_F_DEPRECATED))
+						continue;
+					memcpy(ipv6_addr, ifa->addr.s6_addr,
+						16);
+					break;
+				}
+				sockaddr_storage->addr6.ScopeId = 0;
+			}
+
+			nbytes +=
 				sizeof(struct network_interface_info_ioctl_rsp);
 			rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
-
-			next += 154;
 		}
+
+		/* zero if this is last one */
+		if (nii_rsp)
+			nii_rsp->Next = 0;
+
+		if (!nbytes) {
+			rsp->hdr.Status = NT_STATUS_BUFFER_TOO_SMALL;
+			goto out;
+		}
+
+		rtnl_unlock();
 		break;
 	}
 	default:

@@ -281,6 +281,7 @@ struct preauth_session {
 
 struct tcp_server_info {
 	struct socket *sock;
+	unsigned short family;
 	int srv_count; /* reference counter */
 	int sess_count; /* number of sessions attached with this server */
 	struct smb_version_values   *vals;

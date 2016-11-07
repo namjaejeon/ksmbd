@@ -780,6 +780,8 @@ int connect_tcp_sess(struct socket *sock)
 			&(((const struct sockaddr_in *)csin)->sin_addr));
 	cifssrv_debug("connect request from [%s]\n", server->peeraddr);
 
+	server->family = ((const struct sockaddr_in *)csin)->sin_family;
+
 	rc = init_tcp_server(server, sock);
 	if (rc) {
 		cifssrv_err("cannot init tcp server\n");
