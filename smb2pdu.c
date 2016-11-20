@@ -854,7 +854,7 @@ assemble_neg_contexts(struct tcp_server_info *server,
 			server->CipherId);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
 		inc_rfc1001_len(rsp, 4 +
-				sizeof(struct smb2_encryption_neg_context));
+				sizeof(struct smb2_encryption_neg_context) - 2);
 	}
 }
 
@@ -1048,6 +1048,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		inc_rfc1001_len(rsp, 64 + 74);
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
+		server->use_spnego = true;
 	} else if (server_signing == MANDATORY) {
 		global_signing = true;
 		rsp->SecurityBufferLength = 74;
@@ -1058,6 +1059,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_REQUIRED |
 			SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
+		server->use_spnego = true;
 	} else {
 		rsp->SecurityMode = 0;
 		rsp->SecurityBufferLength = 0;
@@ -1091,6 +1093,10 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	NEGOTIATE_MESSAGE *negblob;
 	struct channel *chann = NULL;
 	int rc = 0;
+	unsigned char *spnego_blob;
+	u16 spnego_blob_len;
+	char *neg_blob;
+	int neg_blob_len;
 
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
 	rsp = (struct smb2_sess_setup_rsp *)smb_work->rsp_buf;
@@ -1212,6 +1218,24 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	negblob = (NEGOTIATE_MESSAGE *)(req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
 
+	if (server->use_spnego) {
+		rc = decode_negTokenInit((char *)negblob,
+				le16_to_cpu(req->SecurityBufferLength), server);
+		if (!rc) {
+			cifssrv_debug("negTokenInit parse err %d\n", rc);
+			/* If failed, it might be negTokenTarg */
+			rc = decode_negTokenTarg((char *)negblob,
+					le16_to_cpu(req->SecurityBufferLength),
+					server);
+			if (!rc)
+				cifssrv_err("negTokenTarg parse err %d\n", rc);
+
+		}
+
+		if (server->mechToken)
+			negblob = (NEGOTIATE_MESSAGE *)server->mechToken;
+	}
+
 	if (negblob->MessageType == NtLmNegotiate) {
 		CHALLENGE_MESSAGE *chgblob;
 
@@ -1225,8 +1249,35 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				rsp->SecurityBufferOffset);
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
-		rsp->SecurityBufferLength = build_ntlmssp_challenge_blob(
+		if (server->use_spnego) {
+			neg_blob = kmalloc(sizeof(struct _NEGOTIATE_MESSAGE) +
+					(strlen(netbios_name) * 2  + 4) * 6,
+					GFP_KERNEL);
+			if (!neg_blob) {
+				rc = -ENOMEM;
+				goto out_err;
+			}
+			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+			neg_blob_len = build_ntlmssp_challenge_blob(
 					chgblob, sess);
+			if (build_spnego_ntlmssp_neg_blob(&spnego_blob,
+						&spnego_blob_len,
+						neg_blob, neg_blob_len)) {
+				kfree(neg_blob);
+				rc = -ENOMEM;
+				goto out_err;
+			}
+
+			memcpy((char *)rsp->hdr.ProtocolId +
+					rsp->SecurityBufferOffset, spnego_blob,
+					spnego_blob_len);
+			rsp->SecurityBufferLength =
+				cpu_to_le16(spnego_blob_len);
+			kfree(spnego_blob);
+			kfree(neg_blob);
+		} else
+			rsp->SecurityBufferLength =
+				build_ntlmssp_challenge_blob(chgblob, sess);
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
 		/* Note: here total size -1 is done as
@@ -1263,8 +1314,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		}
 
 		cifssrv_debug("authenticate phase\n");
-		authblob = (AUTHENTICATE_MESSAGE *)(req->hdr.ProtocolId +
-				req->SecurityBufferOffset);
+		if (server->use_spnego && server->mechToken)
+			authblob = (AUTHENTICATE_MESSAGE *)server->mechToken;
+		else
+			authblob = (AUTHENTICATE_MESSAGE *)
+				(req->hdr.ProtocolId +
+				 req->SecurityBufferOffset);
 
 		username = smb_strndup_from_utf16((const char *)authblob +
 				authblob->UserName.BufferOffset,
@@ -1315,6 +1370,23 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				goto out_err;
 			}
 
+			if (server->use_spnego) {
+				if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
+							&spnego_blob_len, 0)) {
+					rc = -ENOMEM;
+					goto out_err;
+				}
+
+				memcpy((char *)rsp->hdr.ProtocolId +
+						rsp->SecurityBufferOffset,
+						spnego_blob,
+						spnego_blob_len);
+				rsp->SecurityBufferLength =
+					cpu_to_le16(spnego_blob_len);
+				kfree(spnego_blob);
+				inc_rfc1001_len(rsp, rsp->SecurityBufferLength);
+			}
+
 			if ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(server->sign || global_signing)) {
@@ -1345,6 +1417,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 		server->tcp_status = CifsGood;
 		sess->state = SMB2_SESSION_VALID;
+		smb_work->sess = sess;
 	} else {
 		cifssrv_err("%s Invalid phase\n", __func__);
 		rc = -EINVAL;
@@ -1352,6 +1425,9 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	}
 
 out_err:
+	if (server->use_spnego && server->mechToken)
+		kfree(server->mechToken);
+
 	if (rc < 0 && sess) {
 		struct list_head *tmp, *t;
 
@@ -5742,6 +5818,14 @@ int smb2_is_sign_req(struct smb_work *work, unsigned int command)
 			command != SMB2_SESSION_SETUP_HE &&
 			command != SMB2_OPLOCK_BREAK_HE)
 		return 1;
+
+	/* send session setup auth phase signed response */
+	if (command == SMB2_SESSION_SETUP_HE &&
+			work->sess && work->sess->valid &&
+			work->server->use_spnego) {
+		return 1;
+	}
+
 	return 0;
 }
 

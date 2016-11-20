@@ -82,8 +82,6 @@ extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 extern char NEGOTIATE_GSS_HEADER[74];
-extern char SESSION_NEGOTIATE_GSS_HEADER[31];
-extern char SESSION_AUTHENTICATE_GSS_HEADER[9];
 
 extern bool global_signing;
 
@@ -301,6 +299,7 @@ struct tcp_server_info {
 	bool sign;
 	__u16 dialect; /* dialect index that server chose */
 	bool oplocks:1;
+	bool use_spnego:1;
 	unsigned int maxReq;
 	unsigned int cli_cap;
 	unsigned int srv_cap;
@@ -350,7 +349,12 @@ struct tcp_server_info {
 	__u8 Preauth_HashValue[64]; /* PreAuth integrity Hash Value */
 	int CipherId;
 
-	struct list_head p_sess_table; /* PreAuthSession Table */
+	struct list_head p_sess_table;	/* PreAuthSession Table */
+	bool sec_ntlmssp;		/* supports NTLMSSP */
+	bool sec_kerberosu2u;		/* supports U2U Kerberos */
+	bool sec_kerberos;		/* supports plain Kerberos */
+	bool sec_mskerberos;		/* supports legacy MS Kerberos */
+	char *mechToken;
 };
 
 struct trans_state {
@@ -610,5 +614,15 @@ int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
 #endif
+
+/* asn1 functions */
+extern int decode_negTokenInit(unsigned char *security_blob, int length,
+		struct tcp_server_info *server);
+extern int decode_negTokenTarg(unsigned char *security_blob, int length,
+		struct tcp_server_info *server);
+extern int build_spnego_ntlmssp_neg_blob(unsigned char **pbuffer, u16 *buflen,
+		char *ntlm_blob, int ntlm_blob_len);
+extern int build_spnego_ntlmssp_auth_blob(unsigned char **pbuffer, u16 *buflen,
+		int neg_result);
 
 #endif /* __CIFSSRV_GLOB_H */

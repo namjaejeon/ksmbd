@@ -46,18 +46,6 @@ char NEGOTIATE_GSS_HEADER[74] =  {
 	0x72, 0x65
 };
 
-char SESSION_NEGOTIATE_GSS_HEADER[31] = {
-	0xa1, 0x81, 0xbe, 0x30, 0x81, 0xbb, 0xa0, 0x03,
-	0x0a, 0x01, 0x01, 0xa1, 0x0c, 0x06, 0x0a, 0x2b,
-	0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02,
-	0x0a, 0xa2, 0x81, 0xa5, 0x04, 0x81, 0xa2
-};
-
-char SESSION_AUTHENTICATE_GSS_HEADER[9] = {
-	0xa1, 0x07, 0x30, 0x05, 0xa0, 0x03, 0x0a, 0x01,
-	0x00
-};
-
 static int crypto_md5_alloc(struct tcp_server_info *server)
 {
 	int rc;
@@ -459,6 +447,9 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 
 	if (sess->ntlmssp.client_flags & NTLMSSP_REQUEST_TARGET)
 		flags |= NTLMSSP_REQUEST_TARGET;
+
+	if (sess->ntlmssp.client_flags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
 
