@@ -19,6 +19,7 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/idr.h>
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
@@ -49,7 +50,7 @@ unsigned int smb_min_small = 30;
  */
 unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
-int conn_num = 1;
+static DEFINE_IDA(cifssrv_ida);
 static LIST_HEAD(tcp_sess_list);
 static DEFINE_SPINLOCK(tcp_sess_list_lock);
 
@@ -607,6 +608,7 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
  */
 static void server_cleanup(struct tcp_server_info *server)
 {
+	ida_simple_remove(&cifssrv_ida, server->th_id);
 	kernel_sock_shutdown(server->sock, SHUT_RDWR);
 	sock_release(server->sock);
 	server->sock = NULL;
@@ -789,11 +791,19 @@ int connect_tcp_sess(struct socket *sock)
 		goto out;
 	}
 
+	server->th_id = ida_simple_get(&cifssrv_ida, 1, 0, GFP_KERNEL);
+	if (server->th_id < 0) {
+		cifssrv_err("ida_simple_get failed: %d\n", server->th_id);
+		kfree(server);
+		goto out;
+	}
+
 	server->handler = kthread_run(tcp_sess_kthread, server,
-					"kcifssrvd/%d", conn_num++);
+					"kcifssrvd/%d", server->th_id);
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
 		cifssrv_err("cannot start server thread\n");
+		ida_simple_remove(&cifssrv_ida, server->th_id);
 		spin_lock(&tcp_sess_list_lock);
 		list_del(&server->tcp_sess);
 		spin_unlock(&tcp_sess_list_lock);

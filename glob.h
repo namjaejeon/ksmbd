@@ -318,6 +318,7 @@ struct tcp_server_info {
 	/* smb session 1 per user */
 	struct list_head cifssrv_sess;
 	struct task_struct *handler;
+	int th_id;
 	__le16 vuid;
 	int num_files_open;
 	unsigned long last_active;
@@ -350,7 +351,6 @@ struct tcp_server_info {
 	int CipherId;
 
 	struct list_head p_sess_table; /* PreAuthSession Table */
-
 };
 
 struct trans_state {
