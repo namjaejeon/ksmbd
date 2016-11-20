@@ -137,8 +137,8 @@ static inline int is_char_allowed(char *ch)
 	/* check for control chars, wildcards etc. */
 	if (!(*ch & 0x80) &&
 			(*ch <= 0x1f ||
-			 *ch == '?' || *ch == '"' || *ch == ':' ||
-			 *ch == '<' || *ch == '>' || *ch == '|'))
+			 *ch == '?' || *ch == '"' || *ch == '<' ||
+			 *ch == '>' || *ch == '|'))
 		return 0;
 
 	return 1;

@@ -191,6 +191,7 @@ struct cifssrv_tcon {
 	struct path share_path;
 	struct list_head tcon_list;
 	int writeable;
+	int maximal_access;
 };
 
 /*

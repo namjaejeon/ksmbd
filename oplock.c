@@ -1543,34 +1543,11 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 /**
  * create_durable_buf() - create durable handle context
  * @cc:	buffer to create durable context response
- *
- * TODO: not used, remove it ??
- */
-void create_durable_buf(char *cc)
-{
-	struct create_durable *buf;
-	buf = (struct create_durable *)cc;
-	memset(buf, 0, sizeof(struct create_durable));
-	buf->ccontext.DataOffset = cpu_to_le16(offsetof
-			(struct create_durable, Data));
-	buf->ccontext.DataLength = cpu_to_le32(16);
-	buf->ccontext.NameOffset = cpu_to_le16(offsetof
-			(struct create_durable, Name));
-	buf->ccontext.NameLength = cpu_to_le16(4);
-	/* SMB2_CREATE_DURABLE_HANDLE_REQUEST is "DHnQ" */
-	buf->Name[0] = 'D';
-	buf->Name[1] = 'H';
-	buf->Name[2] = 'n';
-	buf->Name[3] = 'Q';
-}
-
-/**
- * create_durable_buf() - create durable handle context
- * @cc:	buffer to create durable context response
  */
 void create_durable_rsp_buf(char *cc)
 {
 	struct create_durable_rsp *buf;
+
 	buf = (struct create_durable_rsp *)cc;
 	memset(buf, 0, sizeof(struct create_durable_rsp));
 	buf->ccontext.DataOffset = cpu_to_le16(offsetof
@@ -1579,11 +1556,37 @@ void create_durable_rsp_buf(char *cc)
 	buf->ccontext.NameOffset = cpu_to_le16(offsetof
 			(struct create_durable_rsp, Name));
 	buf->ccontext.NameLength = cpu_to_le16(4);
-	/* SMB2_CREATE_DURABLE_HANDLE_REQUEST is "DHnQ" */
+	/* SMB2_CREATE_DURABLE_HANDLE_RESPONSE is "DHnQ" */
 	buf->Name[0] = 'D';
 	buf->Name[1] = 'H';
 	buf->Name[2] = 'n';
 	buf->Name[3] = 'Q';
+}
+
+/**
+ * create_mxac_buf() - create query maximal access context
+ * @cc:	buffer to create maximal access context response
+ */
+void create_mxac_rsp_buf(char *cc, int maximal_access)
+{
+	struct create_mxac_rsp *buf;
+
+	buf = (struct create_mxac_rsp *)cc;
+	memset(buf, 0, sizeof(struct create_mxac_rsp));
+	buf->ccontext.DataOffset = cpu_to_le16(offsetof
+			(struct create_mxac_rsp, QueryStatus));
+	buf->ccontext.DataLength = cpu_to_le32(8);
+	buf->ccontext.NameOffset = cpu_to_le16(offsetof
+			(struct create_mxac_rsp, Name));
+	buf->ccontext.NameLength = cpu_to_le16(4);
+	/* SMB2_CREATE_QUERY_MAXIMAL_ACCESS_RESPONSE is "MxAc" */
+	buf->Name[0] = 'M';
+	buf->Name[1] = 'x';
+	buf->Name[2] = 'A';
+	buf->Name[3] = 'c';
+
+	buf->QueryStatus = NT_STATUS_OK;
+	buf->MaximalAccess = cpu_to_le32(maximal_access);
 }
 
 /*

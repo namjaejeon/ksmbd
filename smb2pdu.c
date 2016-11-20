@@ -786,15 +786,16 @@ smb2_get_name_from_filp(struct file *filp)
  *
  * Return:      converted dos mode
  */
-int smb2_get_dos_mode(struct kstat *stat)
+int smb2_get_dos_mode(struct kstat *stat, int attribute)
 {
 	int attr = 0;
 
-	if (stat->mode & S_IXUSR)
-		attr |= ATTR_ARCHIVE;
+	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 
 	if (S_ISDIR(stat->mode))
 		attr = ATTR_DIRECTORY;
+	else
+		attr &= ~(ATTR_DIRECTORY);
 
 	if (!attr)
 		attr = ATTR_NORMAL;
@@ -1446,12 +1447,14 @@ int smb2_tree_connect(struct smb_work *smb_work)
 		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
 		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
 			FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
-			FILE_WRITE_EA_LE | FILE_DELETE_CHILD |
+			FILE_WRITE_EA_LE | FILE_EXECUTE_LE | FILE_DELETE_CHILD |
 			FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
 			FILE_DELETE_LE | FILE_READ_CONTROL_LE |
 			FILE_WRITE_DAC_LE | FILE_WRITE_OWNER_LE |
 			FILE_SYNCHRONIZE_LE;
 	}
+
+	tcon->maximal_access = le32_to_cpu(rsp->MaximalAccess);
 
 out_err:
 	rsp->StructureSize = cpu_to_le16(16);
@@ -1781,7 +1784,7 @@ int smb2_open(struct smb_work *smb_work)
 	char *lk = NULL;
 	struct lease_ctx_info lc;
 	bool attrib_only = false;
-	int open_directory = 0;
+	int maximal_access = 0;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -1815,59 +1818,112 @@ int smb2_open(struct smb_work *smb_work)
 		return create_smb2_pipe(smb_work);
 	}
 
-	if (!(le32_to_cpu(req->CreateOptions) & FILE_NON_DIRECTORY_FILE_LE)) {
-		cifssrv_debug("GOT Opendir\n");
-		open_directory = 1;
+	if (req->CreateOptions && !(req->CreateOptions & CREATE_OPTIONS_MASK)) {
+		cifssrv_err("Invalid create options : 0x%x\n",
+			le32_to_cpu(req->CreateOptions));
+		rc = -EINVAL;
+		goto err_out1;
+	} else {
+
+		if (req->CreateOptions & FILE_SEQUENTIAL_ONLY_LE &&
+			req->CreateOptions & FILE_RANDOM_ACCESS_LE)
+			req->CreateOptions = ~(FILE_SEQUENTIAL_ONLY_LE);
+
+		if (req->CreateOptions & (FILE_OPEN_BY_FILE_ID_LE |
+			CREATE_TREE_CONNECTION | FILE_RESERVE_OPFILTER_LE)) {
+			rc = -EOPNOTSUPP;
+			goto err_out1;
+		}
+
+		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+			if (req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE) {
+				rc = -EINVAL;
+				goto err_out1;
+			} else if (req->CreateOptions & FILE_NO_COMPRESSION_LE)
+				req->CreateOptions = ~(FILE_NO_COMPRESSION_LE);
+		}
 	}
 
-	if (req->CreateContextsOffset != 0 && durable_enable) {
+	if (!(req->DesiredAccess & DISIRED_ACCESS_MASK)) {
+		cifssrv_err("Invalid disired access : 0x%x\n",
+			le32_to_cpu(req->DesiredAccess));
+		rc = -EACCES;
+		goto err_out1;
+	}
+
+	if (req->FileAttributes &&
+		!(req->FileAttributes & FILE_ATTRIBUTE_MASK)) {
+		cifssrv_err("Invalid file attribute : 0x%x\n",
+			le32_to_cpu(req->FileAttributes));
+		rc = -EINVAL;
+		goto err_out1;
+	}
+
+	if (req->CreateContextsOffset && durable_enable) {
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_DURABLE_HANDLE_REQUEST);
 		recon_state =
-		  (struct create_durable *)smb2_find_context_vals(req,
-				SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
-
-		if (recon_state != NULL) {
-
+			(struct create_durable *)smb2_find_context_vals(
+				req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
+		if (recon_state) {
 			durable_reconnect = true;
 			persistent_id =
-			  le64_to_cpu(recon_state->Data.Fid.PersistentFileId);
+				le64_to_cpu(
+				recon_state->Data.Fid.PersistentFileId);
 			durable_state =
-			  cifssrv_get_durable_state(persistent_id);
-			if (durable_state == NULL) {
-				cifssrv_err("Failed to get Durable handle state\n");
+				cifssrv_get_durable_state(persistent_id);
+			if (!durable_state) {
+				cifssrv_err(
+					"Failed to get Durable handle state\n");
 				rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 				rc = -EINVAL;
 				goto err_out1;
 			}
 
 			cifssrv_debug("Persistent-id from reconnect = %llu server = 0x%p\n",
-				     persistent_id, durable_state->sess);
+				persistent_id, durable_state->sess);
 			goto reconnect;
-		} else if (context != NULL &&
+		}
+
+		if (context &&
 			req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_BATCH) {
-
 			context_name = (char *)context + context->NameOffset;
-
 			cifssrv_debug("context name = %s name offset=%u\n",
 					context_name, context->NameOffset);
-
 			durable_open = true;
 			cifssrv_debug("Request for durable open\n");
 		}
 	}
 
-	/* Parse non-durable handle create contexts */
-	if (req->CreateContextsOffset != 0) {
-		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER);
-		if (context != NULL) {
+	if (req->CreateContextsOffset) {
+		/* Parse non-durable handle create contexts */
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_EA_BUFFER);
+		if (context) {
+			if (req->CreateOptions & FILE_NO_EA_KNOWLEDGE_LE) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				rc = -EACCES;
+				goto err_out1;
+			}
+
 			rsp->hdr.Status = NT_STATUS_EAS_NOT_SUPPORTED;
 			rc = -EOPNOTSUPP;
 			goto err_out1;
 		}
+
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST);
+		if (context)
+			maximal_access = smb_work->tcon->maximal_access;
 	}
 
-	if (!req->NameLength) {
+	if (req->NameLength) {
+		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
+		if (IS_ERR(name)) {
+			rc = PTR_ERR(name);
+			goto err_out1;
+		}
+	} else {
 		share = find_matching_share(rsp->hdr.TreeId);
 		if (!share) {
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
@@ -1883,16 +1939,9 @@ int smb2_open(struct smb_work *smb_work)
 			rc = -ENOMEM;
 			goto err_out1;
 		}
+
 		memcpy(name, share->path, len);
 		*(name + len) = '\0';
-
-	} else {
-		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
-	}
-
-	if (IS_ERR(name)) {
-		rc = PTR_ERR(name);
-		goto err_out1;
 	}
 
 	cifssrv_debug("converted name = %s\n", name);
@@ -1913,6 +1962,7 @@ int smb2_open(struct smb_work *smb_work)
 			rc = smb_kern_path(name, 0, &path, 1);
 		}
 	}
+
 	if (rc) {
 		file_present = false;
 		cifssrv_debug("can not get linux path for %s, rc = %d\n",
@@ -1920,69 +1970,79 @@ int smb2_open(struct smb_work *smb_work)
 	} else
 		generic_fillattr(path.dentry->d_inode, &stat);
 
-	if (file_present && !open_directory && S_ISDIR(stat.mode)) {
+	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE
+		&& S_ISDIR(stat.mode)) {
 		cifssrv_debug("Can't open dir %s, request is to open file\n",
 			      name);
 		rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
-		rc = -EINVAL;
+		rc = -EIO;
+		goto err_out;
+	}
+
+	if (file_present && req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
+		!S_ISDIR(stat.mode)) {
+		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
+		rc = -EIO;
 		goto err_out;
 	}
 
 	if (smb_work->tcon->writeable)
 		open_flags = smb2_create_open_flags(file_present,
-		req->DesiredAccess, req->CreateDisposition);
+			req->DesiredAccess, req->CreateDisposition);
 	else
 		open_flags = O_RDONLY;
 
 	/*create file if not present */
 	mode |= S_IRWXUGO;
-	if (!file_present && (open_flags & O_CREAT)) {
-		cifssrv_debug("%s: file does not exist, so creating\n",
-				__func__);
-		if (le32_to_cpu(req->CreateOptions) & FILE_DIRECTORY_FILE_LE) {
-			cifssrv_debug("%s: creating directory\n", __func__);
-			mode |= S_IFDIR;
-			rc = smb_vfs_mkdir(name, mode);
+	if (!file_present) {
+		if (open_flags & O_CREAT) {
+			cifssrv_debug("file does not exist, so creating\n");
+			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+				cifssrv_debug("creating directory\n");
+				mode |= S_IFDIR;
+				rc = smb_vfs_mkdir(name, mode);
+				if (rc) {
+					rsp->hdr.Status = cpu_to_le32(
+							NT_STATUS_DATA_ERROR);
+					rsp->hdr.Status =
+						NT_STATUS_UNEXPECTED_IO_ERROR;
+					kfree(name);
+					return rc;
+				}
+			} else {
+				cifssrv_debug("creating regular file\n");
+				mode |= S_IFREG;
+				rc = smb_vfs_create(name, mode);
+				if (rc) {
+					rsp->hdr.Status =
+						NT_STATUS_UNEXPECTED_IO_ERROR;
+					kfree(name);
+					return rc;
+				}
+			}
+
+			rc = smb_kern_path(name, 0, &path, 0);
 			if (rc) {
-				rsp->hdr.Status = cpu_to_le32(
-						NT_STATUS_DATA_ERROR);
-				rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
+				cifssrv_err("cannot get linux path (%s), err = %d\n",
+						name, rc);
+				rsp->hdr.Status =
+					NT_STATUS_UNEXPECTED_IO_ERROR;
 				kfree(name);
 				return rc;
 			}
-
 		} else {
-			cifssrv_debug("%s: creating regular file\n", __func__);
-			mode |= S_IFREG;
-			rc = smb_vfs_create(name, mode);
-			if (rc) {
-				rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
-				kfree(name);
-				return rc;
-			}
-		}
-
-		rc = smb_kern_path(name, 0, &path, 0);
-		if (rc) {
-			cifssrv_err("cannot get linux path (%s), err = %d\n",
-				name, rc);
-			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 			kfree(name);
-			return rc;
+			if (smb_work->tcon->writeable) {
+				cifssrv_debug("returning as file does not exist\n");
+				rsp->hdr.Status =
+					NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			} else {
+				cifssrv_debug("returning as user does not have permission to write\n");
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+			}
+			smb2_set_err_rsp(smb_work);
+			return 0;
 		}
-	} else if (!file_present && !(open_flags & O_CREAT)) {
-		kfree(name);
-		if (smb_work->tcon->writeable) {
-			cifssrv_debug("%s: returning as file does not exist\n",
-				__func__);
-			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-		} else {
-			 cifssrv_debug("%s: returning as user does not have permission to write\n",
-				__func__);
-			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-		}
-		smb2_set_err_rsp(smb_work);
-		return 0;
 	}
 
 	if (!S_ISDIR(path.dentry->d_inode->i_mode) &&
@@ -1998,7 +2058,7 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	}
 
-	filp = dentry_open(&path, open_flags|O_LARGEFILE, current_cred());
+	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		rc = PTR_ERR(filp);
 		cifssrv_err("dentry open for dir failed, rc %d\n", rc);
@@ -2011,12 +2071,14 @@ int smb2_open(struct smb_work *smb_work)
 		cifssrv_err("Failed to allocate memory for linkpath\n");
 		goto err_out;
 	}
+
 	lname = d_path(&(filp->f_path), pathname, PATH_MAX);
 	if (IS_ERR(lname)) {
 		rc = PTR_ERR(lname);
 		kfree(pathname);
 		goto err_out;
 	}
+
 	if (strncmp(name, lname, PATH_MAX)) {
 		islink = true;
 		cifssrv_debug("Case for symlink follow, name(%s)->path(%s)\n",
@@ -2056,7 +2118,6 @@ int smb2_open(struct smb_work *smb_work)
 	smb_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
 
 reconnect:
-
 	if (durable_reconnect) {
 		rc = cifssrv_durable_reconnect(sess, durable_state,
 			&filp);
@@ -2064,12 +2125,12 @@ reconnect:
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 			goto err_out1;
 		}
+
 		cifssrv_debug("recovered filp = 0x%p\n", filp);
 		path = filp->f_path;
 
 		/* Fetch the filename */
 		name = smb2_get_name_from_filp(filp);
-
 		if (IS_ERR(name)) {
 			rc = PTR_ERR(name);
 			if (rc == -ENOMEM)
@@ -2099,6 +2160,7 @@ reconnect:
 		rc = -ENOMEM;
 		goto err_out;
 	}
+
 	if (islink) {
 		fp->lfilp = lfilp;
 		fp->islink = islink;
@@ -2156,10 +2218,9 @@ reconnect:
 	/* Get Persistent-ID */
 	if (durable_reopened == false) {
 		durable_open = durable_open &&
-				(oplock == SMB2_OPLOCK_LEVEL_BATCH);
+			(oplock == SMB2_OPLOCK_LEVEL_BATCH);
 		rc = cifssrv_insert_in_global_table(sess, volatile_id,
 						       filp, durable_open);
-
 		if (rc < 0) {
 			cifssrv_err("failed to get persistent_id for file\n");
 			cifssrv_close_id(&sess->fidtable, volatile_id);
@@ -2172,9 +2233,7 @@ reconnect:
 
 		if (durable_open)
 			fp->is_durable = 1;
-
-	} else if (durable_reopened == true &&
-		    oplock == SMB2_OPLOCK_LEVEL_BATCH) {
+	} else if (oplock == SMB2_OPLOCK_LEVEL_BATCH) {
 		/* During durable reconnect able to fetch/verify durable state
 		   but couldn't get batch oplock then we will not come here */
 		cifssrv_update_durable_state(sess, persistent_id,
@@ -2205,7 +2264,8 @@ reconnect:
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 	rsp->AllocationSize = cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = cpu_to_le64(stat.size);
-	rsp->FileAttributes = cpu_to_le32(smb2_get_dos_mode(&stat));
+	rsp->FileAttributes = cpu_to_le32(smb2_get_dos_mode(&stat,
+		le32_to_cpu(req->FileAttributes)));
 
 	rsp->Reserved2 = 0;
 
@@ -2238,11 +2298,29 @@ reconnect:
 		inc_rfc1001_len(rsp_org, sizeof(struct create_durable_rsp));
 	}
 
+#if 0
+	if (maximal_access) {
+		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
+			maximal_access);
+		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
+				Buffer) - 4 + rsp->CreateContextsLength;
+		rsp->CreateContextsLength += sizeof(struct create_mxac_rsp);
+		inc_rfc1001_len(rsp_org, sizeof(struct create_mxac_rsp));
+	}
+#endif
+
 err_out:
 	path_put(&path);
 	kfree(name);
 err_out1:
 	if (rc) {
+		if (rc == -EINVAL)
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		else if (rc == -EOPNOTSUPP)
+			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		else if (rc == -EACCES)
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
@@ -2996,33 +3074,6 @@ int smb2_echo(struct smb_work *smb_work)
 }
 
 /**
- * smb2_set_access_flags() - set smb access flags based on filp f_mode
- * @filp:	filp containing f_mode
- * @access:	smb access flags
- */
-static void smb2_set_access_flags(struct file *filp, __le32 *access)
-{
-	struct inode *inode;
-
-	inode = filp->f_path.dentry->d_inode;
-
-	*access = 0;
-	if (filp->f_mode & FMODE_READ) {
-		*access |= FILE_READ_DATA_LE | FILE_READ_EA_LE
-		| FILE_READ_ATTRIBUTES_LE;
-	}
-	if (filp->f_mode & FMODE_WRITE) {
-		*access |= FILE_WRITE_DATA_LE | FILE_WRITE_EA_LE
-		| FILE_WRITE_ATTRIBUTES_LE;
-	} else
-		*access &= ~FILE_DELETE_LE;
-	if (IS_APPEND(inode))
-		*access |= FILE_APPEND_DATA_LE;
-	if (filp->f_mode & FMODE_EXEC)
-		*access |= FILE_EXECUTE_LE;
-}
-
-/**
  * smb2_get_ea() - handler for smb2 get extended attribute command
  * @smb_work:	smb work containing query info command buffer
  * @path:	path of file/dir to query info command
@@ -3308,7 +3359,7 @@ int smb2_info_file(struct smb_work *smb_work)
 
 		file_info = (struct smb2_file_access_info *)rsp->Buffer;
 
-		smb2_set_access_flags(filp, &(file_info->AccessFlags));
+		file_info->AccessFlags = fp->access;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_access_info));
 		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_access_info));

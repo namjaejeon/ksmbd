@@ -175,7 +175,7 @@ extern bool global_signing;
 #define CREATE_TREE_CONNECTION		cpu_to_le32(0x00000080)
 #define FILE_COMPLETE_IF_OPLOCKED_LE	cpu_to_le32(0x00000100)
 #define FILE_NO_EA_KNOWLEDGE_LE		cpu_to_le32(0x00000200)
-#define CREATE_EIGHT_DOT_THREE		cpu_to_le32(0x00000400)
+#define FILE_OPEN_REMOTE_INSTANCE	cpu_to_le32(0x00000400)
 /* doc says this is obsolete "open for recovery" flag
 	should be zero in any case */
 #define CREATE_OPEN_FOR_RECOVERY	cpu_to_le32(0x00000400)
@@ -185,12 +185,14 @@ extern bool global_signing;
 #define FILE_OPEN_FOR_BACKUP_INTENT_LE	cpu_to_le32(0x00004000)
 #define FILE_NO_COMPRESSION_LE		cpu_to_le32(0x00008000)
 /* should be zero*/
+#define FILE_OPEN_REQUIRING_OPLOCK	cpu_to_le32(0x00010000)
+#define FILE_DISALLOW_EXCLUSIVE		cpu_to_le32(0x00020000)
 #define FILE_RESERVE_OPFILTER_LE	cpu_to_le32(0x00100000)
 #define FILE_OPEN_REPARSE_POINT_LE	cpu_to_le32(0x00200000)
 #define FILE_OPEN_NO_RECALL_LE          cpu_to_le32(0x00400000)
 /* should be zero */
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY_LE   cpu_to_le32(0x00800000)
-#define CREATE_OPTIONS_MASK     0x007FFFFF
+#define CREATE_OPTIONS_MASK     0x00FFFFFF
 #define CREATE_OPTION_READONLY  0x10000000
 #define CREATE_OPTION_SPECIAL   0x20000000   /* system. NB not sent over wire */
 

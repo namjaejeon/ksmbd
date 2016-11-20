@@ -342,19 +342,22 @@ struct smb2_tree_disconnect_rsp {
 } __packed;
 
 /* File Attrubutes */
-#define FILE_ATTRIBUTE_READONLY			0x00000001
-#define FILE_ATTRIBUTE_HIDDEN			0x00000002
-#define FILE_ATTRIBUTE_SYSTEM			0x00000004
-#define FILE_ATTRIBUTE_DIRECTORY		0x00000010
-#define FILE_ATTRIBUTE_ARCHIVE			0x00000020
-#define FILE_ATTRIBUTE_NORMAL			0x00000080
-#define FILE_ATTRIBUTE_TEMPORARY		0x00000100
-#define FILE_ATTRIBUTE_SPARSE_FILE		0x00000200
-#define FILE_ATTRIBUTE_REPARSE_POINT		0x00000400
-#define FILE_ATTRIBUTE_COMPRESSED		0x00000800
-#define FILE_ATTRIBUTE_OFFLINE			0x00001000
-#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED	0x00002000
-#define FILE_ATTRIBUTE_ENCRYPTED		0x00004000
+#define FILE_ATTRIBUTE_READONLY_LE		cpu_to_le32(0x00000001)
+#define FILE_ATTRIBUTE_HIDDEN_LE		cpu_to_le32(0x00000002)
+#define FILE_ATTRIBUTE_SYSTEM_LE		cpu_to_le32(0x00000004)
+#define FILE_ATTRIBUTE_DIRECTORY_LE		cpu_to_le32(0x00000010)
+#define FILE_ATTRIBUTE_ARCHIVE_LE		cpu_to_le32(0x00000020)
+#define FILE_ATTRIBUTE_NORMAL_LE		cpu_to_le32(0x00000080)
+#define FILE_ATTRIBUTE_TEMPORARY_LE		cpu_to_le32(0x00000100)
+#define FILE_ATTRIBUTE_SPARSE_FILE_LE		cpu_to_le32(0x00000200)
+#define FILE_ATTRIBUTE_REPARSE_POINT_LE		cpu_to_le32(0x00000400)
+#define FILE_ATTRIBUTE_COMPRESSED_LE		cpu_to_le32(0x00000800)
+#define FILE_ATTRIBUTE_OFFLINE_LE		cpu_to_le32(0x00001000)
+#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED_LE	cpu_to_le32(0x00002000)
+#define FILE_ATTRIBUTE_ENCRYPTED_LE		cpu_to_le32(0x00004000)
+#define FILE_ATTRIBUTE_INTEGRITY_STREAML_LE	cpu_to_le32(0x00008000)
+#define FILE_ATTRIBUTE_NO_SCRUB_DATA_LE		cpu_to_le32(0x00020000)
+#define FILE_ATTRIBUTE_MASK			cpu_to_le32(0x00007FB7)
 
 /* Oplock levels */
 #define SMB2_OPLOCK_LEVEL_NONE		0x00
@@ -390,6 +393,7 @@ struct smb2_tree_disconnect_rsp {
 #define FILE_GENERIC_EXECUTE_LE		cpu_to_le32(0x20000000)
 #define FILE_GENERIC_WRITE_LE		cpu_to_le32(0x40000000)
 #define FILE_GENERIC_READ_LE		cpu_to_le32(0x80000000)
+#define DISIRED_ACCESS_MASK		cpu_to_le32(0xF20F01FF)
 
 /* ShareAccess Flags */
 #define FILE_SHARE_READ_LE		cpu_to_le32(0x00000001)
@@ -500,6 +504,12 @@ struct create_durable_rsp {
 	} Data;
 } __packed;
 
+struct create_mxac_rsp {
+	struct create_context ccontext;
+	__u8   Name[8];
+	__le32 QueryStatus;
+	__le32 MaximalAccess;
+} __packed;
 
 #define SMB2_LEASE_NONE			__constant_cpu_to_le32(0x00)
 #define SMB2_LEASE_READ_CACHING		__constant_cpu_to_le32(0x01)
