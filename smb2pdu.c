@@ -1504,7 +1504,8 @@ int smb2_create_open_flags(bool file_present, __le32 access,
 	if (((access & FILE_READ_DATA_LE || access & FILE_GENERIC_READ_LE) &&
 			(access & FILE_WRITE_DATA_LE ||
 			 access & FILE_GENERIC_WRITE_LE)) ||
-			access & FILE_MAXIMAL_ACCESS_LE)
+			access & FILE_MAXIMAL_ACCESS_LE ||
+			access & FILE_GENERIC_ALL_LE)
 		oflags |= O_RDWR;
 	else if (access & FILE_READ_DATA_LE  || access & FILE_GENERIC_READ_LE)
 		oflags |= O_RDONLY;
@@ -1516,14 +1517,10 @@ int smb2_create_open_flags(bool file_present, __le32 access,
 	if (file_present) {
 		switch (disposition & 0x00000007) {
 		case FILE_OPEN_LE:
-			/* fall through */
 		case FILE_CREATE_LE:
-			oflags &= ~O_CREAT;
 			break;
 		case FILE_SUPERSEDE_LE:
-			/* fall through */
 		case FILE_OVERWRITE_LE:
-			/* fall through */
 		case FILE_OVERWRITE_IF_LE:
 			oflags |= O_TRUNC;
 			break;
@@ -1533,16 +1530,12 @@ int smb2_create_open_flags(bool file_present, __le32 access,
 	} else {
 		switch (disposition & 0x00000007) {
 		case FILE_SUPERSEDE_LE:
-			/* fall through */
 		case FILE_CREATE_LE:
-			/* fall through */
 		case FILE_OPEN_IF_LE:
-			/* fall through */
 		case FILE_OVERWRITE_IF_LE:
 			oflags |= O_CREAT;
 			break;
 		case FILE_OPEN_LE:
-			/* fall through */
 		case FILE_OVERWRITE_LE:
 			oflags &= ~O_CREAT;
 			break;
@@ -1789,6 +1782,7 @@ int smb2_open(struct smb_work *smb_work)
 	int contxt_cnt = 0;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
+	struct create_ea_buf_req *ea_buf = NULL;
 	int query_disk_id = 0;
 
 	req = (struct smb2_create_req *)smb_work->buf;
@@ -1849,6 +1843,13 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	}
 
+	if (req->CreateDisposition > FILE_OVERWRITE_IF_LE) {
+		cifssrv_err("Invalid create disposition : 0x%x\n",
+			req->CreateDisposition);
+		rc = -EINVAL;
+		goto err_out1;
+	}
+
 	if (!(req->DesiredAccess & DISIRED_ACCESS_MASK)) {
 		cifssrv_err("Invalid disired access : 0x%x\n",
 			le32_to_cpu(req->DesiredAccess));
@@ -1865,16 +1866,16 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (req->CreateContextsOffset && durable_enable) {
-		recon_state =
-			(struct create_durable *)smb2_find_context_vals(
+		context = smb2_find_context_vals(
 				req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
-		if (IS_ERR(recon_state)) {
-			rc = PTR_ERR(recon_state);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
 			if (rc == -EINVAL) {
 				cifssrv_err("bad name length\n");
 				goto err_out1;
 			}
 		} else {
+			recon_state = (struct create_durable *)context;
 			durable_reconnect = true;
 			persistent_id =
 				le64_to_cpu(
@@ -1914,8 +1915,7 @@ int smb2_open(struct smb_work *smb_work)
 
 	if (req->CreateContextsOffset) {
 		/* Parse non-durable handle create contexts */
-		context = smb2_find_context_vals(req,
-				SMB2_CREATE_EA_BUFFER);
+		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER);
 		if (IS_ERR(context)) {
 			rc = PTR_ERR(context);
 			if (rc == -EINVAL) {
@@ -1923,15 +1923,12 @@ int smb2_open(struct smb_work *smb_work)
 				goto err_out1;
 			}
 		} else {
+			ea_buf = (struct create_ea_buf_req *)context;
 			if (req->CreateOptions & FILE_NO_EA_KNOWLEDGE_LE) {
 				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 				rc = -EACCES;
 				goto err_out1;
 			}
-
-			rsp->hdr.Status = NT_STATUS_EAS_NOT_SUPPORTED;
-			rc = -EOPNOTSUPP;
-			goto err_out1;
 		}
 
 		context = smb2_find_context_vals(req,
@@ -2036,6 +2033,12 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
+	if (file_present && (req->CreateDisposition == FILE_CREATE_LE)) {
+		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
+		rc = -EIO;
+		goto err_out;
+	}
+
 	if (smb_work->tcon->writeable)
 		open_flags = smb2_create_open_flags(file_present,
 			req->DesiredAccess, req->CreateDisposition);
@@ -2079,6 +2082,12 @@ int smb2_open(struct smb_work *smb_work)
 					NT_STATUS_UNEXPECTED_IO_ERROR;
 				kfree(name);
 				return rc;
+			}
+
+			if (ea_buf) {
+				rc = smb2_set_ea(&ea_buf->ea, &path);
+				if (rc)
+					goto err_out;
 			}
 		} else {
 			kfree(name);
@@ -2333,7 +2342,7 @@ reconnect:
 	}
 
 	fp->persistent_id = persistent_id;
-	fp->access = req->DesiredAccess & ~(FILE_MAXIMAL_ACCESS_LE);
+	fp->access = req->DesiredAccess;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -3493,7 +3502,8 @@ int smb2_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_all_info *basic_info;
 
-		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes\n");
 			return -EACCES;
 		}
@@ -3560,7 +3570,8 @@ int smb2_info_file(struct smb_work *smb_work)
 		char *filename;
 		int uni_filename_len;
 
-		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes\n");
 			return -EACCES;
 		}
@@ -3684,7 +3695,8 @@ int smb2_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_ntwrk_info *file_info;
 
-		if (!(fp->access & FILE_READ_ATTRIBUTES_LE)) {
+		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes\n");
 			return -EACCES;
 		}
@@ -3730,7 +3742,8 @@ int smb2_info_file(struct smb_work *smb_work)
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
-		if (!(fp->access & FILE_READ_EA_LE)) {
+		if (!(fp->access & (FILE_READ_EA_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err(
 				"no right to read the extented attributes\n");
 			return -EACCES;
@@ -3980,6 +3993,8 @@ int smb2_set_info(struct smb_work *smb_work)
 	if (rc < 0) {
 		if (rc == -EACCES)
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		else if (rc == -EINVAL)
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		else if (rsp->hdr.Status == 0)
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
@@ -3996,53 +4011,49 @@ int smb2_set_info(struct smb_work *smb_work)
 /**
  * smb2_set_ea() - handler for setting extended attributes using set
  *		info command
- * @smb_work:	smb work containing set info command buffer
+ * @eabuf:	set info command buffer
  * @path:	dentry path for get ea
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_set_ea(struct smb_work *smb_work, struct path *path)
+int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 {
-	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
-	struct smb2_ea_info *eabuf;
 	char *attr_name = NULL, *value;
 	int rc = 0;
+	int next = 0;
 
-	req = (struct smb2_set_info_req *)smb_work->buf;
-	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
-	eabuf = (struct smb2_ea_info *)(req->Buffer);
-	if (!path) {
-		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		return -EINVAL;
-	}
+	do {
+		cifssrv_debug("name : <%s>, name_len : %u, value_len : %u, next : %u\n",
+				eabuf->name, eabuf->EaNameLength,
+				le16_to_cpu(eabuf->EaValueLength),
+				le32_to_cpu(eabuf->NextEntryOffset));
 
-	cifssrv_debug("name: <%s>, name_len %u, value_len %u\n",
-			eabuf->name, eabuf->EaNameLength,
-			le16_to_cpu(eabuf->EaValueLength));
+		if (eabuf->EaNameLength >
+				(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN))
+			return -EINVAL;
 
-	if (strlen(eabuf->name) >
-			(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN)) {
-		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		return -ERANGE;
-	}
+		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+		if (!attr_name) {
+			rc = -ENOMEM;
+			goto out;
+		}
 
-	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
-	if (!attr_name) {
-		rc = -ENOMEM;
-		goto out;
-	}
+		memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
+		memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->name,
+				eabuf->EaNameLength);
+		attr_name[XATTR_USER_PREFIX_LEN + eabuf->EaNameLength] = '\0';
+		value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
 
-	memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
-	memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->name,
-			eabuf->EaNameLength);
-	attr_name[XATTR_USER_PREFIX_LEN + eabuf->EaNameLength] = '\0';
-	value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
+		rc = smb_vfs_setxattr(NULL, path, attr_name, value,
+				le16_to_cpu(eabuf->EaValueLength), 0);
+		if (rc < 0) {
+			cifssrv_err("smb_vfs_setxattr is failed(%d)\n", rc);
+			break;
+		}
 
-	rc = smb_vfs_setxattr(NULL, path, attr_name, value,
-			le16_to_cpu(eabuf->EaValueLength), 0);
-	if (rc < 0)
-		rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
+		next = le32_to_cpu(eabuf->NextEntryOffset);
+		eabuf = (struct smb2_ea_info *)((char *)eabuf + next);
+	} while (next != 0);
 
 out:
 	kfree(attr_name);
@@ -4284,7 +4295,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *file_info;
 		struct iattr attrs;
 
-		if (!(fp->access & FILE_WRITE_ATTRIBUTES_LE)) {
+		if (!(fp->access & (FILE_WRITE_ATTRIBUTES_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to write the attributes\n");
 			return -EACCES;
 		}
@@ -4327,7 +4339,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_eof_info *file_eof_info;
 		loff_t newsize;
 
-		if (!(fp->access & FILE_WRITE_DATA_LE)) {
+		if (!(fp->access & (FILE_WRITE_DATA_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to write data\n");
 			return -EACCES;
 		}
@@ -4357,7 +4370,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 
 	case FILE_RENAME_INFORMATION:
-		if (!(fp->access & FILE_DELETE_LE)) {
+		if (!(fp->access & (FILE_DELETE_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to delete\n");
 			return -EACCES;
 		}
@@ -4370,7 +4384,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_disposition_info *file_info;
 
-		if (!(fp->access & FILE_DELETE_LE)) {
+		if (!(fp->access & (FILE_DELETE_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to delete\n");
 			return -EACCES;
 		}
@@ -4388,13 +4403,18 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 	case FILE_FULL_EA_INFORMATION:
 	{
-		if (!(fp->access & FILE_WRITE_EA_LE)) {
+		struct smb2_set_info_req *req;
+
+		if (!(fp->access & (FILE_WRITE_EA_LE |
+			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err(
 				"no right to write the extended attributes\n");
 			return -EACCES;
 		}
 
-		rc = smb2_set_ea(smb_work, &filp->f_path);
+		req = (struct smb2_set_info_req *)smb_work->buf;
+		rc = smb2_set_ea((struct smb2_ea_info *)(req->Buffer),
+			&filp->f_path);
 		break;
 	}
 	default:
@@ -4404,7 +4424,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		rc = -1;
 	}
 
-	return 0;
+	return rc;
 }
 
 /**

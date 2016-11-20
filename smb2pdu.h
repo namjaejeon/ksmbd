@@ -1162,6 +1162,12 @@ struct smb2_ea_info {
 	/* optionally followed by value */
 } __packed; /* level 15 Query */
 
+struct create_ea_buf_req {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct smb2_ea_info ea;
+} __packed;
+
 /* functions */
 extern int get_smb2_cmd_val(struct smb_work *smb_work);
 extern void set_smb2_rsp_status(struct smb_work *smb_work, unsigned int err);
@@ -1210,4 +1216,5 @@ extern int smb2_notify(struct smb_work *smb_work);
 extern int smb2_info_filesystem(struct smb_work *smb_work);
 extern int smb2_info_file(struct smb_work *smb_work);
 extern int smb2_set_info_file(struct smb_work *smb_work);
+extern int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path);
 #endif				/* _SMB2PDU_SERVER_H */

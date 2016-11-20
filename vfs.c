@@ -139,7 +139,8 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (!(fp->access & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
+	if (!(fp->access & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
+		FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 		cifssrv_err("no right to read(%llu)\n", fid);
 		return -EACCES;
 	}
@@ -214,7 +215,8 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (!(fp->access & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE))) {
+	if (!(fp->access & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
+		FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 		cifssrv_err("no right to write(%llu)\n", fid);
 		return -EACCES;
 	}
