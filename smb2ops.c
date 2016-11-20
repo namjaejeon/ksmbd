@@ -39,6 +39,9 @@ struct smb_version_values smb20_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
+	.create_lease_size = sizeof(struct create_lease),
+	.create_durable_size = sizeof(struct create_durable_rsp),
+	.create_mxac_size = sizeof(struct create_mxac_rsp),
 };
 
 struct smb_version_values smb21_server_values = {
@@ -56,6 +59,9 @@ struct smb_version_values smb21_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
+	.create_lease_size = sizeof(struct create_lease),
+	.create_durable_size = sizeof(struct create_durable_rsp),
+	.create_mxac_size = sizeof(struct create_mxac_rsp),
 };
 
 struct smb_version_values smb30_server_values = {
@@ -74,6 +80,9 @@ struct smb_version_values smb30_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
+	.create_lease_size = sizeof(struct create_lease),
+	.create_durable_size = sizeof(struct create_durable_rsp),
+	.create_mxac_size = sizeof(struct create_mxac_rsp),
 };
 
 struct smb_version_values smb302_server_values = {
@@ -92,6 +101,9 @@ struct smb_version_values smb302_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
+	.create_lease_size = sizeof(struct create_lease),
+	.create_durable_size = sizeof(struct create_durable_rsp),
+	.create_mxac_size = sizeof(struct create_mxac_rsp),
 };
 
 struct smb_version_values smb311_server_values = {
@@ -110,6 +122,9 @@ struct smb_version_values smb311_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
+	.create_lease_size = sizeof(struct create_lease),
+	.create_durable_size = sizeof(struct create_durable_rsp),
+	.create_mxac_size = sizeof(struct create_mxac_rsp),
 };
 
 struct smb_version_ops smb2_0_server_ops = {

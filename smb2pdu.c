@@ -1785,6 +1785,9 @@ int smb2_open(struct smb_work *smb_work)
 	struct lease_ctx_info lc;
 	bool attrib_only = false;
 	int maximal_access = 0;
+	int contxt_cnt = 0;
+	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
+		*mxac_ccontext = NULL;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -1913,8 +1916,13 @@ int smb2_open(struct smb_work *smb_work)
 
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST);
-		if (context)
+		if (context) {
+			struct create_mxac_req *mxac_req =
+				(struct create_mxac_req *)context;
+			cifssrv_debug("timestamp : %llu\n",
+				le64_to_cpu(mxac_req->Timestamp));
 			maximal_access = smb_work->tcon->maximal_access;
+		}
 	}
 
 	if (req->NameLength) {
@@ -2282,32 +2290,51 @@ reconnect:
 				name, oplock,
 				lc.CurrentLeaseState);
 		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
+
+		lease_ccontext = (struct create_context *)rsp->Buffer;
+		contxt_cnt++;
 		create_lease_buf(rsp->Buffer, lk, oplock,
 			lc.CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING);
-		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
-				Buffer) - 4;
-		rsp->CreateContextsLength = sizeof(struct create_lease);
-		inc_rfc1001_len(rsp_org, sizeof(struct create_lease));
+		rsp->CreateContextsLength =
+			cpu_to_le32(server->vals->create_lease_size);
+		inc_rfc1001_len(rsp_org, server->vals->create_lease_size);
 	}
 
 	if (durable_open) {
+		durable_ccontext = (struct create_context *)(rsp->Buffer +
+			rsp->CreateContextsLength);
+		contxt_cnt++;
 		create_durable_rsp_buf(rsp->Buffer + rsp->CreateContextsLength);
-		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
-				Buffer) - 4 + rsp->CreateContextsLength;
-		rsp->CreateContextsLength += sizeof(struct create_durable_rsp);
-		inc_rfc1001_len(rsp_org, sizeof(struct create_durable_rsp));
+		rsp->CreateContextsLength +=
+			cpu_to_le32(server->vals->create_durable_size);
+		inc_rfc1001_len(rsp_org, server->vals->create_durable_size);
 	}
 
-#if 0
 	if (maximal_access) {
+		mxac_ccontext = (struct create_context *)(rsp->Buffer +
+			rsp->CreateContextsLength);
+		contxt_cnt++;
 		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
 			maximal_access);
-		rsp->CreateContextsOffset = offsetof(struct smb2_create_rsp,
-				Buffer) - 4 + rsp->CreateContextsLength;
-		rsp->CreateContextsLength += sizeof(struct create_mxac_rsp);
-		inc_rfc1001_len(rsp_org, sizeof(struct create_mxac_rsp));
+		rsp->CreateContextsLength +=
+			cpu_to_le32(server->vals->create_mxac_size);
+		inc_rfc1001_len(rsp_org, server->vals->create_mxac_size);
 	}
-#endif
+
+	if (contxt_cnt > 0) {
+		rsp->CreateContextsOffset =
+			cpu_to_le32(offsetof(struct smb2_create_rsp, Buffer)
+			- 4);
+	}
+
+	if (contxt_cnt > 1) {
+		if (lease_ccontext)
+			lease_ccontext->Next =
+				cpu_to_le32(server->vals->create_lease_size);
+		if (durable_ccontext)
+			durable_ccontext->Next =
+				cpu_to_le32(server->vals->create_durable_size);
+	}
 
 err_out:
 	path_put(&path);

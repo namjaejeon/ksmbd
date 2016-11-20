@@ -237,6 +237,8 @@ struct smb_version_values {
 	__u16           signing_enabled;
 	__u16           signing_required;
 	size_t          create_lease_size;
+	size_t          create_durable_size;
+	size_t          create_mxac_size;
 };
 
 struct cifssrv_stats {
