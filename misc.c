@@ -167,37 +167,39 @@ bool add_request_to_queue(struct smb_work *smb_work)
 void dump_smb_msg(void *buf, int smb_buf_length)
 {
 	int i, j;
-	char debug_line[17];
+	char debug_line[33];
 	unsigned char *buffer = buf;
 
 	if (likely(cifssrv_debug_enable != 2))
 		return;
 
 	for (i = 0, j = 0; i < smb_buf_length; i++, j++) {
-		if (i % 8 == 0) {
+		if (i % 16 == 0) {
 			/* have reached the beginning of line */
-			cifssrv_debug("| ");
+			pr_err("%04x ", i);
+			pr_cont("| ");
 			j = 0;
 		}
-		cifssrv_debug("%0#4x ", buffer[i]);
+
+		pr_cont("%02x ", buffer[i]);
 		debug_line[2 * j] = ' ';
 		if (isprint(buffer[i]))
 			debug_line[1 + (2 * j)] = buffer[i];
 		else
 			debug_line[1 + (2 * j)] = '_';
 
-		if (i % 8 == 7) {
+		if (i % 16 == 15) {
 			/* reached end of line, time to print ascii */
-			debug_line[16] = 0;
-			cifssrv_debug(" | %s\n", debug_line);
+			debug_line[32] = 0;
+			pr_cont(" | %s\n", debug_line);
 		}
 	}
-	for (; j < 8; j++) {
-		cifssrv_debug("     ");
+	for (; j < 16; j++) {
+		pr_cont("   ");
 		debug_line[2 * j] = ' ';
 		debug_line[1 + (2 * j)] = ' ';
 	}
-	cifssrv_debug(" | %s\n", debug_line);
+	pr_cont(" | %s\n", debug_line);
 	return;
 }
 
