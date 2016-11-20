@@ -90,6 +90,9 @@ static struct kvec *get_server_iovec(struct tcp_server_info *server,
  */
 bool server_unresponsive(struct tcp_server_info *server)
 {
+	if (server->stats.open_files_count > 0)
+		return false;
+
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
 	if (time_after(jiffies, server->last_active + 2 * SMB_ECHO_INTERVAL)) {

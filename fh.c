@@ -453,8 +453,10 @@ void close_opens_from_fibtable(struct cifssrv_sess *sess, uint32_t tree_id)
 			if (file->is_durable)
 				close_persistent_id(file->persistent_id);
 #endif
+			if (!close_id(sess, id, file->persistent_id) &&
+				sess->server->stats.open_files_count > 0)
+				sess->server->stats.open_files_count--;
 
-			close_id(sess, id, file->persistent_id);
 		}
 	}
 }
@@ -485,7 +487,9 @@ void destroy_fidtable(struct cifssrv_sess *sess)
 				close_persistent_id(file->persistent_id);
 #endif
 
-			close_id(sess, id, file->persistent_id);
+			if (!close_id(sess, id, file->persistent_id) &&
+				sess->server->stats.open_files_count > 0)
+				sess->server->stats.open_files_count--;
 		}
 	}
 	sess->fidtable.ftab = NULL;
