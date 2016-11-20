@@ -506,7 +506,7 @@ void set_service_type(struct cifssrv_share *share, TCONX_RSP_EXT *rsp)
 	int length;
 	char *buf = rsp->Service;
 
-	if (share->tid == 1) {
+	if (share->is_pipe == true) {
 		length = strlen(SERVICE_IPC_SHARE);
 		memcpy(buf, SERVICE_IPC_SHARE, length);
 	} else {
@@ -599,6 +599,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	rsp->MaximalShareAccessRights = (FILE_READ_RIGHTS |
 					FILE_EXEC_RIGHTS | FILE_WRITE_RIGHTS);
 	rsp->GuestMaximalShareAccessRights = 0;
+
+	if (!strncmp("IPC$", name, 4))
+		tcon->share->is_pipe = true;
 
 	set_service_type(share, rsp);
 
@@ -1669,7 +1672,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
-	if (le16_to_cpu(req->hdr.Tid) == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("create pipe on IPC\n");
 		return create_andx_pipe(smb_work);
 	}
@@ -2128,7 +2131,7 @@ int smb_close(struct smb_work *smb_work)
 
 	cifssrv_debug("SMB_COM_CLOSE called for fid %u\n", req->FileID);
 
-	if (le16_to_cpu(req->hdr.Tid) == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		err = smb_close_pipe(smb_work);
 		if (err < 0)
 			goto out;
@@ -2272,7 +2275,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	ssize_t nbytes;
 	int err = 0;
 
-	if (le16_to_cpu(req->hdr.Tid) == 1)
+	if (smb_work->tcon->share->is_pipe == true)
 		return smb_read_andx_pipe(smb_work);
 
 	pos = le32_to_cpu(req->OffsetLow);
@@ -2492,7 +2495,7 @@ int smb_write_andx(struct smb_work *smb_work)
 	char *data_buf;
 	int err = 0;
 
-	if (le16_to_cpu(req->hdr.Tid) == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("Write ANDX called for IPC$");
 		return smb_write_andx_pipe(smb_work);
 	}
@@ -3429,7 +3432,7 @@ int query_path_info(struct smb_work *smb_work)
 	struct file_internal_info *iinfo;
 	char *ptr;
 
-	if (le16_to_cpu(req_hdr->Tid) == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		return 0;
 	}
@@ -6104,7 +6107,7 @@ int query_file_info(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (le16_to_cpu(req->hdr.Tid) == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("query file info for IPC srvsvc\n");
 		return query_file_info_pipe(smb_work);
 	}

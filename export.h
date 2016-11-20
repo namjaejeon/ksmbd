@@ -174,10 +174,11 @@ struct share_config {
 };
 
 struct cifssrv_share {
-	char	*path;
-	__u16	tid;
-	int	tcount;
-	char    *sharename;
+	char *path;
+	__u16 tid;
+	bool is_pipe;
+	int tcount;
+	char *sharename;
 	struct share_config config;
 	/* global list of shares */
 	struct list_head list;

@@ -1432,10 +1432,10 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	}
 
 	tcon->writeable = can_write;
-
 	rsp->hdr.TreeId = tcon->share->tid;
 
-	if (tcon->share->tid == 1) {
+	if (!strncmp("IPC$", name, 4)) {
+		tcon->share->is_pipe = true;
 		cifssrv_debug("IPC share path request\n");
 		rsp->ShareType = SMB2_SHARE_TYPE_PIPE;
 		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
@@ -1816,7 +1816,7 @@ int smb2_open(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (rsp->hdr.TreeId == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("IPC pipe create request\n");
 		return create_smb2_pipe(smb_work);
 	}
@@ -2989,7 +2989,7 @@ int smb2_close(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (rsp->hdr.TreeId == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("IPC pipe close request\n");
 		return smb2_close_pipe(smb_work);
 	}
@@ -3355,7 +3355,7 @@ int smb2_info_file(struct smb_work *smb_work)
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
 
-	if (rsp->hdr.TreeId == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		/* smb2 info file called for pipe */
 		return smb2_info_file_pipe(smb_work);
 	} else {
@@ -4422,7 +4422,7 @@ int smb2_read(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (rsp->hdr.TreeId == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("IPC pipe read request\n");
 		return smb2_read_pipe(smb_work);
 	}
@@ -4634,7 +4634,7 @@ int smb2_write(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (rsp->hdr.TreeId == 1) {
+	if (smb_work->tcon->share->is_pipe == true) {
 		cifssrv_debug("IPC pipe write request\n");
 		return smb2_write_pipe(smb_work);
 	}
