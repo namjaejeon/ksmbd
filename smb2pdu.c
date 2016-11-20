@@ -5327,6 +5327,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 			rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 		}
+		rtnl_unlock();
 
 		/* zero if this is last one */
 		if (nii_rsp)
@@ -5337,7 +5338,6 @@ int smb2_ioctl(struct smb_work *smb_work)
 			goto out;
 		}
 
-		rtnl_unlock();
 		break;
 	}
 	default:
