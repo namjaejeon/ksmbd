@@ -130,6 +130,7 @@ int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo);
 void create_durable_buf(char *buf);
 void create_durable_rsp_buf(char *buf);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
+void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);
 struct create_context *smb2_find_context_vals(void *open_req, char *str);
 int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 					  struct cifssrv_sess *prev_sess,

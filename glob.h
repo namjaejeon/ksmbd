@@ -239,6 +239,7 @@ struct smb_version_values {
 	size_t          create_lease_size;
 	size_t          create_durable_size;
 	size_t          create_mxac_size;
+	size_t          create_disk_id_size;
 };
 
 struct cifssrv_stats {

@@ -1525,8 +1525,10 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 	do {
 		cc = (struct create_context *)((char *)cc + next);
 		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
-		if (le16_to_cpu(cc->NameLength) != 4 ||
-				strncmp(name, str, 4)) {
+		if (le16_to_cpu(cc->NameLength) < 4)
+			return ERR_PTR(-EINVAL);
+
+		if (strncmp(name, str, 4)) {
 			next = le32_to_cpu(cc->Next);
 			continue;
 		}
@@ -1537,7 +1539,7 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 	if (found)
 		return cc;
 	else
-		return NULL;
+		return ERR_PTR(-ENOENT);
 }
 
 /**
@@ -1587,6 +1589,32 @@ void create_mxac_rsp_buf(char *cc, int maximal_access)
 
 	buf->QueryStatus = NT_STATUS_OK;
 	buf->MaximalAccess = cpu_to_le32(maximal_access);
+}
+
+/**
+ * create_mxac_buf() - create query maximal access context
+ * @cc:	buffer to create query disk on id context response
+ */
+void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
+{
+	struct create_disk_id_rsp *buf;
+
+	buf = (struct create_disk_id_rsp *)cc;
+	memset(buf, 0, sizeof(struct create_disk_id_rsp));
+	buf->ccontext.DataOffset = cpu_to_le16(offsetof
+			(struct create_disk_id_rsp, DiskFileId));
+	buf->ccontext.DataLength = cpu_to_le32(32);
+	buf->ccontext.NameOffset = cpu_to_le16(offsetof
+			(struct create_mxac_rsp, Name));
+	buf->ccontext.NameLength = cpu_to_le16(4);
+	/* SMB2_CREATE_QUERY_ON_DISK_ID_RESPONSE is "QFid" */
+	buf->Name[0] = 'Q';
+	buf->Name[1] = 'F';
+	buf->Name[2] = 'i';
+	buf->Name[3] = 'd';
+
+	buf->DiskFileId = cpu_to_le64(file_id);
+	buf->VolumeId = cpu_to_le64(vol_id);
 }
 
 /*

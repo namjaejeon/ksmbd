@@ -1788,7 +1788,8 @@ int smb2_open(struct smb_work *smb_work)
 	int maximal_access = 0;
 	int contxt_cnt = 0;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
-		*mxac_ccontext = NULL;
+		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
+	int query_disk_id = 0;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -1864,12 +1865,16 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (req->CreateContextsOffset && durable_enable) {
-		context = smb2_find_context_vals(req,
-				SMB2_CREATE_DURABLE_HANDLE_REQUEST);
 		recon_state =
 			(struct create_durable *)smb2_find_context_vals(
 				req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
-		if (recon_state) {
+		if (IS_ERR(recon_state)) {
+			rc = PTR_ERR(recon_state);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
 			durable_reconnect = true;
 			persistent_id =
 				le64_to_cpu(
@@ -1889,8 +1894,16 @@ int smb2_open(struct smb_work *smb_work)
 			goto reconnect;
 		}
 
-		if (context &&
-			req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_BATCH) {
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_DURABLE_HANDLE_REQUEST);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else if (req->RequestedOplockLevel ==
+				SMB2_OPLOCK_LEVEL_BATCH) {
 			context_name = (char *)context + context->NameOffset;
 			cifssrv_debug("context name = %s name offset=%u\n",
 					context_name, context->NameOffset);
@@ -1903,7 +1916,13 @@ int smb2_open(struct smb_work *smb_work)
 		/* Parse non-durable handle create contexts */
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_EA_BUFFER);
-		if (context) {
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
 			if (req->CreateOptions & FILE_NO_EA_KNOWLEDGE_LE) {
 				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 				rc = -EACCES;
@@ -1917,13 +1936,35 @@ int smb2_open(struct smb_work *smb_work)
 
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST);
-		if (context) {
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
 			struct create_mxac_req *mxac_req =
 				(struct create_mxac_req *)context;
-			cifssrv_debug("timestamp : %llu\n",
+			cifssrv_debug("get query maximal access context (timestamp : %llu)\n",
 				le64_to_cpu(mxac_req->Timestamp));
 			maximal_access = smb_work->tcon->maximal_access;
 		}
+
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_TIMEWARP_REQUEST);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
+			cifssrv_debug("get timewarp context\n");
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			rc = -EIO;
+			goto err_out1;
+		}
+
 	}
 
 	if (req->NameLength) {
@@ -2130,7 +2171,13 @@ int smb2_open(struct smb_work *smb_work)
 		az_req = (struct create_alloc_size_req *)
 				smb2_find_context_vals(req,
 				SMB2_CREATE_ALLOCATION_SIZE);
-		if (az_req) {
+		if (IS_ERR(az_req)) {
+			rc = PTR_ERR(az_req);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
 			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
 
 			cifssrv_debug("request smb2 create allocate size : %llu\n",
@@ -2142,6 +2189,20 @@ int smb2_open(struct smb_work *smb_work)
 				goto err_out;
 			}
 		}
+
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifssrv_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
+			cifssrv_debug("get query on disk id context\n");
+			query_disk_id = 1;
+		}
+
 	}
 
 	smb_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
@@ -2342,6 +2403,17 @@ reconnect:
 		inc_rfc1001_len(rsp_org, server->vals->create_mxac_size);
 	}
 
+	if (query_disk_id) {
+		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
+			rsp->CreateContextsLength);
+		contxt_cnt++;
+		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
+			stat.ino, smb_work->tcon->share->tid);
+		rsp->CreateContextsLength +=
+			cpu_to_le32(server->vals->create_disk_id_size);
+		inc_rfc1001_len(rsp_org, server->vals->create_disk_id_size);
+	}
+
 	if (contxt_cnt > 0) {
 		rsp->CreateContextsOffset =
 			cpu_to_le32(offsetof(struct smb2_create_rsp, Buffer)
@@ -2355,6 +2427,9 @@ reconnect:
 		if (durable_ccontext)
 			durable_ccontext->Next =
 				cpu_to_le32(server->vals->create_durable_size);
+		if (mxac_ccontext)
+			mxac_ccontext->Next =
+				cpu_to_le32(server->vals->create_mxac_size);
 	}
 
 err_out:

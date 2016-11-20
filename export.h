@@ -175,7 +175,7 @@ struct share_config {
 
 struct cifssrv_share {
 	char *path;
-	__u16 tid;
+	__u64 tid;
 	bool is_pipe;
 	int tcount;
 	char *sharename;
