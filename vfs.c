@@ -28,6 +28,7 @@
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/xattr.h>
 #endif
+#include <linux/falloc.h>
 
 #include "export.h"
 #include "glob.h"
@@ -1066,4 +1067,11 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 #endif
 
 	return err;
+}
+
+
+
+int smb_vfs_alloc_size(struct file *filp, loff_t len)
+{
+	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }

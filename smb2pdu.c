@@ -1501,9 +1501,10 @@ int smb2_create_open_flags(bool file_present, __le32 access,
 {
 	int oflags = 0;
 
-	if ((access & FILE_READ_DATA_LE || access & FILE_GENERIC_READ_LE) &&
+	if (((access & FILE_READ_DATA_LE || access & FILE_GENERIC_READ_LE) &&
 			(access & FILE_WRITE_DATA_LE ||
-			 access & FILE_GENERIC_WRITE_LE))
+			 access & FILE_GENERIC_WRITE_LE)) ||
+			access & FILE_MAXIMAL_ACCESS_LE)
 		oflags |= O_RDWR;
 	else if (access & FILE_READ_DATA_LE  || access & FILE_GENERIC_READ_LE)
 		oflags |= O_RDONLY;
@@ -2122,6 +2123,26 @@ int smb2_open(struct smb_work *smb_work)
 			file_info = FILE_SUPERSEDED;
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
+
+	if (req->CreateContextsOffset) {
+		struct create_alloc_size_req *az_req;
+
+		az_req = (struct create_alloc_size_req *)
+				smb2_find_context_vals(req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+		if (az_req) {
+			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
+
+			cifssrv_debug("request smb2 create allocate size : %llu\n",
+				alloc_size);
+			rc = smb_vfs_alloc_size(filp, alloc_size);
+			if (rc < 0) {
+				cifssrv_err("smb_vfs_alloc_size is failed : %d\n",
+					rc);
+				goto err_out;
+			}
+		}
+	}
 
 	smb_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
 

@@ -501,6 +501,12 @@ struct create_mxac_req {
 	__le64 Timestamp;
 } __packed;
 
+struct create_alloc_size_req {
+	struct create_context ccontext;
+	__u8   Name[8];
+	__le64 AllocationSize;
+} __packed;
+
 struct create_durable_rsp {
 	struct create_context ccontext;
 	__u8   Name[8];
