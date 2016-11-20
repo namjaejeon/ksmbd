@@ -72,6 +72,8 @@ extern int cifssrv_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
 extern int maptoguest;
+extern int server_max_pr;
+extern int server_min_pr;
 
 extern unsigned int SMBMaxBufSize;
 
@@ -210,7 +212,9 @@ struct cifssrv_tcon {
  */
 
 /* functions */
-
+extern int cifssrv_max_protocol(void);
+extern int cifssrv_min_protocol(void);
+extern int get_protocol_idx(char *str);
 extern int cifssrv_init_registry(void);
 extern void cifssrv_free_registry(void);
 extern struct cifssrv_share *find_matching_share(__u16 tid);

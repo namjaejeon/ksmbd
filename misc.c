@@ -27,19 +27,47 @@
 static struct {
 	int index;
 	char *name;
+	char *prot;
 	__u16 prot_id;
 } protocols[] = {
-	{CIFS_PROT, "\2NT LM 0.12", 0},
+	{CIFS_PROT, "\2NT LM 0.12", "NT1", 0},
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	{SMB2_PROT, "\2SMB 2.002", SMB20_PROT_ID},
-	{SMB21_PROT, "\2SMB 2.1", SMB21_PROT_ID},
-	{SMB2X_PROT, "\2SMB 2.???", SMB2X_PROT_ID},
-	{SMB30_PROT, "\2SMB 3.0", SMB30_PROT_ID},
-	{SMB302_PROT, "\2SMB 3.02", SMB302_PROT_ID},
+	{SMB2_PROT, "\2SMB 2.002", "SMB2_02", SMB20_PROT_ID},
+	{SMB21_PROT, "\2SMB 2.1", "SMB2_10", SMB21_PROT_ID},
+	{SMB2X_PROT, "\2SMB 2.???", "SMB2_22", SMB2X_PROT_ID},
+	{SMB30_PROT, "\2SMB 3.0", "SMB3_00", SMB30_PROT_ID},
+	{SMB302_PROT, "\2SMB 3.02", "SMB3_02", SMB302_PROT_ID},
 	/* temporary 3.1.1 dialect disable */
-//	{SMB311_PROT, "\2SMB 3.1.1", SMB311_PROT_ID},
+//	{SMB311_PROT, "\2SMB 3.1.1", "SMB3_11", SMB311_PROT_ID},
 #endif
 };
+
+inline int cifssrv_min_protocol(void)
+{
+	return protocols[0].index;
+}
+
+inline int cifssrv_max_protocol(void)
+{
+	return protocols[ARRAY_SIZE(protocols) - 1].index;
+}
+
+int get_protocol_idx(char *str)
+{
+	int res = -1, i;
+	int protocol_index = protocols[ARRAY_SIZE(protocols) - 1].index;
+	int len = strlen(str);
+
+	for (i = 0; i <= protocol_index; i++) {
+		if (!strncmp(str, protocols[i].prot, len)) {
+			cifssrv_debug("selected %s dialect i = %d\n",
+				protocols[i].prot, i);
+			res = protocols[i].index;
+			break;
+		}
+	}
+	return res;
+}
 
 /**
  * check_smb_hdr() - check for valid smb request header
@@ -294,12 +322,15 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 					dialects);
 			if (!strncmp(dialects, protocols[i].name,
 						cli_count)) {
-				cifssrv_debug("selected %s dialect\n",
-						protocols[i].name);
-				if (i == CIFS_PROT)
-					dialect_id = smb1_index;
-				else
-					dialect_id = protocols[i].prot_id;
+				if (i >= server_min_pr && i <= server_max_pr) {
+					cifssrv_debug("selected %s dialect\n",
+							protocols[i].name);
+					if (i == CIFS_PROT)
+						dialect_id = smb1_index;
+					else
+						dialect_id =
+						protocols[i].prot_id;
+				}
 				goto out;
 			}
 			bcount -= (++cli_count);
@@ -336,9 +367,11 @@ int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 				le16_to_cpu(cli_dialects[count]));
 			if (le16_to_cpu(cli_dialects[count]) ==
 					protocols[i].prot_id) {
-				cifssrv_debug("selected %s dialect\n",
-						protocols[i].name);
-				dialect_id = protocols[i].prot_id;
+				if (i >= server_min_pr && i <= server_max_pr) {
+					cifssrv_debug("selected %s dialect\n",
+							protocols[i].name);
+					dialect_id = protocols[i].prot_id;
+				}
 				goto out;
 			}
 		}

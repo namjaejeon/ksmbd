@@ -59,6 +59,9 @@ char *guestAccountName;
 char *server_string;
 char *workgroup;
 char *netbios_name;
+int server_min_pr;
+int server_max_pr;
+
 
 /**
  * __add_share() - helper function to add a share in global exported share list
@@ -863,6 +866,8 @@ enum {
 	Opt_netbiosname,
 	Opt_signing,
 	Opt_maptoguest,
+	Opt_server_min_protocol,
+	Opt_server_max_protocol,
 
 	Opt_global_err
 };
@@ -874,6 +879,8 @@ static const match_table_t cifssrv_global_tokens = {
 	{ Opt_netbiosname, "netbios name = %s" },
 	{ Opt_signing, "server signing = %s" },
 	{ Opt_maptoguest, "map to guest = %s" },
+	{ Opt_server_min_protocol, "server min protocol = %s" },
+	{ Opt_server_max_protocol, "server max protocol = %s" },
 
 	{ Opt_global_err, NULL }
 };
@@ -991,6 +998,7 @@ static int cifssrv_parse_global_options(char *configdata)
 	char *data;
 	char *options;
 	char separator[2];
+	char *string = NULL;
 
 	separator[0] = '<';
 	separator[1] = 0;
@@ -1033,6 +1041,24 @@ static int cifssrv_parse_global_options(char *configdata)
 		case Opt_maptoguest:
 			if (cifssrv_get_config_val(args, &maptoguest) < 0)
 				goto out_nomem;
+			break;
+		case Opt_server_min_protocol:
+			string = match_strdup(args);
+			if (string == NULL)
+				goto out_nomem;
+			server_min_pr = get_protocol_idx(string);
+			if (server_min_pr < 0)
+				server_min_pr = cifssrv_min_protocol();
+			kfree(string);
+			break;
+		case Opt_server_max_protocol:
+			string = match_strdup(args);
+			if (string == NULL)
+				goto out_nomem;
+			server_max_pr = get_protocol_idx(string);
+			if (server_max_pr < 0)
+				server_max_pr = cifssrv_max_protocol();
+			kfree(string);
 			break;
 		default:
 			cifssrv_err("[%s] not supported\n", data);
@@ -1749,6 +1775,8 @@ int cifssrv_init_global_params(void)
 
 	server_signing = 0;
 	maptoguest = 0;
+	server_min_pr = cifssrv_min_protocol();
+	server_max_pr = cifssrv_max_protocol();
 	return 0;
 }
 
