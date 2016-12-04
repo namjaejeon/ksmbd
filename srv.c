@@ -433,6 +433,7 @@ void handle_smb_work(struct work_struct *work)
 	if (server->ops->check_user_session) {
 		rc = server->ops->check_user_session(smb_work);
 		if (rc < 0) {
+			command = server->ops->get_cmd_val(smb_work);
 			server->ops->set_rsp_status(smb_work,
 					NT_STATUS_USER_SESSION_DELETED);
 			goto send;
@@ -624,6 +625,22 @@ static void server_cleanup(struct tcp_server_info *server)
 	kfree(server);
 }
 
+void free_channel_list(struct cifssrv_sess *sess)
+{
+	struct channel *chann;
+	struct list_head *tmp, *t;
+
+	if (sess->server->dialect >= SMB30_PROT_ID) {
+		list_for_each_safe(tmp, t, &sess->cifssrv_chann_list) {
+			chann = list_entry(tmp, struct channel, chann_list);
+			if (chann) {
+				list_del(&chann->chann_list);
+				kfree(chann);
+			}
+		}
+	}
+}
+
 /**
  * tcp_sess_kthread() - session thread to listen on new smb requests
  * @p:     TCP server instance of connection
@@ -733,6 +750,7 @@ static int tcp_sess_kthread(void *p)
 		list_for_each_safe(tmp, t, &server->cifssrv_sess) {
 			sess = list_entry(tmp, struct cifssrv_sess,
 							cifssrv_ses_list);
+			free_channel_list(sess);
 			list_del(&sess->cifssrv_ses_list);
 			/* SESSION Global list cifssrv_ses_global_list is
 			   for SMB2 only*/

@@ -632,8 +632,23 @@ int smb2_check_user_session(struct smb_work *smb_work)
 			cmd == SMB2_SESSION_SETUP)
 		return 0;
 
-	if (server->tcp_status != CifsGood)
+	if (server->tcp_status != CifsGood) {
+		if (server->sess_count) {
+			struct cifssrv_sess *sess;
+			struct list_head *tmp, *t;
+
+			list_for_each_safe(tmp, t, &server->cifssrv_sess) {
+				sess = list_entry(tmp, struct cifssrv_sess,
+						cifssrv_ses_list);
+				if (sess->state == SMB2_SESSION_EXPIRED) {
+					cifssrv_debug("invalid session\n");
+					smb_work->sess = sess;
+					break;
+				}
+			}
+		}
 		return -EINVAL;
+	}
 
 	rc = -EINVAL;
 	/* Check for validity of user session */
@@ -1689,7 +1704,6 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	struct cifssrv_sess *sess = smb_work->sess;
 	struct cifssrv_tcon *tcon;
 	struct list_head *tmp, *t;
-	struct channel *chann;
 
 	req = (struct smb2_logoff_req *)smb_work->buf;
 	rsp = (struct smb2_logoff_rsp *)smb_work->rsp_buf;
@@ -1734,24 +1748,10 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	WARN_ON(sess->tcon_count != 0);
 
-	if (server->dialect >= SMB30_PROT_ID) {
-		list_for_each_safe(tmp, t, &sess->cifssrv_chann_list) {
-			chann = list_entry(tmp, struct channel, chann_list);
-			if (chann) {
-				list_del(&chann->chann_list);
-				kfree(chann);
-			}
-		}
-	}
-
-	/* free all sessions, we have just 1 */
-	list_del(&sess->cifssrv_ses_list);
-	list_del(&sess->cifssrv_ses_global_list);
 	destroy_fidtable(sess);
-	kfree(sess);
-	smb_work->sess = NULL;
+	sess->valid = 0;
+	sess->state = SMB2_SESSION_EXPIRED;
 
-	server->sess_count--;
 	/* let start_tcp_sess free server info now */
 	server->tcp_status = CifsNeedNegotiate;
 	return 0;
