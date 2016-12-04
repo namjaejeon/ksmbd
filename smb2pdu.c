@@ -3597,8 +3597,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *basic_info;
 
 		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to read the attributes\n");
+			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifssrv_err("no right to read the attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
@@ -3665,8 +3667,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		int uni_filename_len;
 
 		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to read the attributes\n");
+			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifssrv_err("no right to read the attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
@@ -3790,8 +3794,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		struct smb2_file_ntwrk_info *file_info;
 
 		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to read the attributes\n");
+			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifssrv_err("no right to read the attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
@@ -3836,10 +3842,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
-		if (!(fp->access & (FILE_READ_EA_LE |
+		if (!(fp->access & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err(
-				"no right to read the extented attributes\n");
+			cifssrv_err("no right to read the extented attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
@@ -4402,8 +4408,10 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct iattr attrs;
 
 		if (!(fp->access & (FILE_WRITE_ATTRIBUTES_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to write the attributes\n");
+			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifssrv_err("no right to write the attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
@@ -4446,8 +4454,10 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		loff_t newsize;
 
 		if (!(fp->access & (FILE_WRITE_DATA_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to write data\n");
+			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifssrv_err("no right to write data : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
@@ -4478,7 +4488,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	case FILE_RENAME_INFORMATION:
 		if (!(fp->access & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to delete\n");
+			cifssrv_err("no right to delete : 0x%x\n", fp->access);
 			return -EACCES;
 		}
 		rc = smb2_rename(smb_work, filp, id);
@@ -4492,7 +4502,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		if (!(fp->access & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to delete\n");
+			cifssrv_err("no right to delete : 0x%x\n", fp->access);
 			return -EACCES;
 		}
 
@@ -4511,10 +4521,10 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_set_info_req *req;
 
-		if (!(fp->access & (FILE_WRITE_EA_LE |
+		if (!(fp->access & (FILE_WRITE_EA_LE | FILE_GENERIC_WRITE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err(
-				"no right to write the extended attributes\n");
+			cifssrv_err("no right to write the extended attributes : 0x%x\n",
+				fp->access);
 			return -EACCES;
 		}
 
