@@ -23,6 +23,10 @@
 #define _SMB2PDU_SERVER_H
 
 #include "ntlmssp.h"
+
+/* SMB2's Specific ERRNO */
+#define ESHARE 50000
+
 /*
  * Note that, due to trying to use names similar to the protocol specifications,
  * there are many mixed case field names in the structures below.  Although

@@ -139,10 +139,15 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (!(fp->access & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
+	if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
 		FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 		cifssrv_err("no right to read(%llu)\n", fid);
 		return -EACCES;
+	}
+
+	if (!(fp->saccess & FILE_SHARE_READ_LE)) {
+		cifssrv_err("no right(share access) to read(%llu)\n", fid);
+		return -ESHARE;
 	}
 #endif
 
@@ -215,10 +220,15 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (!(fp->access & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
 		FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 		cifssrv_err("no right to write(%llu)\n", fid);
 		return -EACCES;
+	}
+
+	if (!(fp->saccess & FILE_SHARE_WRITE_LE)) {
+		cifssrv_err("no right(share access) to write(%llu)\n", fid);
+		return -ESHARE;
 	}
 #endif
 
@@ -704,6 +714,14 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 			cifssrv_err("can't find filp for fid %llu\n", oldfid);
 			return -ENOENT;
 		}
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
+		if (!(fp->saccess & FILE_SHARE_DELETE_LE)) {
+			cifssrv_err("no right(share access) to rename(%llu)\n",
+				oldfid);
+			return -ESHARE;
+		}
+#endif
 
 		filp = fp->filp;
 		dold_p = filp->f_path.dentry->d_parent;

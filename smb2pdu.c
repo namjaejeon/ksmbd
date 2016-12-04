@@ -2428,7 +2428,8 @@ reconnect:
 	}
 
 	fp->persistent_id = persistent_id;
-	fp->access = req->DesiredAccess;
+	fp->daccess = req->DesiredAccess;
+	fp->saccess = req->ShareAccess;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -2835,7 +2836,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (!(dir_fp->access & FILE_LIST_DIRECTORY_LE)) {
+	if (!(dir_fp->daccess & FILE_LIST_DIRECTORY_LE)) {
 		cifssrv_err("no right to enumerate directory (%llu)\n", id);
 		return -EACCES;
 	}
@@ -3585,7 +3586,7 @@ int smb2_info_file(struct smb_work *smb_work)
 
 		file_info = (struct smb2_file_access_info *)rsp->Buffer;
 
-		file_info->AccessFlags = fp->access;
+		file_info->AccessFlags = fp->daccess;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_access_info));
 		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_access_info));
@@ -3596,11 +3597,11 @@ int smb2_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_all_info *basic_info;
 
-		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
 			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 			FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
@@ -3666,11 +3667,11 @@ int smb2_info_file(struct smb_work *smb_work)
 		char *filename;
 		int uni_filename_len;
 
-		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
 			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 			FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -3793,11 +3794,11 @@ int smb2_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_ntwrk_info *file_info;
 
-		if (!(fp->access & (FILE_READ_ATTRIBUTES_LE |
+		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
 			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 			FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -3842,10 +3843,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
-		if (!(fp->access & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
+		if (!(fp->daccess & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to read the extented attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -4352,7 +4353,9 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 	}
 
 	rc = smb_vfs_rename(smb_work->sess, NULL, new_name, old_fid);
-	if (rc)
+	if (rc == -ESHARE)
+		rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
+	else if (rc < 0)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 
 out:
@@ -4407,11 +4410,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *file_info;
 		struct iattr attrs;
 
-		if (!(fp->access & (FILE_WRITE_ATTRIBUTES_LE |
+		if (!(fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
 			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 			FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to write the attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -4453,11 +4456,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		struct smb2_file_eof_info *file_eof_info;
 		loff_t newsize;
 
-		if (!(fp->access & (FILE_WRITE_DATA_LE |
+		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 			FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to write data : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -4486,9 +4489,9 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 
 	case FILE_RENAME_INFORMATION:
-		if (!(fp->access & (FILE_DELETE_LE |
+		if (!(fp->daccess & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to delete : 0x%x\n", fp->access);
+			cifssrv_err("no right to delete : 0x%x\n", fp->daccess);
 			return -EACCES;
 		}
 		rc = smb2_rename(smb_work, filp, id);
@@ -4500,9 +4503,9 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_disposition_info *file_info;
 
-		if (!(fp->access & (FILE_DELETE_LE |
+		if (!(fp->daccess & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifssrv_err("no right to delete : 0x%x\n", fp->access);
+			cifssrv_err("no right to delete : 0x%x\n", fp->daccess);
 			return -EACCES;
 		}
 
@@ -4521,10 +4524,10 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_set_info_req *req;
 
-		if (!(fp->access & (FILE_WRITE_EA_LE | FILE_GENERIC_WRITE_LE |
+		if (!(fp->daccess & (FILE_WRITE_EA_LE | FILE_GENERIC_WRITE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to write the extended attributes : 0x%x\n",
-				fp->access);
+				fp->daccess);
 			return -EACCES;
 		}
 
@@ -4716,6 +4719,8 @@ out:
 			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		else if (err == -EACCES)
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		else if (err == -ESHARE)
+			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
 		else
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 
@@ -4924,6 +4929,8 @@ out:
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 	else if (err == -EACCES)
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+	else if (err == -ESHARE)
+		rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
 	else
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 

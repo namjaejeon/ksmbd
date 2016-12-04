@@ -88,7 +88,8 @@ struct cifssrv_file {
 	uint64_t persistent_id;
 	uint64_t sess_id;
 	uint32_t tid;
-	__le32 access;
+	__le32 daccess;
+	__le32 saccess;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

@@ -85,6 +85,9 @@ extern char NEGOTIATE_GSS_HEADER[74];
 
 extern bool global_signing;
 
+/* cifssrv's Specific ERRNO */
+#define ESHARE 50000
+
 #define SMB1_VERSION_STRING     "1.0"
 #define SMB20_VERSION_STRING    "2.0"
 #define SMB21_VERSION_STRING    "2.1"
