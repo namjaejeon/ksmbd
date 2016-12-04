@@ -432,7 +432,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		struct cifssrv_sess *sess)
 {
 	TargetInfo *tinfo;
-	__le16 name[8];
+	wchar_t *name;
 	__u8 *target_name;
 	unsigned int len, flags, blob_len, type;
 
@@ -452,8 +452,12 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
+	len = strlen(netbios_name);
+	name = kmalloc(2 + (len * 2), GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
 
-	len = smb_strtoUTF16(name, netbios_name, strlen(netbios_name),
+	len = smb_strtoUTF16((__le16 *)name, netbios_name, len,
 			sess->server->local_nls);
 	len = UNICODE_LEN(len);
 	chgblob->TargetName.Length = cpu_to_le16(len);
@@ -494,6 +498,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	chgblob->TargetInfoArray.MaximumLength =
 			chgblob->TargetInfoArray.Length;
 	blob_len += chgblob->TargetInfoArray.Length;
+	kfree(name);
 	cifssrv_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;
 }

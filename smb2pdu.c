@@ -1263,6 +1263,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
 			neg_blob_len = build_ntlmssp_challenge_blob(
 					chgblob, sess);
+			if (neg_blob_len < 0) {
+				kfree(neg_blob);
+				rc = -ENOMEM;
+				goto out_err;
+			}
+
 			if (build_spnego_ntlmssp_neg_blob(&spnego_blob,
 						&spnego_blob_len,
 						neg_blob, neg_blob_len)) {
@@ -1278,9 +1284,16 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				cpu_to_le16(spnego_blob_len);
 			kfree(spnego_blob);
 			kfree(neg_blob);
-		} else
-			rsp->SecurityBufferLength =
-				build_ntlmssp_challenge_blob(chgblob, sess);
+		} else {
+			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+					sess);
+			if (neg_blob_len < 0) {
+				rc = -ENOMEM;
+				goto out_err;
+			}
+
+			rsp->SecurityBufferLength = neg_blob_len;
+		}
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
 		/* Note: here total size -1 is done as
