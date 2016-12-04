@@ -1042,9 +1042,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 	if ((server_signing == AUTO || server_signing == DISABLE) &&
 			req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) {
 		rsp->SecurityBufferLength = 74;
-		memcpy(((char *)rsp->hdr.ProtocolId) +
-				rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER,
-				74);
+		memcpy(((char *)(&rsp->hdr) +
+			sizeof(rsp->hdr.smb2_buf_length)) +
+			rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
 		inc_rfc1001_len(rsp, 64 + 74);
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 		server->sign = true;
@@ -1052,9 +1052,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 	} else if (server_signing == MANDATORY) {
 		global_signing = true;
 		rsp->SecurityBufferLength = 74;
-		memcpy(((char *)rsp->hdr.ProtocolId) +
-				rsp->SecurityBufferOffset,
-				NEGOTIATE_GSS_HEADER, 74);
+		memcpy(((char *)(&rsp->hdr) +
+			sizeof(rsp->hdr.smb2_buf_length)) +
+			rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
 		inc_rfc1001_len(rsp, 64 + 74);
 		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_REQUIRED |
 			SMB2_NEGOTIATE_SIGNING_ENABLED;
