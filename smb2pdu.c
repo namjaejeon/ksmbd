@@ -1833,7 +1833,6 @@ int smb2_open(struct smb_work *smb_work)
 	struct cifssrv_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
-	__u64 create_time;
 	umode_t mode = 0;
 	bool file_present = true, islink = false;
 	int oplock, open_flags = 0, file_info = 0, len = 0;
@@ -2430,22 +2429,24 @@ reconnect:
 	fp->persistent_id = persistent_id;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
-	fp->open_time = CURRENT_TIME;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
 	rsp->Reserved = 0;
 	rsp->CreateAction = file_info;
 
-	create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-			cifs_UnixTimeToNT(stat.mtime),
-			cifs_UnixTimeToNT(stat.atime));
+	if (file_present)
+		fp->create_time = smb_get_creation_time(&path);
+	else {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		rc = smb_set_creation_time(&fp->filp->f_path, fp->create_time);
+		if (rc) {
+			cifssrv_debug("failed to store creation time in EA\n");
+			rc = 0;
+		}
+	}
 
-	if (!create_time)
-		create_time = min(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime));
-
-	rsp->CreationTime = cpu_to_le64(create_time);
+	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
@@ -3323,7 +3324,6 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	__u32 buf_free_len, alignment_bytes, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 
-
 	req = (struct smb2_query_info_req *)rq;
 	rsp = (struct smb2_query_info_rsp *)resp;
 	rsp_org = (struct smb2_query_info_rsp *)resp_org;
@@ -3392,7 +3392,12 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		buf_free_len -= value_len;
 		eainfo->Flags = 0;
 		eainfo->EaNameLength = name_len;
-		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
+
+		if (!strncmp(name, CREATION_TIME_PREFIX,
+			CREATION_TIME_PREFIX_LEN))
+			continue;
+		else if (!strncmp(name, XATTR_USER_PREFIX,
+			XATTR_USER_PREFIX_LEN))
 			strncpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);
 		else
@@ -3534,7 +3539,6 @@ int smb2_info_file(struct smb_work *smb_work)
 	uint64_t id = -1;
 	int rc = 0;
 	int file_infoclass_size;
-	__u64 create_time;
 
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
@@ -3606,20 +3610,14 @@ int smb2_info_file(struct smb_work *smb_work)
 			return -EACCES;
 		}
 		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
-		create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime),
-				cifs_UnixTimeToNT(stat.atime));
-		if (!create_time)
-			create_time = min(cifs_UnixTimeToNT(stat.ctime),
-					cifs_UnixTimeToNT(stat.mtime));
 
-		basic_info->CreationTime = cpu_to_le64(create_time);
+		basic_info->CreationTime = cpu_to_le64(fp->create_time);
 		basic_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 		basic_info->LastWriteTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
+			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		basic_info->Attributes = S_ISDIR(stat.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
 		basic_info->Pad1 = 0;
@@ -3680,21 +3678,13 @@ int smb2_info_file(struct smb_work *smb_work)
 		cifssrv_debug("filename = %s\n", filename);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
-		create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime),
-				cifs_UnixTimeToNT(stat.atime));
-
-		if (!create_time)
-			create_time = min(cifs_UnixTimeToNT(stat.ctime),
-					cifs_UnixTimeToNT(stat.mtime));
-
-		file_info->CreationTime = cpu_to_le64(create_time);
+		file_info->CreationTime = cpu_to_le64(fp->create_time);
 		file_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 		file_info->LastWriteTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
+			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = S_ISDIR(stat.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
 		file_info->Pad1 = 0;
@@ -3804,21 +3794,14 @@ int smb2_info_file(struct smb_work *smb_work)
 		}
 
 		file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
-		create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime),
-				cifs_UnixTimeToNT(stat.atime));
 
-		if (!create_time)
-			create_time = min(cifs_UnixTimeToNT(stat.ctime),
-					cifs_UnixTimeToNT(stat.mtime));
-
-		file_info->CreationTime = cpu_to_le64(create_time);
+		file_info->CreationTime = cpu_to_le64(fp->create_time);
 		file_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 		file_info->LastWriteTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
+			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = S_ISDIR(stat.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
 		file_info->AllocationSize =
@@ -4423,6 +4406,19 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		file_info = (struct smb2_file_all_info *)req->Buffer;
 		attrs.ia_valid = 0;
+
+		if (le64_to_cpu(file_info->CreationTime)) {
+			fp->create_time = le64_to_cpu(file_info->CreationTime);
+			rc = smb_set_creation_time(&fp->filp->f_path,
+				fp->create_time);
+			if (rc) {
+				cifssrv_debug("failed to set creation time\n");
+				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+				smb2_set_err_rsp(smb_work);
+				return rc;
+			}
+		}
+
 		if (le64_to_cpu(file_info->LastAccessTime)) {
 			attrs.ia_atime = cifs_NTtimeToUnix(
 					le64_to_cpu(file_info->LastAccessTime));
@@ -4442,13 +4438,23 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		if (attrs.ia_valid) {
-			rc = smb_vfs_setattr(sess, NULL, id, &attrs);
+			struct inode *inode = GET_FP_INODE(fp);
+
+			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
+				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+				smb2_set_err_rsp(smb_work);
+				return -EPERM;
+			}
+
+			rc = inode_change_ok(inode, &attrs);
 			if (rc) {
-				cifssrv_debug("failed to set time\n");
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 				smb2_set_err_rsp(smb_work);
 				return rc;
 			}
+
+			setattr_copy(inode, &attrs);
+			mark_inode_dirty(inode);
 		}
 		break;
 	}

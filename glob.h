@@ -203,8 +203,12 @@ extern bool global_signing;
 #define SMB2_CLIENT_GUID_SIZE		16
 
 /* SMB2 timeouts */
-
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
+
+/* CREATION TIME XATTR PREFIX */
+#define CREATION_TIME_PREFIX	"creation.time."
+#define CREATION_TIME_PREFIX_LEN	14
+#define CREATIOM_TIME_LEN 8
 
 enum statusEnum {
 	CifsNew = 0,
@@ -515,6 +519,8 @@ extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
 				char *shortname);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 extern struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session);
+extern __u64 smb_get_creation_time(struct path *path);
+extern int smb_set_creation_time(struct path *path, __u64 create_time);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

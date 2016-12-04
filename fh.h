@@ -50,6 +50,7 @@
 #define cifssrv_find_next_bit		find_next_bit_le
 
 #define GET_FILENAME_FILP(file)	file->filp->f_path.dentry->d_name.name
+#define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 
 struct tcp_server_info;
 struct cifssrv_sess;
@@ -93,6 +94,7 @@ struct cifssrv_file {
 	uint32_t tid;
 	__le32 daccess;
 	__le32 saccess;
+	__u64 create_time;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

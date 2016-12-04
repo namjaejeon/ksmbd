@@ -19,6 +19,12 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/kernel.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
+#include <linux/xattr.h>
+#endif
+
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
@@ -482,3 +488,60 @@ int is_smb2_rsp(struct smb_work *smb_work)
 	return 0;
 };
 #endif
+
+int smb_set_creation_time(struct path *path, __u64 create_time)
+{
+	int err;
+	char *attr_name;
+
+	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+	if (!attr_name)
+		return -ENOMEM;
+
+	memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
+	memcpy(&attr_name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
+			CREATION_TIME_PREFIX_LEN);
+	attr_name[XATTR_USER_PREFIX_LEN + CREATION_TIME_PREFIX_LEN] = '\0';
+
+	err = smb_vfs_setxattr(NULL, path, attr_name, (void *)&create_time,
+		CREATIOM_TIME_LEN, 0);
+	if (err)
+		cifssrv_debug("setxattr failed, err %d\n", err);
+
+	return err;
+}
+
+__u64 smb_get_creation_time(struct path *path)
+{
+	char *name, *xattr_list = NULL;
+	int value_len, xattr_list_len;
+	__u64 create_time = 0;
+
+	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		return 0;
+	} else if (!xattr_list_len) {
+		cifssrv_debug("empty xattr in the file\n");
+		return 0;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifssrv_debug("%s, len %zd\n", name, strlen(name));
+
+		if (strncmp(&name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
+			CREATION_TIME_PREFIX_LEN))
+			continue;
+
+		value_len = smb_vfs_getxattr(path->dentry, name,
+			(void *)&create_time, CREATIOM_TIME_LEN);
+		if (value_len < 0) {
+			cifssrv_err("failed to get xattr in file\n");
+			create_time = 0;
+		}
+		break;
+	}
+
+	return create_time;
+}

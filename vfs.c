@@ -976,7 +976,7 @@ int smb_vfs_setxattr(const char *filename, struct path *fpath, const char *name,
 }
 
 /**
- * smb_vfs_setxattr() - convert smb IO caching options to linux options
+ * smb_vfs_set_fadvise() - convert smb IO caching options to linux options
  * @filp:	file pointer for IO
  * @options:	smb IO options
  */
