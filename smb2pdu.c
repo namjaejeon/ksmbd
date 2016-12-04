@@ -2914,6 +2914,14 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset = 0;
 	}
 
+	if (srch_flag & SMB2_INDEX_SPECIFIED && le32_to_cpu(req->FileIndex)) {
+		cifssrv_debug("specified index\n");
+		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
+			SEEK_SET);
+		dir_fp->readdir_data.used = 0;
+		dir_fp->dirent_offset = le32_to_cpu(req->FileIndex);
+	}
+
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	bufptr = (char *)rsp->Buffer;
 	out_buf_len = le32_to_cpu(req->OutputBufferLength) -
