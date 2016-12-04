@@ -2384,7 +2384,7 @@ reconnect:
 						"lease state 0x%x\n",
 						name, oplock,
 						lc.CurrentLeaseState);
-				rc = smb_grant_oplock(server, &oplock,
+				rc = smb_grant_oplock(sess, &oplock,
 					volatile_id, fp, req->hdr.TreeId,
 					&lc, attrib_only);
 				if (rc)
@@ -2393,7 +2393,7 @@ reconnect:
 		}
 	} else if (oplock & (SMB2_OPLOCK_LEVEL_BATCH |
 				SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
-		rc = smb_grant_oplock(server, &oplock, volatile_id, fp,
+		rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
 				req->hdr.TreeId, NULL, attrib_only);
 		if (rc)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;

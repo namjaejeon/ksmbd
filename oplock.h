@@ -61,7 +61,8 @@ struct lease_fidinfo {
 };
 
 struct oplock_info {
-	struct tcp_server_info  *server;
+	struct tcp_server_info	*server;
+	struct cifssrv_sess	*sess;
 	int                     lock_type;
 	int                     state;
 	int                     fid;
@@ -91,7 +92,7 @@ struct ofile_info {
 	wait_queue_head_t	op_end_wq;
 };
 
-extern int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
+extern int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 		int id, struct cifssrv_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx, bool attr_only);
 extern void smb1_send_oplock_break(struct work_struct *work);

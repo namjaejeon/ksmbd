@@ -123,7 +123,7 @@ struct ofile_info *get_new_ofile(struct inode *inode)
  *
  * Return:      allocated opinfo object on success, otherwise NULL
  */
-static struct oplock_info *get_new_opinfo(struct tcp_server_info *server,
+static struct oplock_info *get_new_opinfo(struct cifssrv_sess *sess,
 		int id, __u16 Tid, struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -134,7 +134,8 @@ static struct oplock_info *get_new_opinfo(struct tcp_server_info *server,
 	if (!opinfo)
 		return NULL;
 
-	opinfo->server = server;
+	opinfo->sess = sess;
+	opinfo->server = sess->server;
 	opinfo->lock_type = OPLOCK_NONE;
 	opinfo->state = OPLOCK_NOT_BREAKING;
 	opinfo->fid = id;
@@ -640,8 +641,11 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 			cifssrv_err("cannot allocate memory\n");
 			continue;
 		}
+
 		work->server = opinfo->server;
+		work->sess = opinfo->sess;
 		work->buf = (char *)opinfo;
+
 		ack_required = 0;
 		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -738,6 +742,8 @@ static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
 
 	work->buf = (char *)opinfo;
 	work->server = server;
+	work->sess = opinfo->sess;
+
 	INIT_WORK(&work->work, smb2_send_oplock_break);
 	schedule_work(&work->work);
 
@@ -931,17 +937,16 @@ static struct oplock_info *same_client_has_lease(struct tcp_server_info *server,
 
 /**
  * smb_grant_oplock() - handle oplock/lease request on file open
- * @server:	TCP server instance of connection
+ * @fp:		cifssrv file pointer
  * @oplock:	granted oplock type
  * @id:		fid of open file
- * @fp:		cifssrv file pointer
  * @Tid:	Tree id of connection
  * @lctx:	lease context information on file open
  * @attr_only:	attribute only file open type
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
+int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 		int id, struct cifssrv_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx, bool attr_only)
 {
@@ -956,7 +961,7 @@ int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
 	struct lease_fidinfo *fidinfo = NULL;
 #endif
 
-	opinfo_new = get_new_opinfo(server, id, Tid, lctx);
+	opinfo_new = get_new_opinfo(sess, id, Tid, lctx);
 	if (!opinfo_new)
 		return -ENOMEM;
 
@@ -1000,7 +1005,7 @@ int smb_grant_oplock(struct tcp_server_info *server, int *oplock,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	/* is lease already granted ? */
-	opinfo_matching = same_client_has_lease(server, lctx, ofile);
+	opinfo_matching = same_client_has_lease(sess->server, lctx, ofile);
 	if (opinfo_matching) {
 		if (fidinfo)
 			list_move(&fidinfo->fid_entry,
@@ -1741,6 +1746,7 @@ int smb_break_write_lease(struct ofile_info *ofile,
 
 	work->buf = (char *)opinfo;
 	work->server = server;
+	work->sess = opinfo->sess;
 	INIT_WORK(&work->work, smb_send_lease_break);
 	schedule_work(&work->work);
 
