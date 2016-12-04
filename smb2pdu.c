@@ -5984,42 +5984,15 @@ int smb2_check_sign_req(struct smb_work *work)
 	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_HMACSHA256_SIZE];
+	struct kvec iov[1];
 
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (smb2_sign_smbpdu(work->sess, rcv_hdr2->ProtocolId,
-			be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
-		return 0;
 
-	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
-		cifssrv_debug("bad smb2 signature\n");
-		return 0;
-	}
+	iov[0].iov_base = rcv_hdr2->ProtocolId;
+	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	return 1;
-}
-
-/**
- * smb3_check_sign_req() - handler for req packet sign processing
- * @work:   smb work containing notify command buffer
- *
- * Return:	1 on success, 0 otherwise
- */
-int smb3_check_sign_req(struct smb_work *work)
-{
-	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
-	struct channel *chann;
-	char signature_req[SMB2_SIGNATURE_SIZE];
-	char signature[SMB2_CMACAES_SIZE];
-
-	chann = lookup_chann_list(work->sess);
-	if (!chann)
-		return 0;
-
-	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
-	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (smb3_sign_smbpdu(chann, rcv_hdr2->ProtocolId,
-		be32_to_cpu(rcv_hdr2->smb2_buf_length), signature))
+	if (smb2_sign_smbpdu(work->sess, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
@@ -6039,12 +6012,60 @@ void smb2_set_sign_rsp(struct smb_work *work)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
 	char signature[SMB2_HMACSHA256_SIZE];
+	struct kvec iov[2];
+	int n_vec = 1;
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!smb2_sign_smbpdu(work->sess, rsp_hdr->ProtocolId,
-			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
+
+	iov[0].iov_base = rsp_hdr->ProtocolId;
+	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
+
+	if (work->rdata_buf) {
+		iov[0].iov_len -= work->rdata_cnt;
+
+		iov[1].iov_base = work->rdata_buf;
+		iov[1].iov_len = work->rdata_cnt;
+		n_vec++;
+	}
+
+	if (!smb2_sign_smbpdu(work->sess, iov, n_vec, signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+}
+
+/**
+ * smb3_check_sign_req() - handler for req packet sign processing
+ * @work:   smb work containing notify command buffer
+ *
+ * Return:	1 on success, 0 otherwise
+ */
+int smb3_check_sign_req(struct smb_work *work)
+{
+	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+	struct channel *chann;
+	char signature_req[SMB2_SIGNATURE_SIZE];
+	char signature[SMB2_CMACAES_SIZE];
+	struct kvec iov[1];
+
+	chann = lookup_chann_list(work->sess);
+	if (!chann)
+		return 0;
+
+	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
+	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+
+	iov[0].iov_base = rcv_hdr2->ProtocolId;
+	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+
+	if (smb3_sign_smbpdu(chann, iov, 1, signature))
+		return 0;
+
+	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
+		cifssrv_debug("bad smb2 signature\n");
+		return 0;
+	}
+
+	return 1;
 }
 
 /**
@@ -6057,6 +6078,8 @@ void smb3_set_sign_rsp(struct smb_work *work)
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
 	struct channel *chann;
 	char signature[SMB2_CMACAES_SIZE];
+	struct kvec iov[2];
+	int n_vec = 1;
 
 	chann = lookup_chann_list(work->sess);
 	if (!chann)
@@ -6064,7 +6087,18 @@ void smb3_set_sign_rsp(struct smb_work *work)
 
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	if (!smb3_sign_smbpdu(chann, rsp_hdr->ProtocolId,
-			be32_to_cpu(rsp_hdr->smb2_buf_length), signature))
+
+	iov[0].iov_base = rsp_hdr->ProtocolId;
+	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
+
+	if (work->rdata_buf) {
+		iov[0].iov_len -= work->rdata_cnt;
+
+		iov[1].iov_base = work->rdata_buf;
+		iov[1].iov_len = work->rdata_cnt;
+		n_vec++;
+	}
+
+	if (!smb3_sign_smbpdu(chann, iov, n_vec, signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }

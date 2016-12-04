@@ -506,15 +506,16 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 /**
  * smb1_sign_smbpdu() - function to generate SMB1 packet signing
  * @sess:	session of connection
- * @buf:        source pointer to client request packet
- * @sz:         size of client request packet
+ * @iov:        buffer iov array
+ * @n_vec:	number of iovecs
  * @sig:        signature value generated for client request packet
  *
  */
-int smb1_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
+	int i;
 
 	rc = crypto_md5_alloc(sess->server);
 	if (rc) {
@@ -535,11 +536,14 @@ int smb1_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		goto out;
 	}
 
-	rc = crypto_shash_update(&sess->server->secmech.sdescmd5->shash,
-			buf, sz);
-	if (rc) {
-		cifssrv_debug("md5 update error %d\n", rc);
-		goto out;
+	for (i = 0; i < n_vec; i++) {
+		rc = crypto_shash_update(
+				&sess->server->secmech.sdescmd5->shash,
+				iov[i].iov_base, iov[i].iov_len);
+		if (rc) {
+			cifssrv_debug("md5 update error %d\n", rc);
+			goto out;
+		}
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdescmd5->shash, sig);
@@ -649,15 +653,16 @@ static int crypto_sha512_alloc(struct tcp_server_info *server)
 /**
  * smb2_sign_smbpdu() - function to generate packet signing
  * @sess:	session of connection
- * @buf:	source pointer to client request packet
- * @sz:		size of client request packet
+ * @iov:        buffer iov array
+ * @n_vec:	number of iovecs
  * @sig:	signature value generated for client request packet
  *
  */
-int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
+	int i;
 
 	rc = crypto_hmacsha256_alloc(sess->server);
 	if (rc) {
@@ -678,11 +683,14 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
 		goto out;
 	}
 
-	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
-					buf, sz);
-	if (rc) {
-		cifssrv_debug("hmacsha256 update error %d\n", rc);
-		goto out;
+	for (i = 0; i < n_vec; i++) {
+		rc = crypto_shash_update(
+				&sess->server->secmech.sdeschmacsha256->shash,
+				iov[i].iov_base, iov[i].iov_len);
+		if (rc) {
+			cifssrv_debug("hmacsha256 update error %d\n", rc);
+			goto out;
+		}
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacsha256->shash,
@@ -697,15 +705,16 @@ out:
 /**
  * smb3_sign_smbpdu() - function to generate packet signing
  * @sess:	session of connection
- * @buf:	source pointer to client request packet
- * @sz:		size of client request packet
+ * @iov:        buffer iov array
+ * @n_vec:	number of iovecs
  * @sig:	signature value generated for client request packet
  *
  */
-int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
+int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
+	int i;
 
 	rc = crypto_shash_setkey(chann->server->secmech.cmacaes,
 		chann->smb3signingkey,	SMB2_CMACAES_SIZE);
@@ -720,11 +729,14 @@ int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
 		goto out;
 	}
 
-	rc = crypto_shash_update(&chann->server->secmech.sdesccmacaes->shash,
-					buf, sz);
-	if (rc) {
-		cifssrv_debug("cmaces update error %d\n", rc);
-		goto out;
+	for (i = 0; i < n_vec; i++) {
+		rc = crypto_shash_update(
+				&chann->server->secmech.sdesccmacaes->shash,
+				iov[i].iov_base, iov[i].iov_len);
+		if (rc) {
+			cifssrv_debug("cmaces update error %d\n", rc);
+			goto out;
+		}
 	}
 
 	rc = crypto_shash_final(&chann->server->secmech.sdesccmacaes->shash,

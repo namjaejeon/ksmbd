@@ -230,11 +230,11 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		struct cifssrv_sess *sess);
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 		int blob_len, struct cifssrv_sess *sess);
-int smb1_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 		char *sig);
-int smb2_sign_smbpdu(struct cifssrv_sess *sess, char *buf, int sz,
+int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 		char *sig);
-int smb3_sign_smbpdu(struct channel *chann, char *buf, int sz,
+int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 		char *sig);
 int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
 int compute_smb3xsigningkey(struct cifssrv_sess *sess,  __u8 *key,

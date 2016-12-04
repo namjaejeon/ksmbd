@@ -7320,6 +7320,7 @@ int smb1_check_sign_req(struct smb_work *work)
 	struct smb_hdr *rcv_hdr1 = (struct smb_hdr *)work->buf;
 	char signature_req[CIFS_SMB1_SIGNATURE_SIZE];
 	char signature[20];
+	struct kvec iov[1];
 
 	memcpy(signature_req, rcv_hdr1->Signature.SecuritySignature,
 			CIFS_SMB1_SIGNATURE_SIZE);
@@ -7327,9 +7328,10 @@ int smb1_check_sign_req(struct smb_work *work)
 		++work->sess->sequence_number;
 	rcv_hdr1->Signature.Sequence.Reserved = 0;
 
-	if (smb1_sign_smbpdu(work->sess, rcv_hdr1->Protocol,
-				be32_to_cpu(rcv_hdr1->smb_buf_length),
-				signature))
+	iov[0].iov_base = rcv_hdr1->Protocol;
+	iov[0].iov_len = be32_to_cpu(rcv_hdr1->smb_buf_length);
+
+	if (smb1_sign_smbpdu(work->sess, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, CIFS_SMB1_SIGNATURE_SIZE)) {
@@ -7349,14 +7351,26 @@ void smb1_set_sign_rsp(struct smb_work *work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
 	char signature[20];
+	struct kvec iov[2];
+	int n_vec = 1;
 
 	rsp_hdr->Flags2 |= SMBFLG2_SECURITY_SIGNATURE;
 	rsp_hdr->Signature.Sequence.SequenceNumber =
 		++work->sess->sequence_number;
 	rsp_hdr->Signature.Sequence.Reserved = 0;
-	if (smb1_sign_smbpdu(work->sess, rsp_hdr->Protocol,
-				be32_to_cpu(rsp_hdr->smb_buf_length),
-				signature))
+
+	iov[0].iov_base = rsp_hdr->Protocol;
+	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb_buf_length);
+
+	if (work->rdata_buf) {
+		iov[0].iov_len -= work->rdata_cnt;
+
+		iov[1].iov_base = work->rdata_buf;
+		iov[1].iov_len = work->rdata_cnt;
+		n_vec++;
+	}
+
+	if (smb1_sign_smbpdu(work->sess, iov, n_vec, signature))
 		memset(rsp_hdr->Signature.SecuritySignature,
 				0, CIFS_SMB1_SIGNATURE_SIZE);
 	else
