@@ -2041,6 +2041,13 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (req->NameLength) {
+		if ((req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
+			*(char *)req->Buffer == '\\') {
+			cifssrv_err("not allow directory name included leadning slash\n");
+			rc = -EINVAL;
+			goto err_out1;
+		}
+
 		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
 		if (IS_ERR(name)) {
 			rc = PTR_ERR(name);
