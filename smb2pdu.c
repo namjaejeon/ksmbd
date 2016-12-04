@@ -3862,6 +3862,18 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_infoclass_size = FILE_ALLOCATION_INFORMATION_SIZE;
 		break;
 	}
+	case FILE_POSITION_INFORMATION:
+	{
+		struct smb2_file_pos_info *file_info;
+		file_info = (struct smb2_file_pos_info *)rsp->Buffer;
+
+		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
+		rsp->OutputBufferLength =
+			cpu_to_le32(sizeof(struct smb2_file_pos_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_pos_info));
+		file_infoclass_size = FILE_POSITION_INFORMATION_SIZE;
+		break;
+	}
 	default:
 		cifssrv_debug("fileinfoclass %d not supported yet\n",
 			fileinfoclass);

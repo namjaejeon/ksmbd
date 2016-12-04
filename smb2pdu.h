@@ -1143,6 +1143,10 @@ struct smb2_file_disposition_info {
 	__u8 DeletePending;
 } __packed;
 
+struct smb2_file_pos_info {
+	__le64 CurrentByteOffset;
+} __packed;
+
 #define SL_RESTART_SCAN	0x00000001
 #define SL_RETURN_SINGLE_ENTRY	0x00000002
 #define SL_INDEX_SPECIFIED	0x00000004
