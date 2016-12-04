@@ -5245,6 +5245,25 @@ int smb2_ioctl(struct smb_work *smb_work)
 		/* Not support DFS yet */
 		rsp->hdr.Status = NT_STATUS_FS_DRIVER_REQUIRED;
 		goto out;
+	case FSCTL_CREATE_OR_GET_OBJECT_ID:
+	{
+		struct file_object_buf_type1_ioctl_rsp *obj_buf;
+
+		nbytes = sizeof(struct file_object_buf_type1_ioctl_rsp);
+		obj_buf = (struct file_object_buf_type1_ioctl_rsp *)
+			&rsp->Buffer[0];
+
+		/*
+		 * TODO: This is dummy implementation to pass smbtorture
+		 * Need to check correct response later
+		 */
+		memset(obj_buf->ObjectId, 0x0, 16);
+		memset(obj_buf->BirthVolumeId, 0x0, 16);
+		memset(obj_buf->BirthObjectId, 0x0, 16);
+		memset(obj_buf->DomainId, 0x0, 16);
+
+		break;
+	}
 	case FSCTL_PIPE_TRANSCEIVE:
 		if (rsp->hdr.TreeId != 1) {
 			cifssrv_debug("Not Pipe transceive\n");

@@ -735,6 +735,13 @@ struct network_interface_info_ioctl_rsp {
 	char	SockAddr_Storage[128];
 } __packed;
 
+struct file_object_buf_type1_ioctl_rsp {
+	__u8 ObjectId[16];
+	__u8 BirthVolumeId[16];
+	__u8 BirthObjectId[16];
+	__u8 DomainId[16];
+} __packed;
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
