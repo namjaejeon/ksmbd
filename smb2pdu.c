@@ -1101,12 +1101,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	req = (struct smb2_sess_setup_req *)smb_work->buf;
 	rsp = (struct smb2_sess_setup_rsp *)smb_work->rsp_buf;
 
-	if (server->tcp_status != CifsNeedNegotiate) {
-		cifssrv_err("server->tcp_status is not CifsNeedNegotiate\n");
-		smb_work->send_no_response = 1;
-		return 0;
-	}
-
 	cifssrv_debug("Received request for session setup\n");
 	if (req->StructureSize != 25) {
 		cifssrv_err("malformed packet\n");
@@ -1135,6 +1129,15 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		INIT_LIST_HEAD(&sess->cifssrv_chann_list);
 		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
 		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
+
+		INIT_LIST_HEAD(&sess->tcon_list);
+		sess->tcon_count = 0;
+		sess->valid = 1;
+		server->sess_count++;
+		rc = init_fidtable(&sess->fidtable);
+		if (rc < 0)
+			goto out_err;
+
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
@@ -1406,15 +1409,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			}
 		}
 
-
-		INIT_LIST_HEAD(&sess->tcon_list);
-		sess->tcon_count = 0;
-		sess->valid = 1;
-		server->sess_count++;
-		rc = init_fidtable(&sess->fidtable);
-		if (rc < 0)
-			goto out_err;
-
 		server->tcp_status = CifsGood;
 		sess->state = SMB2_SESSION_VALID;
 		smb_work->sess = sess;
@@ -1444,6 +1438,7 @@ out_err:
 				}
 			}
 		}
+		destroy_fidtable(sess);
 		kfree(sess);
 		smb_work->sess = NULL;
 	}
