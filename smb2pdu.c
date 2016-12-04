@@ -2429,6 +2429,8 @@ reconnect:
 	fp->persistent_id = persistent_id;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
+	fp->coption = req->CreateOptions;
+	fp->fattr = req->FileAttributes;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -3368,6 +3370,10 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		if (strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
 			continue;
 
+		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
+					CREATION_TIME_PREFIX_LEN))
+			continue;
+
 		if (req->InputBufferLength &&
 				(strncmp(&name[XATTR_USER_PREFIX_LEN],
 					 ea_req->name, ea_req->EaNameLength)))
@@ -3870,6 +3876,51 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_infoclass_size = FILE_POSITION_INFORMATION_SIZE;
 		break;
 	}
+	case FILE_MODE_INFORMATION:
+	{
+		struct smb2_file_mode_info *file_info;
+
+		file_info = (struct smb2_file_mode_info *)rsp->Buffer;
+		file_info->Mode = fp->coption & FILE_MODE_INFO_MASK;
+		rsp->OutputBufferLength =
+			cpu_to_le32(sizeof(struct smb2_file_mode_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_mode_info));
+		file_infoclass_size = FILE_MODE_INFORMATION_SIZE;
+		break;
+	}
+	case FILE_COMPRESSION_INFORMATION:
+	{
+		struct smb2_file_comp_info *file_info;
+
+		file_info = (struct smb2_file_comp_info *)rsp->Buffer;
+		file_info->CompressedFileSize = cpu_to_le64(stat.blocks << 9);
+		file_info->CompressionFormat = COMPRESSION_FORMAT_NONE;
+		file_info->CompressionUnitShift = 0;
+		file_info->ChunkShift = 0;
+		file_info->ClusterShift = 0;
+		memset(&file_info->Reserved[0], 0, 3);
+
+		rsp->OutputBufferLength =
+			cpu_to_le32(sizeof(struct smb2_file_comp_info));
+		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_comp_info));
+		file_infoclass_size = FILE_COMPRESSION_INFORMATION_SIZE;
+		break;
+	}
+	case FILE_ATTRIBUTE_TAG_INFORMATION:
+	{
+		struct smb2_file_attr_tag_info *file_info;
+
+		file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
+		file_info->FileAttributes = fp->fattr;
+		file_info->ReparseTag = 0;
+		rsp->OutputBufferLength =
+			cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
+		inc_rfc1001_len(rsp_org,
+			sizeof(struct smb2_file_attr_tag_info));
+		file_infoclass_size = FILE_ATTRIBUTE_TAG_INFORMATION_SIZE;
+		break;
+	}
+
 	default:
 		cifssrv_debug("fileinfoclass %d not supported yet\n",
 			fileinfoclass);

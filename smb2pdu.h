@@ -919,6 +919,7 @@ struct smb2_set_info_rsp {
 #define FILE_QUOTA_INFORMATION_SIZE           32
 #define FILE_REPARSE_POINT_INFORMATION_SIZE   33
 #define FILE_NETWORK_OPEN_INFORMATION_SIZE    56
+#define FILE_ATTRIBUTE_TAG_INFORMATION_SIZE   8
 
 
 /* FS Info response  size */
@@ -1156,6 +1157,34 @@ struct smb2_file_disposition_info {
 
 struct smb2_file_pos_info {
 	__le64 CurrentByteOffset;
+} __packed;
+
+#define FILE_MODE_INFO_MASK cpu_to_le32(0x0000103e)
+
+struct smb2_file_mode_info {
+	__le32 Mode;
+} __packed;
+
+#define COMPRESSION_FORMAT_NONE 0x0000
+#define COMPRESSION_FORMAT_LZNT1 0x0002
+
+struct smb2_file_comp_info {
+	__le64 CompressedFileSize;
+	__le16 CompressionFormat;
+	__u8 CompressionUnitShift;
+	__u8 ChunkShift;
+	__u8 ClusterShift;
+	__u8 Reserved[3];
+} __packed;
+
+struct smb2_file_attr_tag_info {
+	__le32 FileAttributes;
+	__le32 ReparseTag;
+} __packed;
+
+struct smb2_file_attr_tag_info {
+	__le32 FileAttributes;
+	__le32 ReparseTag;
 } __packed;
 
 #define SL_RESTART_SCAN	0x00000001

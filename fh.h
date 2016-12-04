@@ -94,6 +94,8 @@ struct cifssrv_file {
 	uint32_t tid;
 	__le32 daccess;
 	__le32 saccess;
+	__le32 coption;
+	__le32 fattr;
 	__u64 create_time;
 };
 
