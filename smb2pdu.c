@@ -1893,6 +1893,14 @@ int smb2_open(struct smb_work *smb_work)
 		return create_smb2_pipe(smb_work);
 	}
 
+	if (req->ImpersonationLevel > IL_DELEGATE) {
+		cifssrv_err("Invalid impersonationlevel : 0x%x\n",
+			le32_to_cpu(req->ImpersonationLevel));
+		rc = -EIO;
+		rsp->hdr.Status = NT_STATUS_BAD_IMPERSONATION_LEVEL;
+		goto err_out1;
+	}
+
 	if (req->CreateOptions && !(req->CreateOptions & CREATE_OPTIONS_MASK)) {
 		cifssrv_err("Invalid create options : 0x%x\n",
 			le32_to_cpu(req->CreateOptions));
