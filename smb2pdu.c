@@ -2450,8 +2450,9 @@ reconnect:
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-	rsp->AllocationSize = cpu_to_le64(stat.blocks << 9);
-	rsp->EndofFile = cpu_to_le64(stat.size);
+	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.blocks << 9);
+	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	rsp->FileAttributes = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
 
@@ -3635,8 +3636,10 @@ int smb2_info_file(struct smb_work *smb_work)
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 
-		sinfo->AllocationSize = cpu_to_le64(stat.blocks << 9);
-		sinfo->EndOfFile = cpu_to_le64(stat.size);
+		sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.blocks << 9);
+		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.size);
 		sinfo->NumberOfLinks = cpu_to_le32(stat.nlink);
 		sinfo->DeletePending = 0;
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
@@ -3688,9 +3691,10 @@ int smb2_info_file(struct smb_work *smb_work)
 		file_info->Attributes = S_ISDIR(stat.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
 		file_info->Pad1 = 0;
-		file_info->AllocationSize =
-				cpu_to_le64(stat.blocks << 9);
-		file_info->EndOfFile = cpu_to_le64(stat.size);
+		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.blocks << 9);
+		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.size);
 		file_info->NumberOfLinks = cpu_to_le32(stat.nlink);
 		file_info->DeletePending = 0;
 		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
@@ -3804,9 +3808,10 @@ int smb2_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = S_ISDIR(stat.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
-		file_info->AllocationSize =
+		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 				cpu_to_le64(stat.blocks << 9);
-		file_info->EndOfFile = cpu_to_le64(stat.size);
+		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.size);
 		file_info->Reserved = cpu_to_le32(0);
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_ntwrk_info));
