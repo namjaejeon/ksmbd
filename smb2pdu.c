@@ -2430,6 +2430,7 @@ reconnect:
 	fp->persistent_id = persistent_id;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
+	fp->open_time = CURRENT_TIME;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -4355,6 +4356,8 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 	rc = smb_vfs_rename(smb_work->sess, NULL, new_name, old_fid);
 	if (rc == -ESHARE)
 		rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
+	else if (rc == -ENOTEMPTY)
+		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 	else if (rc < 0)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 

@@ -49,6 +49,8 @@
 #define cifssrv_find_next_zero_bit	find_next_zero_bit_le
 #define cifssrv_find_next_bit		find_next_bit_le
 
+#define GET_FILENAME_FILP(file)	file->filp->f_path.dentry->d_name.name
+
 struct tcp_server_info;
 struct cifssrv_sess;
 
@@ -74,6 +76,7 @@ struct cifssrv_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
+	struct timespec open_time;
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
 	struct smb_readdir_data	readdir_data;
@@ -151,6 +154,8 @@ void destroy_fidtable(struct cifssrv_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
 get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
+struct cifssrv_file *
+get_fp_from_fidtable_using_filename(struct cifssrv_sess *sess, char *filename);
 int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id);
 bool is_dir_empty(struct cifssrv_file *fp);
 unsigned int get_pipe_type(char *pipename);

@@ -145,7 +145,7 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -EACCES;
 	}
 
-	if (!(fp->saccess & FILE_SHARE_READ_LE)) {
+	if (fp->saccess && !(fp->saccess & FILE_SHARE_READ_LE)) {
 		cifssrv_err("no right(share access) to read(%llu)\n", fid);
 		return -ESHARE;
 	}
@@ -226,7 +226,7 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -EACCES;
 	}
 
-	if (!(fp->saccess & FILE_SHARE_WRITE_LE)) {
+	if (fp->saccess && !(fp->saccess & FILE_SHARE_WRITE_LE)) {
 		cifssrv_err("no right(share access) to write(%llu)\n", fid);
 		return -ESHARE;
 	}
@@ -708,6 +708,8 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		}
 		dnew_p = newpath_p.dentry;
 	} else {
+		struct cifssrv_file *parent_fp;
+
 		/* rename by fid of source file instead of source filename */
 		fp = get_id_from_fidtable(sess, oldfid);
 		if (!fp) {
@@ -715,16 +717,19 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 			return -ENOENT;
 		}
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		if (!(fp->saccess & FILE_SHARE_DELETE_LE)) {
-			cifssrv_err("no right(share access) to rename(%llu)\n",
-				oldfid);
-			return -ESHARE;
-		}
-#endif
-
 		filp = fp->filp;
 		dold_p = filp->f_path.dentry->d_parent;
+
+		parent_fp = get_fp_from_fidtable_using_filename(sess,
+			(char *)dold_p->d_name.name);
+		if (parent_fp && timespec_compare(&fp->open_time,
+				&parent_fp->open_time) > 0) {
+			if (!(!(parent_fp->daccess & FILE_DELETE_LE) &&
+				parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
+				cifssrv_err("no right(share access) to rename\n");
+				return -ESHARE;
+			}
+		}
 
 		newname = strrchr(abs_newname, '/');
 		if (newname && newname[1] != '\0') {
