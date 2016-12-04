@@ -1182,11 +1182,6 @@ struct smb2_file_attr_tag_info {
 	__le32 ReparseTag;
 } __packed;
 
-struct smb2_file_attr_tag_info {
-	__le32 FileAttributes;
-	__le32 ReparseTag;
-} __packed;
-
 #define SL_RESTART_SCAN	0x00000001
 #define SL_RETURN_SINGLE_ENTRY	0x00000002
 #define SL_INDEX_SPECIFIED	0x00000004
