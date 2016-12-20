@@ -896,10 +896,9 @@ int smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
 			return -ENOMEM;
 	}
 
+	*list = vlist;
 	err = vfs_listxattr(dentry, vlist, size);
-	if (err > 0) {
-		*list = vlist;
-	} else if (err == -ERANGE) {
+	if (err == -ERANGE) {
 		/* The file system tried to returned a list bigger
 		   than XATTR_LIST_MAX bytes. Not possible. */
 		err = -E2BIG;
