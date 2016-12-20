@@ -109,12 +109,10 @@ static int check_smb_hdr(struct smb_hdr *smb)
  *
  * Return:      0 on success, otherwise 1
  */
-static int check_smb2_hdr(struct smb2_hdr *smb)
+static inline int check_smb2_hdr(struct smb2_hdr *smb)
 {
 	if (!(smb->Flags & SMB2_FLAGS_SERVER_TO_REDIR))
 		return 0;
-
-	cifssrv_debug("Server sent request, not response\n");
 	return 1;
 }
 

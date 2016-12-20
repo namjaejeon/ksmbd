@@ -317,15 +317,9 @@ void queue_dynamic_work_helper(struct tcp_server_info *server)
  *
  * read remaining data from socket create and submit work.
  */
-void queue_dynamic_work(struct tcp_server_info *server)
+void queue_dynamic_work(struct tcp_server_info *server, char *buf)
 {
-	char *buf = server->smallbuf;
 	int ret;
-
-	if (server->wbuf)
-		buf = server->wbuf;
-	else if (server->large_buf)
-		buf = server->bigbuf;
 
 	dump_smb_msg(buf, HEADER_SIZE(server));
 
@@ -720,7 +714,7 @@ static int tcp_sess_kthread(void *p)
 
 		server->total_read += length;
 		if (length == pdu_length)
-			queue_dynamic_work(server);
+			queue_dynamic_work(server, buf);
 		else {
 			if (length > pdu_length)
 				cifssrv_debug("extra read(%d) expected(%u)\n",
