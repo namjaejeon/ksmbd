@@ -207,8 +207,11 @@ extern bool global_signing;
 
 /* CREATION TIME XATTR PREFIX */
 #define CREATION_TIME_PREFIX	"creation.time."
-#define CREATION_TIME_PREFIX_LEN	14
-#define CREATIOM_TIME_LEN 8
+#define CREATION_TIME_PREFIX_LEN	(sizeof(CREATION_TIME_PREFIX) - 1)
+#define CREATIOM_TIME_LEN		(sizeof(__u64))
+
+#define XATTR_NAME_CREATION_TIME	(XATTR_USER_PREFIX CREATION_TIME_PREFIX)
+#define XATTR_NAME_CREATION_TIME_LEN	(sizeof(XATTR_NAME_CREATION_TIME) - 1)
 
 enum statusEnum {
 	CifsNew = 0,

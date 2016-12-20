@@ -3413,10 +3413,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		eainfo->Flags = 0;
 		eainfo->EaNameLength = name_len;
 
-		if (!strncmp(name, CREATION_TIME_PREFIX,
-			CREATION_TIME_PREFIX_LEN))
-			continue;
-		else if (!strncmp(name, XATTR_USER_PREFIX,
+		if (!strncmp(name, XATTR_USER_PREFIX,
 			XATTR_USER_PREFIX_LEN))
 			strncpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);

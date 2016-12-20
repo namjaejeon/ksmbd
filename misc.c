@@ -492,23 +492,11 @@ int is_smb2_rsp(struct smb_work *smb_work)
 int smb_set_creation_time(struct path *path, __u64 create_time)
 {
 	int err;
-	char *attr_name;
 
-	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
-	if (!attr_name)
-		return -ENOMEM;
-
-	memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
-	memcpy(&attr_name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
-			CREATION_TIME_PREFIX_LEN);
-	attr_name[XATTR_USER_PREFIX_LEN + CREATION_TIME_PREFIX_LEN] = '\0';
-
-	err = smb_vfs_setxattr(NULL, path, attr_name, (void *)&create_time,
-		CREATIOM_TIME_LEN, 0);
+	err = smb_vfs_setxattr(NULL, path, XATTR_NAME_CREATION_TIME,
+			(void *)&create_time, CREATIOM_TIME_LEN, 0);
 	if (err)
 		cifssrv_debug("setxattr failed, err %d\n", err);
-
-	kfree(attr_name);
 
 	return err;
 }
@@ -532,8 +520,10 @@ __u64 smb_get_creation_time(struct path *path)
 			name += strlen(name) + 1) {
 		cifssrv_debug("%s, len %zd\n", name, strlen(name));
 
+		if (strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
+			continue;
 		if (strncmp(&name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
-			CREATION_TIME_PREFIX_LEN))
+					CREATION_TIME_PREFIX_LEN))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name,
