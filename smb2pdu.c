@@ -2634,11 +2634,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		ffdinfo->FileName[name_len - 2] = 0;
 		ffdinfo->FileName[name_len - 1] = 0;
 		ffdinfo->NextEntryOffset = next_entry_offset;
-		memset((char *)ffdinfo + sizeof(FILE_FULL_DIRECTORY_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				sizeof(FILE_FULL_DIRECTORY_INFO) - 1
-								+ name_len);
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
@@ -2663,11 +2658,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fbdinfo->FileName[name_len - 2] = 0;
 		fbdinfo->FileName[name_len - 1] = 0;
 		fbdinfo->NextEntryOffset = next_entry_offset;
-		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				sizeof(FILE_BOTH_DIRECTORY_INFO) - 1
-								+ name_len);
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	case FILE_DIRECTORY_INFORMATION:
@@ -2689,10 +2679,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fdinfo->FileName[name_len - 2] = 0;
 		fdinfo->FileName[name_len - 1] = 0;
 		fdinfo->NextEntryOffset = next_entry_offset;
-		memset((char *)fdinfo + sizeof(FILE_DIRECTORY_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				(sizeof(FILE_DIRECTORY_INFO) - 1 + name_len));
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	case FILE_NAMES_INFORMATION:
@@ -2714,10 +2700,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fninfo->FileName[name_len - 2] = 0;
 		fninfo->FileName[name_len - 1] = 0;
 		fninfo->NextEntryOffset = next_entry_offset;
-		memset((char *)fninfo + sizeof(FILE_NAMES_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				(sizeof(FILE_NAMES_INFO) - 1 + name_len));
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
@@ -2742,10 +2724,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		dinfo->FileName[name_len - 2] = 0;
 		dinfo->FileName[name_len - 1] = 0;
 		dinfo->NextEntryOffset = next_entry_offset;
-		memset((char *)dinfo + sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 +
-				name_len, '\0', next_entry_offset -
-				sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 + name_len);
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
@@ -2775,10 +2753,6 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		fibdinfo->FileName[name_len - 2] = 0;
 		fibdinfo->FileName[name_len - 1] = 0;
 		fibdinfo->NextEntryOffset = next_entry_offset;
-		memset((char *)fibdinfo + sizeof(FILE_ID_BOTH_DIRECTORY_INFO)
-			- 1 + name_len, '\0', next_entry_offset -
-			sizeof(FILE_ID_BOTH_DIRECTORY_INFO) - 1 + name_len);
-		*p =  (char *)(*p) + next_entry_offset;
 		break;
 	}
 	default:
@@ -2790,6 +2764,7 @@ static int smb2_populate_readdir_entry(struct tcp_server_info *server,
 		*last_entry_offset = *data_count;
 		*data_count += next_entry_offset;
 		*buf_len -= next_entry_offset;
+		*p =  (char *)(*p) + next_entry_offset;
 		kfree(utfname);
 	}
 	cifssrv_debug("info_level : %d, buf_len :%d,"
@@ -2954,7 +2929,9 @@ int smb2_query_dir(struct smb_work *smb_work)
 
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	bufptr = (char *)rsp->Buffer;
-	out_buf_len = le32_to_cpu(req->OutputBufferLength) -
+	out_buf_len = min(SMBMaxBufSize + MAX_HEADER_SIZE(server) -
+			(get_rfc1002_length(rsp_org) + 4),
+			le32_to_cpu(req->OutputBufferLength)) -
 		sizeof(struct smb2_query_directory_rsp);
 
 	do {
