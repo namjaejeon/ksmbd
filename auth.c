@@ -854,7 +854,7 @@ smb3signkey_ret:
 }
 
 int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
-	char *buf, __u8 *pi_hash)
+	char *buf, __u8 *old_hash, __u8 *new_hash)
 {
 	int rc = -1;
 	struct crypto_shash *c_shash;
@@ -882,7 +882,7 @@ int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
 	}
 
 	rc = crypto_shash_update(&c_sdesc->shash,
-				server->Preauth_HashValue, 64);
+				old_hash, 64);
 	if (rc) {
 		cifssrv_debug("could not update with n\n");
 		goto out;
@@ -894,7 +894,7 @@ int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
 		goto out;
 	}
 
-	rc = crypto_shash_final(&c_sdesc->shash, pi_hash);
+	rc = crypto_shash_final(&c_sdesc->shash, new_hash);
 	if (rc) {
 		cifssrv_debug("Could not generate hash err : %d\n", rc);
 		goto out;

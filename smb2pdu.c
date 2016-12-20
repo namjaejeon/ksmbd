@@ -997,8 +997,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 			return -EINVAL;
 		}
 
+		memset(server->Preauth_HashValue, 0, 64);
 		calc_preauth_integrity_hash(server, server->Preauth_HashId,
-			smb_work->buf, server->Preauth_HashValue);
+			smb_work->buf, server->Preauth_HashValue,
+			server->Preauth_HashValue);
 		assemble_neg_contexts(server, rsp);
 		break;
 	case SMB302_PROT_ID:
@@ -1048,7 +1050,6 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 	rsp->ServerStartTime = 0;
-	rsp->NegotiateContextOffset = cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 	cifssrv_debug("negotiate context count %d\n",
 				le16_to_cpu(rsp->NegotiateContextCount));
 
@@ -1083,7 +1084,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 	if (server->dialect == SMB311_PROT_ID) {
 		calc_preauth_integrity_hash(server, server->Preauth_HashId,
-			smb_work->rsp_buf, server->Preauth_HashValue);
+			smb_work->rsp_buf, server->Preauth_HashValue,
+			server->Preauth_HashValue);
 	}
 
 	server->srv_sec_mode = rsp->SecurityMode;
@@ -1225,7 +1227,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	if (server->dialect == SMB311_PROT_ID) {
 		memcpy(sess->Preauth_HashValue, server->Preauth_HashValue, 64);
 		calc_preauth_integrity_hash(server, server->Preauth_HashId,
-			smb_work->buf, sess->Preauth_HashValue);
+			smb_work->buf, sess->Preauth_HashValue,
+			sess->Preauth_HashValue);
 	}
 
 	/* Check for previous session */
@@ -1258,6 +1261,15 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		CHALLENGE_MESSAGE *chgblob;
 
 		cifssrv_debug("negotiate phase\n");
+		if (server->dialect == SMB311_PROT_ID) {
+			memcpy(sess->Preauth_HashValue,
+				server->Preauth_HashValue, 64);
+			calc_preauth_integrity_hash(server,
+				server->Preauth_HashId, smb_work->buf,
+				sess->Preauth_HashValue,
+				sess->Preauth_HashValue);
+		}
+
 		rc = decode_ntlmssp_negotiate_blob(negblob,
 			le16_to_cpu(req->SecurityBufferLength), sess);
 		if (rc)
@@ -1314,18 +1326,16 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		/* Note: here total size -1 is done as
 		   an adjustment for 0 size blob */
 		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
-
-		if (server->dialect >= SMB30_PROT_ID) {
-			memcpy(sess->Preauth_HashValue,
-				server->Preauth_HashValue, 64);
-			calc_preauth_integrity_hash(server,
-				server->Preauth_HashId, smb_work->rsp_buf,
-				sess->Preauth_HashValue);
-		}
-
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
+
+		if (server->dialect == SMB311_PROT_ID) {
+			calc_preauth_integrity_hash(server,
+				server->Preauth_HashId, smb_work->buf,
+				sess->Preauth_HashValue,
+				sess->Preauth_HashValue);
+		}
 
 		if (server->dialect >= SMB30_PROT_ID) {
 			chann = lookup_chann_list(sess);
@@ -1446,6 +1456,12 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 	}
 
+	if (server->dialect == SMB311_PROT_ID) {
+		calc_preauth_integrity_hash(server,
+			server->Preauth_HashId, smb_work->rsp_buf,
+			sess->Preauth_HashValue,
+			sess->Preauth_HashValue);
+	}
 out_err:
 	if (server->use_spnego && server->mechToken)
 		kfree(server->mechToken);
