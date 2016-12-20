@@ -508,6 +508,8 @@ int smb_set_creation_time(struct path *path, __u64 create_time)
 	if (err)
 		cifssrv_debug("setxattr failed, err %d\n", err);
 
+	kfree(attr_name);
+
 	return err;
 }
 
@@ -520,10 +522,10 @@ __u64 smb_get_creation_time(struct path *path)
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
 		XATTR_LIST_MAX);
 	if (xattr_list_len < 0) {
-		return 0;
+		goto out;
 	} else if (!xattr_list_len) {
 		cifssrv_debug("empty xattr in the file\n");
-		return 0;
+		goto out;
 	}
 
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
@@ -542,6 +544,10 @@ __u64 smb_get_creation_time(struct path *path)
 		}
 		break;
 	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
 
 	return create_time;
 }
