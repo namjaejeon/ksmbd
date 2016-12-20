@@ -512,9 +512,6 @@ again:
 		goto nosend;
 	}
 
-	if (is_chained_smb2_message(smb_work))
-		goto chained;
-
 send:
 	/* call set_rsp_credits() function to set number of credits granted in
 	 * hdr of smb2 response.
@@ -526,6 +523,9 @@ send:
 		server->ops->is_sign_req &&
 		server->ops->is_sign_req(smb_work, command))
 		server->ops->set_sign_rsp(smb_work);
+
+	if (is_chained_smb2_message(smb_work))
+		goto chained;
 
 	smb_send_rsp(smb_work);
 

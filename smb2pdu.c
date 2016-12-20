@@ -6041,21 +6041,35 @@ void smb2_set_sign_rsp(struct smb_work *work)
  */
 int smb3_check_sign_req(struct smb_work *work)
 {
-	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)work->buf;
+	struct smb2_hdr *hdr, *hdr_org;
 	struct channel *chann;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_CMACAES_SIZE];
 	struct kvec iov[1];
+	size_t len;
 
 	chann = lookup_chann_list(work->sess);
 	if (!chann)
 		return 0;
 
-	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
-	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = (struct smb2_hdr *)work->buf;
+	if (work->next_smb2_rcv_hdr_off)
+		hdr = (struct smb2_hdr *)((char *)hdr_org +
+				work->next_smb2_rcv_hdr_off);
 
-	iov[0].iov_base = rcv_hdr2->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+	if (!le32_to_cpu(hdr->NextCommand) &&
+			!work->next_smb2_rcv_hdr_off)
+		len = be32_to_cpu(hdr_org->smb2_buf_length);
+	else if (le32_to_cpu(hdr->NextCommand))
+		len = le32_to_cpu(hdr->NextCommand);
+	else
+		len = be32_to_cpu(hdr_org->smb2_buf_length) -
+			work->next_smb2_rcv_hdr_off;
+
+	memcpy(signature_req, hdr->Signature, SMB2_SIGNATURE_SIZE);
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	iov[0].iov_base = hdr->ProtocolId;
+	iov[0].iov_len = len;
 
 	if (smb3_sign_smbpdu(chann, iov, 1, signature))
 		return 0;
@@ -6075,30 +6089,53 @@ int smb3_check_sign_req(struct smb_work *work)
  */
 void smb3_set_sign_rsp(struct smb_work *work)
 {
-	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)work->rsp_buf;
+	struct smb2_hdr *req_hdr = (struct smb2_hdr *)work->buf;
+	struct smb2_hdr *hdr, *hdr_org;
 	struct channel *chann;
 	char signature[SMB2_CMACAES_SIZE];
 	struct kvec iov[2];
 	int n_vec = 1;
+	size_t len;
 
 	chann = lookup_chann_list(work->sess);
 	if (!chann)
 		return;
 
-	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
-	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = (struct smb2_hdr *)work->rsp_buf;
+	if (work->next_smb2_rsp_hdr_off)
+		hdr = (struct smb2_hdr *)((char *)hdr_org +
+				work->next_smb2_rsp_hdr_off);
 
-	iov[0].iov_base = rsp_hdr->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
+	req_hdr = (struct smb2_hdr *)((char *)req_hdr +
+			work->next_smb2_rcv_hdr_off);
 
+	if (!work->next_smb2_rsp_hdr_off) {
+		len = get_rfc1002_length(hdr_org);
+		if (le32_to_cpu(req_hdr->NextCommand)) {
+			/* Align the length to 8Byte  */
+			len = ((len + 7) & ~7);
+		}
+	} else {
+		len = get_rfc1002_length(hdr_org) -
+			work->next_smb2_rsp_hdr_off;
+		/* Align the length to 8Byte  */
+		len = ((len + 7) & ~7);
+	}
+
+	if (le32_to_cpu(req_hdr->NextCommand))
+		hdr->NextCommand = cpu_to_le32(len);
+
+	hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	iov[0].iov_base = hdr->ProtocolId;
+	iov[0].iov_len = len;
 	if (work->rdata_buf) {
 		iov[0].iov_len -= work->rdata_cnt;
-
 		iov[1].iov_base = work->rdata_buf;
 		iov[1].iov_len = work->rdata_cnt;
 		n_vec++;
 	}
 
 	if (!smb3_sign_smbpdu(chann, iov, n_vec, signature))
-		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }

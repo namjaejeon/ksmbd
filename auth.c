@@ -448,7 +448,9 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	if (sess->ntlmssp.client_flags & NTLMSSP_REQUEST_TARGET)
 		flags |= NTLMSSP_REQUEST_TARGET;
 
-	if (sess->ntlmssp.client_flags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+	if (sess->server->dialect >= SMB30_PROT_ID &&
+			(sess->ntlmssp.client_flags &
+			 NTLMSSP_NEGOTIATE_EXTENDED_SEC))
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
