@@ -2580,7 +2580,7 @@ err_out1:
 		if (filp != NULL && !IS_ERR(filp))
 			fput(filp);
 		if (fp != NULL)
-			kfree(fp);
+			kmem_cache_free(cifssrv_filp_cache, fp);
 		smb2_set_err_rsp(smb_work);
 	} else
 		server->stats.open_files_count++;

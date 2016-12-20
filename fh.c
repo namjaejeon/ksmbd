@@ -280,7 +280,7 @@ insert_id_in_fidtable(struct cifssrv_sess *sess, uint64_t sess_id,
 	struct cifssrv_file *fp = NULL;
 	struct fidtable *ftab;
 
-	fp = kzalloc(sizeof(struct cifssrv_file), GFP_KERNEL);
+	fp = kmem_cache_zalloc(cifssrv_filp_cache, GFP_NOFS);
 	if (!fp) {
 		cifssrv_err("Failed to allocate memory for id (%u)\n", id);
 		return NULL;
@@ -376,7 +376,7 @@ void delete_id_from_fidtable(struct cifssrv_sess *sess, unsigned int id)
 	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
-	kfree(fp);
+	kmem_cache_free(cifssrv_filp_cache, fp);
 	ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }

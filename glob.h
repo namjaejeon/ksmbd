@@ -57,6 +57,8 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
+extern struct kmem_cache *cifssrv_work_cache;
+extern struct kmem_cache *cifssrv_filp_cache;
 extern struct kmem_cache *cifssrv_req_cachep;
 extern mempool_t *cifssrv_req_poolp;
 extern struct kmem_cache *cifssrv_sm_req_cachep;

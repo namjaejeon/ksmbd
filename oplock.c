@@ -636,7 +636,7 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 		}
 #endif
 
-		work = kzalloc(sizeof(struct smb_work), GFP_KERNEL);
+		work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
 		if (!work) {
 			cifssrv_err("cannot allocate memory\n");
 			continue;
@@ -691,7 +691,7 @@ static int smb1_oplock_break_to_levelII(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kzalloc(sizeof(struct smb_work), GFP_KERNEL);
+	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
@@ -736,7 +736,7 @@ static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kzalloc(sizeof(struct smb_work), GFP_KERNEL);
+	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
@@ -1314,7 +1314,7 @@ void smb1_send_oplock_break(struct work_struct *work)
 			req->Fid, req->OplockLevel);
 	smb_send_rsp(smb_work);
 	mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
-	kfree(smb_work);
+	kmem_cache_free(cifssrv_work_cache, smb_work);
 	mutex_unlock(&server->srv_mutex);
 
 	atomic_dec(&server->req_running);
@@ -1740,7 +1740,7 @@ int smb_break_write_lease(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kzalloc(sizeof(struct smb_work), GFP_KERNEL);
+	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 

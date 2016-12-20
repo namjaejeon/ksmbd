@@ -31,6 +31,9 @@
 bool global_signing;
 unsigned long server_start_time;
 
+struct kmem_cache *cifssrv_work_cache;
+struct kmem_cache *cifssrv_filp_cache;
+
 struct kmem_cache *cifssrv_req_cachep;
 mempool_t *cifssrv_req_poolp;
 struct kmem_cache *cifssrv_sm_req_cachep;
@@ -270,7 +273,7 @@ out:
  */
 void queue_dynamic_work_helper(struct tcp_server_info *server)
 {
-	struct smb_work *work = kzalloc(sizeof(struct smb_work), GFP_KERNEL);
+	struct smb_work *work =	kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
 	if (!work) {
 		cifssrv_err("allocation for work failed\n");
 		return;
@@ -377,7 +380,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 
 	if (smb_work->rdata_buf)
 		vfree(smb_work->rdata_buf);
-	kfree(smb_work);
+	kmem_cache_free(cifssrv_work_cache, smb_work);
 }
 
 /**
@@ -892,8 +895,24 @@ static int smb_initialize_mempool(void)
 	if (cifssrv_rsp_poolp == NULL)
 		goto err_out8;
 
+	cifssrv_work_cache = kmem_cache_create("cifssrv_work_cache",
+					sizeof(struct smb_work), 0,
+					SLAB_HWCACHE_ALIGN, NULL);
+	if (cifssrv_work_cache == NULL)
+		goto err_out9;
+
+	cifssrv_filp_cache = kmem_cache_create("cifssrv_file_cache",
+					sizeof(struct cifssrv_file), 0,
+					SLAB_HWCACHE_ALIGN, NULL);
+	if (cifssrv_filp_cache == NULL)
+		goto err_out10;
+
 	return 0;
 
+err_out10:
+	kmem_cache_destroy(cifssrv_work_cache);
+err_out9:
+	mempool_destroy(cifssrv_rsp_poolp);
 err_out8:
 	kmem_cache_destroy(cifssrv_rsp_cachep);
 err_out7:
@@ -927,6 +946,9 @@ void smb_free_mempools(void)
 	kmem_cache_destroy(cifssrv_rsp_cachep);
 	mempool_destroy(cifssrv_sm_rsp_poolp);
 	kmem_cache_destroy(cifssrv_sm_rsp_cachep);
+
+	kmem_cache_destroy(cifssrv_work_cache);
+	kmem_cache_destroy(cifssrv_filp_cache);
 }
 
 /**
