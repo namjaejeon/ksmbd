@@ -3894,7 +3894,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		char *stream_name, *xattr_list = NULL, *stream_buf;
 		struct path *path = &filp->f_path;
 		ssize_t xattr_list_len, value_len;
-		int nbytes = 0, streamlen;
+		int nbytes = 0, streamlen, next;
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
@@ -3956,10 +3956,11 @@ int smb2_info_file(struct smb_work *smb_work)
 				cpu_to_le64(streamlen + value_len);
 			file_info->StreamAllocationSize =
 				cpu_to_le64(XATTR_SIZE_MAX);
-			nbytes +=
-				cpu_to_le32(sizeof(struct smb2_file_stream_info)
-					+ streamlen);
-			file_info->NextEntryOffset = nbytes;
+
+			next = sizeof(struct smb2_file_stream_info)
+				+ streamlen;
+			nbytes += next;
+			file_info->NextEntryOffset = cpu_to_le32(next);
 		}
 
 		/* last entry offset should be 0 */
