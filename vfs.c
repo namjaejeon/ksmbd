@@ -1055,6 +1055,36 @@ int smb_vfs_setxattr(const char *filename, struct path *fpath, const char *name,
 	return err;
 }
 
+int smb_vfs_truncate_xattr(struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t xattr_list_len;
+	int err = 0;
+
+	xattr_list_len = smb_vfs_listxattr(dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		cifssrv_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifssrv_debug("%s, len %zd\n", name, strlen(name));
+
+		err = vfs_removexattr(dentry, name);
+		if (err)
+			cifssrv_err("remove xattr failed : %s\n", name);
+	}
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+
+	return err;
+}
+
 /**
  * smb_vfs_set_fadvise() - convert smb IO caching options to linux options
  * @filp:	file pointer for IO

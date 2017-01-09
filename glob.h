@@ -574,6 +574,7 @@ int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start,
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
 int smb_vfs_alloc_size(struct file *filp, loff_t len);
+int smb_vfs_truncate_xattr(struct dentry *dentry);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct tcp_server_info *server);

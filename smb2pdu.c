@@ -2114,13 +2114,12 @@ int smb2_open(struct smb_work *smb_work)
 
 		stream = name;
 		name = strsep(&stream, ":");
-		convert_to_lowercase(stream);
 		cifssrv_debug("filename : %s, streams : %s\n", name, stream);
 		if (strchr(stream, ':')) {
 			int len, i;
 
 			data = stream;
-			len = get_pos_strnstr(data, ":$data", strlen(data));
+			len = get_pos_strnstr(data, ":$", strlen(data));
 
 			/* Check invalid character in stream name */
 			for (i = 0; i < len; i++) {
@@ -2136,6 +2135,7 @@ int smb2_open(struct smb_work *smb_work)
 			stream = strsep(&data, ":");
 			cifssrv_debug("streams : %s, data : %s\n", stream,
 				data);
+			convert_to_lowercase(data);
 			if (strncmp("$data", data, 5)) {
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -2284,6 +2284,13 @@ int smb2_open(struct smb_work *smb_work)
 			cifssrv_err("vfs_truncate failed, rc %d\n", rc);
 			goto err_out;
 		}
+
+		rc = smb_vfs_truncate_xattr(path.dentry);
+		if (rc) {
+			cifssrv_err("smb_vfs_truncate_xattr is failed, rc %d\n",
+				rc);
+			goto err_out;
+		}
 	}
 
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
@@ -2427,6 +2434,11 @@ reconnect:
 		cifssrv_close_id(&sess->fidtable, volatile_id);
 		rc = -ENOMEM;
 		goto err_out;
+	}
+
+	if (!S_ISDIR(file_inode(filp)->i_mode)) {
+		/* Create default stream in xattr */
+		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
 	}
 
 	if (stream) {

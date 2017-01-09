@@ -24,6 +24,8 @@
 #include "smb1pdu.h"
 #include "oplock.h"
 
+#include <linux/xattr.h>
+
 /**
  * alloc_fid_mem() - alloc memory for fid management
  * @size:	mem allocation request size
@@ -424,6 +426,14 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 		dentry = filp->f_path.dentry;
 		dir = dentry->d_parent;
 
+		if (fp->is_stream) {
+			err = vfs_removexattr(dentry, fp->stream_name);
+			if (err)
+				cifssrv_err("remove xattr failed : %s\n",
+					fp->stream_name);
+			goto out2;
+		}
+
 		dget(dentry);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
 		inode_lock(dir->d_inode);
@@ -458,6 +468,7 @@ out:
 	filp_close(filp, (struct files_struct *)filp);
 	delete_id_from_fidtable(sess, id);
 	cifssrv_close_id(&sess->fidtable, id);
+out2:
 	return 0;
 }
 

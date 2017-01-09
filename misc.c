@@ -502,7 +502,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags)
 {
-	char *name, *xattr_list = NULL;
+	char *name, *xattr_list = NULL, *tmp_a, *tmp_b;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
@@ -514,11 +514,23 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 		goto out;
 	}
 
+	tmp_a = kmalloc(p_len, GFP_KERNEL);
+	tmp_b = kmalloc(p_len, GFP_KERNEL);
+	if (!tmp_a || !tmp_b) {
+		xattr_list_len = -ENOMEM;
+		goto out;
+	}
+
+	memcpy(tmp_a, prefix, p_len);
+	convert_to_lowercase(tmp_a);
+
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
 		cifssrv_debug("%s, len %zd\n", name, strlen(name));
+		memcpy(tmp_b, name, p_len);
+		convert_to_lowercase(tmp_b);
 
-		if (strncmp(name, prefix, p_len))
+		if (strncmp(tmp_a, tmp_b, p_len))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
