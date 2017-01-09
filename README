@@ -51,16 +51,16 @@ mail address:
    i. HMAC-SHA256 Signing
    j. Secure negotiate
    k. Signing Update
+   l. Preautentication integrity(SMB 3.1.1)
 
  - Planned
    a. SMB direct(RDMA)
    b. Multi-channel
-   c. Preautentication integrity(SMB 3.1.1) (on-going)
-   d. Durable handle v2
-   e. Kerberos
-   f. persistent handles
-   g. directory lease
-   h. SMB encryption
+   c. Durable handle v2
+   d. Kerberos
+   e. persistent handles
+   f. directory lease
+   g. SMB encryption
 
 ================================================================================
 * CIFSSRV Architecture
