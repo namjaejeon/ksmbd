@@ -2114,13 +2114,28 @@ int smb2_open(struct smb_work *smb_work)
 
 		stream = name;
 		name = strsep(&stream, ":");
+		convert_to_lowercase(stream);
 		cifssrv_debug("filename : %s, streams : %s\n", name, stream);
 		if (strchr(stream, ':')) {
+			int len, i;
+
 			data = stream;
+			len = get_pos_strnstr(data, ":$data", strlen(data));
+
+			/* Check invalid character in stream name */
+			for (i = 0; i < len; i++) {
+				if (stream[i] == '/' || stream[i] == ':' ||
+					stream[i] == '\\') {
+					cifssrv_err("found invalid character : %c\n",
+						stream[i]);
+					rc = -ENOENT;
+					goto err_out1;
+				}
+			}
+
 			stream = strsep(&data, ":");
 			cifssrv_debug("streams : %s, data : %s\n", stream,
 				data);
-			convert_to_lowercase(data);
 			if (strncmp("$data", data, 5)) {
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -2128,7 +2143,6 @@ int smb2_open(struct smb_work *smb_work)
 				goto err_out1;
 			}
 		}
-		convert_to_lowercase(stream);
 	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
@@ -2677,6 +2691,8 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		else if (rc == -EACCES)
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		else if (rc == -ENOENT)
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
 
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;

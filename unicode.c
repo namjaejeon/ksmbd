@@ -178,6 +178,7 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 	int fromwords = fromlen / 2;
 	char tmp[NLS_MAX_CHARSET_SIZE];
 	__u16 ftmp;
+	int is_stream_data = 0;
 
 	/*
 	 * because the chars can be of varying widths, we need to take care
@@ -204,8 +205,14 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 
 		/* put converted char into 'to' buffer */
 		charlen = cifs_mapchar(&to[outlen], ftmp, codepage, mapchar);
-		if (!is_char_allowed(&to[outlen]))
-			return -EINVAL;
+
+		/* Skip invalid char for filename check for stream data */
+		if (to[outlen] == ':')
+			is_stream_data = 1;
+
+		if (likely(!is_stream_data))
+			if (!is_char_allowed(&to[outlen]))
+				return -EINVAL;
 		outlen += charlen;
 	}
 
