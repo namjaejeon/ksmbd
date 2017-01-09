@@ -519,6 +519,9 @@ send:
 	if (is_smb2_rsp(smb_work))
 		server->ops->set_rsp_credits(smb_work);
 
+	if (server->dialect == SMB311_PROT_ID)
+		smb3_preauth_hash_rsp(smb_work);
+
 	if (smb_work->sess && smb_work->sess->sign &&
 		server->ops->is_sign_req &&
 		server->ops->is_sign_req(smb_work, command))

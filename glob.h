@@ -654,4 +654,5 @@ extern int build_spnego_ntlmssp_neg_blob(unsigned char **pbuffer, u16 *buflen,
 extern int build_spnego_ntlmssp_auth_blob(unsigned char **pbuffer, u16 *buflen,
 		int neg_result);
 
+void smb3_preauth_hash_rsp(struct smb_work *smb_work);
 #endif /* __CIFSSRV_GLOB_H */
