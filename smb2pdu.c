@@ -2421,8 +2421,9 @@ reconnect:
 				GFP_KERNEL);
 
 		memcpy(stream_name, XATTR_NAME_STREAM, XATTR_NAME_STREAM_LEN);
-		memcpy(&stream_name[XATTR_NAME_STREAM_LEN], stream,
-			stream_size);
+		if (stream_size)
+			memcpy(&stream_name[XATTR_NAME_STREAM_LEN], stream,
+				stream_size);
 		stream_name[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
 
 		/* Check if there is stream prefix in xattr space */
@@ -3862,7 +3863,7 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_STREAM_INFORMATION:
 	{
 		struct smb2_file_stream_info *file_info;
-		char *stream_name, *xattr_list = NULL;
+		char *stream_name, *xattr_list = NULL, *stream_buf;
 		struct path *path = &filp->f_path;
 		ssize_t xattr_list_len, value_len;
 		int nbytes = 0, streamlen;
@@ -3881,23 +3882,40 @@ int smb2_info_file(struct smb_work *smb_work)
 		for (stream_name = xattr_list;
 			stream_name - xattr_list < xattr_list_len;
 			stream_name += strlen(stream_name) + 1) {
-			cifssrv_err("%s, len %zd\n",
-				stream_name, strlen(stream_name));
+			cifssrv_debug("%s, len %zd\n",
+					stream_name, strlen(stream_name));
 
-			if (strncmp(stream_name, STREAM_PREFIX,
-				STREAM_PREFIX_LEN))
+			if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
+				STREAM_PREFIX, STREAM_PREFIX_LEN))
 				continue;
 
-			streamlen = strlen(stream_name) - STREAM_PREFIX_LEN;
+			streamlen = strlen(stream_name) - (XATTR_USER_PREFIX_LEN
+				+ STREAM_PREFIX_LEN);
 
 			file_info = (struct smb2_file_stream_info *)
 				&rsp->Buffer[nbytes];
 
+			if (!streamlen) {
+				stream_buf = kmalloc(sizeof("::$DATA"),
+					GFP_KERNEL);
+				if (!stream_buf)
+					break;
+				sprintf(stream_buf, "%s", "::$DATA");
+				streamlen = sizeof("::$DATA");
+			} else {
+				stream_buf = kmalloc(7 + streamlen, GFP_KERNEL);
+				sprintf(stream_buf, ":%s%s",
+					&stream_name[XATTR_USER_PREFIX_LEN +
+					STREAM_PREFIX_LEN], ":$DATA");
+				streamlen += 7;
+			}
+
 			streamlen  = smbConvertToUTF16(
 					(__le16 *)file_info->StreamName,
-					&stream_name[STREAM_PREFIX_LEN],
+					stream_buf,
 					streamlen, server->local_nls, 0);
 			streamlen *= 2;
+			kfree(stream_buf);
 
 			file_info->StreamNameLength = cpu_to_le32(streamlen);
 
