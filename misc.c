@@ -487,23 +487,23 @@ int is_smb2_rsp(struct smb_work *smb_work)
 };
 #endif
 
-int smb_set_creation_time(struct path *path, __u64 create_time)
+int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
+	ssize_t v_len)
 {
 	int err;
 
-	err = smb_vfs_setxattr(NULL, path, XATTR_NAME_CREATION_TIME,
-			(void *)&create_time, CREATIOM_TIME_LEN, 0);
+	err = smb_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
 	if (err)
 		cifssrv_debug("setxattr failed, err %d\n", err);
 
 	return err;
 }
 
-__u64 smb_get_creation_time(struct path *path)
+ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
+	void *value, ssize_t v_len)
 {
 	char *name, *xattr_list = NULL;
-	int value_len, xattr_list_len;
-	__u64 create_time = 0;
+	ssize_t value_len = -ENOENT, xattr_list_len;
 
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
 		XATTR_LIST_MAX);
@@ -518,18 +518,13 @@ __u64 smb_get_creation_time(struct path *path)
 			name += strlen(name) + 1) {
 		cifssrv_debug("%s, len %zd\n", name, strlen(name));
 
-		if (strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
-			continue;
-		if (strncmp(&name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
-					CREATION_TIME_PREFIX_LEN))
+		if (strncmp(name, prefix, p_len))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name,
-			(void *)&create_time, CREATIOM_TIME_LEN);
-		if (value_len < 0) {
+			value, v_len);
+		if (value_len < 0)
 			cifssrv_err("failed to get xattr in file\n");
-			create_time = 0;
-		}
 		break;
 	}
 
@@ -537,5 +532,16 @@ out:
 	if (xattr_list)
 		vfree(xattr_list);
 
-	return create_time;
+	return value_len;
+}
+
+void convert_to_lowercase(char *string)
+{
+	int i;
+	int len = strlen(string);
+
+	for (i = 0; i < len; i++) {
+		if (string[i] >= 'A' && string[i] <= 'Z')
+			string[i] = string[i] + 32;
+	}
 }

@@ -211,9 +211,14 @@ extern bool global_signing;
 #define CREATION_TIME_PREFIX	"creation.time."
 #define CREATION_TIME_PREFIX_LEN	(sizeof(CREATION_TIME_PREFIX) - 1)
 #define CREATIOM_TIME_LEN		(sizeof(__u64))
-
 #define XATTR_NAME_CREATION_TIME	(XATTR_USER_PREFIX CREATION_TIME_PREFIX)
 #define XATTR_NAME_CREATION_TIME_LEN	(sizeof(XATTR_NAME_CREATION_TIME) - 1)
+
+/* STREAM XATTR PREFIX */
+#define STREAM_PREFIX	"stream."
+#define STREAM_PREFIX_LEN	(sizeof(STREAM_PREFIX) - 1)
+#define XATTR_NAME_STREAM	(XATTR_USER_PREFIX STREAM_PREFIX)
+#define XATTR_NAME_STREAM_LEN	(sizeof(XATTR_NAME_STREAM) - 1)
 
 enum statusEnum {
 	CifsNew = 0,
@@ -524,8 +529,11 @@ extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
 				char *shortname);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 extern struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session);
-extern __u64 smb_get_creation_time(struct path *path);
-extern int smb_set_creation_time(struct path *path, __u64 create_time);
+extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
+	ssize_t v_len);
+extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
+	void *value, ssize_t v_len);
+extern void convert_to_lowercase(char *string);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
@@ -551,8 +559,8 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *oldname,
 int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		uint64_t fid, loff_t size);
 int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
-int smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-		char *xattr_buf, __u32 buf_len);
+ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
+		char *xattr_buf, ssize_t buf_len);
 int smb_vfs_setxattr(const char *filename, struct path *path, const char *name,
 		const void *value, size_t size, int flags);
 int smb_kern_path(char *name, unsigned int flags, struct path *path,

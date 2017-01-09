@@ -1883,6 +1883,9 @@ int smb2_open(struct smb_work *smb_work)
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
 	struct create_ea_buf_req *ea_buf = NULL;
 	int query_disk_id = 0;
+	char *stream = NULL;
+	char *stream_name = NULL;
+	int stream_size = 0;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -2106,6 +2109,27 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("converted name = %s\n", name);
+	if (strchr(name, ':')) {
+		char *data;
+
+		stream = name;
+		name = strsep(&stream, ":");
+		cifssrv_debug("filename : %s, streams : %s\n", name, stream);
+		if (strchr(stream, ':')) {
+			data = stream;
+			stream = strsep(&data, ":");
+			cifssrv_debug("streams : %s, data : %s\n", stream,
+				data);
+			convert_to_lowercase(data);
+			if (strncmp("$data", data, 5)) {
+				rsp->hdr.Status =
+					NT_STATUS_OBJECT_NAME_NOT_FOUND;
+				rc = -EIO;
+				goto err_out1;
+			}
+		}
+		convert_to_lowercase(stream);
+	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		/*
@@ -2147,7 +2171,8 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (file_present && (req->CreateDisposition == FILE_CREATE_LE)) {
+	if (file_present && (req->CreateDisposition == FILE_CREATE_LE) &&
+		!stream) {
 		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
 		rc = -EIO;
 		goto err_out;
@@ -2374,6 +2399,58 @@ reconnect:
 		goto err_out;
 	}
 
+	if (stream) {
+		stream_size = strlen(stream);
+		stream_name = kmalloc(XATTR_NAME_STREAM_LEN + stream_size,
+				GFP_KERNEL);
+
+		memcpy(stream_name, XATTR_NAME_STREAM, XATTR_NAME_STREAM_LEN);
+		memcpy(&stream_name[XATTR_NAME_STREAM_LEN], stream,
+			stream_size);
+		stream_name[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+
+		rc = smb_find_cont_xattr(&path, stream_name,
+				stream_size + XATTR_NAME_STREAM_LEN, NULL, 0);
+		if (rc < 0) {
+			if (!(req->CreateDisposition == FILE_OPEN_LE)) {
+				rc = smb_store_cont_xattr(&path, stream_name,
+					NULL, 0);
+				if (rc < 0) {
+					cifssrv_err("failed to store stream in EA, rc :%d\n",
+						rc);
+					rc = -EINVAL;
+					kfree(stream_name);
+					filp_close(filp,
+						(struct files_struct *)filp);
+					delete_id_from_fidtable(sess,
+						volatile_id);
+					cifssrv_close_id(&sess->fidtable,
+						volatile_id);
+					filp = NULL;
+					fp = NULL;
+					goto err_out;
+				}
+			} else {
+				cifssrv_err("failed to find stream in EA, rc : %d\n",
+						rc);
+				rsp->hdr.Status =
+					NT_STATUS_OBJECT_NAME_NOT_FOUND;
+				rc = -EIO;
+				kfree(stream_name);
+				filp_close(filp, (struct files_struct *)filp);
+				delete_id_from_fidtable(sess, volatile_id);
+				cifssrv_close_id(&sess->fidtable, volatile_id);
+				filp = NULL;
+				fp = NULL;
+				goto err_out;
+			}
+		}
+		rc = 0;
+		fp->is_stream = true;
+		fp->stream_name = stream_name;
+		fp->ssize = XATTR_NAME_STREAM_LEN + stream_size;
+	}
+
 	if (islink) {
 		fp->lfilp = lfilp;
 		fp->islink = islink;
@@ -2466,15 +2543,24 @@ reconnect:
 	rsp->Reserved = 0;
 	rsp->CreateAction = file_info;
 
-	if (file_present)
-		fp->create_time = smb_get_creation_time(&path);
-	else {
+	if (file_present) {
+		__u64 create_time;
+
+		rc = smb_find_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
+			XATTR_NAME_CREATION_TIME_LEN, (void *)&create_time,
+			CREATIOM_TIME_LEN);
+		if (rc > 0)
+			fp->create_time = create_time;
+		else
+			fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		rc = 0;
+	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
-		rc = smb_set_creation_time(&fp->filp->f_path, fp->create_time);
-		if (rc) {
+		rc = smb_store_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
+			(void *)&fp->create_time, CREATIOM_TIME_LEN);
+		if (rc)
 			cifssrv_debug("failed to store creation time in EA\n");
-			rc = 0;
-		}
+		rc = 0;
 	}
 
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
@@ -3330,7 +3416,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL;
 	int rc, name_len, value_len, xattr_list_len;
-	__u32 buf_free_len, alignment_bytes, rsp_data_cnt = 0;
+	ssize_t buf_free_len, alignment_bytes, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 
 	req = (struct smb2_query_info_req *)rq;
@@ -3378,6 +3464,10 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 
 		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], CREATION_TIME_PREFIX,
 					CREATION_TIME_PREFIX_LEN))
+			continue;
+
+		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
+					STREAM_PREFIX_LEN))
 			continue;
 
 		if (req->InputBufferLength &&
@@ -4468,8 +4558,9 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		if (le64_to_cpu(file_info->CreationTime)) {
 			fp->create_time = le64_to_cpu(file_info->CreationTime);
-			rc = smb_set_creation_time(&fp->filp->f_path,
-				fp->create_time);
+			rc = smb_store_cont_xattr(&fp->filp->f_path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time, CREATIOM_TIME_LEN);
 			if (rc) {
 				cifssrv_debug("failed to set creation time\n");
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;

@@ -151,18 +151,49 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	}
 #endif
 
+	rbuf = vmalloc(count);
+	if (!rbuf)
+		return -ENOENT;
+
+	if (fp->is_stream) {
+		char *stream_buf;
+		ssize_t v_len;
+
+		stream_buf = kzalloc(XATTR_SIZE_MAX, GFP_KERNEL);
+		if (!stream_buf) {
+			stream_buf = vmalloc(XATTR_SIZE_MAX);
+			if (!stream_buf) {
+				vfree(rbuf);
+				return -ENOMEM;
+			}
+		}
+
+		cifssrv_debug("read stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
+			fp->ssize, (void *)stream_buf, XATTR_SIZE_MAX);
+		if (v_len < 0) {
+			cifssrv_err("not found stream in xattr : %zd\n", v_len);
+			kvfree(stream_buf);
+			vfree(rbuf);
+			return -ENOENT;
+		}
+
+		memcpy(rbuf, &stream_buf[*pos], count);
+
+		*buf = rbuf;
+		kvfree(stream_buf);
+		return v_len > count ? count : v_len;
+	}
+
 	ret = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
 			F_RDLCK);
 	if (ret == -EAGAIN) {
 		cifssrv_err("%s: unable to read due to lock\n",
 				__func__);
+		vfree(rbuf);
 		return ret;
-	}
-
-	rbuf = vmalloc(count);
-	if (!rbuf) {
-		cifssrv_err("failed to alloc buf for size %zu\n", count);
-		return -ENOENT;
 	}
 
 	old_fs = get_fs();
@@ -233,6 +264,46 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 #endif
 
 	filp = fp->filp;
+
+	if (fp->is_stream) {
+		char *stream_buf;
+		size_t size, v_len;
+
+		stream_buf = kzalloc(XATTR_SIZE_MAX, GFP_KERNEL);
+		if (!stream_buf) {
+			stream_buf = vmalloc(XATTR_SIZE_MAX);
+			if (!stream_buf)
+				return -ENOMEM;
+		}
+
+		cifssrv_debug("write stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
+			fp->ssize, (void *)stream_buf, XATTR_SIZE_MAX);
+		if (v_len < 0) {
+			cifssrv_err("not found stream in xattr : %zd\n", v_len);
+			kvfree(stream_buf);
+			return -ENOENT;
+		}
+
+		size = *pos + count;
+		if (size > XATTR_SIZE_MAX)
+			size = XATTR_SIZE_MAX;
+
+		memcpy(&stream_buf[*pos], buf, count);
+
+		err = smb_store_cont_xattr(&filp->f_path, fp->stream_name,
+			(void *)stream_buf, size);
+		if (err < 0)
+			return err;
+
+		kvfree(stream_buf);
+		filp->f_pos = *pos;
+		*written = count;
+		return 0;
+	}
+
 	err = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
 			F_WRLCK);
 	if (err == -EAGAIN) {
@@ -917,8 +988,8 @@ int smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
  *
  * Return:	read xattr value length on success, otherwise error
  */
-int smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-		char *xattr_buf, __u32 buf_len)
+ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
+		char *xattr_buf, ssize_t buf_len)
 {
 	ssize_t xattr_len;
 	ssize_t ret;
@@ -926,9 +997,6 @@ int smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 	xattr_len = vfs_getxattr(dentry, xattr_name, NULL, 0);
 	if (xattr_len <= 0)
 		return xattr_len;
-
-	if (xattr_len > buf_len)
-		return -ENOMEM;
 
 	ret = vfs_getxattr(dentry, xattr_name, xattr_buf, xattr_len);
 	if (ret < 0)

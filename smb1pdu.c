@@ -3318,7 +3318,7 @@ int smb_get_ea(struct smb_work *smb_work, struct path *path)
 	struct fealist *eabuf = (struct fealist *)(smb_work->rsp_buf +
 			sizeof(TRANSACTION2_RSP) + 4);
 	struct fea *temp_fea;
-	__u32 buf_free_len;
+	ssize_t buf_free_len;
 	__u16 rsp_data_cnt = 4;
 
 	eabuf->list_len = cpu_to_le32(rsp_data_cnt);

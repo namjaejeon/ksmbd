@@ -376,6 +376,8 @@ void delete_id_from_fidtable(struct cifssrv_sess *sess, unsigned int id)
 	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
+	if (fp->is_stream)
+		kfree(fp->stream_name);
 	kmem_cache_free(cifssrv_filp_cache, fp);
 	ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);

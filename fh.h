@@ -97,6 +97,9 @@ struct cifssrv_file {
 	__le32 coption;
 	__le32 fattr;
 	__u64 create_time;
+	bool is_stream;
+	char *stream_name;
+	ssize_t ssize;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
