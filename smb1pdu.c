@@ -3087,12 +3087,6 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 
 	aclbuf = (struct cifs_posix_acl *)(smb_work->rsp_buf +
 			sizeof(TRANSACTION2_RSP) + 4);
-	buf = vmalloc(XATTR_SIZE_MAX);
-	if (!buf) {
-		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
-		rc = -ENOMEM;
-		goto out;
-	}
 
 	aclbuf->version = cpu_to_le16(CIFS_ACL_VERSION);
 	aclbuf->default_entry_count = 0;
@@ -3100,17 +3094,21 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 
 	/* check if POSIX_ACL_XATTR_ACCESS exists */
 	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_ACCESS,
-			buf, XATTR_SIZE_MAX);
-	if (value_len > 0)
+			&buf, 1);
+	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
+		kvfree(buf);
+	}
 
 	/* check if POSIX_ACL_XATTR_DEFAULT exists */
 	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_DEFAULT,
-			buf, XATTR_SIZE_MAX);
-	if (value_len > 0)
+			&buf, 1);
+	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_DEFAULT);
+		kvfree(buf);
+	}
 
 	if (rsp_data_cnt)
 		rsp_data_cnt += sizeof(struct cifs_posix_acl);
@@ -3130,9 +3128,9 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 	rsp->t2.Reserved1 = 0;
 	rsp->ByteCount = cpu_to_le16(rsp_data_cnt + 5);
 	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
-out:
+
 	if (buf)
-		vfree(buf);
+		kvfree(buf);
 	return rc;
 }
 
@@ -3313,7 +3311,7 @@ int smb_get_ea(struct smb_work *smb_work, struct path *path)
 {
 	struct tcp_server_info *server = smb_work->server;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
-	char *name, *ptr, *xattr_list = NULL;
+	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
 	struct fealist *eabuf = (struct fealist *)(smb_work->rsp_buf +
 			sizeof(TRANSACTION2_RSP) + 4);
@@ -3356,14 +3354,16 @@ int smb_get_ea(struct smb_work *smb_work, struct path *path)
 
 		ptr = (char *)(&temp_fea->name + name_len + 1);
 		buf_free_len -= (offsetof(struct fea, name) + name_len + 1);
-		/* bailout if xattr can't fit in buf_free_len */
-		value_len = smb_vfs_getxattr(path->dentry, name, ptr,
-				buf_free_len);
-		if (value_len < 0) {
-			rc = value_len;
+
+		value_len = smb_vfs_getxattr(path->dentry, name, &buf, 1);
+		if (value_len <= 0) {
+			rc = -ENOENT;
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 			goto out;
 		}
+
+		memcpy(ptr, buf, value_len);
+		kvfree(buf);
 
 		temp_fea->EA_flags = 0;
 		temp_fea->name_len = name_len;

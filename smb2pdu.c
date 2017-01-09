@@ -2409,6 +2409,7 @@ reconnect:
 			stream_size);
 		stream_name[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
 
+		/* Check if there is stream prefix in xattr space */
 		rc = smb_find_cont_xattr(&path, stream_name,
 				stream_size + XATTR_NAME_STREAM_LEN, NULL, 0);
 		if (rc < 0) {
@@ -2544,16 +2545,16 @@ reconnect:
 	rsp->CreateAction = file_info;
 
 	if (file_present) {
-		__u64 create_time;
+		char *create_time = NULL;
 
 		rc = smb_find_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
-			XATTR_NAME_CREATION_TIME_LEN, (void *)&create_time,
-			CREATIOM_TIME_LEN);
+			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 		if (rc > 0)
-			fp->create_time = create_time;
+			fp->create_time = *create_time;
 		else
 			fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		rc = 0;
+		kvfree(create_time);
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		rc = smb_store_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
@@ -3414,7 +3415,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp_org, *rsp;
 	struct smb2_ea_info *eainfo, *prev_eainfo;
-	char *name, *ptr, *xattr_list = NULL;
+	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
 	ssize_t buf_free_len, alignment_bytes, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
@@ -3483,13 +3484,15 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		buf_free_len -= (offsetof(struct smb2_ea_info, name) +
 				name_len + 1);
 		/* bailout if xattr can't fit in buf_free_len */
-		value_len = smb_vfs_getxattr(path->dentry, name, ptr,
-				buf_free_len);
-		if (value_len < 0) {
-			rc = value_len;
+		value_len = smb_vfs_getxattr(path->dentry, name, &buf, 1);
+		if (value_len <= 0) {
+			rc = -ENOENT;
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 			goto out;
 		}
+
+		memcpy(ptr, buf, value_len);
+		kvfree(buf);
 
 		ptr += value_len;
 		buf_free_len -= value_len;
@@ -4845,7 +4848,7 @@ int smb2_read(struct smb_work *smb_work)
 		goto out;
 	}
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
-		vfree(smb_work->rdata_buf);
+		kvfree(smb_work->rdata_buf);
 		smb_work->rdata_buf = NULL;
 		rsp->hdr.Status = NT_STATUS_END_OF_FILE;
 		smb2_set_err_rsp(smb_work);

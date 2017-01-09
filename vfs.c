@@ -150,40 +150,31 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ESHARE;
 	}
 #endif
-
-	rbuf = vmalloc(count);
-	if (!rbuf)
-		return -ENOENT;
+	rbuf = kzalloc(count, GFP_KERNEL);
+	if (!rbuf) {
+		rbuf = vmalloc(count);
+		if (!rbuf)
+			return -ENOMEM;
+	}
 
 	if (fp->is_stream) {
-		char *stream_buf;
 		ssize_t v_len;
-
-		stream_buf = kzalloc(XATTR_SIZE_MAX, GFP_KERNEL);
-		if (!stream_buf) {
-			stream_buf = vmalloc(XATTR_SIZE_MAX);
-			if (!stream_buf) {
-				vfree(rbuf);
-				return -ENOMEM;
-			}
-		}
+		char *stream_buf = NULL;
 
 		cifssrv_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
 		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, (void *)stream_buf, XATTR_SIZE_MAX);
+			fp->ssize, &stream_buf, 1);
 		if (v_len < 0) {
 			cifssrv_err("not found stream in xattr : %zd\n", v_len);
-			kvfree(stream_buf);
-			vfree(rbuf);
+			kvfree(rbuf);
 			return -ENOENT;
 		}
 
 		memcpy(rbuf, &stream_buf[*pos], count);
 
 		*buf = rbuf;
-		kvfree(stream_buf);
 		return v_len > count ? count : v_len;
 	}
 
@@ -192,7 +183,7 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	if (ret == -EAGAIN) {
 		cifssrv_err("%s: unable to read due to lock\n",
 				__func__);
-		vfree(rbuf);
+		kvfree(rbuf);
 		return ret;
 	}
 
@@ -207,7 +198,7 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 			name = "(error)";
 		cifssrv_err("smb read failed for (%s), err = %zd\n",
 				name, nbytes);
-		vfree(rbuf);
+		kvfree(rbuf);
 	} else {
 		*buf = rbuf;
 		filp->f_pos = *pos;
@@ -266,30 +257,40 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 	filp = fp->filp;
 
 	if (fp->is_stream) {
-		char *stream_buf;
+		char *stream_buf = NULL, *wbuf;
 		size_t size, v_len;
-
-		stream_buf = kzalloc(XATTR_SIZE_MAX, GFP_KERNEL);
-		if (!stream_buf) {
-			stream_buf = vmalloc(XATTR_SIZE_MAX);
-			if (!stream_buf)
-				return -ENOMEM;
-		}
 
 		cifssrv_debug("write stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
+		size = *pos + count;
+		if (size > XATTR_SIZE_MAX) {
+			size = XATTR_SIZE_MAX;
+			count = (*pos + count) - XATTR_SIZE_MAX;
+		}
+
 		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, (void *)stream_buf, XATTR_SIZE_MAX);
+			fp->ssize, &stream_buf, 1);
 		if (v_len < 0) {
 			cifssrv_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(stream_buf);
 			return -ENOENT;
 		}
 
-		size = *pos + count;
-		if (size > XATTR_SIZE_MAX)
-			size = XATTR_SIZE_MAX;
+		if (v_len < size) {
+			wbuf = kzalloc(size, GFP_KERNEL);
+			if (!wbuf) {
+				wbuf = vzalloc(size);
+				if (!wbuf)
+					return -ENOMEM;
+			}
+
+			if (v_len > 0) {
+				memcpy(wbuf, stream_buf, v_len);
+				kvfree(stream_buf);
+			}
+			stream_buf = wbuf;
+		}
 
 		memcpy(&stream_buf[*pos], buf, count);
 
@@ -984,25 +985,37 @@ int smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
  * @dentry:	dentry of file for getting xattrs
  * @xattr_name:	name of xattr name to query
  * @xattr_buf:	destination buffer xattr value
- * @buf_len:	destination buffer length
  *
  * Return:	read xattr value length on success, otherwise error
  */
 ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-		char *xattr_buf, ssize_t buf_len)
+	char **xattr_buf, int flags)
 {
 	ssize_t xattr_len;
-	ssize_t ret;
+	char *buf;
 
 	xattr_len = vfs_getxattr(dentry, xattr_name, NULL, 0);
 	if (xattr_len <= 0)
 		return xattr_len;
 
-	ret = vfs_getxattr(dentry, xattr_name, xattr_buf, xattr_len);
-	if (ret < 0)
-		cifssrv_debug("getxattr failed, ret %zd\n", ret);
+	if (!flags)
+		return xattr_len;
 
-	return ret;
+	buf = kzalloc(xattr_len, GFP_KERNEL);
+	if (!buf) {
+		buf = vzalloc(xattr_len);
+		if (!buf)
+			return -ENOMEM;
+	}
+
+	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf,
+		xattr_len);
+	if (xattr_len < 0)
+		cifssrv_debug("getxattr failed, ret %zd\n", xattr_len);
+	else
+		*xattr_buf = buf;
+
+	return xattr_len;
 }
 
 /**

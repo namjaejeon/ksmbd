@@ -532,7 +532,7 @@ extern struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session);
 extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 	ssize_t v_len);
 extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
-	void *value, ssize_t v_len);
+	char **value, int flags);
 extern void convert_to_lowercase(char *string);
 
 /* smb vfs functions */
@@ -560,7 +560,7 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		uint64_t fid, loff_t size);
 int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-		char *xattr_buf, ssize_t buf_len);
+		char **xattr_buf, int flags);
 int smb_vfs_setxattr(const char *filename, struct path *path, const char *name,
 		const void *value, size_t size, int flags);
 int smb_kern_path(char *name, unsigned int flags, struct path *path,

@@ -379,7 +379,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 		mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
 
 	if (smb_work->rdata_buf)
-		vfree(smb_work->rdata_buf);
+		kvfree(smb_work->rdata_buf);
 	kmem_cache_free(cifssrv_work_cache, smb_work);
 }
 

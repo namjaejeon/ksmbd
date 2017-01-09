@@ -500,7 +500,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 }
 
 ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
-	void *value, ssize_t v_len)
+	char **value, int flags)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
@@ -521,8 +521,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 		if (strncmp(name, prefix, p_len))
 			continue;
 
-		value_len = smb_vfs_getxattr(path->dentry, name,
-			value, v_len);
+		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
 		if (value_len < 0)
 			cifssrv_err("failed to get xattr in file\n");
 		break;
