@@ -2171,6 +2171,22 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
+	if (stream && (req->CreateOptions & FILE_DIRECTORY_FILE_LE)) {
+		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
+		rc = -EIO;
+		if (file_present)
+			goto err_out;
+		else
+			goto err_out1;
+	}
+
+	if (stream && !(req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
+			S_ISDIR(stat.mode)) {
+		rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
+		rc = -EIO;
+		goto err_out;
+	}
+
 	if (file_present && (req->CreateDisposition == FILE_CREATE_LE) &&
 		!stream) {
 		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
@@ -3846,29 +3862,67 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_STREAM_INFORMATION:
 	{
 		struct smb2_file_stream_info *file_info;
-		struct inode *inode;
-		struct kstat stat;
-		char *Streamname, streamlen;
+		char *stream_name, *xattr_list = NULL;
+		struct path *path = &filp->f_path;
+		ssize_t xattr_list_len, value_len;
+		int nbytes = 0, streamlen;
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
-		inode = filp->f_path.dentry->d_inode;
+		xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
+				XATTR_LIST_MAX);
+		if (xattr_list_len < 0) {
+			goto out;
+		} else if (!xattr_list_len) {
+			cifssrv_debug("empty xattr in the file\n");
+			goto out;
+		}
 
-		generic_fillattr(inode, &stat);
+		for (stream_name = xattr_list;
+			stream_name - xattr_list < xattr_list_len;
+			stream_name += strlen(stream_name) + 1) {
+			cifssrv_err("%s, len %zd\n",
+				stream_name, strlen(stream_name));
 
-		Streamname = "::$DATA";
+			if (strncmp(stream_name, STREAM_PREFIX,
+				STREAM_PREFIX_LEN))
+				continue;
+
+			streamlen = strlen(stream_name) - STREAM_PREFIX_LEN;
+
+			file_info = (struct smb2_file_stream_info *)
+				&rsp->Buffer[nbytes];
+
+			streamlen  = smbConvertToUTF16(
+					(__le16 *)file_info->StreamName,
+					&stream_name[STREAM_PREFIX_LEN],
+					streamlen, server->local_nls, 0);
+			streamlen *= 2;
+
+			file_info->StreamNameLength = cpu_to_le32(streamlen);
+
+			value_len = smb_vfs_getxattr(path->dentry, stream_name,
+				NULL, 0);
+			if (value_len < 0)
+				break;
+
+			file_info->StreamSize =
+				cpu_to_le64(streamlen + value_len);
+			file_info->StreamAllocationSize =
+				cpu_to_le64(XATTR_SIZE_MAX);
+			nbytes +=
+				cpu_to_le32(sizeof(struct smb2_file_stream_info)
+					+ streamlen);
+			file_info->NextEntryOffset = nbytes;
+		}
+
+		/* last entry offset should be 0 */
 		file_info->NextEntryOffset = 0;
-		streamlen  = smbConvertToUTF16(
-				(__le16 *)file_info->StreamName,
-				Streamname, PATH_MAX,
-				server->local_nls, 0);
-		streamlen *= 2;
-		file_info->StreamNameLength = cpu_to_le32(streamlen);
-		file_info->StreamSize = cpu_to_le64(stat.size);
-		file_info->StreamAllocationSize = cpu_to_le64(stat.blocks << 9);
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_stream_info) +
-					   streamlen);
+out:
+		if (xattr_list)
+			vfree(xattr_list);
+
+		rsp->OutputBufferLength = nbytes;
 		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;

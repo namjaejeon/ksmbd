@@ -558,7 +558,7 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *oldname,
 		char *newname, uint64_t oldfid);
 int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		uint64_t fid, loff_t size);
-int smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
+ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 		char **xattr_buf, int flags);
 int smb_vfs_setxattr(const char *filename, struct path *path, const char *name,

@@ -955,9 +955,9 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
  *
  * Return:	xattr list length on success, otherwise error
  */
-int smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
+ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
 {
-	int err;
+	ssize_t err;
 	char *vlist = NULL;
 
 	if (size) {
