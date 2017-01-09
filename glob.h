@@ -52,6 +52,7 @@
 #include <linux/vmalloc.h>
 #include <uapi/linux/xattr.h>
 #endif
+#include <linux/hashtable.h>
 #include "unicode.h"
 #include "fh.h"
 #include <crypto/hash.h>
@@ -86,6 +87,8 @@ extern char *netbios_name;
 extern char NEGOTIATE_GSS_HEADER[74];
 
 extern bool global_signing;
+
+extern struct hlist_head global_name_table[1024];
 
 /* cifssrv's Specific ERRNO */
 #define ESHARE 50000
@@ -535,6 +538,8 @@ extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags);
 extern void convert_to_lowercase(char *string);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
+extern int smb_check_shared_mode(struct file *filp,
+	struct cifssrv_file *curr_fp);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

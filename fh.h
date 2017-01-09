@@ -85,6 +85,7 @@ struct cifssrv_file {
 	/* oplock info */
 	struct ofile_info *ofile;
 	bool delete_on_close;
+	bool delete_pending;
 	bool is_nt_open;
 	bool lease_granted;
 	char LeaseKey[16];
@@ -95,11 +96,13 @@ struct cifssrv_file {
 	__le32 daccess;
 	__le32 saccess;
 	__le32 coption;
+	__le32 cdoption;
 	__le32 fattr;
 	__u64 create_time;
 	bool is_stream;
 	char *stream_name;
 	ssize_t ssize;
+	struct hlist_node node;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

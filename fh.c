@@ -422,11 +422,13 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 	else
 		filp = fp->filp;
 
+	hash_del(&fp->node);
+
 	if (fp->delete_on_close) {
 		dentry = filp->f_path.dentry;
 		dir = dentry->d_parent;
 
-		if (fp->is_stream) {
+		if (fp->is_stream && !fp->delete_pending) {
 			err = vfs_removexattr(dentry, fp->stream_name);
 			if (err)
 				cifssrv_err("remove xattr failed : %s\n",

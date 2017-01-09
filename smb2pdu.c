@@ -2436,6 +2436,18 @@ reconnect:
 		goto err_out;
 	}
 
+	if (S_ISDIR(stat.mode))
+		fp->readdir_data.dirent = NULL;
+
+	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
+		fp->delete_on_close = 1;
+
+	fp->cdoption = req->CreateDisposition;
+	fp->daccess = req->DesiredAccess;
+	fp->saccess = req->ShareAccess;
+	fp->coption = req->CreateOptions;
+	fp->fattr = req->FileAttributes;
+
 	if (!S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default stream in xattr */
 		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
@@ -2445,54 +2457,55 @@ reconnect:
 		stream_size = strlen(stream);
 		stream_name = kmalloc(XATTR_NAME_STREAM_LEN + stream_size,
 				GFP_KERNEL);
-
 		memcpy(stream_name, XATTR_NAME_STREAM, XATTR_NAME_STREAM_LEN);
+
 		if (stream_size)
 			memcpy(&stream_name[XATTR_NAME_STREAM_LEN], stream,
 				stream_size);
 		stream_name[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
 
+		fp->is_stream = true;
+		fp->stream_name = stream_name;
+		fp->ssize = XATTR_NAME_STREAM_LEN + stream_size;
+
 		/* Check if there is stream prefix in xattr space */
 		rc = smb_find_cont_xattr(&path, stream_name,
 				stream_size + XATTR_NAME_STREAM_LEN, NULL, 0);
 		if (rc < 0) {
-			if (!(req->CreateDisposition == FILE_OPEN_LE)) {
-				rc = smb_store_cont_xattr(&path, stream_name,
-					NULL, 0);
-				if (rc < 0) {
-					cifssrv_err("failed to store stream in EA, rc :%d\n",
-						rc);
-					rc = -EINVAL;
-					kfree(stream_name);
-					filp_close(filp,
-						(struct files_struct *)filp);
-					delete_id_from_fidtable(sess,
-						volatile_id);
-					cifssrv_close_id(&sess->fidtable,
-						volatile_id);
-					filp = NULL;
-					fp = NULL;
-					goto err_out;
-				}
-			} else {
+			if (fp->cdoption == FILE_OPEN_LE) {
 				cifssrv_err("failed to find stream in EA, rc : %d\n",
 						rc);
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
 				rc = -EIO;
-				kfree(stream_name);
-				filp_close(filp, (struct files_struct *)filp);
-				delete_id_from_fidtable(sess, volatile_id);
-				cifssrv_close_id(&sess->fidtable, volatile_id);
-				filp = NULL;
-				fp = NULL;
 				goto err_out;
 			}
+
+			rc = smb_check_shared_mode(filp, fp);
+			if (rc < 0)
+				goto err_out;
+
+			rc = smb_store_cont_xattr(&path, stream_name,
+					NULL, 0);
+			if (rc < 0) {
+				cifssrv_err("failed to store stream in EA, rc :%d\n",
+						rc);
+				rc = -EINVAL;
+				goto err_out;
+			}
+		} else {
+			rc = smb_check_shared_mode(filp, fp);
+			if (rc < 0)
+				goto err_out;
 		}
+
 		rc = 0;
-		fp->is_stream = true;
-		fp->stream_name = stream_name;
-		fp->ssize = XATTR_NAME_STREAM_LEN + stream_size;
+	} else {
+		if (!S_ISDIR(file_inode(filp)->i_mode)) {
+			rc = smb_check_shared_mode(filp, fp);
+			if (rc < 0)
+				goto err_out;
+		}
 	}
 
 	if (islink) {
@@ -2543,12 +2556,6 @@ reconnect:
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 	}
 
-	if (S_ISDIR(stat.mode))
-		fp->readdir_data.dirent = NULL;
-
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
-		fp->delete_on_close = 1;
-
 	/* Get Persistent-ID */
 	if (durable_reopened == false) {
 		durable_open = durable_open &&
@@ -2557,7 +2564,6 @@ reconnect:
 						       filp, durable_open);
 		if (rc < 0) {
 			cifssrv_err("failed to get persistent_id for file\n");
-			cifssrv_close_id(&sess->fidtable, volatile_id);
 			durable_open = false;
 			goto err_out;
 		} else {
@@ -2577,10 +2583,9 @@ reconnect:
 	}
 
 	fp->persistent_id = persistent_id;
-	fp->daccess = req->DesiredAccess;
-	fp->saccess = req->ShareAccess;
-	fp->coption = req->CreateOptions;
-	fp->fattr = req->FileAttributes;
+
+	/* Add fp to global file table using inode key. */
+	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -2705,14 +2710,19 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		else if (rc == -ENOENT)
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
+		else if (rc == -ESHARE)
+			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
+		else if (rc == -EBUSY)
+			rsp->hdr.Status = NT_STATUS_DELETE_PENDING;
 
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
-		if (filp != NULL && !IS_ERR(filp))
-			fput(filp);
-		if (fp != NULL)
-			kmem_cache_free(cifssrv_filp_cache, fp);
+		if (fp != NULL) {
+			filp_close(filp, (struct files_struct *)filp);
+			delete_id_from_fidtable(sess, volatile_id);
+			cifssrv_close_id(&sess->fidtable, volatile_id);
+		}
 		smb2_set_err_rsp(smb_work);
 	} else
 		server->stats.open_files_count++;
@@ -3385,7 +3395,6 @@ int smb2_close(struct smb_work *smb_work)
 	}
 	cifssrv_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
-
 
 	err = close_id(smb_work->sess, volatile_id, persistent_id);
 	if (err)

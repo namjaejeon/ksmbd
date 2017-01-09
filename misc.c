@@ -575,3 +575,109 @@ int get_pos_strnstr(const char *s1, const char *s2, size_t len)
 	}
 	return 0;
 }
+
+int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
+{
+	int rc = 0;
+	struct cifssrv_file *prev_fp;
+
+	/*
+	 * Lookup fp in global table, and check desired access and
+	 * shared mode between previous open and current open.
+	 */
+	hash_for_each_possible(global_name_table, prev_fp, node,
+			(unsigned long)file_inode(filp))
+		if (file_inode(filp) == GET_FP_INODE(prev_fp)) {
+			if (prev_fp->is_stream && curr_fp->is_stream) {
+				if (strcmp(prev_fp->stream_name,
+					curr_fp->stream_name)) {
+					continue;
+				}
+
+				if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
+					cifssrv_err("not allow FILE_SUPERSEDE_LE if file is already opened with ADS\n");
+					rc = -ESHARE;
+					break;
+				}
+			}
+
+			if (prev_fp->delete_pending) {
+				rc = -EBUSY;
+				break;
+			}
+
+			if (!(prev_fp->saccess & (FILE_SHARE_DELETE_LE)) &&
+					curr_fp->daccess & FILE_DELETE_LE) {
+				cifssrv_err("previous filename don't have share delete\n");
+				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+					prev_fp->saccess, curr_fp->daccess);
+				rc = -ESHARE;
+				break;
+			}
+
+			if (prev_fp->is_stream && curr_fp->delete_on_close) {
+				prev_fp->delete_pending = 1;
+				prev_fp->delete_on_close = 1;
+				curr_fp->delete_on_close = 0;
+			}
+
+			/*
+			 * Only check FILE_SHARE_DELETE if stream opened and
+			 * normal file opened.
+			 */
+			if (prev_fp->is_stream && !curr_fp->is_stream)
+				continue;
+
+			if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
+				curr_fp->daccess & (FILE_READ_DATA_LE |
+					FILE_GENERIC_READ_LE)) {
+				cifssrv_err("previous filename don't have share read\n");
+				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+					prev_fp->saccess, curr_fp->daccess);
+				rc = -ESHARE;
+				break;
+			}
+
+			if (!(prev_fp->saccess & (FILE_SHARE_WRITE_LE)) &&
+				curr_fp->daccess & (FILE_WRITE_DATA_LE |
+					FILE_GENERIC_WRITE_LE)) {
+				cifssrv_err("previous filename don't have share write\n");
+				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+					prev_fp->saccess, curr_fp->daccess);
+				rc = -ESHARE;
+				break;
+			}
+
+			if (prev_fp->daccess & (FILE_READ_DATA_LE |
+					FILE_GENERIC_READ_LE) &&
+				!(curr_fp->saccess & FILE_SHARE_READ_LE)) {
+				cifssrv_err("previous filename don't have desired read access\n");
+				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+					prev_fp->daccess, curr_fp->saccess);
+				rc = -ESHARE;
+				break;
+			}
+
+			if (prev_fp->daccess & (FILE_WRITE_DATA_LE |
+					FILE_GENERIC_WRITE_LE) &&
+				!(curr_fp->saccess & FILE_SHARE_WRITE_LE)) {
+				cifssrv_err("previous filename don't have desired write access\n");
+				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+					prev_fp->daccess, curr_fp->saccess);
+				rc = -ESHARE;
+				break;
+			}
+
+			if (prev_fp->daccess & FILE_DELETE_LE &&
+				!(curr_fp->saccess & FILE_SHARE_DELETE_LE)) {
+				cifssrv_err("previous filename don't have desired delete access\n");
+				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+					prev_fp->daccess, curr_fp->saccess);
+				rc = -ESHARE;
+				break;
+			}
+		}
+
+	return rc;
+}
+
