@@ -501,7 +501,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags)
 {
-	char *name, *xattr_list = NULL, *tmp_a, *tmp_b;
+	char *name, *xattr_list = NULL, *tmp_a = NULL, *tmp_b = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
@@ -541,7 +541,8 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 out:
 	if (xattr_list)
 		vfree(xattr_list);
-
+	kfree(tmp_a);
+	kfree(tmp_b);
 	return value_len;
 }
 
