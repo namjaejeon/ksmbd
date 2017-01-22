@@ -731,10 +731,10 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		char *abs_newname, uint64_t oldfid)
 {
 	struct path oldpath_p, newpath_p;
-	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap;
+	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap, *child_de;
 	char *oldname = NULL, *newname = NULL;
 	struct file *filp = NULL;
-	struct cifssrv_file *fp;
+	struct cifssrv_file *fp = NULL;
 	int err;
 
 	if (abs_oldname) {
@@ -780,8 +780,6 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		}
 		dnew_p = newpath_p.dentry;
 	} else {
-		struct cifssrv_file *parent_fp;
-
 		/* rename by fid of source file instead of source filename */
 		fp = get_id_from_fidtable(sess, oldfid);
 		if (!fp) {
@@ -791,17 +789,6 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 
 		filp = fp->filp;
 		dold_p = filp->f_path.dentry->d_parent;
-
-		parent_fp = get_fp_from_fidtable_using_filename(sess,
-			(char *)dold_p->d_name.name);
-		if (parent_fp && timespec_compare(&fp->open_time,
-				&parent_fp->open_time) > 0) {
-			if (!(!(parent_fp->daccess & FILE_DELETE_LE) &&
-				parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
-				cifssrv_err("no right(share access) to rename\n");
-				return -ESHARE;
-			}
-		}
 
 		newname = strrchr(abs_newname, '/');
 		if (newname && newname[1] != '\0') {
@@ -838,6 +825,20 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		dold = filp->f_path.dentry;
 		dget(dold);
 	}
+
+	spin_lock(&dold->d_lock);
+	list_for_each_entry(child_de, &dold->d_subdirs, d_child) {
+		struct cifssrv_file *child_fp;
+
+		child_fp = find_fp_in_hlist_using_inode(child_de->d_inode);
+		if (fp) {
+			cifssrv_debug("not allow to rename dir with opening sub file\n");
+			err = -ENOTEMPTY;
+			spin_unlock(&dold->d_lock);
+			goto out3;
+		}
+	}
+	spin_unlock(&dold->d_lock);
 
 	err = -ENOENT;
 	if (!dold->d_inode)

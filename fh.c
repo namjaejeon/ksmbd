@@ -332,37 +332,6 @@ get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id)
 }
 
 /**
- * get_fp_from_fidtable_using_filename() - get cifssrv file pointer for
- * a filename
- * @sess:	session of connection
- * @filename:	filename for lookup
- *
- * lookup a fid in fid table and return associated cifssrv file pointer
- *
- * Return:      cifssrv file pointer if success, otherwise NULL
- */
-struct cifssrv_file *
-get_fp_from_fidtable_using_filename(struct cifssrv_sess *sess, char *filename)
-{
-	struct cifssrv_file *file;
-	struct fidtable *ftab;
-	int id, len;
-
-	len = strlen(filename);
-	ftab = sess->fidtable.ftab;
-	for (id = CIFSSRV_START_FID; id < ftab->max_fids; id++) {
-		file = ftab->fileid[id];
-		if (file && !strncmp(GET_FILENAME_FILP(file), filename, len)) {
-			cifssrv_debug("found id(%d) using filename(%s)\n",
-				id, filename);
-			return file;
-		}
-	}
-
-	return NULL;
-}
-
-/**
  * delete_id_from_fidtable() - delete a fid from fid table
  * @server:	TCP server instance of connection
  * @id:		fid to be deleted from fid table

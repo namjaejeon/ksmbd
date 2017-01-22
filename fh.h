@@ -165,8 +165,6 @@ void destroy_fidtable(struct cifssrv_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifssrv_file *
 get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
-struct cifssrv_file *
-get_fp_from_fidtable_using_filename(struct cifssrv_sess *sess, char *filename);
 int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id);
 bool is_dir_empty(struct cifssrv_file *fp);
 unsigned int get_pipe_type(char *pipename);
