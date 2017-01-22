@@ -606,7 +606,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 			}
 
 			if (!(prev_fp->saccess & (FILE_SHARE_DELETE_LE)) &&
-					curr_fp->daccess & FILE_DELETE_LE) {
+					curr_fp->daccess & (FILE_DELETE_LE |
+				FILE_GENERIC_ALL_LE | FILE_MAXIMAL_ACCESS_LE)) {
 				cifssrv_err("previous filename don't have share delete\n");
 				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
@@ -629,7 +630,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 
 			if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
 				curr_fp->daccess & (FILE_READ_DATA_LE |
-					FILE_GENERIC_READ_LE)) {
+					FILE_GENERIC_READ_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE)) {
 				cifssrv_err("previous filename don't have share read\n");
 				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
@@ -639,7 +642,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 
 			if (!(prev_fp->saccess & (FILE_SHARE_WRITE_LE)) &&
 				curr_fp->daccess & (FILE_WRITE_DATA_LE |
-					FILE_GENERIC_WRITE_LE)) {
+					FILE_GENERIC_WRITE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE)) {
 				cifssrv_err("previous filename don't have share write\n");
 				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
@@ -648,7 +653,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 			}
 
 			if (prev_fp->daccess & (FILE_READ_DATA_LE |
-					FILE_GENERIC_READ_LE) &&
+					FILE_GENERIC_READ_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_READ_LE)) {
 				cifssrv_err("previous filename don't have desired read access\n");
 				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
@@ -658,7 +665,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 			}
 
 			if (prev_fp->daccess & (FILE_WRITE_DATA_LE |
-					FILE_GENERIC_WRITE_LE) &&
+					FILE_GENERIC_WRITE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_WRITE_LE)) {
 				cifssrv_err("previous filename don't have desired write access\n");
 				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
@@ -667,7 +676,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 				break;
 			}
 
-			if (prev_fp->daccess & FILE_DELETE_LE &&
+			if (prev_fp->daccess & (FILE_DELETE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_DELETE_LE)) {
 				cifssrv_err("previous filename don't have desired delete access\n");
 				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
