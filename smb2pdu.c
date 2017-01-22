@@ -3041,8 +3041,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	bufptr = (char *)rsp->Buffer;
-	out_buf_len = min(SMBMaxBufSize + MAX_HEADER_SIZE(server) -
-			(get_rfc1002_length(rsp_org) + 4),
+	out_buf_len = min_t(int,(SMBMaxBufSize + MAX_HEADER_SIZE(server) -
+			(get_rfc1002_length(rsp_org) + 4)),
 			le32_to_cpu(req->OutputBufferLength)) -
 		sizeof(struct smb2_query_directory_rsp);
 

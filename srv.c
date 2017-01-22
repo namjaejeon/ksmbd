@@ -996,7 +996,9 @@ static int __init init_smb_server(void)
 #endif
 	return 0;
 
+#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 err4:
+#endif
 	cifssrv_stop_forker_thread();
 err3:
 #ifdef CONFIG_CIFS_SMB2_SERVER
