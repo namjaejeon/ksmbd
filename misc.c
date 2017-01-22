@@ -680,3 +680,15 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 	return rc;
 }
 
+struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode)
+{
+	struct cifssrv_file *fp;
+
+	hash_for_each_possible(global_name_table, fp, node,
+			(unsigned long)inode)
+		if (inode == GET_FP_INODE(fp))
+			return fp;
+
+	return NULL;
+}
+

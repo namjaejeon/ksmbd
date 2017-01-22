@@ -540,6 +540,7 @@ extern void convert_to_lowercase(char *string);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifssrv_file *curr_fp);
+extern struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

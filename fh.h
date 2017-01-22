@@ -51,6 +51,7 @@
 
 #define GET_FILENAME_FILP(file)	file->filp->f_path.dentry->d_name.name
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
+#define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
 struct tcp_server_info;
 struct cifssrv_sess;

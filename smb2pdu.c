@@ -4324,6 +4324,8 @@ int smb2_set_info(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		else if (rc == -EINVAL)
 			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		else if (rc == -ESHARE)
+			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
 		else if (rsp->hdr.Status == 0)
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
@@ -4731,13 +4733,32 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	}
 
 	case FILE_RENAME_INFORMATION:
+	{
+		struct cifssrv_file *parent_fp;
+
 		if (!(fp->daccess & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifssrv_err("no right to delete : 0x%x\n", fp->daccess);
 			return -EACCES;
 		}
+
+		parent_fp = find_fp_in_hlist_using_inode(GET_PARENT_INO(fp));
+		if (parent_fp) {
+			if (parent_fp->saccess & FILE_SHARE_DELETE_LE &&
+					parent_fp->daccess & FILE_DELETE_LE) {
+				cifssrv_err("parent dir is opened with share delete and delete access\n");
+				return -ESHARE;
+			}
+
+			if (!(parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
+				cifssrv_err("parent dir is opened without share delete\n");
+				return -ESHARE;
+			}
+		}
+
 		rc = smb2_rename(smb_work, filp, id);
 		break;
+	}
 	case FILE_LINK_INFORMATION:
 		rc = smb2_create_link(smb_work, fp->filp);
 		break;
