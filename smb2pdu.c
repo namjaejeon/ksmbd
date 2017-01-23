@@ -4674,15 +4674,23 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		if (attrs.ia_valid) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+			struct dentry *dentry = fp->filp->f_path.dentry;
+			struct inode *inode = dentry->d_inode;
+#else
 			struct inode *inode = GET_FP_INODE(fp);
-
+#endif
 			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 				smb2_set_err_rsp(smb_work);
 				return -EPERM;
 			}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+			rc = setattr_prepare(dentry, &attrs);
+#else
 			rc = inode_change_ok(inode, &attrs);
+#endif
 			if (rc) {
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 				smb2_set_err_rsp(smb_work);
