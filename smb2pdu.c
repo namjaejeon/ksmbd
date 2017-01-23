@@ -2483,6 +2483,9 @@ reconnect:
 		fp->islink = islink;
 	}
 
+	/* Add fp to global file table using inode key. */
+	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
+
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	/* In case of durable reopen try to get BATCH oplock, irrespective
@@ -2535,6 +2538,7 @@ reconnect:
 		if (rc < 0) {
 			cifssrv_err("failed to get persistent_id for file\n");
 			durable_open = false;
+			hash_del(&fp->node);
 			goto err_out;
 		} else {
 			persistent_id = rc;
@@ -2553,9 +2557,6 @@ reconnect:
 	}
 
 	fp->persistent_id = persistent_id;
-
-	/* Add fp to global file table using inode key. */
-	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;

@@ -47,6 +47,23 @@ module_param(durable_enable, bool, 0644);
 MODULE_PARM_DESC(durable_enable, "Enable or disable lease. Default: y/Y/1");
 #endif
 
+void release_ofile(struct cifssrv_file *fp)
+{
+	struct cifssrv_file *tmp_fp;
+	struct ofile_info *ofile;
+
+	ofile = fp->ofile;
+	list_del(&fp->ofile->i_list);
+	fp->ofile = NULL;
+
+	hash_for_each_possible(global_name_table, tmp_fp, node,
+			(unsigned long)GET_FP_INODE(fp)) {
+		if (ofile == tmp_fp->ofile)
+			tmp_fp->ofile = NULL;
+	}
+	kfree(ofile);
+}
+
 /**
  * dispose_ofile_list() - free all memory allocated for ofile
  *
@@ -427,11 +444,8 @@ static void close_id_del_lease(struct tcp_server_info *server,
 	}
 
 out:
-	if (!atomic_read(&ofile->op_count)) {
-		list_del(&ofile->i_list);
-		kfree(ofile);
-		fp->ofile = NULL;
-	}
+	if (!atomic_read(&ofile->op_count))
+		release_ofile(fp);
 }
 #endif
 
@@ -493,11 +507,8 @@ void close_id_del_oplock(struct tcp_server_info *server,
 	atomic_dec(&ofile->op_count);
 
 out:
-	if (!atomic_read(&ofile->op_count)) {
-		list_del(&ofile->i_list);
-		kfree(ofile);
-		fp->ofile = NULL;
-	}
+	if (!atomic_read(&ofile->op_count))
+		release_ofile(fp);
 	mutex_unlock(&ofile_list_lock);
 }
 
