@@ -831,7 +831,7 @@ int smb_vfs_rename(struct cifssrv_sess *sess, char *abs_oldname,
 		struct cifssrv_file *child_fp;
 
 		child_fp = find_fp_in_hlist_using_inode(child_de->d_inode);
-		if (fp) {
+		if (child_fp) {
 			cifssrv_debug("not allow to rename dir with opening sub file\n");
 			err = -ENOTEMPTY;
 			spin_unlock(&dold->d_lock);
