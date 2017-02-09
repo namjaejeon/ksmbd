@@ -458,9 +458,6 @@ struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 		share = list_entry(tmp, struct cifssrv_share, list);
 		cifssrv_debug("comparing(%s) with treename %s\n",
 				sharename, share->sharename);
-		if (!strcasecmp(share->sharename, STR_IPC))
-			return share;
-
 		if (!strcasecmp(share->sharename, sharename)) {
 			rc = validate_host(server->peeraddr, share);
 			if (rc < 0) {
