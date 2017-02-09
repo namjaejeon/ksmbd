@@ -144,11 +144,6 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		cifssrv_err("no right to read(%llu)\n", fid);
 		return -EACCES;
 	}
-
-	if (fp->saccess && !(fp->saccess & FILE_SHARE_READ_LE)) {
-		cifssrv_err("no right(share access) to read(%llu)\n", fid);
-		return -ESHARE;
-	}
 #endif
 	rbuf = kzalloc(count, GFP_KERNEL);
 	if (!rbuf) {
@@ -246,11 +241,6 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 		cifssrv_err("no right to write(%llu)\n", fid);
 		return -EACCES;
-	}
-
-	if (fp->saccess && !(fp->saccess & FILE_SHARE_WRITE_LE)) {
-		cifssrv_err("no right(share access) to write(%llu)\n", fid);
-		return -ESHARE;
 	}
 #endif
 
