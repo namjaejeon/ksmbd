@@ -2079,6 +2079,7 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("converted name = %s\n", name);
+#ifdef CONFIG_CIFSSRV_STREAM_SUPPORT
 	if (strchr(name, ':')) {
 		char *data;
 
@@ -2114,6 +2115,7 @@ int smb2_open(struct smb_work *smb_work)
 			}
 		}
 	}
+#endif
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		/*
