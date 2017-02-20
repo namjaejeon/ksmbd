@@ -261,53 +261,26 @@ static void cifssrv_user_free(void)
 	}
 }
 
-/**
- * init_2_strings() - allocate and initialize two strings from src string
- * @src:	src string contains two stings delimated by ":"
- * @str1:	allocated and intialized by string prior to ":" in src
- * @str2:	allocated and intialized by string after ":" in src
- * @len:	length of src string
- *
- * Return:      0 on success, -ENOMEM on error
- */
-static int init_2_strings(const char *src, char **str1, char **str2, int len)
+static int parse_user_strings(const char *src, char **str, int exp_num)
 {
-	int idx;
-	int idx2;
-	char *pos;
+	int s_num = 0, pos = 0;
+	ssize_t len;
 
-	if (src[len - 1] == '\n')
-		len--;
+	while (s_num < exp_num) {
+		len = strcspn(&src[pos], (const char *)":") + 1;
+		if (!len)
+			break;
 
-	pos = strnchr(src, len, ':');
-	if (!pos)
-		return -EINVAL;
+		str[s_num] = kmalloc(len, GFP_KERNEL);
+		if (!str[s_num])
+			break;
 
-	idx = (int)(pos - src);
-	if (idx <= 0)
-		return -EINVAL;
-
-	idx2 = len - idx - 1;
-
-	*str1 = kmalloc(idx + 1, GFP_NOFS);
-	if (!*str1)
-		return -ENOMEM;
-
-	*str2 = kmalloc(idx2 + 1, GFP_NOFS);
-	if (!*str2) {
-		kfree(*str1);
-		return -ENOMEM;
+		strlcpy(str[s_num], &src[pos], len);
+		s_num++;
+		pos = len;
 	}
 
-	memcpy(*str1, src, idx);
-	*(*str1 + idx) = '\0';
-
-	src += (idx + 1);
-
-	memcpy(*str2, src, idx2);
-	*(*str2 + idx2) = '\0';
-
-	return 0;
+	return s_num;
 }
 
 /**
@@ -672,26 +645,30 @@ static ssize_t share_store(struct kobject *kobj,
 			   struct kobj_attribute *kobj_attr,
 			   const char *buf, size_t len)
 {
-	char *share[1], *path[1];
+	char *share, *path;
 	int rc;
+	char *parse_ptr[2];
 
-	rc = init_2_strings(buf, share, path, len);
-	if (rc)
-		return rc;
+	rc = parse_user_strings(buf, parse_ptr, 2);
+	if (rc < 2)
+		return -EINVAL;
+
+	share = parse_ptr[0];
+	path = parse_ptr[1];
 
 	/* check if sharepath is already exported */
-	rc = check_sharepath(*path);
+	rc = check_sharepath(path);
 	if (!rc) {
-		cifssrv_err("path %s is already exported\n", *path);
-		kfree(*share);
-		kfree(*path);
+		cifssrv_err("path %s is already exported\n", path);
+		kfree(share);
+		kfree(path);
 		return -EEXIST;
 	}
 
-	rc = add_share(*share, *path);
+	rc = add_share(share, path);
 	if (rc) {
-		kfree(*share);
-		kfree(*path);
+		kfree(share);
+		kfree(path);
 		return rc;
 	}
 
@@ -742,28 +719,30 @@ static ssize_t user_store(struct kobject *kobj,
 			  struct kobj_attribute *kobj_attr,
 			  const char *buf, size_t len)
 {
-	char *usrname[1], *passwd[1];
+	char *usrname, *passwd;
 	int rc;
+	char *parse_ptr[2];
 
-	rc = init_2_strings(buf, usrname, passwd, len);
-	if (rc) {
-		if (rc == -EINVAL) {
-			cifssrv_err("[%s] <usr:pass> format err\n", __func__);
-			return len;
-		}
-		return rc;
+	rc = parse_user_strings(buf, parse_ptr, 2);
+	if (rc < 2) {
+		kfree(parse_ptr[0]);
+		cifssrv_err("[%s] <usr:pass> format err\n", __func__);
+		return -EINVAL;
 	}
 
+	usrname = parse_ptr[0];
+	passwd = parse_ptr[1];
+
 	/* check if user is already present*/
-	rc = getUser(*usrname, *passwd);
+	rc = getUser(usrname, passwd);
 	if (!rc) {
-		kfree(*usrname);
-		kfree(*passwd);
+		kfree(usrname);
+		kfree(passwd);
 	} else {
-		rc = add_user(*usrname, *passwd);
-		kfree(*passwd);
+		rc = add_user(usrname, passwd);
+		kfree(passwd);
 		if (rc) {
-			kfree(*usrname);
+			kfree(usrname);
 			if (rc == -ENOMEM)
 				return -ENOMEM;
 		}
