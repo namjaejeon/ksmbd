@@ -2560,9 +2560,10 @@ reconnect:
 
 	fp->persistent_id = persistent_id;
 
-	i_uid_write(GET_FP_INODE(fp), sess->usr->uid.val);
-	i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
-
+	if (!file_present) {
+		i_uid_write(GET_FP_INODE(fp), sess->usr->uid.val);
+		i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
+	}
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
 	rsp->Reserved = 0;
