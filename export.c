@@ -212,7 +212,7 @@ static void cleanup_bad_share(struct cifssrv_share *badshare)
  *
  * Return:      0 on success, error number on error
  */
-static int add_user(char *name, char *pass)
+static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 {
 	struct cifssrv_usr *usr;
 
@@ -238,8 +238,8 @@ static int add_user(char *name, char *pass)
 		memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
 	}
 
-	usr->gid = current_gid();
-	usr->uid = current_uid();
+	usr->uid.val = uid.val;
+	usr->gid.val = gid.val;
 	usr->sess_uid = 0;
 	INIT_LIST_HEAD(&usr->list);
 	list_add(&usr->list, &cifssrv_usr_list);
@@ -261,7 +261,8 @@ static void cifssrv_user_free(void)
 	}
 }
 
-static int parse_user_strings(const char *src, char **str, int exp_num)
+static int parse_user_strings(const char *src, char **str, int exp_num,
+	ssize_t src_len)
 {
 	int s_num = 0, pos = 0;
 	ssize_t len;
@@ -277,7 +278,9 @@ static int parse_user_strings(const char *src, char **str, int exp_num)
 
 		strlcpy(str[s_num], &src[pos], len);
 		s_num++;
-		pos = len;
+		pos += len;
+		if (pos >= src_len)
+			break;
 	}
 
 	return s_num;
@@ -649,7 +652,7 @@ static ssize_t share_store(struct kobject *kobj,
 	int rc;
 	char *parse_ptr[2];
 
-	rc = parse_user_strings(buf, parse_ptr, 2);
+	rc = parse_user_strings(buf, parse_ptr, 2, len);
 	if (rc < 2)
 		return -EINVAL;
 
@@ -720,18 +723,31 @@ static ssize_t user_store(struct kobject *kobj,
 			  const char *buf, size_t len)
 {
 	char *usrname, *passwd;
-	int rc;
-	char *parse_ptr[2];
+	int rc, i;
+	char *parse_ptr[4] = {0};
+	kuid_t uid;
+	kgid_t gid;
 
-	rc = parse_user_strings(buf, parse_ptr, 2);
+	rc = parse_user_strings(buf, parse_ptr, 4, len);
 	if (rc < 2) {
-		kfree(parse_ptr[0]);
 		cifssrv_err("[%s] <usr:pass> format err\n", __func__);
-		return -EINVAL;
+		goto out;
 	}
 
 	usrname = parse_ptr[0];
 	passwd = parse_ptr[1];
+
+	if (rc > 2) {
+		if (kstrtouint(parse_ptr[2], 10, &uid.val) ||
+				kstrtouint(parse_ptr[3], 10, &gid.val)) {
+			goto out;
+		}
+
+		cifssrv_debug("uid : %u, gid %u\n", uid.val, gid.val);
+	} else {
+		uid.val = 0;
+		gid.val = 0;
+	}
 
 	/* check if user is already present*/
 	rc = getUser(usrname, passwd);
@@ -739,16 +755,21 @@ static ssize_t user_store(struct kobject *kobj,
 		kfree(usrname);
 		kfree(passwd);
 	} else {
-		rc = add_user(usrname, passwd);
+		rc = add_user(usrname, passwd, uid, gid);
 		kfree(passwd);
 		if (rc) {
 			kfree(usrname);
 			if (rc == -ENOMEM)
-				return -ENOMEM;
+				goto out;
 		}
 	}
 
 	return len;
+out:
+	for (i = 0; i < 4; i++)
+		kfree(parse_ptr[i]);
+
+	return -EINVAL;
 }
 
 /**
@@ -994,10 +1015,18 @@ static int cifssrv_parse_global_options(char *configdata)
 		token = match_token(data, cifssrv_global_tokens, args);
 		switch (token) {
 		case Opt_guest:
+		{
+			kuid_t uid;
+			kgid_t gid;
+
 			if (cifssrv_get_config_str(args, &guestAccountName))
 				goto out_nomem;
-			add_user(guestAccountName, NULL);
+
+			uid.val = 9999;
+			gid.val = 9999;
+			add_user(guestAccountName, NULL, uid, gid);
 			break;
+		}
 		case Opt_servern:
 			if (cifssrv_get_config_str(args, &server_string))
 				goto out_nomem;
