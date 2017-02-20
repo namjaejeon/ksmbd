@@ -1856,6 +1856,8 @@ int smb2_open(struct smb_work *smb_work)
 	char *stream = NULL;
 	char *stream_name = NULL;
 	int stream_size = 0;
+	int next_off = 0;
+	__le32 *next_ptr = NULL;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -2079,7 +2081,6 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	cifssrv_debug("converted name = %s\n", name);
-#ifdef CONFIG_CIFSSRV_STREAM_SUPPORT
 	if (strchr(name, ':')) {
 		char *data;
 
@@ -2115,7 +2116,6 @@ int smb2_open(struct smb_work *smb_work)
 			}
 		}
 	}
-#endif
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		/*
@@ -2621,6 +2621,8 @@ reconnect:
 		rsp->CreateContextsLength =
 			cpu_to_le32(server->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_lease_size);
+		next_ptr = &lease_ccontext->Next;
+		next_off = server->vals->create_lease_size;
 	}
 
 	if (durable_open) {
@@ -2631,6 +2633,10 @@ reconnect:
 		rsp->CreateContextsLength +=
 			cpu_to_le32(server->vals->create_durable_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_durable_size);
+		if (next_ptr)
+			*next_ptr = cpu_to_le32(next_off);
+		next_ptr = &durable_ccontext->Next;
+		next_off = server->vals->create_durable_size;
 	}
 
 	if (maximal_access) {
@@ -2642,6 +2648,10 @@ reconnect:
 		rsp->CreateContextsLength +=
 			cpu_to_le32(server->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_mxac_size);
+		if (next_ptr)
+			*next_ptr = cpu_to_le32(next_off);
+		next_ptr = &mxac_ccontext->Next;
+		next_off = server->vals->create_mxac_size;
 	}
 
 	if (query_disk_id) {
@@ -2653,24 +2663,14 @@ reconnect:
 		rsp->CreateContextsLength +=
 			cpu_to_le32(server->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_disk_id_size);
+		if (next_ptr)
+			*next_ptr = cpu_to_le32(next_off);
 	}
 
 	if (contxt_cnt > 0) {
 		rsp->CreateContextsOffset =
 			cpu_to_le32(offsetof(struct smb2_create_rsp, Buffer)
 			- 4);
-	}
-
-	if (contxt_cnt > 1) {
-		if (lease_ccontext)
-			lease_ccontext->Next =
-				cpu_to_le32(server->vals->create_lease_size);
-		if (durable_ccontext)
-			durable_ccontext->Next =
-				cpu_to_le32(server->vals->create_durable_size);
-		if (mxac_ccontext)
-			mxac_ccontext->Next =
-				cpu_to_le32(server->vals->create_mxac_size);
 	}
 
 err_out:
