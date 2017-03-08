@@ -1221,8 +1221,11 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			rc = decode_negTokenTarg((char *)negblob,
 					le16_to_cpu(req->SecurityBufferLength),
 					server);
-			if (!rc)
-				cifssrv_err("negTokenTarg parse err %d\n", rc);
+			if (!rc) {
+				cifssrv_debug("negTokenTarg parse err %d\n",
+					rc);
+				server->use_spnego = false;
+			}
 
 		}
 
