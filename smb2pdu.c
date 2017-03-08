@@ -1226,7 +1226,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 					rc);
 				server->use_spnego = false;
 			}
-
+			rc = 0;
 		}
 
 		if (server->mechToken)
@@ -1379,23 +1379,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				goto out_err;
 			}
 
-			if (server->use_spnego) {
-				if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
-							&spnego_blob_len, 0)) {
-					rc = -ENOMEM;
-					goto out_err;
-				}
-
-				memcpy((char *)rsp->hdr.ProtocolId +
-						rsp->SecurityBufferOffset,
-						spnego_blob,
-						spnego_blob_len);
-				rsp->SecurityBufferLength =
-					cpu_to_le16(spnego_blob_len);
-				kfree(spnego_blob);
-				inc_rfc1001_len(rsp, rsp->SecurityBufferLength);
-			}
-
 			if ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(server->sign || global_signing) ||
@@ -1414,6 +1397,22 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				}
 				sess->sign = true;
 			}
+		}
+
+		if (server->use_spnego) {
+			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
+					&spnego_blob_len, 0)) {
+				rc = -ENOMEM;
+				goto out_err;
+			}
+
+			memcpy((char *)rsp->hdr.ProtocolId +
+				rsp->SecurityBufferOffset,
+				spnego_blob, spnego_blob_len);
+			rsp->SecurityBufferLength =
+				cpu_to_le16(spnego_blob_len);
+			kfree(spnego_blob);
+			inc_rfc1001_len(rsp, rsp->SecurityBufferLength);
 		}
 
 		server->tcp_status = CifsGood;
@@ -6158,10 +6157,8 @@ int smb2_is_sign_req(struct smb_work *work, unsigned int command)
 
 	/* send session setup auth phase signed response */
 	if (command == SMB2_SESSION_SETUP_HE &&
-			work->sess && work->sess->valid &&
-			work->server->use_spnego) {
+			work->sess && work->sess->valid)
 		return 1;
-	}
 
 	return 0;
 }
