@@ -152,6 +152,27 @@ int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 	return rc;
 }
 
+int cifssrv_kthread_stop_status(int etype)
+{
+	struct cifssrv_uevent *ev;
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
+	int rc;
+	int len = nlmsg_total_size(sizeof(*ev)+sizeof(rc));
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (unlikely(!skb)) {
+		cifssrv_err("Failed to allocate\n");
+		return -ENOMEM;
+	}
+	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
+	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
+	ev = nlmsg_data(nlh);
+	ev->buflen = sizeof(rc);
+	rc = nlmsg_unicast(cifssrv_nlsk, skb, pid);
+	return 0;
+}
+
 static int cifssrv_init_connection(struct nlmsghdr *nlh)
 {
 	cifssrv_debug("init connection\n");
@@ -219,6 +240,14 @@ static int cifssrv_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	switch (nlh->nlmsg_type) {
 	case CIFSSRV_UEVENT_INIT_CONNECTION:
 		err = cifssrv_init_connection(nlh);
+		break;
+	case CIFSSRV_UEVENT_START_SMBPORT:
+		err = cifssrv_create_socket();
+		if (err)
+			cifssrv_err("unable to open SMB PORT\n");
+		break;
+	case CIFSSRV_UEVENT_STOP_SMBPORT:
+		cifssrv_close_socket();
 		break;
 	case CIFSSRV_UEVENT_EXIT_CONNECTION:
 		err = cifssrv_exit_connection(nlh);

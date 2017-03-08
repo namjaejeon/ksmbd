@@ -836,6 +836,29 @@ out:
 	return rc;
 }
 
+int cifssrv_stop_tcp_sess(void)
+{
+	int ret;
+	int err = 0;
+	int etype;
+	struct tcp_server_info *server, *tmp;
+
+	list_for_each_entry_safe(server, tmp, &cifssrv_connection_list, list) {
+		server->tcp_status = CifsExiting;
+		ret = kthread_stop(server->handler);
+		if (ret) {
+			etype = CIFSSRV_KEVENT_SMBPORT_CLOSE_FAIL;
+			cifssrv_err("failed to stop server thread\n");
+			err = ret;
+		} else
+			etype = CIFSSRV_KEVENT_SMBPORT_CLOSE_PASS;
+
+		cifssrv_kthread_stop_status(etype);
+	}
+
+	return err;
+}
+
 /**
  * smb_initialize_mempool() - initialize mempool for smb request/response
  *
@@ -985,22 +1008,18 @@ static int __init init_smb_server(void)
 	if (rc)
 		goto err2;
 #endif
-	rc = cifssrv_create_socket();
-	if (rc)
-		goto err3;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	rc = cifssrv_net_init();
 	if (rc)
-		goto err4;
+		goto err3;
 #endif
 	return 0;
 
 #ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-err4:
-#endif
-	cifssrv_stop_forker_thread();
 err3:
+#endif
+
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
 err2:

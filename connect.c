@@ -25,6 +25,7 @@
 
 struct task_struct *cifssrv_forkerd;
 
+static int deny_new_conn;
 /**
  * kvec_array_init() - initialize a IO vector segment
  * @new:	IO vector to be intialized
@@ -265,9 +266,11 @@ static int cifssrv_do_fork(void *p)
 {
 	struct socket *socket = p;
 	int ret;
+	struct socket *newsock = NULL;
 
 	while (!kthread_should_stop()) {
-		struct socket *newsock = NULL;
+		if (deny_new_conn)
+			continue;
 
 		ret = kernel_accept(socket, &newsock, O_NONBLOCK);
 		if (ret) {
@@ -282,7 +285,6 @@ static int cifssrv_do_fork(void *p)
 			connect_tcp_sess(newsock);
 		}
 	}
-
 	cifssrv_debug("releasing socket\n");
 	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
 	if (ret)
@@ -306,6 +308,7 @@ int cifssrv_start_forker_thread(struct socket *socket)
 {
 	int rc;
 
+	deny_new_conn = 0;
 	cifssrv_forkerd = kthread_run(cifssrv_do_fork, socket, "kcifssrvd/0");
 	if (IS_ERR(cifssrv_forkerd)) {
 		rc = PTR_ERR(cifssrv_forkerd);
@@ -323,7 +326,25 @@ int cifssrv_start_forker_thread(struct socket *socket)
  */
 void cifssrv_stop_forker_thread(void)
 {
-	if (cifssrv_forkerd)
-		kthread_stop(cifssrv_forkerd);
+	int ret;
+
+	if (cifssrv_forkerd) {
+		ret = kthread_stop(cifssrv_forkerd);
+		if (ret)
+			cifssrv_err("failed to stop forker thread\n");
+	}
+	cifssrv_forkerd = NULL;
 }
 
+void cifssrv_close_socket(void)
+{
+	int ret;
+
+	cifssrv_debug("closing SMB PORT and releasing socket\n");
+	deny_new_conn = 1;
+	ret = cifssrv_stop_tcp_sess();
+	if (!ret) {
+		cifssrv_stop_forker_thread();
+		cifssrv_debug("SMB PORT closed\n");
+	}
+}

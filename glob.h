@@ -523,6 +523,9 @@ extern int cifssrv_create_socket(void);
 extern int cifssrv_start_forker_thread(struct socket *socket);
 extern void cifssrv_stop_forker_thread(void);
 
+extern void cifssrv_close_socket(void);
+extern int cifssrv_stop_tcp_sess(void);
+
 /* cifssrv misc functions */
 extern int check_smb_message(char *buf);
 extern bool add_request_to_queue(struct smb_work *smb_work);
@@ -643,6 +646,7 @@ void cifssrv_net_exit(void);
 int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
+int cifssrv_kthread_stop_status(int etype);
 #endif
 
 /* asn1 functions */
