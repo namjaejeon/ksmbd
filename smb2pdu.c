@@ -1051,32 +1051,21 @@ int smb2_negotiate(struct smb_work *smb_work)
 				le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
+	rsp->SecurityBufferLength = 74;
+	memcpy(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) +
+		rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
+	inc_rfc1001_len(rsp, 64 + 74);
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	server->use_spnego = true;
 
 	if ((server_signing == AUTO || server_signing == DISABLE) &&
-			req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED) {
-		rsp->SecurityBufferLength = 74;
-		memcpy(((char *)(&rsp->hdr) +
-			sizeof(rsp->hdr.smb2_buf_length)) +
-			rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
-		inc_rfc1001_len(rsp, 64 + 74);
-		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
 		server->sign = true;
-		server->use_spnego = true;
-	} else if (server_signing == MANDATORY) {
+	else if (server_signing == MANDATORY) {
 		global_signing = true;
-		rsp->SecurityBufferLength = 74;
-		memcpy(((char *)(&rsp->hdr) +
-			sizeof(rsp->hdr.smb2_buf_length)) +
-			rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
-		inc_rfc1001_len(rsp, 64 + 74);
-		rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_REQUIRED |
-			SMB2_NEGOTIATE_SIGNING_ENABLED;
+		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED;
 		server->sign = true;
-		server->use_spnego = true;
-	} else {
-		rsp->SecurityMode = 0;
-		rsp->SecurityBufferLength = 0;
-		inc_rfc1001_len(rsp, 65);
 	}
 
 	server->srv_sec_mode = rsp->SecurityMode;
@@ -1406,7 +1395,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 			if ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
-				(server->sign || global_signing)) {
+				(server->sign || global_signing) ||
+				(server->dialect == SMB311_PROT_ID)) {
 				if (server->dialect >= SMB30_PROT_ID &&
 					server->ops->compute_signingkey) {
 					rc = server->ops->compute_signingkey(
