@@ -2944,7 +2944,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		cifssrv_err("valatile id lookup fail: %llu\n", id);
 		rc = -ENOENT;
-		goto err_out;
+		goto err_out2;
 	}
 
 	if (dir_fp->is_durable && dir_fp->persistent_id !=
@@ -2953,18 +2953,21 @@ int smb2_query_dir(struct smb_work *smb_work)
 				dir_fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		rc = -ENOENT;
-		goto err_out;
+		goto err_out2;
 	}
 
 	if (!(dir_fp->daccess & FILE_LIST_DIRECTORY_LE)) {
 		cifssrv_err("no right to enumerate directory (%llu)\n", id);
-		return -EACCES;
+		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+		rc = -EACCES;
+		goto err_out2;
 	}
 
 	if (!S_ISDIR(file_inode(dir_fp->filp)->i_mode)) {
 		cifssrv_err("can't do query dir for a file\n");
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
-		goto err_out;
+		goto err_out2;
 	}
 
 	srch_flag = req->Flags;
@@ -2975,7 +2978,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		cifssrv_debug("Search Pattern not found\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
-		goto err_out;
+		goto err_out2;
 	} else
 		cifssrv_debug("Search pattern is %s\n", srch_ptr);
 
@@ -2984,7 +2987,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 		cifssrv_err("Failed to allocate memory\n");
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		rc = -ENOMEM;
-		goto err_out;
+		kfree(srch_ptr);
+		goto err_out2;
 	}
 
 	dirpath = d_path(&(dir_fp->filp->f_path), path, PATH_MAX);
@@ -3149,6 +3153,11 @@ int smb2_query_dir(struct smb_work *smb_work)
 	return 0;
 
 err_out:
+	cifssrv_err("error while processing smb2 query dir rc = %d\n", rc);
+	kfree(path);
+	kfree(srch_ptr);
+
+err_out2:
 	if (dir_fp && dir_fp->readdir_data.dirent) {
 		free_page((unsigned long)
 				(dir_fp->readdir_data.dirent));
@@ -3159,9 +3168,6 @@ err_out:
 		rsp->hdr.Status = NT_STATUS_NOT_IMPLEMENTED;
 	smb2_set_err_rsp(smb_work);
 
-	cifssrv_err("error while processing smb2 query dir rc = %d\n", rc);
-	kfree(path);
-	kfree(srch_ptr);
 	return 0;
 }
 
