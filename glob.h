@@ -353,6 +353,7 @@ struct tcp_server_info {
 	wait_queue_head_t oplock_q; /* Other server threads */
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
+	struct list_head async_requests;
 	int max_credits;
 	int credits_granted;
 	char peeraddr[MAX_ADDRBUFLEN];
@@ -387,6 +388,20 @@ struct trans_state {
 	int		got_param;
 	int		total_data;
 	int		got_data;
+};
+
+enum asyncEnum {
+	ASYNC_WAITING = 1,
+	ASYNC_PROG,
+	ASYNC_EXITING
+};
+
+struct async_info {
+	__u64 async_id;	/* Async ID */
+	struct	work_struct async_work;
+	enum asyncEnum async_status;
+	int fd;
+	int wd;
 };
 
 /* one of these for every pending CIFS request at the server */
@@ -425,6 +440,8 @@ struct smb_work {
 
 	struct cifssrv_sess *sess;
 	struct cifssrv_tcon *tcon;
+
+	struct async_info *async;
 };
 
 struct smb_version_ops {
@@ -528,7 +545,7 @@ extern int cifssrv_stop_tcp_sess(void);
 
 /* cifssrv misc functions */
 extern int check_smb_message(char *buf);
-extern bool add_request_to_queue(struct smb_work *smb_work);
+extern void add_request_to_queue(struct smb_work *smb_work);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct smb_work *smb_work);
 extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
@@ -544,6 +561,7 @@ extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifssrv_file *curr_fp);
 extern struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode);
+extern void remove_async_id(__u64 async_id);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

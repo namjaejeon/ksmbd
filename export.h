@@ -106,6 +106,7 @@ struct cifssrv_sess {
 	struct list_head cifssrv_ses_list;
 	struct list_head cifssrv_ses_global_list;
 	struct list_head tcon_list;
+	struct hlist_head notify_table[64];
 	int tcon_count;
 	int valid;
 	unsigned int sequence_number;

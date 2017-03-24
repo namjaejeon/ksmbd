@@ -303,12 +303,7 @@ void queue_dynamic_work_helper(struct tcp_server_info *server)
 		server->smallbuf = NULL;
 	}
 
-	if (add_request_to_queue(work)) {
-		spin_lock(&server->request_lock);
-		list_add_tail(&work->request_entry, &server->requests);
-		work->added_in_request_list = 1;
-		spin_unlock(&server->request_lock);
-	}
+	add_request_to_queue(work);
 
 	/* update activity on server */
 	server->last_active = jiffies;
@@ -593,6 +588,7 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	INIT_LIST_HEAD(&server->tcp_sess);
 	INIT_LIST_HEAD(&server->cifssrv_sess);
 	INIT_LIST_HEAD(&server->requests);
+	INIT_LIST_HEAD(&server->async_requests);
 	spin_lock_init(&server->request_lock);
 	server->srv_cap = SERVER_CAPS;
 	init_waitqueue_head(&server->oplock_q);

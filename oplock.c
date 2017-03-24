@@ -550,8 +550,8 @@ static void smb_send_lease_break(struct work_struct *work)
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = cpu_to_le64(-1);
-	rsp_hdr->ProcessId = 0;
-	rsp_hdr->TreeId = 0;
+	rsp_hdr->Id.SyncId.ProcessId = 0;
+	rsp_hdr->Id.SyncId.TreeId = 0;
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
@@ -1386,8 +1386,8 @@ void smb2_send_oplock_break(struct work_struct *work)
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = cpu_to_le64(-1);
-	rsp_hdr->ProcessId = 0;
-	rsp_hdr->TreeId = 0;
+	rsp_hdr->Id.SyncId.ProcessId = 0;
+	rsp_hdr->Id.SyncId.TreeId = 0;
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 

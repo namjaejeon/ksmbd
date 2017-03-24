@@ -74,6 +74,12 @@ struct smb_dirent {
 	char            name[];
 };
 
+struct notification {
+	unsigned int mode;
+	struct list_head queuelist;
+	struct smb_work *work;
+};
+
 struct cifssrv_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
@@ -104,6 +110,8 @@ struct cifssrv_file {
 	char *stream_name;
 	ssize_t ssize;
 	struct hlist_node node;
+	struct hlist_node notify_node;
+	struct list_head queue;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

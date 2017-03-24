@@ -30,6 +30,9 @@
 #include "smb1pdu.h"
 #include "smb2pdu.h"
 
+/* Async ida to generate async id */
+DEFINE_IDA(async_ida);
+
 static struct {
 	int index;
 	char *name;
@@ -55,6 +58,11 @@ inline int cifssrv_min_protocol(void)
 inline int cifssrv_max_protocol(void)
 {
 	return protocols[ARRAY_SIZE(protocols) - 1].index;
+}
+
+inline void remove_async_id(__u64 async_id)
+{
+	ida_simple_remove(&async_ida, (int)async_id);
 }
 
 int get_protocol_idx(char *str)
@@ -145,20 +153,40 @@ int check_smb_message(char *buf)
  *
  * Return:      true if not add to queue, otherwise false
  */
-bool add_request_to_queue(struct smb_work *smb_work)
+void add_request_to_queue(struct smb_work *smb_work)
 {
 	struct tcp_server_info *server = smb_work->server;
+	struct list_head *requests_queue = NULL;
 
 	if (*(__le32 *)((struct smb2_hdr *)smb_work->buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
-		if (server->ops->get_cmd_val(smb_work) != SMB2_CANCEL)
-			return true;
+		unsigned int command = server->ops->get_cmd_val(smb_work);
+
+		if (command != SMB2_CANCEL) {
+			if (command == SMB2_CHANGE_NOTIFY) {
+				smb_work->async =
+					kmalloc(sizeof(struct async_info),
+					GFP_KERNEL);
+				smb_work->async->async_id =
+					(__u64) ida_simple_get(&async_ida, 1, 0,
+					GFP_KERNEL);
+
+				requests_queue = &server->async_requests;
+				smb_work->async->async_status = ASYNC_WAITING;
+			} else
+				requests_queue = &server->requests;
+		}
 	} else {
 		if (server->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
-			return true;
+			requests_queue = &server->requests;
 	}
 
-	return false;
+	if (requests_queue) {
+		spin_lock(&server->request_lock);
+		list_add_tail(&smb_work->request_entry, requests_queue);
+		smb_work->added_in_request_list = 1;
+		spin_unlock(&server->request_lock);
+	}
 }
 
 /**

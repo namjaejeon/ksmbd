@@ -121,8 +121,13 @@ struct smb2_hdr {
 	__le32 Flags;
 	__le32 NextCommand;
 	__u64  MessageId;	/* opaque - so can stay little endian */
-	__le32 ProcessId;
-	__u32  TreeId;		/* opaque - so do not make little endian */
+	union {
+		struct {
+			__le32 ProcessId;
+			__u32  TreeId;
+		} __packed SyncId;
+		__u64  AsyncId;
+	} __packed Id;
 	__u64  SessionId;	/* opaque - so do not make little endian */
 	__u8   Signature[16];
 } __packed;
@@ -746,6 +751,21 @@ struct file_object_buf_type1_ioctl_rsp {
 	__u8 DomainId[16];
 } __packed;
 
+/* Completion Filter flags for Notify */
+#define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
+#define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002
+#define FILE_NOTIFY_CHANGE_NAME		0x00000003
+#define FILE_NOTIFY_CHANGE_ATTRIBUTES	0x00000004
+#define FILE_NOTIFY_CHANGE_SIZE		0x00000008
+#define FILE_NOTIFY_CHANGE_LAST_WRITE	0x00000010
+#define FILE_NOTIFY_CHANGE_LAST_ACCESS	0x00000020
+#define FILE_NOTIFY_CHANGE_CREATION	0x00000040
+#define FILE_NOTIFY_CHANGE_EA		0x00000080
+#define FILE_NOTIFY_CHANGE_SECURITY	0x00000100
+#define FILE_NOTIFY_CHANGE_STREAM_NAME	0x00000200
+#define FILE_NOTIFY_CHANGE_STREAM_SIZE	0x00000400
+#define FILE_NOTIFY_CHANGE_STREAM_WRITE	0x00000800
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
@@ -763,6 +783,24 @@ struct smb2_notify_rsp {
 	__le16 OutputBufferOffset;
 	__le32 OutputBufferLength;
 	__u8 Buffer[1];
+} __packed;
+
+/* SMB2 Notify Action Flags */
+#define FILE_ACTION_ADDED		0x00000001
+#define FILE_ACTION_REMOVED		0x00000002
+#define FILE_ACTION_MODIFIED		0x00000003
+#define FILE_ACTION_RENAMED_OLD_NAME	0x00000004
+#define FILE_ACTION_RENAMED_NEW_NAME	0x00000005
+#define FILE_ACTION_ADDED_STREAM	0x00000006
+#define FILE_ACTION_REMOVED_STREAM	0x00000007
+#define FILE_ACTION_MODIFIED_STREAM	0x00000008
+#define FILE_ACTION_REMOVED_BY_DELETE	0x00000009
+
+struct FileNotifyInformation {
+	__le32 NextEntryOffset;
+	__le32 Action;
+	__le32 FileNameLength;
+	char FileName[0];
 } __packed;
 
 #define SMB2_LOCKFLAG_SHARED		0x0001

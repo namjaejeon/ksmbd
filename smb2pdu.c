@@ -28,6 +28,8 @@
 
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
+#include <linux/syscalls.h>
+#include <linux/inotify.h>
 
 bool multi_channel_enable;
 
@@ -147,15 +149,18 @@ int smb2_get_cifssrv_tcon(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (smb_work->server->ops->get_cmd_val(smb_work) ==
-		SMB2_TREE_CONNECT_HE) {
+	if ((smb_work->server->ops->get_cmd_val(smb_work) ==
+		SMB2_TREE_CONNECT_HE) ||
+		(smb_work->server->ops->get_cmd_val(smb_work) ==
+		SMB2_CANCEL_HE)) {
 		cifssrv_debug("skip to check tree connect request\n");
 		return 0;
 	}
 
 	list_for_each(tmp, &smb_work->sess->tcon_list) {
 		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
-		if (tcon->share->tid == le32_to_cpu(req_hdr->TreeId)) {
+		if (tcon->share->tid ==
+			le32_to_cpu(req_hdr->Id.SyncId.TreeId)) {
 			rc = 1;
 			smb_work->tcon = tcon;
 			break;
@@ -163,7 +168,8 @@ int smb2_get_cifssrv_tcon(struct smb_work *smb_work)
 	}
 
 	if (rc < 0)
-		cifssrv_err("Invalid tid %d\n", req_hdr->TreeId);
+		cifssrv_err("Invalid tid %d\n",
+			req_hdr->Id.SyncId.TreeId);
 
 	return rc;
 }
@@ -297,8 +303,8 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = 0;
-	rsp_hdr->ProcessId = 0;
-	rsp_hdr->TreeId = 0;
+	rsp_hdr->Id.SyncId.ProcessId = 0;
+	rsp_hdr->Id.SyncId.TreeId = 0;
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
@@ -402,8 +408,8 @@ void init_smb2_rsp(struct smb_work *smb_work)
 				SMB2_FLAGS_RELATED_OPERATIONS);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = rcv_hdr->MessageId;
-	rsp_hdr->ProcessId = rcv_hdr->ProcessId;
-	rsp_hdr->TreeId = rcv_hdr->TreeId;
+	rsp_hdr->Id.SyncId.ProcessId = rcv_hdr->Id.SyncId.ProcessId;
+	rsp_hdr->Id.SyncId.TreeId = rcv_hdr->Id.SyncId.TreeId;
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 }
@@ -477,8 +483,8 @@ int init_smb2_rsp_hdr(struct smb_work *smb_work)
 	else
 		rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = rcv_hdr->MessageId;
-	rsp_hdr->ProcessId = rcv_hdr->ProcessId;
-	rsp_hdr->TreeId = rcv_hdr->TreeId;
+	rsp_hdr->Id.SyncId.ProcessId = rcv_hdr->Id.SyncId.ProcessId;
+	rsp_hdr->Id.SyncId.TreeId = rcv_hdr->Id.SyncId.TreeId;
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
@@ -744,7 +750,7 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	if (wild_card_pos != NULL)
 		*wild_card_pos = '\0';
 
-	unixname = convert_to_unix_name(name, req_hdr->TreeId);
+	unixname = convert_to_unix_name(name, req_hdr->Id.SyncId.TreeId);
 	kfree(name);
 	if (!unixname) {
 		cifssrv_err("can not convert absolute name\n");
@@ -1126,6 +1132,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		INIT_LIST_HEAD(&sess->cifssrv_chann_list);
 		list_add(&sess->cifssrv_ses_list, &server->cifssrv_sess);
 		list_add(&sess->cifssrv_ses_global_list, &cifssrv_session_list);
+		hash_init(sess->notify_table);
 
 		INIT_LIST_HEAD(&sess->tcon_list);
 		sess->tcon_count = 0;
@@ -1509,7 +1516,7 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	}
 
 	tcon->writeable = can_write;
-	rsp->hdr.TreeId = tcon->share->tid;
+	rsp->hdr.Id.SyncId.TreeId = tcon->share->tid;
 
 	if (!strncmp("IPC$", name, 4)) {
 		tcon->share->is_pipe = true;
@@ -1650,7 +1657,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	cifssrv_debug("%s : request\n", __func__);
 
 	if (!tcon) {
-		cifssrv_debug("Invalid tid %d\n", req->hdr.TreeId);
+		cifssrv_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
 		rsp->hdr.Status = NT_STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(smb_work);
 		return 0;
@@ -1663,7 +1670,7 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 	sess->tcon_count--;
 	kfree(tcon);
 
-	close_opens_from_fibtable(sess, le32_to_cpu(req->hdr.TreeId));
+	close_opens_from_fibtable(sess, le32_to_cpu(req->hdr.Id.SyncId.TreeId));
 	return 0;
 }
 
@@ -1714,7 +1721,8 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	list_for_each_safe(tmp, t, &sess->tcon_list) {
 		tcon = list_entry(tmp, struct cifssrv_tcon, tcon_list);
 		if (tcon == NULL) {
-			cifssrv_debug("Invalid tid %d\n", req->hdr.TreeId);
+			cifssrv_debug("Invalid tid %d\n",
+				req->hdr.Id.SyncId.TreeId);
 			rsp->hdr.Status = NT_STATUS_NETWORK_NAME_DELETED;
 			smb2_set_err_rsp(smb_work);
 			return 0;
@@ -2052,7 +2060,7 @@ int smb2_open(struct smb_work *smb_work)
 			goto err_out1;
 		}
 	} else {
-		share = find_matching_share(rsp->hdr.TreeId);
+		share = find_matching_share(rsp->hdr.Id.SyncId.TreeId);
 		if (!share) {
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 			rc = -ENOMEM;
@@ -2392,7 +2400,7 @@ reconnect:
 
 	cifssrv_debug("volatile_id returned: %d\n", volatile_id);
 	fp = insert_id_in_fidtable(smb_work->sess, sess->sess_id,
-		le32_to_cpu(req->hdr.TreeId), volatile_id, filp);
+		le32_to_cpu(req->hdr.Id.SyncId.TreeId), volatile_id, filp);
 	if (fp == NULL) {
 		cifssrv_err("volatile_id insert failed\n");
 		cifssrv_close_id(&sess->fidtable, volatile_id);
@@ -2509,8 +2517,9 @@ reconnect:
 						name, oplock,
 						lc.CurrentLeaseState);
 				rc = smb_grant_oplock(sess, &oplock,
-					volatile_id, fp, req->hdr.TreeId,
-					&lc, attrib_only);
+					volatile_id, fp,
+					req->hdr.Id.SyncId.TreeId, &lc,
+					attrib_only);
 				if (rc)
 					oplock = SMB2_OPLOCK_LEVEL_NONE;
 			}
@@ -2518,7 +2527,7 @@ reconnect:
 	} else if (oplock & (SMB2_OPLOCK_LEVEL_BATCH |
 				SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
-				req->hdr.TreeId, NULL, attrib_only);
+				req->hdr.Id.SyncId.TreeId, NULL, attrib_only);
 		if (rc)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 	}
@@ -4168,7 +4177,7 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 					smb_work->next_smb2_rsp_hdr_off);
 	}
 
-	share = find_matching_share(req->hdr.TreeId);
+	share = find_matching_share(req->hdr.Id.SyncId.TreeId);
 	if (!share)
 		return -ENOENT;
 
@@ -5281,25 +5290,55 @@ int smb2_cancel(struct smb_work *smb_work)
 	struct tcp_server_info *server = smb_work->server;
 	struct smb2_hdr *hdr = (struct smb2_hdr *)smb_work->buf;
 	struct smb2_hdr *work_hdr;
-	struct smb_work *work;
+	struct smb_work *work = NULL;
 	struct list_head *tmp;
+	int canceled = 0;
 
 	cifssrv_debug("smb2 cancel called on mid %llu\n", hdr->MessageId);
 
-	spin_lock(&server->request_lock);
-	list_for_each(tmp, &server->requests) {
-		work = list_entry(tmp, struct smb_work, request_entry);
-		work_hdr = (struct smb2_hdr *)work->buf;
-		if (work_hdr->MessageId == hdr->MessageId) {
-			cifssrv_debug("smb2 with mid %llu cancelled command = 0x%x\n",
-					hdr->MessageId, work_hdr->Command);
-			work->send_no_response = 1;
-			list_del_init(&work->request_entry);
-			work->added_in_request_list = 0;
-			break;
+	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND) {
+		spin_lock(&server->request_lock);
+		list_for_each(tmp, &server->async_requests) {
+			work = list_entry(tmp, struct smb_work, request_entry);
+			work_hdr = (struct smb2_hdr *)work->buf;
+			if (work->async->async_id ==
+				le64_to_cpu(hdr->Id.AsyncId)) {
+				cifssrv_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
+					hdr->Id.AsyncId, work_hdr->Command);
+				if (work->async->async_status == ASYNC_WAITING)
+					work->async->async_status =
+						ASYNC_EXITING;
+				else if (work->async->async_status ==
+					ASYNC_PROG) {
+					work->async->async_status =
+						ASYNC_EXITING;
+					canceled = 1;
+				}
+				break;
+			}
 		}
+		spin_unlock(&server->request_lock);
+
+		if (canceled)
+			sys_inotify_rm_watch(work->async->fd, work->async->wd);
+
+	} else {
+		spin_lock(&server->request_lock);
+		list_for_each(tmp, &server->requests) {
+			work = list_entry(tmp, struct smb_work, request_entry);
+			work_hdr = (struct smb2_hdr *)work->buf;
+			if (work_hdr->MessageId == hdr->MessageId) {
+				cifssrv_debug("smb2 with mid %llu cancelled command = 0x%x\n",
+					hdr->MessageId, work_hdr->Command);
+				canceled = 1;
+				break;
+			}
+		}
+		spin_unlock(&server->request_lock);
+
+		if (canceled)
+			cancel_work_sync(&work->work);
 	}
-	spin_unlock(&server->request_lock);
 
 	/* For SMB2_CANCEL command itself send no response*/
 	smb_work->send_no_response = 1;
@@ -5570,7 +5609,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 		break;
 	}
 	case FSCTL_PIPE_TRANSCEIVE:
-		if (rsp->hdr.TreeId != 1) {
+		if (rsp->hdr.Id.SyncId.TreeId != 1) {
 			cifssrv_debug("Not Pipe transceive\n");
 			goto out;
 		}
@@ -6113,6 +6152,23 @@ err_out:
 	return 0;
 }
 
+#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
+static unsigned int convert_inotify_mask(unsigned int mode)
+{
+	unsigned int mask = 0;
+
+	if (mode & FILE_NOTIFY_CHANGE_NAME)
+		mask |= IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO;
+	if (mode & FILE_NOTIFY_CHANGE_ATTRIBUTES)
+		mask |= IN_ATTRIB | IN_MOVED_TO | IN_MOVED_FROM | IN_MODIFY;
+	if (mode & (FILE_NOTIFY_CHANGE_LAST_WRITE |
+		FILE_NOTIFY_CHANGE_LAST_ACCESS | FILE_NOTIFY_CHANGE_EA |
+		FILE_NOTIFY_CHANGE_SECURITY))
+		mask |= IN_ATTRIB;
+
+	return mask;
+}
+
 /**
  * smb2_notify() - handler for smb2 notify request
  * @smb_work:	smb work containing notify command buffer
@@ -6123,6 +6179,18 @@ int smb2_notify(struct smb_work *smb_work)
 {
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp, *rsp_org;
+	struct notification *notify_req;
+	struct cifssrv_file *fp, *prev_fp;
+	struct inotify_event *event;
+	struct notification *request;
+	struct FileNotifyInformation *out_buf = NULL;
+	struct smb_work *work;
+	int fd, offset = 0, wd, byte, count = 1024, i = 0;
+	int filename_len, total_len, out_len;
+	int err = 0;
+	u32 mask;
+	char *p, *pbuf, *buf;
+	mm_segment_t cur_fs = get_fs();
 
 	req = (struct smb2_notify_req *)smb_work->buf;
 	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
@@ -6148,6 +6216,240 @@ int smb2_notify(struct smb_work *smb_work)
 		return 0;
 	}
 
+	fp = get_id_from_fidtable(smb_work->sess,
+			le64_to_cpu(req->VolatileFileId));
+	if (!fp) {
+		cifssrv_err("Invalid file id for lock : %llu\n",
+				le64_to_cpu(req->VolatileFileId));
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		goto out3;
+	}
+
+	if (fp->is_durable && fp->persistent_id !=
+			le64_to_cpu(req->PersistentFileId)) {
+		cifssrv_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		goto out3;
+	}
+
+	pbuf = kzalloc(PATH_MAX, GFP_KERNEL);
+	if (!pbuf)
+		goto out3;
+
+	p = d_path(&(fp->filp->f_path), pbuf, PATH_MAX);
+	if (IS_ERR(p)) {
+		kfree(pbuf);
+		goto out3;
+	}
+
+	notify_req = kmalloc(sizeof(struct notification), GFP_KERNEL);
+	if (!notify_req)
+		goto out3;
+
+	notify_req->mode = le32_to_cpu(req->CompletionFileter);
+	cifssrv_debug("CompletionFileter : 0x%x\n", notify_req->mode);
+
+	notify_req->work = smb_work;
+
+	hash_for_each_possible(smb_work->sess->notify_table, prev_fp, node,
+		(unsigned long)GET_FP_INODE(fp)) {
+		if (GET_FP_INODE(fp) == GET_FP_INODE(prev_fp)) {
+			list_add_tail(&notify_req->queuelist, &prev_fp->queue);
+			goto out2;
+		}
+	}
+
+	INIT_LIST_HEAD(&fp->queue);
+	list_add_tail(&notify_req->queuelist, &fp->queue);
+
+	fd = sys_inotify_init();
+
+start:
+	while (!list_empty(&fp->queue)) {
+		request = list_first_entry_or_null(&fp->queue,
+			struct notification, queuelist);
+		if (!request)
+			continue;
+		list_del_init(&request->queuelist);
+
+		work = request->work;
+
+		req = (struct smb2_notify_req *)work->buf;
+		rsp = (struct smb2_notify_rsp *)work->rsp_buf;
+		rsp_org = rsp;
+
+		out_len = le32_to_cpu(req->OutputBufferLength);
+
+		mask = convert_inotify_mask(request->mode);
+		if (!mask) {
+			list_add_tail(&request->queuelist, &fp->queue);
+			continue;
+		}
+
+		kfree(request);
+
+		set_fs(get_ds());
+		wd = sys_inotify_add_watch(fd, (__force char __user *)p, mask);
+		set_fs(cur_fs);
+
+		spin_lock(&work->server->request_lock);
+		if (work->async->async_status == ASYNC_EXITING) {
+			spin_unlock(&work->server->request_lock);
+			sys_inotify_rm_watch(fd, wd);
+			continue;
+		}
+
+		work->async->async_status = ASYNC_PROG;
+
+		work->async->fd = fd;
+		work->async->wd = wd;
+		spin_unlock(&work->server->request_lock);
+
+		buf = kmalloc(1024 * (sizeof(struct inotify_event) + 16),
+			GFP_KERNEL);
+		if (!buf)
+			break;
+
+		rsp->hdr.Flags |= SMB2_FLAGS_ASYNC_COMMAND;
+		rsp->hdr.Id.AsyncId = cpu_to_le64(work->async->async_id);
+
+		/* Send interim Response to inform asynchronous request */
+		cifssrv_debug("Send interim Response to inform asynchronous request id : %lld\n",
+			work->async->async_id);
+		smb2_set_err_rsp(work);
+		rsp->hdr.Status = NT_STATUS_PENDING;
+		work->multiRsp = 1;
+		smb_send_rsp(work);
+		work->multiRsp = 0;
+
+		cifssrv_debug("watching filename : %s, mask : 0x%x\n", p, mask);
+		set_fs(get_ds());
+		byte = sys_read(fd, (__force char __user *)buf, count);
+		set_fs(cur_fs);
+		if (byte < 0) {
+			cifssrv_err("event read failed : %d\n", byte);
+			sys_inotify_rm_watch(fd, wd);
+			continue;
+		}
+
+		i = 0;
+		total_len = 0;
+		while (i < byte) {
+			if (i >= out_len) {
+				cifssrv_err("buffer length(%d) is greater than output's one (%d) of request\n",
+					i, out_len);
+				rsp->hdr.Status = NT_STATUS_NOTIFY_ENUM_DIR;
+				goto out;
+			}
+
+			out_buf = (struct FileNotifyInformation *)
+				&rsp->Buffer[offset];
+			event = (struct inotify_event *) &buf[i];
+			cifssrv_debug("event->mask : 0x%x, event length : %d\n",
+				event->mask, event->len);
+
+			if (event->mask & (IN_IGNORED | IN_UNMOUNT |
+					IN_Q_OVERFLOW) || !event->len) {
+				rsp->hdr.Status = NT_STATUS_CANCELLED;
+				smb2_set_err_rsp(work);
+				smb_send_rsp(work);
+				remove_async_id(work->async->async_id);
+				goto start;
+			}
+
+			if (event->mask & IN_CREATE) {
+				cifssrv_err("get file creation event\n");
+				out_buf->Action = FILE_ACTION_ADDED;
+			} else if (event->mask & (IN_DELETE | IN_DELETE_SELF)) {
+				cifssrv_err("get file deletion event\n");
+				out_buf->Action = FILE_ACTION_REMOVED;
+			} else if (event->mask & (IN_ATTRIB | IN_MODIFY)) {
+				cifssrv_err("get file modification event\n");
+				out_buf->Action = FILE_ACTION_MODIFIED;
+			} else if (event->mask & IN_MOVED_FROM) {
+				cifssrv_err("get file rename(from old) event\n");
+				out_buf->Action = FILE_ACTION_RENAMED_OLD_NAME;
+			} else if (event->mask & IN_MOVED_TO) {
+				cifssrv_err("get file rename(to new) event\n");
+				out_buf->Action = FILE_ACTION_RENAMED_NEW_NAME;
+			}
+			/* TODO : add named stream notify */
+
+			i += sizeof(struct inotify_event) + event->len;
+			filename_len =
+				smbConvertToUTF16((__le16 *)out_buf->FileName,
+				event->name, event->len,
+				work->sess->server->local_nls, 0);
+			filename_len *= 2;
+			out_buf->FileNameLength = cpu_to_le32(filename_len);
+			offset = 12 + filename_len;
+			total_len += offset;
+			out_buf->NextEntryOffset = cpu_to_le32(offset);
+		}
+
+		out_buf->NextEntryOffset = 0;
+
+		rsp->hdr.Status = NT_STATUS_OK;
+		rsp->StructureSize = cpu_to_le16(9);
+		rsp->OutputBufferOffset = cpu_to_le16(72);
+		rsp->OutputBufferLength = cpu_to_le32(total_len);
+		inc_rfc1001_len(rsp_org, 8 + total_len);
+
+out:
+		smb_send_rsp(work);
+		remove_async_id(work->async->async_id);
+		sys_inotify_rm_watch(fd, wd);
+	}
+
+	kfree(pbuf);
+out2:
+	smb_work->send_no_response = 1;
+	return 0;
+
+out3:
+	if (rsp->hdr.Status == 0)
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+	smb2_set_err_rsp(smb_work);
+	return err;
+}
+
+#else
+/**
+ * smb2_notify() - handler for smb2 notify request
+ * @smb_work:   smb work containing notify command buffer
+ *
+ * Return:      0
+ */
+int smb2_notify(struct smb_work *smb_work)
+{
+	struct smb2_notify_req *req;
+	struct smb2_notify_rsp *rsp, *rsp_org;
+
+	req = (struct smb2_notify_req *)smb_work->buf;
+	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_notify_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_notify_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	if (req->StructureSize != 32) {
+		cifssrv_err("malformed packet\n");
+		smb_work->send_no_response = 1;
+		return 0;
+	}
+
+	if (smb_work->next_smb2_rcv_hdr_off &&
+			le32_to_cpu(req->hdr.NextCommand)) {
+		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
+		smb2_set_err_rsp(smb_work);
+		return 0;
+	}
+
 	rsp->hdr.Status = NT_STATUS_OK;
 	rsp->StructureSize = cpu_to_le16(9);
 	rsp->OutputBufferLength = cpu_to_le32(0);
@@ -6156,6 +6458,7 @@ int smb2_notify(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp_org, 9);
 	return 0;
 }
+#endif
 
 /**
  * smb2_is_sign_req() - handler for checking packet signing status
