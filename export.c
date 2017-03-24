@@ -903,6 +903,7 @@ enum {
 	Opt_writelist,
 	Opt_hostallow,
 	Opt_hostdeny,
+	Opt_store_dos_attr,
 
 	Opt_share_err
 };
@@ -928,6 +929,7 @@ static const match_table_t cifssrv_share_tokens = {
 	{ Opt_writelist, "write list = %s" },
 	{ Opt_hostallow, "hosts allow = %s" },
 	{ Opt_hostdeny, "hosts deny = %s" },
+	{ Opt_store_dos_attr, "store dos attributes = %s" },
 
 	{ Opt_share_err, NULL }
 };
@@ -1250,6 +1252,14 @@ static int cifssrv_parse_share_options(const char *configdata)
 						&share->config.write_list))
 				goto out_nomem;
 			break;
+		case Opt_store_dos_attr:
+			if (!share || cifssrv_get_config_val(args, &val))
+				goto config_err;
+			if (val == 1)
+				set_attr_store_dos(&share->config.attr);
+			else
+				clear_attr_store_dos(&share->config.attr);
+			break;
 		default:
 			cifssrv_err("[%s] not supported\n", data);
 			break;
@@ -1418,6 +1428,15 @@ static ssize_t show_share_config(char *buf, int offset,
 				share->config.write_list);
 		if (ret < 0)
 			return cum;
+	}
+
+	if (cum < limit) {
+		ret = snprintf(buf + cum, limit - cum,
+			"\tstore dos attributes = %d\n",
+			get_attr_store_dos(&share->config.attr));
+		if (ret < 0)
+			return cum;
+		cum += ret;
 	}
 
 	return cum;

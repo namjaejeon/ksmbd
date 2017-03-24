@@ -2562,23 +2562,29 @@ reconnect:
 	rsp->CreateAction = file_info;
 
 	if (file_present) {
-		char *create_time = NULL;
 
-		rc = smb_find_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
-			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
-		if (rc > 0)
-			fp->create_time = *create_time;
-		else
-			fp->create_time = cifs_UnixTimeToNT(stat.ctime);
-		rc = 0;
-		kvfree(create_time);
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			char *create_time = NULL;
+
+			rc = smb_find_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			if (rc > 0)
+				fp->create_time = *create_time;
+			kvfree(create_time);
+			rc = 0;
+		}
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
-		rc = smb_store_cont_xattr(&path, XATTR_NAME_CREATION_TIME,
-			(void *)&fp->create_time, CREATIOM_TIME_LEN);
-		if (rc)
-			cifssrv_debug("failed to store creation time in EA\n");
-		rc = 0;
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			rc = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			if (rc)
+				cifssrv_debug("failed to store creation time in EA\n");
+			rc = 0;
+		}
 	}
 
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
@@ -4647,15 +4653,21 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		attrs.ia_valid = 0;
 
 		if (le64_to_cpu(file_info->CreationTime)) {
+			struct cifssrv_share *share = smb_work->tcon->share;
+
 			fp->create_time = le64_to_cpu(file_info->CreationTime);
-			rc = smb_store_cont_xattr(&fp->filp->f_path,
-				XATTR_NAME_CREATION_TIME,
-				(void *)&fp->create_time, CREATIOM_TIME_LEN);
-			if (rc) {
-				cifssrv_debug("failed to set creation time\n");
-				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-				smb2_set_err_rsp(smb_work);
-				return rc;
+			if (get_attr_store_dos(&share->config.attr)) {
+				rc = smb_store_cont_xattr(&fp->filp->f_path,
+					XATTR_NAME_CREATION_TIME,
+					(void *)&fp->create_time,
+					CREATIOM_TIME_LEN);
+				if (rc) {
+					cifssrv_debug("failed to set creation time\n");
+					rsp->hdr.Status =
+						NT_STATUS_INVALID_PARAMETER;
+					smb2_set_err_rsp(smb_work);
+					return rc;
+				}
 			}
 		}
 

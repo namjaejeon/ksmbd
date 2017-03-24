@@ -134,7 +134,8 @@ enum share_attrs {
 	SH_OPLOCKS,
 	SH_WRITEABLE,
 	SH_READONLY,
-	SH_WRITEOK
+	SH_WRITEOK,
+	SH_STORE_DOS
 };
 
 #define SHARE_ATTR(bit, name)					\
@@ -162,6 +163,7 @@ SHARE_ATTR(SH_GUESTONLY, guestonly)	/* default: disabled */
 SHARE_ATTR(SH_OPLOCKS, oplocks)		/* default: enabled */
 SHARE_ATTR(SH_READONLY, readonly)	/* default: enabled */
 SHARE_ATTR(SH_WRITEOK, writeok)		/* default: enabled */
+SHARE_ATTR(SH_STORE_DOS, store_dos)	/* default: disable */
 
 struct share_config {
 	char *comment;
