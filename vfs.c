@@ -145,12 +145,10 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return -EACCES;
 	}
 #endif
-	rbuf = kzalloc(count, GFP_KERNEL);
-	if (!rbuf) {
-		rbuf = vmalloc(count);
-		if (!rbuf)
-			return -ENOMEM;
-	}
+
+	rbuf = alloc_data_mem(count);
+	if (!rbuf)
+		return -ENOMEM;
 
 	if (fp->is_stream) {
 		ssize_t v_len;
@@ -268,11 +266,10 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		}
 
 		if (v_len < size) {
-			wbuf = kzalloc(size, GFP_KERNEL);
+			wbuf = alloc_data_mem(size);
 			if (!wbuf) {
-				wbuf = vzalloc(size);
-				if (!wbuf)
-					return -ENOMEM;
+				kvfree(stream_buf);
+				return -ENOMEM;
 			}
 
 			if (v_len > 0) {
@@ -992,12 +989,9 @@ ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 	if (!flags)
 		return xattr_len;
 
-	buf = kzalloc(xattr_len, GFP_KERNEL);
-	if (!buf) {
-		buf = vzalloc(xattr_len);
-		if (!buf)
-			return -ENOMEM;
-	}
+	buf = alloc_data_mem(xattr_len);
+	if (!buf)
+		return -ENOMEM;
 
 	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf,
 		xattr_len);

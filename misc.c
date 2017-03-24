@@ -732,3 +732,14 @@ struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode)
 	return NULL;
 }
 
+char *alloc_data_mem(size_t size)
+{
+	/*
+	 * Use vzalloc area for allocation > 16KB,
+	 * otherwise use kzalloc
+	 */
+	if (size <= (PAGE_SIZE << PAGE_ALLOC_KMEM_ORDER))
+		return kzalloc(size, GFP_KERNEL);
+
+	return vzalloc(size);
+}

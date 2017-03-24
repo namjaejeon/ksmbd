@@ -223,6 +223,9 @@ extern struct hlist_head global_name_table[1024];
 #define XATTR_NAME_STREAM	(XATTR_USER_PREFIX STREAM_PREFIX)
 #define XATTR_NAME_STREAM_LEN	(sizeof(XATTR_NAME_STREAM) - 1)
 
+/* MAXIMUM KMEM DATA SIZE ORDER */
+#define PAGE_ALLOC_KMEM_ORDER	2
+
 enum statusEnum {
 	CifsNew = 0,
 	CifsGood,
@@ -562,6 +565,7 @@ extern int smb_check_shared_mode(struct file *filp,
 	struct cifssrv_file *curr_fp);
 extern struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
+extern char *alloc_data_mem(size_t size);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
