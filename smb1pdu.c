@@ -501,7 +501,8 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 	return 0;
 }
 
-void set_service_type(struct cifssrv_share *share, TCONX_RSP_EXT *rsp)
+void set_service_type(struct tcp_server_info *server,
+			struct cifssrv_share *share, TCONX_RSP_EXT *rsp)
 {
 	int length;
 	char *buf = rsp->Service;
@@ -509,13 +510,23 @@ void set_service_type(struct cifssrv_share *share, TCONX_RSP_EXT *rsp)
 	if (share->is_pipe == true) {
 		length = strlen(SERVICE_IPC_SHARE);
 		memcpy(buf, SERVICE_IPC_SHARE, length);
+		rsp->ByteCount = length + 1;
+		buf += length;
+		*buf = '\0';
 	} else {
+		int uni_len = 0;
 		length = strlen(SERVICE_DISK_SHARE);
 		memcpy(buf, SERVICE_DISK_SHARE, length);
+		buf[length] = '\0';
+		length += 1;
+		uni_len = smbConvertToUTF16((__le16 *)(buf + length),
+					     NATIVE_FILE_SYSTEM,
+					     PATH_MAX, server->local_nls, 0);
+		uni_len++;
+		uni_len *= 2;
+		length += uni_len;
+		rsp->ByteCount = length;
 	}
-	rsp->ByteCount = length + 1;
-	buf += length;
-	*buf = '\0';
 }
 
 /**
@@ -603,7 +614,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	if (!strncmp("IPC$", name, 4))
 		tcon->share->is_pipe = true;
 
-	set_service_type(share, rsp);
+	set_service_type(server, share, rsp);
 
 	rsp_hdr->Tid = tcon->share->tid;
 
