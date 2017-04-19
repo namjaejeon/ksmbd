@@ -5319,8 +5319,10 @@ int smb2_cancel(struct smb_work *smb_work)
 		}
 		spin_unlock(&server->request_lock);
 
+#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
 		if (canceled)
 			sys_inotify_rm_watch(work->async->fd, work->async->wd);
+#endif
 
 	} else {
 		spin_lock(&server->request_lock);
