@@ -436,7 +436,7 @@ int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
 
 	attrs->ia_valid |= ATTR_CTIME;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 	inode_lock(inode);
 	err = notify_change(dentry, attrs, NULL);
 	inode_unlock(inode);
@@ -556,7 +556,7 @@ int smb_vfs_unlink(char *name)
 	if (!dir->d_inode)
 		goto out;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
 #else
 	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
@@ -590,7 +590,7 @@ int smb_vfs_unlink(char *name)
 
 	dput(dentry);
 out_err:
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 	inode_unlock(dir->d_inode);
 #else
 	mutex_unlock(&dir->d_inode->i_mutex);

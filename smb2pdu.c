@@ -4699,7 +4699,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		if (attrs.ia_valid) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 			struct dentry *dentry = fp->filp->f_path.dentry;
 			struct inode *inode = dentry->d_inode;
 #else
@@ -4711,7 +4711,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				return -EPERM;
 			}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 			rc = setattr_prepare(dentry, &attrs);
 #else
 			rc = inode_change_ok(inode, &attrs);

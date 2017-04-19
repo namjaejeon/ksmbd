@@ -406,7 +406,7 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 		}
 
 		dget(dentry);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		inode_lock(dir->d_inode);
 #else
 		mutex_lock(&dir->d_inode->i_mutex);
@@ -426,7 +426,7 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 #endif
 
 out:
-#if LINUX_VERSION_CODE > KERNEL_VERSION(4, 1, 10)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		inode_unlock(dir->d_inode);
 #else
 		mutex_unlock(&dir->d_inode->i_mutex);
