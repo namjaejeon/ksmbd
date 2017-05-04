@@ -80,6 +80,19 @@ struct notification {
 	struct smb_work *work;
 };
 
+struct cifssrv_lock {
+	struct file_lock *fl;
+	struct list_head glist;
+	struct list_head llist;
+	struct list_head flist;
+	unsigned int flags;
+	unsigned int cmd;
+	int zero_len;
+	loff_t start;
+	loff_t end;
+	struct smb_work *work;
+};
+
 struct cifssrv_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
@@ -112,6 +125,7 @@ struct cifssrv_file {
 	struct hlist_node node;
 	struct hlist_node notify_node;
 	struct list_head queue;
+	struct list_head lock_list;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

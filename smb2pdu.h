@@ -807,6 +807,7 @@ struct FileNotifyInformation {
 #define SMB2_LOCKFLAG_EXCLUSIVE		0x0002
 #define SMB2_LOCKFLAG_UNLOCK		0x0004
 #define SMB2_LOCKFLAG_FAIL_IMMEDIATELY	0x0010
+#define SMB2_LOCKFLAG_MASK		0x0007
 
 struct smb2_lock_element {
 	__le64 Offset;
@@ -1263,6 +1264,7 @@ extern int smb3_check_sign_req(struct smb_work *work);
 extern void smb3_set_sign_rsp(struct smb_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
+extern struct file_lock *smb_flock_init(struct file *f);
 
 /* smb2 command handlers */
 extern int calc_preauth_integrity_hash(struct tcp_server_info *server,

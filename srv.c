@@ -60,7 +60,7 @@ static DEFINE_SPINLOCK(tcp_sess_list_lock);
 struct fidtable_desc global_fidtable;
 
 struct hlist_head global_name_table[1024];
-
+LIST_HEAD(global_lock_list);
 
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
 unsigned int alloc_roundup_size = 1048576;

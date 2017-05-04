@@ -174,13 +174,13 @@ int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return v_len > count ? count : v_len;
 	}
 
-	ret = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
-			F_RDLCK);
-	if (ret == -EAGAIN) {
+	ret = check_lock_range(filp, *pos, *pos + count - 1,
+			READ);
+	if (ret) {
 		cifssrv_err("%s: unable to read due to lock\n",
 				__func__);
 		kvfree(rbuf);
-		return ret;
+		return -EAGAIN;
 	}
 
 	old_fs = get_fs();
@@ -298,12 +298,12 @@ int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
 		return 0;
 	}
 
-	err = smb_vfs_locks_mandatory_area(filp, *pos, *pos + count - 1,
-			F_WRLCK);
-	if (err == -EAGAIN) {
+	err = check_lock_range(filp, *pos, *pos + count - 1,
+			WRITE);
+	if (err) {
 		cifssrv_err("%s: unable to write due to lock\n",
 				__func__);
-		return err;
+		return -EAGAIN;
 	}
 
 	old_fs = get_fs();
@@ -919,17 +919,16 @@ int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
 		} else {
 			inode = file_inode(filp);
 			if (size < inode->i_size) {
-				err = smb_vfs_locks_mandatory_area(filp, size,
-						inode->i_size - 1, F_WRLCK);
+				err = check_lock_range(filp, size,
+					inode->i_size - 1, WRITE);
 			} else {
-				err = smb_vfs_locks_mandatory_area(filp,
-						inode->i_size, size - 1,
-						F_WRLCK);
+				err = check_lock_range(filp, inode->i_size,
+					size - 1, WRITE);
 			}
 
-			if (err == -EAGAIN) {
+			if (err) {
 				cifssrv_err("failed due to lock\n");
-				return err;
+				return -EAGAIN;
 			}
 		}
 		err = vfs_truncate(&filp->f_path, size);
@@ -1141,7 +1140,7 @@ int smb_vfs_lock(struct file *filp, int cmd,
 }
 
 /**
- * smb_vfs_locks_mandatory_area() - vfs helper for smb byte range file locking
+ * check_lock_range() - vfs helper for smb byte range file locking
  * @filp:	the file to apply the lock to
  * @start:	lock start byte offset
  * @end:	lock end byte offset
@@ -1149,35 +1148,36 @@ int smb_vfs_lock(struct file *filp, int cmd,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start, loff_t end,
+int check_lock_range(struct file *filp, loff_t start, loff_t end,
 		unsigned char type)
 {
-	struct file_lock fl;
-	int error;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
+	struct file_lock *flock;
 	struct file_lock_context *ctx = file_inode(filp)->i_flctx;
+	int error = 0;
+
 	if (!ctx || list_empty_careful(&ctx->flc_posix))
 		return 0;
-#else
-	if (!file_inode(filp)->i_flock)
-		return 0;
-#endif
 
-	locks_init_lock(&fl);
-	fl.fl_owner = (struct files_struct *)filp;
-	fl.fl_pid = current->tgid;
-	fl.fl_file = filp;
-	fl.fl_flags = FL_POSIX | FL_ACCESS;
-	fl.fl_type = type;
-	fl.fl_start = start;
-	fl.fl_end = end;
-	error = posix_lock_file(filp, &fl, NULL);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	posix_unblock_lock(&fl);
-#else
-	locks_delete_block(&fl);
-#endif
+	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
+		/* check conflict locks */
+		if (flock->fl_end >= start && end >= flock->fl_start) {
+			if (flock->fl_type == F_RDLCK) {
+				if (type == WRITE) {
+					cifssrv_err("not allow write by shared lock\n");
+					error = 1;
+					goto out;
+				}
+			} else if (flock->fl_type == F_WRLCK) {
+				/* check owner in lock */
+				if (flock->fl_file != filp) {
+					error = 1;
+					cifssrv_err("not allow rw access by exclusive lock from other opens\n");
+					goto out;
+				}
+			}
+		}
+	}
+out:
 	return error;
 }
 

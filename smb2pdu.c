@@ -144,17 +144,19 @@ int smb2_get_cifssrv_tcon(struct smb_work *smb_work)
 	int rc = -1;
 
 	smb_work->tcon = NULL;
-	if (!smb_work->sess->tcon_count) {
-		cifssrv_debug("NO tree connected\n");
-		return 0;
-	}
-
 	if ((smb_work->server->ops->get_cmd_val(smb_work) ==
 		SMB2_TREE_CONNECT_HE) ||
 		(smb_work->server->ops->get_cmd_val(smb_work) ==
-		SMB2_CANCEL_HE)) {
+		SMB2_CANCEL_HE) ||
+		(smb_work->server->ops->get_cmd_val(smb_work) ==
+		SMB2_LOGOFF_HE)) {
 		cifssrv_debug("skip to check tree connect request\n");
 		return 0;
+	}
+
+	if (!smb_work->sess->tcon_count) {
+		cifssrv_debug("NO tree connected\n");
+		return -1;
 	}
 
 	list_for_each(tmp, &smb_work->sess->tcon_list) {
@@ -799,6 +801,30 @@ smb2_get_name_from_filp(struct file *filp)
 
 	kfree(pathname);
 	return full_pathname;
+}
+
+void smb2_send_interim_resp(struct smb_work *smb_work)
+{
+	struct smb2_lock_rsp *rsp;
+	struct async_info *async = smb_work->async;
+
+	rsp = (struct smb2_lock_rsp *)smb_work->rsp_buf;
+
+	async->async_status = ASYNC_PROG;
+	rsp->hdr.Flags |= SMB2_FLAGS_ASYNC_COMMAND;
+	rsp->hdr.Id.AsyncId =
+		cpu_to_le64(async->async_id);
+	/*
+	 * Send interim Response to inform
+	 * asynchronous request
+	 */
+	cifssrv_debug("Send interim Response to inform asynchronous request id : %lld\n",
+			async->async_id);
+	smb2_set_err_rsp(smb_work);
+	rsp->hdr.Status = NT_STATUS_PENDING;
+	smb_work->multiRsp = 1;
+	smb_send_rsp(smb_work);
+	smb_work->multiRsp = 0;
 }
 
 /**
@@ -1710,6 +1736,8 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	/* setting CifsExiting here may race with start_tcp_sess */
 	server->tcp_status = CifsNeedReconnect;
 
+	destroy_fidtable(sess);
+
 	/*
 	 * We cannot discard session in case some request are already running.
 	 * Need to wait for them to finish and update req_running.
@@ -1734,7 +1762,6 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	WARN_ON(sess->tcon_count != 0);
 
-	destroy_fidtable(sess);
 	sess->valid = 0;
 	sess->state = SMB2_SESSION_EXPIRED;
 
@@ -2419,6 +2446,7 @@ reconnect:
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
 	fp->fattr = req->FileAttributes;
+	INIT_LIST_HEAD(&fp->lock_list);
 
 	if (!S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default stream in xattr */
@@ -5305,25 +5333,13 @@ int smb2_cancel(struct smb_work *smb_work)
 				le64_to_cpu(hdr->Id.AsyncId)) {
 				cifssrv_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
 					hdr->Id.AsyncId, work_hdr->Command);
-				if (work->async->async_status == ASYNC_WAITING)
+				if (work->async->async_status == ASYNC_PROG)
 					work->async->async_status =
-						ASYNC_EXITING;
-				else if (work->async->async_status ==
-					ASYNC_PROG) {
-					work->async->async_status =
-						ASYNC_EXITING;
-					canceled = 1;
-				}
+						ASYNC_CANCEL;
 				break;
 			}
 		}
 		spin_unlock(&server->request_lock);
-
-#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
-		if (canceled)
-			sys_inotify_rm_watch(work->async->fd, work->async->wd);
-#endif
-
 	} else {
 		spin_lock(&server->request_lock);
 		list_for_each(tmp, &server->requests) {
@@ -5349,14 +5365,49 @@ int smb2_cancel(struct smb_work *smb_work)
 
 }
 
-static inline void smb_flock_init(struct file_lock *fl, struct file *f)
+struct file_lock *smb_flock_init(struct file *f)
 {
-	fl->fl_owner = (struct files_struct *)f;
+	struct file_lock *fl;
+
+	fl = locks_alloc_lock();
+	if (!fl)
+		goto out;
+
+	locks_init_lock(fl);
+
+	fl->fl_owner = f;
 	fl->fl_pid = current->tgid;
 	fl->fl_file = f;
 	fl->fl_flags = FL_POSIX;
 	fl->fl_ops = NULL;
 	fl->fl_lmops = NULL;
+
+out:
+	return fl;
+}
+
+static struct cifssrv_lock *smb2_lock_init(struct file_lock *flock,
+	unsigned int cmd, int flags, struct list_head *lock_list)
+{
+	struct cifssrv_lock *lock;
+
+	lock = kzalloc(sizeof(struct cifssrv_lock), GFP_KERNEL);
+	if (!lock)
+		return NULL;
+
+	lock->cmd = cmd;
+	lock->fl = flock;
+	lock->start = flock->fl_start;
+	lock->end = flock->fl_end;
+	lock->flags = flags;
+	if (lock->start == lock->end)
+		lock->zero_len = 1;
+	INIT_LIST_HEAD(&lock->llist);
+	INIT_LIST_HEAD(&lock->glist);
+	INIT_LIST_HEAD(&lock->flist);
+	list_add_tail(&lock->llist, lock_list);
+
+	return lock;
 }
 
 /**
@@ -5367,23 +5418,31 @@ static inline void smb_flock_init(struct file_lock *fl, struct file *f)
  */
 int smb2_lock(struct smb_work *smb_work)
 {
+	struct tcp_server_info *server = smb_work->server;
+	struct async_info *async = smb_work->async;
 	struct smb2_lock_req *req;
 	struct smb2_lock_rsp *rsp;
 	struct smb2_lock_element *lock_ele;
 	struct cifssrv_file *fp;
 	struct file_lock *flock = NULL;
-	struct file *filp;
+	struct file *filp = NULL;
 	int lock_count;
 	int flags = 0;
 	unsigned int cmd = 0;
 	int err = 0, i;
+	uint64_t lock_length;
+	struct cifssrv_lock *smb_lock = NULL, *cmp_lock, *tmp;
+	int nolock = 0;
+	LIST_HEAD(lock_list);
+	LIST_HEAD(rollback_list);
+	int prior_lock = 0;
 
 	req = (struct smb2_lock_req *)smb_work->buf;
 	rsp = (struct smb2_lock_rsp *)smb_work->rsp_buf;
 
 	if (le16_to_cpu(req->StructureSize) != 48) {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		goto out;
+		goto out2;
 	}
 
 	cifssrv_debug("Recieved lock request\n");
@@ -5393,7 +5452,7 @@ int smb2_lock(struct smb_work *smb_work)
 		cifssrv_debug("Invalid file id for lock : %llu\n",
 				le64_to_cpu(req->VolatileFileId));
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto out;
+		goto out2;
 	}
 
 	if (fp->is_durable && fp->persistent_id !=
@@ -5401,7 +5460,7 @@ int smb2_lock(struct smb_work *smb_work)
 		cifssrv_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto out;
+		goto out2;
 	}
 
 	filp = fp->filp;
@@ -5411,21 +5470,17 @@ int smb2_lock(struct smb_work *smb_work)
 	cifssrv_debug("lock count is %d\n", lock_count);
 	if (!lock_count)  {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		goto out;
+		goto out2;
 	}
-
-	flock = locks_alloc_lock();
-	if (!flock) {
-		rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
-		goto out;
-	}
-
-	locks_init_lock(flock);
 
 	for (i = 0; i < lock_count; i++) {
 		flags = le32_to_cpu(lock_ele[i].Flags);
 
-		smb_flock_init(flock, filp);
+		flock = smb_flock_init(filp);
+		if (!flock) {
+			rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
+			goto out;
+		}
 
 		/* Checking for wrong flag combination during lock request*/
 		switch (flags) {
@@ -5470,22 +5525,158 @@ int smb2_lock(struct smb_work *smb_work)
 		case SMB2_LOCKFLAG_UNLOCK:
 			cifssrv_debug("received unlock request\n");
 			flock->fl_type = F_UNLCK;
+			cmd = 0;
 			break;
 		default:
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-			goto out;
+			flags = 0;
 		}
 
 		flock->fl_start = le64_to_cpu(lock_ele[i].Offset);
-		flock->fl_end = flock->fl_start +
-			le64_to_cpu(lock_ele[i].Length) - 1;
-		if (flock->fl_end < flock->fl_start) {
+		if (flock->fl_start > OFFSET_MAX) {
+			cifssrv_err("Invalid lock range requested\n");
 			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
 		}
 
+		lock_length = le64_to_cpu(lock_ele[i].Length);
+		if (lock_length > 0) {
+			if ((loff_t)lock_length >
+					OFFSET_MAX - flock->fl_start) {
+				cifssrv_err("Invalid lock range requested\n");
+				rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
+				goto out;
+			}
+		} else
+			lock_length = 0;
+
+		flock->fl_end = flock->fl_start + lock_length;
+
+		if (flock->fl_end < flock->fl_start) {
+			cifssrv_err("the end offset(%llx) is smaller than the start offset(%llx)\n",
+				flock->fl_end, flock->fl_start);
+			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
+			goto out;
+		}
+
+		/* Check conflict locks in one request */
+		list_for_each_entry(cmp_lock, &lock_list, llist) {
+			if (cmp_lock->fl->fl_start <= flock->fl_start &&
+					cmp_lock->fl->fl_end >= flock->fl_end) {
+				if (cmp_lock->fl->fl_type != F_UNLCK &&
+					flock->fl_type != F_UNLCK) {
+					cifssrv_err("conflict two locks in one request\n");
+					rsp->hdr.Status =
+						NT_STATUS_INVALID_PARAMETER;
+					goto out;
+				}
+			}
+		}
+
+		smb_lock = smb2_lock_init(flock, cmd, flags, &lock_list);
+		if (!smb_lock) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+	}
+
+	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		if (!(smb_lock->flags & SMB2_LOCKFLAG_MASK)) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		if ((prior_lock & (SMB2_LOCKFLAG_EXCLUSIVE |
+				SMB2_LOCKFLAG_SHARED) &&
+			smb_lock->flags & SMB2_LOCKFLAG_UNLOCK) ||
+			(prior_lock == SMB2_LOCKFLAG_UNLOCK &&
+				 !(smb_lock->flags & SMB2_LOCKFLAG_UNLOCK))) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		prior_lock = smb_lock->flags;
+
+		if (!(smb_lock->flags & SMB2_LOCKFLAG_UNLOCK) &&
+			!(smb_lock->flags & SMB2_LOCKFLAG_FAIL_IMMEDIATELY))
+			goto no_check_gl;
+
+		nolock = 1;
+		/* check locks in global list */
+		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+			if (file_inode(cmp_lock->fl->fl_file) !=
+				file_inode(smb_lock->fl->fl_file))
+				continue;
+
+			if (smb_lock->fl->fl_type == F_UNLCK) {
+				if (cmp_lock->fl->fl_file ==
+					smb_lock->fl->fl_file &&
+					cmp_lock->start == smb_lock->start &&
+					cmp_lock->end == smb_lock->end &&
+					!cmp_lock->work) {
+					nolock = 0;
+					locks_free_lock(cmp_lock->fl);
+					list_del(&cmp_lock->glist);
+					list_del(&cmp_lock->flist);
+					kfree(cmp_lock);
+					break;
+				}
+				continue;
+			}
+
+			if (cmp_lock->fl->fl_file == smb_lock->fl->fl_file) {
+				if (smb_lock->flags & SMB2_LOCKFLAG_SHARED)
+					continue;
+			} else {
+				if (cmp_lock->flags & SMB2_LOCKFLAG_SHARED)
+					continue;
+			}
+
+			/* check zero byte lock range */
+			if (cmp_lock->zero_len && !smb_lock->zero_len &&
+				cmp_lock->start > smb_lock->start &&
+				cmp_lock->start < smb_lock->end) {
+				cifssrv_err("previous lock conflict with zero byte lock range\n");
+				rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
+					goto out;
+			}
+
+			if (smb_lock->zero_len && !cmp_lock->zero_len &&
+				smb_lock->start > cmp_lock->start &&
+				smb_lock->start < cmp_lock->end) {
+				cifssrv_err("current lock conflict with zero byte lock range\n");
+				rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
+					goto out;
+			}
+
+			if (((cmp_lock->start <= smb_lock->start &&
+				cmp_lock->end > smb_lock->start) ||
+				(cmp_lock->start < smb_lock->end &&
+				cmp_lock->end >= smb_lock->end)) &&
+				!cmp_lock->zero_len && !smb_lock->zero_len) {
+				cifssrv_err("Not allow lock operation on exclusive lock range\n");
+				rsp->hdr.Status =
+					NT_STATUS_LOCK_NOT_GRANTED;
+				goto out;
+			}
+		}
+
+		if (smb_lock->fl->fl_type == F_UNLCK && nolock) {
+			cifssrv_err("Try to unlock nolocked range\n");
+			rsp->hdr.Status = NT_STATUS_RANGE_NOT_LOCKED;
+			goto out;
+		}
+
+no_check_gl:
+		if (smb_lock->zero_len) {
+			err = 0;
+			goto skip;
+		}
+
+		flock = smb_lock->fl;
+		list_del(&smb_lock->llist);
 retry:
-		err = smb_vfs_lock(filp, cmd, flock);
+		err = smb_vfs_lock(filp, smb_lock->cmd, flock);
+skip:
 		if (flags & SMB2_LOCKFLAG_UNLOCK) {
 			if (!err)
 				cifssrv_debug("File unlocked\n");
@@ -5493,42 +5684,106 @@ retry:
 				rsp->hdr.Status = NT_STATUS_NOT_LOCKED;
 				goto out;
 			}
+			locks_free_lock(flock);
+			kfree(smb_lock);
 		} else {
 			if (err == FILE_LOCK_DEFERRED) {
+				spinlock_t *rq_lock = &server->request_lock;
+
 				cifssrv_debug("would have to wait for getting"
 						" lock\n");
-				rsp->hdr.Status = NT_STATUS_PENDING;
-				rsp->StructureSize = cpu_to_le16(4);
-				rsp->Reserved = 0;
-				inc_rfc1001_len(rsp, 4);
-				smb_send_rsp(smb_work);
-				init_smb2_rsp(smb_work);
-				err = wait_event_interruptible(flock->fl_wait,
-						!flock->fl_next);
-				if (!err)
+				smb_lock->work = smb_work;
+				list_add_tail(&smb_lock->glist,
+					&global_lock_list);
+				list_add(&smb_lock->llist, &rollback_list);
+				list_add(&smb_lock->flist, &fp->lock_list);
+
+				smb2_send_interim_resp(smb_work);
+wait:
+				err = wait_event_interruptible_timeout(
+						flock->fl_wait,	!flock->fl_next,
+						msecs_to_jiffies(10));
+				spin_lock(rq_lock);
+				if (async->async_status == ASYNC_CANCEL ||
+					async->async_status == ASYNC_CLOSE) {
+					posix_unblock_lock(flock);
+					list_del(&smb_lock->llist);
+					list_del(&smb_lock->glist);
+					locks_free_lock(flock);
+
+					if (async->async_status ==
+							ASYNC_CANCEL) {
+						rsp->hdr.Status =
+							NT_STATUS_CANCELLED;
+						list_del(&smb_lock->flist);
+						kfree(smb_lock);
+						spin_unlock(rq_lock);
+						goto out;
+					}
+					rsp->hdr.Status =
+						NT_STATUS_RANGE_NOT_LOCKED;
+					kfree(smb_lock);
+					spin_unlock(rq_lock);
+					goto out2;
+				}
+				spin_unlock(rq_lock);
+
+				if (err) {
+					list_del(&smb_lock->llist);
+					list_del(&smb_lock->glist);
+					list_del(&smb_lock->flist);
 					goto retry;
-			} else if (!err)
+				} else
+					goto wait;
+			} else if (!err) {
+				list_add_tail(&smb_lock->glist,
+					&global_lock_list);
+				list_add(&smb_lock->llist, &rollback_list);
+				list_add(&smb_lock->flist, &fp->lock_list);
 				cifssrv_debug("successful in taking lock\n");
-			else {
+			} else {
 				rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
 				goto out;
 			}
 		}
 	}
 
-	locks_free_lock(flock);
 	rsp->StructureSize = cpu_to_le16(4);
 	cifssrv_debug("successful in taking lock\n");
 	rsp->hdr.Status = NT_STATUS_OK;
 	rsp->Reserved = 0;
 	inc_rfc1001_len(rsp, 4);
+
 	return err;
 
 out:
+	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		locks_free_lock(smb_lock->fl);
+		list_del(&smb_lock->llist);
+		kfree(smb_lock);
+	}
+
+	list_for_each_entry_safe(smb_lock, tmp, &rollback_list, llist) {
+		struct file_lock *rlock = NULL;
+
+		rlock = smb_flock_init(filp);
+		rlock->fl_type = F_UNLCK;
+		rlock->fl_start = smb_lock->start;
+		rlock->fl_end = smb_lock->end;
+
+		err = smb_vfs_lock(filp, 0, rlock);
+		if (err)
+			cifssrv_err("rollback unlock fail : %d\n", err);
+		list_del(&smb_lock->llist);
+		list_del(&smb_lock->glist);
+		list_del(&smb_lock->flist);
+		locks_free_lock(smb_lock->fl);
+		locks_free_lock(rlock);
+		kfree(smb_lock);
+	}
+out2:
 	cifssrv_err("failed in taking lock(flags : %x)\n", flags);
 	smb2_set_err_rsp(smb_work);
-	if (flock)
-		locks_free_lock(flock);
 	return 0;
 }
 
@@ -6296,7 +6551,7 @@ start:
 		set_fs(cur_fs);
 
 		spin_lock(&work->server->request_lock);
-		if (work->async->async_status == ASYNC_EXITING) {
+		if (work->async->async_status == ASYNC_CANCEL) {
 			spin_unlock(&work->server->request_lock);
 			sys_inotify_rm_watch(fd, wd);
 			continue;

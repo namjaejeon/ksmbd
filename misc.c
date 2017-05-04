@@ -163,18 +163,23 @@ void add_request_to_queue(struct smb_work *smb_work)
 		unsigned int command = server->ops->get_cmd_val(smb_work);
 
 		if (command != SMB2_CANCEL) {
-			if (command == SMB2_CHANGE_NOTIFY) {
+			if (command == SMB2_CHANGE_NOTIFY ||
+				command == SMB2_LOCK) {
 				smb_work->async =
 					kmalloc(sizeof(struct async_info),
 					GFP_KERNEL);
+				smb_work->type = ASYNC;
+
 				smb_work->async->async_id =
 					(__u64) ida_simple_get(&async_ida, 1, 0,
 					GFP_KERNEL);
 
 				requests_queue = &server->async_requests;
 				smb_work->async->async_status = ASYNC_WAITING;
-			} else
+			} else {
 				requests_queue = &server->requests;
+				smb_work->type = SYNC;
+			}
 		}
 	} else {
 		if (server->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)

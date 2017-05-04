@@ -370,6 +370,7 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifssrv_file *fp;
 	struct file *filp;
 	struct dentry *dir, *dentry;
+	struct cifssrv_lock *lock, *tmp;
 	int err;
 
 	fp = get_id_from_fidtable(sess, id);
@@ -392,6 +393,31 @@ int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id)
 		filp = fp->filp;
 
 	hash_del(&fp->node);
+
+	list_for_each_entry_safe(lock, tmp, &fp->lock_list, flist) {
+		struct file_lock *flock = NULL;
+
+		if (lock->work && lock->work->type == ASYNC &&
+			lock->work->async->async_status == ASYNC_PROG) {
+			struct smb_work *async_work = lock->work;
+
+			async_work->async->async_status = ASYNC_CLOSE;
+		} else {
+			flock = smb_flock_init(filp);
+			flock->fl_type = F_UNLCK;
+			flock->fl_start = lock->start;
+			flock->fl_end = lock->end;
+			err = smb_vfs_lock(filp, 0, flock);
+			if (err)
+				cifssrv_err("unlock fail : %d\n", err);
+			list_del(&lock->llist);
+			list_del(&lock->glist);
+			list_del(&lock->flist);
+			locks_free_lock(lock->fl);
+			locks_free_lock(flock);
+			kfree(lock);
+		}
+	}
 
 	if (fp->delete_on_close) {
 		dentry = filp->f_path.dentry;

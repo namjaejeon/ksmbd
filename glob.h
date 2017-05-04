@@ -89,6 +89,7 @@ extern char NEGOTIATE_GSS_HEADER[74];
 extern bool global_signing;
 
 extern struct hlist_head global_name_table[1024];
+extern struct list_head global_lock_list;
 
 /* cifssrv's Specific ERRNO */
 #define ESHARE 50000
@@ -396,7 +397,9 @@ struct trans_state {
 enum asyncEnum {
 	ASYNC_WAITING = 1,
 	ASYNC_PROG,
-	ASYNC_EXITING
+	ASYNC_CANCEL,
+	ASYNC_CLOSE,
+	ASYNC_EXITING,
 };
 
 struct async_info {
@@ -407,8 +410,12 @@ struct async_info {
 	int wd;
 };
 
+#define SYNC 1
+#define ASYNC 2
+
 /* one of these for every pending CIFS request at the server */
 struct smb_work {
+	int type;
 	struct list_head qhead;		/* works waiting on reply
 							from this server */
 	struct list_head request_entry;	/* list head at server->requests */
@@ -600,7 +607,7 @@ int smb_kern_path(char *name, unsigned int flags, struct path *path,
 int smb_search_dir(char *dirname, char *filename);
 void smb_vfs_set_fadvise(struct file *filp, int option);
 int smb_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int smb_vfs_locks_mandatory_area(struct file *filp, loff_t start,
+int check_lock_range(struct file *filp, loff_t start,
 		loff_t end, unsigned char type);
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
