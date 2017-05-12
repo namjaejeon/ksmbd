@@ -5983,9 +5983,7 @@ int smb2_ioctl(struct smb_work *smb_work)
 		struct network_interface_info_ioctl_rsp *nii_rsp = NULL;
 		struct net_device *netdev;
 		struct sockaddr_storage_rsp *sockaddr_storage;
-		struct ethtool_cmd cmd;
-		int err;
-		unsigned int speed;
+		unsigned int speed, flags;
 
 		rtnl_lock();
 		for_each_netdev(&init_net, netdev) {
@@ -5997,7 +5995,8 @@ int smb2_ioctl(struct smb_work *smb_work)
 			if (netdev->type == ARPHRD_LOOPBACK)
 				continue;
 
-			if (netdev->flags & IFF_UP)
+			flags = dev_get_flags(netdev);
+			if (!(flags & IFF_RUNNING))
 				continue;
 
 			nii_rsp = (struct network_interface_info_ioctl_rsp *)
@@ -6013,12 +6012,27 @@ int smb2_ioctl(struct smb_work *smb_work)
 			nii_rsp->Next = cpu_to_le32(152);
 			nii_rsp->Reserved = 0;
 
-			memset(&cmd, 0, sizeof(cmd));
-			cmd.cmd = ETHTOOL_GSET;
-			err = netdev->ethtool_ops->get_settings(netdev, &cmd);
-			if (err < 0)
-				goto out;
-			speed = ethtool_cmd_speed(&cmd);
+			if (netdev->ethtool_ops->get_settings) {
+				struct ethtool_cmd cmd;
+
+				netdev->ethtool_ops->get_settings(netdev, &cmd);
+				speed = cmd.speed;
+			}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+			else if (netdev->ethtool_ops->get_link_ksettings) {
+				struct ethtool_link_ksettings cmd;
+
+				netdev->ethtool_ops->get_link_ksettings(netdev,
+					&cmd);
+				speed = cmd.base.speed;
+			}
+#endif
+			else {
+				cifssrv_err("%s speed is unknown, defaulting to 100\n",
+					netdev->name);
+				speed = 1000;
+			}
+
 			nii_rsp->LinkSpeed = cpu_to_le64(speed * 1000000);
 
 			sockaddr_storage = (struct sockaddr_storage_rsp *)
@@ -6070,8 +6084,6 @@ int smb2_ioctl(struct smb_work *smb_work)
 
 			nbytes +=
 				sizeof(struct network_interface_info_ioctl_rsp);
-			rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
-			rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 		}
 		rtnl_unlock();
 
@@ -6083,6 +6095,9 @@ int smb2_ioctl(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_BUFFER_TOO_SMALL;
 			goto out;
 		}
+
+		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 
 		break;
 	}
