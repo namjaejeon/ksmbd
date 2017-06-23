@@ -677,7 +677,7 @@ int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 int cifssrv_kthread_stop_status(int etype);
 
 /* asn1 functions */
-extern int decode_negTokenInit(unsigned char *security_blob, int length,
+extern int cifssrv_decode_negTokenInit(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);
 extern int decode_negTokenTarg(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);
