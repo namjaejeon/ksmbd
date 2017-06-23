@@ -4260,6 +4260,7 @@ int smb_posix_open(struct smb_work *smb_work)
 				err = -ENOENT;
 				cifssrv_debug("returning as file does not exist\n");
 			}
+			goto out;
 		}
 		goto free_path;
 	}
