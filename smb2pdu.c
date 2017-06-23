@@ -2372,11 +2372,9 @@ int smb2_open(struct smb_work *smb_work)
 			cifssrv_debug("request smb2 create allocate size : %llu\n",
 				alloc_size);
 			rc = smb_vfs_alloc_size(filp, alloc_size);
-			if (rc < 0) {
-				cifssrv_err("smb_vfs_alloc_size is failed : %d\n",
+			if (rc < 0)
+				cifssrv_debug("smb_vfs_alloc_size is failed : %d\n",
 					rc);
-				goto err_out;
-			}
 		}
 
 		context = smb2_find_context_vals(req,
