@@ -1193,7 +1193,6 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 	pipe_desc->id = id;
 	pipe_desc->pkt_type = -1;
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
 			GFP_KERNEL);
 	if (!pipe_desc->rsp_buf) {
@@ -1201,7 +1200,6 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 		sess->pipe_desc[pipe_type] = NULL;
 		return -ENOMEM;
 	}
-#endif
 
 	switch (pipe_type) {
 	case SRVSVC:
@@ -1238,9 +1236,7 @@ int close_pipe_id(struct cifssrv_sess *sess, int pipe_type)
 	if (rc < 0)
 		return rc;
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	kfree(pipe_desc->rsp_buf);
-#endif
 	kfree(pipe_desc);
 	sess->pipe_desc[pipe_type] = NULL;
 

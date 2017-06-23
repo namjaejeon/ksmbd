@@ -668,7 +668,6 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment);
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 /* netlink functions */
 int cifssrv_net_init(void);
 void cifssrv_net_exit(void);
@@ -676,7 +675,6 @@ int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
 int cifssrv_kthread_stop_status(int etype);
-#endif
 
 /* asn1 functions */
 extern int decode_negTokenInit(unsigned char *security_blob, int length,

@@ -1005,16 +1005,12 @@ static int __init init_smb_server(void)
 		goto err2;
 #endif
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	rc = cifssrv_net_init();
 	if (rc)
 		goto err3;
-#endif
 	return 0;
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 err3:
-#endif
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
@@ -1031,9 +1027,7 @@ err1:
  */
 static void __exit exit_smb_server(void)
 {
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	cifssrv_net_exit();
-#endif
 
 	cifssrv_stop_forker_thread();
 #ifdef CONFIG_CIFS_SMB2_SERVER

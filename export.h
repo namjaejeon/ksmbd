@@ -121,10 +121,8 @@ struct cifssrv_sess {
 	int state;
 	__u8 Preauth_HashValue[64];
 	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	wait_queue_head_t pipe_q;
 	int ev_state;
-#endif
 };
 
 enum share_attrs {

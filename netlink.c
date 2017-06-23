@@ -27,8 +27,6 @@
 #include "export.h"
 #include "netlink.h"
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
-
 #define NETLINK_CIFSSRV			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
 #define cifssrv_ptr(_handle)		((void *)(unsigned long)_handle)
@@ -314,4 +312,3 @@ void cifssrv_net_exit(void)
 {
 	netlink_kernel_release(cifssrv_nlsk);
 }
-#endif /* CONFIG_CIFSSRV_NETLINK_INTERFACE */
