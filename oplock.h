@@ -84,6 +84,7 @@ struct oplock_info {
 
 struct ofile_info {
 	struct inode            *inode;
+	char			*stream_name;
 	struct list_head        i_list;
 	struct list_head        op_write_list;
 	struct list_head        op_read_list;
@@ -118,7 +119,7 @@ void smb_break_all_oplock(struct tcp_server_info *server,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
-void create_lease_buf(u8 *rbuf, u8 *LeaseKey, u8 oplock, u8 handle);
+void create_lease_buf(u8 *rbuf, u8 *LeaseKey, __le32 curr_lease_state);
 __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq);
 struct oplock_info *get_matching_opinfo_lease(struct tcp_server_info *server,
 		struct ofile_info **ofile, char *LeaseKey,

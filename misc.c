@@ -554,15 +554,13 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	}
 
 	memcpy(tmp_a, prefix, p_len);
-	convert_to_lowercase(tmp_a);
 
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
 		cifssrv_debug("%s, len %zd\n", name, strlen(name));
 		memcpy(tmp_b, name, p_len);
-		convert_to_lowercase(tmp_b);
 
-		if (strncmp(tmp_a, tmp_b, p_len))
+		if (strncasecmp(tmp_a, tmp_b, p_len))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
@@ -577,17 +575,6 @@ out:
 	kfree(tmp_a);
 	kfree(tmp_b);
 	return value_len;
-}
-
-void convert_to_lowercase(char *string)
-{
-	int i;
-	int len = strlen(string);
-
-	for (i = 0; i < len; i++) {
-		if (string[i] >= 'A' && string[i] <= 'Z')
-			string[i] = string[i] + 32;
-	}
 }
 
 int get_pos_strnstr(const char *s1, const char *s2, size_t len)

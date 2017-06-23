@@ -1870,7 +1870,6 @@ int smb2_open(struct smb_work *smb_work)
 	int durable_reconnect = false, durable_reopened = false;
 	struct create_durable *recon_state;
 	struct cifssrv_durable_state *durable_state;
-	char *lk = NULL;
 	struct lease_ctx_info lc;
 	int maximal_access = 0;
 	int contxt_cnt = 0;
@@ -1883,6 +1882,7 @@ int smb2_open(struct smb_work *smb_work)
 	int stream_size = 0;
 	int next_off = 0;
 	__le32 *next_ptr = NULL;
+	int dlease = 0;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -2132,8 +2132,7 @@ int smb2_open(struct smb_work *smb_work)
 			stream = strsep(&data, ":");
 			cifssrv_debug("streams : %s, data : %s\n", stream,
 				data);
-			convert_to_lowercase(data);
-			if (strncmp("$data", data, 5)) {
+			if (strncasecmp("$data", data, 5)) {
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
 				rc = -EIO;
@@ -2490,6 +2489,7 @@ reconnect:
 				rc = -EINVAL;
 				goto err_out;
 			}
+			file_info = FILE_CREATED;
 		}
 		rc = 0;
 	}
@@ -2513,25 +2513,22 @@ reconnect:
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
-	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode)) {
+	if (!oplocks_enable || (oplock == SMB2_OPLOCK_LEVEL_LEASE &&
+		!(server->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
 	} else if (oplock == SMB2_OPLOCK_LEVEL_LEASE) {
-		if (!(server->srv_cap & SMB2_GLOBAL_CAP_LEASING)
-				|| stat.nlink != 1)
-			oplock = SMB2_OPLOCK_LEVEL_NONE;
-		else {
-			oplock = parse_lease_state(req, &lc);
-			if (oplock) {
-				lk = (char *)&lc.LeaseKey;
-				cifssrv_debug("lease req for(%s) oplock 0x%x, "
-						"lease state 0x%x\n",
-						name, oplock,
-						lc.CurrentLeaseState);
-				rc = smb_grant_oplock(sess, &oplock,
-					volatile_id, fp,
-					req->hdr.Id.SyncId.TreeId, &lc);
-				if (rc)
-					oplock = SMB2_OPLOCK_LEVEL_NONE;
+		oplock = parse_lease_state(req, &lc);
+		if (oplock >= 0) {
+			cifssrv_debug("lease req for(%s) oplock 0x%x, lease state 0x%x\n",
+				name, oplock, lc.CurrentLeaseState);
+			rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
+				req->hdr.Id.SyncId.TreeId, &lc);
+			if (rc == -EINVAL)
+				goto err_out;
+			else if (rc) {
+				oplock = SMB2_OPLOCK_LEVEL_NONE;
+				if (rc == -EISDIR)
+					dlease = 1;
 			}
 		}
 	} else {
@@ -2634,7 +2631,7 @@ reconnect:
 	inc_rfc1001_len(rsp_org, 88); /* StructureSize - 1*/
 
 	/* If lease is request send lease context response */
-	if (lk && (req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_LEASE)) {
+	if (!dlease && req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_LEASE) {
 		cifssrv_debug("lease granted on(%s) oplock 0x%x, "
 				"lease state 0x%x\n",
 				name, oplock,
@@ -2643,8 +2640,8 @@ reconnect:
 
 		lease_ccontext = (struct create_context *)rsp->Buffer;
 		contxt_cnt++;
-		create_lease_buf(rsp->Buffer, lk, oplock,
-			lc.CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING);
+		create_lease_buf(rsp->Buffer, (char *)&lc.LeaseKey,
+			lc.CurrentLeaseState);
 		rsp->CreateContextsLength =
 			cpu_to_le32(server->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_lease_size);
