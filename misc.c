@@ -639,6 +639,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 				break;
 			}
 
+			if (prev_fp->attrib_only != curr_fp->attrib_only)
+				continue;
+
 			if (!(prev_fp->saccess & (FILE_SHARE_DELETE_LE)) &&
 					curr_fp->daccess & (FILE_DELETE_LE |
 				FILE_GENERIC_ALL_LE | FILE_MAXIMAL_ACCESS_LE)) {

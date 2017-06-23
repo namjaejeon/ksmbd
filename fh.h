@@ -119,6 +119,7 @@ struct cifssrv_file {
 	__le32 cdoption;
 	__le32 fattr;
 	__u64 create_time;
+	bool attrib_only;
 	bool is_stream;
 	char *stream_name;
 	ssize_t ssize;

@@ -1870,7 +1870,7 @@ int smb2_open(struct smb_work *smb_work)
 	int oplock, open_flags = 0, file_info = 0, len = 0;
 	int volatile_id = 0;
 	uint64_t persistent_id = 0;
-	int rc = 0;
+	int rc = 0, sh_rc = 0;
 	char *name = NULL, *context_name, *lname = NULL, *pathname = NULL;
 	struct create_context *context;
 	int durable_open = false;
@@ -1879,7 +1879,6 @@ int smb2_open(struct smb_work *smb_work)
 	struct cifssrv_durable_state *durable_state;
 	char *lk = NULL;
 	struct lease_ctx_info lc;
-	bool attrib_only = false;
 	int maximal_access = 0;
 	int contxt_cnt = 0;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
@@ -2454,6 +2453,11 @@ reconnect:
 	fp->fattr = req->FileAttributes;
 	INIT_LIST_HEAD(&fp->lock_list);
 
+	if (islink) {
+		fp->lfilp = lfilp;
+		fp->islink = islink;
+	}
+
 	if (!S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default stream in xattr */
 		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
@@ -2487,10 +2491,6 @@ reconnect:
 				goto err_out;
 			}
 
-			rc = smb_check_shared_mode(filp, fp);
-			if (rc < 0)
-				goto err_out;
-
 			rc = smb_store_cont_xattr(&path, stream_name,
 					NULL, 0);
 			if (rc < 0) {
@@ -2499,30 +2499,9 @@ reconnect:
 				rc = -EINVAL;
 				goto err_out;
 			}
-		} else {
-			rc = smb_check_shared_mode(filp, fp);
-			if (rc < 0)
-				goto err_out;
 		}
-
 		rc = 0;
-	} else {
-		if (!S_ISDIR(file_inode(filp)->i_mode)) {
-			rc = smb_check_shared_mode(filp, fp);
-			if (rc < 0)
-				goto err_out;
-		}
 	}
-
-	if (islink) {
-		fp->lfilp = lfilp;
-		fp->islink = islink;
-	}
-
-	/* Add fp to global file table using inode key. */
-	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
-
-	generic_fillattr(path.dentry->d_inode, &stat);
 
 	/* In case of durable reopen try to get BATCH oplock, irrespective
 	   of the value of requested oplock in the request */
@@ -2530,11 +2509,18 @@ reconnect:
 		oplock = SMB2_OPLOCK_LEVEL_BATCH;
 	else
 		oplock = req->RequestedOplockLevel;
+	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
+			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
-	if (oplock && (req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
-					FILE_WRITE_ATTRIBUTES_LE |
-					FILE_SYNCHRONIZE_LE)) == 0)
-		attrib_only = true;
+	if (!S_ISDIR(file_inode(filp)->i_mode)) {
+		sh_rc = smb_check_shared_mode(filp, fp);
+		if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE && sh_rc < 0) {
+			rc = sh_rc;
+			goto err_out;
+		}
+	}
+
+	generic_fillattr(path.dentry->d_inode, &stat);
 
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode)) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
@@ -2552,19 +2538,27 @@ reconnect:
 						lc.CurrentLeaseState);
 				rc = smb_grant_oplock(sess, &oplock,
 					volatile_id, fp,
-					req->hdr.Id.SyncId.TreeId, &lc,
-					attrib_only);
+					req->hdr.Id.SyncId.TreeId, &lc);
 				if (rc)
 					oplock = SMB2_OPLOCK_LEVEL_NONE;
 			}
 		}
-	} else if (oplock & (SMB2_OPLOCK_LEVEL_BATCH |
-				SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+	} else {
 		rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
-				req->hdr.Id.SyncId.TreeId, NULL, attrib_only);
+				req->hdr.Id.SyncId.TreeId, NULL);
 		if (rc)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 	}
+
+	if (!S_ISDIR(file_inode(filp)->i_mode)) {
+		if (sh_rc < 0) {
+			rc = sh_rc;
+			goto err_out;
+		}
+	}
+
+	/* Add fp to global file table using inode key. */
+	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
 
 	/* Get Persistent-ID */
 	if (durable_reopened == false) {
@@ -4794,6 +4788,16 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				smb2_set_err_rsp(smb_work);
 				return rc;
 			}
+
+			if (oplocks_enable) {
+				/*
+				 * Do we need to break any of a levelII
+				 * oplock ?
+				 */
+				mutex_lock(&ofile_list_lock);
+				smb_breakII_oplock(sess->server, fp, NULL);
+				mutex_unlock(&ofile_list_lock);
+			}
 			cifssrv_debug("fid %llu truncated to newsize %lld\n",
 					id, newsize);
 		}
@@ -4812,9 +4816,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		parent_fp = find_fp_in_hlist_using_inode(GET_PARENT_INO(fp));
 		if (parent_fp) {
-			if (parent_fp->saccess & FILE_SHARE_DELETE_LE &&
-					parent_fp->daccess & FILE_DELETE_LE) {
-				cifssrv_err("parent dir is opened with share delete and delete access\n");
+			if (parent_fp->daccess & FILE_DELETE_LE) {
+				cifssrv_err("parent dir is opened with delete access\n");
 				return -ESHARE;
 			}
 

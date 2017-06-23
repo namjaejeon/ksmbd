@@ -1008,7 +1008,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
 		/* Client cannot request levelII oplock directly */
 		err = smb_grant_oplock(work->sess, oplock, id, fp, rcv_hdr->Tid,
-			NULL, false);
+			NULL);
 		/* if we enconter an error, no oplock is granted */
 		if (err)
 			*oplock = 0;

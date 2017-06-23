@@ -94,7 +94,7 @@ struct ofile_info {
 
 extern int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 		int id, struct cifssrv_file *fp, __u16 Tid,
-		struct lease_ctx_info *lctx, bool attr_only);
+		struct lease_ctx_info *lctx);
 extern void smb1_send_oplock_break(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 extern void smb2_send_oplock_break(struct work_struct *work);
