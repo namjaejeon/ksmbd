@@ -2514,7 +2514,8 @@ reconnect:
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	if (!oplocks_enable || (oplock == SMB2_OPLOCK_LEVEL_LEASE &&
-		!(server->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
+		!(server->srv_cap & SMB2_GLOBAL_CAP_LEASING)) ||
+		(open_flags & O_TRUNC && file_present)) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
 	} else if (oplock == SMB2_OPLOCK_LEVEL_LEASE) {
 		oplock = parse_lease_state(req, &lc);
@@ -2640,8 +2641,7 @@ reconnect:
 
 		lease_ccontext = (struct create_context *)rsp->Buffer;
 		contxt_cnt++;
-		create_lease_buf(rsp->Buffer, (char *)&lc.LeaseKey,
-			lc.CurrentLeaseState);
+		create_lease_buf(rsp->Buffer, &lc);
 		rsp->CreateContextsLength =
 			cpu_to_le32(server->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, server->vals->create_lease_size);

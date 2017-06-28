@@ -676,8 +676,13 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			if (opinfo->leased) {
 				/* send lease break */
+				if (opinfo->CurrentLeaseState &
+					(SMB2_LEASE_HANDLE_CACHING |
+					SMB2_LEASE_WRITE_CACHING)) {
+					opinfo->state = OPLOCK_BREAKING;
+				}
+
 				ack_required = 1;
-				opinfo->state = OPLOCK_BREAKING;
 				opinfo->NewLeaseState = SMB2_LEASE_NONE;
 				smb_send_lease_break(&work->work);
 				if (!ack_required)
@@ -1060,7 +1065,7 @@ int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 	int err = 0;
 	struct inode *inode = file_inode(fp->filp);
 	struct ofile_info *ofile = NULL;
-	struct oplock_info *opinfo_new, *opinfo_old;
+	struct oplock_info *opinfo_new, *opinfo_old = NULL;
 	struct list_head *tmp;
 	bool oplocked = false;
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1181,7 +1186,8 @@ out1:
 		memcpy(fp->LeaseKey, lctx->LeaseKey,
 				SMB2_LEASE_KEY_SIZE);
 		fp->lease_granted = 1;
-
+		if (opinfo_matching->state)
+			lctx->LeaseFlags = SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
 		lctx->CurrentLeaseState = opinfo_matching->CurrentLeaseState;
 		*oplock = opinfo_matching->lock_type;
 		mutex_unlock(&ofile_list_lock);
@@ -1231,8 +1237,20 @@ out1:
 	}
 
 op_break_not_needed:
-	/* add new oplock to read list */
-	err = grant_read_oplock(ofile, opinfo_new, oplock, fp, lctx);
+	if (!opinfo_old)
+		opinfo_old = get_read_oplock(ofile);
+	if (opinfo_old && opinfo_old->leased && !opinfo_new->leased) {
+		if (opinfo_old->CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING) {
+			*oplock = 0;
+			kfree(opinfo_new);
+			goto out2;
+		}
+	}
+
+	if (*oplock != SMB2_OPLOCK_LEVEL_NONE) {
+		/* add new oplock to read list */
+		err = grant_read_oplock(ofile, opinfo_new, oplock, fp, lctx);
+	}
 out2:
 	mutex_unlock(&ofile_list_lock);
 	return err;
@@ -1545,18 +1563,21 @@ static __u8 smb2_map_lease_to_oplock(__le32 lease_state)
 /**
  * create_lease_buf() - create lease context for open cmd response
  * @rbuf:	buffer to create lease context response
- * @LeaseKey:	lease key
- * @oplock:	granted oplock/lease type
- * @curr_lease_state:	lease state
+ * @lreq:	buffer to stored parsed lease state information
  */
-void create_lease_buf(u8 *rbuf, u8 *LeaseKey, __le32 curr_lease_state)
+void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq)
 {
 	struct create_lease *buf = (struct create_lease *)rbuf;
-	memset(buf, 0, sizeof(struct create_lease));
+	char *LeaseKey = (char *)&lreq->LeaseKey;
 
+	memset(buf, 0, sizeof(struct create_lease));
 	buf->lcontext.LeaseKeyLow = *((u64 *)LeaseKey);
 	buf->lcontext.LeaseKeyHigh = *((u64 *)(LeaseKey + 8));
-	buf->lcontext.LeaseState = curr_lease_state;
+	buf->lcontext.LeaseFlags = lreq->LeaseFlags;
+	if (lreq->LeaseFlags == SMB2_LEASE_FLAG_BREAK_IN_PROGRESS)
+		buf->lcontext.LeaseState = lreq->OldLeaseState;
+	else
+		buf->lcontext.LeaseState = lreq->CurrentLeaseState;
 	buf->ccontext.DataOffset = cpu_to_le16(offsetof
 					(struct create_lease, lcontext));
 	buf->ccontext.DataLength = cpu_to_le32(sizeof(struct lease_context));
@@ -1603,6 +1624,7 @@ __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq)
 		struct create_lease *lc = (struct create_lease *)cc;
 		*((u64 *)lreq->LeaseKey) = lc->lcontext.LeaseKeyLow;
 		*((u64 *)(lreq->LeaseKey + 8)) = lc->lcontext.LeaseKeyHigh;
+		lreq->OldLeaseState = lc->lcontext.LeaseState;
 		lreq->CurrentLeaseState = lc->lcontext.LeaseState;
 		lreq->LeaseFlags = lc->lcontext.LeaseFlags;
 		lreq->LeaseDuration = lc->lcontext.LeaseDuration;

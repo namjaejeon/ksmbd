@@ -51,6 +51,7 @@ extern struct mutex ofile_list_lock;
 struct lease_ctx_info {
 	__u8			LeaseKey[SMB2_LEASE_KEY_SIZE];
 	__le32			CurrentLeaseState;
+	__le32			OldLeaseState;
 	__le32			LeaseFlags;
 	__le64			LeaseDuration;
 };
@@ -119,7 +120,7 @@ void smb_break_all_oplock(struct tcp_server_info *server,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
-void create_lease_buf(u8 *rbuf, u8 *LeaseKey, __le32 curr_lease_state);
+void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq);
 __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq);
 struct oplock_info *get_matching_opinfo_lease(struct tcp_server_info *server,
 		struct ofile_info **ofile, char *LeaseKey,
