@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/glob.h
+ *   fs/cifsd/glob.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,8 +19,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_GLOB_H
-#define __CIFSSRV_GLOB_H
+#ifndef __CIFSD_GLOB_H
+#define __CIFSD_GLOB_H
 
 #include <linux/list.h>
 #include <linux/spinlock_types.h>
@@ -58,24 +58,24 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
-extern struct kmem_cache *cifssrv_work_cache;
-extern struct kmem_cache *cifssrv_filp_cache;
-extern struct kmem_cache *cifssrv_req_cachep;
-extern mempool_t *cifssrv_req_poolp;
-extern struct kmem_cache *cifssrv_sm_req_cachep;
-extern mempool_t *cifssrv_sm_req_poolp;
-extern struct kmem_cache *cifssrv_sm_rsp_cachep;
-extern mempool_t *cifssrv_sm_rsp_poolp;
-extern struct kmem_cache *cifssrv_rsp_cachep;
-extern mempool_t *cifssrv_rsp_poolp;
+extern struct kmem_cache *cifsd_work_cache;
+extern struct kmem_cache *cifsd_filp_cache;
+extern struct kmem_cache *cifsd_req_cachep;
+extern mempool_t *cifsd_req_poolp;
+extern struct kmem_cache *cifsd_sm_req_cachep;
+extern mempool_t *cifsd_sm_req_poolp;
+extern struct kmem_cache *cifsd_sm_rsp_cachep;
+extern mempool_t *cifsd_sm_rsp_poolp;
+extern struct kmem_cache *cifsd_rsp_cachep;
+extern mempool_t *cifsd_rsp_poolp;
 extern struct list_head oplock_info_list;
 
 #define CIFS_MIN_RCV_POOL 4
 extern unsigned int smb_min_rcv;
 extern unsigned int smb_min_small;
 
-extern int cifssrv_debug_enable;
-extern int cifssrv_caseless_search;
+extern int cifsd_debug_enable;
+extern int cifsd_caseless_search;
 extern bool oplocks_enable;
 extern bool lease_enable;
 extern bool durable_enable;
@@ -91,7 +91,7 @@ extern bool global_signing;
 extern struct hlist_head global_name_table[1024];
 extern struct list_head global_lock_list;
 
-/* cifssrv's Specific ERRNO */
+/* cifsd's Specific ERRNO */
 #define ESHARE 50000
 
 #define SMB1_VERSION_STRING     "1.0"
@@ -264,7 +264,7 @@ struct smb_version_values {
 	size_t          create_disk_id_size;
 };
 
-struct cifssrv_stats {
+struct cifsd_stats {
 	int open_files_count;
 	int request_served;
 	long int avg_req_duration;
@@ -339,7 +339,7 @@ struct tcp_server_info {
 	/* This session will become part of global tcp session list */
 	struct list_head tcp_sess;
 	/* smb session 1 per user */
-	struct list_head cifssrv_sess;
+	struct list_head cifsd_sess;
 	struct task_struct *handler;
 	int th_id;
 	__le16 vuid;
@@ -362,7 +362,7 @@ struct tcp_server_info {
 	int credits_granted;
 	char peeraddr[MAX_ADDRBUFLEN];
 	int connection_type;
-	struct cifssrv_stats stats;
+	struct cifsd_stats stats;
 	struct list_head list;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	char ClientGUID[SMB2_CLIENT_GUID_SIZE];
@@ -448,8 +448,8 @@ struct smb_work {
 	bool send_no_response:1;	/* no response for cancelled request */
 	bool added_in_request_list:1;	/* added in server->requests list */
 
-	struct cifssrv_sess *sess;
-	struct cifssrv_tcon *tcon;
+	struct cifsd_sess *sess;
+	struct cifsd_tcon *tcon;
 
 	struct async_info *async;
 };
@@ -461,11 +461,11 @@ struct smb_version_ops {
 	int (*allocate_rsp_buf)(struct smb_work *smb_work);
 	void (*set_rsp_credits)(struct smb_work *swork);
 	int (*check_user_session)(struct smb_work *work);
-	int (*get_cifssrv_tcon)(struct smb_work *smb_work);
+	int (*get_cifsd_tcon)(struct smb_work *smb_work);
 	int (*is_sign_req)(struct smb_work *work, unsigned int command);
 	int (*check_sign_req)(struct smb_work *work);
 	void (*set_sign_rsp)(struct smb_work *work);
-	int (*compute_signingkey)(struct cifssrv_sess *sess,  __u8 *key,
+	int (*compute_signingkey)(struct cifsd_sess *sess,  __u8 *key,
 		unsigned int key_size);
 };
 
@@ -474,20 +474,20 @@ struct smb_version_cmds {
 };
 
 
-#define cifssrv_debug(fmt, ...)					\
+#define cifsd_debug(fmt, ...)					\
 	do {							\
-		if (cifssrv_debug_enable)			\
+		if (cifsd_debug_enable)			\
 			printk(KERN_ERR "%s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
-#define cifssrv_info(fmt, ...)					\
+#define cifsd_info(fmt, ...)					\
 	do {							\
 		printk(KERN_INFO "%s:%d: " fmt,			\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
-#define cifssrv_err(fmt, ...)					\
+#define cifsd_err(fmt, ...)					\
 	do {							\
 		printk(KERN_ERR "%s:%d: " fmt,			\
 			__func__, __LINE__, ##__VA_ARGS__);	\
@@ -538,22 +538,22 @@ void smb_put_name(void *name);
 bool is_smb_request(struct tcp_server_info *server, unsigned char type);
 int switch_req_buf(struct tcp_server_info *server);
 int negotiate_dialect(void *buf);
-struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
+struct cifsd_sess *lookup_session_on_conn(struct tcp_server_info *server,
 		uint64_t sess_id);
 
-/* cifssrv export functions */
-extern int cifssrv_export_init(void);
-extern void cifssrv_export_exit(void);
+/* cifsd export functions */
+extern int cifsd_export_init(void);
+extern void cifsd_export_exit(void);
 
-/* cifssrv connect functions */
-extern int cifssrv_create_socket(void);
-extern int cifssrv_start_forker_thread(struct socket *socket);
-extern void cifssrv_stop_forker_thread(void);
+/* cifsd connect functions */
+extern int cifsd_create_socket(void);
+extern int cifsd_start_forker_thread(struct socket *socket);
+extern void cifsd_stop_forker_thread(void);
 
-extern void cifssrv_close_socket(void);
-extern int cifssrv_stop_tcp_sess(void);
+extern void cifsd_close_socket(void);
+extern int cifsd_stop_tcp_sess(void);
 
-/* cifssrv misc functions */
+/* cifsd misc functions */
 extern int check_smb_message(char *buf);
 extern void add_request_to_queue(struct smb_work *smb_work);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
@@ -561,30 +561,30 @@ extern int switch_rsp_buf(struct smb_work *smb_work);
 extern int smb2_get_shortname(struct tcp_server_info *server, char *longname,
 				char *shortname);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
-extern struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session);
+extern struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session);
 extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 	ssize_t v_len);
 extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_shared_mode(struct file *filp,
-	struct cifssrv_file *curr_fp);
-extern struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode);
+	struct cifsd_file *curr_fp);
+extern struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
 extern char *alloc_data_mem(size_t size);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	char **buf, size_t count, loff_t *pos);
-int smb_vfs_write(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
-int smb_vfs_getattr(struct cifssrv_sess *sess, uint64_t fid,
+int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 		struct kstat *stat);
-int smb_vfs_setattr(struct cifssrv_sess *sess, const char *name,
+int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 		uint64_t fid, struct iattr *attrs);
-int smb_vfs_fsync(struct cifssrv_sess *sess, uint64_t fid, uint64_t p_id);
+int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
 		int fexist);
@@ -592,9 +592,9 @@ int smb_vfs_unlink(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
-int smb_vfs_rename(struct cifssrv_sess *sess, char *oldname,
+int smb_vfs_rename(struct cifsd_sess *sess, char *oldname,
 		char *newname, uint64_t oldfid);
-int smb_vfs_truncate(struct cifssrv_sess *sess, const char *name,
+int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		uint64_t fid, loff_t size);
 ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
@@ -629,7 +629,7 @@ extern int is_smb2_rsp(struct smb_work *smb_work);
 
 /* functions */
 extern int connect_tcp_sess(struct socket *sock);
-extern int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
+extern int cifsd_read_from_socket(struct tcp_server_info *server, char *buf,
 		unsigned int to_read);
 
 extern void handle_smb_work(struct work_struct *work);
@@ -668,15 +668,15 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		int alignment);
 
 /* netlink functions */
-int cifssrv_net_init(void);
-void cifssrv_net_exit(void);
-int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
+int cifsd_net_init(void);
+void cifsd_net_exit(void);
+int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
-int cifssrv_kthread_stop_status(int etype);
+int cifsd_kthread_stop_status(int etype);
 
 /* asn1 functions */
-extern int cifssrv_decode_negTokenInit(unsigned char *security_blob, int length,
+extern int cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);
 extern int decode_negTokenTarg(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);
@@ -686,4 +686,4 @@ extern int build_spnego_ntlmssp_auth_blob(unsigned char **pbuffer, u16 *buflen,
 		int neg_result);
 
 void smb3_preauth_hash_rsp(struct smb_work *smb_work);
-#endif /* __CIFSSRV_GLOB_H */
+#endif /* __CIFSD_GLOB_H */

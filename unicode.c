@@ -439,7 +439,7 @@ cifs_local_to_utf16_bytes(const char *from, int len,
 }
 
 /*
- * cifssrv_strndup_to_utf16() - copy a string to wire format from the local
+ * cifsd_strndup_to_utf16() - copy a string to wire format from the local
  *		codepage
  * @src:	source string
  * @maxlen:	don't walk past this many bytes in the source string
@@ -454,7 +454,7 @@ cifs_local_to_utf16_bytes(const char *from, int len,
  * Return:	destination buffer on success or NULL on error
  */
 __le16 *
-cifssrv_strndup_to_utf16(const char *src, const int maxlen, int *utf16_len,
+cifsd_strndup_to_utf16(const char *src, const int maxlen, int *utf16_len,
 		      const struct nls_table *cp, int remap)
 {
 	int len;

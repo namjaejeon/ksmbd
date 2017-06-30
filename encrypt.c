@@ -77,7 +77,7 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 	tfm_des = crypto_alloc_blkcipher("ecb(des)", 0, CRYPTO_ALG_ASYNC);
 	if (IS_ERR(tfm_des)) {
 		rc = PTR_ERR(tfm_des);
-		cifssrv_debug("could not allocate des crypto API\n");
+		cifsd_debug("could not allocate des crypto API\n");
 		goto smbhash_err;
 	}
 
@@ -90,7 +90,7 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 
 	rc = crypto_blkcipher_encrypt(&desc, &sgout, &sgin, 8);
 	if (rc)
-		cifssrv_debug("could not encrypt crypt key rc: %d\n", rc);
+		cifsd_debug("could not encrypt crypt key rc: %d\n", rc);
 
 	crypto_free_blkcipher(tfm_des);
 smbhash_err:
@@ -138,7 +138,7 @@ smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
 	md4 = crypto_alloc_shash("md4", 0, 0);
 	if (IS_ERR(md4)) {
 		rc = PTR_ERR(md4);
-		cifssrv_debug("%s: Crypto md4 allocation error %d\n",
+		cifsd_debug("%s: Crypto md4 allocation error %d\n",
 				__func__, rc);
 		return rc;
 	}
@@ -153,17 +153,17 @@ smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
 
 	rc = crypto_shash_init(&sdescmd4->shash);
 	if (rc) {
-		cifssrv_debug("%s: Could not init md4 shash\n", __func__);
+		cifsd_debug("%s: Could not init md4 shash\n", __func__);
 		goto smb_mdfour_err;
 	}
 	rc = crypto_shash_update(&sdescmd4->shash, link_str, link_len);
 	if (rc) {
-		cifssrv_debug("%s: Could not update with link_str\n", __func__);
+		cifsd_debug("%s: Could not update with link_str\n", __func__);
 		goto smb_mdfour_err;
 	}
 	rc = crypto_shash_final(&sdescmd4->shash, md4_hash);
 	if (rc)
-		cifssrv_debug("%s: Could not generate md4 hash\n", __func__);
+		cifsd_debug("%s: Could not generate md4 hash\n", __func__);
 
 smb_mdfour_err:
 	crypto_free_shash(md4);
@@ -237,7 +237,7 @@ SMB_NTencrypt(unsigned char *passwd, unsigned char *c8, unsigned char *p24,
 
 	rc = smb_E_md4hash(passwd, p16, codepage);
 	if (rc) {
-		cifssrv_debug("%s Can't generate NT hash, error: %d\n",
+		cifsd_debug("%s Can't generate NT hash, error: %d\n",
 				__func__, rc);
 		return rc;
 	}

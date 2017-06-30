@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/smb2ops.c
+ *   fs/cifsd/smb2ops.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -139,7 +139,7 @@ struct smb_version_ops smb2_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifssrv_tcon	=	smb2_get_cifssrv_tcon,
+	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb2_check_sign_req,
 	.set_sign_rsp		=	smb2_set_sign_rsp
@@ -152,7 +152,7 @@ struct smb_version_ops smb3_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifssrv_tcon	=	smb2_get_cifssrv_tcon,
+	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,

@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/misc.c
+ *   fs/cifsd/misc.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -50,12 +50,12 @@ static struct {
 #endif
 };
 
-inline int cifssrv_min_protocol(void)
+inline int cifsd_min_protocol(void)
 {
 	return protocols[0].index;
 }
 
-inline int cifssrv_max_protocol(void)
+inline int cifsd_max_protocol(void)
 {
 	return protocols[ARRAY_SIZE(protocols) - 1].index;
 }
@@ -73,7 +73,7 @@ int get_protocol_idx(char *str)
 
 	for (i = 0; i <= protocol_index; i++) {
 		if (!strncmp(str, protocols[i].prot, len)) {
-			cifssrv_debug("selected %s dialect i = %d\n",
+			cifsd_debug("selected %s dialect i = %d\n",
 				protocols[i].prot, i);
 			res = protocols[i].index;
 			break;
@@ -95,18 +95,18 @@ static int check_smb_hdr(struct smb_hdr *smb)
 {
 	/* does it have the right SMB "signature" ? */
 	if (*(__le32 *) smb->Protocol != SMB1_PROTO_NUMBER) {
-		cifssrv_debug("Bad protocol string signature header 0x%x\n",
+		cifsd_debug("Bad protocol string signature header 0x%x\n",
 			*(unsigned int *)smb->Protocol);
 		return 1;
 	} else
-		cifssrv_debug("got SMB\n");
+		cifsd_debug("got SMB\n");
 
 	/* if it's not a response then accept */
 	/* TODO : check for oplock break */
 	if (!(smb->Flags & SMBFLG_RESPONSE))
 		return 0;
 
-	cifssrv_debug("Server sent request, not response\n");
+	cifsd_debug("Server sent request, not response\n");
 	return 1;
 }
 
@@ -137,7 +137,7 @@ int check_smb_message(char *buf)
 	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
 
-		cifssrv_debug("got SMB2 command\n");
+		cifsd_debug("got SMB2 command\n");
 		return check_smb2_hdr((struct smb2_hdr *)buf);
 
 	}
@@ -206,7 +206,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	char debug_line[33];
 	unsigned char *buffer = buf;
 
-	if (likely(cifssrv_debug_enable != 2))
+	if (likely(cifsd_debug_enable != 2))
 		return;
 
 	for (i = 0, j = 0; i < smb_buf_length; i++, j++) {
@@ -259,26 +259,26 @@ int switch_req_buf(struct tcp_server_info *server)
 
 	/* request can fit in large request buffer i.e. < 64K */
 	if (pdu_length <= SMBMaxBufSize + hdr_len - 4) {
-		cifssrv_debug("switching to large buffer\n");
+		cifsd_debug("switching to large buffer\n");
 		server->large_buf = true;
 		memcpy(server->bigbuf, buf, server->total_read);
 	} else if (pdu_length <= CIFS_DEFAULT_IOSIZE + hdr_len - 4) {
 		/* allocate big buffer for large write request i.e. > 64K */
 		server->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
 		if (!server->wbuf) {
-			cifssrv_debug("failed to alloc mem\n");
+			cifsd_debug("failed to alloc mem\n");
 			return -ENOMEM;
 		}
 		memcpy(server->wbuf, buf, server->total_read);
 
 		/* as wbuf is used for request, free both small and big buf */
-		mempool_free(server->smallbuf, cifssrv_sm_req_poolp);
-		mempool_free(server->bigbuf, cifssrv_req_poolp);
+		mempool_free(server->smallbuf, cifsd_sm_req_poolp);
+		mempool_free(server->bigbuf, cifsd_req_poolp);
 		server->large_buf = false;
 		server->smallbuf = NULL;
 		server->bigbuf = NULL;
 	} else {
-		cifssrv_debug("SMB request too long (%u bytes)\n", pdu_length);
+		cifsd_debug("SMB request too long (%u bytes)\n", pdu_length);
 		return -ECONNABORTED;
 	}
 
@@ -295,20 +295,20 @@ int switch_rsp_buf(struct smb_work *smb_work)
 {
 	char *buf;
 	if (smb_work->rsp_large_buf) {
-		cifssrv_debug("already using rsp_large_buf\n");
+		cifsd_debug("already using rsp_large_buf\n");
 		return 0;
 	}
 
-	buf = mempool_alloc(cifssrv_rsp_poolp, GFP_NOFS);
+	buf = mempool_alloc(cifsd_rsp_poolp, GFP_NOFS);
 	if (!buf) {
-		cifssrv_debug("failed to alloc mem\n");
+		cifsd_debug("failed to alloc mem\n");
 		return -ENOMEM;
 	}
 
 	/* free small buf and switch to large rsp buffer */
-	cifssrv_debug("switching to large rsp buf\n");
+	cifsd_debug("switching to large rsp buf\n");
 	memcpy(buf, smb_work->rsp_buf, MAX_CIFS_SMALL_BUFFER_SIZE);
-	mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
+	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
 
 	smb_work->rsp_buf = buf;
 	smb_work->rsp_large_buf = true;
@@ -329,10 +329,10 @@ bool is_smb_request(struct tcp_server_info *server, unsigned char type)
 		/* Regular SMB request */
 		return true;
 	case RFC1002_SESSION_KEEP_ALIVE:
-		cifssrv_debug("RFC 1002 session keep alive\n");
+		cifsd_debug("RFC 1002 session keep alive\n");
 		break;
 	default:
-		cifssrv_debug("RFC 1002 unknown request type 0x%x\n", type);
+		cifsd_debug("RFC 1002 unknown request type 0x%x\n", type);
 	}
 
 	return false;
@@ -345,7 +345,7 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 	char *dialects = NULL;
 
 	if (unlikely(start_index >= ARRAY_SIZE(protocols))) {
-		cifssrv_err("bad start_index %d\n", start_index);
+		cifsd_err("bad start_index %d\n", start_index);
 		return dialect_id;
 	}
 
@@ -356,12 +356,12 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 
 		while (bcount) {
 			cli_count = strlen(dialects);
-			cifssrv_debug("client requested dialect %s\n",
+			cifsd_debug("client requested dialect %s\n",
 					dialects);
 			if (!strncmp(dialects, protocols[i].name,
 						cli_count)) {
 				if (i >= server_min_pr && i <= server_max_pr) {
-					cifssrv_debug("selected %s dialect\n",
+					cifsd_debug("selected %s dialect\n",
 							protocols[i].name);
 					if (i == CIFS_PROT)
 						dialect_id = smb1_index;
@@ -401,12 +401,12 @@ int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	for (i = start_index; i >= SMB2_PROT; i--) {
 		count = le16_to_cpu(dialects_count);
 		while (--count >= 0) {
-			cifssrv_debug("client requested dialect 0x%x\n",
+			cifsd_debug("client requested dialect 0x%x\n",
 				le16_to_cpu(cli_dialects[count]));
 			if (le16_to_cpu(cli_dialects[count]) ==
 					protocols[i].prot_id) {
 				if (i >= server_min_pr && i <= server_max_pr) {
-					cifssrv_debug("selected %s dialect\n",
+					cifsd_debug("selected %s dialect\n",
 							protocols[i].name);
 					dialect_id = protocols[i].prot_id;
 				}
@@ -456,19 +456,19 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
+struct cifsd_sess *lookup_session_on_conn(struct tcp_server_info *server,
 		uint64_t sess_id)
 {
-	struct cifssrv_sess *sess;
+	struct cifsd_sess *sess;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &server->cifssrv_sess) {
-		sess = list_entry(tmp, struct cifssrv_sess, cifssrv_ses_list);
+	list_for_each_safe(tmp, t, &server->cifsd_sess) {
+		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
 		if (sess->sess_id == sess_id)
 			return sess;
 	}
 
-	cifssrv_err("User session(ID : %llu) not found\n", sess_id);
+	cifsd_err("User session(ID : %llu) not found\n", sess_id);
 	return NULL;
 }
 
@@ -478,19 +478,19 @@ struct cifssrv_sess *lookup_session_on_conn(struct tcp_server_info *server,
  *
  * Return:      matching session handle, otherwise NULL
  */
-struct cifssrv_sess *validate_sess_handle(struct cifssrv_sess *session)
+struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
 {
-	struct cifssrv_sess *sess;
+	struct cifsd_sess *sess;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &cifssrv_session_list) {
-		sess = list_entry(tmp, struct cifssrv_sess,
-				cifssrv_ses_global_list);
+	list_for_each_safe(tmp, t, &cifsd_session_list) {
+		sess = list_entry(tmp, struct cifsd_sess,
+				cifsd_ses_global_list);
 		if (sess == session)
 			return sess;
 	}
 
-	cifssrv_err("session(%p) not found\n", session);
+	cifsd_err("session(%p) not found\n", session);
 	return NULL;
 }
 
@@ -526,7 +526,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 
 	err = smb_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
 	if (err)
-		cifssrv_debug("setxattr failed, err %d\n", err);
+		cifsd_debug("setxattr failed, err %d\n", err);
 
 	return err;
 }
@@ -542,7 +542,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	if (xattr_list_len < 0) {
 		goto out;
 	} else if (!xattr_list_len) {
-		cifssrv_debug("empty xattr in the file\n");
+		cifsd_debug("empty xattr in the file\n");
 		goto out;
 	}
 
@@ -557,7 +557,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
-		cifssrv_debug("%s, len %zd\n", name, strlen(name));
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
 		memcpy(tmp_b, name, p_len);
 
 		if (strncasecmp(tmp_a, tmp_b, p_len))
@@ -565,7 +565,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 
 		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
 		if (value_len < 0)
-			cifssrv_err("failed to get xattr in file\n");
+			cifsd_err("failed to get xattr in file\n");
 		break;
 	}
 
@@ -596,10 +596,10 @@ int get_pos_strnstr(const char *s1, const char *s2, size_t len)
 	return 0;
 }
 
-int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
+int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
-	struct cifssrv_file *prev_fp;
+	struct cifsd_file *prev_fp;
 
 	/*
 	 * Lookup fp in global table, and check desired access and
@@ -615,7 +615,7 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 				}
 
 				if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-					cifssrv_err("not allow FILE_SUPERSEDE_LE if file is already opened with ADS\n");
+					cifsd_err("not allow FILE_SUPERSEDE_LE if file is already opened with ADS\n");
 					rc = -ESHARE;
 					break;
 				}
@@ -632,8 +632,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 			if (!(prev_fp->saccess & (FILE_SHARE_DELETE_LE)) &&
 					curr_fp->daccess & (FILE_DELETE_LE |
 				FILE_GENERIC_ALL_LE | FILE_MAXIMAL_ACCESS_LE)) {
-				cifssrv_err("previous filename don't have share delete\n");
-				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+				cifsd_err("previous filename don't have share delete\n");
+				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
 				rc = -ESHARE;
 				break;
@@ -657,8 +657,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 					FILE_GENERIC_READ_LE |
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE)) {
-				cifssrv_err("previous filename don't have share read\n");
-				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+				cifsd_err("previous filename don't have share read\n");
+				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
 				rc = -ESHARE;
 				break;
@@ -669,8 +669,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 					FILE_GENERIC_WRITE_LE |
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE)) {
-				cifssrv_err("previous filename don't have share write\n");
-				cifssrv_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
+				cifsd_err("previous filename don't have share write\n");
+				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
 				rc = -ESHARE;
 				break;
@@ -681,8 +681,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_READ_LE)) {
-				cifssrv_err("previous filename don't have desired read access\n");
-				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+				cifsd_err("previous filename don't have desired read access\n");
+				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
 				rc = -ESHARE;
 				break;
@@ -693,8 +693,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_WRITE_LE)) {
-				cifssrv_err("previous filename don't have desired write access\n");
-				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+				cifsd_err("previous filename don't have desired write access\n");
+				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
 				rc = -ESHARE;
 				break;
@@ -704,8 +704,8 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE) &&
 				!(curr_fp->saccess & FILE_SHARE_DELETE_LE)) {
-				cifssrv_err("previous filename don't have desired delete access\n");
-				cifssrv_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
+				cifsd_err("previous filename don't have desired delete access\n");
+				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
 				rc = -ESHARE;
 				break;
@@ -715,9 +715,9 @@ int smb_check_shared_mode(struct file *filp, struct cifssrv_file *curr_fp)
 	return rc;
 }
 
-struct cifssrv_file *find_fp_in_hlist_using_inode(struct inode *inode)
+struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode)
 {
-	struct cifssrv_file *fp;
+	struct cifsd_file *fp;
 
 	hash_for_each_possible(global_name_table, fp, node,
 			(unsigned long)inode)

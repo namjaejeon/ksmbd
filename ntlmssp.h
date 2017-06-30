@@ -19,13 +19,13 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 
-#ifndef __CIFSSRV_NTLMSSP_H
-#define __CIFSSRV_NTLMSSP_H
+#ifndef __CIFSD_NTLMSSP_H
+#define __CIFSD_NTLMSSP_H
 
 #define NTLMSSP_SIGNATURE "NTLMSSP"
 
 /* Security blob target info data */
-#define TGT_Name        "CIFSSRV"
+#define TGT_Name        "CIFSD"
 
 /* Message Types */
 #define NtLmNegotiate     cpu_to_le32(1)
@@ -159,4 +159,4 @@ struct ntlmv2_resp {
 	/* array of name entries could follow ending in minimum 4 byte struct */
 } __attribute__((packed));
 
-#endif /* __CIFSSRV_NTLMSSP_H */
+#endif /* __CIFSD_NTLMSSP_H */

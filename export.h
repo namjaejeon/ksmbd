@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/export.h
+ *   fs/cifsd/export.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,8 +19,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_EXPORT_H
-#define __CIFSSRV_EXPORT_H
+#ifndef __CIFSD_EXPORT_H
+#define __CIFSD_EXPORT_H
 
 #include "smb1pdu.h"
 #include "ntlmssp.h"
@@ -32,13 +32,13 @@
 #define SMB_PORT		445
 #define MAX_CONNECTIONS		64
 
-extern int cifssrv_debug_enable;
+extern int cifsd_debug_enable;
 
 /* Global list containing exported points */
-extern struct list_head cifssrv_usr_list;
-extern struct list_head cifssrv_share_list;
-extern struct list_head cifssrv_connection_list;
-extern struct list_head cifssrv_session_list;
+extern struct list_head cifsd_usr_list;
+extern struct list_head cifsd_share_list;
+extern struct list_head cifsd_connection_list;
+extern struct list_head cifsd_session_list;
 
 /* Spinlock to protect global list */
 extern spinlock_t export_list_lock;
@@ -62,13 +62,13 @@ extern spinlock_t connect_list_lock;
 			CAP_LARGE_WRITE_X | CAP_LEVEL_II_OPLOCKS)
 #define SERVER_SECU  (SECMODE_USER | SECMODE_PW_ENCRYPT)
 
-#define CIFSSRV_MAJOR_VERSION 1
-#define CIFSSRV_MINOR_VERSION 0
+#define CIFSD_MAJOR_VERSION 1
+#define CIFSD_MINOR_VERSION 0
 #define STR_IPC	"IPC$"
-#define STR_SRV_NAME	"CIFSSRV SERVER"
+#define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
-extern int cifssrv_num_shares;
+extern int cifsd_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
 extern int maptoguest;
@@ -84,14 +84,14 @@ enum {
 	MANDATORY
 };
 
-struct cifssrv_usr {
+struct cifsd_usr {
 	char	*name;
 	char	passkey[CIFS_NTHASH_SIZE];
 	kuid_t	uid;
 	kgid_t	gid;
 	__le32	sess_uid;
 	bool	guest;
-	/* global list of cifssrv users */
+	/* global list of cifsd users */
 	struct	list_head list;
 	__u16	vuid;
 	/* how many server have this user */
@@ -99,12 +99,12 @@ struct cifssrv_usr {
 	/* unsigned int capabilities; what for */
 };
 
-/* cifssrv_sess coupled with cifssrv_usr */
-struct cifssrv_sess {
-	struct cifssrv_usr *usr;
+/* cifsd_sess coupled with cifsd_usr */
+struct cifsd_sess {
+	struct cifsd_usr *usr;
 	struct tcp_server_info *server;
-	struct list_head cifssrv_ses_list;
-	struct list_head cifssrv_ses_global_list;
+	struct list_head cifsd_ses_list;
+	struct list_head cifsd_ses_global_list;
 	struct list_head tcon_list;
 	struct hlist_head notify_table[64];
 	int tcon_count;
@@ -114,13 +114,13 @@ struct cifssrv_sess {
 	struct ntlmssp_auth ntlmssp;
 	char sess_key[CIFS_KEY_SIZE];
 	bool sign;
-	struct list_head cifssrv_chann_list;
+	struct list_head cifsd_chann_list;
 	bool is_anonymous;
 	bool is_guest;
 	struct fidtable_desc fidtable;
 	int state;
 	__u8 Preauth_HashValue[64];
-	struct cifssrv_pipe *pipe_desc[MAX_PIPE];
+	struct cifsd_pipe *pipe_desc[MAX_PIPE];
 	wait_queue_head_t pipe_q;
 	int ev_state;
 };
@@ -176,7 +176,7 @@ struct share_config {
 	unsigned int max_connections;
 };
 
-struct cifssrv_share {
+struct cifsd_share {
 	char *path;
 	__u64 tid;
 	bool is_pipe;
@@ -188,10 +188,10 @@ struct cifssrv_share {
 	int writeable;
 };
 
-/* cifssrv_tcon is coupled with cifssrv_share */
-struct cifssrv_tcon {
-	struct cifssrv_share *share;
-	struct cifssrv_sess *sess;
+/* cifsd_tcon is coupled with cifsd_share */
+struct cifsd_tcon {
+	struct cifsd_share *share;
+	struct cifsd_sess *sess;
 	struct path share_path;
 	struct list_head tcon_list;
 	int writeable;
@@ -199,62 +199,62 @@ struct cifssrv_tcon {
 };
 
 /*
- * Relation between tcp session, cifssrv session and cifssrv tree conn:
+ * Relation between tcp session, cifsd session and cifsd tree conn:
  * 1 TCP session per client. Each TCP session is represented by 1
  * tcp_server_info object.
  * If there are multiple useres per client, than 1 session per user
  * per tcp sess.
- * These sessions are linked via cifssrv_ses_list headed at
- * server_info->cifssrv_sess.
- * Currently we have limited 1 cifssrv session per tcp session.
+ * These sessions are linked via cifsd_ses_list headed at
+ * server_info->cifsd_sess.
+ * Currently we have limited 1 cifsd session per tcp session.
  * However, multiple tree connect possible per session.
  * Each tree connect is associated with a share.
- * Tree cons are linked via tcon_list headed at cifssrv_sess->tcon_list.
+ * Tree cons are linked via tcon_list headed at cifsd_sess->tcon_list.
  */
 
 /* functions */
-extern int cifssrv_max_protocol(void);
-extern int cifssrv_min_protocol(void);
+extern int cifsd_max_protocol(void);
+extern int cifsd_min_protocol(void);
 extern int get_protocol_idx(char *str);
-extern int cifssrv_init_registry(void);
-extern void cifssrv_free_registry(void);
-extern struct cifssrv_share *find_matching_share(__u16 tid);
-int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
+extern int cifsd_init_registry(void);
+extern void cifsd_free_registry(void);
+extern struct cifsd_share *find_matching_share(__u16 tid);
+int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
 	bool *can_write);
-int validate_host(char *cip, struct cifssrv_share *share);
-int process_ntlm(struct cifssrv_sess *sess, char *pw_buf);
-int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
+int validate_host(char *cip, struct cifsd_share *share);
+int process_ntlm(struct cifsd_sess *sess, char *pw_buf);
+int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name);
 int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct cifssrv_sess *sess);
+		int blob_len, struct cifsd_sess *sess);
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct cifssrv_sess *sess);
+		struct cifsd_sess *sess);
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-		int blob_len, struct cifssrv_sess *sess);
-int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
+		int blob_len, struct cifsd_sess *sess);
+int smb1_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		char *sig);
-int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
+int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		char *sig);
 int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 		char *sig);
-int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac);
-int compute_smb3xsigningkey(struct cifssrv_sess *sess,  __u8 *key,
+int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
+int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
 	unsigned int key_size);
-extern struct cifssrv_usr *cifssrv_is_user_present(char *name);
-struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
-		struct cifssrv_sess *sess, char *sharename, bool *can_write);
-extern struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
-		struct cifssrv_sess *sess);
-extern struct cifssrv_tcon *get_cifssrv_tcon(struct cifssrv_sess *sess,
+extern struct cifsd_usr *cifsd_is_user_present(char *name);
+struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
+		struct cifsd_sess *sess, char *sharename, bool *can_write);
+extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
+		struct cifsd_sess *sess);
+extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
 			unsigned int tid);
-struct cifssrv_usr *get_smb_session_user(struct cifssrv_sess *sess);
+struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess);
 #ifdef CONFIG_CIFS_SMB2_SERVER
-int cifssrv_durable_reconnect(struct cifssrv_sess *curr_sess,
-		struct cifssrv_durable_state *durable_state,
+int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
+		struct cifsd_durable_state *durable_state,
 		struct file **filp);
 #endif
-struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
+struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
-int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type);
-int close_pipe_id(struct cifssrv_sess *sess, int pipe_type);
-#endif /* __CIFSSRV_EXPORT_H */
+int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
+int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
+#endif /* __CIFSD_EXPORT_H */

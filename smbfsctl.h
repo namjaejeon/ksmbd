@@ -32,8 +32,8 @@
  * than via the standard vfs entry points
  */
 
-#ifndef __CIFSSRV_SMBFSCTL_H
-#define __CIFSSRV_SMBFSCTL_H
+#ifndef __CIFSD_SMBFSCTL_H
+#define __CIFSD_SMBFSCTL_H
 
 #define FSCTL_DFS_GET_REFERRALS      0x00060194
 #define FSCTL_DFS_GET_REFERRALS_EX   0x000601B0
@@ -91,4 +91,4 @@
 #define IO_REPARSE_TAG_HSM           0xC0000004
 #define IO_REPARSE_TAG_SIS           0x80000007
 
-#endif /* __CIFSSRV_SMBFSCTL_H */
+#endif /* __CIFSD_SMBFSCTL_H */

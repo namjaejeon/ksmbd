@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/oplock.c
+ *   fs/cifsd/oplock.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -47,9 +47,9 @@ module_param(durable_enable, bool, 0644);
 MODULE_PARM_DESC(durable_enable, "Enable or disable lease. Default: y/Y/1");
 #endif
 
-void release_ofile(struct cifssrv_file *fp)
+void release_ofile(struct cifsd_file *fp)
 {
-	struct cifssrv_file *tmp_fp;
+	struct cifsd_file *tmp_fp;
 	struct ofile_info *ofile;
 
 	ofile = fp->ofile;
@@ -141,7 +141,7 @@ struct ofile_info *get_new_ofile(struct inode *inode)
  *
  * Return:      allocated opinfo object on success, otherwise NULL
  */
-static struct oplock_info *get_new_opinfo(struct cifssrv_sess *sess,
+static struct oplock_info *get_new_opinfo(struct cifsd_sess *sess,
 		int id, __u16 Tid, struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -274,9 +274,9 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (!((opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) ||
 			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			if (opinfo->leased)
-				cifssrv_err("lease state(0x%x)\n",
+				cifsd_err("lease state(0x%x)\n",
 						opinfo->CurrentLeaseState);
 			return -EINVAL;
 		}
@@ -293,7 +293,7 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 	} else {
 		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
 			(opinfo->lock_type == OPLOCK_BATCH))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			return -EINVAL;
 		}
 		opinfo->lock_type = OPLOCK_READ;
@@ -320,9 +320,9 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (!((opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) ||
 			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			if (opinfo->leased)
-				cifssrv_err("lease state(0x%x)\n",
+				cifsd_err("lease state(0x%x)\n",
 						opinfo->CurrentLeaseState);
 			return -EINVAL;
 		}
@@ -335,7 +335,7 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 	} else {
 		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
 			(opinfo->lock_type == OPLOCK_BATCH))) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			return -EINVAL;
 		}
 		opinfo->lock_type = OPLOCK_NONE;
@@ -361,9 +361,9 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 	if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (opinfo->lock_type != SMB2_OPLOCK_LEVEL_II) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			if (opinfo->leased)
-				cifssrv_err("lease state(0x%x)\n",
+				cifsd_err("lease state(0x%x)\n",
 						opinfo->CurrentLeaseState);
 			return -EINVAL;
 		}
@@ -375,7 +375,7 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 #endif
 	} else {
 		if (opinfo->lock_type != OPLOCK_READ) {
-			cifssrv_err("bad oplock(0x%x)\n", opinfo->lock_type);
+			cifsd_err("bad oplock(0x%x)\n", opinfo->lock_type);
 			return -EINVAL;
 		}
 		opinfo->lock_type = OPLOCK_NONE;
@@ -396,7 +396,7 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo)
 {
 	if (!(opinfo->CurrentLeaseState & SMB2_LEASE_READ_CACHING)) {
-		cifssrv_debug("bad lease state(0x%x)\n",
+		cifsd_debug("bad lease state(0x%x)\n",
 				opinfo->CurrentLeaseState);
 		return -EINVAL;
 	}
@@ -414,11 +414,11 @@ int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo)
 /**
  * close_id_del_lease() - release lease object at file close time
  * @server:     TCP server instance of connection
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @id:		fid of open file
  */
 static void close_id_del_lease(struct tcp_server_info *server,
-		struct cifssrv_file *fp, unsigned int id)
+		struct cifsd_file *fp, unsigned int id)
 {
 	struct ofile_info *ofile = NULL;
 	struct oplock_info *opinfo = NULL;
@@ -455,7 +455,7 @@ static void close_id_del_lease(struct tcp_server_info *server,
 		kfree(opinfo);
 		atomic_dec(&ofile->op_count);
 	} else {
-		cifssrv_err("bad lease cnt %d\n",
+		cifsd_err("bad lease cnt %d\n",
 				atomic_read(&opinfo->LeaseCount));
 	}
 
@@ -468,11 +468,11 @@ out:
 /**
  * close_id_del_oplock() - release oplock object at file close time
  * @server:     TCP server instance of connection
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @id:		fid of open file
  */
 void close_id_del_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, unsigned int id)
+		struct cifsd_file *fp, unsigned int id)
 {
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo;
@@ -546,7 +546,7 @@ static void smb_send_lease_break(struct work_struct *work)
 	mutex_lock(&server->srv_mutex);
 
 	if (server->ops->allocate_rsp_buf(smb_work)) {
-		cifssrv_debug("smb2_allocate_rsp_buf failed! ");
+		cifsd_debug("smb2_allocate_rsp_buf failed! ");
 		mutex_unlock(&server->srv_mutex);
 		kfree(smb_work);
 		return;
@@ -589,7 +589,7 @@ static void smb_send_lease_break(struct work_struct *work)
 
 	inc_rfc1001_len(rsp, 44);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
+	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
 	kfree(smb_work);
 	mutex_unlock(&server->srv_mutex);
 
@@ -604,11 +604,11 @@ static void smb_send_lease_break(struct work_struct *work)
  * smb_breakII_oplock() - send level2 oplock or read lease break command from
  *			server to client
  * @server:     TCP server instance of connection
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @openfile:	open file information
  */
 void smb_breakII_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, struct ofile_info *openfile)
+		struct cifsd_file *fp, struct ofile_info *openfile)
 {
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo, *tmp;
@@ -630,19 +630,19 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 			if (opinfo->leased && (opinfo->CurrentLeaseState &
 					(~(SMB2_LEASE_READ_CACHING |
 					   SMB2_LEASE_HANDLE_CACHING)))) {
-				cifssrv_err("unexpected lease state(0x%x)\n",
+				cifsd_err("unexpected lease state(0x%x)\n",
 						opinfo->CurrentLeaseState);
 				continue;
 			} else if (opinfo->lock_type !=
 					SMB2_OPLOCK_LEVEL_II) {
-				cifssrv_err("unexpected oplock(0x%x)\n",
+				cifsd_err("unexpected oplock(0x%x)\n",
 						opinfo->lock_type);
 				continue;
 			}
 #endif
 		} else {
 			if (opinfo->lock_type != OPLOCK_READ) {
-				cifssrv_err("unexpected oplock(0x%x)\n",
+				cifsd_err("unexpected oplock(0x%x)\n",
 					opinfo->lock_type);
 				continue;
 			}
@@ -661,9 +661,9 @@ void smb_breakII_oplock(struct tcp_server_info *server,
 		}
 #endif
 
-		work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
+		work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 		if (!work) {
-			cifssrv_err("cannot allocate memory\n");
+			cifsd_err("cannot allocate memory\n");
 			continue;
 		}
 
@@ -717,7 +717,7 @@ static int smb1_oplock_break_to_levelII(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
+	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
@@ -762,7 +762,7 @@ static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
+	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
@@ -794,14 +794,14 @@ static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
  * @ofile:	open file object
  * @opinfo_new:	new oplock info object
  * @oplock:	granted oplock type
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @lctx:	lease context information
  *
  * Return:      0
  */
 static int grant_write_oplock(struct ofile_info *ofile,
 		struct oplock_info *opinfo_new, int *oplock,
-		struct cifssrv_file *fp, struct lease_ctx_info *lctx)
+		struct cifsd_file *fp, struct lease_ctx_info *lctx)
 {
 	WARN_ON(!list_empty(&ofile->op_write_list));
 
@@ -844,14 +844,14 @@ static int grant_write_oplock(struct ofile_info *ofile,
  * @ofile:	open file object
  * @opinfo_new:	new oplock info object
  * @oplock:	granted oplock type
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @lctx:	lease context information
  *
  * Return:      0
  */
 static int grant_read_oplock(struct ofile_info *ofile,
 		struct oplock_info *opinfo_new, int *oplock,
-		struct cifssrv_file *fp, struct lease_ctx_info *lctx)
+		struct cifsd_file *fp, struct lease_ctx_info *lctx)
 {
 	if (IS_SMB2(opinfo_new->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -993,10 +993,10 @@ static int smb_send_oplock_break_notification(struct ofile_info *ofile,
 	int is_smb2 = IS_SMB2(brk_opinfo->server);
 
 	/* Need to break exclusive/batch oplock, write lease or overwrite_if */
-	cifssrv_debug("id old = %d(%d) was oplocked\n",
+	cifsd_debug("id old = %d(%d) was oplocked\n",
 			brk_opinfo->fid, brk_opinfo->lock_type);
 
-	cifssrv_debug("oplock break for inode %lu\n", ofile->inode->i_ino);
+	cifsd_debug("oplock break for inode %lu\n", ofile->inode->i_ino);
 
 	/*
 	* Don't wait for oplock break while grabbing mutex.
@@ -1037,7 +1037,7 @@ static int smb_send_oplock_break_notification(struct ofile_info *ofile,
 		return err;
 	}
 
-	cifssrv_debug("oplock granted = %d\n", brk_opinfo->lock_type);
+	cifsd_debug("oplock granted = %d\n", brk_opinfo->lock_type);
 
 	if (brk_opinfo->state == OPLOCK_BREAKING) {
 		brk_opinfo->state = OPLOCK_NOT_BREAKING;
@@ -1049,7 +1049,7 @@ static int smb_send_oplock_break_notification(struct ofile_info *ofile,
 
 /**
  * smb_grant_oplock() - handle oplock/lease request on file open
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @oplock:	granted oplock type
  * @id:		fid of open file
  * @Tid:	Tree id of connection
@@ -1058,8 +1058,8 @@ static int smb_send_oplock_break_notification(struct ofile_info *ofile,
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
-		int id, struct cifssrv_file *fp, __u16 Tid,
+int smb_grant_oplock(struct cifsd_sess *sess, int *oplock,
+		int id, struct cifsd_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx)
 {
 	int err = 0;
@@ -1113,7 +1113,7 @@ int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 			opinfo = find_opinfo(&ofile->op_write_list,
 				sess->server->ClientGUID, lctx->LeaseKey);
 			if (opinfo) {
-				cifssrv_err("found same lease key is already used in other files\n");
+				cifsd_err("found same lease key is already used in other files\n");
 				err = -EINVAL;
 				break;
 			}
@@ -1121,7 +1121,7 @@ int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 			opinfo = find_opinfo(&ofile->op_read_list,
 				sess->server->ClientGUID, lctx->LeaseKey);
 			if (opinfo) {
-				cifssrv_err("found same lease key is already used in other files\n");
+				cifsd_err("found same lease key is already used in other files\n");
 				err = -EINVAL;
 				break;
 			}
@@ -1207,7 +1207,7 @@ out1:
 	if (fp->attrib_only && (fp->cdoption != FILE_OVERWRITE_IF_LE ||
 				fp->cdoption != FILE_OVERWRITE_LE ||
 				fp->cdoption != FILE_SUPERSEDE_LE)) {
-		cifssrv_debug("second attrib only open: don't grant oplock\n");
+		cifsd_debug("second attrib only open: don't grant oplock\n");
 		*oplock = SMB2_OPLOCK_LEVEL_NONE;
 		mutex_unlock(&ofile_list_lock);
 		kfree(opinfo_new);
@@ -1259,11 +1259,11 @@ out2:
 /**
  * smb_break_write_oplock() - break batch/exclusive oplock to level2
  * @server:	TCP server instance of connection
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
 void smb_break_write_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, struct ofile_info *openfile)
+		struct cifsd_file *fp, struct ofile_info *openfile)
 {
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo, *tmp;
@@ -1286,7 +1286,7 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 		opinfo->open_trunc = 1;
 		if (IS_SMB2(opinfo->server)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
-			cifssrv_debug("oplock break for inode %lu\n",
+			cifsd_debug("oplock break for inode %lu\n",
 					inode->i_ino);
 			WARN_ON(!((opinfo->lock_type ==
 						SMB2_OPLOCK_LEVEL_BATCH) ||
@@ -1313,10 +1313,10 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 				return;
 			}
 
-			cifssrv_debug("oplock granted %d\n", opinfo->lock_type);
+			cifsd_debug("oplock granted %d\n", opinfo->lock_type);
 #endif
 		} else {
-			cifssrv_debug("oplock break for inode %lu\n",
+			cifsd_debug("oplock break for inode %lu\n",
 					inode->i_ino);
 			WARN_ON(!((opinfo->lock_type == OPLOCK_BATCH) ||
 					(opinfo->lock_type ==
@@ -1334,7 +1334,7 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 				return;
 			}
 
-			cifssrv_debug("oplock granted %d\n", opinfo->lock_type);
+			cifsd_debug("oplock granted %d\n", opinfo->lock_type);
 		}
 
 		if (opinfo->state == OPLOCK_BREAKING) {
@@ -1347,11 +1347,11 @@ void smb_break_write_oplock(struct tcp_server_info *server,
 /**
  * smb_break_all_oplock() - break both batch/exclusive and level2 oplock
  * @server:	TCP server instance of connection
- * @fp:		cifssrv file pointer
+ * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
 void smb_break_all_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, struct inode *inode)
+		struct cifsd_file *fp, struct inode *inode)
 {
 	struct ofile_info *ofile = NULL;
 	struct list_head *tmp;
@@ -1396,7 +1396,7 @@ void smb1_send_oplock_break(struct work_struct *work)
 
 	smb_work->rsp_large_buf = false;
 	if (server->ops->allocate_rsp_buf(smb_work)) {
-		cifssrv_err("smb_allocate_rsp_buf failed! ");
+		cifsd_err("smb_allocate_rsp_buf failed! ");
 		mutex_unlock(&server->srv_mutex);
 		kfree(smb_work);
 		return;
@@ -1440,11 +1440,11 @@ void smb1_send_oplock_break(struct work_struct *work)
 	req->Timeout = 0;
 	req->NumberOfUnlocks = 0;
 	req->ByteCount = 0;
-	cifssrv_debug("sending oplock break for fid %d lock level = %d\n",
+	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
-	kmem_cache_free(cifssrv_work_cache, smb_work);
+	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+	kmem_cache_free(cifsd_work_cache, smb_work);
 	mutex_unlock(&server->srv_mutex);
 
 	atomic_dec(&server->req_running);
@@ -1469,7 +1469,7 @@ void smb2_send_oplock_break(struct work_struct *work)
 	struct tcp_server_info *server = smb_work->server;
 	struct oplock_info *opinfo = (struct oplock_info *)smb_work->buf;
 	struct smb2_hdr *rsp_hdr;
-	struct cifssrv_file *fp;
+	struct cifsd_file *fp;
 	int persistent_id;
 
 	atomic_inc(&server->req_running);
@@ -1485,7 +1485,7 @@ void smb2_send_oplock_break(struct work_struct *work)
 	persistent_id = fp->persistent_id;
 
 	if (server->ops->allocate_rsp_buf(smb_work)) {
-		cifssrv_err("smb2_allocate_rsp_buf failed! ");
+		cifsd_err("smb2_allocate_rsp_buf failed! ");
 		mutex_unlock(&server->srv_mutex);
 		kfree(smb_work);
 		return;
@@ -1527,10 +1527,10 @@ void smb2_send_oplock_break(struct work_struct *work)
 
 	inc_rfc1001_len(rsp, 24);
 
-	cifssrv_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
+	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
+	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
 	kfree(smb_work);
 	mutex_unlock(&server->srv_mutex);
 
@@ -1865,7 +1865,7 @@ int smb_break_write_lease(struct ofile_info *ofile,
 {
 	struct tcp_server_info *server = opinfo->server;
 	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
+	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
@@ -1892,7 +1892,7 @@ int smb_break_write_lease(struct ofile_info *ofile,
 }
 
 /**
- * cifssrv_durable_verify_and_del_oplock() - Check if the file is already
+ * cifsd_durable_verify_and_del_oplock() - Check if the file is already
  *					opened on current server
  * @curr_sess:		current TCP server session
  * @prev_sess:		previous TCP server session
@@ -1901,12 +1901,12 @@ int smb_break_write_lease(struct ofile_info *ofile,
  *
  * Return:	0 on success, otherwise error
  */
-int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
-					  struct cifssrv_sess *prev_sess,
+int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
+					  struct cifsd_sess *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id)
 {
-	struct cifssrv_file *fp, *fp_curr;
+	struct cifsd_file *fp, *fp_curr;
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo;
 	int lock_type;
@@ -1918,7 +1918,7 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	fp_curr = get_id_from_fidtable(curr_sess, fid);
 	if (fp_curr && fp_curr->sess_id == sess_id) {
 		mutex_unlock(&ofile_list_lock);
-		cifssrv_err("File already opened on current server\n");
+		cifsd_err("File already opened on current server\n");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1926,7 +1926,7 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	fp = get_id_from_fidtable(prev_sess, fid);
 	if (!fp) {
 		mutex_unlock(&ofile_list_lock);
-		cifssrv_err("File struct not found\n");
+		cifsd_err("File struct not found\n");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1934,7 +1934,7 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	ofile = fp->ofile;
 	if (ofile == NULL) {
 		mutex_unlock(&ofile_list_lock);
-		cifssrv_err("unexpected null ofile_info\n");
+		cifsd_err("unexpected null ofile_info\n");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1942,7 +1942,7 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	opinfo = get_matching_opinfo(prev_sess->server, ofile, fid, 0);
 	if (opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
-		cifssrv_err("Unexpected null oplock_info\n");
+		cifsd_err("Unexpected null oplock_info\n");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1954,13 +1954,13 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	mutex_unlock(&ofile_list_lock);
 
 	if (op_state == OPLOCK_BREAKING) {
-		cifssrv_err("Oplock is breaking state\n");
+		cifsd_err("Oplock is breaking state\n");
 		rc = -EINVAL;
 		goto out;
 	}
 
 	if (lock_type != SMB2_OPLOCK_LEVEL_BATCH) {
-		cifssrv_err("Oplock is broken from Batch oplock\n");
+		cifsd_err("Oplock is broken from Batch oplock\n");
 		rc = -EINVAL;
 		goto out;
 	}
@@ -1968,7 +1968,7 @@ int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
 	/* Remove the oplock associated with previous server thread */
 	close_id_del_oplock(prev_sess->server, fp, fid);
 	delete_id_from_fidtable(prev_sess, fid);
-	cifssrv_close_id(&prev_sess->fidtable, fid);
+	cifsd_close_id(&prev_sess->fidtable, fid);
 
 out:
 	return rc;

@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/srv.c
+ *   fs/cifsd/srv.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -31,17 +31,17 @@
 bool global_signing;
 unsigned long server_start_time;
 
-struct kmem_cache *cifssrv_work_cache;
-struct kmem_cache *cifssrv_filp_cache;
+struct kmem_cache *cifsd_work_cache;
+struct kmem_cache *cifsd_filp_cache;
 
-struct kmem_cache *cifssrv_req_cachep;
-mempool_t *cifssrv_req_poolp;
-struct kmem_cache *cifssrv_sm_req_cachep;
-mempool_t *cifssrv_sm_req_poolp;
-struct kmem_cache *cifssrv_sm_rsp_cachep;
-mempool_t *cifssrv_sm_rsp_poolp;
-struct kmem_cache *cifssrv_rsp_cachep;
-mempool_t *cifssrv_rsp_poolp;
+struct kmem_cache *cifsd_req_cachep;
+mempool_t *cifsd_req_poolp;
+struct kmem_cache *cifsd_sm_req_cachep;
+mempool_t *cifsd_sm_req_poolp;
+struct kmem_cache *cifsd_sm_rsp_cachep;
+mempool_t *cifsd_sm_rsp_poolp;
+struct kmem_cache *cifsd_rsp_cachep;
+mempool_t *cifsd_rsp_poolp;
 
 unsigned int smb_min_rcv = CIFS_MIN_RCV_POOL;
 unsigned int cifs_min_send = CIFS_MIN_RCV_POOL;
@@ -53,7 +53,7 @@ unsigned int smb_min_small = 30;
  */
 unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
-static DEFINE_IDA(cifssrv_ida);
+static DEFINE_IDA(cifsd_ida);
 static LIST_HEAD(tcp_sess_list);
 static DEFINE_SPINLOCK(tcp_sess_list_lock);
 
@@ -66,12 +66,12 @@ LIST_HEAD(global_lock_list);
 unsigned int alloc_roundup_size = 1048576;
 
 /**
- * cifssrv_buf_get() - get large response buffer
+ * cifsd_buf_get() - get large response buffer
  *
  * Return:	pointer to large response buffer on success,
  *		otherwise NULL
  */
-struct smb_hdr *cifssrv_buf_get(void)
+struct smb_hdr *cifsd_buf_get(void)
 {
 	struct smb_hdr *hdr;
 	size_t buf_size = sizeof(struct smb_hdr);
@@ -83,7 +83,7 @@ struct smb_hdr *cifssrv_buf_get(void)
 	 */
 	buf_size = sizeof(struct smb2_hdr);
 #endif
-	hdr = mempool_alloc(cifssrv_req_poolp, GFP_NOFS | __GFP_ZERO);
+	hdr = mempool_alloc(cifsd_req_poolp, GFP_NOFS | __GFP_ZERO);
 
 	/* clear the first few header bytes */
 	if (hdr)
@@ -93,7 +93,7 @@ struct smb_hdr *cifssrv_buf_get(void)
 }
 
 /**
- * cifssrv_buf_get() - get small response buffer
+ * cifsd_buf_get() - get small response buffer
  *
  * Return:	pointer to small response buffer on success,
  *		otherwise NULL
@@ -101,24 +101,24 @@ struct smb_hdr *cifssrv_buf_get(void)
 struct smb_hdr *smb_small_buf_get(void)
 {
 	/* No need to memset smallbuf as we will fill hdr anyway */
-	return mempool_alloc(cifssrv_sm_req_poolp, GFP_NOFS | __GFP_ZERO);
+	return mempool_alloc(cifsd_sm_req_poolp, GFP_NOFS | __GFP_ZERO);
 }
 
 /**
- * construct_cifssrv_tcon() - alloc tcon object and initialize
+ * construct_cifsd_tcon() - alloc tcon object and initialize
  *		 from session and share info and increment tcon count
  * @sess:	session to link with tcon object
  * @share:	Related association of tcon object with share
  *
  * Return:	If Succes, Valid initialized tcon object, else errors
  */
-struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
-				struct cifssrv_sess *sess)
+struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
+				struct cifsd_sess *sess)
 {
-	struct cifssrv_tcon *tcon;
+	struct cifsd_tcon *tcon;
 	int err;
 
-	tcon = kzalloc(sizeof(struct cifssrv_tcon), GFP_KERNEL);
+	tcon = kzalloc(sizeof(struct cifsd_tcon), GFP_KERNEL);
 	if (!tcon)
 		return ERR_PTR(-ENOMEM);
 
@@ -127,7 +127,7 @@ struct cifssrv_tcon *construct_cifssrv_tcon(struct cifssrv_share *share,
 
 	err = kern_path(share->path, 0, &tcon->share_path);
 	if (err) {
-		cifssrv_err("kern_path() failed for shares(%s)\n", share->path);
+		cifsd_err("kern_path() failed for shares(%s)\n", share->path);
 		kfree(tcon);
 		return ERR_PTR(-ENOENT);
 	}
@@ -151,9 +151,9 @@ out:
 static bool allocate_buffers(struct tcp_server_info *server)
 {
 	if (!server->bigbuf) {
-		server->bigbuf = (char *)cifssrv_buf_get();
+		server->bigbuf = (char *)cifsd_buf_get();
 		if (!server->bigbuf) {
-			cifssrv_debug("No memory for large SMB response\n");
+			cifsd_debug("No memory for large SMB response\n");
 			msleep(3000);
 			/* retry will check if exiting */
 			return false;
@@ -166,7 +166,7 @@ static bool allocate_buffers(struct tcp_server_info *server)
 	if (!server->smallbuf) {
 		server->smallbuf = (char *)smb_small_buf_get();
 		if (!server->smallbuf) {
-			cifssrv_debug("No memory for SMB response\n");
+			cifsd_debug("No memory for SMB response\n");
 			/* retry will check if exiting */
 			return false;
 		}
@@ -207,7 +207,7 @@ int smb_send_rsp(struct smb_work *work)
 	spin_unlock(&server->request_lock);
 
 	if (rsp_hdr == NULL) {
-		cifssrv_err("NULL response header\n");
+		cifsd_err("NULL response header\n");
 		return -ENOMEM;
 	}
 
@@ -217,7 +217,7 @@ int smb_send_rsp(struct smb_work *work)
 
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
 		if (len < 0) {
-			cifssrv_err("err1 %d while sending data\n", len);
+			cifsd_err("err1 %d while sending data\n", len);
 			goto out;
 		}
 		total_len = len;
@@ -232,7 +232,7 @@ int smb_send_rsp(struct smb_work *work)
 
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
 		if (len < 0) {
-			cifssrv_err("err2 %d while sending data\n", len);
+			cifsd_err("err2 %d while sending data\n", len);
 			goto uncork;
 		}
 		total_len = len;
@@ -242,7 +242,7 @@ int smb_send_rsp(struct smb_work *work)
 		iov.iov_len = work->rdata_cnt;
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
 		if (len < 0) {
-			cifssrv_err("err3 %d while sending data\n", len);
+			cifsd_err("err3 %d while sending data\n", len);
 			goto uncork;
 		}
 		total_len += len;
@@ -255,15 +255,15 @@ uncork:
 	}
 
 	if (total_len != get_rfc1002_length(rsp_hdr) + 4)
-		cifssrv_err("transfered %d, expected %d bytes\n",
+		cifsd_err("transfered %d, expected %d bytes\n",
 				total_len, get_rfc1002_length(rsp_hdr) + 4);
 
 out:
-	cifssrv_debug("data sent = %d\n", total_len);
+	cifsd_debug("data sent = %d\n", total_len);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (server->tcp_status == CifsGood && IS_SMB2(server))
-		cifssrv_update_durable_stat_info(work->sess);
+		cifsd_update_durable_stat_info(work->sess);
 #endif
 
 	return 0;
@@ -276,9 +276,9 @@ out:
  */
 void queue_dynamic_work_helper(struct tcp_server_info *server)
 {
-	struct smb_work *work =	kmem_cache_zalloc(cifssrv_work_cache, GFP_NOFS);
+	struct smb_work *work =	kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work) {
-		cifssrv_err("allocation for work failed\n");
+		cifsd_err("allocation for work failed\n");
 		return;
 	}
 
@@ -327,7 +327,7 @@ void queue_dynamic_work(struct tcp_server_info *server, char *buf)
 	/* check if the message is ok */
 	ret = check_smb_message(buf);
 	if (ret) {
-		cifssrv_debug("Malformed smb request\n");
+		cifsd_debug("Malformed smb request\n");
 		return;
 	}
 
@@ -366,19 +366,19 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 		vfree(smb_work->buf);
 	else {
 		if (smb_work->large_buf)
-			mempool_free(smb_work->buf, cifssrv_req_poolp);
+			mempool_free(smb_work->buf, cifsd_req_poolp);
 		else
-			mempool_free(smb_work->buf, cifssrv_sm_req_poolp);
+			mempool_free(smb_work->buf, cifsd_sm_req_poolp);
 	}
 
 	if (smb_work->rsp_large_buf)
-		mempool_free(smb_work->rsp_buf, cifssrv_rsp_poolp);
+		mempool_free(smb_work->rsp_buf, cifsd_rsp_poolp);
 	else
-		mempool_free(smb_work->rsp_buf, cifssrv_sm_rsp_poolp);
+		mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
 
 	if (smb_work->rdata_buf)
 		kvfree(smb_work->rdata_buf);
-	kmem_cache_free(cifssrv_work_cache, smb_work);
+	kmem_cache_free(cifsd_work_cache, smb_work);
 }
 
 /**
@@ -400,7 +400,7 @@ void handle_smb_work(struct work_struct *work)
 	atomic_inc(&server->req_running);
 	mutex_lock(&server->srv_mutex);
 
-	if (cifssrv_debug_enable)
+	if (cifsd_debug_enable)
 		start_time = jiffies;
 
 	server->stats.request_served++;
@@ -433,7 +433,7 @@ void handle_smb_work(struct work_struct *work)
 					NT_STATUS_USER_SESSION_DELETED);
 			goto send;
 		} else if (rc > 0) {
-			rc = server->ops->get_cifssrv_tcon(smb_work);
+			rc = server->ops->get_cifsd_tcon(smb_work);
 			if (rc < 0) {
 				server->ops->set_rsp_status(smb_work,
 					NT_STATUS_NETWORK_NAME_DELETED);
@@ -458,7 +458,7 @@ again:
 
 	cmds = &server->cmds[command];
 	if (cmds->proc == NULL) {
-		cifssrv_err("*** not implemented yet cmd = %x\n", command);
+		cifsd_err("*** not implemented yet cmd = %x\n", command);
 		server->ops->set_rsp_status(smb_work,
 						NT_STATUS_NOT_IMPLEMENTED);
 		goto send;
@@ -485,7 +485,7 @@ again:
 				server->dialect == SMB30_PROT_ID ||
 				server->dialect == SMB302_PROT_ID ||
 				server->dialect == SMB311_PROT_ID)) {
-		cifssrv_debug("Need to send the smb2 negotiate response\n");
+		cifsd_debug("Need to send the smb2 negotiate response\n");
 		init_smb2_neg_rsp(smb_work);
 		goto send;
 	}
@@ -494,7 +494,7 @@ again:
 		command = rc;
 		goto again;
 	} else if (rc < 0)
-		cifssrv_debug("error(%d) while processing cmd %u\n",
+		cifsd_debug("error(%d) while processing cmd %u\n",
 							rc, command);
 
 	if (smb_work->send_no_response) {
@@ -531,7 +531,7 @@ nosend:
 	/* free buffers */
 	free_workitem_buffers(smb_work);
 
-	if (cifssrv_debug_enable) {
+	if (cifsd_debug_enable) {
 		end_time = jiffies;
 
 		time_elapsed = end_time - start_time;
@@ -550,7 +550,7 @@ nosend:
 
 	mutex_unlock(&server->srv_mutex);
 	atomic_dec(&server->req_running);
-	cifssrv_debug("req running = %d\n", atomic_read(&server->req_running));
+	cifsd_debug("req running = %d\n", atomic_read(&server->req_running));
 	if (waitqueue_active(&server->req_running_q))
 		wake_up_all(&server->req_running_q);
 
@@ -586,7 +586,7 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
 	server->credits_granted = 0;
 	init_waitqueue_head(&server->req_running_q);
 	INIT_LIST_HEAD(&server->tcp_sess);
-	INIT_LIST_HEAD(&server->cifssrv_sess);
+	INIT_LIST_HEAD(&server->cifsd_sess);
 	INIT_LIST_HEAD(&server->requests);
 	INIT_LIST_HEAD(&server->async_requests);
 	spin_lock_init(&server->request_lock);
@@ -608,15 +608,15 @@ int init_tcp_server(struct tcp_server_info *server, struct socket *sock)
  */
 static void server_cleanup(struct tcp_server_info *server)
 {
-	ida_simple_remove(&cifssrv_ida, server->th_id);
+	ida_simple_remove(&cifsd_ida, server->th_id);
 	kernel_sock_shutdown(server->sock, SHUT_RDWR);
 	sock_release(server->sock);
 	server->sock = NULL;
 
 	if (server->bigbuf)
-		mempool_free(server->bigbuf, cifssrv_req_poolp);
+		mempool_free(server->bigbuf, cifsd_req_poolp);
 	if (server->smallbuf)
-		mempool_free(server->smallbuf, cifssrv_sm_req_poolp);
+		mempool_free(server->smallbuf, cifsd_sm_req_poolp);
 	if (server->wbuf)
 		vfree(server->wbuf);
 
@@ -624,13 +624,13 @@ static void server_cleanup(struct tcp_server_info *server)
 	kfree(server);
 }
 
-void free_channel_list(struct cifssrv_sess *sess)
+void free_channel_list(struct cifsd_sess *sess)
 {
 	struct channel *chann;
 	struct list_head *tmp, *t;
 
 	if (sess->server->dialect >= SMB30_PROT_ID) {
-		list_for_each_safe(tmp, t, &sess->cifssrv_chann_list) {
+		list_for_each_safe(tmp, t, &sess->cifsd_chann_list) {
 			chann = list_entry(tmp, struct channel, chann_list);
 			if (chann) {
 				list_del(&chann->chann_list);
@@ -657,7 +657,7 @@ static int tcp_sess_kthread(void *p)
 
 	mutex_init(&server->srv_mutex);
 	__module_get(THIS_MODULE);
-	list_add(&server->list, &cifssrv_connection_list);
+	list_add(&server->list, &cifsd_connection_list);
 	server->last_active = jiffies;
 
 	while (!kthread_should_stop() &&
@@ -671,7 +671,7 @@ static int tcp_sess_kthread(void *p)
 
 		buf = server->smallbuf;
 		pdu_length = 4; /* enough to get RFC1001 header */
-		length = cifssrv_read_from_socket(server, buf, pdu_length);
+		length = cifsd_read_from_socket(server, buf, pdu_length);
 		if (length != pdu_length)
 			/* 7 seconds passed. It should be EAGAIN */
 			continue;
@@ -681,10 +681,10 @@ static int tcp_sess_kthread(void *p)
 			continue;
 
 		pdu_length = get_rfc1002_length(buf);
-		cifssrv_debug("RFC1002 header %u bytes\n", pdu_length);
+		cifsd_debug("RFC1002 header %u bytes\n", pdu_length);
 		/* make sure we have enough to get to SMB header end */
 		if (pdu_length < HEADER_SIZE(server) - 4) {
-			cifssrv_debug("SMB request too short (%u bytes)\n",
+			cifsd_debug("SMB request too short (%u bytes)\n",
 					pdu_length);
 			continue;
 		}
@@ -711,9 +711,9 @@ static int tcp_sess_kthread(void *p)
 			buf = server->bigbuf;
 
 		/* read the request */
-		length = cifssrv_read_from_socket(server, buf + 4, pdu_length);
+		length = cifsd_read_from_socket(server, buf + 4, pdu_length);
 		if (length < 0) {
-			cifssrv_err("sock_read failed: %d\n", length);
+			cifsd_err("sock_read failed: %d\n", length);
 			continue;
 		}
 
@@ -722,10 +722,10 @@ static int tcp_sess_kthread(void *p)
 			queue_dynamic_work(server, buf);
 		else {
 			if (length > pdu_length)
-				cifssrv_debug("extra read(%d) expected(%u)\n",
+				cifsd_debug("extra read(%d) expected(%u)\n",
 						length, pdu_length);
 			else
-				cifssrv_debug("short read(%d) expected(%u)\n",
+				cifsd_debug("short read(%d) expected(%u)\n",
 						length, pdu_length);
 		}
 	}
@@ -743,18 +743,18 @@ static int tcp_sess_kthread(void *p)
 	spin_unlock(&tcp_sess_list_lock);
 
 	if (server->sess_count) {
-		struct cifssrv_sess *sess;
+		struct cifsd_sess *sess;
 		struct list_head *tmp, *t;
 
-		list_for_each_safe(tmp, t, &server->cifssrv_sess) {
-			sess = list_entry(tmp, struct cifssrv_sess,
-							cifssrv_ses_list);
+		list_for_each_safe(tmp, t, &server->cifsd_sess) {
+			sess = list_entry(tmp, struct cifsd_sess,
+							cifsd_ses_list);
 			free_channel_list(sess);
-			list_del(&sess->cifssrv_ses_list);
-			/* SESSION Global list cifssrv_ses_global_list is
+			list_del(&sess->cifsd_ses_list);
+			/* SESSION Global list cifsd_ses_global_list is
 			   for SMB2 only*/
 			if (server->connection_type != 0)
-				list_del(&sess->cifssrv_ses_global_list);
+				list_del(&sess->cifsd_ses_global_list);
 			kfree(sess);
 		}
 	}
@@ -762,7 +762,7 @@ static int tcp_sess_kthread(void *p)
 	server_cleanup(server);
 	module_put(THIS_MODULE);
 
-	cifssrv_debug("%s: exiting\n", current->comm);
+	cifsd_debug("%s: exiting\n", current->comm);
 
 	return 0;
 }
@@ -785,7 +785,7 @@ int connect_tcp_sess(struct socket *sock)
 	struct tcp_server_info *server;
 
 	if (kernel_getpeername(sock, csin, &cslen) < 0) {
-		cifssrv_err("client ip resolution failed\n");
+		cifsd_err("client ip resolution failed\n");
 		return -EINVAL;
 	}
 
@@ -797,30 +797,30 @@ int connect_tcp_sess(struct socket *sock)
 
 	snprintf(server->peeraddr, sizeof(server->peeraddr), "%pI4",
 			&(((const struct sockaddr_in *)csin)->sin_addr));
-	cifssrv_debug("connect request from [%s]\n", server->peeraddr);
+	cifsd_debug("connect request from [%s]\n", server->peeraddr);
 
 	server->family = ((const struct sockaddr_in *)csin)->sin_family;
 
 	rc = init_tcp_server(server, sock);
 	if (rc) {
-		cifssrv_err("cannot init tcp server\n");
+		cifsd_err("cannot init tcp server\n");
 		kfree(server);
 		goto out;
 	}
 
-	server->th_id = ida_simple_get(&cifssrv_ida, 1, 0, GFP_KERNEL);
+	server->th_id = ida_simple_get(&cifsd_ida, 1, 0, GFP_KERNEL);
 	if (server->th_id < 0) {
-		cifssrv_err("ida_simple_get failed: %d\n", server->th_id);
+		cifsd_err("ida_simple_get failed: %d\n", server->th_id);
 		kfree(server);
 		goto out;
 	}
 
 	server->handler = kthread_run(tcp_sess_kthread, server,
-					"kcifssrvd/%d", server->th_id);
+					"kcifsd/%d", server->th_id);
 	if (IS_ERR(server->handler)) {
 		/* TODO : remove from list and free sock */
-		cifssrv_err("cannot start server thread\n");
-		ida_simple_remove(&cifssrv_ida, server->th_id);
+		cifsd_err("cannot start server thread\n");
+		ida_simple_remove(&cifsd_ida, server->th_id);
 		spin_lock(&tcp_sess_list_lock);
 		list_del(&server->tcp_sess);
 		spin_unlock(&tcp_sess_list_lock);
@@ -832,24 +832,24 @@ out:
 	return rc;
 }
 
-int cifssrv_stop_tcp_sess(void)
+int cifsd_stop_tcp_sess(void)
 {
 	int ret;
 	int err = 0;
 	int etype;
 	struct tcp_server_info *server, *tmp;
 
-	list_for_each_entry_safe(server, tmp, &cifssrv_connection_list, list) {
+	list_for_each_entry_safe(server, tmp, &cifsd_connection_list, list) {
 		server->tcp_status = CifsExiting;
 		ret = kthread_stop(server->handler);
 		if (ret) {
-			etype = CIFSSRV_KEVENT_SMBPORT_CLOSE_FAIL;
-			cifssrv_err("failed to stop server thread\n");
+			etype = CIFSD_KEVENT_SMBPORT_CLOSE_FAIL;
+			cifsd_err("failed to stop server thread\n");
 			err = ret;
 		} else
-			etype = CIFSSRV_KEVENT_SMBPORT_CLOSE_PASS;
+			etype = CIFSD_KEVENT_SMBPORT_CLOSE_PASS;
 
-		cifssrv_kthread_stop_status(etype);
+		cifsd_kthread_stop_status(etype);
 	}
 
 	return err;
@@ -866,94 +866,94 @@ static int smb_initialize_mempool(void)
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	max_hdr_size = MAX_SMB2_HDR_SIZE;
 #endif
-	cifssrv_req_cachep = kmem_cache_create("cifssrv_request",
+	cifsd_req_cachep = kmem_cache_create("cifsd_request",
 			SMBMaxBufSize + max_hdr_size, 0,
 			SLAB_HWCACHE_ALIGN, NULL);
 
-	if (cifssrv_req_cachep == NULL)
+	if (cifsd_req_cachep == NULL)
 		goto err_out1;
 
-	cifssrv_req_poolp = mempool_create_slab_pool(smb_min_rcv,
-			cifssrv_req_cachep);
+	cifsd_req_poolp = mempool_create_slab_pool(smb_min_rcv,
+			cifsd_req_cachep);
 
-	if (cifssrv_req_poolp == NULL)
+	if (cifsd_req_poolp == NULL)
 		goto err_out2;
 
 	/* Initialize small request pool */
-	cifssrv_sm_req_cachep = kmem_cache_create("cifssrv_small_rq",
+	cifsd_sm_req_cachep = kmem_cache_create("cifsd_small_rq",
 			MAX_CIFS_SMALL_BUFFER_SIZE, 0, SLAB_HWCACHE_ALIGN,
 			NULL);
 
-	if (cifssrv_sm_req_cachep == NULL)
+	if (cifsd_sm_req_cachep == NULL)
 		goto err_out3;
 
-	cifssrv_sm_req_poolp = mempool_create_slab_pool(smb_min_small,
-			cifssrv_sm_req_cachep);
+	cifsd_sm_req_poolp = mempool_create_slab_pool(smb_min_small,
+			cifsd_sm_req_cachep);
 
-	if (cifssrv_sm_req_poolp == NULL)
+	if (cifsd_sm_req_poolp == NULL)
 		goto err_out4;
 
-	cifssrv_sm_rsp_cachep = kmem_cache_create("cifssrv_small_rsp",
+	cifsd_sm_rsp_cachep = kmem_cache_create("cifsd_small_rsp",
 			MAX_CIFS_SMALL_BUFFER_SIZE, 0, SLAB_HWCACHE_ALIGN,
 			NULL);
 
-	if (cifssrv_sm_rsp_cachep == NULL)
+	if (cifsd_sm_rsp_cachep == NULL)
 		goto err_out5;
 
-	cifssrv_sm_rsp_poolp = mempool_create_slab_pool(smb_min_small,
-			cifssrv_sm_rsp_cachep);
+	cifsd_sm_rsp_poolp = mempool_create_slab_pool(smb_min_small,
+			cifsd_sm_rsp_cachep);
 
-	if (cifssrv_sm_rsp_poolp == NULL)
+	if (cifsd_sm_rsp_poolp == NULL)
 		goto err_out6;
 
-	cifssrv_rsp_cachep = kmem_cache_create("cifssrv_rsp",
+	cifsd_rsp_cachep = kmem_cache_create("cifsd_rsp",
 			SMBMaxBufSize + max_hdr_size, 0,
 			SLAB_HWCACHE_ALIGN,
 			NULL);
 
-	if (cifssrv_rsp_cachep == NULL)
+	if (cifsd_rsp_cachep == NULL)
 		goto err_out7;
 
-	cifssrv_rsp_poolp = mempool_create_slab_pool(cifs_min_send,
-			cifssrv_rsp_cachep);
+	cifsd_rsp_poolp = mempool_create_slab_pool(cifs_min_send,
+			cifsd_rsp_cachep);
 
-	if (cifssrv_rsp_poolp == NULL)
+	if (cifsd_rsp_poolp == NULL)
 		goto err_out8;
 
-	cifssrv_work_cache = kmem_cache_create("cifssrv_work_cache",
+	cifsd_work_cache = kmem_cache_create("cifsd_work_cache",
 					sizeof(struct smb_work), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
-	if (cifssrv_work_cache == NULL)
+	if (cifsd_work_cache == NULL)
 		goto err_out9;
 
-	cifssrv_filp_cache = kmem_cache_create("cifssrv_file_cache",
-					sizeof(struct cifssrv_file), 0,
+	cifsd_filp_cache = kmem_cache_create("cifsd_file_cache",
+					sizeof(struct cifsd_file), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
-	if (cifssrv_filp_cache == NULL)
+	if (cifsd_filp_cache == NULL)
 		goto err_out10;
 
 	return 0;
 
 err_out10:
-	kmem_cache_destroy(cifssrv_work_cache);
+	kmem_cache_destroy(cifsd_work_cache);
 err_out9:
-	mempool_destroy(cifssrv_rsp_poolp);
+	mempool_destroy(cifsd_rsp_poolp);
 err_out8:
-	kmem_cache_destroy(cifssrv_rsp_cachep);
+	kmem_cache_destroy(cifsd_rsp_cachep);
 err_out7:
-	mempool_destroy(cifssrv_sm_rsp_poolp);
+	mempool_destroy(cifsd_sm_rsp_poolp);
 err_out6:
-	kmem_cache_destroy(cifssrv_sm_rsp_cachep);
+	kmem_cache_destroy(cifsd_sm_rsp_cachep);
 err_out5:
-	mempool_destroy(cifssrv_sm_req_poolp);
+	mempool_destroy(cifsd_sm_req_poolp);
 err_out4:
-	kmem_cache_destroy(cifssrv_sm_req_cachep);
+	kmem_cache_destroy(cifsd_sm_req_cachep);
 err_out3:
-	mempool_destroy(cifssrv_req_poolp);
+	mempool_destroy(cifsd_req_poolp);
 err_out2:
-	kmem_cache_destroy(cifssrv_req_cachep);
+	kmem_cache_destroy(cifsd_req_cachep);
 err_out1:
-	cifssrv_err("failed to allocate memory\n");
+	cifsd_err("failed to allocate memory\n");
 	return -ENOMEM;
 }
 
@@ -962,18 +962,18 @@ err_out1:
  */
 void smb_free_mempools(void)
 {
-	mempool_destroy(cifssrv_req_poolp);
-	kmem_cache_destroy(cifssrv_req_cachep);
-	mempool_destroy(cifssrv_sm_req_poolp);
-	kmem_cache_destroy(cifssrv_sm_req_cachep);
+	mempool_destroy(cifsd_req_poolp);
+	kmem_cache_destroy(cifsd_req_cachep);
+	mempool_destroy(cifsd_sm_req_poolp);
+	kmem_cache_destroy(cifsd_sm_req_cachep);
 
-	mempool_destroy(cifssrv_rsp_poolp);
-	kmem_cache_destroy(cifssrv_rsp_cachep);
-	mempool_destroy(cifssrv_sm_rsp_poolp);
-	kmem_cache_destroy(cifssrv_sm_rsp_cachep);
+	mempool_destroy(cifsd_rsp_poolp);
+	kmem_cache_destroy(cifsd_rsp_cachep);
+	mempool_destroy(cifsd_sm_rsp_poolp);
+	kmem_cache_destroy(cifsd_sm_rsp_cachep);
 
-	kmem_cache_destroy(cifssrv_work_cache);
-	kmem_cache_destroy(cifssrv_filp_cache);
+	kmem_cache_destroy(cifsd_work_cache);
+	kmem_cache_destroy(cifsd_filp_cache);
 }
 
 /**
@@ -995,7 +995,7 @@ static int __init init_smb_server(void)
 	if (rc)
 		return rc;
 
-	rc = cifssrv_export_init();
+	rc = cifsd_export_init();
 	if (rc)
 		goto err1;
 
@@ -1005,7 +1005,7 @@ static int __init init_smb_server(void)
 		goto err2;
 #endif
 
-	rc = cifssrv_net_init();
+	rc = cifsd_net_init();
 	if (rc)
 		goto err3;
 	return 0;
@@ -1016,7 +1016,7 @@ err3:
 	destroy_global_fidtable();
 err2:
 #endif
-	cifssrv_export_exit();
+	cifsd_export_exit();
 err1:
 	smb_free_mempools();
 	return rc;
@@ -1027,13 +1027,13 @@ err1:
  */
 static void __exit exit_smb_server(void)
 {
-	cifssrv_net_exit();
+	cifsd_net_exit();
 
-	cifssrv_stop_forker_thread();
+	cifsd_stop_forker_thread();
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
 #endif
-	cifssrv_export_exit();
+	cifsd_export_exit();
 	dispose_ofile_list();
 	smb_free_mempools();
 }

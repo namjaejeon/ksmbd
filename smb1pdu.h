@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/smb1pdu.h
+ *   fs/cifsd/smb1pdu.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,8 +19,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_SMB1PDU_H
-#define __CIFSSRV_SMB1PDU_H
+#ifndef __CIFSD_SMB1PDU_H
+#define __CIFSD_SMB1PDU_H
 
 #include "glob.h"
 #include "nterr.h"
@@ -1887,7 +1887,7 @@ extern int smb1_is_sign_req(struct smb_work *work, unsigned int command);
 extern int smb1_check_sign_req(struct smb_work *work);
 extern void smb1_set_sign_rsp(struct smb_work *work);
 extern int smb_check_user_session(struct smb_work *smb_work);
-extern int smb_get_cifssrv_tcon(struct smb_work *smb_work);
+extern int smb_get_cifsd_tcon(struct smb_work *smb_work);
 
 /* smb1 command handlers */
 extern int smb_rename(struct smb_work *smb_work);
@@ -1919,4 +1919,4 @@ extern int smb_write(struct smb_work *smb_work);
 extern int smb_setattr(struct smb_work *smb_work);
 extern int smb_checkdir(struct smb_work *smb_work);
 extern int smb_process_exit(struct smb_work *smb_work);
-#endif /* __CIFSSRV_SMB1PDU_H */
+#endif /* __CIFSD_SMB1PDU_H */

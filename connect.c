@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/connect.c
+ *   fs/cifsd/connect.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -23,7 +23,7 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
-struct task_struct *cifssrv_forkerd;
+struct task_struct *cifsd_forkerd;
 
 static int deny_new_conn;
 /**
@@ -97,7 +97,7 @@ bool server_unresponsive(struct tcp_server_info *server)
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
 	if (time_after(jiffies, server->last_active + 2 * SMB_ECHO_INTERVAL)) {
-		cifssrv_debug("No response from client in 120 secs\n");
+		cifsd_debug("No response from client in 120 secs\n");
 		return true;
 	}
 	return false;
@@ -107,7 +107,7 @@ bool server_unresponsive(struct tcp_server_info *server)
 }
 
 /**
- * cifssrv_readv_from_socket() - read data from socket in given iovec
+ * cifsd_readv_from_socket() - read data from socket in given iovec
  * @server:     TCP server instance of connection
  * @iov_orig:	base IO vector
  * @nr_segs:	number of segments in base iov
@@ -116,22 +116,22 @@ bool server_unresponsive(struct tcp_server_info *server)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifssrv_readv_from_socket(struct tcp_server_info *server,
+int cifsd_readv_from_socket(struct tcp_server_info *server,
 			      struct kvec *iov_orig, unsigned int nr_segs,
 			      unsigned int to_read)
 {
 	int length = 0;
 	int total_read;
 	unsigned int segs;
-	struct msghdr cifssrv_msg;
+	struct msghdr cifsd_msg;
 	struct kvec *iov;
 
 	iov = get_server_iovec(server, nr_segs);
 	if (!iov)
 		return -ENOMEM;
 
-	cifssrv_msg.msg_control = NULL;
-	cifssrv_msg.msg_controllen = 0;
+	cifsd_msg.msg_control = NULL;
+	cifsd_msg.msg_controllen = 0;
 
 	for (total_read = 0; to_read; total_read += length, to_read -= length) {
 		try_to_freeze();
@@ -143,7 +143,7 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
 
 		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
 
-		length = kernel_recvmsg(server->sock, &cifssrv_msg,
+		length = kernel_recvmsg(server->sock, &cifsd_msg,
 				iov, segs, to_read, 0);
 
 		if (server->tcp_status == CifsExiting) {
@@ -168,7 +168,7 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
 }
 
 /**
- * cifssrv_readv_from_socket() - read data from socket in given buffer
+ * cifsd_readv_from_socket() - read data from socket in given buffer
  * @server:     TCP server instance of connection
  * @buf:	buffer to store read data from socket
  * @to_read:	number of bytes to read from socket
@@ -176,7 +176,7 @@ int cifssrv_readv_from_socket(struct tcp_server_info *server,
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
+int cifsd_read_from_socket(struct tcp_server_info *server, char *buf,
 			     unsigned int to_read)
 {
 	struct kvec iov;
@@ -184,15 +184,15 @@ int cifssrv_read_from_socket(struct tcp_server_info *server, char *buf,
 	iov.iov_base = buf;
 	iov.iov_len = to_read;
 
-	return cifssrv_readv_from_socket(server, &iov, 1, to_read);
+	return cifsd_readv_from_socket(server, &iov, 1, to_read);
 }
 
 /**
- * cifssrv_create_socket - create socket for kcifssrvd/0
+ * cifsd_create_socket - create socket for kcifsd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-int cifssrv_create_socket(void)
+int cifsd_create_socket(void)
 {
 	int ret;
 	struct socket *socket = NULL;
@@ -203,7 +203,7 @@ int cifssrv_create_socket(void)
 	if (ret)
 		return ret;
 
-	cifssrv_debug("socket created\n");
+	cifsd_debug("socket created\n");
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = PF_INET;
 	sin.sin_port = htons(SMB_PORT);
@@ -211,20 +211,20 @@ int cifssrv_create_socket(void)
 	ret = kernel_setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
 			(char *)&opt, sizeof(opt));
 	if (ret < 0) {
-		cifssrv_err("failed to set socket options(%d)\n", ret);
+		cifsd_err("failed to set socket options(%d)\n", ret);
 		goto release;
 	}
 
 	ret = kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY,
 			(char *)&opt, sizeof(opt));
 	if (ret < 0) {
-		cifssrv_err("set TCP_NODELAY socket option error %d\n", ret);
+		cifsd_err("set TCP_NODELAY socket option error %d\n", ret);
 		goto release;
 	}
 
 	ret = kernel_bind(socket, (struct sockaddr *)&sin, sizeof(sin));
 	if (ret) {
-		cifssrv_err("failed to bind socket err = %d\n", ret);
+		cifsd_err("failed to bind socket err = %d\n", ret);
 		goto release;
 	}
 
@@ -233,23 +233,23 @@ int cifssrv_create_socket(void)
 
 	ret = socket->ops->listen(socket, 64);
 	if (ret) {
-		cifssrv_err("port listen failure(%d)\n", ret);
+		cifsd_err("port listen failure(%d)\n", ret);
 		goto release;
 	}
 
-	ret = cifssrv_start_forker_thread(socket);
+	ret = cifsd_start_forker_thread(socket);
 	if (ret) {
-		cifssrv_err("failed to run forker thread(%d)\n", ret);
+		cifsd_err("failed to run forker thread(%d)\n", ret);
 		goto release;
 	}
 
 	return 0;
 
 release:
-	cifssrv_debug("releasing socket\n");
+	cifsd_debug("releasing socket\n");
 	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
 	if (ret)
-		cifssrv_err("failed to shutdown socket cleanly\n");
+		cifsd_err("failed to shutdown socket cleanly\n");
 
 	sock_release(socket);
 
@@ -257,12 +257,12 @@ release:
 }
 
 /**
- * cifssrv_do_fork() - forker thread to listen new SMB connection
+ * cifsd_do_fork() - forker thread to listen new SMB connection
  * @p:		arguments to forker thread
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-static int cifssrv_do_fork(void *p)
+static int cifsd_do_fork(void *p)
 {
 	struct socket *socket = p;
 	int ret;
@@ -278,17 +278,17 @@ static int cifssrv_do_fork(void *p)
 				/* check for new connections every 100 msecs */
 				schedule_timeout_interruptible(HZ/10);
 		} else {
-			cifssrv_debug("connect success: accepted new connection\n");
+			cifsd_debug("connect success: accepted new connection\n");
 			newsock->sk->sk_rcvtimeo = 7 * HZ;
 			newsock->sk->sk_sndtimeo = 5 * HZ;
 			/* request for new connection */
 			connect_tcp_sess(newsock);
 		}
 	}
-	cifssrv_debug("releasing socket\n");
+	cifsd_debug("releasing socket\n");
 	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
 	if (ret)
-		cifssrv_err("failed to shutdown socket cleanly\n");
+		cifsd_err("failed to shutdown socket cleanly\n");
 
 	sock_release(socket);
 
@@ -296,23 +296,23 @@ static int cifssrv_do_fork(void *p)
 }
 
 /**
- * cifssrv_start_forker_thread() - start forker thread
+ * cifsd_start_forker_thread() - start forker thread
  *
- * start forker thread(kcifssrvd/0) at module init time to listen
+ * start forker thread(kcifsd/0) at module init time to listen
  * on port 445 for new SMB connection requests. It creates per connection
- * server threads(kcifssrvd/x)
+ * server threads(kcifsd/x)
  *
  * Return:	0 on success or error number
  */
-int cifssrv_start_forker_thread(struct socket *socket)
+int cifsd_start_forker_thread(struct socket *socket)
 {
 	int rc;
 
 	deny_new_conn = 0;
-	cifssrv_forkerd = kthread_run(cifssrv_do_fork, socket, "kcifssrvd/0");
-	if (IS_ERR(cifssrv_forkerd)) {
-		rc = PTR_ERR(cifssrv_forkerd);
-		cifssrv_forkerd = NULL;
+	cifsd_forkerd = kthread_run(cifsd_do_fork, socket, "kcifsd/0");
+	if (IS_ERR(cifsd_forkerd)) {
+		rc = PTR_ERR(cifsd_forkerd);
+		cifsd_forkerd = NULL;
 		return rc;
 	}
 
@@ -320,31 +320,31 @@ int cifssrv_start_forker_thread(struct socket *socket)
 }
 
 /**
- * cifssrv_stop_forker_thread() - stop forker thread
+ * cifsd_stop_forker_thread() - stop forker thread
  *
- * stop forker thread(cifssrv_forkerd) at module exit time
+ * stop forker thread(cifsd_forkerd) at module exit time
  */
-void cifssrv_stop_forker_thread(void)
+void cifsd_stop_forker_thread(void)
 {
 	int ret;
 
-	if (cifssrv_forkerd) {
-		ret = kthread_stop(cifssrv_forkerd);
+	if (cifsd_forkerd) {
+		ret = kthread_stop(cifsd_forkerd);
 		if (ret)
-			cifssrv_err("failed to stop forker thread\n");
+			cifsd_err("failed to stop forker thread\n");
 	}
-	cifssrv_forkerd = NULL;
+	cifsd_forkerd = NULL;
 }
 
-void cifssrv_close_socket(void)
+void cifsd_close_socket(void)
 {
 	int ret;
 
-	cifssrv_debug("closing SMB PORT and releasing socket\n");
+	cifsd_debug("closing SMB PORT and releasing socket\n");
 	deny_new_conn = 1;
-	ret = cifssrv_stop_tcp_sess();
+	ret = cifsd_stop_tcp_sess();
 	if (!ret) {
-		cifssrv_stop_forker_thread();
-		cifssrv_debug("SMB PORT closed\n");
+		cifsd_stop_forker_thread();
+		cifsd_debug("SMB PORT closed\n");
 	}
 }
