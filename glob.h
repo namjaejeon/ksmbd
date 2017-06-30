@@ -566,7 +566,6 @@ extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 	ssize_t v_len);
 extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags);
-extern void convert_to_lowercase(char *string);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifssrv_file *curr_fp);
@@ -668,7 +667,6 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment);
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 /* netlink functions */
 int cifssrv_net_init(void);
 void cifssrv_net_exit(void);
@@ -676,10 +674,9 @@ int cifssrv_sendmsg(struct cifssrv_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
 int cifssrv_kthread_stop_status(int etype);
-#endif
 
 /* asn1 functions */
-extern int decode_negTokenInit(unsigned char *security_blob, int length,
+extern int cifssrv_decode_negTokenInit(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);
 extern int decode_negTokenTarg(unsigned char *security_blob, int length,
 		struct tcp_server_info *server);

@@ -347,7 +347,7 @@ compare_oid(unsigned long *oid1, unsigned int oid1len,
 /* BB check for endian conversion issues here */
 
 int
-decode_negTokenInit(unsigned char *security_blob, int length,
+cifssrv_decode_negTokenInit(unsigned char *security_blob, int length,
 		    struct tcp_server_info *server)
 {
 	struct asn1_ctx ctx;

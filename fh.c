@@ -1001,6 +1001,8 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		goto err_out;
 	}
 
+	INIT_LIST_HEAD(&fp->lock_list);
+
 	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode))
 		*oplock = OPLOCK_NONE;
 
@@ -1008,7 +1010,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
 		/* Client cannot request levelII oplock directly */
 		err = smb_grant_oplock(work->sess, oplock, id, fp, rcv_hdr->Tid,
-			NULL, false);
+			NULL);
 		/* if we enconter an error, no oplock is granted */
 		if (err)
 			*oplock = 0;
@@ -1193,7 +1195,6 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 	pipe_desc->id = id;
 	pipe_desc->pkt_type = -1;
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSSRV_MAX_PAYLOAD,
 			GFP_KERNEL);
 	if (!pipe_desc->rsp_buf) {
@@ -1201,7 +1202,6 @@ int get_pipe_id(struct cifssrv_sess *sess, unsigned int pipe_type)
 		sess->pipe_desc[pipe_type] = NULL;
 		return -ENOMEM;
 	}
-#endif
 
 	switch (pipe_type) {
 	case SRVSVC:
@@ -1238,9 +1238,7 @@ int close_pipe_id(struct cifssrv_sess *sess, int pipe_type)
 	if (rc < 0)
 		return rc;
 
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	kfree(pipe_desc->rsp_buf);
-#endif
 	kfree(pipe_desc);
 	sess->pipe_desc[pipe_type] = NULL;
 

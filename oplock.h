@@ -51,6 +51,7 @@ extern struct mutex ofile_list_lock;
 struct lease_ctx_info {
 	__u8			LeaseKey[SMB2_LEASE_KEY_SIZE];
 	__le32			CurrentLeaseState;
+	__le32			OldLeaseState;
 	__le32			LeaseFlags;
 	__le64			LeaseDuration;
 };
@@ -84,6 +85,7 @@ struct oplock_info {
 
 struct ofile_info {
 	struct inode            *inode;
+	char			*stream_name;
 	struct list_head        i_list;
 	struct list_head        op_write_list;
 	struct list_head        op_read_list;
@@ -94,7 +96,7 @@ struct ofile_info {
 
 extern int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
 		int id, struct cifssrv_file *fp, __u16 Tid,
-		struct lease_ctx_info *lctx, bool attr_only);
+		struct lease_ctx_info *lctx);
 extern void smb1_send_oplock_break(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 extern void smb2_send_oplock_break(struct work_struct *work);
@@ -118,7 +120,7 @@ void smb_break_all_oplock(struct tcp_server_info *server,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
-void create_lease_buf(u8 *rbuf, u8 *LeaseKey, u8 oplock, u8 handle);
+void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq);
 __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq);
 struct oplock_info *get_matching_opinfo_lease(struct tcp_server_info *server,
 		struct ofile_info **ofile, char *LeaseKey,

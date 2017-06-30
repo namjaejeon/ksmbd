@@ -62,6 +62,68 @@ char *netbios_name;
 int server_min_pr;
 int server_max_pr;
 
+struct cifssrv_pipe_table cifssrv_pipes[] = {
+	{"\\srvsvc", SRVSVC},
+	{"srvsvc", SRVSVC},
+	{"\\wkssvc", SRVSVC},
+	{"wkssvc", SRVSVC},
+	{"\\winreg", WINREG},
+	{"winreg", WINREG},
+};
+unsigned int npipes = sizeof(cifssrv_pipes)/sizeof(cifssrv_pipes[0]);
+
+/**
+ * get_pipe_type() - get the type of the pipe from the string name
+ * @name:      string name for representation of pipe, need to be searched
+ *             in the supported table
+ * Return:     the pipe type number if found in the table,
+ *             else invalid pipe type
+ */
+unsigned int get_pipe_type(char *pipename)
+{
+	int i;
+	unsigned int pipetype = INVALID_PIPE;
+
+	for (i = 0; i < npipes; i++) {
+		if (!strcmp(cifssrv_pipes[i].pipename, pipename)) {
+			pipetype = cifssrv_pipes[i].pipetype;
+			break;
+		}
+	}
+	return pipetype;
+}
+
+/**
+ * get_pipe_desc() - get matching pipe descriptor from pipe id
+ * @sess:	session info
+ * @id:		lookup pipe id
+ *
+ * Return:	matching pipe descriptor from opened pipe id
+ */
+struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
+		unsigned int id)
+{
+	struct cifssrv_pipe *pipe_desc;
+	int i;
+
+	if (unlikely(!sess))
+		return NULL;
+
+	for (i = 0; i < MAX_PIPE; i++) {
+		/* fid is not created for LANMAN */
+		if (i == LANMAN)
+			continue;
+
+		pipe_desc = sess->pipe_desc[i];
+		if (!pipe_desc)
+			continue;
+
+		if (pipe_desc->id == id)
+			return pipe_desc;
+	}
+
+	return NULL;
+}
 
 /**
  * __add_share() - helper function to add a share in global exported share list
@@ -1843,14 +1905,6 @@ int cifssrv_export_init(void)
 		return rc;
 	}
 
-	rc = cifssrv_init_registry();
-	if (rc) {
-		cifssrv_free_global_params();
-		exit_sysfs_parser();
-		cifssrv_share_free();
-		return rc;
-	}
-
 	return 0;
 }
 
@@ -1860,7 +1914,6 @@ int cifssrv_export_init(void)
  */
 void cifssrv_export_exit(void)
 {
-	cifssrv_free_registry();
 	exit_sysfs_parser();
 	cifssrv_free_global_params();
 	cifssrv_user_free();

@@ -27,9 +27,7 @@
 #include <linux/fs.h>
 
 #include "glob.h"
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 #include "netlink.h"
-#endif
 
 /* Windows style file permissions for extended response */
 #define	FILE_GENERIC_ALL	0x1F01FF
@@ -119,6 +117,7 @@ struct cifssrv_file {
 	__le32 cdoption;
 	__le32 fattr;
 	__u64 create_time;
+	bool attrib_only;
 	bool is_stream;
 	char *stream_name;
 	ssize_t ssize;
@@ -160,10 +159,8 @@ struct cifssrv_pipe {
 	char *buf;
 	int datasize;
 	int sent;
-#ifdef CONFIG_CIFSSRV_NETLINK_INTERFACE
 	struct cifssrv_uevent ev;
 	char *rsp_buf;
-#endif
 };
 
 #define CIFSSRV_NR_OPEN_DEFAULT BITS_PER_LONG
