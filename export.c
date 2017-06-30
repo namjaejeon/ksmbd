@@ -70,7 +70,7 @@ struct cifsd_pipe_table cifsd_pipes[] = {
 	{"\\winreg", WINREG},
 	{"winreg", WINREG},
 };
-unsigned int npipes = sizeof(cifsd_pipes)/sizeof(cifsd_pipes[0]);
+unsigned int npipes = ARRAY_SIZE(cifsd_pipes);
 
 /**
  * get_pipe_type() - get the type of the pipe from the string name

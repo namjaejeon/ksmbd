@@ -97,5 +97,5 @@ void init_smb1_server(struct tcp_server_info *server)
 	server->vals = &smb1_server_values;
 	server->ops = &smb1_server_ops;
 	server->cmds = smb1_server_cmds;
-	server->max_cmds = sizeof(smb1_server_cmds)/sizeof(smb1_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb1_server_cmds);
 }

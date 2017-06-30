@@ -191,8 +191,7 @@ void init_smb2_0_server(struct tcp_server_info *server)
 	server->vals = &smb20_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
-	server->max_cmds =
-		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	server->max_credits = SMB2_MAX_CREDITS;
 	server->credits_granted = 0;
 }
@@ -207,8 +206,7 @@ void init_smb2_1_server(struct tcp_server_info *server)
 	server->vals = &smb21_server_values;
 	server->ops = &smb2_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
-	server->max_cmds =
-		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	server->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
@@ -227,8 +225,7 @@ void init_smb3_0_server(struct tcp_server_info *server)
 	server->vals = &smb30_server_values;
 	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
-	server->max_cmds =
-		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	server->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
@@ -250,8 +247,7 @@ void init_smb3_02_server(struct tcp_server_info *server)
 	server->vals = &smb302_server_values;
 	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
-	server->max_cmds =
-		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	server->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
@@ -273,8 +269,7 @@ void init_smb3_11_server(struct tcp_server_info *server)
 	server->vals = &smb311_server_values;
 	server->ops = &smb3_0_server_ops;
 	server->cmds = smb2_0_server_cmds;
-	server->max_cmds =
-		sizeof(smb2_0_server_cmds)/sizeof(smb2_0_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	server->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
