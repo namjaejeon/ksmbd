@@ -91,7 +91,7 @@ extern int smbConvertToUTF16(__le16 *target, const char *source, int maxlen,
 		const struct nls_table *cp, int mapChars);
 extern char *extract_sharename(const char *treename);
 #ifdef CONFIG_CIFS_SMB2
-extern __le16 *cifssrv_strndup_to_utf16(const char *src, const int maxlen,
+extern __le16 *cifsd_strndup_to_utf16(const char *src, const int maxlen,
 		int *utf16_len, const struct nls_table *cp,
 		int remap);
 #endif /* CONFIG_CIFS_SMB2 */

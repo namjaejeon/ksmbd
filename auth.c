@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/auth.c
+ *   fs/cifsd/auth.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -57,7 +57,7 @@ static int crypto_md5_alloc(struct tcp_server_info *server)
 
 	server->secmech.md5 = crypto_alloc_shash("md5", 0, 0);
 	if (IS_ERR(server->secmech.md5)) {
-		cifssrv_debug("could not allocate crypto md5\n");
+		cifsd_debug("could not allocate crypto md5\n");
 		rc = PTR_ERR(server->secmech.md5);
 		server->secmech.md5 = NULL;
 		return rc;
@@ -88,7 +88,7 @@ static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
 
 	server->secmech.hmacmd5 = crypto_alloc_shash("hmac(md5)", 0, 0);
 	if (IS_ERR(server->secmech.hmacmd5)) {
-		cifssrv_debug("could not allocate crypto hmacmd5\n");
+		cifsd_debug("could not allocate crypto hmacmd5\n");
 		rc = PTR_ERR(server->secmech.hmacmd5);
 		server->secmech.hmacmd5 = NULL;
 		return rc;
@@ -115,40 +115,40 @@ static int crypto_hmacmd5_alloc(struct tcp_server_info *server)
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-int compute_sess_key(struct cifssrv_sess *sess, char *hash, char *hmac)
+int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac)
 {
 	int rc;
 
 	rc = crypto_hmacmd5_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_setkey(sess->server->secmech.hmacmd5, hash,
 			CIFS_HMAC_MD5_HASH_SIZE);
 	if (rc) {
-		cifssrv_debug("hmacmd5 set key fail error %d\n", rc);
+		cifsd_debug("hmacmd5 set key fail error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(&sess->server->secmech.sdeschmacmd5->shash);
 	if (rc) {
-		cifssrv_debug("could not init hmacmd5 error %d\n", rc);
+		cifsd_debug("could not init hmacmd5 error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
 		hmac, SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
-		cifssrv_debug("Could not update with response error %d\n", rc);
+		cifsd_debug("Could not update with response error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacmd5->shash,
 			sess->sess_key);
 	if (rc) {
-		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		cifsd_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto out;
 	}
 
@@ -156,7 +156,7 @@ out:
 	return rc;
 }
 
-static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
+static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret, len;
@@ -164,20 +164,20 @@ static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
 	__le16 *uniname;
 
 	if (!sess->server->secmech.sdeschmacmd5) {
-		cifssrv_debug("can't generate ntlmv2 hash\n");
+		cifsd_debug("can't generate ntlmv2 hash\n");
 		return -1;
 	}
 
 	ret = crypto_shash_setkey(sess->server->secmech.hmacmd5,
 		sess->usr->passkey, CIFS_ENCPWD_SIZE);
 	if (ret) {
-		cifssrv_debug("Could not set NT Hash as a key\n");
+		cifsd_debug("Could not set NT Hash as a key\n");
 		return ret;
 	}
 
 	ret = crypto_shash_init(&sess->server->secmech.sdeschmacmd5->shash);
 	if (ret) {
-		cifssrv_debug("could not init hmacmd5\n");
+		cifsd_debug("could not init hmacmd5\n");
 		return ret;
 	}
 
@@ -198,7 +198,7 @@ static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
 	ret = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
 			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
-		cifssrv_debug("Could not update with user\n");
+		cifsd_debug("Could not update with user\n");
 		return ret;
 	}
 
@@ -206,7 +206,7 @@ static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
 	len = strlen(dname);
 	domain = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!domain) {
-		cifssrv_debug("memory allocation failed\n");
+		cifsd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
 		return ret;
 	}
@@ -217,14 +217,14 @@ static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
 	ret = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
-		cifssrv_debug("Could not update with domain\n");
+		cifsd_debug("Could not update with domain\n");
 		return ret;
 	}
 
 	ret = crypto_shash_final(&sess->server->secmech.sdeschmacmd5->shash,
 			ntlmv2_hash);
 	if (ret) {
-		cifssrv_debug("Could not generate md5 hash\n");
+		cifsd_debug("Could not generate md5 hash\n");
 	}
 
 	return ret;
@@ -238,7 +238,7 @@ static int calc_ntlmv2_hash(struct cifssrv_sess *sess, char *ntlmv2_hash,
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlm(struct cifssrv_sess *sess, char *pw_buf)
+int process_ntlm(struct cifsd_sess *sess, char *pw_buf)
 {
 	int rc;
 	unsigned char p21[21];
@@ -248,7 +248,7 @@ int process_ntlm(struct cifssrv_sess *sess, char *pw_buf)
 	memcpy(p21, sess->usr->passkey, CIFS_NTHASH_SIZE);
 	rc = E_P24(p21, sess->ntlmssp.cryptkey, key);
 	if (rc) {
-		cifssrv_err("password processing failed\n");
+		cifsd_err("password processing failed\n");
 		return rc;
 	}
 
@@ -258,10 +258,10 @@ int process_ntlm(struct cifssrv_sess *sess, char *pw_buf)
 	sess->sequence_number = 1;
 
 	if (strncmp(pw_buf, key, CIFS_AUTH_RESP_SIZE) != 0) {
-		cifssrv_debug("ntlmv1 authentication failed\n");
+		cifsd_debug("ntlmv1 authentication failed\n");
 		rc = -EINVAL;
 	} else
-		cifssrv_debug("ntlmv1 authentication pass\n");
+		cifsd_debug("ntlmv1 authentication pass\n");
 
 	return rc;
 }
@@ -275,7 +275,7 @@ int process_ntlm(struct cifssrv_sess *sess, char *pw_buf)
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
+int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name)
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
@@ -285,7 +285,7 @@ int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
 
 	rc = crypto_hmacmd5_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
@@ -295,27 +295,27 @@ int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
 		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
 
 	if (rc) {
-		cifssrv_debug("could not get v2 hash rc %d\n", rc);
+		cifsd_debug("could not get v2 hash rc %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_setkey(sess->server->secmech.hmacmd5, ntlmv2_hash,
 						CIFS_HMAC_MD5_HASH_SIZE);
 	if (rc) {
-		cifssrv_debug("Could not set NTLMV2 Hash as a key\n");
+		cifsd_debug("Could not set NTLMV2 Hash as a key\n");
 		goto out;
 	}
 
 	rc = crypto_shash_init(&sess->server->secmech.sdeschmacmd5->shash);
 	if (rc) {
-		cifssrv_debug("Could not init hmacmd5\n");
+		cifsd_debug("Could not init hmacmd5\n");
 		goto out;
 	}
 
 	len = CIFS_CRYPTO_KEY_SIZE + blen;
 	construct = kzalloc(len, GFP_KERNEL);
 	if (!construct) {
-		cifssrv_debug("Memory allocation failed\n");
+		cifsd_debug("Memory allocation failed\n");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -327,20 +327,20 @@ int process_ntlmv2(struct cifssrv_sess *sess, struct ntlmv2_resp *ntlmv2,
 	rc = crypto_shash_update(&sess->server->secmech.sdeschmacmd5->shash,
 			construct, len);
 	if (rc) {
-		cifssrv_debug("Could not update with response\n");
+		cifsd_debug("Could not update with response\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacmd5->shash,
 			ntlmv2_rsp);
 	if (rc) {
-		cifssrv_debug("Could not generate md5 hash\n");
+		cifsd_debug("Could not generate md5 hash\n");
 		goto out;
 	}
 
 	rc = compute_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
 	if (rc) {
-		cifssrv_debug("%s: Could not generate sess key\n", __func__);
+		cifsd_debug("%s: Could not generate sess key\n", __func__);
 		goto out;
 	}
 
@@ -359,17 +359,17 @@ out:
  * Return:	0 on success, error number on error
  */
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-	int blob_len, struct cifssrv_sess *sess)
+	int blob_len, struct cifsd_sess *sess)
 {
 	char *domain_name;
 
 	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
-		cifssrv_debug("negotiate blob len %d too small\n", blob_len);
+		cifsd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
 
 	if (memcmp(authblob->Signature, "NTLMSSP", 8)) {
-		cifssrv_debug("blob signature incorrect %s\n",
+		cifsd_debug("blob signature incorrect %s\n",
 				authblob->Signature);
 		return -EINVAL;
 	}
@@ -388,7 +388,7 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 			sess->server->local_nls);
 
 	/* process NTLMv2 authentication */
-	cifssrv_debug("decode_ntlmssp_authenticate_blob dname%s\n",
+	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
 	return process_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
 		authblob->NtChallengeResponse.BufferOffset),
@@ -404,15 +404,15 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
  *
  */
 int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct cifssrv_sess *sess)
+		int blob_len, struct cifsd_sess *sess)
 {
 	if (blob_len < sizeof(NEGOTIATE_MESSAGE)) {
-		cifssrv_debug("negotiate blob len %d too small\n", blob_len);
+		cifsd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
 
 	if (memcmp(negblob->Signature, "NTLMSSP", 8)) {
-		cifssrv_debug("blob signature incorrect %s\n",
+		cifsd_debug("blob signature incorrect %s\n",
 				negblob->Signature);
 		return -EINVAL;
 	}
@@ -429,7 +429,7 @@ int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
  *
  */
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct cifssrv_sess *sess)
+		struct cifsd_sess *sess)
 {
 	TargetInfo *tinfo;
 	wchar_t *name;
@@ -502,7 +502,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 			chgblob->TargetInfoArray.Length;
 	blob_len += chgblob->TargetInfoArray.Length;
 	kfree(name);
-	cifssrv_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
+	cifsd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;
 }
 
@@ -514,7 +514,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
  * @sig:        signature value generated for client request packet
  *
  */
-int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
+int smb1_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
@@ -522,20 +522,20 @@ int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 
 	rc = crypto_md5_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc md5 rc %d\n", rc);
+		cifsd_debug("could not crypto alloc md5 rc %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(&sess->server->secmech.sdescmd5->shash);
 	if (rc) {
-		cifssrv_debug("md5 init error %d\n", rc);
+		cifsd_debug("md5 init error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_update(&sess->server->secmech.sdescmd5->shash,
 			sess->sess_key, 40);
 	if (rc) {
-		cifssrv_debug("md5 update error %d\n", rc);
+		cifsd_debug("md5 update error %d\n", rc);
 		goto out;
 	}
 
@@ -544,14 +544,14 @@ int smb1_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 				&sess->server->secmech.sdescmd5->shash,
 				iov[i].iov_base, iov[i].iov_len);
 		if (rc) {
-			cifssrv_debug("md5 update error %d\n", rc);
+			cifsd_debug("md5 update error %d\n", rc);
 			goto out;
 		}
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdescmd5->shash, sig);
 	if (rc)
-		cifssrv_debug("md5 generation error %d\n", rc);
+		cifsd_debug("md5 generation error %d\n", rc);
 
 out:
 	return rc;
@@ -570,7 +570,7 @@ static int crypto_hmacsha256_alloc(struct tcp_server_info *server)
 
 	server->secmech.hmacsha256 = crypto_alloc_shash("hmac(sha256)", 0, 0);
 	if (IS_ERR(server->secmech.hmacsha256)) {
-		cifssrv_debug("could not allocate crypto hmacsha256\n");
+		cifsd_debug("could not allocate crypto hmacsha256\n");
 		rc = PTR_ERR(server->secmech.hmacsha256);
 		server->secmech.hmacsha256 = NULL;
 		return rc;
@@ -601,7 +601,7 @@ static int crypto_cmac_alloc(struct tcp_server_info *server)
 
 	server->secmech.cmacaes = crypto_alloc_shash("cmac(aes)", 0, 0);
 	if (IS_ERR(server->secmech.cmacaes)) {
-		cifssrv_debug("could not allocate crypto cmac-aes\n");
+		cifsd_debug("could not allocate crypto cmac-aes\n");
 		rc = PTR_ERR(server->secmech.cmacaes);
 		server->secmech.cmacaes = NULL;
 		return rc;
@@ -630,10 +630,10 @@ static int crypto_sha512_alloc(struct tcp_server_info *server)
 	if (server->secmech.sdescsha512)
 		return 0;
 
-	cifssrv_debug("Inside crypto_sha512_alloc\n");
+	cifsd_debug("Inside crypto_sha512_alloc\n");
 	server->secmech.sha512 = crypto_alloc_shash("sha512", 0, 0);
 	if (IS_ERR(server->secmech.sha512)) {
-		cifssrv_debug("could not allocate crypto sha512\n");
+		cifsd_debug("could not allocate crypto sha512\n");
 		rc = PTR_ERR(server->secmech.sha512);
 		server->secmech.sha512 = NULL;
 		return rc;
@@ -661,7 +661,7 @@ static int crypto_sha512_alloc(struct tcp_server_info *server)
  * @sig:	signature value generated for client request packet
  *
  */
-int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
+int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
@@ -669,20 +669,20 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 
 	rc = crypto_hmacsha256_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_setkey(sess->server->secmech.hmacsha256,
 		sess->sess_key, SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
-		cifssrv_debug("hmacsha256 update error %d\n", rc);
+		cifsd_debug("hmacsha256 update error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(&sess->server->secmech.sdeschmacsha256->shash);
 	if (rc) {
-		cifssrv_debug("hmacsha256 init error %d\n", rc);
+		cifsd_debug("hmacsha256 init error %d\n", rc);
 		goto out;
 	}
 
@@ -691,7 +691,7 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 				&sess->server->secmech.sdeschmacsha256->shash,
 				iov[i].iov_base, iov[i].iov_len);
 		if (rc) {
-			cifssrv_debug("hmacsha256 update error %d\n", rc);
+			cifsd_debug("hmacsha256 update error %d\n", rc);
 			goto out;
 		}
 	}
@@ -699,7 +699,7 @@ int smb2_sign_smbpdu(struct cifssrv_sess *sess, struct kvec *iov, int n_vec,
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacsha256->shash,
 		sig);
 	if (rc)
-		cifssrv_debug("hmacsha256 generation error %d\n", rc);
+		cifsd_debug("hmacsha256 generation error %d\n", rc);
 
 out:
 	return rc;
@@ -722,13 +722,13 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 	rc = crypto_shash_setkey(chann->server->secmech.cmacaes,
 		chann->smb3signingkey,	SMB2_CMACAES_SIZE);
 	if (rc) {
-		cifssrv_debug("cmaces update error %d\n", rc);
+		cifsd_debug("cmaces update error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(&chann->server->secmech.sdesccmacaes->shash);
 	if (rc) {
-		cifssrv_debug("cmaces init error %d\n", rc);
+		cifsd_debug("cmaces init error %d\n", rc);
 		goto out;
 	}
 
@@ -737,7 +737,7 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 				&chann->server->secmech.sdesccmacaes->shash,
 				iov[i].iov_base, iov[i].iov_len);
 		if (rc) {
-			cifssrv_debug("cmaces update error %d\n", rc);
+			cifsd_debug("cmaces update error %d\n", rc);
 			goto out;
 		}
 	}
@@ -745,7 +745,7 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 	rc = crypto_shash_final(&chann->server->secmech.sdesccmacaes->shash,
 		sig);
 	if (rc)
-		cifssrv_debug("cmaces generation error %d\n", rc);
+		cifsd_debug("cmaces generation error %d\n", rc);
 
 out:
 	return rc;
@@ -757,7 +757,7 @@ out:
  * @sess:	session of connection
  *
  */
-int compute_smb3xsigningkey(struct cifssrv_sess *sess, __u8 *key,
+int compute_smb3xsigningkey(struct cifsd_sess *sess, __u8 *key,
 	unsigned int key_size)
 {
 	unsigned char zero = 0x0;
@@ -772,33 +772,33 @@ int compute_smb3xsigningkey(struct cifssrv_sess *sess, __u8 *key,
 
 	rc = crypto_hmacsha256_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_cmac_alloc(sess->server);
 	if (rc) {
-		cifssrv_debug("could not crypto alloc cmac rc %d\n", rc);
+		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_setkey(sess->server->secmech.hmacsha256,
 			sess->sess_key, SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
-		cifssrv_debug("could not set with session key\n");
+		cifsd_debug("could not set with session key\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_init(&sess->server->secmech.sdeschmacsha256->shash);
 	if (rc) {
-		cifssrv_debug("could not init sign hmac\n");
+		cifsd_debug("could not init sign hmac\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
 			i, 4);
 	if (rc) {
-		cifssrv_debug("could not update with n\n");
+		cifsd_debug("could not update with n\n");
 		goto smb3signkey_ret;
 	}
 
@@ -811,14 +811,14 @@ int compute_smb3xsigningkey(struct cifssrv_sess *sess, __u8 *key,
 				secmech.sdeschmacsha256->shash,
 				"SMB2AESCMAC", 12);
 	if (rc) {
-		cifssrv_debug("could not update with label\n");
+		cifsd_debug("could not update with label\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
 			&zero, 1);
 	if (rc) {
-		cifssrv_debug("could not update with zero\n");
+		cifsd_debug("could not update with zero\n");
 		goto smb3signkey_ret;
 	}
 
@@ -830,21 +830,21 @@ int compute_smb3xsigningkey(struct cifssrv_sess *sess, __u8 *key,
 		rc = crypto_shash_update(&sess->server->
 			secmech.sdeschmacsha256->shash, "SmbSign", 8);
 	if (rc) {
-		cifssrv_debug("could not update with context\n");
+		cifsd_debug("could not update with context\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(&sess->server->secmech.sdeschmacsha256->shash,
 			L, 4);
 	if (rc) {
-		cifssrv_debug("could not update with L\n");
+		cifsd_debug("could not update with L\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_final(&sess->server->secmech.sdeschmacsha256->shash,
 			hashptr);
 	if (rc) {
-		cifssrv_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		cifsd_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
@@ -867,7 +867,7 @@ int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
 	if (hash_id == SMB2_PREAUTH_INTEGRITY_SHA512) {
 		rc = crypto_sha512_alloc(server);
 		if (rc) {
-			cifssrv_debug("could not alloc sha512 rc %d\n", rc);
+			cifsd_debug("could not alloc sha512 rc %d\n", rc);
 			goto out;
 		}
 
@@ -878,26 +878,26 @@ int calc_preauth_integrity_hash(struct tcp_server_info *server, int hash_id,
 
 	rc = crypto_shash_init(&c_sdesc->shash);
 	if (rc) {
-		cifssrv_debug("could not init shashn");
+		cifsd_debug("could not init shashn");
 		goto out;
 	}
 
 	rc = crypto_shash_update(&c_sdesc->shash,
 				server->Preauth_HashValue, 64);
 	if (rc) {
-		cifssrv_debug("could not update with n\n");
+		cifsd_debug("could not update with n\n");
 		goto out;
 	}
 
 	rc = crypto_shash_update(&c_sdesc->shash, all_bytes_msg, msg_size);
 	if (rc) {
-		cifssrv_debug("could not update with n\n");
+		cifsd_debug("could not update with n\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(&c_sdesc->shash, pi_hash);
 	if (rc) {
-		cifssrv_debug("Could not generate hash err : %d\n", rc);
+		cifsd_debug("Could not generate hash err : %d\n", rc);
 		goto out;
 	}
 out:

@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/smberr.h
+ *   fs/cifsd/smberr.h
  *
  *   Copyright (c) International Business Machines  Corp., 2002,2004
  *   Author(s): Steve French (sfrench@us.ibm.com)
@@ -21,8 +21,8 @@
  *   along with this library; if not, write to the Free Software
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
-#ifndef __CIFSSRV_SMBERR_H
-#define __CIFSSRV_SMBERR_H
+#ifndef __CIFSD_SMBERR_H
+#define __CIFSD_SMBERR_H
 
 #define SUCCESS	0x00	/* The request was successful. */
 #define ERRDOS	0x01	/* Error is from the core DOS operating system set */
@@ -185,4 +185,4 @@
 #define ERRnetlogonNotStarted	2455
 #define ERRnosupport		0xFFFF
 
-#endif /* __CIFSSRV_SMBERR_H */
+#endif /* __CIFSD_SMBERR_H */

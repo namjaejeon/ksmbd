@@ -1,7 +1,7 @@
 ================================================================================
-* WHAT IS CIFSSRV?
+* WHAT IS CIFSD?
 ================================================================================
-CIFSSRV is an opensource In-kernel CIFS/SMB3 server created by Namjae Jeon for
+CIFSD is an opensource In-kernel CIFS/SMB3 server created by Namjae Jeon for
 Linux Kernel. It's an implementation of SMB/CIFS protocol in kernel space for
 sharing files and IPC services over network. Initially the target is to provide
 improved file I/O performances, but the bigger goal is to have some new features
@@ -25,11 +25,11 @@ for more details.
 * Git
 ================================================================================
 The development git tree is available at
- - https://github.com/namjaejeon/cifssrv
- - https://github.com/namjaejeon/cifssrv-tools
+ - https://github.com/namjaejeon/cifsd
+ - https://github.com/namjaejeon/cifsd-tools
 
 ================================================================================
-* Bug Report or contribution for cifssrv development
+* Bug Report or contribution for cifsd development
 ================================================================================
 For reporting bugs and sending patches, please send the patches to the following
 mail address:
@@ -63,27 +63,27 @@ mail address:
    g. SMB encryption
 
 ================================================================================
-* CIFSSRV Architecture
+* CIFSD Architecture
 ================================================================================
                |--- ...
-       --------|---kcifssrvd/3 - Cleint 3
-       |-------|---kcifssrvd/2 - Client 2
+       --------|--- kcifsd/3 - Cleint 3
+       |-------|--- kcifsd/2 - Client 2
        |       |         _____________________________________________________
        |       |        |- Client 1                                           |
-<--- Socket ---|---kcifssrvd/1 <<= Authentication : NTLM/NTLM2, Kerberos(TODO)|
+<--- Socket ---|--- kcifsd/1   <<= Authentication : NTLM/NTLM2, Kerberos(TODO)|
        |       |      | |      <<= SMB : SMB1, SMB2, SMB2.1, SMB3, SMB3.0.2,  |
        |       |      | |                SMB3.1.1                             |
        |       |      | |_____________________________________________________|
        |       |      |
        |       |      |--- VFS --- Local Filesystem
        |       |
-KERNEL |--- kcifssrvd/0(forker kthread)
+KERNEL |--- kcifsd/0(forker kthread)
 ---------------||---------------------------------------------------------------
 USER           ||
                || communication using NETLINK and sysfs
                ||  ______________________________________________
                || |                                              |
-            cifssrvd <<= DCE/RPC, WINREG                         |
+             cifsd   <<= DCE/RPC, WINREG                         |
                ^  |  <<= configure shares setting, user accounts |
                |  |______________________________________________|
                |

@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/smb2pdu.h
+ *   fs/cifsd/smb2pdu.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -1256,7 +1256,7 @@ extern void init_smb2_neg_rsp(struct smb_work *smb_work);
 extern void smb2_set_rsp_credits(struct smb_work *smb_work);
 extern void smb2_set_err_rsp(struct smb_work *smb_work);
 extern int smb2_check_user_session(struct smb_work *smb_work);
-extern int smb2_get_cifssrv_tcon(struct smb_work *smb_work);
+extern int smb2_get_cifsd_tcon(struct smb_work *smb_work);
 extern int smb2_is_sign_req(struct smb_work *work, unsigned int command);
 extern int smb2_check_sign_req(struct smb_work *work);
 extern void smb2_set_sign_rsp(struct smb_work *work);

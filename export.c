@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/export.c
+ *   fs/cifsd/export.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -35,22 +35,22 @@
  * There could be 2 ways to add path to an export list.
  * One is static, via a conf file. Other is dynamic, via sysfs entry.
  */
-struct cifssrv_sysfs_obj *sysobj;
+struct cifsd_sysfs_obj *sysobj;
 
-LIST_HEAD(cifssrv_usr_list);
-LIST_HEAD(cifssrv_share_list);
-LIST_HEAD(cifssrv_connection_list);
-LIST_HEAD(cifssrv_session_list);
+LIST_HEAD(cifsd_usr_list);
+LIST_HEAD(cifsd_share_list);
+LIST_HEAD(cifsd_connection_list);
+LIST_HEAD(cifsd_session_list);
 
 __u16 vid = 1;
 __u16 tid = 1;
-int cifssrv_debug_enable;
-int cifssrv_caseless_search;
+int cifsd_debug_enable;
+int cifsd_caseless_search;
 static char statIP[MAX_ADDRBUFLEN];
-static inline void free_share(struct cifssrv_share *share);
+static inline void free_share(struct cifsd_share *share);
 
 /* Number of shares defined on server */
-int cifssrv_num_shares;
+int cifsd_num_shares;
 
 /* The parameters defined on configuration */
 int maptoguest;
@@ -62,7 +62,7 @@ char *netbios_name;
 int server_min_pr;
 int server_max_pr;
 
-struct cifssrv_pipe_table cifssrv_pipes[] = {
+struct cifsd_pipe_table cifsd_pipes[] = {
 	{"\\srvsvc", SRVSVC},
 	{"srvsvc", SRVSVC},
 	{"\\wkssvc", SRVSVC},
@@ -70,7 +70,7 @@ struct cifssrv_pipe_table cifssrv_pipes[] = {
 	{"\\winreg", WINREG},
 	{"winreg", WINREG},
 };
-unsigned int npipes = sizeof(cifssrv_pipes)/sizeof(cifssrv_pipes[0]);
+unsigned int npipes = ARRAY_SIZE(cifsd_pipes);
 
 /**
  * get_pipe_type() - get the type of the pipe from the string name
@@ -85,8 +85,8 @@ unsigned int get_pipe_type(char *pipename)
 	unsigned int pipetype = INVALID_PIPE;
 
 	for (i = 0; i < npipes; i++) {
-		if (!strcmp(cifssrv_pipes[i].pipename, pipename)) {
-			pipetype = cifssrv_pipes[i].pipetype;
+		if (!strcmp(cifsd_pipes[i].pipename, pipename)) {
+			pipetype = cifsd_pipes[i].pipetype;
 			break;
 		}
 	}
@@ -100,10 +100,10 @@ unsigned int get_pipe_type(char *pipename)
  *
  * Return:	matching pipe descriptor from opened pipe id
  */
-struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
+struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id)
 {
-	struct cifssrv_pipe *pipe_desc;
+	struct cifsd_pipe *pipe_desc;
 	int i;
 
 	if (unlikely(!sess))
@@ -133,7 +133,7 @@ struct cifssrv_pipe *get_pipe_desc(struct cifssrv_sess *sess,
  *
  * Return:      true on success, false on error
  */
-static bool __add_share(struct cifssrv_share *share, char *sharename,
+static bool __add_share(struct cifsd_share *share, char *sharename,
 		       char *pathname)
 {
 	struct kstat stat;
@@ -144,13 +144,13 @@ static bool __add_share(struct cifssrv_share *share, char *sharename,
 	if (pathname != NULL) {
 		err = kern_path(pathname, 0, &share_path);
 		if (err) {
-			cifssrv_err("share add failed for %s\n", pathname);
+			cifsd_err("share add failed for %s\n", pathname);
 			return false;
 		} else {
 			err = vfs_getattr(&share_path, &stat);
 			path_put(&share_path);
 			if (err) {
-				cifssrv_err("share add failed for %s\n",
+				cifsd_err("share add failed for %s\n",
 					    pathname);
 				return false;
 			}
@@ -162,8 +162,8 @@ static bool __add_share(struct cifssrv_share *share, char *sharename,
 	share->tid = tid++;
 	share->sharename = sharename;
 	INIT_LIST_HEAD(&share->list);
-	list_add(&share->list, &cifssrv_share_list);
-	cifssrv_num_shares++;
+	list_add(&share->list, &cifsd_share_list);
+	cifsd_num_shares++;
 	return true;
 }
 
@@ -171,7 +171,7 @@ static bool __add_share(struct cifssrv_share *share, char *sharename,
  * init_params() - initialize config parameters of a share
  * @share:	share instance to be initialized
  */
-static void init_params(struct cifssrv_share *share)
+static void init_params(struct cifsd_share *share)
 {
 	set_attr_available(&share->config.attr);
 	set_attr_browsable(&share->config.attr);
@@ -192,10 +192,10 @@ static void init_params(struct cifssrv_share *share)
  */
 static int add_share(char *sharename, char *pathname)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	int ret;
 
-	share = kzalloc(sizeof(struct cifssrv_share), GFP_KERNEL);
+	share = kzalloc(sizeof(struct cifsd_share), GFP_KERNEL);
 	if (!share)
 		return -ENOMEM;
 
@@ -214,7 +214,7 @@ static int add_share(char *sharename, char *pathname)
  * free_share() - free a share point release associated memory
  * @share:	share instance to be freed
  */
-static inline void free_share(struct cifssrv_share *share)
+static inline void free_share(struct cifsd_share *share)
 {
 	kfree(share->sharename);
 
@@ -231,17 +231,17 @@ static inline void free_share(struct cifssrv_share *share)
 }
 
 /**
- * cifssrv_share_free() - delete all shares from global exported share list
+ * cifsd_share_free() - delete all shares from global exported share list
  */
-static void cifssrv_share_free(void)
+static void cifsd_share_free(void)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each_safe(tmp, t, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		list_del(&share->list);
-		cifssrv_num_shares--;
+		cifsd_num_shares--;
 		free_share(share);
 		kfree(share);
 	}
@@ -251,17 +251,17 @@ static void cifssrv_share_free(void)
  * cleanup_bad_share() - remove a bad share, added while config parse error
  * @badshare:	share name to be removed
  */
-static void cleanup_bad_share(struct cifssrv_share *badshare)
+static void cleanup_bad_share(struct cifsd_share *badshare)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each_safe(tmp, t, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		if (share != badshare)
 			continue;
 		list_del(&share->list);
-		cifssrv_num_shares--;
+		cifsd_num_shares--;
 	}
 	free_share(badshare);
 	kfree(badshare);
@@ -276,9 +276,9 @@ static void cleanup_bad_share(struct cifssrv_share *badshare)
  */
 static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 {
-	struct cifssrv_usr *usr;
+	struct cifsd_usr *usr;
 
-	usr = kmalloc(sizeof(struct cifssrv_usr), GFP_KERNEL);
+	usr = kmalloc(sizeof(struct cifsd_usr), GFP_KERNEL);
 	if (!usr)
 		return -ENOMEM;
 
@@ -304,19 +304,19 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 	usr->gid.val = gid.val;
 	usr->sess_uid = 0;
 	INIT_LIST_HEAD(&usr->list);
-	list_add(&usr->list, &cifssrv_usr_list);
+	list_add(&usr->list, &cifsd_usr_list);
 	usr->ucount = 0;
 	return 0;
 }
 
 /**
- * cifssrv_user_free() - delete all users from global exported user list
+ * cifsd_user_free() - delete all users from global exported user list
  */
-static void cifssrv_user_free(void)
+static void cifsd_user_free(void)
 {
-	struct cifssrv_usr *usr, *tmp;
+	struct cifsd_usr *usr, *tmp;
 
-	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
+	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
 		list_del(&usr->list);
 		kfree(usr->name);
 		kfree(usr);
@@ -384,7 +384,7 @@ static int chktkn(char *userslist, char *str2)
  *
  * Return:      1 if cip is allowed access to share, otherwise 0
  */
-int validate_host(char *cip, struct cifssrv_share *share)
+int validate_host(char *cip, struct cifsd_share *share)
 {
 	char *alist = share->config.allow_hosts;
 	char *dlist = share->config.deny_hosts;
@@ -434,7 +434,7 @@ int validate_host(char *cip, struct cifssrv_share *share)
  *
  * Return:      1 if usr is allowed access to share, otherwise error
  */
-int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
+int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
 	bool *can_write)
 {
 	char *vlist = share->config.valid_users;
@@ -453,7 +453,7 @@ int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
 	* mapped with valid share path
 	*/
 	if (get_attr_guestok(&share->config.attr)) {
-		cifssrv_debug("guest login on to share %s\n",
+		cifsd_debug("guest login on to share %s\n",
 				share->sharename);
 		return 1;
 	}
@@ -484,29 +484,29 @@ int validate_usr(struct cifssrv_sess *sess, struct cifssrv_share *share,
 	return chktkn(vlist, sess->usr->name);
 }
 
-struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
-		struct cifssrv_sess *sess,
+struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
+		struct cifsd_sess *sess,
 		char *sharename, bool *can_write)
 {
 	struct list_head *tmp;
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	int rc;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
-		cifssrv_debug("comparing(%s) with treename %s\n",
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
+		cifsd_debug("comparing(%s) with treename %s\n",
 				sharename, share->sharename);
 		if (!strcasecmp(share->sharename, sharename)) {
 			rc = validate_host(server->peeraddr, share);
 			if (rc < 0) {
-				cifssrv_err(
+				cifsd_err(
 				"[host:%s] not allowed for [share:%s]\n"
 				, server->peeraddr, share->sharename);
 				return ERR_PTR(rc);
 			}
 			rc = validate_usr(sess, share, can_write);
 			if (rc < 0) {
-				cifssrv_err(
+				cifsd_err(
 				"[user:%s] not authorised for [share:%s]\n",
 				sess->usr->name, share->sharename);
 				return ERR_PTR(rc);
@@ -514,7 +514,7 @@ struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
 			return share;
 		}
 	}
-	cifssrv_debug("Tree(%s) not exported on server\n", sharename);
+	cifsd_debug("Tree(%s) not exported on server\n", sharename);
 	return ERR_PTR(-ENOENT);
 }
 
@@ -524,13 +524,13 @@ struct cifssrv_share *get_cifssrv_share(struct tcp_server_info *server,
  *
  * Return:      share if there is matching share tid, otherwise NULL
  */
-struct cifssrv_share *find_matching_share(__u16 tid)
+struct cifsd_share *find_matching_share(__u16 tid)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		if (share->tid == tid)
 			return share;
 	}
@@ -538,15 +538,15 @@ struct cifssrv_share *find_matching_share(__u16 tid)
 	return NULL;
 }
 
-struct cifssrv_usr *cifssrv_is_user_present(char *name)
+struct cifsd_usr *cifsd_is_user_present(char *name)
 {
-	struct cifssrv_usr *usr, *tmp, *guest_user = NULL;
+	struct cifsd_usr *usr, *tmp, *guest_user = NULL;
 
 	if (!name)
 		return NULL;
 
-	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
-		cifssrv_debug("comparing with user %s\n", usr->name);
+	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
+		cifsd_debug("comparing with user %s\n", usr->name);
 		if (!strcmp(name, usr->name))
 			return usr;
 		else if (usr->guest && maptoguest)
@@ -561,11 +561,11 @@ struct cifssrv_usr *cifssrv_is_user_present(char *name)
  *
  * Return:      matching user for a session on success, otherwise NULL
  */
-struct cifssrv_usr *get_smb_session_user(struct cifssrv_sess *sess)
+struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess)
 {
-	struct cifssrv_usr *usr;
+	struct cifsd_usr *usr;
 
-	list_for_each_entry(usr, &cifssrv_usr_list, list) {
+	list_for_each_entry(usr, &cifsd_usr_list, list) {
 		if (sess->server->vuid  == usr->vuid)
 			return usr;
 	}
@@ -581,14 +581,14 @@ struct cifssrv_usr *get_smb_session_user(struct cifssrv_sess *sess)
  */
 static bool check_sharepath(char *path)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 	int srclen, targetlen = 0;
 
 	srclen = strlen(path);
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		if (share->path) {
 			targetlen = strlen(share->path);
 			if (srclen == targetlen) {
@@ -610,9 +610,9 @@ static bool check_sharepath(char *path)
  */
 static bool getUser(char *name, char *pass)
 {
-	struct cifssrv_usr *usr;
+	struct cifsd_usr *usr;
 
-	usr = cifssrv_is_user_present(name);
+	usr = cifsd_is_user_present(name);
 	if (usr) {
 		if (!strlen(pass)) {
 			list_del(&usr->list);
@@ -636,14 +636,14 @@ static bool getUser(char *name, char *pass)
  *
  * Return:      share name if already exported, otherwise NULL
  */
-static struct cifssrv_share *check_share(char *share_name, int *alloc_share)
+static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 	int srclen;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		srclen = strlen(share->sharename);
 		if (srclen == strlen(share_name)) {
 			if (strncasecmp(share->sharename,
@@ -653,7 +653,7 @@ static struct cifssrv_share *check_share(char *share_name, int *alloc_share)
 		}
 	}
 
-	share = kzalloc(sizeof(struct cifssrv_share), GFP_KERNEL);
+	share = kzalloc(sizeof(struct cifsd_share), GFP_KERNEL);
 	if (!share)
 		return ERR_PTR(-ENOMEM);
 
@@ -674,13 +674,13 @@ static ssize_t share_show(struct kobject *kobj,
 			  struct kobj_attribute *kobj_attr,
 			  char *buf)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
 	char *tbuf = buf;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		if (share->path) {
 			len = snprintf(tbuf, limit, "%s:%s\n",
 				 share->sharename, share->path);
@@ -724,7 +724,7 @@ static ssize_t share_store(struct kobject *kobj,
 	/* check if sharepath is already exported */
 	rc = check_sharepath(path);
 	if (!rc) {
-		cifssrv_err("path %s is already exported\n", path);
+		cifsd_err("path %s is already exported\n", path);
 		kfree(share);
 		kfree(path);
 		return -EEXIST;
@@ -753,11 +753,11 @@ static ssize_t user_show(struct kobject *kobj,
 			 char *buf)
 
 {
-	struct cifssrv_usr *usr, *tmp;
+	struct cifsd_usr *usr, *tmp;
 	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
 	char *tbuf = buf;
 
-	list_for_each_entry_safe(usr, tmp, &cifssrv_usr_list, list) {
+	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
 		len = snprintf(tbuf, limit, "%s\n", usr->name);
 		if (len < 0) {
 			total = len;
@@ -792,7 +792,7 @@ static ssize_t user_store(struct kobject *kobj,
 
 	rc = parse_user_strings(buf, parse_ptr, 4, len);
 	if (rc < 2) {
-		cifssrv_err("[%s] <usr:pass> format err\n", __func__);
+		cifsd_err("[%s] <usr:pass> format err\n", __func__);
 		goto out;
 	}
 
@@ -805,7 +805,7 @@ static ssize_t user_store(struct kobject *kobj,
 			goto out;
 		}
 
-		cifssrv_debug("uid : %u, gid %u\n", uid.val, gid.val);
+		cifsd_debug("uid : %u, gid %u\n", uid.val, gid.val);
 	} else {
 		uid.val = 0;
 		gid.val = 0;
@@ -853,9 +853,9 @@ static ssize_t debug_store(struct kobject *kobj,
 		return len;
 
 	if (value > 0)
-		cifssrv_debug_enable = value;
+		cifsd_debug_enable = value;
 	else if (value == 0)
-		cifssrv_debug_enable = 0;
+		cifsd_debug_enable = 0;
 
 	return len;
 }
@@ -873,7 +873,7 @@ static ssize_t debug_show(struct kobject *kobj,
 			  char *buf)
 
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_debug_enable);
+	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_debug_enable);
 }
 
 /**
@@ -894,9 +894,9 @@ static ssize_t caseless_search_store(struct kobject *kobj,
 	if (kstrtol(buf, 10, &value))
 		goto out;
 	if (value > 0)
-		cifssrv_caseless_search = 1;
+		cifsd_caseless_search = 1;
 	else if (value == 0)
-		cifssrv_caseless_search = 0;
+		cifsd_caseless_search = 0;
 
 out:
 	return len;
@@ -915,7 +915,7 @@ static ssize_t caseless_search_show(struct kobject *kobj,
 		char *buf)
 
 {
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifssrv_caseless_search);
+	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_caseless_search);
 }
 
 enum {
@@ -931,7 +931,7 @@ enum {
 	Opt_global_err
 };
 
-static const match_table_t cifssrv_global_tokens = {
+static const match_table_t cifsd_global_tokens = {
 	{ Opt_guest, "guest account = %s" },
 	{ Opt_servern, "server string = %s" },
 	{ Opt_domain, "workgroup = %s" },
@@ -970,7 +970,7 @@ enum {
 	Opt_share_err
 };
 
-static const match_table_t cifssrv_share_tokens = {
+static const match_table_t cifsd_share_tokens = {
 	{ Opt_sharename, "sharename = %s" },
 	{ Opt_available, "available = %s" },
 	{ Opt_browsable, "browsable = %s" },
@@ -997,13 +997,13 @@ static const match_table_t cifssrv_share_tokens = {
 };
 
 /*
- * cifssrv_get_config_str() - get a configuration string
+ * cifsd_get_config_str() - get a configuration string
  * @arg:	configuration argument list
  * @config:	destination to store output config string
  *
  * Return:      0 on success, otherwise -ENOMEM
  */
-static int cifssrv_get_config_str(substring_t args[], char **config)
+static int cifsd_get_config_str(substring_t args[], char **config)
 {
 	kfree(*config);
 	*config = match_strdup(args);
@@ -1014,13 +1014,13 @@ static int cifssrv_get_config_str(substring_t args[], char **config)
 }
 
 /*
- * cifssrv_get_config_val() - get a configuration string value
+ * cifsd_get_config_val() - get a configuration string value
  * @arg:	configuration argument list
  * @val:	destination to store output val
  *
  * Return:      0 on success, otherwise error
  */
-static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
+static int cifsd_get_config_val(substring_t args[], unsigned int *val)
 {
 	char *str;
 	int ret = 0;
@@ -1046,7 +1046,7 @@ static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
 	else if (!strcasecmp(str, "mandatory"))
 		*val = MANDATORY;
 	else {
-		cifssrv_err("bad option value %s\n", str);
+		cifsd_err("bad option value %s\n", str);
 		ret = -EINVAL;
 	}
 
@@ -1054,7 +1054,7 @@ static int cifssrv_get_config_val(substring_t args[], unsigned int *val)
 	return ret;
 }
 
-static int cifssrv_parse_global_options(char *configdata)
+static int cifsd_parse_global_options(char *configdata)
 {
 	char *data;
 	char *options;
@@ -1076,14 +1076,14 @@ static int cifssrv_parse_global_options(char *configdata)
 		if (!*data)
 			continue;
 
-		token = match_token(data, cifssrv_global_tokens, args);
+		token = match_token(data, cifsd_global_tokens, args);
 		switch (token) {
 		case Opt_guest:
 		{
 			kuid_t uid;
 			kgid_t gid;
 
-			if (cifssrv_get_config_str(args, &guestAccountName))
+			if (cifsd_get_config_str(args, &guestAccountName))
 				goto out_nomem;
 
 			uid.val = 9999;
@@ -1092,23 +1092,23 @@ static int cifssrv_parse_global_options(char *configdata)
 			break;
 		}
 		case Opt_servern:
-			if (cifssrv_get_config_str(args, &server_string))
+			if (cifsd_get_config_str(args, &server_string))
 				goto out_nomem;
 			break;
 		case Opt_domain:
-			if (cifssrv_get_config_str(args, &workgroup))
+			if (cifsd_get_config_str(args, &workgroup))
 				goto out_nomem;
 			break;
 		case Opt_netbiosname:
-			if (cifssrv_get_config_str(args, &netbios_name))
+			if (cifsd_get_config_str(args, &netbios_name))
 				goto out_nomem;
 			break;
 		case Opt_signing:
-			if (cifssrv_get_config_val(args, &server_signing) < 0)
+			if (cifsd_get_config_val(args, &server_signing) < 0)
 				goto out_nomem;
 			break;
 		case Opt_maptoguest:
-			if (cifssrv_get_config_val(args, &maptoguest) < 0)
+			if (cifsd_get_config_val(args, &maptoguest) < 0)
 				goto out_nomem;
 			break;
 		case Opt_server_min_protocol:
@@ -1117,7 +1117,7 @@ static int cifssrv_parse_global_options(char *configdata)
 				goto out_nomem;
 			server_min_pr = get_protocol_idx(string);
 			if (server_min_pr < 0)
-				server_min_pr = cifssrv_min_protocol();
+				server_min_pr = cifsd_min_protocol();
 			kfree(string);
 			break;
 		case Opt_server_max_protocol:
@@ -1126,11 +1126,11 @@ static int cifssrv_parse_global_options(char *configdata)
 				goto out_nomem;
 			server_max_pr = get_protocol_idx(string);
 			if (server_max_pr < 0)
-				server_max_pr = cifssrv_max_protocol();
+				server_max_pr = cifsd_max_protocol();
 			kfree(string);
 			break;
 		default:
-			cifssrv_err("[%s] not supported\n", data);
+			cifsd_err("[%s] not supported\n", data);
 			break;
 		}
 	}
@@ -1138,15 +1138,15 @@ static int cifssrv_parse_global_options(char *configdata)
 	return 0;
 
 out_nomem:
-	cifssrv_err("Could not allocate buffer\n");
+	cifsd_err("Could not allocate buffer\n");
 
 config_err:
 	return 1;
 }
 
-static int cifssrv_parse_share_options(const char *configdata)
+static int cifsd_parse_share_options(const char *configdata)
 {
-	struct cifssrv_share *share = NULL;
+	struct cifsd_share *share = NULL;
 	char *data, *end;
 	char *configdata_copy = NULL, *options;
 	char separator[2];
@@ -1174,7 +1174,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 		if (!*data)
 			continue;
 
-		token = match_token(data, cifssrv_share_tokens, args);
+		token = match_token(data, cifsd_share_tokens, args);
 		switch (token) {
 		case Opt_sharename:
 			string = match_strdup(args);
@@ -1182,7 +1182,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				goto out_nomem;
 			if (!strncmp(string, "global", 6)) {
 				kfree(string);
-				if (cifssrv_parse_global_options(options) != 0)
+				if (cifsd_parse_global_options(options) != 0)
 					goto config_err;
 				options = end;
 			} else {
@@ -1196,7 +1196,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 			}
 			break;
 		case Opt_available:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 
 			if (val == 0)
@@ -1205,7 +1205,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				set_attr_available(&share->config.attr);
 			break;
 		case Opt_browsable:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 0)
 				clear_attr_browsable(&share->config.attr);
@@ -1214,11 +1214,11 @@ static int cifssrv_parse_share_options(const char *configdata)
 			break;
 		case Opt_writeable:
 			if (!share ||
-				cifssrv_get_config_val(args, &share->writeable))
+				cifsd_get_config_val(args, &share->writeable))
 				goto config_err;
 			break;
 		case Opt_guestok:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 1)
 				set_attr_guestok(&share->config.attr);
@@ -1226,7 +1226,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				clear_attr_guestok(&share->config.attr);
 			break;
 		case Opt_guestonly:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 1)
 				set_attr_guestonly(&share->config.attr);
@@ -1234,7 +1234,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				clear_attr_guestonly(&share->config.attr);
 			break;
 		case Opt_oplocks:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 0)
 				clear_attr_oplocks(&share->config.attr);
@@ -1253,48 +1253,48 @@ static int cifssrv_parse_share_options(const char *configdata)
 			kfree(string);
 			break;
 		case Opt_comment:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.comment))
 				goto out_nomem;
 			break;
 		case Opt_allowhost:
 		case Opt_hostallow:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.allow_hosts))
 				goto out_nomem;
 			break;
 		case Opt_denyhost:
 		case Opt_hostdeny:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.deny_hosts))
 				goto out_nomem;
 			break;
 		case Opt_validusers:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.valid_users))
 				goto out_nomem;
 			break;
 		case Opt_invalidusers:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.invalid_users))
 				goto out_nomem;
 			break;
 		case Opt_path:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->path))
 				goto out_nomem;
 			if (new_share && !__add_share(share, share->sharename,
 						share->path))
-				cifssrv_err("share add error %s:%s\n",
+				cifsd_err("share add error %s:%s\n",
 						share->sharename, share->path);
 			break;
 		case Opt_readlist:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.read_list))
 				goto out_nomem;
 			break;
 		case Opt_readonly:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 1)
 				set_attr_readonly(&share->config.attr);
@@ -1302,7 +1302,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				clear_attr_readonly(&share->config.attr);
 			break;
 		case Opt_writeok:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 1)
 				set_attr_writeok(&share->config.attr);
@@ -1310,12 +1310,12 @@ static int cifssrv_parse_share_options(const char *configdata)
 				clear_attr_writeok(&share->config.attr);
 			break;
 		case Opt_writelist:
-			if (!share || cifssrv_get_config_str(args,
+			if (!share || cifsd_get_config_str(args,
 						&share->config.write_list))
 				goto out_nomem;
 			break;
 		case Opt_store_dos_attr:
-			if (!share || cifssrv_get_config_val(args, &val))
+			if (!share || cifsd_get_config_val(args, &val))
 				goto config_err;
 			if (val == 1)
 				set_attr_store_dos(&share->config.attr);
@@ -1323,7 +1323,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 				clear_attr_store_dos(&share->config.attr);
 			break;
 		default:
-			cifssrv_err("[%s] not supported\n", data);
+			cifsd_err("[%s] not supported\n", data);
 			break;
 		}
 	}
@@ -1332,7 +1332,7 @@ static int cifssrv_parse_share_options(const char *configdata)
 	return 0;
 
 out_nomem:
-	cifssrv_err("Could not allocate buffer\n");
+	cifsd_err("Could not allocate buffer\n");
 
 config_err:
 	if (new_share && share)
@@ -1342,7 +1342,7 @@ config_err:
 }
 
 /**
- * show_share_config() - show cifssrv share config
+ * show_share_config() - show cifsd share config
  * @buf:	destination buffer for config info
  * @offset:	offset in destination buffer
  * @share:	show config info of this share
@@ -1350,7 +1350,7 @@ config_err:
  * Return:      output buffer length
  */
 static ssize_t show_share_config(char *buf, int offset,
-		struct cifssrv_share *share)
+		struct cifsd_share *share)
 {
 	int cum = offset;
 	int ret = 0;
@@ -1517,13 +1517,13 @@ static ssize_t config_show(struct kobject *kobj,
 			   char *buf)
 
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 	int cum = 0;
 	int ret = 0;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		/* no need to show IPC$ share details */
 		if (!share->path)
 			continue;
@@ -1550,21 +1550,21 @@ static ssize_t config_store(struct kobject *kobj,
 		struct kobj_attribute *kobj_attr,
 		const char *buf, size_t len)
 {
-	if (cifssrv_parse_share_options(buf))
+	if (cifsd_parse_share_options(buf))
 		return -EINVAL;
 
 	return len;
 }
 
 /**
- * show_server_stat() - show cifssrv server stat
+ * show_server_stat() - show cifsd server stat
  * @buf:	destination buffer for stat info
  *
  * Return:      output buffer length
  */
 static ssize_t show_server_stat(char *buf)
 {
-	struct cifssrv_share *share;
+	struct cifsd_share *share;
 	struct list_head *tmp;
 	int count = 0, cum = 0, ret = 0, limit = PAGE_SIZE;
 
@@ -1575,8 +1575,8 @@ static ssize_t show_server_stat(char *buf)
 		return cum;
 	cum += ret;
 
-	list_for_each(tmp, &cifssrv_share_list) {
-		share = list_entry(tmp, struct cifssrv_share, list);
+	list_for_each(tmp, &cifsd_share_list) {
+		share = list_entry(tmp, struct cifsd_share, list);
 		if (share->path)
 			count++;
 	}
@@ -1591,7 +1591,7 @@ static ssize_t show_server_stat(char *buf)
 }
 
 /**
- * show_client_stat() - show cifssrv client stat
+ * show_client_stat() - show cifsd client stat
  * @buf:	destination buffer for stat info
  * @sess:	TCP server session
  *
@@ -1629,7 +1629,7 @@ static ssize_t show_client_stat(char *buf, struct tcp_server_info *server)
 		return cum;
 	cum += ret;
 
-	if (cifssrv_debug_enable) {
+	if (cifsd_debug_enable) {
 		ret = snprintf(buf+cum, limit - cum,
 				"Avg. duration per request = %ld\n",
 				server->stats.avg_req_duration);
@@ -1668,7 +1668,7 @@ static ssize_t stat_store(struct kobject *kobj,
 }
 
 /**
- * stat_show() - show cifssrv stat
+ * stat_show() - show cifsd stat
  * @kobj:	kobject of the modules
  * @kobj_attr:	kobject attribute of the modules
  * @buf:	buffer containing stat info
@@ -1690,7 +1690,7 @@ static ssize_t stat_show(struct kobject *kobj,
 		int len1, len2;
 		len1 = strlen(statIP);
 
-		list_for_each(tmp, &cifssrv_connection_list) {
+		list_for_each(tmp, &cifsd_connection_list) {
 			server = list_entry(tmp, struct tcp_server_info, list);
 			len2 = strlen(server->peeraddr);
 			if (len1 == len2 && !strncmp(statIP,
@@ -1706,8 +1706,8 @@ out:
 	return ret;
 }
 
-/* cifssrv sysfs entries */
-static ssize_t cifssrv_attr_show(struct kobject *kobj,
+/* cifsd sysfs entries */
+static ssize_t cifsd_attr_show(struct kobject *kobj,
 				 struct attribute *attr, char *buf)
 {
 	struct kobj_attribute *kobj_attr =
@@ -1716,7 +1716,7 @@ static ssize_t cifssrv_attr_show(struct kobject *kobj,
 }
 
 
-static ssize_t cifssrv_attr_store(struct kobject *kobj,
+static ssize_t cifsd_attr_store(struct kobject *kobj,
 				  struct attribute *attr,
 				  const char *buf, size_t len)
 {
@@ -1736,7 +1736,7 @@ SMB_ATTR(caseless_search);
 SMB_ATTR(config);
 SMB_ATTR(stat);
 
-static struct attribute *cifssrv_sysfs_attrs[] = {
+static struct attribute *cifsd_sysfs_attrs[] = {
 	&share_attr.attr,
 	&user_attr.attr,
 	&debug_attr.attr,
@@ -1746,42 +1746,42 @@ static struct attribute *cifssrv_sysfs_attrs[] = {
 	NULL,
 };
 
-struct cifssrv_sysfs_obj {
+struct cifsd_sysfs_obj {
 	struct kobject kobj;
 	struct completion kobj_unregister;
 };
 
-static const struct sysfs_ops cifssrv_attr_ops = {
-	.show   = cifssrv_attr_show,
-	.store  = cifssrv_attr_store,
+static const struct sysfs_ops cifsd_attr_ops = {
+	.show   = cifsd_attr_show,
+	.store  = cifsd_attr_store,
 };
 
-static void cifssrv_attr_release(struct kobject *kobj)
+static void cifsd_attr_release(struct kobject *kobj)
 {
 	complete(&sysobj->kobj_unregister);
 }
 
-struct kobj_type cifssrvfs_ktype  = {
-	.default_attrs  = cifssrv_sysfs_attrs,
-	.sysfs_ops      = &cifssrv_attr_ops,
-	.release        = cifssrv_attr_release,
+struct kobj_type cifsdfs_ktype  = {
+	.default_attrs  = cifsd_sysfs_attrs,
+	.sysfs_ops      = &cifsd_attr_ops,
+	.release        = cifsd_attr_release,
 };
 
 /**
- * cifssrv_init_sysfs_parser() - init cifssrv sysfs entries
+ * cifsd_init_sysfs_parser() - init cifsd sysfs entries
  *
  * Return:      0 on success, otherwise error
  */
-static int cifssrv_init_sysfs_parser(void)
+static int cifsd_init_sysfs_parser(void)
 {
 	int ret;
-	sysobj = kzalloc(sizeof(struct cifssrv_sysfs_obj), GFP_NOFS);
+	sysobj = kzalloc(sizeof(struct cifsd_sysfs_obj), GFP_NOFS);
 	if (!sysobj)
 		return -ENOMEM;
 
 	init_completion(&sysobj->kobj_unregister);
-	ret = kobject_init_and_add(&sysobj->kobj, &cifssrvfs_ktype,
-							fs_kobj, "cifssrv");
+	ret = kobject_init_and_add(&sysobj->kobj, &cifsdfs_ktype,
+							fs_kobj, "cifsd");
 	if (ret)
 		kfree(sysobj);
 
@@ -1789,7 +1789,7 @@ static int cifssrv_init_sysfs_parser(void)
 }
 
 /**
- * cifssrv_init_sysfs_parser() - cleanup cifssrv sysfs entries at modules exit
+ * cifsd_init_sysfs_parser() - cleanup cifsd sysfs entries at modules exit
  *
  * Return:      0 on success, otherwise error
  */
@@ -1801,11 +1801,11 @@ static void exit_sysfs_parser(void)
 }
 
 /**
- * cifssrv_add_IPC_share() - add share entry for IPC$ pipe with tid = 1
+ * cifsd_add_IPC_share() - add share entry for IPC$ pipe with tid = 1
  *
  * Return:      0 on success, otherwise error
  */
-static int cifssrv_add_IPC_share(void)
+static int cifsd_add_IPC_share(void)
 {
 	char *ipc;
 	int len, rc;
@@ -1827,12 +1827,12 @@ static int cifssrv_add_IPC_share(void)
 }
 
 /**
- * cifssrv_init_global_params() - initialize default values of Server name
+ * cifsd_init_global_params() - initialize default values of Server name
  *		Domain name
  *
  * Return:      0 on success, otherwise -ENOMEM
  */
-int cifssrv_init_global_params(void)
+int cifsd_init_global_params(void)
 {
 	int len;
 
@@ -1861,15 +1861,15 @@ int cifssrv_init_global_params(void)
 
 	server_signing = 0;
 	maptoguest = 0;
-	server_min_pr = cifssrv_min_protocol();
-	server_max_pr = cifssrv_max_protocol();
+	server_min_pr = cifsd_min_protocol();
+	server_max_pr = cifsd_max_protocol();
 	return 0;
 }
 
 /**
- * cifssrv_free_global_params() - free global parameters
+ * cifsd_free_global_params() - free global parameters
  */
-void cifssrv_free_global_params(void)
+void cifsd_free_global_params(void)
 {
 	kfree(server_string);
 	kfree(workgroup);
@@ -1878,30 +1878,30 @@ void cifssrv_free_global_params(void)
 }
 
 /**
- * cifssrv_export_init() - perform export related setup at module
+ * cifsd_export_init() - perform export related setup at module
  *			load time
  *
  * Return:      0 on success, otherwise error
  */
-int cifssrv_export_init(void)
+int cifsd_export_init(void)
 {
 	int rc;
 
 	/* IPC share */
-	rc = cifssrv_add_IPC_share();
+	rc = cifsd_add_IPC_share();
 	if (rc)
 		return rc;
 
-	rc = cifssrv_init_sysfs_parser();
+	rc = cifsd_init_sysfs_parser();
 	if (rc) {
-		cifssrv_share_free();
+		cifsd_share_free();
 		return rc;
 	}
 
-	rc = cifssrv_init_global_params();
+	rc = cifsd_init_global_params();
 	if (rc) {
 		exit_sysfs_parser();
-		cifssrv_share_free();
+		cifsd_share_free();
 		return rc;
 	}
 
@@ -1909,13 +1909,13 @@ int cifssrv_export_init(void)
 }
 
 /**
- * cifssrv_export_exit() - perform export related cleanup at module
+ * cifsd_export_exit() - perform export related cleanup at module
  *			exit time
  */
-void cifssrv_export_exit(void)
+void cifsd_export_exit(void)
 {
 	exit_sysfs_parser();
-	cifssrv_free_global_params();
-	cifssrv_user_free();
-	cifssrv_share_free();
+	cifsd_free_global_params();
+	cifsd_user_free();
+	cifsd_share_free();
 }

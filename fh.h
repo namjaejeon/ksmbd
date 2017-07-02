@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/fh.h
+ *   fs/cifsd/fh.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,8 +19,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_FSHANDLE_H
-#define __CIFSSRV_FSHANDLE_H
+#ifndef __CIFSD_FH_H
+#define __CIFSD_FH_H
 
 #include <linux/file.h>
 #include <linux/fdtable.h>
@@ -36,23 +36,23 @@
 #define	FILE_GENERIC_EXECUTE	0X1200a0
 
 /* Max id limit is 0xFFFF, so create bitmap with only this size*/
-#define CIFSSRV_BITMAP_SIZE        0xFFFF
-#define CIFSSRV_START_FID		 1
+#define CIFSD_BITMAP_SIZE        0xFFFF
+#define CIFSD_START_FID		 1
 
-#define cifssrv_set_bit			__set_bit_le
-#define cifssrv_test_and_set_bit	__test_and_set_bit_le
-#define cifssrv_test_bit		test_bit_le
-#define cifssrv_clear_bit		__clear_bit_le
-#define cifssrv_test_and_clear_bit	__test_and_clear_bit_le
-#define cifssrv_find_next_zero_bit	find_next_zero_bit_le
-#define cifssrv_find_next_bit		find_next_bit_le
+#define cifsd_set_bit			__set_bit_le
+#define cifsd_test_and_set_bit	__test_and_set_bit_le
+#define cifsd_test_bit		test_bit_le
+#define cifsd_clear_bit		__clear_bit_le
+#define cifsd_test_and_clear_bit	__test_and_clear_bit_le
+#define cifsd_find_next_zero_bit	find_next_zero_bit_le
+#define cifsd_find_next_bit		find_next_bit_le
 
 #define GET_FILENAME_FILP(file)	file->filp->f_path.dentry->d_name.name
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 #define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
 struct tcp_server_info;
-struct cifssrv_sess;
+struct cifsd_sess;
 
 struct smb_readdir_data {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
@@ -78,7 +78,7 @@ struct notification {
 	struct smb_work *work;
 };
 
-struct cifssrv_lock {
+struct cifsd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
 	struct list_head llist;
@@ -91,7 +91,7 @@ struct cifssrv_lock {
 	struct smb_work *work;
 };
 
-struct cifssrv_file {
+struct cifsd_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
@@ -128,29 +128,29 @@ struct cifssrv_file {
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-struct cifssrv_durable_state {
-	struct cifssrv_sess *sess;
+struct cifsd_durable_state {
+	struct cifsd_sess *sess;
 	int volatile_id;
 	struct kstat stat;
 	int refcount;
 };
 #endif
 
-enum cifssrv_pipe_type {
+enum cifsd_pipe_type {
 	SRVSVC,
 	WINREG,
 	LANMAN,
 	MAX_PIPE
 };
 
-struct cifssrv_pipe_table {
+struct cifsd_pipe_table {
 	char pipename[32];
 	unsigned int pipetype;
 };
 
 #define INVALID_PIPE   0xFFFFFFFF
 
-struct cifssrv_pipe {
+struct cifsd_pipe {
 	unsigned int id;
 	char *data;
 	int pkt_type;
@@ -159,18 +159,18 @@ struct cifssrv_pipe {
 	char *buf;
 	int datasize;
 	int sent;
-	struct cifssrv_uevent ev;
+	struct cifsd_uevent ev;
 	char *rsp_buf;
 };
 
-#define CIFSSRV_NR_OPEN_DEFAULT BITS_PER_LONG
+#define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 
 /* fidtable structure */
 struct fidtable {
 	unsigned int max_fids;
 	void **fileid;
 	unsigned int start_pos;
-	unsigned long *cifssrv_bitmap;
+	unsigned long *cifsd_bitmap;
 };
 
 struct fidtable_desc {
@@ -179,45 +179,45 @@ struct fidtable_desc {
 };
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
-void close_opens_from_fibtable(struct cifssrv_sess *sess, uint32_t tree_id);
-void destroy_fidtable(struct cifssrv_sess *sess);
+void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id);
+void destroy_fidtable(struct cifsd_sess *sess);
 void free_fidtable(struct fidtable *ftab);
-struct cifssrv_file *
-get_id_from_fidtable(struct cifssrv_sess *sess, uint64_t id);
-int close_id(struct cifssrv_sess *sess, uint64_t id, uint64_t p_id);
-bool is_dir_empty(struct cifssrv_file *fp);
+struct cifsd_file *
+get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id);
+int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id);
+bool is_dir_empty(struct cifsd_file *fp);
 unsigned int get_pipe_type(char *pipename);
-int cifssrv_get_unused_id(struct fidtable_desc *ftab_desc);
-int cifssrv_close_id(struct fidtable_desc *ftab_desc, int id);
-struct cifssrv_file *
-insert_id_in_fidtable(struct cifssrv_sess *sess, uint64_t sess_id,
+int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
+int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
+struct cifsd_file *
+insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 		uint32_t tree_id, unsigned int id, struct file *filp);
-void delete_id_from_fidtable(struct cifssrv_sess *sess,
+void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
-int cifssrv_insert_in_global_table(struct cifssrv_sess *sess,
+int cifsd_insert_in_global_table(struct cifsd_sess *sess,
 				   int volatile_id, struct file *filp,
 				   int durable_open);
 int close_persistent_id(uint64_t id);
 void destroy_global_fidtable(void);
 
 /* Durable handle functions */
-struct cifssrv_durable_state *
-	cifssrv_get_durable_state(uint64_t persistent_id);
+struct cifsd_durable_state *
+	cifsd_get_durable_state(uint64_t persistent_id);
 void
-cifssrv_update_durable_state(struct cifssrv_sess *sess,
+cifsd_update_durable_state(struct cifsd_sess *sess,
 				unsigned int persistent_id,
 				unsigned int volatile_id,
 				struct file *filp);
 
-int cifssrv_delete_durable_state(uint64_t persistent_id);
+int cifsd_delete_durable_state(uint64_t persistent_id);
 void
-cifssrv_durable_disconnect(struct tcp_server_info *server,
+cifsd_durable_disconnect(struct tcp_server_info *server,
 		unsigned int persistent_id, struct file *filp);
 
-void cifssrv_update_durable_stat_info(struct cifssrv_sess *sess);
+void cifsd_update_durable_stat_info(struct cifsd_sess *sess);
 #endif
 
-#endif /* __CIFSSRV_FSHANDLE_H */
+#endif /* __CIFSD_FH_H */

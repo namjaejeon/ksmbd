@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/netlink.h
+ *   fs/cifsd/netlink.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,44 +19,44 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_NETLINK_H
-#define __CIFSSRV_NETLINK_H
+#ifndef __CIFSD_NETLINK_H
+#define __CIFSD_NETLINK_H
 
-#define NETLINK_CIFSSRV_MAX_PAYLOAD	4096
+#define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
 #define NETLINK_REQ_INIT        0x00
 #define NETLINK_REQ_SENT        0x01
 #define NETLINK_REQ_RECV        0x02
 #define NETLINK_REQ_COMPLETED   0x04
 
-#define CIFSSRV_CODEPAGE_LEN	32
-#define CIFSSRV_USERNAME_LEN	33
+#define CIFSD_CODEPAGE_LEN	32
+#define CIFSD_USERNAME_LEN	33
 
-enum cifssrv_uevent_e {
-	CIFSSRV_UEVENT_UNKNOWN            = 0,
+enum cifsd_uevent_e {
+	CIFSD_UEVENT_UNKNOWN            = 0,
 
 	/* down events: userspace to kernel space */
-	CIFSSRV_UEVENT_INIT_CONNECTION    = 10,
-	CIFSSRV_UEVENT_READ_PIPE_RSP,
-	CIFSSRV_UEVENT_WRITE_PIPE_RSP,
-	CIFSSRV_UEVENT_IOCTL_PIPE_RSP,
-	CIFSSRV_UEVENT_LANMAN_PIPE_RSP,
-	CIFSSRV_UEVENT_START_SMBPORT,
-	CIFSSRV_UEVENT_STOP_SMBPORT,
-	CIFSSRV_UEVENT_EXIT_CONNECTION,
+	CIFSD_UEVENT_INIT_CONNECTION    = 10,
+	CIFSD_UEVENT_READ_PIPE_RSP,
+	CIFSD_UEVENT_WRITE_PIPE_RSP,
+	CIFSD_UEVENT_IOCTL_PIPE_RSP,
+	CIFSD_UEVENT_LANMAN_PIPE_RSP,
+	CIFSD_UEVENT_START_SMBPORT,
+	CIFSD_UEVENT_STOP_SMBPORT,
+	CIFSD_UEVENT_EXIT_CONNECTION,
 
 	/* up events: kernel space to userspace */
-	CIFSSRV_KEVENT_CREATE_PIPE     = 100,
-	CIFSSRV_KEVENT_READ_PIPE,
-	CIFSSRV_KEVENT_WRITE_PIPE,
-	CIFSSRV_KEVENT_IOCTL_PIPE,
-	CIFSSRV_KEVENT_LANMAN_PIPE,
-	CIFSSRV_KEVENT_DESTROY_PIPE,
-	CIFSSRV_KEVENT_SMBPORT_CLOSE_FAIL,
-	CIFSSRV_KEVENT_SMBPORT_CLOSE_PASS,
+	CIFSD_KEVENT_CREATE_PIPE     = 100,
+	CIFSD_KEVENT_READ_PIPE,
+	CIFSD_KEVENT_WRITE_PIPE,
+	CIFSD_KEVENT_IOCTL_PIPE,
+	CIFSD_KEVENT_LANMAN_PIPE,
+	CIFSD_KEVENT_DESTROY_PIPE,
+	CIFSD_KEVENT_SMBPORT_CLOSE_FAIL,
+	CIFSD_KEVENT_SMBPORT_CLOSE_PASS,
 };
 
-struct cifssrv_uevent {
+struct cifsd_uevent {
 	unsigned int	type; /* k/u events type */
 	int		error; /* carries interface or resource errors */
 	__u64		server_handle;
@@ -90,7 +90,7 @@ struct cifssrv_uevent {
 		/* messages k -> u */
 		struct msg_create_pipe {
 			__u64		id;
-			char	codepage[CIFSSRV_CODEPAGE_LEN];
+			char	codepage[CIFSD_CODEPAGE_LEN];
 		} c_pipe;
 		struct msg_destroy_pipe {
 			__u64		id;
@@ -108,11 +108,11 @@ struct cifssrv_uevent {
 		} i_pipe;
 		struct msg_lanman_pipe {
 			unsigned int	out_buflen;
-			char	codepage[CIFSSRV_CODEPAGE_LEN];
-			char	username[CIFSSRV_USERNAME_LEN];
+			char	codepage[CIFSD_CODEPAGE_LEN];
+			char	username[CIFSD_USERNAME_LEN];
 		} l_pipe;
 	} k;
 	char buffer[0];
 };
 
-#endif /* __CIFSSRV_NETLINK_H */
+#endif /* __CIFSD_NETLINK_H */

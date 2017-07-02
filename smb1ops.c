@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/smb1ops.c
+ *   fs/cifsd/smb1ops.c
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -51,7 +51,7 @@ struct smb_version_ops smb1_server_ops = {
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
 	.check_user_session = smb_check_user_session,
-	.get_cifssrv_tcon = smb_get_cifssrv_tcon,
+	.get_cifsd_tcon = smb_get_cifsd_tcon,
 };
 
 struct smb_version_cmds smb1_server_cmds[256] = {
@@ -97,5 +97,5 @@ void init_smb1_server(struct tcp_server_info *server)
 	server->vals = &smb1_server_values;
 	server->ops = &smb1_server_ops;
 	server->cmds = smb1_server_cmds;
-	server->max_cmds = sizeof(smb1_server_cmds)/sizeof(smb1_server_cmds[0]);
+	server->max_cmds = ARRAY_SIZE(smb1_server_cmds);
 }

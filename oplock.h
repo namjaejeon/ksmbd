@@ -1,5 +1,5 @@
 /*
- *   fs/cifssrv/oplock.h
+ *   fs/cifsd/oplock.h
  *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
@@ -19,8 +19,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSSRV_OPLOCK_H
-#define __CIFSSRV_OPLOCK_H
+#ifndef __CIFSD_OPLOCK_H
+#define __CIFSD_OPLOCK_H
 
 #define OPLOCK_WAIT_TIME	(35*HZ)
 
@@ -63,7 +63,7 @@ struct lease_fidinfo {
 
 struct oplock_info {
 	struct tcp_server_info	*server;
-	struct cifssrv_sess	*sess;
+	struct cifsd_sess	*sess;
 	int                     lock_type;
 	int                     state;
 	int                     fid;
@@ -94,15 +94,15 @@ struct ofile_info {
 	wait_queue_head_t	op_end_wq;
 };
 
-extern int smb_grant_oplock(struct cifssrv_sess *sess, int *oplock,
-		int id, struct cifssrv_file *fp, __u16 Tid,
+extern int smb_grant_oplock(struct cifsd_sess *sess, int *oplock,
+		int id, struct cifsd_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx);
 extern void smb1_send_oplock_break(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 extern void smb2_send_oplock_break(struct work_struct *work);
 #endif
 extern void smb_breakII_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, struct ofile_info *ofile);
+		struct cifsd_file *fp, struct ofile_info *ofile);
 
 struct oplock_info *get_matching_opinfo(struct tcp_server_info *server,
 		struct ofile_info *ofile, int fid, int fhclose);
@@ -113,10 +113,10 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 int opinfo_read_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 void close_id_del_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, unsigned int id);
+		struct cifsd_file *fp, unsigned int id);
 void dispose_ofile_list(void);
 void smb_break_all_oplock(struct tcp_server_info *server,
-		struct cifssrv_file *fp, struct inode *inode);
+		struct cifsd_file *fp, struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
@@ -135,10 +135,10 @@ void create_durable_rsp_buf(char *buf);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
 void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);
 struct create_context *smb2_find_context_vals(void *open_req, char *str);
-int cifssrv_durable_verify_and_del_oplock(struct cifssrv_sess *curr_sess,
-					  struct cifssrv_sess *prev_sess,
+int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
+					  struct cifsd_sess *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id);
 #endif
 
-#endif /* __CIFSSRV_OPLOCK_H */
+#endif /* __CIFSD_OPLOCK_H */
