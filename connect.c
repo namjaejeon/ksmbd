@@ -59,44 +59,44 @@ static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
 }
 
 /**
- * get_server_iovec() - get server iovec for reading from socket
- * @server:     TCP server instance of connection
+ * get_conn_iovec() - get connection iovec for reading from socket
+ * @conn:     TCP server instance of connection
  * @nr_segs:	number of segments in iov
  *
  * Return:	return existing or newly allocate iovec
  */
-static struct kvec *get_server_iovec(struct tcp_server_info *server,
+static struct kvec *get_conn_iovec(struct connection *conn,
 				     unsigned int nr_segs)
 {
 	struct kvec *new_iov;
 
-	if (server->iov && nr_segs <= server->nr_iov)
-		return server->iov;
+	if (conn->iov && nr_segs <= conn->nr_iov)
+		return conn->iov;
 
 	/* not big enough -- allocate a new one and release the old */
 	new_iov = kmalloc(sizeof(*new_iov) * nr_segs, GFP_NOFS);
 	if (new_iov) {
-		kfree(server->iov);
-		server->iov = new_iov;
-		server->nr_iov = nr_segs;
+		kfree(conn->iov);
+		conn->iov = new_iov;
+		conn->nr_iov = nr_segs;
 	}
 	return new_iov;
 }
 
 /**
- * server_unresponsive() - check server is unresponsive or not
- * @server:     TCP server instance of connection
+ * conn_unresponsive() - check server is unresponsive or not
+ * @conn:     TCP server instance of connection
  *
  * Return:	true if server unresponsive, otherwise  false
  */
-bool server_unresponsive(struct tcp_server_info *server)
+bool conn_unresponsive(struct connection *conn)
 {
-	if (server->stats.open_files_count > 0)
+	if (conn->stats.open_files_count > 0)
 		return false;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
-	if (time_after(jiffies, server->last_active + 2 * SMB_ECHO_INTERVAL)) {
+	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
 		cifsd_debug("No response from client in 120 secs\n");
 		return true;
 	}
@@ -108,7 +108,7 @@ bool server_unresponsive(struct tcp_server_info *server)
 
 /**
  * cifsd_readv_from_socket() - read data from socket in given iovec
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  * @iov_orig:	base IO vector
  * @nr_segs:	number of segments in base iov
  * @to_read:	number of bytes to read from socket
@@ -116,7 +116,7 @@ bool server_unresponsive(struct tcp_server_info *server)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_readv_from_socket(struct tcp_server_info *server,
+int cifsd_readv_from_socket(struct connection *conn,
 			      struct kvec *iov_orig, unsigned int nr_segs,
 			      unsigned int to_read)
 {
@@ -126,7 +126,7 @@ int cifsd_readv_from_socket(struct tcp_server_info *server,
 	struct msghdr cifsd_msg;
 	struct kvec *iov;
 
-	iov = get_server_iovec(server, nr_segs);
+	iov = get_conn_iovec(conn, nr_segs);
 	if (!iov)
 		return -ENOMEM;
 
@@ -136,20 +136,20 @@ int cifsd_readv_from_socket(struct tcp_server_info *server,
 	for (total_read = 0; to_read; total_read += length, to_read -= length) {
 		try_to_freeze();
 
-		if (server_unresponsive(server)) {
+		if (conn_unresponsive(conn)) {
 			total_read = -EAGAIN;
 			break;
 		}
 
 		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
 
-		length = kernel_recvmsg(server->sock, &cifsd_msg,
+		length = kernel_recvmsg(conn->sock, &cifsd_msg,
 				iov, segs, to_read, 0);
 
-		if (server->tcp_status == CifsExiting) {
+		if (conn->tcp_status == CifsExiting) {
 			total_read = -ESHUTDOWN;
 			break;
-		} else if (server->tcp_status == CifsNeedReconnect) {
+		} else if (conn->tcp_status == CifsNeedReconnect) {
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS ||
@@ -169,14 +169,14 @@ int cifsd_readv_from_socket(struct tcp_server_info *server,
 
 /**
  * cifsd_readv_from_socket() - read data from socket in given buffer
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  * @buf:	buffer to store read data from socket
  * @to_read:	number of bytes to read from socket
  *
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_read_from_socket(struct tcp_server_info *server, char *buf,
+int cifsd_read_from_socket(struct connection *conn, char *buf,
 			     unsigned int to_read)
 {
 	struct kvec iov;
@@ -184,7 +184,7 @@ int cifsd_read_from_socket(struct tcp_server_info *server, char *buf,
 	iov.iov_base = buf;
 	iov.iov_len = to_read;
 
-	return cifsd_readv_from_socket(server, &iov, 1, to_read);
+	return cifsd_readv_from_socket(conn, &iov, 1, to_read);
 }
 
 /**

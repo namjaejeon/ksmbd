@@ -62,7 +62,7 @@ struct lease_fidinfo {
 };
 
 struct oplock_info {
-	struct tcp_server_info	*server;
+	struct connection	*conn;
 	struct cifsd_sess	*sess;
 	int                     lock_type;
 	int                     state;
@@ -101,10 +101,10 @@ extern void smb1_send_oplock_break(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 extern void smb2_send_oplock_break(struct work_struct *work);
 #endif
-extern void smb_breakII_oplock(struct tcp_server_info *server,
+extern void smb_breakII_oplock(struct connection *conn,
 		struct cifsd_file *fp, struct ofile_info *ofile);
 
-struct oplock_info *get_matching_opinfo(struct tcp_server_info *server,
+struct oplock_info *get_matching_opinfo(struct connection *conn,
 		struct ofile_info *ofile, int fid, int fhclose);
 int opinfo_write_to_read(struct ofile_info *ofile,
 		struct oplock_info *opinfo, __le32 lease_state);
@@ -112,17 +112,17 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 int opinfo_read_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
-void close_id_del_oplock(struct tcp_server_info *server,
+void close_id_del_oplock(struct connection *conn,
 		struct cifsd_file *fp, unsigned int id);
 void dispose_ofile_list(void);
-void smb_break_all_oplock(struct tcp_server_info *server,
+void smb_break_all_oplock(struct connection *conn,
 		struct cifsd_file *fp, struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
 void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq);
 __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq);
-struct oplock_info *get_matching_opinfo_lease(struct tcp_server_info *server,
+struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
 		struct ofile_info **ofile, char *LeaseKey,
 		struct lease_fidinfo **fidinfo, int id);
 int smb_break_write_lease(struct ofile_info *ofile,

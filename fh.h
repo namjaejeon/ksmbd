@@ -51,7 +51,7 @@
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 #define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
-struct tcp_server_info;
+struct connection;
 struct cifsd_sess;
 
 struct smb_readdir_data {
@@ -214,7 +214,7 @@ cifsd_update_durable_state(struct cifsd_sess *sess,
 
 int cifsd_delete_durable_state(uint64_t persistent_id);
 void
-cifsd_durable_disconnect(struct tcp_server_info *server,
+cifsd_durable_disconnect(struct connection *conn,
 		unsigned int persistent_id, struct file *filp);
 
 void cifsd_update_durable_stat_info(struct cifsd_sess *sess);

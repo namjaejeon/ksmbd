@@ -59,7 +59,7 @@ enum cifsd_uevent_e {
 struct cifsd_uevent {
 	unsigned int	type; /* k/u events type */
 	int		error; /* carries interface or resource errors */
-	__u64		server_handle;
+	__u64		conn_handle;
 	unsigned int	buflen;
 	unsigned int	pipe_type;
 	union {

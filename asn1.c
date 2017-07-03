@@ -348,7 +348,7 @@ compare_oid(unsigned long *oid1, unsigned int oid1len,
 
 int
 cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
-		    struct tcp_server_info *server)
+		    struct connection *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
@@ -447,16 +447,16 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 			if (asn1_oid_decode(&ctx, end, &oid, &oidlen)) {
 				if (compare_oid(oid, oidlen, MSKRB5_OID,
 						MSKRB5_OID_LEN))
-					server->sec_mskerberos = true;
+					conn->sec_mskerberos = true;
 				else if (compare_oid(oid, oidlen, KRB5U2U_OID,
 						     KRB5U2U_OID_LEN))
-					server->sec_kerberosu2u = true;
+					conn->sec_kerberosu2u = true;
 				else if (compare_oid(oid, oidlen, KRB5_OID,
 						     KRB5_OID_LEN))
-					server->sec_kerberos = true;
+					conn->sec_kerberos = true;
 				else if (compare_oid(oid, oidlen, NTLMSSP_OID,
 						     NTLMSSP_OID_LEN)) {
-					server->sec_ntlmssp = true;
+					conn->sec_ntlmssp = true;
 				}
 
 				kfree(oid);
@@ -489,21 +489,21 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 	}
 
 	mechTokenlen = ctx.end - ctx.pointer;
-	server->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
-	if (!server->mechToken) {
+	conn->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
+	if (!conn->mechToken) {
 		cifsd_err("memory allocation error\n");
 		return 0;
 	}
 
-	memcpy(server->mechToken, ctx.pointer, mechTokenlen);
-	server->mechToken[mechTokenlen] = '\0';
+	memcpy(conn->mechToken, ctx.pointer, mechTokenlen);
+	conn->mechToken[mechTokenlen] = '\0';
 
 	return 1;
 }
 
 int
 decode_negTokenTarg(unsigned char *security_blob, int length,
-		    struct tcp_server_info *server)
+		    struct connection *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
@@ -557,14 +557,14 @@ decode_negTokenTarg(unsigned char *security_blob, int length,
 	}
 
 	mechTokenlen = ctx.end - ctx.pointer;
-	server->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
-	if (!server->mechToken) {
+	conn->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
+	if (!conn->mechToken) {
 		cifsd_err("memory allocation error\n");
 		return 0;
 	}
 
-	memcpy(server->mechToken, ctx.pointer, mechTokenlen);
-	server->mechToken[mechTokenlen] = '\0';
+	memcpy(conn->mechToken, ctx.pointer, mechTokenlen);
+	conn->mechToken[mechTokenlen] = '\0';
 
 	return 1;
 }

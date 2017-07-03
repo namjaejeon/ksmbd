@@ -155,12 +155,12 @@ int check_smb_message(char *buf)
  */
 void add_request_to_queue(struct smb_work *smb_work)
 {
-	struct tcp_server_info *server = smb_work->server;
+	struct connection *conn = smb_work->conn;
 	struct list_head *requests_queue = NULL;
 
 	if (*(__le32 *)((struct smb2_hdr *)smb_work->buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
-		unsigned int command = server->ops->get_cmd_val(smb_work);
+		unsigned int command = conn->ops->get_cmd_val(smb_work);
 
 		if (command != SMB2_CANCEL) {
 			if (command == SMB2_CHANGE_NOTIFY ||
@@ -174,23 +174,23 @@ void add_request_to_queue(struct smb_work *smb_work)
 					(__u64) ida_simple_get(&async_ida, 1, 0,
 					GFP_KERNEL);
 
-				requests_queue = &server->async_requests;
+				requests_queue = &conn->async_requests;
 				smb_work->async->async_status = ASYNC_WAITING;
 			} else {
-				requests_queue = &server->requests;
+				requests_queue = &conn->requests;
 				smb_work->type = SYNC;
 			}
 		}
 	} else {
-		if (server->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
-			requests_queue = &server->requests;
+		if (conn->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
+			requests_queue = &conn->requests;
 	}
 
 	if (requests_queue) {
-		spin_lock(&server->request_lock);
+		spin_lock(&conn->request_lock);
 		list_add_tail(&smb_work->request_entry, requests_queue);
 		smb_work->added_in_request_list = 1;
-		spin_unlock(&server->request_lock);
+		spin_unlock(&conn->request_lock);
 	}
 }
 
@@ -241,13 +241,13 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 
 /**
  * switch_req_buf() - switch to big request buffer
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  *
  * Return:      0 on success, otherwise -ENOMEM
  */
-int switch_req_buf(struct tcp_server_info *server)
+int switch_req_buf(struct connection *conn)
 {
-	char *buf = server->smallbuf;
+	char *buf = conn->smallbuf;
 	unsigned int pdu_length = get_rfc1002_length(buf);
 	unsigned int hdr_len;
 
@@ -260,23 +260,23 @@ int switch_req_buf(struct tcp_server_info *server)
 	/* request can fit in large request buffer i.e. < 64K */
 	if (pdu_length <= SMBMaxBufSize + hdr_len - 4) {
 		cifsd_debug("switching to large buffer\n");
-		server->large_buf = true;
-		memcpy(server->bigbuf, buf, server->total_read);
+		conn->large_buf = true;
+		memcpy(conn->bigbuf, buf, conn->total_read);
 	} else if (pdu_length <= CIFS_DEFAULT_IOSIZE + hdr_len - 4) {
 		/* allocate big buffer for large write request i.e. > 64K */
-		server->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
-		if (!server->wbuf) {
+		conn->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
+		if (!conn->wbuf) {
 			cifsd_debug("failed to alloc mem\n");
 			return -ENOMEM;
 		}
-		memcpy(server->wbuf, buf, server->total_read);
+		memcpy(conn->wbuf, buf, conn->total_read);
 
 		/* as wbuf is used for request, free both small and big buf */
-		mempool_free(server->smallbuf, cifsd_sm_req_poolp);
-		mempool_free(server->bigbuf, cifsd_req_poolp);
-		server->large_buf = false;
-		server->smallbuf = NULL;
-		server->bigbuf = NULL;
+		mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
+		mempool_free(conn->bigbuf, cifsd_req_poolp);
+		conn->large_buf = false;
+		conn->smallbuf = NULL;
+		conn->bigbuf = NULL;
 	} else {
 		cifsd_debug("SMB request too long (%u bytes)\n", pdu_length);
 		return -ECONNABORTED;
@@ -317,12 +317,12 @@ int switch_rsp_buf(struct smb_work *smb_work)
 
 /**
  * is_smb_request() - check for valid smb request type
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  * @type:	smb request type
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct tcp_server_info *server, unsigned char type)
+bool is_smb_request(struct connection *conn, unsigned char type)
 {
 	switch (type) {
 	case RFC1002_SESSION_MESSAGE:
@@ -456,13 +456,13 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_sess *lookup_session_on_conn(struct tcp_server_info *server,
+struct cifsd_sess *lookup_session_on_server(struct connection *conn,
 		uint64_t sess_id)
 {
 	struct cifsd_sess *sess;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &server->cifsd_sess) {
+	list_for_each_safe(tmp, t, &conn->cifsd_sess) {
 		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
 		if (sess->sess_id == sess_id)
 			return sess;
@@ -495,11 +495,11 @@ struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
 }
 
 #ifndef CONFIG_CIFS_SMB2_SERVER
-void init_smb2_0_server(struct tcp_server_info *server) { }
-void init_smb2_1_server(struct tcp_server_info *server) { }
-void init_smb3_0_server(struct tcp_server_info *server) { }
-void init_smb3_02_server(struct tcp_server_info *server) { }
-void init_smb3_11_server(struct tcp_server_info *server) { }
+void init_smb2_0_server(struct connection *server) { }
+void init_smb2_1_server(struct connection *server) { }
+void init_smb3_0_server(struct connection *server) { }
+void init_smb3_02_server(struct connection *server) { }
+void init_smb3_11_server(struct connection *server) { }
 int is_smb2_neg_cmd(struct smb_work *smb_work)
 {
 	return 0;

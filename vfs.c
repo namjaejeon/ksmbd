@@ -98,7 +98,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 
 /**
  * smb_vfs_read() - vfs helper for smb file read
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @buf:	buf containing read data
  * @count:	read byte count
@@ -139,7 +139,7 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (sess->server->connection_type) {
+	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
@@ -205,7 +205,7 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 /**
  * smb_vfs_write() - vfs helper for smb file write
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @buf:	buf containing data for writing
  * @count:	read byte count
@@ -238,7 +238,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (sess->server->connection_type) {
+	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 		   FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 		   FILE_GENERIC_ALL_LE))) {
@@ -312,7 +312,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
 		mutex_lock(&ofile_list_lock);
-		smb_breakII_oplock(sess->server, fp, NULL);
+		smb_breakII_oplock(sess->conn, fp, NULL);
 		mutex_unlock(&ofile_list_lock);
 	}
 
@@ -370,7 +370,7 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 
 /**
  * smb_vfs_setattr() - vfs helper for smb setattr
- * @sess:	TCP server session
+ * @sess:	session
  * @name:	file name
  * @fid:	file id of open file
  * @attrs:	inode attributes
@@ -466,7 +466,7 @@ out:
 
 /**
  * smb_vfs_getattr() - vfs helper for smb getattr
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
@@ -499,7 +499,7 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 
 /**
  * smb_vfs_fsync() - vfs helper for smb fsync
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  *
  * Return:	0 on success, otherwise error
@@ -718,7 +718,7 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
 
 /**
  * smb_vfs_rename() - vfs helper for smb rename
- * @sess:		TCP server session
+ * @sess:		session
  * @abs_oldname:	old filename
  * @abs_newname:	new filename
  * @oldfid:		file id of old file
@@ -880,7 +880,7 @@ out1:
 
 /**
  * smb_vfs_truncate() - vfs helper for smb file truncate
- * @sess:	TCP server session
+ * @sess:	session
  * @name:	old filename
  * @fid:	file id of old file
  * @size:	truncate to given size
@@ -919,7 +919,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
 			mutex_lock(&ofile_list_lock);
-			smb_breakII_oplock(sess->server, fp, NULL);
+			smb_breakII_oplock(sess->conn, fp, NULL);
 			mutex_unlock(&ofile_list_lock);
 		} else {
 			inode = file_inode(filp);

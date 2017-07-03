@@ -1267,7 +1267,7 @@ extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 extern struct file_lock *smb_flock_init(struct file *f);
 
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct tcp_server_info *server,
+extern int calc_preauth_integrity_hash(struct connection *conn,
 	int hash_id, char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);

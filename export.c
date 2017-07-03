@@ -490,7 +490,7 @@ int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
 	return chktkn(vlist, sess->usr->name);
 }
 
-struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
+struct cifsd_share *get_cifsd_share(struct connection *conn,
 		struct cifsd_sess *sess,
 		char *sharename, bool *can_write)
 {
@@ -503,11 +503,11 @@ struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
 		cifsd_debug("comparing(%s) with treename %s\n",
 				sharename, share->sharename);
 		if (!strcasecmp(share->sharename, sharename)) {
-			rc = validate_host(server->peeraddr, share);
+			rc = validate_host(conn->peeraddr, share);
 			if (rc < 0) {
 				cifsd_err(
 				"[host:%s] not allowed for [share:%s]\n"
-				, server->peeraddr, share->sharename);
+				, conn->peeraddr, share->sharename);
 				return ERR_PTR(rc);
 			}
 			rc = validate_usr(sess, share, can_write);
@@ -520,7 +520,7 @@ struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
 			return share;
 		}
 	}
-	cifsd_debug("Tree(%s) not exported on server\n", sharename);
+	cifsd_debug("Tree(%s) not exported on connection\n", sharename);
 	return ERR_PTR(-ENOENT);
 }
 
@@ -572,7 +572,7 @@ struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess)
 	struct cifsd_usr *usr;
 
 	list_for_each_entry(usr, &cifsd_usr_list, list) {
-		if (sess->server->vuid  == usr->vuid)
+		if (sess->conn->vuid  == usr->vuid)
 			return usr;
 	}
 
@@ -1599,38 +1599,38 @@ static ssize_t show_server_stat(char *buf)
 /**
  * show_client_stat() - show cifsd client stat
  * @buf:	destination buffer for stat info
- * @sess:	TCP server session
+ * @sess:	session
  *
  * Return:      output buffer length
  */
-static ssize_t show_client_stat(char *buf, struct tcp_server_info *server)
+static ssize_t show_client_stat(char *buf, struct connection *conn)
 {
 	int cum = 0, ret = 0, limit = PAGE_SIZE;
 
 	ret = snprintf(buf+cum, limit - cum,
 			"Connection type = SMB%s\n",
-			server->vals->version_string);
+			conn->vals->version_string);
 	if (ret < 0)
 		return cum;
 	cum += ret;
 
 	ret = snprintf(buf+cum, limit - cum,
 			"Current open files count = %d\n",
-			server->stats.open_files_count);
+			conn->stats.open_files_count);
 	if (ret < 0)
 		return cum;
 	cum += ret;
 
 	ret = snprintf(buf+cum, limit - cum,
 			"Outstanding Request = %d\n",
-			atomic_read(&server->req_running));
+			atomic_read(&conn->req_running));
 	if (ret < 0)
 		return cum;
 	cum += ret;
 
 	ret = snprintf(buf+cum, limit - cum,
 			"Total Requests Served = %d\n",
-			server->stats.request_served);
+			conn->stats.request_served);
 	if (ret < 0)
 		return cum;
 	cum += ret;
@@ -1638,14 +1638,14 @@ static ssize_t show_client_stat(char *buf, struct tcp_server_info *server)
 	if (cifsd_debug_enable) {
 		ret = snprintf(buf+cum, limit - cum,
 				"Avg. duration per request = %ld\n",
-				server->stats.avg_req_duration);
+				conn->stats.avg_req_duration);
 		if (ret < 0)
 			return cum;
 		cum += ret;
 
 		ret = snprintf(buf+cum, limit - cum,
 				"Max. duration request = %ld\n",
-				server->stats.max_timed_request);
+				conn->stats.max_timed_request);
 		if (ret < 0)
 			return cum;
 		cum += ret;
@@ -1686,7 +1686,7 @@ static ssize_t stat_show(struct kobject *kobj,
 		char *buf)
 {
 	struct list_head *tmp;
-	struct tcp_server_info *server;
+	struct connection *conn;
 	int ret = 0;
 
 	if (!strlen(statIP)) {
@@ -1697,11 +1697,11 @@ static ssize_t stat_show(struct kobject *kobj,
 		len1 = strlen(statIP);
 
 		list_for_each(tmp, &cifsd_connection_list) {
-			server = list_entry(tmp, struct tcp_server_info, list);
-			len2 = strlen(server->peeraddr);
+			conn = list_entry(tmp, struct connection, list);
+			len2 = strlen(conn->peeraddr);
 			if (len1 == len2 && !strncmp(statIP,
-				server->peeraddr, len1)) {
-				ret = show_client_stat(buf, server);
+				conn->peeraddr, len1)) {
+				ret = show_client_stat(buf, conn);
 				break;
 			}
 		}
