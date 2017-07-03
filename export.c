@@ -147,7 +147,13 @@ static bool __add_share(struct cifsd_share *share, char *sharename,
 			cifsd_err("share add failed for %s\n", pathname);
 			return false;
 		} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+			err = vfs_getattr(&share_path, &stat, STATX_BASIC_STATS,
+				AT_STATX_SYNC_AS_STAT);
+#else
 			err = vfs_getattr(&share_path, &stat);
+
+#endif
 			path_put(&share_path);
 			if (err) {
 				cifsd_err("share add failed for %s\n",

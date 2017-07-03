@@ -27,6 +27,9 @@
 #include "smb2pdu.h"
 #endif
 #include "oplock.h"
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+#include <linux/sched/signal.h>
+#endif
 
 bool global_signing;
 unsigned long server_start_time;

@@ -1764,7 +1764,12 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		cifsd_debug("can not get linux path for %s, err = %d\n",
 				conv_name, err);
 	} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+			AT_STATX_SYNC_AS_STAT);
+#else
 		err = vfs_getattr(&path, &stat);
+#endif
 		if (err) {
 			cifsd_err("can not stat %s, err = %d\n",
 				conv_name, err);
@@ -1905,7 +1910,12 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	}
 
 	/* open success, send back response */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+		AT_STATX_SYNC_AS_STAT);
+#else
 	err = vfs_getattr(&path, &stat);
+#endif
 	if (err) {
 		cifsd_err("cannot get stat information\n");
 		goto free_path;
@@ -3386,7 +3396,11 @@ int query_path_info(struct smb_work *smb_work)
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+	rc = vfs_getattr(&path, &st, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
+#else
 	rc = vfs_getattr(&path, &st);
+#endif
 	if (rc) {
 		cifsd_err("cannot get stat information\n");
 		goto err_out;
@@ -4222,7 +4236,12 @@ int smb_posix_open(struct smb_work *smb_work)
 		cifsd_debug("cannot get linux path for %s, err = %d\n",
 				name, err);
 	} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+			AT_STATX_SYNC_AS_STAT);
+#else
 		err = vfs_getattr(&path, &stat);
+#endif
 		if (err) {
 			cifsd_err("can not stat %s, err = %d\n", name, err);
 			goto free_path;
@@ -4331,7 +4350,12 @@ prepare_rsp:
 	}
 	psx_rsp->ReturnedLevel = cpu_to_le16(rsp_info_level);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+		AT_STATX_SYNC_AS_STAT);
+#else
 	err = vfs_getattr(&path, &stat);
+#endif
 	if (err) {
 		cifsd_err("cannot get stat information\n");
 		goto free_path;
