@@ -5716,6 +5716,9 @@ wait:
 		}
 	}
 
+	if (oplocks_enable)
+		smb_break_all_oplock(conn, fp, GET_FP_INODE(fp));
+
 	rsp->StructureSize = cpu_to_le16(4);
 	cifsd_debug("successful in taking lock\n");
 	rsp->hdr.Status = NT_STATUS_OK;

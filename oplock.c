@@ -649,7 +649,6 @@ void smb_breakII_oplock(struct connection *conn,
 		}
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-		/* upgrade lease state of current client */
 		if ((fp && fp->lease_granted) && opinfo->leased &&
 				!memcmp(conn->ClientGUID,
 					opinfo->conn->ClientGUID,
