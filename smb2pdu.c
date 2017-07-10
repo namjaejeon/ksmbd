@@ -6097,7 +6097,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	struct smb2_oplock_break *rsp;
 	struct cifsd_file *fp;
 	struct ofile_info *ofile;
-	struct oplock_info *opinfo;
+	struct oplock_info *opinfo = NULL;
 	int err = 0, ret = 0;
 	uint64_t volatile_id, persistent_id;
 	char oplock;
@@ -6209,7 +6209,9 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
-	rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+	if (opinfo)
+		opinfo->lock_type = 0;
+	rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -6321,7 +6323,11 @@ int smb21_lease_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
-	rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+	if (opinfo) {
+		opinfo->lock_type = 0;
+		opinfo->CurrentLeaseState = 0;
+	}
+	rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
