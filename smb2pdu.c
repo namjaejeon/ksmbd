@@ -558,7 +558,7 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 }
 
 /**
- * smb2_set_rsp_credits() - set number of credits iin response buffer
+ * smb2_set_rsp_credits() - set number of credits in response buffer
  * @smb_work:	smb work containing smb response buffer
  */
 void smb2_set_rsp_credits(struct smb_work *smb_work)
@@ -595,7 +595,7 @@ void smb2_set_rsp_credits(struct smb_work *smb_work)
 		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
 		credits_granted = aux_credits + credit_charge;
 
-		/* if credits granted per client is getting bigger than default
+		/* if credits granted per client are getting bigger than default
 		 * minimum credits then we should wrap it up within the limits.
 		 */
 		if ((conn->credits_granted + credits_granted) > min_credits)
@@ -1009,7 +1009,7 @@ deassemble_neg_contexts(struct connection *conn,
  * smb2_negotiate() - handler for smb2 negotiate command
  * @smb_work:	smb work containing smb request buffer
  *
- * Return:      0
+ * Return:      0 on success, otherwise error
  */
 int smb2_negotiate(struct smb_work *smb_work)
 {
