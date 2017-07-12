@@ -316,7 +316,7 @@ void queue_dynamic_work_helper(struct connection *conn)
 
 /**
  * queue_dynamic_work() - queue a smb request to worker thread queue
- *		for proccessing amd command and sending response
+ *		for proccessing smb command and sending response
  * @conn:     TCP server instance of connection
  *
  * read remaining data from socket create and submit work.

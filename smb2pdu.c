@@ -558,7 +558,7 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 }
 
 /**
- * smb2_set_rsp_credits() - set number of credits iin response buffer
+ * smb2_set_rsp_credits() - set number of credits in response buffer
  * @smb_work:	smb work containing smb response buffer
  */
 void smb2_set_rsp_credits(struct smb_work *smb_work)
