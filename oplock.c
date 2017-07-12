@@ -1594,7 +1594,6 @@ void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq)
  * @open_req:	buffer containing smb2 file open(create) request
  * @lreq:	buffer to stored parsed lease state information
  *
- * Return:      0
  */
 __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq)
 {
