@@ -765,7 +765,7 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name);
+	convert_delimiter(name, 0);
 
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
@@ -1863,7 +1863,7 @@ int smb2_open(struct smb_work *smb_work)
 	int oplock, open_flags = 0, file_info = 0, len = 0;
 	int volatile_id = 0;
 	uint64_t persistent_id = 0;
-	int rc = 0, sh_rc = 0;
+	int rc = 0;
 	char *name = NULL, *context_name, *lname = NULL, *pathname = NULL;
 	struct create_context *context;
 	int durable_open = false;
@@ -2503,19 +2503,17 @@ reconnect:
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
-	if (!S_ISDIR(file_inode(filp)->i_mode)) {
-		sh_rc = smb_check_shared_mode(filp, fp);
-		if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE && sh_rc < 0) {
-			rc = sh_rc;
+	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
+		!S_ISDIR(file_inode(filp)->i_mode)) {
+		rc = smb_check_shared_mode(filp, fp);
+		if (rc < 0)
 			goto err_out;
-		}
 	}
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	if (!oplocks_enable || (oplock == SMB2_OPLOCK_LEVEL_LEASE &&
-		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING)) ||
-		(open_flags & O_TRUNC && file_present)) {
+		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
 		oplock = SMB2_OPLOCK_LEVEL_NONE;
 	} else if (oplock == SMB2_OPLOCK_LEVEL_LEASE) {
 		oplock = parse_lease_state(req, &lc);
@@ -2528,7 +2526,7 @@ reconnect:
 				goto err_out;
 			else if (rc) {
 				oplock = SMB2_OPLOCK_LEVEL_NONE;
-				if (rc == -EISDIR)
+				if (rc == -EOPNOTSUPP)
 					dlease = 1;
 			}
 		}
@@ -2539,11 +2537,11 @@ reconnect:
 			oplock = SMB2_OPLOCK_LEVEL_NONE;
 	}
 
-	if (!S_ISDIR(file_inode(filp)->i_mode)) {
-		if (sh_rc < 0) {
-			rc = sh_rc;
+	if (oplock != SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
+		!S_ISDIR(file_inode(filp)->i_mode)) {
+		rc = smb_check_shared_mode(filp, fp);
+		if (rc < 0)
 			goto err_out;
-		}
 	}
 
 	/* Add fp to global file table using inode key. */
@@ -3827,7 +3825,7 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_ALL_INFORMATION:
 	{
 		struct smb2_file_all_info *file_info;
-		char *filename;
+		char *filename, *buf;
 		int uni_filename_len;
 
 		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
@@ -3838,7 +3836,21 @@ int smb2_info_file(struct smb_work *smb_work)
 			return -EACCES;
 		}
 
-		filename = (char *)filp->f_path.dentry->d_name.name;
+		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+		if (!buf)
+			return -ENOMEM;
+
+		filename = d_path(&filp->f_path, buf, PAGE_SIZE);
+		if (IS_ERR(filename)) {
+			cifsd_err("d_path failed %ld\n", PTR_ERR(filename));
+			return PTR_ERR(filename);
+		}
+
+		/* remove share directory path */
+		strsep(&filename, "/");
+		strsep(&filename, "/");
+
+		convert_delimiter(filename, 1);
 		cifsd_debug("filename = %s\n", filename);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
@@ -3879,6 +3891,8 @@ int smb2_info_file(struct smb_work *smb_work)
 				    uni_filename_len - 1);
 		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_ALL_INFORMATION_SIZE;
+
+		kfree(buf);
 		break;
 	}
 	case FILE_ALTERNATE_NAME_INFORMATION:

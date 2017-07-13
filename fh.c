@@ -385,14 +385,13 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		return -ENOENT;
 	}
 
+	hash_del(&fp->node);
 	close_id_del_oplock(sess->conn, fp, id);
 
 	if (fp->islink)
 		filp = fp->lfilp;
 	else
 		filp = fp->filp;
-
-	hash_del(&fp->node);
 
 	list_for_each_entry_safe(lock, tmp, &fp->lock_list, flist) {
 		struct file_lock *flock = NULL;

@@ -2598,18 +2598,22 @@ out:
  *****************************************************************************/
 
 /**
- * convert_delimiter() - convert windows path to unix format
+ * convert_delimiter() - convert windows path to unix format or unix format
+ *			 to windos path
  * @path:	path to be converted
+ * @flags:	1 is to convert windows, 2 is to convert unix
  *
- * Return:	0 on success, otherwise error
  */
-void convert_delimiter(char *path)
+void convert_delimiter(char *path, int flags)
 {
 	char *pos = path;
-	char delim = '\\';
 
-	while ((pos = strchr(pos, delim)))
-		*pos = '/';
+	if (flags == 1)
+		while ((pos = strchr(pos, '/')))
+			*pos = '\\';
+	else
+		while ((pos = strchr(pos, '\\')))
+			*pos = '/';
 }
 
 /**
@@ -4025,7 +4029,7 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name);
+	convert_delimiter(name, 0);
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
 
@@ -4074,7 +4078,7 @@ static char *smb_get_dir_name(const char *src, const int maxlen,
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name);
+	convert_delimiter(name, 0);
 
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');

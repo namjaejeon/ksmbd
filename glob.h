@@ -648,7 +648,7 @@ bool conn_unresponsive(struct connection *conn);
 int query_fs_info(struct smb_work *smb_work);
 void create_trans2_reply(struct smb_work *smb_work, __u16 count);
 char *convert_to_unix_name(char *name, int tid);
-void convert_delimiter(char *path);
+void convert_delimiter(char *path, int flags);
 int find_first(struct smb_work *smb_work);
 int find_next(struct smb_work *smb_work);
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
