@@ -567,6 +567,8 @@ extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
+extern int smb_check_delete_pending(struct file *filp,
+	struct cifsd_file *curr_fp);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode);

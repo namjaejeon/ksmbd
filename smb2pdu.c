@@ -2503,6 +2503,11 @@ reconnect:
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
+	/* Check delete pending among previous fp before oplock break */
+	rc = smb_check_delete_pending(filp, fp);
+	if (rc < 0)
+		goto err_out;
+
 	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
 		!S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = smb_check_shared_mode(filp, fp);
@@ -4852,6 +4857,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				rc = -1;
 			} else
 				fp->delete_on_close = true;
+				fp->delete_pending = true;
 		}
 		break;
 	}
