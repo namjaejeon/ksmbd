@@ -6143,6 +6143,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	if (ofile == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected null ofile_info\n");
+		rsp->hdr.Status = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
 		goto err_out;
 	}
 
@@ -6150,14 +6151,14 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	if (opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected null oplock_info\n");
+		rsp->hdr.Status = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
 		goto err_out;
 	}
 
 	if (opinfo->state == OPLOCK_NOT_BREAKING) {
 		mutex_unlock(&ofile_list_lock);
-		rsp->hdr.Status =
-			NT_STATUS_INVALID_DEVICE_STATE;
 		cifsd_err("unexpected oplock state 0x%x\n", opinfo->state);
+		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
 
@@ -6231,7 +6232,6 @@ int smb20_oplock_break(struct smb_work *smb_work)
 err_out:
 	if (opinfo)
 		opinfo->lock_type = 0;
-	rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -6268,10 +6268,9 @@ int smb21_lease_break(struct smb_work *smb_work)
 
 	if (opinfo->state == OPLOCK_NOT_BREAKING) {
 		mutex_unlock(&ofile_list_lock);
-		rsp->hdr.Status =
-			NT_STATUS_INVALID_DEVICE_STATE;
-		cifsd_debug("unexpected lease break state 0x%x\n",
+		cifsd_err("unexpected lease break state 0x%x\n",
 				opinfo->state);
+		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
 
@@ -6347,7 +6346,6 @@ err_out:
 		opinfo->lock_type = 0;
 		opinfo->CurrentLeaseState = 0;
 	}
-	rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
