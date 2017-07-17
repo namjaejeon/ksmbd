@@ -412,6 +412,43 @@ int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo)
 }
 
 /**
+ * lease_none_upgrade() - upgrade lease state from none
+ * @ofile:	opened file to be checked for oplock status
+ * @opinfo:	current lease info
+ * @curr_state:	current lease state
+ *
+ * Return:	0 on success, otherwise -EINVAL
+ */
+int lease_none_upgrade(struct ofile_info *ofile, struct oplock_info *opinfo,
+	__le32 curr_state)
+{
+	if (!(opinfo->CurrentLeaseState == SMB2_LEASE_NONE)) {
+		cifsd_debug("bad lease state(0x%x)\n",
+				opinfo->CurrentLeaseState);
+		return -EINVAL;
+	}
+
+	opinfo->NewLeaseState = SMB2_LEASE_NONE;
+	opinfo->CurrentLeaseState = curr_state;
+	if (opinfo->CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING) {
+		if (opinfo->CurrentLeaseState & SMB2_LEASE_WRITE_CACHING) {
+			opinfo->lock_type = SMB2_OPLOCK_LEVEL_BATCH;
+			list_move(&opinfo->op_list, &ofile->op_write_list);
+		} else {
+			opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
+			list_move(&opinfo->op_list, &ofile->op_read_list);
+		}
+	} else if (opinfo->CurrentLeaseState & SMB2_LEASE_WRITE_CACHING) {
+		opinfo->lock_type = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
+		list_move(&opinfo->op_list, &ofile->op_write_list);
+	} else if (opinfo->CurrentLeaseState & SMB2_LEASE_READ_CACHING) {
+		opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
+		list_move(&opinfo->op_list, &ofile->op_read_list);
+	}
+	return 0;
+}
+
+/**
  * close_id_del_lease() - release lease object at file close time
  * @conn:     TCP server instance of connection
  * @fp:		cifsd file pointer
@@ -700,9 +737,9 @@ void smb_breakII_oplock(struct connection *conn,
 					(SMB2_LEASE_HANDLE_CACHING |
 					SMB2_LEASE_WRITE_CACHING)) {
 					opinfo->state = OPLOCK_BREAKING;
+					ack_required = 1;
 				}
 
-				ack_required = 1;
 				opinfo->NewLeaseState = SMB2_LEASE_NONE;
 				smb_send_lease_break(&work->work);
 				if (!ack_required)
@@ -1053,7 +1090,9 @@ static struct oplock_info *same_client_has_lease(struct connection *conn,
 	opinfo = find_opinfo(&ofile->op_none_list,
 			conn->ClientGUID, lctx->LeaseKey);
 	if (opinfo) {
-		opinfo->CurrentLeaseState = lctx->CurrentLeaseState;
+		if (lctx->CurrentLeaseState)
+			lease_none_upgrade(ofile, opinfo,
+				lctx->CurrentLeaseState);
 		return opinfo;
 	}
 
