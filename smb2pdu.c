@@ -824,28 +824,56 @@ smb2_get_name_from_filp(struct file *filp)
 	return full_pathname;
 }
 
+/* Async ida to generate async id */
+DEFINE_IDA(async_ida);
+
+inline void remove_async_id(__u64 async_id)
+{
+	ida_simple_remove(&async_ida, (int)async_id);
+}
+
+/**
+ * smb2_send_interim_resp() - Send interim Response to inform
+ *				asynchronous request
+ * @smb_work:	smb work containing smb request buffer
+ *
+ */
 void smb2_send_interim_resp(struct smb_work *smb_work)
 {
-	struct smb2_lock_rsp *rsp;
-	struct async_info *async = smb_work->async;
+	struct smb2_hdr *rsp_hdr;
+	struct connection *conn = smb_work->conn;
+	struct async_info *async;
 
-	rsp = (struct smb2_lock_rsp *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
 
+	async = kmalloc(sizeof(struct async_info), GFP_KERNEL);
 	async->async_status = ASYNC_PROG;
-	rsp->hdr.Flags |= SMB2_FLAGS_ASYNC_COMMAND;
-	rsp->hdr.Id.AsyncId =
-		cpu_to_le64(async->async_id);
-	/*
-	 * Send interim Response to inform
-	 * asynchronous request
-	 */
+	smb_work->async = async;
+	rsp_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
+	rsp_hdr->Id.AsyncId = cpu_to_le64(async->async_id);
+
 	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
 			async->async_id);
+
+	smb_work->async->async_id = (__u64) ida_simple_get(&async_ida, 1, 0,
+		GFP_KERNEL);
+	smb_work->async->async_status = ASYNC_WAITING;
+	smb_work->type = ASYNC;
+
+	spin_lock(&conn->request_lock);
+	list_del_init(&smb_work->request_entry);
+	list_add_tail(&smb_work->request_entry,
+		&conn->async_requests);
+	smb_work->added_in_request_list = 1;
+	spin_unlock(&conn->request_lock);
+
 	smb2_set_err_rsp(smb_work);
-	rsp->hdr.Status = NT_STATUS_PENDING;
+	rsp_hdr->Status = NT_STATUS_PENDING;
 	smb_work->multiRsp = 1;
 	smb_send_rsp(smb_work);
 	smb_work->multiRsp = 0;
+
+	init_smb2_rsp_hdr(smb_work);
 }
 
 /**
@@ -2525,8 +2553,8 @@ reconnect:
 		if (oplock >= 0) {
 			cifsd_debug("lease req for(%s) oplock 0x%x, lease state 0x%x\n",
 				name, oplock, lc.CurrentLeaseState);
-			rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
-				req->hdr.Id.SyncId.TreeId, &lc);
+			rc = smb_grant_oplock(smb_work, &oplock, volatile_id,
+				fp, req->hdr.Id.SyncId.TreeId, &lc);
 			if (rc == -EINVAL)
 				goto err_out;
 			else if (rc) {
@@ -2536,7 +2564,7 @@ reconnect:
 			}
 		}
 	} else {
-		rc = smb_grant_oplock(sess, &oplock, volatile_id, fp,
+		rc = smb_grant_oplock(smb_work, &oplock, volatile_id, fp,
 				req->hdr.Id.SyncId.TreeId, NULL);
 		if (rc)
 			oplock = SMB2_OPLOCK_LEVEL_NONE;

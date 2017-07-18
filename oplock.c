@@ -141,9 +141,10 @@ struct ofile_info *get_new_ofile(struct inode *inode)
  *
  * Return:      allocated opinfo object on success, otherwise NULL
  */
-static struct oplock_info *get_new_opinfo(struct cifsd_sess *sess,
+static struct oplock_info *get_new_opinfo(struct smb_work *work,
 		int id, __u16 Tid, struct lease_ctx_info *lctx)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct oplock_info *opinfo;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	struct lease_fidinfo *fidinfo;
@@ -152,6 +153,7 @@ static struct oplock_info *get_new_opinfo(struct cifsd_sess *sess,
 	if (!opinfo)
 		return NULL;
 
+	opinfo->work = work;
 	opinfo->sess = sess;
 	opinfo->conn = sess->conn;
 	opinfo->lock_type = OPLOCK_NONE;
@@ -1207,10 +1209,10 @@ int check_same_lease_key_list(struct cifsd_sess *sess,
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct cifsd_sess *sess, int *oplock,
-		int id, struct cifsd_file *fp, __u16 Tid,
-		struct lease_ctx_info *lctx)
+int smb_grant_oplock(struct smb_work *work, int *oplock, int id,
+	struct cifsd_file *fp, __u16 Tid, struct lease_ctx_info *lctx)
 {
+	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct inode *inode = file_inode(fp->filp);
 	struct ofile_info *ofile = NULL;
@@ -1222,7 +1224,7 @@ int smb_grant_oplock(struct cifsd_sess *sess, int *oplock,
 	struct lease_fidinfo *fidinfo = NULL;
 #endif
 
-	opinfo_new = get_new_opinfo(sess, id, Tid, lctx);
+	opinfo_new = get_new_opinfo(work, id, Tid, lctx);
 	if (!opinfo_new)
 		return -ENOMEM;
 
@@ -1298,8 +1300,10 @@ no_oplock:
 		memcpy(fp->LeaseKey, lctx->LeaseKey,
 				SMB2_LEASE_KEY_SIZE);
 		fp->lease_granted = 1;
-		if (opinfo_matching->state)
+		if (opinfo_matching->state) {
 			lctx->LeaseFlags = SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
+			smb2_send_interim_resp(opinfo_matching->work);
+		}
 		lctx->CurrentLeaseState = opinfo_matching->CurrentLeaseState;
 		*oplock = opinfo_matching->lock_type;
 		mutex_unlock(&ofile_list_lock);

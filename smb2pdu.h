@@ -1265,6 +1265,7 @@ extern void smb3_set_sign_rsp(struct smb_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
+extern void smb2_send_interim_resp(struct smb_work *smb_work);
 
 /* smb2 command handlers */
 extern int calc_preauth_integrity_hash(struct connection *conn,

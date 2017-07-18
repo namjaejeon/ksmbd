@@ -206,6 +206,10 @@ int smb_send_rsp(struct smb_work *work)
 	if (work->added_in_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
 		work->added_in_request_list = 0;
+		if (work->async) {
+			remove_async_id(work->async->async_id);
+			kfree(work->async);
+		}
 	}
 	spin_unlock(&conn->request_lock);
 
