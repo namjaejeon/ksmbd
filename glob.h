@@ -574,6 +574,8 @@ extern int smb_check_shared_mode(struct file *filp,
 extern struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
 extern char *alloc_data_mem(size_t size);
+extern int pattern_cmp(const char *string, const char *pattern);
+extern bool is_matched(const char *fname, const char *exp);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

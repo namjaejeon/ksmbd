@@ -3152,44 +3152,32 @@ int smb2_query_dir(struct smb_work *smb_work)
 			continue;
 		}
 
-		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY) {
-			cifsd_debug("Single entry requested\n");
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-			if (strncmp(srch_ptr, "*", 1) &&
-					(strlen(srch_ptr) != de->namelen ||
-					 strncasecmp(de->name, srch_ptr,
-						 de->namelen))) {
-#else
-			if (strncmp(srch_ptr, "*", 1) &&
-					(strlen(srch_ptr) != de->namelen ||
-					 strnicmp(de->name, srch_ptr,
-						 de->namelen))) {
-#endif
-					kfree(namestr);
-					continue;
+		if (is_matched(namestr, srch_ptr)) {
+			rc = smb2_populate_readdir_entry(conn,
+			req->FileInformationClass, &bufptr,
+			namestr, &out_buf_len, &num_entry,
+			&kstat, &data_count);
+
+			if (rc)	{
+				kfree(namestr);
+				goto err_out;
+			}
+
+			/* server MUST only return the first search result */
+			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY) {
+				kfree(namestr);
+				break;
 			}
 		}
 
-		rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &bufptr,
-				namestr, &out_buf_len, &num_entry,
-				&kstat, &data_count);
 		kfree(namestr);
-		if (rc)
-			goto err_out;
 
-		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
-			break;
 	} while (out_buf_len >= 0);
 
 	if (out_buf_len < 0)
 		dir_fp->dirent_offset -= reclen;
 
 	if (!data_count) {
-		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY
-				&& strncmp(srch_ptr, "*", 1))
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
-
 		if (smb_work->next_smb2_rcv_hdr_off)
 			rsp->hdr.Status = 0;
 		else if (rsp->hdr.Status == 0)
