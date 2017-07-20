@@ -1269,7 +1269,7 @@ extern void smb2_send_interim_resp(struct smb_work *smb_work);
 
 /* smb2 command handlers */
 extern int calc_preauth_integrity_hash(struct connection *conn,
-	int hash_id, char *buf, __u8 *pi_hash);
+	char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);
 extern int smb2_tree_connect(struct smb_work *smb_work);

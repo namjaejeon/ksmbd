@@ -854,8 +854,8 @@ smb3signkey_ret:
 	return rc;
 }
 
-int calc_preauth_integrity_hash(struct connection *conn, int hash_id,
-	char *buf, __u8 *pi_hash)
+int calc_preauth_integrity_hash(struct connection *conn, char *buf,
+	__u8 *pi_hash)
 {
 	int rc = -1;
 	struct crypto_shash *c_shash;
@@ -864,7 +864,7 @@ int calc_preauth_integrity_hash(struct connection *conn, int hash_id,
 	char *all_bytes_msg = rcv_hdr2->ProtocolId;
 	int msg_size = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	if (hash_id == SMB2_PREAUTH_INTEGRITY_SHA512) {
+	if (conn->Preauth_HashId == SMB2_PREAUTH_INTEGRITY_SHA512) {
 		rc = crypto_sha512_alloc(conn);
 		if (rc) {
 			cifsd_debug("could not alloc sha512 rc %d\n", rc);
@@ -883,7 +883,7 @@ int calc_preauth_integrity_hash(struct connection *conn, int hash_id,
 	}
 
 	rc = crypto_shash_update(&c_sdesc->shash,
-				conn->Preauth_HashValue, 64);
+				pi_hash, 64);
 	if (rc) {
 		cifsd_debug("could not update with n\n");
 		goto out;

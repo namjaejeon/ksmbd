@@ -1076,8 +1076,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 			return -EINVAL;
 		}
 
-		calc_preauth_integrity_hash(conn, conn->Preauth_HashId,
-			smb_work->buf, conn->Preauth_HashValue);
+		calc_preauth_integrity_hash(conn, smb_work->buf,
+			conn->Preauth_HashValue);
 		assemble_neg_contexts(conn, rsp);
 		break;
 	case SMB302_PROT_ID:
@@ -1219,6 +1219,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
+		smb_work->sess = sess;
 	} else {
 		struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 
@@ -1313,9 +1314,13 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
 	}
 
+	if (conn->dialect == SMB311_PROT_ID &&
+			negblob->MessageType == NtLmNegotiate)
+		memcpy(sess->Preauth_HashValue, conn->Preauth_HashValue, 64);
+
 	if (conn->dialect == SMB311_PROT_ID)
-		calc_preauth_integrity_hash(conn, conn->Preauth_HashId,
-				smb_work->buf, conn->Preauth_HashValue);
+		calc_preauth_integrity_hash(conn, smb_work->buf,
+			sess->Preauth_HashValue);
 
 	if (negblob->MessageType == NtLmNegotiate) {
 		CHALLENGE_MESSAGE *chgblob;
@@ -1399,10 +1404,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		}
 
 		cifsd_debug("authenticate phase\n");
-		if (conn->dialect == SMB311_PROT_ID)
-			memcpy(sess->Preauth_HashValue,
-					conn->Preauth_HashValue, 64);
-
 		if (conn->use_spnego && conn->mechToken)
 			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
 		else
@@ -6915,6 +6916,7 @@ void smb3_set_sign_rsp(struct smb_work *work)
 void smb3_preauth_hash_rsp(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
+	struct cifsd_sess *sess = smb_work->sess;
 	struct smb2_hdr *req = (struct smb2_hdr *)smb_work->buf;
 	struct smb2_hdr *rsp = (struct smb2_hdr *)smb_work->rsp_buf;
 
@@ -6926,13 +6928,12 @@ void smb3_preauth_hash_rsp(struct smb_work *smb_work)
 	}
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
-		calc_preauth_integrity_hash(conn, conn->Preauth_HashId,
-				(char *)rsp, conn->Preauth_HashValue);
+		calc_preauth_integrity_hash(conn, (char *)rsp,
+			conn->Preauth_HashValue);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE) {
 		if (rsp->Status == NT_STATUS_MORE_PROCESSING_REQUIRED)
-			calc_preauth_integrity_hash(conn,
-					conn->Preauth_HashId, (char *)rsp,
-					conn->Preauth_HashValue);
+			calc_preauth_integrity_hash(conn, (char *)rsp,
+					sess->Preauth_HashValue);
 	}
 }
