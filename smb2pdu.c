@@ -1219,7 +1219,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
-		smb_work->sess = sess;
 	} else {
 		struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 
@@ -1281,6 +1280,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			}
 		}
 	}
+	smb_work->sess = sess;
 
 	if (sess->state & SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
@@ -1460,10 +1460,10 @@ int smb2_sess_setup(struct smb_work *smb_work)
 				goto out_err;
 			}
 
-			if ((req->SecurityMode &
+			if (!sess->sign && ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || global_signing) ||
-				(conn->dialect == SMB311_PROT_ID)) {
+				(conn->dialect == SMB311_PROT_ID))) {
 				if (conn->dialect >= SMB30_PROT_ID &&
 					conn->ops->compute_signingkey) {
 					rc = conn->ops->compute_signingkey(
