@@ -6246,8 +6246,6 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
-	if (opinfo)
-		opinfo->lock_type = 0;
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -6279,6 +6277,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 	if (ofile == NULL || opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_debug("file not opened\n");
+		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
 
@@ -6287,6 +6286,14 @@ int smb21_lease_break(struct smb_work *smb_work)
 		cifsd_err("unexpected lease break state 0x%x\n",
 				opinfo->state);
 		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
+		goto err_out;
+	}
+
+	if (opinfo->NewLeaseState != req->LeaseState) {
+		mutex_unlock(&ofile_list_lock);
+		rsp->hdr.Status = NT_STATUS_REQUEST_NOT_ACCEPTED;
+		cifsd_err("req lease break state is different with opinfo new lease state (opinfo : 0x%x, req : 0x%x)\n",
+				opinfo->NewLeaseState, req->LeaseState);
 		goto err_out;
 	}
 
@@ -6358,10 +6365,6 @@ int smb21_lease_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
-	if (opinfo) {
-		opinfo->lock_type = 0;
-		opinfo->CurrentLeaseState = 0;
-	}
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
