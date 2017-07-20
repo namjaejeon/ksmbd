@@ -3703,6 +3703,28 @@ int buffer_check_err(int reqOutputBufferLength, struct smb2_query_info_rsp *rsp,
 	return 0;
 }
 
+static char *find_abosolute_pathname(struct path *path, char *buf)
+{
+	char *ab_pathname;
+
+	ab_pathname = d_path(path, buf, PAGE_SIZE);
+	if (IS_ERR(ab_pathname)) {
+		cifsd_err("d_path failed %ld\n", PTR_ERR(ab_pathname));
+		return ab_pathname;
+	}
+
+	/* remove share directory path */
+	strsep(&ab_pathname, "/");
+	strsep(&ab_pathname, "/");
+
+	if (!ab_pathname)
+		ab_pathname = "\\";
+
+	convert_delimiter(ab_pathname, 1);
+
+	return ab_pathname;
+}
+
 /**
  * smb2_info_file() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
@@ -3861,18 +3883,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!buf)
 			return -ENOMEM;
-
-		filename = d_path(&filp->f_path, buf, PAGE_SIZE);
-		if (IS_ERR(filename)) {
-			cifsd_err("d_path failed %ld\n", PTR_ERR(filename));
-			return PTR_ERR(filename);
-		}
-
-		/* remove share directory path */
-		strsep(&filename, "/");
-		strsep(&filename, "/");
-
-		convert_delimiter(filename, 1);
+		filename = find_abosolute_pathname(&filp->f_path, buf);
 		cifsd_debug("filename = %s\n", filename);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
@@ -3920,10 +3931,13 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_ALTERNATE_NAME_INFORMATION:
 	{
 		struct smb2_file_alt_name_info *file_info;
-		char *filename;
+		char *filename, *buf;
 		int uni_filename_len;
 
-		filename = (char *)filp->f_path.dentry->d_name.name;
+		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+		if (!buf)
+			return -ENOMEM;
+		filename = find_abosolute_pathname(&filp->f_path, buf);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
 		uni_filename_len = smb_get_shortname(conn, filename,
