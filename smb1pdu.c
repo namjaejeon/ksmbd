@@ -4928,7 +4928,7 @@ void *fill_common_info(char **p, struct kstat *kstat)
 	info->LastWriteTime = cpu_to_le64(
 			cifs_UnixTimeToNT(kstat->mtime));
 	info->ChangeTime = cpu_to_le64(
-			cifs_UnixTimeToNT(kstat->mtime));
+			cifs_UnixTimeToNT(kstat->ctime));
 	info->EndOfFile = cpu_to_le64(kstat->size);
 	info->AllocationSize = cpu_to_le64(kstat->blocks << 9);
 	info->ExtFileAttributes = S_ISDIR(kstat->mode) ?
