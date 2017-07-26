@@ -558,8 +558,6 @@ extern int check_smb_message(char *buf);
 extern void add_request_to_queue(struct smb_work *smb_work);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct smb_work *smb_work);
-extern int smb2_get_shortname(struct connection *conn, char *longname,
-				char *shortname);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 extern struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session);
 extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
