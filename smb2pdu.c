@@ -2810,8 +2810,8 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		ffdinfo->EaSize = 0;
 
 		memcpy(ffdinfo->FileName, utfname, name_len);
-		ffdinfo->FileName[name_len - 2] = 0;
-		ffdinfo->FileName[name_len - 1] = 0;
+		ffdinfo->FileName[name_len] = 0;
+		ffdinfo->FileName[name_len + 1] = 0;
 		ffdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -2830,12 +2830,13 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 				fill_common_info(p, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = 0;
+		fbdinfo->ShortNameLength = smb_get_shortname(conn, namestr,
+			&(fbdinfo->ShortName[0]));
 		fbdinfo->Reserved = 0;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
-		fbdinfo->FileName[name_len - 2] = 0;
-		fbdinfo->FileName[name_len - 1] = 0;
+		fbdinfo->FileName[name_len] = 0;
+		fbdinfo->FileName[name_len + 1] = 0;
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -2855,8 +2856,8 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
-		fdinfo->FileName[name_len - 2] = 0;
-		fdinfo->FileName[name_len - 1] = 0;
+		fdinfo->FileName[name_len] = 0;
+		fdinfo->FileName[name_len + 1] = 0;
 		fdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -2876,8 +2877,8 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
-		fninfo->FileName[name_len - 2] = 0;
-		fninfo->FileName[name_len - 1] = 0;
+		fninfo->FileName[name_len] = 0;
+		fninfo->FileName[name_len + 1] = 0;
 		fninfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -2901,8 +2902,8 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 
 		memcpy(dinfo->FileName, utfname, name_len);
-		dinfo->FileName[name_len - 2] = 0;
-		dinfo->FileName[name_len - 1] = 0;
+		dinfo->FileName[name_len] = 0;
+		dinfo->FileName[name_len + 1] = 0;
 		dinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -2930,8 +2931,8 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
 		memcpy(fibdinfo->FileName, utfname, name_len);
-		fibdinfo->FileName[name_len - 2] = 0;
-		fibdinfo->FileName[name_len - 1] = 0;
+		fibdinfo->FileName[name_len] = 0;
+		fibdinfo->FileName[name_len + 1] = 0;
 		fibdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3711,7 +3712,16 @@ int buffer_check_err(int reqOutputBufferLength, struct smb2_query_info_rsp *rsp,
 	return 0;
 }
 
-static char *find_abosolute_pathname(struct path *path, char *buf)
+/**
+ * find_absolute_pathname() - extract and return absolute path string
+ *	whose share directory prefix was removed from file path
+ * @path: file path
+ * @buf: buffer to return value in
+ *
+ * Return : absolute path string or error
+ */
+
+static char *find_absolute_pathname(struct path *path, char *buf)
 {
 	char *ab_pathname;
 
@@ -3722,6 +3732,7 @@ static char *find_abosolute_pathname(struct path *path, char *buf)
 	}
 
 	/* remove share directory path */
+	/* TODO : need to consider a case that share directory is not 1 depth */
 	strsep(&ab_pathname, "/");
 	strsep(&ab_pathname, "/");
 
@@ -3891,7 +3902,7 @@ int smb2_info_file(struct smb_work *smb_work)
 		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
 		if (!buf)
 			return -ENOMEM;
-		filename = find_abosolute_pathname(&filp->f_path, buf);
+		filename = find_absolute_pathname(&filp->f_path, buf);
 		cifsd_debug("filename = %s\n", filename);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
@@ -3939,18 +3950,14 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_ALTERNATE_NAME_INFORMATION:
 	{
 		struct smb2_file_alt_name_info *file_info;
-		char *filename, *buf;
+		char *filename;
 		int uni_filename_len;
 
-		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-		filename = find_abosolute_pathname(&filp->f_path, buf);
+		filename = (char *)GET_FILENAME_FILP(fp);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
 		uni_filename_len = smb_get_shortname(conn, filename,
 				file_info->FileName);
-		uni_filename_len *= 2;
 		file_info->FileNameLength = cpu_to_le32(uni_filename_len);
 
 		rsp->OutputBufferLength =
@@ -3958,6 +3965,7 @@ int smb2_info_file(struct smb_work *smb_work)
 				    uni_filename_len);
 		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_ALTERNATE_NAME_INFORMATION_SIZE;
+
 		break;
 	}
 	case FILE_STREAM_INFORMATION:
