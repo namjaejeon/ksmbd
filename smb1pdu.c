@@ -39,7 +39,9 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
  * @longname:	source long filename
  * @shortname:	destination short filename
  *
- * Return:	0 or shortname length
+ * Return:	shortname length or 0 when source long name is '.' or '..'
+ * TODO: Though this function comforms the restriction of 8.3 Filename spec,
+ * but the result is different with Windows 7's one. need to check.
  */
 int smb_get_shortname(struct connection *conn, char *longname,
 		char *shortname)
@@ -5003,7 +5005,6 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 
 	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
 			namestr, len, local_nls, 0);
-	(*name_len)++; /*for NULL character*/
 	*name_len *= 2;
 
 	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
