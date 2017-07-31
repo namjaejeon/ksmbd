@@ -473,6 +473,11 @@ struct smb_version_cmds {
 	int (*proc)(struct smb_work *swork);
 };
 
+/* cifsd kstat wrapper to get valid create time when reading dir entry */
+struct smb_kstat {
+	struct kstat *kstat;
+	__u64 create_time;
+};
 
 #define cifsd_debug(fmt, ...)					\
 	do {							\
@@ -662,8 +667,11 @@ int smb_filldir(void *__buf, const char *name, int namlen,
 #endif
 int smb_get_shortname(struct connection *conn, char *longname,
 		char *shortname);
-char *read_next_entry(struct kstat *kstat, struct smb_dirent *de, char *dpath);
-void *fill_common_info(char **p, struct kstat *kstat);
+char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,
+		struct smb_dirent *de, char *dpath);
+void *fill_common_info(char **p, struct smb_kstat *smb_kstat);
+void fill_create_time(struct smb_work *smb_work,
+		struct path *path, struct smb_kstat *smb_kstat);
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,

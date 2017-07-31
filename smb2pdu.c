@@ -2620,16 +2620,20 @@ reconnect:
 	rsp->CreateAction = file_info;
 
 	if (file_present) {
-
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
 			char *create_time = NULL;
+			int i; /* for loop index */
 
 			rc = smb_find_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
-			if (rc > 0)
-				fp->create_time = *create_time;
+			if (rc > 0) {
+				fp->create_time = 0;
+				for (i = 0; i < rc ; i++)
+					fp->create_time +=
+					(__u64)create_time[i] << (8*i);
+			}
 			kvfree(create_time);
 			rc = 0;
 		}
@@ -2770,7 +2774,7 @@ err_out1:
  * @namestr:	dirent name string
  * @buf_len:	response buffer length
  * @last_entry_offset:	offset of last entry in directory
- * @kstat:	dirent stat information
+ * @smb_kstat:	cifsd wrapper of dirent stat information
  * @data_count:	used buffer size
  *
  * if directory has many entries, find first can't read it fully.
@@ -2780,7 +2784,8 @@ err_out1:
  */
 static int smb2_populate_readdir_entry(struct connection *conn,
 	int info_level, char **p, char *namestr, int *buf_len,
-		int *last_entry_offset,	struct kstat *kstat, int *data_count)
+		int *last_entry_offset,	struct smb_kstat *smb_kstat,
+		int *data_count)
 {
 	int name_len;
 	int next_entry_offset;
@@ -2800,7 +2805,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				fill_common_info(p, kstat);
+				fill_common_info(p, smb_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
@@ -2822,7 +2827,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				fill_common_info(p, kstat);
+				fill_common_info(p, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = 0;
@@ -2846,7 +2851,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		if (!utfname)
 			break;
 
-		fdinfo = (FILE_DIRECTORY_INFO *)fill_common_info(p, kstat);
+		fdinfo = (FILE_DIRECTORY_INFO *)fill_common_info(p, smb_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
@@ -2867,7 +2872,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		if (!utfname)
 			break;
 
-		fninfo = (FILE_NAMES_INFO *)fill_common_info(p, kstat);
+		fninfo = (FILE_NAMES_INFO *)fill_common_info(p, smb_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -2888,11 +2893,12 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		if (!utfname)
 			break;
 
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)fill_common_info(p, kstat);
+		dinfo =
+		(SEARCH_ID_FULL_DIR_INFO *)fill_common_info(p, smb_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(kstat->ino);
+		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->FileName[name_len - 2] = 0;
@@ -2913,10 +2919,10 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-			fill_common_info(p, kstat);
+			fill_common_info(p, smb_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->UniqueId = cpu_to_le64(kstat->ino);
+		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 		fibdinfo->ShortNameLength =
 			smb_get_shortname(conn, namestr,
 					&(fibdinfo->ShortName[0]));
@@ -2969,6 +2975,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 	int rc = 0;
 	uint64_t id = -1;
 	struct kstat kstat;
+	struct smb_kstat smb_kstat;
 	char *dirpath, *bufptr, *namestr, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct smb_readdir_data r_data = {
@@ -3145,7 +3152,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
-		namestr = read_next_entry(&kstat, de, dirpath);
+		smb_kstat.kstat = &kstat;
+		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
 		if (IS_ERR(namestr)) {
 			rc = PTR_ERR(namestr);
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
@@ -3157,7 +3165,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 			rc = smb2_populate_readdir_entry(conn,
 			req->FileInformationClass, &bufptr,
 			namestr, &out_buf_len, &num_entry,
-			&kstat, &data_count);
+			&smb_kstat, &data_count);
 
 			if (rc)	{
 				kfree(namestr);

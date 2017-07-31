@@ -4868,15 +4868,54 @@ int smb_filldir(void *__buf, const char *name, int namlen,
 }
 
 /**
+ * fill_create_time() - fill create time of directory entry in smb_kstat
+ * if related config is not set, create time is same with change time
+ *
+ * @smb_work: smb work containing share config
+ * @path: path info
+ * @smb_kstat: cifsd kstat wrapper
+ */
+
+void fill_create_time(struct smb_work *smb_work,
+	struct path *path, struct smb_kstat *smb_kstat)
+{
+	char *create_time = NULL;
+	int xattr_len;
+	int i;
+
+	/*
+	 * if "store dos attributes" conf is not yes,
+	 * create time = change time
+	 */
+	smb_kstat->create_time = cifs_UnixTimeToNT(smb_kstat->kstat->ctime);
+
+	if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		xattr_len = smb_find_cont_xattr(path,
+			XATTR_NAME_CREATION_TIME,
+			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+
+		if (xattr_len > 0) {
+			smb_kstat->create_time = 0;
+			for (i = 0; i < xattr_len ; i++)
+				smb_kstat->create_time +=
+				((__u64)create_time[i]) << (8*i);
+		}
+
+		kvfree(create_time);
+	}
+}
+
+/**
  * read_next_entry() - read next directory entry and return absolute name
- * @kstat:	stat of next dirent
+ * @smb_work:	smb work containing share config
+ * @smb_kstat:	cifsd wrapper of next dirent's stat
  * @de:		directory entry
  * @dirpath:	directory path name
  *
  * Return:      on success return absolute path of directory entry,
  *              otherwise NULL
  */
-char *read_next_entry(struct kstat *kstat,
+char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,
 		struct smb_dirent *de, char *dirpath)
 {
 	struct path path;
@@ -4905,7 +4944,8 @@ char *read_next_entry(struct kstat *kstat,
 		return ERR_PTR(rc);
 	}
 
-	generic_fillattr(path.dentry->d_inode, kstat);
+	generic_fillattr(path.dentry->d_inode, smb_kstat->kstat);
+	fill_create_time(smb_work, &path, smb_kstat);
 	memcpy(name, de->name, de->namelen);
 	name[de->namelen] = '\0';
 	path_put(&path);
@@ -4915,23 +4955,22 @@ char *read_next_entry(struct kstat *kstat,
 /**
  * fill_common_info() - convert unix stat information to smb stat format
  * @p:          destination buffer
- * @kstat:      file stat information
+ * @smb_kstat:      cifsd kstat wrapper
  */
-void *fill_common_info(char **p, struct kstat *kstat)
+void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 {
 	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
 	info->FileIndex = 0;
-	info->CreationTime = cpu_to_le64(
-			cifs_UnixTimeToNT(kstat->ctime));
+	info->CreationTime = cpu_to_le64(smb_kstat->create_time);
 	info->LastAccessTime = cpu_to_le64(
-			cifs_UnixTimeToNT(kstat->atime));
+			cifs_UnixTimeToNT(smb_kstat->kstat->atime));
 	info->LastWriteTime = cpu_to_le64(
-			cifs_UnixTimeToNT(kstat->mtime));
+			cifs_UnixTimeToNT(smb_kstat->kstat->mtime));
 	info->ChangeTime = cpu_to_le64(
-			cifs_UnixTimeToNT(kstat->ctime));
-	info->EndOfFile = cpu_to_le64(kstat->size);
-	info->AllocationSize = cpu_to_le64(kstat->blocks << 9);
-	info->ExtFileAttributes = S_ISDIR(kstat->mode) ?
+			cifs_UnixTimeToNT(smb_kstat->kstat->ctime));
+	info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
+	info->AllocationSize = cpu_to_le64(smb_kstat->kstat->blocks << 9);
+	info->ExtFileAttributes = S_ISDIR(smb_kstat->kstat->mode) ?
 		ATTR_DIRECTORY : ATTR_NORMAL;
 
 	return info;
@@ -4989,7 +5028,7 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
  * @namestr:	dirent name string
  * @buf_len:	response buffer length
  * @last_entry_offset:	offset of last entry in directory
- * @kstat:	dirent stat information
+ * @smb_kstat: cifsd wrapper of dirent stat information
  * @data_count:	used buffer size
  * @num_entry:	number of dirents searched so far
  *
@@ -5000,8 +5039,8 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
  */
 static int smb_populate_readdir_entry(struct connection *conn,
 		int info_level, char **p, int reclen, char *namestr,
-		int *buf_len, int *last_entry_offset, struct kstat *kstat,
-		int *data_count, int *num_entry)
+		int *buf_len, int *last_entry_offset,
+		struct smb_kstat *smb_kstat, int *data_count, int *num_entry)
 {
 	int name_len;
 	int next_entry_offset;
@@ -5021,7 +5060,7 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-			fill_common_info(p, kstat);
+			fill_common_info(p, smb_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 		memcpy(fdinfo->FileName, utfname, name_len);
 		fdinfo->FileName[name_len - 2] = 0;
@@ -5046,7 +5085,7 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-			fill_common_info(p, kstat);
+			fill_common_info(p, smb_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 		memcpy(ffdinfo->FileName, utfname, name_len);
@@ -5073,7 +5112,7 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			break;
 
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-			fill_common_info(p, kstat);
+			fill_common_info(p, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = 0;
@@ -5103,11 +5142,11 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-			fill_common_info(p, kstat);
+			fill_common_info(p, smb_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(kstat->ino);
+		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->FileName[name_len - 2] = 0;
 		dinfo->FileName[name_len - 1] = 0;
@@ -5134,7 +5173,7 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		finfo = (FILE_UNIX_INFO *)(*p);
 		finfo->ResumeKey = 0;
 		unix_info = (FILE_UNIX_BASIC_INFO *)((char *)finfo + 8);
-		init_unix_info(unix_info, kstat);
+		init_unix_info(unix_info, smb_kstat->kstat);
 		memcpy(finfo->FileName, utfname, name_len);
 		finfo->FileName[name_len - 2] = 0;
 		finfo->FileName[name_len - 1] = 0;
@@ -5185,6 +5224,7 @@ int find_first(struct smb_work *smb_work)
 	struct smb_dirent *de;
 	struct cifsd_file *dir_fp = NULL;
 	struct kstat kstat;
+	struct smb_kstat smb_kstat;
 	int params_count = sizeof(T2_FFIRST_RSP_PARMS);
 	int data_alignment_offset = 0;
 	int data_count = 0;
@@ -5295,7 +5335,8 @@ int find_first(struct smb_work *smb_work)
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
-		namestr = read_next_entry(&kstat, de, dirpath);
+		smb_kstat.kstat = &kstat;
+		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
 		if (IS_ERR(namestr)) {
 			rc = PTR_ERR(namestr);
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
@@ -5323,7 +5364,7 @@ int find_first(struct smb_work *smb_work)
 		rc = smb_populate_readdir_entry(conn,
 				req_params->InformationLevel, &bufptr, reclen,
 				namestr, &out_buf_len, &last_entry_offset,
-				&kstat, &data_count, &num_entry);
+				&smb_kstat, &data_count, &num_entry);
 		kfree(namestr);
 		if (rc)
 			goto err_out;
@@ -5423,6 +5464,7 @@ int find_next(struct smb_work *smb_work)
 	struct smb_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct kstat kstat;
+	struct smb_kstat smb_kstat;
 	int params_count = sizeof(T2_FNEXT_RSP_PARMS);
 	int data_alignment_offset = 0;
 	int data_count = 0;
@@ -5525,7 +5567,8 @@ int find_next(struct smb_work *smb_work)
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
-		namestr = read_next_entry(&kstat, de, dirpath);
+		smb_kstat.kstat = &kstat;
+		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
 		if (IS_ERR(namestr)) {
 			rc = PTR_ERR(namestr);
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
@@ -5537,7 +5580,7 @@ int find_next(struct smb_work *smb_work)
 		rc = smb_populate_readdir_entry(conn,
 				req_params->InformationLevel, &bufptr, reclen,
 				namestr, &out_buf_len, &last_entry_offset,
-				&kstat, &data_count, &num_entry);
+				&smb_kstat, &data_count, &num_entry);
 		kfree(namestr);
 		if (rc)
 			goto err_out;
