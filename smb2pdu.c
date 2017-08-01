@@ -2823,7 +2823,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 				fill_common_info(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = smb_get_shortname(conn, namestr,
+		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
 			&(fbdinfo->ShortName[0]));
 		fbdinfo->Reserved = 0;
 
