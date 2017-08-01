@@ -2770,12 +2770,8 @@ err_out1:
  * smb2_populate_readdir_entry() - encode directory entry in smb2 response buffer
  * @conn:	TCP server instance of connection
  * @info_level:	smb information level
- * @p:		smb response buffer pointer
- * @namestr:	dirent name string
- * @buf_len:	response buffer length
- * @last_entry_offset:	offset of last entry in directory
+ * @d_info:	structure included variables for query dir
  * @smb_kstat:	cifsd wrapper of dirent stat information
- * @data_count:	used buffer size
  *
  * if directory has many entries, find first can't read it fully.
  * find next might be called multiple times to read remaining dir entries
@@ -2783,9 +2779,8 @@ err_out1:
  * Return:	0 on success, otherwise error
  */
 static int smb2_populate_readdir_entry(struct connection *conn,
-	int info_level, char **p, char *namestr, int *buf_len,
-		int *last_entry_offset,	struct smb_kstat *smb_kstat,
-		int *data_count)
+	int info_level, struct cifsd_dir_info *d_info,
+	struct smb_kstat *smb_kstat)
 {
 	int name_len;
 	int next_entry_offset;
@@ -2796,16 +2791,15 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		FILE_FULL_DIRECTORY_INFO *ffdinfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(FILE_FULL_DIRECTORY_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(FILE_FULL_DIRECTORY_INFO), conn->local_nls,
+			&name_len, &next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				fill_common_info(p, smb_kstat);
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
@@ -2819,15 +2813,14 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(FILE_BOTH_DIRECTORY_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(FILE_BOTH_DIRECTORY_INFO), conn->local_nls,
+			&name_len, &next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				fill_common_info(p, smb_kstat);
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = smb_get_shortname(conn, namestr,
@@ -2844,15 +2837,15 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		FILE_DIRECTORY_INFO *fdinfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(FILE_DIRECTORY_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(FILE_DIRECTORY_INFO), conn->local_nls, &name_len,
+			&next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 
-		fdinfo = (FILE_DIRECTORY_INFO *)fill_common_info(p, smb_kstat);
+		fdinfo = (FILE_DIRECTORY_INFO *)
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
@@ -2865,15 +2858,15 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		FILE_NAMES_INFO *fninfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(FILE_NAMES_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(FILE_NAMES_INFO), conn->local_nls, &name_len,
+			&next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 
-		fninfo = (FILE_NAMES_INFO *)fill_common_info(p, smb_kstat);
+		fninfo = (FILE_NAMES_INFO *)
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -2886,16 +2879,15 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		SEARCH_ID_FULL_DIR_INFO *dinfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(SEARCH_ID_FULL_DIR_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(SEARCH_ID_FULL_DIR_INFO), conn->local_nls,
+			&name_len, &next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 
-		dinfo =
-		(SEARCH_ID_FULL_DIR_INFO *)fill_common_info(p, smb_kstat);
+		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -2911,21 +2903,20 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	{
 		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
 
-		utfname = convname_updatenextoffset(namestr, PATH_MAX,
-					sizeof(FILE_ID_BOTH_DIRECTORY_INFO),
-					conn->local_nls, &name_len,
-					&next_entry_offset,
-					buf_len, data_count, 7);
+		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+			sizeof(FILE_ID_BOTH_DIRECTORY_INFO), conn->local_nls,
+			&name_len, &next_entry_offset, &d_info->out_buf_len,
+			&d_info->data_count, 7);
 		if (!utfname)
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-			fill_common_info(p, smb_kstat);
+				fill_common_info(&d_info->bufptr, smb_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 		fibdinfo->ShortNameLength =
-			smb_get_shortname(conn, namestr,
+			smb_get_shortname(conn, d_info->name,
 					&(fibdinfo->ShortName[0]));
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
@@ -2942,18 +2933,51 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	}
 
 	if (utfname) {
-		*last_entry_offset = *data_count;
-		*data_count += next_entry_offset;
-		*buf_len -= next_entry_offset;
-		*p =  (char *)(*p) + next_entry_offset;
+		d_info->num_entry = d_info->data_count;
+		d_info->data_count += next_entry_offset;
+		d_info->out_buf_len -= next_entry_offset;
+		d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
 		kfree(utfname);
 	}
 	cifsd_debug("info_level : %d, buf_len :%d,"
 			" next_offset : %d, data_count : %d\n",
-			info_level, *buf_len,
-			next_entry_offset, *data_count);
+			info_level, d_info->out_buf_len,
+			next_entry_offset, d_info->data_count);
 
 	return 0;
+}
+
+int smb_populate_dot_dotdot_entries(struct connection *conn,
+	__u8 file_info_class, struct cifsd_file *dir,
+	struct cifsd_dir_info *d_info)
+{
+	int i, rc = 0;
+
+	for (i = 0; i < 2; i++) {
+		struct kstat kstat;
+		struct smb_kstat smb_kstat;
+
+		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
+			if (i == 0)
+				d_info->name = ".";
+			else
+				d_info->name = "..";
+			generic_fillattr(GET_PARENT_INO(dir), &kstat);
+
+			smb_kstat.kstat = &kstat;
+			rc = smb2_populate_readdir_entry(conn, file_info_class,
+				d_info, &smb_kstat);
+			if (rc)
+				break;
+
+			if (d_info->out_buf_len <= 0)
+				break;
+
+			dir->dot_dotdot[i] = 1;
+		}
+	}
+
+	return rc;
 }
 
 /**
@@ -2969,15 +2993,13 @@ int smb2_query_dir(struct smb_work *smb_work)
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	struct smb_dirent *de;
 	struct cifsd_file *dir_fp;
-	int data_count = 0;
-	int out_buf_len;
+	struct cifsd_dir_info d_info;
 	int reclen = 0;
-	int num_entry = 0;
 	int rc = 0;
 	uint64_t id = -1;
 	struct kstat kstat;
 	struct smb_kstat smb_kstat;
-	char *dirpath, *bufptr, *namestr, *srch_ptr = NULL, *path = NULL;
+	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct smb_readdir_data r_data = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
@@ -3114,13 +3136,25 @@ int smb2_query_dir(struct smb_work *smb_work)
 	}
 
 	r_data.dirent = dir_fp->readdir_data.dirent;
-	bufptr = (char *)rsp->Buffer;
-	out_buf_len = min_t(int, (SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
-			(get_rfc1002_length(rsp_org) + 4)),
-			le32_to_cpu(req->OutputBufferLength)) -
+	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
+	d_info.bufptr = (char *)rsp->Buffer;
+	d_info.out_buf_len = min_t(int, (SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
+		(get_rfc1002_length(rsp_org) + 4)),
+		le32_to_cpu(req->OutputBufferLength)) -
 		sizeof(struct smb2_query_directory_rsp);
 
-	do {
+	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY)) {
+		/*
+		 * reserve dot and dotdot entries in head of buffer
+		 * in first response
+		 */
+		rc = smb_populate_dot_dotdot_entries(conn,
+			req->FileInformationClass, dir_fp, &d_info);
+		if (rc)
+			goto err_out;
+	}
+
+	while (d_info.out_buf_len > 0) {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
@@ -3154,45 +3188,44 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset += reclen;
 
 		smb_kstat.kstat = &kstat;
-		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
-		if (IS_ERR(namestr)) {
-			rc = PTR_ERR(namestr);
+		d_info.name = read_next_entry(smb_work, &smb_kstat, de,
+			dirpath);
+		if (IS_ERR(d_info.name)) {
+			rc = PTR_ERR(d_info.name);
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
 			rc = 0;
 			continue;
 		}
 
-		if (is_matched(namestr, srch_ptr)) {
+		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-			req->FileInformationClass, &bufptr,
-			namestr, &out_buf_len, &num_entry,
-			&smb_kstat, &data_count);
-
+				req->FileInformationClass, &d_info, &smb_kstat);
 			if (rc)	{
-				kfree(namestr);
+				kfree(d_info.name);
 				goto err_out;
 			}
 
 			/* server MUST only return the first search result */
 			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY) {
-				kfree(namestr);
+				kfree(d_info.name);
 				break;
 			}
 		}
 
-		kfree(namestr);
+		kfree(d_info.name);
 
-	} while (out_buf_len >= 0);
+	}
 
-	if (out_buf_len < 0)
+	if (d_info.out_buf_len < 0)
 		dir_fp->dirent_offset -= reclen;
 
-	if (!data_count) {
+	if (!d_info.data_count) {
 		if (smb_work->next_smb2_rcv_hdr_off)
 			rsp->hdr.Status = 0;
-		else if (rsp->hdr.Status == 0)
+		else if (rsp->hdr.Status == 0) {
+			dir_fp->dot_dotdot[0] = dir_fp->dot_dotdot[1] = 0;
 			rsp->hdr.Status = STATUS_NO_MORE_FILES;
-
+		}
 		rsp->StructureSize = cpu_to_le16(9);
 		rsp->OutputBufferOffset = cpu_to_le16(0);
 		rsp->OutputBufferLength = cpu_to_le32(0);
@@ -3200,12 +3233,12 @@ int smb2_query_dir(struct smb_work *smb_work)
 		inc_rfc1001_len(rsp_org, 9);
 	} else {
 		((FILE_DIRECTORY_INFO *)
-		 ((char *)rsp->Buffer + num_entry))->NextEntryOffset = 0;
+		 ((char *)rsp->Buffer + d_info.num_entry))->NextEntryOffset = 0;
 
 		rsp->StructureSize = cpu_to_le16(9);
 		rsp->OutputBufferOffset = cpu_to_le16(72);
-		rsp->OutputBufferLength = cpu_to_le32(data_count);
-		inc_rfc1001_len(rsp_org, 8 + data_count);
+		rsp->OutputBufferLength = cpu_to_le32(d_info.data_count);
+		inc_rfc1001_len(rsp_org, 8 + d_info.data_count);
 	}
 
 	kfree(path);
@@ -3220,7 +3253,7 @@ err_out:
 err_out2:
 	if (dir_fp && dir_fp->readdir_data.dirent) {
 		free_page((unsigned long)
-				(dir_fp->readdir_data.dirent));
+			(dir_fp->readdir_data.dirent));
 		dir_fp->readdir_data.dirent = NULL;
 	}
 

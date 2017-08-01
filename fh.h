@@ -99,7 +99,8 @@ struct cifsd_file {
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
 	struct smb_readdir_data	readdir_data;
-	int		dirent_offset;
+	int	dot_dotdot[2];
+	int	dirent_offset;
 	/* oplock info */
 	struct ofile_info *ofile;
 	bool delete_on_close;

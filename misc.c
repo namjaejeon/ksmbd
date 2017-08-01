@@ -800,6 +800,10 @@ int pattern_cmp(const char *string, const char *pattern)
  */
 bool is_matched(const char *fname, const char *exp)
 {
+	/* dot and dotdot entries are already reserved */
+	if (!strcmp(".", fname) || !strcmp("..", fname))
+		return false;
+
 	/* optimization to avoid pattern compare */
 	if (!*fname && *exp)
 		return false;

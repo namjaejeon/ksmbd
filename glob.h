@@ -473,6 +473,15 @@ struct smb_version_cmds {
 	int (*proc)(struct smb_work *swork);
 };
 
+struct cifsd_dir_info {
+	char *name;
+	char *bufptr;
+	struct kstat kstat;
+	int data_count;
+	int out_buf_len;
+	int num_entry;
+};
+
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
 struct smb_kstat {
 	struct kstat *kstat;
