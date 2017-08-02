@@ -5510,7 +5510,7 @@ int smb2_lock(struct smb_work *smb_work)
 		goto out2;
 	}
 
-	if (fp->is_durable && fp->persistent_id !=
+	if (fp->persistent_id !=
 			le64_to_cpu(req->PersistentFileId)) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
