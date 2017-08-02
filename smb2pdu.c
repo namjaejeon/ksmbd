@@ -4400,6 +4400,31 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 			fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
 			break;
 		}
+	case FS_OBJECT_ID_INFORMATION:
+		{
+			unsigned char objid[16];
+			struct object_id_info *obj_info;
+
+			obj_info = (struct object_id_info *)(rsp->Buffer);
+
+			if (smb_work->sess->usr->passkey) {
+				smb_E_md4hash(smb_work->sess->usr->passkey,
+					objid, conn->local_nls);
+				memcpy(obj_info->objid, objid, 16);
+			} else
+				memset(obj_info->objid, 0, 16);
+
+			obj_info->extended_info.magic = EXTENDED_INFO_MAGIC;
+			obj_info->extended_info.version = 1;
+			obj_info->extended_info.release = 1;
+			obj_info->extended_info.rel_date = 0;
+			memcpy(obj_info->extended_info.version_string,
+				"1.1.0", STRING_LENGTH);
+			rsp->OutputBufferLength = cpu_to_le32(64);
+			inc_rfc1001_len(rsp_org, 64);
+			fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
+			break;
+		}
 	case FS_SECTOR_SIZE_INFORMATION:
 		{
 			struct smb3_fs_ss_info *ss_info;

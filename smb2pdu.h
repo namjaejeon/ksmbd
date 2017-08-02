@@ -968,6 +968,7 @@ struct smb2_set_info_rsp {
 #define FS_SIZE_INFORMATION_SIZE       24
 #define FS_FULL_SIZE_INFORMATION_SIZE  32
 #define FS_SECTOR_SIZE_INFORMATION_SIZE 28
+#define FS_OBJECT_ID_INFORMATION_SIZE 64
 
 
 /* FS_ATTRIBUTE_File_System_Name */
