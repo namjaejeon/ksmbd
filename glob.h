@@ -644,6 +644,7 @@ extern void init_smb2_neg_rsp(struct smb_work *smb_work);
 extern int is_smb2_rsp(struct smb_work *smb_work);
 
 /* functions */
+extern void smb_delete_session(struct cifsd_sess *sess);
 extern int connect_tcp_sess(struct socket *sock);
 extern int cifsd_read_from_socket(struct connection *conn, char *buf,
 		unsigned int to_read);

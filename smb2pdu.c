@@ -672,27 +672,6 @@ int smb2_check_user_session(struct smb_work *smb_work)
 	return rc;
 }
 
-void smb2_delete_session(struct cifsd_sess *sess)
-{
-	struct list_head *tmp, *t;
-	struct channel *chann = NULL;
-
-	sess->valid = 0;
-	list_del(&sess->cifsd_ses_list);
-	list_del(&sess->cifsd_ses_global_list);
-	if (sess->conn->dialect >= SMB30_PROT_ID) {
-		list_for_each_safe(tmp, t, &sess->cifsd_chann_list) {
-			chann = list_entry(tmp, struct channel,
-					chann_list);
-			if (chann) {
-				list_del(&chann->chann_list);
-				kfree(chann);
-			}
-		}
-	}
-	destroy_fidtable(sess);
-	kfree(sess);
-}
 
 /**
  * smb2_invalidate_prev_session() - invalidate existing session of an user
@@ -707,7 +686,7 @@ void smb2_invalidate_prev_session(uint64_t sess_id)
 		sess = list_entry(tmp, struct cifsd_sess,
 				cifsd_ses_global_list);
 		if (sess->sess_id == sess_id) {
-			smb2_delete_session(sess);
+			smb_delete_session(sess);
 			break;
 		}
 	}
@@ -1510,7 +1489,7 @@ out_err:
 		kfree(conn->mechToken);
 
 	if (rc < 0 && sess) {
-		smb2_delete_session(sess);
+		smb_delete_session(sess);
 		smb_work->sess = NULL;
 	}
 

@@ -647,6 +647,16 @@ void free_channel_list(struct cifsd_sess *sess)
 	}
 }
 
+void smb_delete_session(struct cifsd_sess *sess)
+{
+	sess->valid = 0;
+	list_del(&sess->cifsd_ses_list);
+	list_del(&sess->cifsd_ses_global_list);
+	free_channel_list(sess);
+	destroy_fidtable(sess);
+	kfree(sess);
+}
+
 /**
  * tcp_sess_kthread() - session thread to listen on new smb requests
  * @p:     TCP conn instance of connection
@@ -680,8 +690,8 @@ static int tcp_sess_kthread(void *p)
 		pdu_length = 4; /* enough to get RFC1001 header */
 		length = cifsd_read_from_socket(conn, buf, pdu_length);
 		if (length != pdu_length)
-			/* 7 seconds passed. It should be EAGAIN */
-			continue;
+			/* 7 seconds passed. It should be break */
+			break;
 
 		conn->total_read = length;
 		if (!is_smb_request(conn, buf[0]))
@@ -756,13 +766,7 @@ static int tcp_sess_kthread(void *p)
 		list_for_each_safe(tmp, t, &conn->cifsd_sess) {
 			sess = list_entry(tmp, struct cifsd_sess,
 							cifsd_ses_list);
-			free_channel_list(sess);
-			list_del(&sess->cifsd_ses_list);
-			/* SESSION Global list cifsd_ses_global_list is
-			   for SMB2 only*/
-			if (conn->connection_type != 0)
-				list_del(&sess->cifsd_ses_global_list);
-			kfree(sess);
+			smb_delete_session(sess);
 		}
 	}
 

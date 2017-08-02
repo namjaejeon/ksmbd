@@ -519,6 +519,8 @@ void destroy_fidtable(struct cifsd_sess *sess)
 	ftab = sess->fidtable.ftab;
 	spin_unlock(&sess->fidtable.fidtable_lock);
 
+	if (!ftab)
+		return;
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
