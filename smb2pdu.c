@@ -2204,8 +2204,9 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (file_present && (req->CreateDisposition == FILE_CREATE_LE) &&
-		!stream) {
+	if (file_present && (req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
+		(req->CreateDisposition == FILE_CREATE_LE) &&
+		!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
 		rc = -EIO;
 		goto err_out;
