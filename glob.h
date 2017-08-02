@@ -395,8 +395,7 @@ struct trans_state {
 };
 
 enum asyncEnum {
-	ASYNC_WAITING = 1,
-	ASYNC_PROG,
+	ASYNC_PROG = 1,
 	ASYNC_CANCEL,
 	ASYNC_CLOSE,
 	ASYNC_EXITING,

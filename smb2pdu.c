@@ -829,15 +829,14 @@ void smb2_send_interim_resp(struct smb_work *smb_work)
 	async->async_status = ASYNC_PROG;
 	smb_work->async = async;
 	rsp_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
-	rsp_hdr->Id.AsyncId = cpu_to_le64(async->async_id);
-
-	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
-			async->async_id);
 
 	smb_work->async->async_id = (__u64) ida_simple_get(&async_ida, 1, 0,
 		GFP_KERNEL);
-	smb_work->async->async_status = ASYNC_WAITING;
 	smb_work->type = ASYNC;
+	rsp_hdr->Id.AsyncId = cpu_to_le64(smb_work->async->async_id);
+
+	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
+			async->async_id);
 
 	spin_lock(&conn->request_lock);
 	list_del_init(&smb_work->request_entry);
