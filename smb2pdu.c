@@ -4258,6 +4258,7 @@ inline int fsTypeSearch(struct fs_type_info fs_type[],
  */
 int smb2_info_filesystem(struct smb_work *smb_work)
 {
+	const uint64_t bytes_per_sector = 512;
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp, *rsp_org;
 	struct connection *conn = smb_work->conn;
@@ -4371,7 +4372,8 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 						cpu_to_le64(stfs.f_bfree);
 			fs_size_info->SectorsPerAllocationUnit =
 						cpu_to_le32(stfs.f_bsize >> 9);
-			fs_size_info->BytesPerSector = cpu_to_le32(512);
+			fs_size_info->BytesPerSector =
+				cpu_to_le32(bytes_per_sector);
 			rsp->OutputBufferLength = cpu_to_le32(24);
 			inc_rfc1001_len(rsp_org, 24);
 			fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
@@ -4391,13 +4393,37 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 						cpu_to_le64(stfs.f_bfree);
 			fs_fullsize_info->SectorsPerAllocationUnit =
 						cpu_to_le32(stfs.f_bsize >> 9);
-			fs_fullsize_info->BytesPerSector = cpu_to_le32(512);
+			fs_fullsize_info->BytesPerSector =
+				cpu_to_le32(bytes_per_sector);
 			rsp->OutputBufferLength = cpu_to_le32(32);
 			inc_rfc1001_len(rsp_org, 32);
 			fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
 			break;
 		}
+	case FS_SECTOR_SIZE_INFORMATION:
+		{
+			struct smb3_fs_ss_info *ss_info;
 
+			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
+
+			ss_info->LogicalBytesPerSector =
+				cpu_to_le32(bytes_per_sector);
+			ss_info->PhysicalBytesPerSectorForAtomicity =
+				cpu_to_le32(bytes_per_sector);
+			ss_info->PhysicalBytesPerSectorForPerf =
+				cpu_to_le32(bytes_per_sector);
+			ss_info->FSEffPhysicalBytesPerSectorForAtomicity =
+				cpu_to_le32(bytes_per_sector);
+			ss_info->Flags = cpu_to_le32(
+				SSINFO_FLAGS_ALIGNED_DEVICE |
+				SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE);
+			ss_info->ByteOffsetForSectorAlignment = 0;
+			ss_info->ByteOffsetForPartitionAlignment = 0;
+			rsp->OutputBufferLength = cpu_to_le32(28);
+			inc_rfc1001_len(rsp_org, 28);
+			fs_infoclass_size = FS_SECTOR_SIZE_INFORMATION_SIZE;
+			break;
+		}
 	default:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		path_put(&path);
