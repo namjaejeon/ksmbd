@@ -5476,7 +5476,6 @@ static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
 int smb2_lock(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
-	struct async_info *async = smb_work->async;
 	struct smb2_lock_req *req;
 	struct smb2_lock_rsp *rsp;
 	struct smb2_lock_element *lock_ele;
@@ -5746,6 +5745,7 @@ skip:
 		} else {
 			if (err == FILE_LOCK_DEFERRED) {
 				spinlock_t *rq_lock = &conn->request_lock;
+				struct async_info *async;
 
 				cifsd_debug("would have to wait for getting"
 						" lock\n");
@@ -5761,6 +5761,7 @@ wait:
 						flock->fl_wait,	!flock->fl_next,
 						msecs_to_jiffies(10));
 				spin_lock(rq_lock);
+				async = smb_work->async;
 				if (async->async_status == ASYNC_CANCEL ||
 					async->async_status == ASYNC_CLOSE) {
 					posix_unblock_lock(flock);
