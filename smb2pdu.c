@@ -2947,9 +2947,9 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	return 0;
 }
 
-int smb_populate_dot_dotdot_entries(struct connection *conn,
+static int smb_populate_dot_dotdot_entries(struct connection *conn,
 	__u8 file_info_class, struct cifsd_file *dir,
-	struct cifsd_dir_info *d_info)
+	struct cifsd_dir_info *d_info, char *search_patten)
 {
 	int i, rc = 0;
 
@@ -2962,6 +2962,12 @@ int smb_populate_dot_dotdot_entries(struct connection *conn,
 				d_info->name = ".";
 			else
 				d_info->name = "..";
+
+			if (!is_matched(d_info->name, search_patten)) {
+				dir->dot_dotdot[i] = 1;
+				continue;
+			}
+
 			generic_fillattr(GET_PARENT_INO(dir), &kstat);
 
 			smb_kstat.kstat = &kstat;
@@ -3149,7 +3155,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		 * in first response
 		 */
 		rc = smb_populate_dot_dotdot_entries(conn,
-			req->FileInformationClass, dir_fp, &d_info);
+			req->FileInformationClass, dir_fp, &d_info, srch_ptr);
 		if (rc)
 			goto err_out;
 	}
@@ -3196,6 +3202,10 @@ int smb2_query_dir(struct smb_work *smb_work)
 			rc = 0;
 			continue;
 		}
+
+		/* dot and dotdot entries are already reserved */
+		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
+			continue;
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
