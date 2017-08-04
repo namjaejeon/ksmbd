@@ -4869,9 +4869,48 @@ int smb_filldir(void *__buf, const char *name, int namlen,
 	return 0;
 }
 
+/*
+ * fill_file_attributes() - fill FileAttributes of directory entry in smb_kstat.
+ * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
+ *
+ * @smb_work: smb work containing share config
+ * @path: path info
+ * @smb_kstat: cifsd kstat wrapper
+ */
+
+void fill_file_attributes(struct smb_work *smb_work,
+	struct path *path, struct smb_kstat *smb_kstat)
+{
+	/*
+	 * set default value for the case that store dos attributes is not yes
+	 * or that acl is disable in server's filesystem and the config is yes.
+	 */
+	if (S_ISDIR(smb_kstat->kstat->mode))
+		smb_kstat->file_attributes = ATTR_DIRECTORY;
+	else
+		smb_kstat->file_attributes = ATTR_ARCHIVE;
+
+	if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		char *file_attribute = NULL;
+		int rc;
+
+		rc = smb_find_cont_xattr(path,
+			XATTR_NAME_FILE_ATTRIBUTE,
+			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
+
+		if (rc > 0)
+			smb_kstat->file_attributes =
+				*((__le32 *)file_attribute);
+		else
+			cifsd_debug("fail to fill file attributes.\n");
+
+		kvfree(file_attribute);
+	}
+}
+
 /**
  * fill_create_time() - fill create time of directory entry in smb_kstat
- * if related config is not set, create time is same with change time
+ * if related config is not yes, create time is same with change time
  *
  * @smb_work: smb work containing share config
  * @path: path info
@@ -4944,6 +4983,7 @@ char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,
 
 	generic_fillattr(path.dentry->d_inode, smb_kstat->kstat);
 	fill_create_time(smb_work, &path, smb_kstat);
+	fill_file_attributes(smb_work, &path, smb_kstat);
 	memcpy(name, de->name, de->namelen);
 	name[de->namelen] = '\0';
 	path_put(&path);
@@ -4968,8 +5008,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 			cifs_UnixTimeToNT(smb_kstat->kstat->ctime));
 	info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
 	info->AllocationSize = cpu_to_le64(smb_kstat->kstat->blocks << 9);
-	info->ExtFileAttributes = S_ISDIR(smb_kstat->kstat->mode) ?
-		ATTR_DIRECTORY : ATTR_NORMAL;
+	info->ExtFileAttributes = cpu_to_le32(smb_kstat->file_attributes);
 
 	return info;
 }
