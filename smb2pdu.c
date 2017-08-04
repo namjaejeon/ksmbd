@@ -860,9 +860,9 @@ void smb2_send_interim_resp(struct smb_work *smb_work)
  *
  * Return:      converted dos mode
  */
-int smb2_get_dos_mode(struct kstat *stat, int attribute)
+__le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 {
-	int attr = 0;
+	__le32 attr = 0;
 
 	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 
@@ -870,9 +870,6 @@ int smb2_get_dos_mode(struct kstat *stat, int attribute)
 		attr = ATTR_DIRECTORY;
 	else
 		attr &= ~(ATTR_DIRECTORY);
-
-	if (!attr)
-		attr = ATTR_NORMAL;
 
 	return attr;
 }
@@ -2448,7 +2445,8 @@ reconnect:
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
-	fp->fattr = req->FileAttributes;
+	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+		le32_to_cpu(req->FileAttributes)));
 	INIT_LIST_HEAD(&fp->lock_list);
 
 	if (islink) {
@@ -2628,6 +2626,43 @@ reconnect:
 		}
 	}
 
+	if (file_present) {
+		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			char *file_attribute = NULL;
+			int i;
+
+			rc = smb_find_cont_xattr(&path,
+				 XATTR_NAME_FILE_ATTRIBUTE,
+				 XATTR_NAME_FILE_ATTRIBUTE_LEN,
+				 &file_attribute, 1);
+
+			if (rc > 0) {
+				fp->fattr = 0;
+				for (i = 0; i < rc ; i++)
+					fp->fattr +=
+					(__le32)file_attribute[i]<<(8*i);
+			}
+
+			kvfree(file_attribute);
+			rc = 0;
+		}
+	}
+
+	else {
+		/* set XATTR_NAME_FILE_ATTRIBUTE with req->FileAttributes */
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			rc = smb_store_cont_xattr(&path,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				(void *)&fp->fattr, FILE_ATTRIBUTE_LEN);
+
+			if (rc)
+				cifsd_debug("failed to store file attribute in EA\n");
+
+			rc = 0;
+		}
+	}
+
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
@@ -2635,8 +2670,7 @@ reconnect:
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
-	rsp->FileAttributes = cpu_to_le32(smb2_get_dos_mode(&stat,
-		le32_to_cpu(req->FileAttributes)));
+	rsp->FileAttributes = cpu_to_le32(fp->fattr);
 
 	rsp->Reserved2 = 0;
 
@@ -3092,7 +3126,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset = 0;
 	}
 
-	if (srch_flag & SMB2_REOPEN) {
+	if ((srch_flag & SMB2_REOPEN) || (srch_flag & SMB2_RESTART_SCANS)) {
 		cifsd_debug("Reopen the directory\n");
 		filp_close(dir_fp->filp, NULL);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
@@ -3104,14 +3138,14 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->readdir_data.used = 0;
 		dir_fp->dirent_offset = 0;
 	}
-
+/*
 	if (srch_flag & SMB2_RESTART_SCANS) {
 		cifsd_debug("SMB2 RESTART SCANS\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
 		dir_fp->readdir_data.used = 0;
 		dir_fp->dirent_offset = 0;
 	}
-
+*/
 	if (srch_flag & SMB2_INDEX_SPECIFIED && le32_to_cpu(req->FileIndex)) {
 		cifsd_debug("specified index\n");
 		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
@@ -3863,8 +3897,7 @@ int smb2_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		basic_info->Attributes = S_ISDIR(stat.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+		basic_info->Attributes = cpu_to_le32(fp->fattr);
 		basic_info->Pad1 = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(offsetof(struct smb2_file_all_info,
@@ -4850,6 +4883,24 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			attrs.ia_mtime = cifs_NTtimeToUnix(
 					le64_to_cpu(file_info->LastWriteTime));
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
+		}
+
+		if (le32_to_cpu(file_info->Attributes)) {
+			unsigned long *config_attr;
+
+			config_attr = &smb_work->tcon->share->config.attr;
+			fp->fattr = file_info->Attributes;
+			if (get_attr_store_dos(config_attr)) {
+				rc = smb_store_cont_xattr(&fp->filp->f_path,
+						XATTR_NAME_FILE_ATTRIBUTE,
+						(void *)&fp->fattr,
+						FILE_ATTRIBUTE_LEN);
+
+				if (rc)
+					cifsd_debug("failed to store file attribute in EA\n");
+
+				rc = 0;
+			}
 		}
 
 		if (attrs.ia_valid) {
