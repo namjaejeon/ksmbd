@@ -594,6 +594,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
 	struct cifsd_file *prev_fp;
+	int same_stream = 0;
 
 	/*
 	 * Lookup fp in global table, and check desired access and
@@ -603,16 +604,11 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			(unsigned long)file_inode(filp))
 		if (file_inode(filp) == GET_FP_INODE(prev_fp)) {
 			if (prev_fp->is_stream && curr_fp->is_stream) {
-				if (strcmp(prev_fp->stream_name,
-					curr_fp->stream_name)) {
+				if (strcmp(prev_fp->stream.name,
+					curr_fp->stream.name)) {
 					continue;
 				}
-
-				if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-					cifsd_err("not allow FILE_SUPERSEDE_LE if file is already opened with ADS\n");
-					rc = -ESHARE;
-					break;
-				}
+				same_stream = 1;
 			}
 
 			if (prev_fp->delete_pending) {
@@ -704,7 +700,17 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				rc = -ESHARE;
 				break;
 			}
+
 		}
+
+	if (!same_stream && !curr_fp->is_stream) {
+		if (curr_fp->cdoption == FILE_SUPERSEDE_LE ||
+			curr_fp->cdoption == FILE_OVERWRITE_LE ||
+			curr_fp->cdoption == FILE_OVERWRITE_IF_LE) {
+			smb_vfs_truncate_stream_xattr(
+				curr_fp->filp->f_path.dentry);
+		}
+	}
 
 	return rc;
 }
@@ -814,4 +820,94 @@ bool is_matched(const char *fname, const char *exp)
 		return false;
 	else
 		return true;
+}
+
+int check_invalid_char_stream(char *stream_name)
+{
+	int len, i, rc = 0;
+
+	len = strlen(stream_name);
+
+	/* Check invalid character in stream name */
+	for (i = 0; i < len; i++) {
+		if (stream_name[i] == '/' || stream_name[i] == ':' ||
+				stream_name[i] == '\\') {
+			cifsd_err("found invalid character : %c\n",
+					stream_name[i]);
+			rc = -ENOENT;
+			break;
+		}
+	}
+
+	return rc;
+}
+
+int parse_stream_name(char *filename, char **stream_name, int *s_type)
+{
+	char *stream_type;
+	char *s_name;
+	int rc = 0;
+
+	s_name = filename;
+	filename = strsep(&s_name, ":");
+	cifsd_debug("filename : %s, streams : %s\n", filename, s_name);
+	if (strchr(s_name, ':')) {
+		stream_type = s_name;
+		s_name = strsep(&stream_type, ":");
+
+		rc = check_invalid_char_stream(s_name);
+		if (rc < 0) {
+			rc = -ENOENT;
+			goto out;
+		}
+
+		cifsd_debug("stream name : %s, stream type : %s\n", s_name,
+				stream_type);
+		if (!strncasecmp("$data", stream_type, 5))
+			*s_type = DATA_STREAM;
+		else if (!strncasecmp("$index_allocation", stream_type, 17))
+			*s_type = DIR_STREAM;
+		else
+			rc = -ENOENT;
+	}
+
+	*stream_name = s_name;
+out:
+	return rc;
+}
+
+int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name,
+	int s_type)
+{
+	int stream_size;
+	char *stream_name_buf;
+	int stream_type_size = 0;
+
+	stream_size = strlen(stream_name) + XATTR_NAME_STREAM_LEN;
+
+	if (s_type == DATA_STREAM)
+		stream_type_size = 7;
+	else if (s_type == DIR_STREAM)
+		stream_type_size = 19;
+
+	stream_name_buf = kmalloc(XATTR_NAME_STREAM_LEN +
+			stream_size + stream_type_size, GFP_KERNEL);
+	memcpy(stream_name_buf, XATTR_NAME_STREAM,
+			XATTR_NAME_STREAM_LEN);
+
+	if (stream_size)
+		memcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN],
+			stream_name, stream_size);
+
+	stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+
+	if (s_type == DIR_STREAM)
+		strcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size],
+			":$INDEX_ALLOCATION");
+	else
+		strcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size],
+			":$DATA");
+
+	*xattr_stream_name = stream_name_buf;
+	return XATTR_NAME_STREAM_LEN + stream_size + stream_type_size;
 }

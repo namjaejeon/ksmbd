@@ -91,6 +91,12 @@ struct cifsd_lock {
 	struct smb_work *work;
 };
 
+struct stream {
+	char *name;
+	int type;
+	ssize_t size;
+};
+
 struct cifsd_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
@@ -120,8 +126,7 @@ struct cifsd_file {
 	__u64 create_time;
 	bool attrib_only;
 	bool is_stream;
-	char *stream_name;
-	ssize_t ssize;
+	struct stream stream;
 	struct hlist_node node;
 	struct hlist_node notify_node;
 	struct list_head queue;

@@ -348,7 +348,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
 	if (fp->is_stream)
-		kfree(fp->stream_name);
+		kfree(fp->stream.name);
 	kmem_cache_free(cifsd_filp_cache, fp);
 	ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);
@@ -423,10 +423,10 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		dir = dentry->d_parent;
 
 		if (fp->is_stream && !fp->delete_pending) {
-			err = vfs_removexattr(dentry, fp->stream_name);
+			err = vfs_removexattr(dentry, fp->stream.name);
 			if (err)
 				cifsd_err("remove xattr failed : %s\n",
-					fp->stream_name);
+					fp->stream.name);
 			goto out2;
 		}
 

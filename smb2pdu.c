@@ -726,7 +726,6 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
 	char *name, *unixname;
-	char *wild_card_pos;
 
 	if (smb_work->next_smb2_rcv_hdr_off)
 		req_hdr = (struct smb2_hdr *)((char *)req_hdr
@@ -738,19 +737,15 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 		cifsd_err("failed to get name %ld\n", PTR_ERR(name));
 		if (PTR_ERR(name) == -ENOMEM)
 			rsp_hdr->Status = NT_STATUS_NO_MEMORY;
-		else
+		else {
+			name = ERR_PTR(-EIO);
 			rsp_hdr->Status = NT_STATUS_OBJECT_NAME_INVALID;
+		}
 		return name;
 	}
 
 	/* change it to absolute unix name */
 	convert_delimiter(name, 0);
-
-	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
-	wild_card_pos = strrchr(name, '*');
-
-	if (wild_card_pos != NULL)
-		*wild_card_pos = '\0';
 
 	unixname = convert_to_unix_name(name, req_hdr->Id.SyncId.TreeId);
 	kfree(name);
@@ -1865,31 +1860,27 @@ int smb2_open(struct smb_work *smb_work)
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
-	umode_t mode = 0;
-	bool file_present = true, islink = false;
-	int oplock, open_flags = 0, file_info = 0, len = 0;
-	int volatile_id = 0;
-	uint64_t persistent_id = 0;
-	int rc = 0;
-	char *name = NULL, *context_name, *lname = NULL, *pathname = NULL;
 	struct create_context *context;
-	int durable_open = false;
-	int durable_reconnect = false, durable_reopened = false;
 	struct create_durable *recon_state;
 	struct cifsd_durable_state *durable_state;
 	struct lease_ctx_info lc;
-	int maximal_access = 0;
-	int contxt_cnt = 0;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
 	struct create_ea_buf_req *ea_buf = NULL;
-	int query_disk_id = 0;
-	char *stream = NULL;
-	char *stream_name = NULL;
-	int stream_size = 0;
-	int next_off = 0;
+	umode_t mode = 0;
 	__le32 *next_ptr = NULL;
-	int dlease = 0;
+	uint64_t persistent_id = 0;
+	int oplock, open_flags = 0, file_info = 0, len = 0, dlease = 0;
+	int volatile_id = 0;
+	int rc = 0;
+	int durable_open = false;
+	int durable_reconnect = false, durable_reopened = false;
+	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
+	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
+	int next_off = 0;
+	char *name = NULL, *context_name, *lname = NULL, *pathname = NULL;
+	char *stream_name = NULL, *xattr_stream_name = NULL;
+	bool file_present = true, islink = false;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -1976,6 +1967,13 @@ int smb2_open(struct smb_work *smb_work)
 		cifsd_err("Invalid file attribute : 0x%x\n",
 			le32_to_cpu(req->FileAttributes));
 		rc = -EINVAL;
+		goto err_out1;
+	}
+
+	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
+			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
+		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
+		rc = -EIO;
 		goto err_out1;
 	}
 
@@ -2114,38 +2112,9 @@ int smb2_open(struct smb_work *smb_work)
 
 	cifsd_debug("converted name = %s\n", name);
 	if (strchr(name, ':')) {
-		char *data;
-
-		stream = name;
-		name = strsep(&stream, ":");
-		cifsd_debug("filename : %s, streams : %s\n", name, stream);
-		if (strchr(stream, ':')) {
-			int len, i;
-
-			data = stream;
-			len = get_pos_strnstr(data, ":$", strlen(data));
-
-			/* Check invalid character in stream name */
-			for (i = 0; i < len; i++) {
-				if (stream[i] == '/' || stream[i] == ':' ||
-					stream[i] == '\\') {
-					cifsd_err("found invalid character : %c\n",
-						stream[i]);
-					rc = -ENOENT;
-					goto err_out1;
-				}
-			}
-
-			stream = strsep(&data, ":");
-			cifsd_debug("streams : %s, data : %s\n", stream,
-				data);
-			if (strncasecmp("$data", data, 5)) {
-				rsp->hdr.Status =
-					NT_STATUS_OBJECT_NAME_NOT_FOUND;
-				rc = -EIO;
-				goto err_out1;
-			}
-		}
+		rc = parse_stream_name(name, &stream_name, &s_type);
+		if (rc < 0)
+			goto err_out1;
 	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
@@ -2172,10 +2141,27 @@ int smb2_open(struct smb_work *smb_work)
 	} else
 		generic_fillattr(path.dentry->d_inode, &stat);
 
+	if (stream_name) {
+		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+			if (s_type == DATA_STREAM) {
+				rc = -EIO;
+				rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
+				goto err_out;
+			}
+		} else {
+			if (S_ISDIR(stat.mode) && s_type == DATA_STREAM) {
+				rc = -EIO;
+				rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
+				goto err_out;
+			}
+		}
+	}
+
 	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE
-		&& S_ISDIR(stat.mode)) {
-		cifsd_debug("Can't open dir %s, request is to open file\n",
-			      name);
+		&& S_ISDIR(stat.mode) &&
+		!(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+		cifsd_err("Can't open dir %s, request is to open file : %x\n",
+			      name, req->CreateOptions);
 		rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
 		rc = -EIO;
 		goto err_out;
@@ -2184,22 +2170,6 @@ int smb2_open(struct smb_work *smb_work)
 	if (file_present && req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
 		!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
-		rc = -EIO;
-		goto err_out;
-	}
-
-	if (stream && (req->CreateOptions & FILE_DIRECTORY_FILE_LE)) {
-		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
-		rc = -EIO;
-		if (file_present)
-			goto err_out;
-		else
-			goto err_out1;
-	}
-
-	if (stream && !(req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
-			S_ISDIR(stat.mode)) {
-		rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
 		rc = -EIO;
 		goto err_out;
 	}
@@ -2295,6 +2265,7 @@ int smb2_open(struct smb_work *smb_work)
 				rc);
 			goto err_out;
 		}
+
 	}
 
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
@@ -2456,32 +2427,21 @@ reconnect:
 		fp->islink = islink;
 	}
 
-	if (!S_ISDIR(file_inode(filp)->i_mode)) {
-		/* Create default stream in xattr */
-		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
-	}
-
-	if (stream) {
-		stream_size = strlen(stream);
-		stream_name = kmalloc(XATTR_NAME_STREAM_LEN + stream_size,
-				GFP_KERNEL);
-		memcpy(stream_name, XATTR_NAME_STREAM, XATTR_NAME_STREAM_LEN);
-
-		if (stream_size)
-			memcpy(&stream_name[XATTR_NAME_STREAM_LEN], stream,
-				stream_size);
-		stream_name[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+	if (stream_name) {
+		xattr_stream_size = construct_xattr_stream_name(stream_name,
+			&xattr_stream_name, s_type);
 
 		fp->is_stream = true;
-		fp->stream_name = stream_name;
-		fp->ssize = XATTR_NAME_STREAM_LEN + stream_size;
+		fp->stream.name = xattr_stream_name;
+		fp->stream.type = s_type;
+		fp->stream.size = xattr_stream_size;
 
 		/* Check if there is stream prefix in xattr space */
-		rc = smb_find_cont_xattr(&path, stream_name,
-				stream_size + XATTR_NAME_STREAM_LEN, NULL, 0);
+		rc = smb_find_cont_xattr(&path, xattr_stream_name,
+				xattr_stream_size, NULL, 0);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_err("failed to find stream in EA, rc : %d\n",
+				cifsd_err("failed to find stream name in xattr, rc : %d\n",
 						rc);
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -2489,15 +2449,7 @@ reconnect:
 				goto err_out;
 			}
 
-			rc = smb_store_cont_xattr(&path, stream_name,
-					NULL, 0);
-			if (rc < 0) {
-				cifsd_err("failed to store stream in EA, rc :%d\n",
-						rc);
-				rc = -EINVAL;
-				goto err_out;
-			}
-			file_info = FILE_CREATED;
+			store_stream = 1;
 		}
 		rc = 0;
 	}
@@ -2559,6 +2511,22 @@ reconnect:
 
 	/* Add fp to global file table using inode key. */
 	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
+
+	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
+		/* Create default data stream in xattr */
+		smb_store_cont_xattr(&path, XATTR_NAME_DEFAULT_DATA_STREAM,
+				NULL, 0);
+	}
+
+	if (store_stream) {
+		rc = smb_store_cont_xattr(&path, xattr_stream_name, NULL, 0);
+		if (rc < 0) {
+			cifsd_err("failed to store stream name in xattr, rc :%d\n",
+					rc);
+		}
+		file_info = FILE_CREATED;
+		rc = 0;
+	}
 
 	/* Get Persistent-ID */
 	if (durable_reopened == false) {
@@ -3993,9 +3961,9 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_STREAM_INFORMATION:
 	{
 		struct smb2_file_stream_info *file_info;
-		char *stream_name, *xattr_list = NULL, *stream_buf;
+		char *stream_name, *xattr_list = NULL;
 		struct path *path = &filp->f_path;
-		ssize_t xattr_list_len, value_len;
+		ssize_t xattr_list_len;
 		int nbytes = 0, streamlen, next;
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
@@ -4024,38 +3992,16 @@ int smb2_info_file(struct smb_work *smb_work)
 
 			file_info = (struct smb2_file_stream_info *)
 				&rsp->Buffer[nbytes];
-
-			if (!streamlen) {
-				stream_buf = kmalloc(sizeof("::$DATA"),
-					GFP_KERNEL);
-				if (!stream_buf)
-					break;
-				sprintf(stream_buf, "%s", "::$DATA");
-				streamlen = sizeof("::$DATA");
-			} else {
-				stream_buf = kmalloc(7 + streamlen, GFP_KERNEL);
-				sprintf(stream_buf, ":%s%s",
-					&stream_name[XATTR_USER_PREFIX_LEN +
-					STREAM_PREFIX_LEN], ":$DATA");
-				streamlen += 7;
-			}
-
 			streamlen  = smbConvertToUTF16(
 					(__le16 *)file_info->StreamName,
-					stream_buf,
+					&stream_name[XATTR_USER_PREFIX_LEN +
+					STREAM_PREFIX_LEN],
 					streamlen, conn->local_nls, 0);
 			streamlen *= 2;
-			kfree(stream_buf);
 
 			file_info->StreamNameLength = cpu_to_le32(streamlen);
-
-			value_len = smb_vfs_getxattr(path->dentry, stream_name,
-				NULL, 0);
-			if (value_len < 0)
-				break;
-
 			file_info->StreamSize =
-				cpu_to_le64(streamlen + value_len);
+				cpu_to_le64(streamlen);
 			file_info->StreamAllocationSize =
 				cpu_to_le64(XATTR_SIZE_MAX);
 
@@ -4500,6 +4446,8 @@ int smb2_set_info(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		else if (rc == -ESHARE)
 			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
+		else if (rc == -ENOENT)
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
 		else if (rsp->hdr.Status == 0)
 			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
@@ -4700,6 +4648,40 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 			smb_work);
 	if (IS_ERR(new_name)) {
 		rc = PTR_ERR(new_name);
+		goto out;
+	}
+
+
+	if (strchr(new_name, ':')) {
+		int s_type;
+		char *xattr_stream_name, *stream_name = NULL;
+		size_t xattr_stream_size;
+		int len;
+
+		rc = parse_stream_name(new_name, &stream_name, &s_type);
+		if (rc < 0)
+			goto out;
+
+		len = strlen(new_name);
+		if (new_name[len - 1] != '/') {
+			cifsd_err("not allow base filename in rename\n");
+			rc = -ESHARE;
+			goto out;
+		}
+
+		xattr_stream_size = construct_xattr_stream_name(stream_name,
+			&xattr_stream_name, 1);
+
+		rc = smb_store_cont_xattr(&filp->f_path, xattr_stream_name,
+				NULL, 0);
+		if (rc < 0) {
+			cifsd_err("failed to store stream name in xattr, rc :%d\n",
+					rc);
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			rc = -EINVAL;
+			goto out;
+		}
+
 		goto out;
 	}
 
@@ -4940,6 +4922,9 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			return -EACCES;
 		}
 
+		if (fp->is_stream)
+			goto next;
+
 		parent_fp = find_fp_in_hlist_using_inode(GET_PARENT_INO(fp));
 		if (parent_fp) {
 			if (parent_fp->daccess & FILE_DELETE_LE) {
@@ -4952,7 +4937,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				return -ESHARE;
 			}
 		}
-
+next:
 		rc = smb2_rename(smb_work, filp, id);
 		break;
 	}

@@ -1241,7 +1241,7 @@ int smb_grant_oplock(struct smb_work *work, int *oplock, int id,
 		if (ofile->inode == inode) {
 			if (fp->is_stream && (!ofile->stream_name ||
 				strncasecmp(ofile->stream_name,
-				fp->stream_name, fp->ssize)))
+				fp->stream.name, fp->stream.size)))
 				continue;
 			oplocked = true;
 			break;
@@ -1282,7 +1282,7 @@ no_oplock:
 		list_add(&ofile->i_list, &ofile_list);
 		fp->ofile = ofile;
 		if (fp->is_stream)
-			ofile->stream_name = fp->stream_name;
+			ofile->stream_name = fp->stream.name;
 		mutex_unlock(&ofile_list_lock);
 		return err;
 	}

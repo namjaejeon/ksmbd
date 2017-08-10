@@ -227,6 +227,16 @@ extern struct list_head global_lock_list;
 /* MAXIMUM KMEM DATA SIZE ORDER */
 #define PAGE_ALLOC_KMEM_ORDER	2
 
+/* STREAM related macros */
+#define DEF_DATA_STREAM_TYPE "stream.::$DATA"
+#define DEF_DIR_STREAM_TYPE "stream.::$INDEX_ALLOCATION"
+
+#define XATTR_NAME_DEFAULT_DATA_STREAM (XATTR_USER_PREFIX DEF_DATA_STREAM_TYPE)
+#define XATTR_NAME_DEFAULT_DIR_STREAM (XATTR_USER_PREFIX DEF_DIR_STREAM_TYPE)
+
+#define DATA_STREAM	1
+#define DIR_STREAM	2
+
 enum statusEnum {
 	CifsNew = 0,
 	CifsGood,
@@ -587,6 +597,10 @@ extern void remove_async_id(__u64 async_id);
 extern char *alloc_data_mem(size_t size);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);
+extern int check_invalid_stream_char(char *stream_name);
+extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
+extern int construct_xattr_stream_name(char *stream_name,
+	char **xattr_stream_name, int s_type);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
@@ -627,6 +641,7 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
 int smb_vfs_alloc_size(struct file *filp, loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
+int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct connection *conn);

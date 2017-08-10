@@ -160,8 +160,8 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		cifsd_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, &stream_buf, 1);
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
 		if (v_len < 0) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(rbuf);
@@ -263,8 +263,8 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 			count = (*pos + count) - XATTR_SIZE_MAX;
 		}
 
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, &stream_buf, 1);
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
 		if (v_len < 0) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(stream_buf);
@@ -287,7 +287,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 		memcpy(&stream_buf[*pos], buf, count);
 
-		err = smb_store_cont_xattr(&filp->f_path, fp->stream_name,
+		err = smb_store_cont_xattr(&filp->f_path, fp->stream.name,
 			(void *)stream_buf, size);
 		if (err < 0)
 			return err;
@@ -1068,6 +1068,44 @@ int smb_vfs_truncate_xattr(struct dentry *dentry)
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
+
+		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
+					STREAM_PREFIX_LEN))
+			continue;
+
+		err = vfs_removexattr(dentry, name);
+		if (err)
+			cifsd_err("remove xattr failed : %s\n", name);
+	}
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+
+	return err;
+}
+
+int smb_vfs_truncate_stream_xattr(struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t xattr_list_len;
+	int err = 0;
+
+	xattr_list_len = smb_vfs_listxattr(dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		cifsd_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+
+		if (strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
+					STREAM_PREFIX_LEN))
+			continue;
 
 		err = vfs_removexattr(dentry, name);
 		if (err)
