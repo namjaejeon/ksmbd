@@ -224,6 +224,14 @@ extern struct list_head global_lock_list;
 #define XATTR_NAME_STREAM	(XATTR_USER_PREFIX STREAM_PREFIX)
 #define XATTR_NAME_STREAM_LEN	(sizeof(XATTR_NAME_STREAM) - 1)
 
+/* FILE ATTRIBUITE XATTR PREFIX */
+#define FILE_ATTRIBUTE_PREFIX   "file.attribute."
+#define FILE_ATTRIBUTE_PREFIX_LEN   (sizeof(FILE_ATTRIBUTE_PREFIX) - 1)
+#define FILE_ATTRIBUTE_LEN      (sizeof(__u32))
+#define XATTR_NAME_FILE_ATTRIBUTE   (XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX)
+#define XATTR_NAME_FILE_ATTRIBUTE_LEN \
+	(sizeof(XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX) - 1)
+
 /* MAXIMUM KMEM DATA SIZE ORDER */
 #define PAGE_ALLOC_KMEM_ORDER	2
 
@@ -485,6 +493,7 @@ struct cifsd_dir_info {
 struct smb_kstat {
 	struct kstat *kstat;
 	__u64 create_time;
+	__le32 file_attributes;
 };
 
 #define cifsd_debug(fmt, ...)					\
@@ -679,7 +688,10 @@ int smb_get_shortname(struct connection *conn, char *longname,
 char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,
 		struct smb_dirent *de, char *dpath);
 void *fill_common_info(char **p, struct smb_kstat *smb_kstat);
+/* fill SMB specific fields when smb2 query dir is requested */
 void fill_create_time(struct smb_work *smb_work,
+		struct path *path, struct smb_kstat *smb_kstat);
+void fill_file_attributes(struct smb_work *smb_work,
 		struct path *path, struct smb_kstat *smb_kstat);
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
