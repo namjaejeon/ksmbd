@@ -4896,12 +4896,8 @@ void fill_create_time(struct smb_work *smb_work,
 			XATTR_NAME_CREATION_TIME,
 			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
-		if (xattr_len > 0) {
-			smb_kstat->create_time = 0;
-			for (i = 0; i < xattr_len ; i++)
-				smb_kstat->create_time +=
-				((__u64)create_time[i]) << (8*i);
-		}
+		if (xattr_len > 0)
+			smb_kstat->create_time = *((u64 *)create_time);
 
 		kvfree(create_time);
 	}

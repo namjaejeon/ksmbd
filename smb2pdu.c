@@ -2575,12 +2575,9 @@ reconnect:
 			rc = smb_find_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
-			if (rc > 0) {
-				fp->create_time = 0;
-				for (i = 0; i < rc ; i++)
-					fp->create_time +=
-					(__u64)create_time[i] << (8*i);
-			}
+			if (rc > 0)
+				fp->create_time = *((__u64 *)create_time);
+
 			kvfree(create_time);
 			rc = 0;
 		}
