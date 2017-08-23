@@ -2406,7 +2406,7 @@ reconnect:
 		goto err_out;
 	}
 
-	if (S_ISDIR(stat.mode))
+	if (file_present && S_ISDIR(stat.mode))
 		fp->readdir_data.dirent = NULL;
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
@@ -2416,8 +2416,6 @@ reconnect:
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
-	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
-		le32_to_cpu(req->FileAttributes)));
 	INIT_LIST_HEAD(&fp->lock_list);
 
 	if (islink) {
@@ -2591,6 +2589,9 @@ reconnect:
 			rc = 0;
 		}
 	}
+
+	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+		le32_to_cpu(req->FileAttributes)));
 
 	if (file_present) {
 		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
