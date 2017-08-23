@@ -51,6 +51,8 @@
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 #define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
+#define S_DEL_ON_CLS	131072
+
 struct connection;
 struct cifsd_sess;
 
@@ -109,8 +111,6 @@ struct cifsd_file {
 	int	dirent_offset;
 	/* oplock info */
 	struct ofile_info *ofile;
-	bool delete_on_close;
-	bool delete_pending;
 	bool is_nt_open;
 	bool lease_granted;
 	char LeaseKey[16];

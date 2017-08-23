@@ -371,6 +371,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
+	struct inode *inode;
 	int err;
 
 	fp = get_id_from_fidtable(sess, id);
@@ -418,11 +419,17 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		}
 	}
 
-	if (fp->delete_on_close) {
+	inode = GET_FP_INODE(fp);
+	iput(inode);
+
+	if ((inode->i_flags & S_DEL_ON_CLS) &&
+		(atomic_read(&inode->i_count) == 1)) {
 		dentry = filp->f_path.dentry;
 		dir = dentry->d_parent;
 
-		if (fp->is_stream && !fp->delete_pending) {
+		inode->i_flags &= ~S_DEL_ON_CLS;
+
+		if (fp->is_stream) {
 			err = vfs_removexattr(dentry, fp->stream.name);
 			if (err)
 				cifsd_err("remove xattr failed : %s\n",

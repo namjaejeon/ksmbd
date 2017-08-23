@@ -1908,7 +1908,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 			fp->is_nt_open = 1;
 		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
 				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
-			fp->delete_on_close = 1;
+			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
 	}
 
 	/* open success, send back response */
@@ -4922,7 +4922,6 @@ void fill_create_time(struct smb_work *smb_work,
 {
 	char *create_time = NULL;
 	int xattr_len;
-	int i;
 
 	/*
 	 * if "store dos attributes" conf is not yes,
@@ -5939,7 +5938,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 				NT_STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
 		}
-		fp->delete_on_close = 1;
+		GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
 	}
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;

@@ -573,23 +573,6 @@ int get_pos_strnstr(const char *s1, const char *s2, size_t len)
 	return 0;
 }
 
-int smb_check_delete_pending(struct file *filp, struct cifsd_file *curr_fp)
-{
-	int rc = 0;
-	struct cifsd_file *prev_fp;
-
-	hash_for_each_possible(global_name_table, prev_fp, node,
-			(unsigned long)file_inode(filp))
-		if (file_inode(filp) == GET_FP_INODE(prev_fp)) {
-			if (prev_fp->delete_pending) {
-				rc = -EBUSY;
-				break;
-			}
-		}
-
-	return rc;
-}
-
 int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
@@ -611,11 +594,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				same_stream = 1;
 			}
 
-			if (prev_fp->delete_pending) {
-				rc = -EBUSY;
-				break;
-			}
-
 			if (prev_fp->attrib_only != curr_fp->attrib_only)
 				continue;
 
@@ -627,12 +605,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 					prev_fp->saccess, curr_fp->daccess);
 				rc = -ESHARE;
 				break;
-			}
-
-			if (prev_fp->is_stream && curr_fp->delete_on_close) {
-				prev_fp->delete_pending = 1;
-				prev_fp->delete_on_close = 1;
-				curr_fp->delete_on_close = 0;
 			}
 
 			/*

@@ -2409,9 +2409,6 @@ reconnect:
 	if (S_ISDIR(stat.mode))
 		fp->readdir_data.dirent = NULL;
 
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
-		fp->delete_on_close = 1;
-
 	fp->cdoption = req->CreateDisposition;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
@@ -2462,9 +2459,12 @@ reconnect:
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
 	/* Check delete pending among previous fp before oplock break */
-	rc = smb_check_delete_pending(filp, fp);
-	if (rc < 0)
+	if (GET_FP_INODE(fp)->i_flags & S_DEL_ON_CLS) {
+		rc = -EBUSY;
 		goto err_out;
+	}
+	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
+		GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
 
 	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
 		!S_ISDIR(file_inode(filp)->i_mode)) {
@@ -2559,6 +2559,8 @@ reconnect:
 		i_uid_write(GET_FP_INODE(fp), sess->usr->uid.val);
 		i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
 	}
+	igrab(GET_FP_INODE(fp));
+
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
 	rsp->Reserved = 0;
@@ -2568,7 +2570,6 @@ reconnect:
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
 			char *create_time = NULL;
-			int i; /* for loop index */
 
 			rc = smb_find_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
@@ -3085,7 +3086,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset = 0;
 	}
 
-	if ((srch_flag & SMB2_REOPEN) || (srch_flag & SMB2_RESTART_SCANS)) {
+	if (srch_flag & SMB2_REOPEN) {
 		cifsd_debug("Reopen the directory\n");
 		filp_close(dir_fp->filp, NULL);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
@@ -3094,6 +3095,13 @@ int smb2_query_dir(struct smb_work *smb_work)
 			rc = -EINVAL;
 			goto err_out;
 		}
+		dir_fp->readdir_data.used = 0;
+		dir_fp->dirent_offset = 0;
+	}
+
+	if (srch_flag & SMB2_RESTART_SCANS) {
+		cifsd_debug("SMB2 RESTART SCANS\n");
+		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
 		dir_fp->readdir_data.used = 0;
 		dir_fp->dirent_offset = 0;
 	}
@@ -4996,8 +5004,7 @@ next:
 				rsp->hdr.Status = NT_STATUS_DIRECTORY_NOT_EMPTY;
 				rc = -1;
 			} else
-				fp->delete_on_close = true;
-				fp->delete_pending = true;
+				GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
 		}
 		break;
 	}

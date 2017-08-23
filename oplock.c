@@ -1330,8 +1330,9 @@ no_oplock:
 		return 0;
 	}
 
-	if (opinfo_old->lock_type != SMB2_OPLOCK_LEVEL_BATCH &&
-		(fp->delete_on_close || *oplock == SMB2_OPLOCK_LEVEL_NONE)) {
+	if ((opinfo_old->lock_type != SMB2_OPLOCK_LEVEL_BATCH) &&
+		((inode->i_flags & S_DEL_ON_CLS) ||
+			(*oplock == SMB2_OPLOCK_LEVEL_NONE))) {
 		*oplock = SMB2_OPLOCK_LEVEL_NONE;
 		mutex_unlock(&ofile_list_lock);
 		kfree(opinfo_new);
