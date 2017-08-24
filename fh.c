@@ -420,22 +420,24 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	}
 
 	inode = GET_FP_INODE(fp);
-	iput(inode);
+	dentry = filp->f_path.dentry;
+	if (!fp->is_stream)
+		atomic_dec(&inode->i_count);
+	else if (inode->i_flags & S_DEL_ON_CLS_STREAM) {
+		inode->i_flags &= ~S_DEL_ON_CLS_STREAM;
+		err = vfs_removexattr(dentry, fp->stream.name);
+		if (err)
+			cifsd_err("remove xattr failed : %s\n",
+				fp->stream.name);
+
+		goto out2;
+	}
 
 	if ((inode->i_flags & S_DEL_ON_CLS) &&
 		(atomic_read(&inode->i_count) == 1)) {
-		dentry = filp->f_path.dentry;
 		dir = dentry->d_parent;
 
 		inode->i_flags &= ~S_DEL_ON_CLS;
-
-		if (fp->is_stream) {
-			err = vfs_removexattr(dentry, fp->stream.name);
-			if (err)
-				cifsd_err("remove xattr failed : %s\n",
-					fp->stream.name);
-			goto out2;
-		}
 
 		dget(dentry);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)

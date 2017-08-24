@@ -2461,8 +2461,12 @@ reconnect:
 		rc = -EBUSY;
 		goto err_out;
 	}
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE)
-		GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+		if (fp->is_stream)
+			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS_STREAM;
+		else
+			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+	}
 
 	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
 		!S_ISDIR(file_inode(filp)->i_mode)) {
@@ -2557,7 +2561,9 @@ reconnect:
 		i_uid_write(GET_FP_INODE(fp), sess->usr->uid.val);
 		i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
 	}
-	igrab(GET_FP_INODE(fp));
+
+	if (!fp->is_stream)
+		igrab(GET_FP_INODE(fp));
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;

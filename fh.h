@@ -51,7 +51,8 @@
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 #define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
-#define S_DEL_ON_CLS	131072
+#define S_DEL_ON_CLS		131072
+#define S_DEL_ON_CLS_STREAM	262144
 
 struct connection;
 struct cifsd_sess;
