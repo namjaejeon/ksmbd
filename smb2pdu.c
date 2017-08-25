@@ -2514,8 +2514,7 @@ reconnect:
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
-		smb_store_cont_xattr(&path, XATTR_NAME_DEFAULT_DATA_STREAM,
-				NULL, 0);
+		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
 	}
 
 	if (store_stream) {
@@ -3993,7 +3992,8 @@ int smb2_info_file(struct smb_work *smb_work)
 	case FILE_STREAM_INFORMATION:
 	{
 		struct smb2_file_stream_info *file_info;
-		char *stream_name, *xattr_list = NULL;
+		char *stream_name, *xattr_list = NULL, *stream_buf;
+		char *stream_type;
 		struct path *path = &filp->f_path;
 		ssize_t xattr_list_len;
 		int nbytes = 0, streamlen, next;
@@ -4022,12 +4022,27 @@ int smb2_info_file(struct smb_work *smb_work)
 			streamlen = strlen(stream_name) - (XATTR_USER_PREFIX_LEN
 				+ STREAM_PREFIX_LEN);
 
+			if (fp->stream.type == 2) {
+				streamlen += 17;
+				stream_type = "$INDEX_ALLOCATION";
+			} else {
+				streamlen += 5;
+				stream_type = "$DATA";
+			}
+
+			stream_buf = kmalloc(streamlen + 1, GFP_KERNEL);
+			if (!stream_buf)
+				break;
+
+			streamlen = sprintf(stream_buf, ":%s:%s",
+				&stream_name[XATTR_NAME_STREAM_LEN],
+				stream_type);
+
 			file_info = (struct smb2_file_stream_info *)
 				&rsp->Buffer[nbytes];
 			streamlen  = smbConvertToUTF16(
 					(__le16 *)file_info->StreamName,
-					&stream_name[XATTR_USER_PREFIX_LEN +
-					STREAM_PREFIX_LEN],
+					stream_buf,
 					streamlen, conn->local_nls, 0);
 			streamlen *= 2;
 

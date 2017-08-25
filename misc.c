@@ -511,7 +511,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags)
 {
-	char *name, *xattr_list = NULL, *tmp_a = NULL, *tmp_b = NULL;
+	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
@@ -523,21 +523,10 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 		goto out;
 	}
 
-	tmp_a = kmalloc(p_len, GFP_KERNEL);
-	tmp_b = kmalloc(p_len, GFP_KERNEL);
-	if (!tmp_a || !tmp_b) {
-		xattr_list_len = -ENOMEM;
-		goto out;
-	}
-
-	memcpy(tmp_a, prefix, p_len);
-
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
-		memcpy(tmp_b, name, p_len);
-
-		if (strncasecmp(tmp_a, tmp_b, p_len))
+		if (strncasecmp(prefix, name, p_len))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
@@ -549,8 +538,6 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 out:
 	if (xattr_list)
 		vfree(xattr_list);
-	kfree(tmp_a);
-	kfree(tmp_b);
 	return value_len;
 }
 
@@ -848,20 +835,13 @@ out:
 	return rc;
 }
 
-int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name,
-	int s_type)
+int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 {
 	int stream_size;
 	char *stream_name_buf;
 	int stream_type_size = 0;
 
 	stream_size = strlen(stream_name) + XATTR_NAME_STREAM_LEN;
-
-	if (s_type == DATA_STREAM)
-		stream_type_size = 7;
-	else if (s_type == DIR_STREAM)
-		stream_type_size = 19;
-
 	stream_name_buf = kmalloc(XATTR_NAME_STREAM_LEN +
 			stream_size + stream_type_size, GFP_KERNEL);
 	memcpy(stream_name_buf, XATTR_NAME_STREAM,
@@ -873,13 +853,6 @@ int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name,
 
 	stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
 
-	if (s_type == DIR_STREAM)
-		strcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size],
-			":$INDEX_ALLOCATION");
-	else
-		strcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size],
-			":$DATA");
-
 	*xattr_stream_name = stream_name_buf;
-	return XATTR_NAME_STREAM_LEN + stream_size + stream_type_size;
+	return XATTR_NAME_STREAM_LEN + stream_size;
 }
