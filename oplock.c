@@ -1193,7 +1193,7 @@ int check_same_lease_key_list(struct cifsd_sess *sess,
 	}
 
 	if (err < 0)
-		cifsd_err("found same lease key is already used in other files\n");
+		cifsd_debug("found same lease key is already used in other files\n");
 
 	return err;
 }
