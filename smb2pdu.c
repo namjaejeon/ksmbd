@@ -737,10 +737,8 @@ smb2_get_name(const char *src, const int maxlen, struct smb_work *smb_work)
 		cifsd_err("failed to get name %ld\n", PTR_ERR(name));
 		if (PTR_ERR(name) == -ENOMEM)
 			rsp_hdr->Status = NT_STATUS_NO_MEMORY;
-		else {
-			name = ERR_PTR(-EIO);
+		else
 			rsp_hdr->Status = NT_STATUS_OBJECT_NAME_INVALID;
-		}
 		return name;
 	}
 
@@ -2114,6 +2112,10 @@ int smb2_open(struct smb_work *smb_work)
 			goto err_out1;
 	}
 
+	rc = check_invalid_char(name);
+	if (rc < 0)
+		goto err_out1;
+
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		/*
 		 * On delete request, instead of following up, need to
@@ -2422,7 +2424,7 @@ reconnect:
 
 	if (stream_name) {
 		xattr_stream_size = construct_xattr_stream_name(stream_name,
-			&xattr_stream_name, s_type);
+			&xattr_stream_name);
 
 		fp->is_stream = true;
 		fp->stream.name = xattr_stream_name;
@@ -4717,7 +4719,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 		}
 
 		xattr_stream_size = construct_xattr_stream_name(stream_name,
-			&xattr_stream_name, 1);
+			&xattr_stream_name);
 
 		rc = smb_store_cont_xattr(&filp->f_path, xattr_stream_name,
 				NULL, 0);

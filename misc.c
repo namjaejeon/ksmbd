@@ -781,12 +781,48 @@ bool is_matched(const char *fname, const char *exp)
 		return true;
 }
 
+/*
+ * is_char_allowed() - check for valid character
+ * @ch:		input character to be checked
+ *
+ * Return:	1 if char is allowed, otherwise 0
+ */
+static inline int is_char_allowed(char *ch)
+{
+	/* check for control chars, wildcards etc. */
+	if (!(*ch & 0x80) &&
+		(*ch <= 0x1f ||
+		 *ch == '?' || *ch == '"' || *ch == '<' ||
+		 *ch == '>' || *ch == '|' || *ch == '*'))
+		return 0;
+
+	return 1;
+}
+
+int check_invalid_char(char *filename)
+{
+	int len, i, rc = 0;
+
+	len = strlen(filename);
+
+	/* Check invalid character in stream name */
+	for (i = 0; i < len; i++) {
+		if (!is_char_allowed(&filename[i])) {
+			cifsd_err("found invalid character : %c\n",
+					filename[i]);
+			rc = -ENOENT;
+			break;
+		}
+	}
+
+	return rc;
+}
+
 int check_invalid_char_stream(char *stream_name)
 {
 	int len, i, rc = 0;
 
 	len = strlen(stream_name);
-
 	/* Check invalid character in stream name */
 	for (i = 0; i < len; i++) {
 		if (stream_name[i] == '/' || stream_name[i] == ':' ||

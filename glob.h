@@ -603,9 +603,10 @@ extern char *alloc_data_mem(size_t size);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);
 extern int check_invalid_stream_char(char *stream_name);
+extern int check_invalid_char(char *filename);
 extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
 extern int construct_xattr_stream_name(char *stream_name,
-	char **xattr_stream_name, int s_type);
+	char **xattr_stream_name);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
