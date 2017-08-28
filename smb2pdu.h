@@ -879,6 +879,20 @@ struct smb2_query_directory_rsp {
 #define SMB2_O_INFO_SECURITY	0x03
 #define SMB2_O_INFO_QUOTA	0x04
 
+/* Security info type additionalinfo flags. See MS-SMB2 (2.2.37) or MS-DTYP */
+#define OWNER_SECINFO   0x00000001
+#define GROUP_SECINFO   0x00000002
+#define DACL_SECINFO   0x00000004
+#define SACL_SECINFO   0x00000008
+#define LABEL_SECINFO   0x00000010
+#define ATTRIBUTE_SECINFO   0x00000020
+#define SCOPE_SECINFO   0x00000040
+#define BACKUP_SECINFO   0x00010000
+#define UNPROTECTED_SACL_SECINFO   0x10000000
+#define UNPROTECTED_DACL_SECINFO   0x20000000
+#define PROTECTED_SACL_SECINFO   0x40000000
+#define PROTECTED_DACL_SECINFO   0x80000000
+
 struct smb2_query_info_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 41 */
@@ -1313,9 +1327,11 @@ extern int smb2_oplock_break(struct smb_work *smb_work);
 extern int smb2_notify(struct smb_work *smb_work);
 
 /* smb2 sub command handlers */
-
-extern int smb2_info_filesystem(struct smb_work *smb_work);
-extern int smb2_info_file(struct smb_work *smb_work);
+extern int smb2_get_info_filesystem(struct smb_work *smb_work);
+extern int smb2_get_info_file(struct smb_work *smb_work);
 extern int smb2_set_info_file(struct smb_work *smb_work);
+extern int smb2_get_ea(struct smb_work *smb_work, struct path *path,
+		void *rq, void *resp, void *resp_org);
 extern int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path);
+
 #endif				/* _SMB2PDU_SERVER_H */

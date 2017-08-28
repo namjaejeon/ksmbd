@@ -24,6 +24,7 @@
 #include "smb2pdu.h"
 #include "smbfsctl.h"
 #include "oplock.h"
+#include "cifsacl.h"
 
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
@@ -2360,6 +2361,39 @@ int smb2_open(struct smb_work *smb_work)
 			query_disk_id = 1;
 		}
 
+#ifdef CONFIG_CIFSD_ACL
+		context = smb2_find_context_vals(req, SMB2_CREATE_SD_BUFFER);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifsd_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
+			cifsd_err("Create SMB2_CREATE_SD_BUFFER\n");
+
+			if (!(fp->daccess & FILE_WRITE_DAC_LE)) {
+				rc = -EACCES;
+				goto err_out1;
+			}
+
+			if (open_flags & O_CREAT) {
+				struct cifs_ntsd *pntsd;
+				struct cifsd_fattr fattr;
+				struct inode *inode = GET_FP_INODE(fp);
+
+				pntsd = (struct cifs_ntsd *)
+					(((char *) context) +
+					 context->DataOffset);
+
+				parse_sec_desc(pntsd,
+					le32_to_cpu(context->DataLength),
+					&fattr);
+
+				cifsd_fattr_to_inode(inode, &fattr);
+			}
+		}
+#endif
 	}
 
 	smb_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
@@ -3255,6 +3289,69 @@ err_out2:
 	return 0;
 }
 
+#ifdef CONFIG_CIFSD_ACL
+/**
+ * smb2_get_info_sec() - handler for smb2 query info command
+ * @smb_work:   smb work containing query info request buffer
+ *
+ * Return:      0 on success, otherwise error
+ */
+static int smb2_get_info_sec(struct smb_work *smb_work)
+{
+	struct smb2_query_info_req *req;
+	struct smb2_query_info_rsp *rsp, *rsp_org;
+	struct cifsd_file *fp;
+	struct file *filp;
+	int rc = 0;
+	uint64_t id = -1;
+	struct cifs_ntsd *pntsd;
+	struct inode *inode;
+	int out_len;
+
+	req = (struct smb2_query_info_req *)smb_work->buf;
+	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	if (id == -1)
+		id = le64_to_cpu(req->VolatileFileId);
+
+	fp = get_id_from_fidtable(smb_work->sess, id);
+	if (!fp) {
+		cifsd_debug("Invalid id for file info : %llu\n", id);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	if (fp->is_durable && fp->persistent_id !=
+			le64_to_cpu(req->PersistentFileId)) {
+		cifsd_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	filp = fp->filp;
+	inode = GET_FP_INODE(fp);
+
+	pntsd = (struct cifs_ntsd *) rsp->Buffer;
+
+	out_len = build_sec_desc(pntsd, le32_to_cpu(req->AdditionalInformation),
+		inode);
+
+	rsp->OutputBufferLength = out_len;
+	inc_rfc1001_len(rsp_org, out_len);
+
+	return rc;
+}
+#endif
+
 /**
  * smb2_query_info() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
@@ -3290,12 +3387,18 @@ int smb2_query_info(struct smb_work *smb_work)
 	switch (req->InfoType) {
 	case SMB2_O_INFO_FILE:
 		cifsd_debug("GOT SMB2_O_INFO_FILE\n");
-		rc = smb2_info_file(smb_work);
+		rc = smb2_get_info_file(smb_work);
 		break;
 	case SMB2_O_INFO_FILESYSTEM:
 		cifsd_debug("GOT SMB2_O_INFO_FILESYSTEM\n");
-		rc = smb2_info_filesystem(smb_work);
+		rc = smb2_get_info_filesystem(smb_work);
 		break;
+#ifdef CONFIG_CIFSD_ACL
+	case SMB2_O_INFO_SECURITY:
+		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
+		rc = smb2_get_info_sec(smb_work);
+		break;
+#endif
 	default:
 		cifsd_debug("InfoType %d not supported yet\n", req->InfoType);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
@@ -3659,7 +3762,7 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_info_file_pipe(struct smb_work *smb_work)
+int smb2_get_info_file_pipe(struct smb_work *smb_work)
 {
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp;
@@ -3769,12 +3872,12 @@ static char *find_absolute_pathname(struct path *path, char *buf)
 }
 
 /**
- * smb2_info_file() - handler for smb2 query info command
+ * smb2_get_info_file() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_info_file(struct smb_work *smb_work)
+int smb2_get_info_file(struct smb_work *smb_work)
 {
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp, *rsp_org;
@@ -3809,7 +3912,7 @@ int smb2_info_file(struct smb_work *smb_work)
 
 	if (smb_work->tcon->share->is_pipe == true) {
 		/* smb2 info file called for pipe */
-		return smb2_info_file_pipe(smb_work);
+		return smb2_get_info_file_pipe(smb_work);
 	} else {
 		fp = get_id_from_fidtable(smb_work->sess, id);
 		if (!fp) {
@@ -4247,12 +4350,12 @@ inline int fsTypeSearch(struct fs_type_info fs_type[],
 }
 
 /**
- * smb2_info_filesystem() - handler for smb2 query info command
+ * smb2_get_info_filesystem() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_info_filesystem(struct smb_work *smb_work)
+int smb2_get_info_filesystem(struct smb_work *smb_work)
 {
 	const uint64_t bytes_per_sector = 512;
 	struct smb2_query_info_req *req;
@@ -4457,6 +4560,72 @@ int smb2_info_filesystem(struct smb_work *smb_work)
 
 }
 
+#ifdef CONFIG_CIFSD_ACL
+/**
+ * smb2_set_info_sec() - handler for smb2 set info command
+ * @smb_work:   smb work containing set info command buffer
+ *
+ * Return:      0 on success, otherwise error
+ */
+static int smb2_set_info_sec(struct smb_work *smb_work)
+{
+	struct smb2_set_info_req *req;
+	struct smb2_set_info_rsp *rsp;
+	struct cifsd_file *fp;
+	struct cifsd_sess *sess = smb_work->sess;
+	uint64_t id;
+	int rc = 0;
+	struct file *filp;
+	struct inode *inode;
+	struct cifs_ntsd *pntsd;
+	struct cifsd_fattr fattr;
+	int addition_info;
+
+	req = (struct smb2_set_info_req *)smb_work->buf;
+	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
+
+	id = le64_to_cpu(req->VolatileFileId);
+	fp = get_id_from_fidtable(sess, id);
+	if (!fp) {
+		cifsd_debug("Invalid id for close: %llu\n", id);
+		return -ENOENT;
+	}
+
+	if (fp->is_durable && fp->persistent_id !=
+			le64_to_cpu(req->PersistentFileId)) {
+		cifsd_err("persistent id mismatch : %llu, %llu\n",
+				fp->persistent_id, req->PersistentFileId);
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	filp = fp->filp;
+	inode = filp->f_path.dentry->d_inode;
+
+	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
+	pntsd = (struct cifs_ntsd *) req->Buffer;
+
+	addition_info = le32_to_cpu(req->AdditionalInformation);
+
+	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
+			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
+		rc = -EPERM;
+		return rc;
+	}
+
+	if ((addition_info & DACL_SECINFO) &&
+			(!(fp->daccess & FILE_WRITE_DAC_LE))) {
+		rc = -EPERM;
+		return rc;
+	}
+
+	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
+
+	cifsd_fattr_to_inode(inode, &fattr);
+	return rc;
+}
+#endif
+
 /**
  * smb2_set_info() - handler for smb2 set info command handler
  * @smb_work:	smb work containing set info request buffer
@@ -4484,6 +4653,12 @@ int smb2_set_info(struct smb_work *smb_work)
 		cifsd_debug("GOT SMB2_O_INFO_FILE\n");
 		rc = smb2_set_info_file(smb_work);
 		break;
+#ifdef CONFIG_CIFSD_ACL
+	case SMB2_O_INFO_SECURITY:
+		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
+		rc = smb2_set_info_sec(smb_work);
+		break;
+#endif
 	default:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 	}

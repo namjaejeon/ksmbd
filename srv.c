@@ -27,6 +27,7 @@
 #include "smb2pdu.h"
 #endif
 #include "oplock.h"
+#include "cifsacl.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
 #endif
@@ -1019,8 +1020,13 @@ static int __init init_smb_server(void)
 	rc = cifsd_net_init();
 	if (rc)
 		goto err3;
-	return 0;
+#ifdef CONFIG_CIFSD_ACL
+	rc = init_cifsd_idmap();
+	if (rc)
+		goto err3;
+#endif
 
+	return 0;
 err3:
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1047,6 +1053,9 @@ static void __exit exit_smb_server(void)
 	cifsd_export_exit();
 	dispose_ofile_list();
 	smb_free_mempools();
+#ifdef CONFIG_CIFSD_ACL
+	exit_cifsd_idmap();
+#endif
 }
 
 MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");

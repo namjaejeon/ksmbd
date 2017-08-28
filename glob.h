@@ -241,6 +241,27 @@ extern struct list_head global_lock_list;
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
+/* Security Descriptor XATTR PREFIX */
+#define SD_NTSD_PREFIX	"sd.ntsd"
+#define SD_NTSD_PREFIX_LEN	(sizeof(SD_NTSD_PREFIX) - 1)
+#define XATTR_NAME_SD_NTSD	(XATTR_USER_PREFIX SD_NTSD_PREFIX)
+#define XATTR_NAME_SD_NTSD_LEN	(sizeof(XATTR_NAME_SD_NTSD) - 1)
+
+#define SD_OWNER_PREFIX	"sd.OwnerSid"
+#define SD_OWNER_PREFIX_LEN	(sizeof(SD_OWNER_PREFIX) - 1)
+#define XATTR_NAME_SD_OWNER	(XATTR_USER_PREFIX SD_OWNER_PREFIX)
+#define XATTR_NAME_SD_OWNER_LEN	(sizeof(XATTR_NAME_SD_OWNER) - 1)
+
+#define SD_GROUP_PREFIX	"sd.GroupSid"
+#define SD_GROUP_PREFIX_LEN	(sizeof(SD_GROUP_PREFIX) - 1)
+#define XATTR_NAME_SD_GROUP	(XATTR_USER_PREFIX SD_GROUP_PREFIX)
+#define XATTR_NAME_SD_GROUP_LEN	(sizeof(XATTR_NAME_SD_GROUP) - 1)
+
+#define SD_DACL_PREFIX	"sd.dacl"
+#define SD_DACL_PREFIX_LEN	(sizeof(SD_DACL_PREFIX) - 1)
+#define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
+#define XATTR_NAME_SD_DACL_LEN	(sizeof(XATTR_NAME_SD_DACL) - 1)
+
 enum statusEnum {
 	CifsNew = 0,
 	CifsGood,
@@ -648,6 +669,7 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 int smb_vfs_alloc_size(struct file *filp, loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
+int smb_vfs_remove_xattr(struct file *filp, char *field_name);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct connection *conn);

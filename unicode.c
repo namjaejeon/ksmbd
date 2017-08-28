@@ -3,6 +3,7 @@
  *
  *   Copyright (c) International Business Machines  Corp., 2000,2009
  *   Modified by Steve French (sfrench@us.ibm.com)
+ *   Modified by Namjae Jeon (namjae.jeon@protocolfreedom.org)
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by

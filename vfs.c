@@ -1238,9 +1238,12 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 	return err;
 }
 
-
-
 int smb_vfs_alloc_size(struct file *filp, loff_t len)
 {
 	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
+}
+
+int smb_vfs_remove_xattr(struct file *filp, char *field_name)
+{
+	return vfs_removexattr(filp->f_path.dentry, field_name);
 }
