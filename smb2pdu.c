@@ -2492,18 +2492,6 @@ reconnect:
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
-	/* Check delete pending among previous fp before oplock break */
-	if (GET_FP_INODE(fp)->i_flags & S_DEL_ON_CLS) {
-		rc = -EBUSY;
-		goto err_out;
-	}
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
-		if (fp->is_stream)
-			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS_STREAM;
-		else
-			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
-	}
-
 	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
 		!S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = smb_check_shared_mode(filp, fp);
@@ -2543,6 +2531,18 @@ reconnect:
 		rc = smb_check_shared_mode(filp, fp);
 		if (rc < 0)
 			goto err_out;
+	}
+
+	/* Check delete pending among previous fp before oplock break */
+	if (GET_FP_INODE(fp)->i_flags & S_DEL_ON_CLS) {
+		rc = -EBUSY;
+		goto err_out;
+	}
+	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+		if (fp->is_stream)
+			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS_STREAM;
+		else
+			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
 	}
 
 	/* Add fp to global file table using inode key. */
@@ -2597,8 +2597,7 @@ reconnect:
 		i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
 	}
 
-	if (!fp->is_stream)
-		igrab(GET_FP_INODE(fp));
+	igrab(GET_FP_INODE(fp));
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;

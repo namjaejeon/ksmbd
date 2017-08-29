@@ -420,16 +420,15 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	}
 
 	inode = GET_FP_INODE(fp);
-	if (!fp->is_stream)
-		atomic_dec(&inode->i_count);
-	else if (inode->i_flags & S_DEL_ON_CLS_STREAM) {
+	atomic_dec(&inode->i_count);
+
+	if (fp->is_stream && (inode->i_flags & S_DEL_ON_CLS_STREAM)) {
 		inode->i_flags &= ~S_DEL_ON_CLS_STREAM;
 		err = smb_vfs_remove_xattr(filp, fp->stream.name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n",
 				fp->stream.name);
 
-		goto out2;
 	}
 
 	if ((inode->i_flags & S_DEL_ON_CLS) &&
@@ -473,7 +472,6 @@ out:
 	filp_close(filp, (struct files_struct *)filp);
 	delete_id_from_fidtable(sess, id);
 	cifsd_close_id(&sess->fidtable, id);
-out2:
 	return 0;
 }
 
