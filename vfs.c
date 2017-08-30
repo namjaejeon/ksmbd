@@ -54,7 +54,7 @@ int smb_vfs_create(const char *name, umode_t mode)
 		return err;
 	}
 
-	mode = (mode & ~S_IFMT) | S_IFREG;
+	mode |= S_IFREG;
 	err = vfs_create(path.dentry->d_inode, dentry, mode, true);
 	if (err)
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
@@ -86,7 +86,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 		return err;
 	}
 
-	mode = (mode & ~S_IFMT) | S_IFDIR;
+	mode |= S_IFDIR;
 	err = vfs_mkdir(path.dentry->d_inode, dentry, mode);
 	if (err)
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);

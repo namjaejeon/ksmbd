@@ -2189,13 +2189,12 @@ int smb2_open(struct smb_work *smb_work)
 		open_flags = O_RDONLY;
 
 	/*create file if not present */
-	mode |= S_IRWXUGO;
 	if (!file_present) {
 		if (open_flags & O_CREAT) {
 			cifsd_debug("file does not exist, so creating\n");
 			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 				cifsd_debug("creating directory\n");
-				mode |= S_IFDIR;
+				mode = 00777 & ~current_umask();
 				rc = smb_vfs_mkdir(name, mode);
 				if (rc) {
 					rsp->hdr.Status = cpu_to_le32(
@@ -2207,7 +2206,7 @@ int smb2_open(struct smb_work *smb_work)
 				}
 			} else {
 				cifsd_debug("creating regular file\n");
-				mode |= S_IFREG;
+				mode = 00666 & ~current_umask();
 				rc = smb_vfs_create(name, mode);
 				if (rc) {
 					rsp->hdr.Status =
