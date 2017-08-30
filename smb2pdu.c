@@ -4148,7 +4148,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 					stream_buf,
 					streamlen, conn->local_nls, 0);
 			streamlen *= 2;
-
+			kfree(stream_buf);
 			file_info->StreamNameLength = cpu_to_le32(streamlen);
 			file_info->StreamSize =
 				cpu_to_le64(streamlen);
