@@ -2675,7 +2675,7 @@ reconnect:
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
-	rsp->FileAttributes = cpu_to_le32(fp->fattr);
+	rsp->FileAttributes = fp->fattr;
 
 	rsp->Reserved2 = 0;
 
@@ -3971,7 +3971,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		basic_info->Attributes = cpu_to_le32(fp->fattr);
+		basic_info->Attributes = fp->fattr;
 		basic_info->Pad1 = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(offsetof(struct smb2_file_all_info,
@@ -4042,7 +4042,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		file_info->Attributes = cpu_to_le32(fp->fattr);
+		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.blocks << 9);
@@ -4211,7 +4211,7 @@ out:
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		file_info->Attributes = cpu_to_le32(fp->fattr);
+		file_info->Attributes = fp->fattr;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 				cpu_to_le64(stat.blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -4253,7 +4253,7 @@ out:
 		struct smb2_file_alloc_info *file_info;
 		file_info = (struct smb2_file_alloc_info *)rsp->Buffer;
 
-		file_info->Attributes = cpu_to_le32(fp->fattr);
+		file_info->Attributes = fp->fattr;
 		file_info->ReparseTag = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_alloc_info));
@@ -4308,7 +4308,7 @@ out:
 		struct smb2_file_attr_tag_info *file_info;
 
 		file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
-		file_info->FileAttributes = cpu_to_le32(fp->fattr);
+		file_info->FileAttributes = fp->fattr;
 		file_info->ReparseTag = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
