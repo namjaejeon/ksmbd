@@ -2131,6 +2131,7 @@ int smb2_open(struct smb_work *smb_work)
 		file_present = false;
 		cifsd_debug("can not get linux path for %s, rc = %d\n",
 				name, rc);
+		rc = 0;
 	} else
 		generic_fillattr(path.dentry->d_inode, &stat);
 
@@ -2139,13 +2140,11 @@ int smb2_open(struct smb_work *smb_work)
 			if (s_type == DATA_STREAM) {
 				rc = -EIO;
 				rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
-				goto err_out;
 			}
 		} else {
 			if (S_ISDIR(stat.mode) && s_type == DATA_STREAM) {
 				rc = -EIO;
 				rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
-				goto err_out;
 			}
 		}
 
@@ -2153,7 +2152,13 @@ int smb2_open(struct smb_work *smb_work)
 			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
 			rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
 			rc = -EIO;
-			goto err_out;
+		}
+
+		if (rc < 0) {
+			if (file_present)
+				goto err_out;
+			else
+				goto err_out1;
 		}
 	}
 
