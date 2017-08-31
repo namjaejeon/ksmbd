@@ -1966,13 +1966,6 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out1;
 	}
 
-	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
-			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
-		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
-		rc = -EIO;
-		goto err_out1;
-	}
-
 	if (req->CreateContextsOffset && durable_enable) {
 		context = smb2_find_context_vals(
 				req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
@@ -2155,6 +2148,13 @@ int smb2_open(struct smb_work *smb_work)
 				goto err_out;
 			}
 		}
+
+		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
+			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
+			rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
+			rc = -EIO;
+			goto err_out;
+		}
 	}
 
 	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE
@@ -2167,16 +2167,16 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (file_present && req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
+	if (file_present && (req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
+		!(req->CreateDisposition == FILE_CREATE_LE) &&
 		!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status = NT_STATUS_NOT_A_DIRECTORY;
 		rc = -EIO;
 		goto err_out;
 	}
 
-	if (file_present && (req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
-		(req->CreateDisposition == FILE_CREATE_LE) &&
-		!S_ISDIR(stat.mode)) {
+	if (!stream_name && file_present &&
+		(req->CreateDisposition == FILE_CREATE_LE)) {
 		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
 		rc = -EIO;
 		goto err_out;
