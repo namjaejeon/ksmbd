@@ -4042,8 +4042,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		file_info->Attributes = S_ISDIR(stat.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+		file_info->Attributes = cpu_to_le32(fp->fattr);
 		file_info->Pad1 = 0;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.blocks << 9);
@@ -4212,8 +4211,7 @@ out:
 			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
-		file_info->Attributes = S_ISDIR(stat.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+		file_info->Attributes = cpu_to_le32(fp->fattr);
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 				cpu_to_le64(stat.blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -4255,8 +4253,7 @@ out:
 		struct smb2_file_alloc_info *file_info;
 		file_info = (struct smb2_file_alloc_info *)rsp->Buffer;
 
-		file_info->Attributes = S_ISDIR(stat.mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
+		file_info->Attributes = cpu_to_le32(fp->fattr);
 		file_info->ReparseTag = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_alloc_info));
@@ -4311,7 +4308,7 @@ out:
 		struct smb2_file_attr_tag_info *file_info;
 
 		file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
-		file_info->FileAttributes = fp->fattr;
+		file_info->FileAttributes = cpu_to_le32(fp->fattr);
 		file_info->ReparseTag = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
