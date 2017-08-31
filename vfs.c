@@ -162,7 +162,7 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
 			fp->stream.size, &stream_buf, 1);
-		if (v_len < 0) {
+		if (v_len == -ENOENT) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(rbuf);
 			return -ENOENT;
@@ -265,7 +265,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
 			fp->stream.size, &stream_buf, 1);
-		if (v_len < 0) {
+		if (v_len == -ENOENT) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(stream_buf);
 			return -ENOENT;
