@@ -30,9 +30,6 @@
 #include "smb1pdu.h"
 #include "smb2pdu.h"
 
-/* Async ida to generate async id */
-DEFINE_IDA(async_ida);
-
 static struct {
 	int index;
 	char *name;
@@ -58,11 +55,6 @@ inline int cifsd_min_protocol(void)
 inline int cifsd_max_protocol(void)
 {
 	return protocols[ARRAY_SIZE(protocols) - 1].index;
-}
-
-inline void remove_async_id(__u64 async_id)
-{
-	ida_simple_remove(&async_ida, (int)async_id);
 }
 
 int get_protocol_idx(char *str)
@@ -155,42 +147,27 @@ int check_smb_message(char *buf)
  */
 void add_request_to_queue(struct smb_work *smb_work)
 {
-	struct tcp_server_info *server = smb_work->server;
+	struct connection *conn = smb_work->conn;
 	struct list_head *requests_queue = NULL;
 
 	if (*(__le32 *)((struct smb2_hdr *)smb_work->buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
-		unsigned int command = server->ops->get_cmd_val(smb_work);
+		unsigned int command = conn->ops->get_cmd_val(smb_work);
 
 		if (command != SMB2_CANCEL) {
-			if (command == SMB2_CHANGE_NOTIFY ||
-				command == SMB2_LOCK) {
-				smb_work->async =
-					kmalloc(sizeof(struct async_info),
-					GFP_KERNEL);
-				smb_work->type = ASYNC;
-
-				smb_work->async->async_id =
-					(__u64) ida_simple_get(&async_ida, 1, 0,
-					GFP_KERNEL);
-
-				requests_queue = &server->async_requests;
-				smb_work->async->async_status = ASYNC_WAITING;
-			} else {
-				requests_queue = &server->requests;
-				smb_work->type = SYNC;
-			}
+			requests_queue = &conn->requests;
+			smb_work->type = SYNC;
 		}
 	} else {
-		if (server->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
-			requests_queue = &server->requests;
+		if (conn->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
+			requests_queue = &conn->requests;
 	}
 
 	if (requests_queue) {
-		spin_lock(&server->request_lock);
+		spin_lock(&conn->request_lock);
 		list_add_tail(&smb_work->request_entry, requests_queue);
 		smb_work->added_in_request_list = 1;
-		spin_unlock(&server->request_lock);
+		spin_unlock(&conn->request_lock);
 	}
 }
 
@@ -241,13 +218,13 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 
 /**
  * switch_req_buf() - switch to big request buffer
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  *
  * Return:      0 on success, otherwise -ENOMEM
  */
-int switch_req_buf(struct tcp_server_info *server)
+int switch_req_buf(struct connection *conn)
 {
-	char *buf = server->smallbuf;
+	char *buf = conn->smallbuf;
 	unsigned int pdu_length = get_rfc1002_length(buf);
 	unsigned int hdr_len;
 
@@ -260,23 +237,23 @@ int switch_req_buf(struct tcp_server_info *server)
 	/* request can fit in large request buffer i.e. < 64K */
 	if (pdu_length <= SMBMaxBufSize + hdr_len - 4) {
 		cifsd_debug("switching to large buffer\n");
-		server->large_buf = true;
-		memcpy(server->bigbuf, buf, server->total_read);
+		conn->large_buf = true;
+		memcpy(conn->bigbuf, buf, conn->total_read);
 	} else if (pdu_length <= CIFS_DEFAULT_IOSIZE + hdr_len - 4) {
 		/* allocate big buffer for large write request i.e. > 64K */
-		server->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
-		if (!server->wbuf) {
+		conn->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
+		if (!conn->wbuf) {
 			cifsd_debug("failed to alloc mem\n");
 			return -ENOMEM;
 		}
-		memcpy(server->wbuf, buf, server->total_read);
+		memcpy(conn->wbuf, buf, conn->total_read);
 
 		/* as wbuf is used for request, free both small and big buf */
-		mempool_free(server->smallbuf, cifsd_sm_req_poolp);
-		mempool_free(server->bigbuf, cifsd_req_poolp);
-		server->large_buf = false;
-		server->smallbuf = NULL;
-		server->bigbuf = NULL;
+		mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
+		mempool_free(conn->bigbuf, cifsd_req_poolp);
+		conn->large_buf = false;
+		conn->smallbuf = NULL;
+		conn->bigbuf = NULL;
 	} else {
 		cifsd_debug("SMB request too long (%u bytes)\n", pdu_length);
 		return -ECONNABORTED;
@@ -317,12 +294,12 @@ int switch_rsp_buf(struct smb_work *smb_work)
 
 /**
  * is_smb_request() - check for valid smb request type
- * @server:     TCP server instance of connection
+ * @conn:     TCP server instance of connection
  * @type:	smb request type
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct tcp_server_info *server, unsigned char type)
+bool is_smb_request(struct connection *conn, unsigned char type)
 {
 	switch (type) {
 	case RFC1002_SESSION_MESSAGE:
@@ -456,13 +433,13 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_sess *lookup_session_on_conn(struct tcp_server_info *server,
+struct cifsd_sess *lookup_session_on_server(struct connection *conn,
 		uint64_t sess_id)
 {
 	struct cifsd_sess *sess;
 	struct list_head *tmp, *t;
 
-	list_for_each_safe(tmp, t, &server->cifsd_sess) {
+	list_for_each_safe(tmp, t, &conn->cifsd_sess) {
 		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
 		if (sess->sess_id == sess_id)
 			return sess;
@@ -495,11 +472,11 @@ struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
 }
 
 #ifndef CONFIG_CIFS_SMB2_SERVER
-void init_smb2_0_server(struct tcp_server_info *server) { }
-void init_smb2_1_server(struct tcp_server_info *server) { }
-void init_smb3_0_server(struct tcp_server_info *server) { }
-void init_smb3_02_server(struct tcp_server_info *server) { }
-void init_smb3_11_server(struct tcp_server_info *server) { }
+void init_smb2_0_server(struct connection *server) { }
+void init_smb2_1_server(struct connection *server) { }
+void init_smb3_0_server(struct connection *server) { }
+void init_smb3_02_server(struct connection *server) { }
+void init_smb3_11_server(struct connection *server) { }
 int is_smb2_neg_cmd(struct smb_work *smb_work)
 {
 	return 0;
@@ -534,7 +511,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char **value, int flags)
 {
-	char *name, *xattr_list = NULL, *tmp_a = NULL, *tmp_b = NULL;
+	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
 	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
@@ -546,21 +523,10 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 		goto out;
 	}
 
-	tmp_a = kmalloc(p_len, GFP_KERNEL);
-	tmp_b = kmalloc(p_len, GFP_KERNEL);
-	if (!tmp_a || !tmp_b) {
-		xattr_list_len = -ENOMEM;
-		goto out;
-	}
-
-	memcpy(tmp_a, prefix, p_len);
-
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
-		memcpy(tmp_b, name, p_len);
-
-		if (strncasecmp(tmp_a, tmp_b, p_len))
+		if (strncasecmp(prefix, name, p_len))
 			continue;
 
 		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
@@ -572,8 +538,6 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 out:
 	if (xattr_list)
 		vfree(xattr_list);
-	kfree(tmp_a);
-	kfree(tmp_b);
 	return value_len;
 }
 
@@ -600,6 +564,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
 	struct cifsd_file *prev_fp;
+	int same_stream = 0;
 
 	/*
 	 * Lookup fp in global table, and check desired access and
@@ -609,21 +574,11 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			(unsigned long)file_inode(filp))
 		if (file_inode(filp) == GET_FP_INODE(prev_fp)) {
 			if (prev_fp->is_stream && curr_fp->is_stream) {
-				if (strcmp(prev_fp->stream_name,
-					curr_fp->stream_name)) {
+				if (strcmp(prev_fp->stream.name,
+					curr_fp->stream.name)) {
 					continue;
 				}
-
-				if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-					cifsd_err("not allow FILE_SUPERSEDE_LE if file is already opened with ADS\n");
-					rc = -ESHARE;
-					break;
-				}
-			}
-
-			if (prev_fp->delete_pending) {
-				rc = -EBUSY;
-				break;
+				same_stream = 1;
 			}
 
 			if (prev_fp->attrib_only != curr_fp->attrib_only)
@@ -637,12 +592,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 					prev_fp->saccess, curr_fp->daccess);
 				rc = -ESHARE;
 				break;
-			}
-
-			if (prev_fp->is_stream && curr_fp->delete_on_close) {
-				prev_fp->delete_pending = 1;
-				prev_fp->delete_on_close = 1;
-				curr_fp->delete_on_close = 0;
 			}
 
 			/*
@@ -710,7 +659,17 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				rc = -ESHARE;
 				break;
 			}
+
 		}
+
+	if (!same_stream && !curr_fp->is_stream) {
+		if (curr_fp->cdoption == FILE_SUPERSEDE_LE ||
+			curr_fp->cdoption == FILE_OVERWRITE_LE ||
+			curr_fp->cdoption == FILE_OVERWRITE_IF_LE) {
+			smb_vfs_truncate_stream_xattr(
+				curr_fp->filp->f_path.dentry);
+		}
+	}
 
 	return rc;
 }
@@ -737,4 +696,199 @@ char *alloc_data_mem(size_t size)
 		return kzalloc(size, GFP_KERNEL);
 
 	return vzalloc(size);
+}
+
+/**
+ * pattern_cmp() - compare a string with a pattern which might include
+ * wildcard '*' and '?'
+ * TODO : implement consideration about DOS_DOT, DOS_QM and DOS_STAR
+ *
+ * @string:	string to compare with a pattern
+ * @pattern:	pattern string which might include wildcard '*' and '?'
+ *
+ * Return:	0 if pattern matched with the string, otherwise non zero value
+ */
+int pattern_cmp(const char *string, const char *pattern)
+{
+	const char *cp = NULL;
+	const char *mp = NULL;
+	int diff;
+
+	/* handle plain characters and '?' */
+	while ((*string) && (*pattern != '*')) {
+		diff = strncasecmp(pattern, string, 1);
+		if (diff && (*pattern != '?'))
+			return diff;
+
+		pattern++;
+		string++;
+	}
+
+	/* handle '*' wildcard */
+	while (*string) {
+		if (*pattern == '*') {
+			/*
+			 * if the last char of a pattern is '*',
+			 * any string matches with the pattern
+			 */
+			if (!*++pattern)
+				return 0;
+
+			mp = pattern;
+			cp = string + 1;
+		} else if (!strncasecmp(pattern, string, 1)
+				|| (*pattern == '?')) {
+			/* ? is matched with any "one" char */
+			pattern++;
+			string++;
+		} else {
+			pattern = mp;
+			string = cp++;
+		}
+	}
+
+	/* handle remaining '*' */
+	while (*pattern == '*')
+		pattern++;
+
+	return *pattern;
+}
+
+/**
+ * is_matched() - compare a file name with an expression which might
+ * include wildcards
+ *
+ * @fname:	file name to compare with an expression
+ * @exp:	an expression which might include wildcard '*' and '?'
+ *
+ * Return:	true if fname and exp are matched, otherwise false
+ */
+bool is_matched(const char *fname, const char *exp)
+{
+	/* optimization to avoid pattern compare */
+	if (!*fname && *exp)
+		return false;
+	else if (*fname && !*exp)
+		return false;
+	else if (!*fname && !*exp)
+		return true;
+	else if (*exp == '*' && strlen(exp) == 1)
+		return true;
+
+	if (pattern_cmp(fname, exp))
+		return false;
+	else
+		return true;
+}
+
+/*
+ * is_char_allowed() - check for valid character
+ * @ch:		input character to be checked
+ *
+ * Return:	1 if char is allowed, otherwise 0
+ */
+static inline int is_char_allowed(char *ch)
+{
+	/* check for control chars, wildcards etc. */
+	if (!(*ch & 0x80) &&
+		(*ch <= 0x1f ||
+		 *ch == '?' || *ch == '"' || *ch == '<' ||
+		 *ch == '>' || *ch == '|' || *ch == '*'))
+		return 0;
+
+	return 1;
+}
+
+int check_invalid_char(char *filename)
+{
+	int len, i, rc = 0;
+
+	len = strlen(filename);
+
+	/* Check invalid character in stream name */
+	for (i = 0; i < len; i++) {
+		if (!is_char_allowed(&filename[i])) {
+			cifsd_err("found invalid character : %c\n",
+					filename[i]);
+			rc = -ENOENT;
+			break;
+		}
+	}
+
+	return rc;
+}
+
+int check_invalid_char_stream(char *stream_name)
+{
+	int len, i, rc = 0;
+
+	len = strlen(stream_name);
+	/* Check invalid character in stream name */
+	for (i = 0; i < len; i++) {
+		if (stream_name[i] == '/' || stream_name[i] == ':' ||
+				stream_name[i] == '\\') {
+			cifsd_err("found invalid character : %c\n",
+					stream_name[i]);
+			rc = -ENOENT;
+			break;
+		}
+	}
+
+	return rc;
+}
+
+int parse_stream_name(char *filename, char **stream_name, int *s_type)
+{
+	char *stream_type;
+	char *s_name;
+	int rc = 0;
+
+	s_name = filename;
+	filename = strsep(&s_name, ":");
+	cifsd_debug("filename : %s, streams : %s\n", filename, s_name);
+	if (strchr(s_name, ':')) {
+		stream_type = s_name;
+		s_name = strsep(&stream_type, ":");
+
+		rc = check_invalid_char_stream(s_name);
+		if (rc < 0) {
+			rc = -ENOENT;
+			goto out;
+		}
+
+		cifsd_debug("stream name : %s, stream type : %s\n", s_name,
+				stream_type);
+		if (!strncasecmp("$data", stream_type, 5))
+			*s_type = DATA_STREAM;
+		else if (!strncasecmp("$index_allocation", stream_type, 17))
+			*s_type = DIR_STREAM;
+		else
+			rc = -ENOENT;
+	}
+
+	*stream_name = s_name;
+out:
+	return rc;
+}
+
+int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
+{
+	int stream_size;
+	char *stream_name_buf;
+	int stream_type_size = 0;
+
+	stream_size = strlen(stream_name) + XATTR_NAME_STREAM_LEN;
+	stream_name_buf = kmalloc(XATTR_NAME_STREAM_LEN +
+			stream_size + stream_type_size, GFP_KERNEL);
+	memcpy(stream_name_buf, XATTR_NAME_STREAM,
+			XATTR_NAME_STREAM_LEN);
+
+	if (stream_size)
+		memcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN],
+			stream_name, stream_size);
+
+	stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+
+	*xattr_stream_name = stream_name_buf;
+	return XATTR_NAME_STREAM_LEN + stream_size;
 }

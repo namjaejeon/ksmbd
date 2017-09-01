@@ -266,7 +266,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 
 /**
  * insert_id_in_fidtable() - insert a fid in fid table
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  * @id:		fid to be inserted into fid table
  * @filp:	associate this filp with fid
  *
@@ -305,7 +305,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 
 /**
  * get_id_from_fidtable() - get cifsd file pointer for a fid
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  * @id:		fid to be looked into fid table
  *
  * lookup a fid in fid table and return associated cifsd file pointer
@@ -333,7 +333,7 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 
 /**
  * delete_id_from_fidtable() - delete a fid from fid table
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  * @id:		fid to be deleted from fid table
  *
  * delete a fid from fid table and free associated cifsd file pointer
@@ -348,7 +348,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
 	if (fp->is_stream)
-		kfree(fp->stream_name);
+		kfree(fp->stream.name);
 	kmem_cache_free(cifsd_filp_cache, fp);
 	ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);
@@ -356,7 +356,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 
 /**
  * close_id() - close filp for a fid and delete it from fid table
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  * @id:		fid to be deleted from fid table
  *
  * lookup fid from fid table, release oplock info and close associated filp.
@@ -371,6 +371,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
+	struct inode *inode;
 	int err;
 
 	fp = get_id_from_fidtable(sess, id);
@@ -385,14 +386,13 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		return -ENOENT;
 	}
 
-	close_id_del_oplock(sess->server, fp, id);
+	hash_del(&fp->node);
+	close_id_del_oplock(sess->conn, fp, id);
 
 	if (fp->islink)
 		filp = fp->lfilp;
 	else
 		filp = fp->filp;
-
-	hash_del(&fp->node);
 
 	list_for_each_entry_safe(lock, tmp, &fp->lock_list, flist) {
 		struct file_lock *flock = NULL;
@@ -419,17 +419,24 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		}
 	}
 
-	if (fp->delete_on_close) {
+	inode = GET_FP_INODE(fp);
+	atomic_dec(&inode->i_count);
+
+	if (fp->is_stream && (inode->i_flags & S_DEL_ON_CLS_STREAM)) {
+		inode->i_flags &= ~S_DEL_ON_CLS_STREAM;
+		err = smb_vfs_remove_xattr(filp, fp->stream.name);
+		if (err)
+			cifsd_err("remove xattr failed : %s\n",
+				fp->stream.name);
+
+	}
+
+	if ((inode->i_flags & S_DEL_ON_CLS) &&
+		(atomic_read(&inode->i_count) == 1)) {
 		dentry = filp->f_path.dentry;
 		dir = dentry->d_parent;
 
-		if (fp->is_stream && !fp->delete_pending) {
-			err = vfs_removexattr(dentry, fp->stream_name);
-			if (err)
-				cifsd_err("remove xattr failed : %s\n",
-					fp->stream_name);
-			goto out2;
-		}
+		inode->i_flags &= ~S_DEL_ON_CLS;
 
 		dget(dentry);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
@@ -465,13 +472,12 @@ out:
 	filp_close(filp, (struct files_struct *)filp);
 	delete_id_from_fidtable(sess, id);
 	cifsd_close_id(&sess->fidtable, id);
-out2:
 	return 0;
 }
 
 /**
  * close_opens_from_fibtable() - close all opens from a fid table
- * @sess:	TCP server session
+ * @sess:	session
  *
  * lookup fid from fid table, release oplock info and close associated filp.
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
@@ -495,8 +501,8 @@ void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
 				close_persistent_id(file->persistent_id);
 #endif
 			if (!close_id(sess, id, file->persistent_id) &&
-				sess->server->stats.open_files_count > 0)
-				sess->server->stats.open_files_count--;
+				sess->conn->stats.open_files_count > 0)
+				sess->conn->stats.open_files_count--;
 
 		}
 	}
@@ -504,7 +510,7 @@ void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
 
 /**
  * destroy_fidtable() - destroy a fid table for given cifsd thread
- * @sess:	TCP server session
+ * @sess:	session
  *
  * lookup fid from fid table, release oplock info and close associated filp.
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
@@ -520,6 +526,8 @@ void destroy_fidtable(struct cifsd_sess *sess)
 	ftab = sess->fidtable.ftab;
 	spin_unlock(&sess->fidtable.fidtable_lock);
 
+	if (!ftab)
+		return;
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
@@ -529,8 +537,8 @@ void destroy_fidtable(struct cifsd_sess *sess)
 #endif
 
 			if (!close_id(sess, id, file->persistent_id) &&
-				sess->server->stats.open_files_count > 0)
-				sess->server->stats.open_files_count--;
+				sess->conn->stats.open_files_count > 0)
+				sess->conn->stats.open_files_count--;
 		}
 	}
 	sess->fidtable.ftab = NULL;
@@ -545,7 +553,7 @@ void destroy_fidtable(struct cifsd_sess *sess)
 /**
  * cifsd_insert_in_global_table() - insert a fid in global fid table
  *					for persistent id
- * @server:		TCP server instance of connection
+ * @conn:		TCP server instance of connection
  * @volatile_id:	volatile id
  * @filp:		file pointer
  * @durable_open:	true if durable open is requested
@@ -629,7 +637,7 @@ cifsd_get_durable_state(uint64_t id)
 
 /**
  * cifsd_update_durable_state() - update durable state for a fid
- * @server:		TCP server instance of connection
+ * @conn:		TCP server instance of connection
  * @persistent_id:	persistent id
  * @volatile_id:	volatile id
  * @filp:		file pointer
@@ -658,11 +666,11 @@ void cifsd_update_durable_state(struct cifsd_sess *sess,
 
 /**
  * cifsd_durable_disconnect() - update file stat with durable state
- * @server:		TCP server instance of connection
+ * @conn:		TCP server instance of connection
  * @persistent_id:	persistent id
  * @filp:		file pointer
  */
-void cifsd_durable_disconnect(struct tcp_server_info *server,
+void cifsd_durable_disconnect(struct connection *conn,
 			   unsigned int persistent_id, struct file *filp)
 {
 	struct cifsd_durable_state *durable_state;
@@ -858,7 +866,7 @@ int cifsd_check_stat_info(struct kstat *durable_stat,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * cifsd_durable_reconnect() - verify durable state on reconnect
- * @curr_server:	TCP server instance of connection
+ * @curr_conn:	TCP server instance of connection
  * @durable_stat:	durable state of filp
  * @filp:		current inode stat
  *
@@ -903,7 +911,7 @@ int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
 /**
  * cifsd_update_durable_stat_info() - update durable state of all
  *		persistent fid of a server thread
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
 void cifsd_update_durable_stat_info(struct cifsd_sess *sess)
 {
@@ -960,7 +968,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		    int flags, __u16 *ret_id, int *oplock, int option,
 		    int fexist)
 {
-	struct tcp_server_info *server = work->server;
+	struct connection *conn = work->conn;
 	struct file *filp;
 	int id, err = 0;
 	struct cifsd_file *fp;
@@ -976,7 +984,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
-			smb_break_all_oplock(server, NULL,
+			smb_break_all_oplock(conn, NULL,
 					path->dentry->d_inode);
 		err = vfs_truncate((struct path *)path, 0);
 		if (err)
@@ -1009,7 +1017,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	if (!S_ISDIR(file_inode(filp)->i_mode) &&
 			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
 		/* Client cannot request levelII oplock directly */
-		err = smb_grant_oplock(work->sess, oplock, id, fp, rcv_hdr->Tid,
+		err = smb_grant_oplock(work, oplock, id, fp, rcv_hdr->Tid,
 			NULL);
 		/* if we enconter an error, no oplock is granted */
 		if (err)
@@ -1173,7 +1181,7 @@ out:
 
 /**
  * get_pipe_id() - get a free id for a pipe
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  *
  * Return:	id on success, otherwise error
  */

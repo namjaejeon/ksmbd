@@ -1781,6 +1781,22 @@ typedef struct {
 	__le32 BytesPerSector;
 } __attribute__((packed)) FILE_SYSTEM_INFO;     /* size info, level 0x103 */
 
+#define EXTENDED_INFO_MAGIC 0x43667364		/* Cfsd */
+#define STRING_LENGTH 28
+
+struct fs_extended_info {
+		__le32 magic;
+		__le32 version;
+		__le32 release;
+		__u64 rel_date;
+		char	version_string[STRING_LENGTH];
+} __packed;
+
+struct object_id_info {
+		char objid[16];
+		struct fs_extended_info extended_info;
+} __packed;
+
 typedef struct {
 	/* For undefined recommended transfer size return -1 in that field */
 	__le32 OptimalTransferSize;  /* bsize on some os, iosize on other os */

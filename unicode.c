@@ -3,6 +3,7 @@
  *
  *   Copyright (c) International Business Machines  Corp., 2000,2009
  *   Modified by Steve French (sfrench@us.ibm.com)
+ *   Modified by Namjae Jeon (namjae.jeon@protocolfreedom.org)
  *
  *   This program is free software;  you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -136,9 +137,9 @@ static inline int is_char_allowed(char *ch)
 {
 	/* check for control chars, wildcards etc. */
 	if (!(*ch & 0x80) &&
-			(*ch <= 0x1f ||
-			 *ch == '?' || *ch == '"' || *ch == '<' ||
-			 *ch == '>' || *ch == '|'))
+		(*ch <= 0x1f ||
+		 *ch == '?' || *ch == '"' || *ch == '<' ||
+		 *ch == '>' || *ch == '|'))
 		return 0;
 
 	return 1;
@@ -178,7 +179,6 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 	int fromwords = fromlen / 2;
 	char tmp[NLS_MAX_CHARSET_SIZE];
 	__u16 ftmp;
-	int is_stream_data = 0;
 
 	/*
 	 * because the chars can be of varying widths, we need to take care
@@ -205,14 +205,6 @@ smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
 
 		/* put converted char into 'to' buffer */
 		charlen = cifs_mapchar(&to[outlen], ftmp, codepage, mapchar);
-
-		/* Skip invalid char for filename check for stream data */
-		if (to[outlen] == ':')
-			is_stream_data = 1;
-
-		if (likely(!is_stream_data))
-			if (!is_char_allowed(&to[outlen]))
-				return -EINVAL;
 		outlen += charlen;
 	}
 

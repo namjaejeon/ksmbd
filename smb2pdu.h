@@ -879,6 +879,20 @@ struct smb2_query_directory_rsp {
 #define SMB2_O_INFO_SECURITY	0x03
 #define SMB2_O_INFO_QUOTA	0x04
 
+/* Security info type additionalinfo flags. See MS-SMB2 (2.2.37) or MS-DTYP */
+#define OWNER_SECINFO   0x00000001
+#define GROUP_SECINFO   0x00000002
+#define DACL_SECINFO   0x00000004
+#define SACL_SECINFO   0x00000008
+#define LABEL_SECINFO   0x00000010
+#define ATTRIBUTE_SECINFO   0x00000020
+#define SCOPE_SECINFO   0x00000040
+#define BACKUP_SECINFO   0x00010000
+#define UNPROTECTED_SACL_SECINFO   0x10000000
+#define UNPROTECTED_DACL_SECINFO   0x20000000
+#define PROTECTED_SACL_SECINFO   0x40000000
+#define PROTECTED_DACL_SECINFO   0x80000000
+
 struct smb2_query_info_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 41 */
@@ -967,6 +981,8 @@ struct smb2_set_info_rsp {
 #define FS_VOLUME_INFORMATION_SIZE     24
 #define FS_SIZE_INFORMATION_SIZE       24
 #define FS_FULL_SIZE_INFORMATION_SIZE  32
+#define FS_SECTOR_SIZE_INFORMATION_SIZE 28
+#define FS_OBJECT_ID_INFORMATION_SIZE 64
 
 
 /* FS_ATTRIBUTE_File_System_Name */
@@ -1026,6 +1042,8 @@ struct smb2_lease_ack {
 #define FS_FULL_SIZE_INFORMATION	7 /* Query */
 #define FS_OBJECT_ID_INFORMATION	8 /* Query, Set */
 #define FS_DRIVER_PATH_INFORMATION	9 /* Query */
+#define FS_SECTOR_SIZE_INFORMATION	11 /* SMB3 or later. Query */
+
 
 struct smb2_fs_full_size_info {
 	__le64 TotalAllocationUnits;
@@ -1034,6 +1052,23 @@ struct smb2_fs_full_size_info {
 	__le32 SectorsPerAllocationUnit;
 	__le32 BytesPerSector;
 } __packed;
+
+#define SSINFO_FLAGS_ALIGNED_DEVICE		0x00000001
+#define SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE 0x00000002
+#define SSINFO_FLAGS_NO_SEEK_PENALTY		0x00000004
+#define SSINFO_FLAGS_TRIM_ENABLED		0x00000008
+
+/* sector size info struct */
+struct smb3_fs_ss_info {
+	__le32 LogicalBytesPerSector;
+	__le32 PhysicalBytesPerSectorForAtomicity;
+	__le32 PhysicalBytesPerSectorForPerf;
+	__le32 FSEffPhysicalBytesPerSectorForAtomicity;
+	__le32 Flags;
+	__le32 ByteOffsetForSectorAlignment;
+	__le32 ByteOffsetForPartitionAlignment;
+} __packed;
+
 
 /* partial list of QUERY INFO levels */
 #define FILE_DIRECTORY_INFORMATION	1
@@ -1265,10 +1300,11 @@ extern void smb3_set_sign_rsp(struct smb_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
+extern void smb2_send_interim_resp(struct smb_work *smb_work);
 
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct tcp_server_info *server,
-	int hash_id, char *buf, __u8 *pi_hash);
+extern int calc_preauth_integrity_hash(struct connection *conn,
+	char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);
 extern int smb2_tree_connect(struct smb_work *smb_work);
@@ -1291,9 +1327,11 @@ extern int smb2_oplock_break(struct smb_work *smb_work);
 extern int smb2_notify(struct smb_work *smb_work);
 
 /* smb2 sub command handlers */
-
-extern int smb2_info_filesystem(struct smb_work *smb_work);
-extern int smb2_info_file(struct smb_work *smb_work);
+extern int smb2_get_info_filesystem(struct smb_work *smb_work);
+extern int smb2_get_info_file(struct smb_work *smb_work);
 extern int smb2_set_info_file(struct smb_work *smb_work);
+extern int smb2_get_ea(struct smb_work *smb_work, struct path *path,
+		void *rq, void *resp, void *resp_org);
 extern int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path);
+
 #endif				/* _SMB2PDU_SERVER_H */

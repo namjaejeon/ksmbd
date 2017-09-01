@@ -87,15 +87,15 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 /**
  * init_smb1_server() - initialize a smb server connection with smb1
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb1_server(struct tcp_server_info *server)
+void init_smb1_server(struct connection *conn)
 {
-	if (!server)
+	if (!conn)
 		return;
 
-	server->vals = &smb1_server_values;
-	server->ops = &smb1_server_ops;
-	server->cmds = smb1_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb1_server_cmds);
+	conn->vals = &smb1_server_values;
+	conn->ops = &smb1_server_ops;
+	conn->cmds = smb1_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb1_server_cmds);
 }

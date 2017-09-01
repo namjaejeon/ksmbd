@@ -51,7 +51,10 @@
 #define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
 #define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
 
-struct tcp_server_info;
+#define S_DEL_ON_CLS		131072
+#define S_DEL_ON_CLS_STREAM	262144
+
+struct connection;
 struct cifsd_sess;
 
 struct smb_readdir_data {
@@ -91,6 +94,12 @@ struct cifsd_lock {
 	struct smb_work *work;
 };
 
+struct stream {
+	char *name;
+	int type;
+	ssize_t size;
+};
+
 struct cifsd_file {
 	struct file *filp;
 	/* Will be used for in case of symlink */
@@ -99,11 +108,10 @@ struct cifsd_file {
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
 	struct smb_readdir_data	readdir_data;
-	int		dirent_offset;
+	int	dot_dotdot[2];
+	int	dirent_offset;
 	/* oplock info */
 	struct ofile_info *ofile;
-	bool delete_on_close;
-	bool delete_pending;
 	bool is_nt_open;
 	bool lease_granted;
 	char LeaseKey[16];
@@ -119,8 +127,7 @@ struct cifsd_file {
 	__u64 create_time;
 	bool attrib_only;
 	bool is_stream;
-	char *stream_name;
-	ssize_t ssize;
+	struct stream stream;
 	struct hlist_node node;
 	struct hlist_node notify_node;
 	struct list_head queue;
@@ -214,7 +221,7 @@ cifsd_update_durable_state(struct cifsd_sess *sess,
 
 int cifsd_delete_durable_state(uint64_t persistent_id);
 void
-cifsd_durable_disconnect(struct tcp_server_info *server,
+cifsd_durable_disconnect(struct connection *conn,
 		unsigned int persistent_id, struct file *filp);
 
 void cifsd_update_durable_stat_info(struct cifsd_sess *sess);

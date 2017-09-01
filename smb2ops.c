@@ -184,99 +184,99 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 /**
  * init_smb2_0_server() - initialize a smb server connection with smb2.0
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb2_0_server(struct tcp_server_info *server)
+void init_smb2_0_server(struct connection *conn)
 {
-	server->vals = &smb20_server_values;
-	server->ops = &smb2_0_server_ops;
-	server->cmds = smb2_0_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	server->max_credits = SMB2_MAX_CREDITS;
-	server->credits_granted = 0;
+	conn->vals = &smb20_server_values;
+	conn->ops = &smb2_0_server_ops;
+	conn->cmds = smb2_0_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
+	conn->max_credits = SMB2_MAX_CREDITS;
+	conn->credits_granted = 0;
 }
 
 /**
  * init_smb2_1_server() - initialize a smb server connection with smb2.1
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb2_1_server(struct tcp_server_info *server)
+void init_smb2_1_server(struct connection *conn)
 {
-	server->vals = &smb21_server_values;
-	server->ops = &smb2_0_server_ops;
-	server->cmds = smb2_0_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	server->max_credits = SMB2_MAX_CREDITS;
+	conn->vals = &smb21_server_values;
+	conn->ops = &smb2_0_server_ops;
+	conn->cmds = smb2_0_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
+	conn->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
-		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
+		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 }
 
 /**
  * init_smb3_0_server() - initialize a smb server connection with smb3.0
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb3_0_server(struct tcp_server_info *server)
+void init_smb3_0_server(struct connection *conn)
 {
-	server->vals = &smb30_server_values;
-	server->ops = &smb3_0_server_ops;
-	server->cmds = smb2_0_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	server->max_credits = SMB2_MAX_CREDITS;
+	conn->vals = &smb30_server_values;
+	conn->ops = &smb3_0_server_ops;
+	conn->cmds = smb2_0_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
+	conn->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
-		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
+		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (multi_channel_enable)
-		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
  * init_smb3_02_server() - initialize a smb server connection with smb3.02
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb3_02_server(struct tcp_server_info *server)
+void init_smb3_02_server(struct connection *conn)
 {
-	server->vals = &smb302_server_values;
-	server->ops = &smb3_0_server_ops;
-	server->cmds = smb2_0_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	server->max_credits = SMB2_MAX_CREDITS;
+	conn->vals = &smb302_server_values;
+	conn->ops = &smb3_0_server_ops;
+	conn->cmds = smb2_0_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
+	conn->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
-		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
+		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (multi_channel_enable)
-		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
  * init_smb3_11_server() - initialize a smb server connection with smb3.11
  *			command dispatcher
- * @server:	TCP server instance of connection
+ * @conn:	TCP server instance of connection
  */
-void init_smb3_11_server(struct tcp_server_info *server)
+void init_smb3_11_server(struct connection *conn)
 {
-	server->vals = &smb311_server_values;
-	server->ops = &smb3_0_server_ops;
-	server->cmds = smb2_0_server_cmds;
-	server->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	server->max_credits = SMB2_MAX_CREDITS;
+	conn->vals = &smb311_server_values;
+	conn->ops = &smb3_0_server_ops;
+	conn->cmds = smb2_0_server_cmds;
+	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
+	conn->max_credits = SMB2_MAX_CREDITS;
 
 	if (lease_enable)
-		server->srv_cap = SMB2_GLOBAL_CAP_LEASING;
+		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
 
-	server->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (multi_channel_enable)
-		server->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }

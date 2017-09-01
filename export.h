@@ -94,7 +94,7 @@ struct cifsd_usr {
 	/* global list of cifsd users */
 	struct	list_head list;
 	__u16	vuid;
-	/* how many server have this user */
+	/* how many connection have this user */
 	int	ucount;
 	/* unsigned int capabilities; what for */
 };
@@ -102,7 +102,7 @@ struct cifsd_usr {
 /* cifsd_sess coupled with cifsd_usr */
 struct cifsd_sess {
 	struct cifsd_usr *usr;
-	struct tcp_server_info *server;
+	struct connection *conn;
 	struct list_head cifsd_ses_list;
 	struct list_head cifsd_ses_global_list;
 	struct list_head tcon_list;
@@ -201,11 +201,10 @@ struct cifsd_tcon {
 /*
  * Relation between tcp session, cifsd session and cifsd tree conn:
  * 1 TCP session per client. Each TCP session is represented by 1
- * tcp_server_info object.
+ * connection object.
  * If there are multiple useres per client, than 1 session per user
  * per tcp sess.
- * These sessions are linked via cifsd_ses_list headed at
- * server_info->cifsd_sess.
+ * These sessions are linked via cifsd_ses_list headed at conn->cifsd_sess.
  * Currently we have limited 1 cifsd session per tcp session.
  * However, multiple tree connect possible per session.
  * Each tree connect is associated with a share.
@@ -241,7 +240,7 @@ int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
 int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
 	unsigned int key_size);
 extern struct cifsd_usr *cifsd_is_user_present(char *name);
-struct cifsd_share *get_cifsd_share(struct tcp_server_info *server,
+struct cifsd_share *get_cifsd_share(struct connection *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);
 extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 		struct cifsd_sess *sess);

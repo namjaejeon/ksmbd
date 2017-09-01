@@ -54,7 +54,7 @@ int smb_vfs_create(const char *name, umode_t mode)
 		return err;
 	}
 
-	mode = (mode & ~S_IFMT) | S_IFREG;
+	mode |= S_IFREG;
 	err = vfs_create(path.dentry->d_inode, dentry, mode, true);
 	if (err)
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
@@ -86,7 +86,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 		return err;
 	}
 
-	mode = (mode & ~S_IFMT) | S_IFDIR;
+	mode |= S_IFDIR;
 	err = vfs_mkdir(path.dentry->d_inode, dentry, mode);
 	if (err)
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
@@ -98,7 +98,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 
 /**
  * smb_vfs_read() - vfs helper for smb file read
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @buf:	buf containing read data
  * @count:	read byte count
@@ -139,7 +139,7 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (sess->server->connection_type) {
+	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
@@ -160,9 +160,9 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		cifsd_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, &stream_buf, 1);
-		if (v_len < 0) {
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+		if (v_len == -ENOENT) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(rbuf);
 			return -ENOENT;
@@ -205,7 +205,7 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 /**
  * smb_vfs_write() - vfs helper for smb file write
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @buf:	buf containing data for writing
  * @count:	read byte count
@@ -238,7 +238,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		return -ENOENT;
 	}
 
-	if (sess->server->connection_type) {
+	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 		   FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 		   FILE_GENERIC_ALL_LE))) {
@@ -263,9 +263,9 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 			count = (*pos + count) - XATTR_SIZE_MAX;
 		}
 
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream_name,
-			fp->ssize, &stream_buf, 1);
-		if (v_len < 0) {
+		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+		if (v_len == -ENOENT) {
 			cifsd_err("not found stream in xattr : %zd\n", v_len);
 			kvfree(stream_buf);
 			return -ENOENT;
@@ -287,7 +287,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 		memcpy(&stream_buf[*pos], buf, count);
 
-		err = smb_store_cont_xattr(&filp->f_path, fp->stream_name,
+		err = smb_store_cont_xattr(&filp->f_path, fp->stream.name,
 			(void *)stream_buf, size);
 		if (err < 0)
 			return err;
@@ -312,7 +312,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
 		mutex_lock(&ofile_list_lock);
-		smb_breakII_oplock(sess->server, fp, NULL);
+		smb_breakII_oplock(sess->conn, fp, NULL);
 		mutex_unlock(&ofile_list_lock);
 	}
 
@@ -370,7 +370,7 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 
 /**
  * smb_vfs_setattr() - vfs helper for smb setattr
- * @sess:	TCP server session
+ * @sess:	session
  * @name:	file name
  * @fid:	file id of open file
  * @attrs:	inode attributes
@@ -466,7 +466,7 @@ out:
 
 /**
  * smb_vfs_getattr() - vfs helper for smb getattr
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
@@ -486,7 +486,12 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 	}
 
 	filp = fp->filp;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+	err = vfs_getattr(&filp->f_path, stat, STATX_BASIC_STATS,
+		AT_STATX_SYNC_AS_STAT);
+#else
 	err = vfs_getattr(&filp->f_path, stat);
+#endif
 	if (err)
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
 	return err;
@@ -494,7 +499,7 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 
 /**
  * smb_vfs_fsync() - vfs helper for smb fsync
- * @sess:	TCP server session
+ * @sess:	session
  * @fid:	file id of open file
  *
  * Return:	0 on success, otherwise error
@@ -713,7 +718,7 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
 
 /**
  * smb_vfs_rename() - vfs helper for smb rename
- * @sess:		TCP server session
+ * @sess:		session
  * @abs_oldname:	old filename
  * @abs_newname:	new filename
  * @oldfid:		file id of old file
@@ -875,7 +880,7 @@ out1:
 
 /**
  * smb_vfs_truncate() - vfs helper for smb file truncate
- * @sess:	TCP server session
+ * @sess:	session
  * @name:	old filename
  * @fid:	file id of old file
  * @size:	truncate to given size
@@ -914,7 +919,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
 			mutex_lock(&ofile_list_lock);
-			smb_breakII_oplock(sess->server, fp, NULL);
+			smb_breakII_oplock(sess->conn, fp, NULL);
 			mutex_unlock(&ofile_list_lock);
 		} else {
 			inode = file_inode(filp);
@@ -1064,6 +1069,44 @@ int smb_vfs_truncate_xattr(struct dentry *dentry)
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
 
+		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
+					STREAM_PREFIX_LEN))
+			continue;
+
+		err = vfs_removexattr(dentry, name);
+		if (err)
+			cifsd_err("remove xattr failed : %s\n", name);
+	}
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+
+	return err;
+}
+
+int smb_vfs_truncate_stream_xattr(struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t xattr_list_len;
+	int err = 0;
+
+	xattr_list_len = smb_vfs_listxattr(dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		cifsd_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+
+		if (strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
+					STREAM_PREFIX_LEN))
+			continue;
+
 		err = vfs_removexattr(dentry, name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n", name);
@@ -1195,9 +1238,12 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 	return err;
 }
 
-
-
 int smb_vfs_alloc_size(struct file *filp, loff_t len)
 {
 	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
+}
+
+int smb_vfs_remove_xattr(struct file *filp, char *field_name)
+{
+	return vfs_removexattr(filp->f_path.dentry, field_name);
 }

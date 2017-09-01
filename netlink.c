@@ -83,13 +83,13 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
 	ev = nlmsg_data(nlh);
 	memset(ev, 0, sizeof(*ev));
-	ev->server_handle = cifsd_sess_handle(sess);
+	ev->conn_handle = cifsd_sess_handle(sess);
 	ev->pipe_type = pipe_type;
 
 	switch (etype) {
 	case CIFSD_KEVENT_CREATE_PIPE:
 		ev->k.c_pipe.id = pipe_desc->id;
-		strncpy(ev->k.c_pipe.codepage, sess->server->local_nls->charset,
+		strncpy(ev->k.c_pipe.codepage, sess->conn->local_nls->charset,
 				CIFSD_CODEPAGE_LEN - 1);
 		break;
 	case CIFSD_KEVENT_DESTROY_PIPE:
@@ -108,7 +108,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 		break;
 	case CIFSD_KEVENT_LANMAN_PIPE:
 		ev->k.l_pipe.out_buflen = out_buflen;
-		strncpy(ev->k.l_pipe.codepage, sess->server->local_nls->charset,
+		strncpy(ev->k.l_pipe.codepage, sess->conn->local_nls->charset,
 				CIFSD_CODEPAGE_LEN - 1);
 		user = get_smb_session_user(sess);
 		if (user)
@@ -196,7 +196,7 @@ static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 		return -EINVAL;
 	}
 
-	sess = validate_sess_handle(cifsd_ptr(ev->server_handle));
+	sess = validate_sess_handle(cifsd_ptr(ev->conn_handle));
 	if (unlikely(!sess)) {
 		cifsd_err("invalid session handle\n");
 		return -EINVAL;
