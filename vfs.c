@@ -529,12 +529,12 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 }
 
 /**
- * smb_vfs_unlink() - vfs helper for smb rmdir or unlink
+ * smb_vfs_remove_file() - vfs helper for smb rmdir or unlink
  * @name:	absolute directory or file name
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_unlink(char *name)
+int smb_vfs_remove_file(char *name)
 {
 	struct path parent;
 	struct dentry *dir, *dentry;
@@ -828,7 +828,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 	list_for_each_entry(child_de, &dold->d_subdirs, d_child) {
 		struct cifsd_file *child_fp;
 
-		child_fp = find_fp_in_hlist_using_inode(child_de->d_inode);
+		child_fp = find_fp_using_inode(child_de->d_inode);
 		if (child_fp) {
 			cifsd_debug("not allow to rename dir with opening sub file\n");
 			err = -ENOTEMPTY;
@@ -1246,4 +1246,41 @@ int smb_vfs_alloc_size(struct file *filp, loff_t len)
 int smb_vfs_remove_xattr(struct file *filp, char *field_name)
 {
 	return vfs_removexattr(filp->f_path.dentry, field_name);
+}
+
+int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry)
+{
+	int err = 0;
+
+	dget(dentry);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_lock(dir->d_inode);
+#else
+	mutex_lock(&dir->d_inode->i_mutex);
+#endif
+	if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (S_ISDIR(dentry->d_inode->i_mode))
+		err = vfs_rmdir(dir->d_inode, dentry);
+	else
+#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
+		err = vfs_unlink(dir->d_inode, dentry, NULL);
+#else
+	err = vfs_unlink(dir->d_inode, dentry);
+#endif
+
+out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_unlock(dir->d_inode);
+#else
+	mutex_unlock(&dir->d_inode->i_mutex);
+#endif
+	dput(dentry);
+	if (err)
+		cifsd_debug("failed to delete, err %d\n", err);
+
+	return err;
 }

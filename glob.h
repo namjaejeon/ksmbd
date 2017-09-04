@@ -88,7 +88,6 @@ extern char NEGOTIATE_GSS_HEADER[74];
 
 extern bool global_signing;
 
-extern struct hlist_head global_name_table[1024];
 extern struct list_head global_lock_list;
 
 /* cifsd's Specific ERRNO */
@@ -618,7 +617,7 @@ extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
-extern struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode);
+extern struct cifsd_file *find_fp_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
 extern char *alloc_data_mem(size_t size);
 extern int pattern_cmp(const char *string, const char *pattern);
@@ -644,7 +643,7 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id);
 int smb_dentry_open(struct smb_work *work, const struct path *path,
 		int flags, __u16 *fid, int *oplock, int option,
 		int fexist);
-int smb_vfs_unlink(char *name);
+int smb_vfs_remove_file(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
@@ -670,6 +669,7 @@ int smb_vfs_alloc_size(struct file *filp, loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
 int smb_vfs_remove_xattr(struct file *filp, char *field_name);
+int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct connection *conn);
