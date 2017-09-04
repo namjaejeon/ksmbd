@@ -29,6 +29,8 @@
 #include <linux/xattr.h>
 #endif
 #include <linux/falloc.h>
+#include <linux/genhd.h>
+#include <linux/blkdev.h>
 
 #include "export.h"
 #include "glob.h"
@@ -1246,4 +1248,24 @@ int smb_vfs_alloc_size(struct file *filp, loff_t len)
 int smb_vfs_remove_xattr(struct file *filp, char *field_name)
 {
 	return vfs_removexattr(filp->f_path.dentry, field_name);
+}
+
+/*
+ * get_logical_sector_size() - get logical sector size from inode
+ * @inode: inode
+ *
+ * Return: logical sector size
+ */
+unsigned short get_logical_sector_size(struct inode *inode)
+{
+	struct request_queue *q;
+	int ret_val;
+
+	ret_val = 512;
+	q = inode->i_sb->s_bdev->bd_disk->queue;
+
+	if (q && q->limits.logical_block_size)
+		ret_val = q->limits.logical_block_size;
+
+	return ret_val;
 }
