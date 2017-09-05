@@ -5079,7 +5079,6 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			if (!S_ISDIR(file_inode(filp)->i_mode)
 				&& file_info->Attributes == ATTR_DIRECTORY) {
 				cifsd_err("can't change a file to a directory\n");
-				smb2_set_err_rsp(smb_work);
 				return -EINVAL;
 			}
 
