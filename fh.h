@@ -47,12 +47,12 @@
 #define cifsd_find_next_zero_bit	find_next_zero_bit_le
 #define cifsd_find_next_bit		find_next_bit_le
 
-#define GET_FILENAME_FILP(file)	file->filp->f_path.dentry->d_name.name
-#define GET_FP_INODE(file)	file->filp->f_path.dentry->d_inode
-#define GET_PARENT_INO(file)	file->filp->f_path.dentry->d_parent->d_inode
+#define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
+#define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
+#define PARENT_INODE(fp)	fp->filp->f_path.dentry->d_parent->d_inode
 
-#define S_DEL_ON_CLS		131072
-#define S_DEL_ON_CLS_STREAM	262144
+#define S_DEL_ON_CLS		1
+#define S_DEL_ON_CLS_STREAM	2
 
 struct connection;
 struct cifsd_sess;
@@ -100,7 +100,17 @@ struct stream {
 	ssize_t size;
 };
 
+struct cifsd_mfile {
+	atomic_t m_count;
+	struct inode *m_inode;
+	unsigned int m_nlink;
+	unsigned int m_flags;
+	struct hlist_node m_hash;
+	struct list_head m_fp_list;
+};
+
 struct cifsd_file {
+	struct cifsd_mfile *f_mfp;
 	struct file *filp;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
@@ -128,7 +138,7 @@ struct cifsd_file {
 	bool attrib_only;
 	bool is_stream;
 	struct stream stream;
-	struct hlist_node node;
+	struct list_head node;
 	struct hlist_node notify_node;
 	struct list_head queue;
 	struct list_head lock_list;
@@ -201,6 +211,12 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 		uint32_t tree_id, unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
+void __init mfp_hash_init(void);
+void mfp_init(struct cifsd_mfile *mfp, struct inode *inode);
+void mfp_free(struct cifsd_mfile *mfp);
+void insert_mfp_hash(struct cifsd_mfile *mfp);
+void remove_mfp_hash(struct cifsd_mfile *mfp);
+struct cifsd_mfile *mfp_lookup(struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
