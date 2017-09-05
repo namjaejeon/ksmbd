@@ -627,6 +627,7 @@ extern int check_invalid_char(char *filename);
 extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
 extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
+extern unsigned short get_logical_sector_size(struct inode *inode);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
