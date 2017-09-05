@@ -4985,6 +4985,7 @@ out:
  * @smb_work:	smb work containing set info command buffer
  *
  * Return:	0 on success, otherwise error
+ * TODO: need to implement an error handling for STATUS_INFO_LENGTH_MISMATCH
  */
 int smb2_set_info_file(struct smb_work *smb_work)
 {
@@ -5074,6 +5075,12 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		if (le32_to_cpu(file_info->Attributes)) {
 			unsigned long *config_attr;
+
+			if (!S_ISDIR(file_inode(filp)->i_mode)
+				&& file_info->Attributes == ATTR_DIRECTORY) {
+				cifsd_err("can't change a file to a directory\n");
+				return -EINVAL;
+			}
 
 			config_attr = &smb_work->tcon->share->config.attr;
 			fp->fattr = file_info->Attributes;
@@ -5235,6 +5242,28 @@ next:
 		req = (struct smb2_set_info_req *)smb_work->buf;
 		rc = smb2_set_ea((struct smb2_ea_info *)(req->Buffer),
 			&filp->f_path);
+		break;
+	}
+	case FILE_POSITION_INFORMATION:
+	{
+		struct smb2_file_pos_info *file_info;
+		loff_t current_byte_offset;
+		unsigned short sector_size;
+
+		file_info = (struct smb2_file_pos_info *)req->Buffer;
+		current_byte_offset = le64_to_cpu(file_info->CurrentByteOffset);
+		sector_size = get_logical_sector_size(inode);
+
+		if (current_byte_offset < 0 ||
+			(fp->coption == FILE_NO_INTERMEDIATE_BUFFERING_LE &&
+			current_byte_offset & (sector_size-1))) {
+			cifsd_err("CurrentByteOffset is not valid : %llu\n",
+				current_byte_offset);
+			return -EINVAL;
+		}
+
+		filp->f_pos = current_byte_offset;
+
 		break;
 	}
 	default:
