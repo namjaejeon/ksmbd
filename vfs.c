@@ -830,6 +830,9 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 	list_for_each_entry(child_de, &dold->d_subdirs, d_child) {
 		struct cifsd_file *child_fp;
 
+		if (!child_de->d_inode)
+			continue;
+
 		child_fp = find_fp_using_inode(child_de->d_inode);
 		if (child_fp) {
 			cifsd_debug("not allow to rename dir with opening sub file\n");
