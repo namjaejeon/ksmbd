@@ -2687,7 +2687,7 @@ reconnect:
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	rsp->FileAttributes = fp->fattr;
 
@@ -4002,7 +4002,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 
 		sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		sinfo->NumberOfLinks = cpu_to_le32(stat.nlink);
@@ -4059,7 +4059,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->NumberOfLinks = cpu_to_le32(stat.nlink);
@@ -4227,7 +4227,7 @@ out:
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-				cpu_to_le64(stat.blocks << 9);
+				cpu_to_le64((stat.size + 511) >> 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->Reserved = cpu_to_le32(0);
