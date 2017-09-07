@@ -4070,7 +4070,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		file_info->EASize = 0;
 		file_info->AccessFlags = cpu_to_le32(0x00000080);
 		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
-		file_info->Mode = cpu_to_le32(0x00000010);
+		file_info->Mode = fp->coption;
 		file_info->AlignmentRequirement = 0;
 		uni_filename_len = smbConvertToUTF16(
 				(__le16 *)file_info->FileName,
@@ -5263,6 +5263,31 @@ next:
 		}
 
 		filp->f_pos = current_byte_offset;
+
+		break;
+	}
+	case FILE_MODE_INFORMATION:
+	{
+		struct smb2_file_mode_info *file_info;
+		__le32 mode;
+
+		file_info = (struct smb2_file_mode_info *)req->Buffer;
+		mode = file_info->Mode;
+
+		if ((mode & (~FILE_MODE_INFO_MASK)) ||
+			(mode & FILE_SYNCHRONOUS_IO_ALERT_LE
+			&& mode & FILE_SYNCHRONOUS_IO_NONALERT_LE)) {
+			cifsd_err("Mode is not valid : 0x%x\n",
+				le32_to_cpu(mode));
+			return -EINVAL;
+		}
+
+		/*
+		 * TODO : need to implement consideration for
+		 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
+		 */
+		smb_vfs_set_fadvise(fp->filp, mode);
+		fp->coption = mode;
 
 		break;
 	}
