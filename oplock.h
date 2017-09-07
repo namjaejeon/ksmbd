@@ -115,6 +115,7 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 void close_id_del_oplock(struct connection *conn,
 		struct cifsd_file *fp, unsigned int id);
+void free_opinfo_disconnect(struct connection *conn);
 void dispose_ofile_list(void);
 void smb_break_all_oplock(struct connection *conn,
 		struct cifsd_file *fp, struct inode *inode);
