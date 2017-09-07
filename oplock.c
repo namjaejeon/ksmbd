@@ -66,6 +66,54 @@ void release_ofile(struct cifsd_file *fp)
 }
 
 /**
+ * free_opinfo_disconnect() - free all opinfo created at same conn from
+ * ofile list at disconnection time
+ */
+void free_opinfo_disconnect(struct connection *conn)
+{
+	struct ofile_info *ofile, *tmp1;
+	struct oplock_info *opinfo, *tmp2;
+
+	mutex_lock(&ofile_list_lock);
+	list_for_each_entry_safe(ofile, tmp1, &ofile_list, i_list) {
+		if (atomic_read(&ofile->op_count) > 0) {
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_write_list, op_list) {
+				if (opinfo->conn != conn)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_read_list, op_list) {
+				if (opinfo->conn != conn)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_none_list, op_list) {
+				if (opinfo->conn != conn)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+		}
+
+		if (!atomic_read(&ofile->op_count)) {
+			list_del(&ofile->i_list);
+			kfree(ofile);
+		}
+	}
+	mutex_unlock(&ofile_list_lock);
+}
+
+/**
  * dispose_ofile_list() - free all memory allocated for ofile
  *
  * unlikely that ofile_list will have any remaining entry at rmmod,

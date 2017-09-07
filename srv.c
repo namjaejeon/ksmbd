@@ -628,6 +628,7 @@ static void conn_cleanup(struct connection *conn)
 		vfree(conn->wbuf);
 
 	list_del(&conn->list);
+	free_opinfo_disconnect(conn);
 	kfree(conn);
 }
 
