@@ -522,6 +522,12 @@ struct smb_kstat {
 	__le32 file_attributes;
 };
 
+struct smb2_fs_sector_size {
+	unsigned short logical_sector_size;
+	unsigned int physical_sector_size;
+	unsigned int optimal_io_size;
+};
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debug_enable)			\
@@ -627,7 +633,6 @@ extern int check_invalid_char(char *filename);
 extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
 extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
-extern unsigned short get_logical_sector_size(struct inode *inode);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
@@ -671,6 +676,9 @@ int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
 int smb_vfs_remove_xattr(struct file *filp, char *field_name);
 int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry);
+unsigned short get_logical_sector_size(struct inode *inode);
+void get_smb2_sector_size(struct inode *inode,
+	struct smb2_fs_sector_size *fs_ss);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct connection *conn);

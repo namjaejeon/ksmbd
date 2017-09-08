@@ -1299,7 +1299,7 @@ out:
 unsigned short get_logical_sector_size(struct inode *inode)
 {
 	struct request_queue *q;
-	int ret_val;
+	unsigned short ret_val;
 
 	ret_val = 512;
 	q = inode->i_sb->s_bdev->bd_disk->queue;
@@ -1308,4 +1308,31 @@ unsigned short get_logical_sector_size(struct inode *inode)
 		ret_val = q->limits.logical_block_size;
 
 	return ret_val;
+}
+
+/*
+ * get_smb2_sector_size() - get fs sector sizes
+ * @inode: inode
+ * @fs_ss: fs sector size struct
+ */
+void get_smb2_sector_size(struct inode *inode,
+	struct smb2_fs_sector_size *fs_ss)
+{
+	struct request_queue *q;
+
+	q = inode->i_sb->s_bdev->bd_disk->queue;
+	fs_ss->logical_sector_size = 512;
+	fs_ss->physical_sector_size = 512;
+	fs_ss->optimal_io_size = 512;
+
+	if (q) {
+		if (q->limits.logical_block_size)
+			fs_ss->logical_sector_size =
+				q->limits.logical_block_size;
+		if (q->limits.physical_block_size)
+			fs_ss->physical_sector_size =
+				q->limits.physical_block_size;
+		if (q->limits.io_opt)
+			fs_ss->optimal_io_size = q->limits.io_opt;
+	}
 }

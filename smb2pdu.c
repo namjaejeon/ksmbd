@@ -4368,10 +4368,10 @@ inline int fsTypeSearch(struct fs_type_info fs_type[],
  * @smb_work:	smb work containing query info request buffer
  *
  * Return:	0 on success, otherwise error
+ * TODO: need to implement STATUS_INFO_LENGTH_MISMATCH error handling
  */
 int smb2_get_info_filesystem(struct smb_work *smb_work)
 {
-	const uint64_t bytes_per_sector = 512;
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp, *rsp_org;
 	struct connection *conn = smb_work->conn;
@@ -4382,6 +4382,7 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 	int rc = 0, len;
 	int fs_infoclass_size = 0;
 	int fs_type_idx;
+
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
 	rsp_org = rsp;
@@ -4412,7 +4413,6 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 		path_put(&path);
 		return rc;
 	}
-
 
 	fsinfoclass = req->FileInfoClass;
 
@@ -4477,7 +4477,11 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 	case FS_SIZE_INFORMATION:
 		{
 			FILE_SYSTEM_INFO *fs_size_info;
+			unsigned short logical_sector_size;
+
 			fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
+			logical_sector_size =
+				get_logical_sector_size(path.dentry->d_inode);
 
 			fs_size_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4486,7 +4490,7 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 			fs_size_info->SectorsPerAllocationUnit =
 						cpu_to_le32(stfs.f_bsize >> 9);
 			fs_size_info->BytesPerSector =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(logical_sector_size);
 			rsp->OutputBufferLength = cpu_to_le32(24);
 			inc_rfc1001_len(rsp_org, 24);
 			fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
@@ -4495,8 +4499,12 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 	case FS_FULL_SIZE_INFORMATION:
 		{
 			struct smb2_fs_full_size_info *fs_fullsize_info;
+			unsigned short logical_sector_size;
+
 			fs_fullsize_info =
 				(struct smb2_fs_full_size_info *)(rsp->Buffer);
+			logical_sector_size =
+				get_logical_sector_size(path.dentry->d_inode);
 
 			fs_fullsize_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4507,7 +4515,7 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 			fs_fullsize_info->SectorsPerAllocationUnit =
 						cpu_to_le32(stfs.f_bsize >> 9);
 			fs_fullsize_info->BytesPerSector =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(logical_sector_size);
 			rsp->OutputBufferLength = cpu_to_le32(32);
 			inc_rfc1001_len(rsp_org, 32);
 			fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
@@ -4541,17 +4549,19 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 	case FS_SECTOR_SIZE_INFORMATION:
 		{
 			struct smb3_fs_ss_info *ss_info;
+			struct smb2_fs_sector_size fs_ss;
 
 			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
+			get_smb2_sector_size(path.dentry->d_inode, &fs_ss);
 
 			ss_info->LogicalBytesPerSector =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(fs_ss.logical_sector_size);
 			ss_info->PhysicalBytesPerSectorForAtomicity =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(fs_ss.physical_sector_size);
 			ss_info->PhysicalBytesPerSectorForPerf =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(fs_ss.optimal_io_size);
 			ss_info->FSEffPhysicalBytesPerSectorForAtomicity =
-				cpu_to_le32(bytes_per_sector);
+				cpu_to_le32(fs_ss.optimal_io_size);
 			ss_info->Flags = cpu_to_le32(
 				SSINFO_FLAGS_ALIGNED_DEVICE |
 				SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE);
