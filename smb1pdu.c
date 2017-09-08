@@ -1904,11 +1904,29 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	fp = get_id_from_fidtable(sess, fid);
 	if (fp) {
+		struct cifsd_mfile *mfp;
+
+		mfp = mfp_lookup(FP_INODE(fp));
+		if (!mfp) {
+			mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+			if (!mfp) {
+				err = -ENOMEM;
+				goto free_path;
+			}
+
+			mfp_init(mfp, FP_INODE(fp));
+		}
+
+		/* Add fp to master fp list. */
+		list_add(&fp->node, &mfp->m_fp_list);
+		atomic_inc(&mfp->m_count);
+		fp->f_mfp = mfp;
+
 		if (le32_to_cpu(req->DesiredAccess) & DELETE)
 			fp->is_nt_open = 1;
 		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
 				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
-			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+			mfp->m_flags |= S_DEL_ON_CLS;
 	}
 
 	/* open success, send back response */
@@ -4439,7 +4457,7 @@ int smb_posix_unlink(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	rc = smb_vfs_unlink(name);
+	rc = smb_vfs_remove_file(name);
 	if (rc < 0)
 		goto out;
 
@@ -5938,7 +5956,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 				NT_STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
 		}
-		GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+		fp->f_mfp->m_flags |= S_DEL_ON_CLS;
 	}
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
@@ -6699,7 +6717,7 @@ int smb_rmdir(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_vfs_unlink(name);
+	err = smb_vfs_remove_file(name);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
@@ -6734,7 +6752,7 @@ int smb_unlink(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_vfs_unlink(name);
+	err = smb_vfs_remove_file(name);
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =

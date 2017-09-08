@@ -63,7 +63,6 @@ static DEFINE_SPINLOCK(tcp_sess_list_lock);
 
 struct fidtable_desc global_fidtable;
 
-struct hlist_head global_name_table[1024];
 LIST_HEAD(global_lock_list);
 
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
@@ -1020,6 +1019,9 @@ static int __init init_smb_server(void)
 	rc = cifsd_net_init();
 	if (rc)
 		goto err3;
+
+	mfp_hash_init();
+
 #ifdef CONFIG_CIFSD_ACL
 	rc = init_cifsd_idmap();
 	if (rc)

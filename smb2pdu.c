@@ -1853,6 +1853,7 @@ int smb2_open(struct smb_work *smb_work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifsd_share *share;
+	struct cifsd_mfile *mfp = NULL;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
@@ -2496,6 +2497,18 @@ reconnect:
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 
+	mfp = mfp_lookup(file_inode(filp));
+	if (!mfp) {
+		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+		if (!mfp) {
+			rc = -ENOMEM;
+			goto err_out;
+		}
+
+		mfp_init(mfp, FP_INODE(fp));
+	}
+	fp->f_mfp = mfp;
+
 	if (oplock == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
 		!S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = smb_check_shared_mode(filp, fp);
@@ -2538,19 +2551,20 @@ reconnect:
 	}
 
 	/* Check delete pending among previous fp before oplock break */
-	if (GET_FP_INODE(fp)->i_flags & S_DEL_ON_CLS) {
+	if (mfp->m_flags & S_DEL_ON_CLS) {
 		rc = -EBUSY;
 		goto err_out;
 	}
+
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		if (fp->is_stream)
-			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS_STREAM;
+			mfp->m_flags |= S_DEL_ON_CLS_STREAM;
 		else
-			GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+			mfp->m_flags |= S_DEL_ON_CLS;
 	}
 
-	/* Add fp to global file table using inode key. */
-	hash_add(global_name_table, &fp->node, (unsigned long)file_inode(filp));
+	/* Add fp to master fp list. */
+	list_add(&fp->node, &mfp->m_fp_list);
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
@@ -2576,7 +2590,7 @@ reconnect:
 		if (rc < 0) {
 			cifsd_err("failed to get persistent_id for file\n");
 			durable_open = false;
-			hash_del(&fp->node);
+			list_del(&fp->node);
 			goto err_out;
 		} else {
 			persistent_id = rc;
@@ -2597,11 +2611,11 @@ reconnect:
 	fp->persistent_id = persistent_id;
 
 	if (!file_present) {
-		i_uid_write(GET_FP_INODE(fp), sess->usr->uid.val);
-		i_gid_write(GET_FP_INODE(fp), sess->usr->gid.val);
+		i_uid_write(FP_INODE(fp), sess->usr->uid.val);
+		i_gid_write(FP_INODE(fp), sess->usr->gid.val);
 	}
 
-	igrab(GET_FP_INODE(fp));
+	atomic_inc(&mfp->m_count);
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
@@ -2673,7 +2687,7 @@ reconnect:
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	rsp->FileAttributes = fp->fattr;
 
@@ -2986,7 +3000,7 @@ static int smb_populate_dot_dotdot_entries(struct connection *conn,
 				continue;
 			}
 
-			generic_fillattr(GET_PARENT_INO(dir), &kstat);
+			generic_fillattr(PARENT_INODE(dir), &kstat);
 
 			smb_kstat.kstat = &kstat;
 			rc = smb2_populate_readdir_entry(conn, file_info_class,
@@ -3988,7 +4002,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 
 		sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		sinfo->NumberOfLinks = cpu_to_le32(stat.nlink);
@@ -4045,7 +4059,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.blocks << 9);
+			cpu_to_le64((stat.size + 511) >> 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->NumberOfLinks = cpu_to_le32(stat.nlink);
@@ -4081,7 +4095,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		char *filename;
 		int uni_filename_len;
 
-		filename = (char *)GET_FILENAME_FILP(fp);
+		filename = (char *)FP_FILENAME(fp);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
 		uni_filename_len = smb_get_shortname(conn, filename,
@@ -4213,7 +4227,7 @@ out:
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
 		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-				cpu_to_le64(stat.blocks << 9);
+				cpu_to_le64((stat.size + 511) >> 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->Reserved = cpu_to_le32(0);
@@ -4792,7 +4806,7 @@ int smb2_create_link(struct smb_work *smb_work, struct file *filp)
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = smb_vfs_unlink(link_name);
+			rc = smb_vfs_remove_file(link_name);
 			if (rc) {
 				rsp->hdr.Status =
 					NT_STATUS_INVALID_PARAMETER;
@@ -4925,7 +4939,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = smb_vfs_unlink(tmp_name);
+			rc = smb_vfs_remove_file(tmp_name);
 			if (rc) {
 				if (rc == -ENOTEMPTY)
 					rsp->hdr.Status =
@@ -4971,6 +4985,7 @@ out:
  * @smb_work:	smb work containing set info command buffer
  *
  * Return:	0 on success, otherwise error
+ * TODO: need to implement an error handling for STATUS_INFO_LENGTH_MISMATCH
  */
 int smb2_set_info_file(struct smb_work *smb_work)
 {
@@ -5061,6 +5076,12 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		if (le32_to_cpu(file_info->Attributes)) {
 			unsigned long *config_attr;
 
+			if (!S_ISDIR(file_inode(filp)->i_mode)
+				&& file_info->Attributes == ATTR_DIRECTORY) {
+				cifsd_err("can't change a file to a directory\n");
+				return -EINVAL;
+			}
+
 			config_attr = &smb_work->tcon->share->config.attr;
 			fp->fattr = file_info->Attributes;
 			if (get_attr_store_dos(config_attr)) {
@@ -5081,7 +5102,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			struct dentry *dentry = fp->filp->f_path.dentry;
 			struct inode *inode = dentry->d_inode;
 #else
-			struct inode *inode = GET_FP_INODE(fp);
+			struct inode *inode = FP_INODE(fp);
 #endif
 			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -5167,7 +5188,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		if (fp->is_stream)
 			goto next;
 
-		parent_fp = find_fp_in_hlist_using_inode(GET_PARENT_INO(fp));
+		parent_fp = find_fp_using_inode(PARENT_INODE(fp));
 		if (parent_fp) {
 			if (parent_fp->daccess & FILE_DELETE_LE) {
 				cifsd_err("parent dir is opened with delete access\n");
@@ -5203,7 +5224,7 @@ next:
 				rsp->hdr.Status = NT_STATUS_DIRECTORY_NOT_EMPTY;
 				rc = -1;
 			} else
-				GET_FP_INODE(fp)->i_flags |= S_DEL_ON_CLS;
+				fp->f_mfp->m_flags |= S_DEL_ON_CLS;
 		}
 		break;
 	}
@@ -5221,6 +5242,28 @@ next:
 		req = (struct smb2_set_info_req *)smb_work->buf;
 		rc = smb2_set_ea((struct smb2_ea_info *)(req->Buffer),
 			&filp->f_path);
+		break;
+	}
+	case FILE_POSITION_INFORMATION:
+	{
+		struct smb2_file_pos_info *file_info;
+		loff_t current_byte_offset;
+		unsigned short sector_size;
+
+		file_info = (struct smb2_file_pos_info *)req->Buffer;
+		current_byte_offset = le64_to_cpu(file_info->CurrentByteOffset);
+		sector_size = get_logical_sector_size(inode);
+
+		if (current_byte_offset < 0 ||
+			(fp->coption == FILE_NO_INTERMEDIATE_BUFFERING_LE &&
+			current_byte_offset & (sector_size-1))) {
+			cifsd_err("CurrentByteOffset is not valid : %llu\n",
+				current_byte_offset);
+			return -EINVAL;
+		}
+
+		filp->f_pos = current_byte_offset;
+
 		break;
 	}
 	default:
@@ -6084,7 +6127,7 @@ wait:
 	}
 
 	if (oplocks_enable)
-		smb_break_all_oplock(conn, fp, GET_FP_INODE(fp));
+		smb_break_all_oplock(conn, fp, FP_INODE(fp));
 
 	rsp->StructureSize = cpu_to_le16(4);
 	cifsd_debug("successful in taking lock\n");

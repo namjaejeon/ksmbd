@@ -565,14 +565,15 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	int rc = 0;
 	struct cifsd_file *prev_fp;
 	int same_stream = 0;
+	struct list_head *cur;
 
 	/*
 	 * Lookup fp in global table, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
-	hash_for_each_possible(global_name_table, prev_fp, node,
-			(unsigned long)file_inode(filp))
-		if (file_inode(filp) == GET_FP_INODE(prev_fp)) {
+	list_for_each(cur, &curr_fp->f_mfp->m_fp_list) {
+		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (file_inode(filp) == FP_INODE(prev_fp)) {
 			if (prev_fp->is_stream && curr_fp->is_stream) {
 				if (strcmp(prev_fp->stream.name,
 					curr_fp->stream.name)) {
@@ -661,6 +662,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			}
 
 		}
+	}
 
 	if (!same_stream && !curr_fp->is_stream) {
 		if (curr_fp->cdoption == FILE_SUPERSEDE_LE ||
@@ -674,15 +676,22 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	return rc;
 }
 
-struct cifsd_file *find_fp_in_hlist_using_inode(struct inode *inode)
+struct cifsd_file *find_fp_using_inode(struct inode *inode)
 {
-	struct cifsd_file *fp;
+	struct cifsd_file *lfp;
+	struct cifsd_mfile *mfp;
+	struct list_head *cur;
 
-	hash_for_each_possible(global_name_table, fp, node,
-			(unsigned long)inode)
-		if (inode == GET_FP_INODE(fp))
-			return fp;
+	mfp = mfp_lookup(inode);
+	if (!mfp)
+		goto out;
 
+	list_for_each(cur, &mfp->m_fp_list) {
+		lfp = list_entry(cur, struct cifsd_file, node);
+		if (inode == FP_INODE(lfp))
+			return lfp;
+	}
+out:
 	return NULL;
 }
 

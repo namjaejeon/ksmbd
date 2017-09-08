@@ -51,13 +51,14 @@ void release_ofile(struct cifsd_file *fp)
 {
 	struct cifsd_file *tmp_fp;
 	struct ofile_info *ofile;
+	struct list_head *cur;
 
 	ofile = fp->ofile;
 	list_del(&fp->ofile->i_list);
 	fp->ofile = NULL;
 
-	hash_for_each_possible(global_name_table, tmp_fp, node,
-			(unsigned long)GET_FP_INODE(fp)) {
+	list_for_each(cur, &fp->f_mfp->m_fp_list) {
+		tmp_fp = list_entry(cur, struct cifsd_file, node);
 		if (ofile == tmp_fp->ofile)
 			tmp_fp->ofile = NULL;
 	}
