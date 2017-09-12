@@ -3998,15 +3998,17 @@ int smb2_get_info_file(struct smb_work *smb_work)
 	case FILE_STANDARD_INFORMATION:
 	{
 		struct smb2_file_standard_info *sinfo;
+		unsigned int delete_pending;
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
+		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 
 		sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64((stat.size + 511) >> 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		sinfo->NumberOfLinks = cpu_to_le32(stat.nlink);
-		sinfo->DeletePending = 0;
+		sinfo->NumberOfLinks = FP_INODE(fp)->i_nlink - delete_pending;
+		sinfo->DeletePending = delete_pending;
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_standard_info));
@@ -4033,6 +4035,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		struct smb2_file_all_info *file_info;
 		char *filename, *buf;
 		int uni_filename_len;
+		unsigned int delete_pending;
 
 		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
 			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
@@ -4047,6 +4050,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			return -ENOMEM;
 		filename = find_absolute_pathname(&filp->f_path, buf);
 		cifsd_debug("filename = %s\n", filename);
+		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -4062,8 +4066,9 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64((stat.size + 511) >> 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		file_info->NumberOfLinks = cpu_to_le32(stat.nlink);
-		file_info->DeletePending = 0;
+		file_info->NumberOfLinks =
+			FP_INODE(fp)->i_nlink - delete_pending;
+		file_info->DeletePending = delete_pending;
 		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		file_info->Pad2 = 0;
 		file_info->IndexNumber = cpu_to_le64(stat.ino);
@@ -5235,7 +5240,8 @@ next:
 				rc = -1;
 			} else
 				fp->f_mfp->m_flags |= S_DEL_ON_CLS;
-		}
+		} else
+			fp->f_mfp->m_flags &= ~S_DEL_ON_CLS;
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
