@@ -103,7 +103,6 @@ struct stream {
 struct cifsd_mfile {
 	atomic_t m_count;
 	struct inode *m_inode;
-	unsigned int m_nlink;
 	unsigned int m_flags;
 	struct hlist_node m_hash;
 	struct list_head m_fp_list;

@@ -1283,7 +1283,6 @@ void mfp_init(struct cifsd_mfile *mfp, struct inode *inode)
 {
 	mfp->m_inode = inode;
 	atomic_set(&mfp->m_count, 0);
-	mfp->m_nlink = 0;
 	mfp->m_flags = 0;
 	INIT_LIST_HEAD(&mfp->m_fp_list);
 	insert_mfp_hash(mfp);
