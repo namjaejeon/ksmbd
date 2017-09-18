@@ -665,9 +665,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	}
 
 	if (!same_stream && !curr_fp->is_stream) {
-		if (curr_fp->cdoption == FILE_SUPERSEDE_LE ||
-			curr_fp->cdoption == FILE_OVERWRITE_LE ||
-			curr_fp->cdoption == FILE_OVERWRITE_IF_LE) {
+		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
 			smb_vfs_truncate_stream_xattr(
 				curr_fp->filp->f_path.dentry);
 		}
@@ -882,22 +880,22 @@ out:
 
 int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 {
-	int stream_size;
-	char *stream_name_buf;
-	int stream_type_size = 0;
+	int stream_name_size;
+	int xattr_stream_name_size;
+	char *xattr_stream_name_buf;
 
-	stream_size = strlen(stream_name) + XATTR_NAME_STREAM_LEN;
-	stream_name_buf = kmalloc(XATTR_NAME_STREAM_LEN +
-			stream_size + stream_type_size, GFP_KERNEL);
-	memcpy(stream_name_buf, XATTR_NAME_STREAM,
-			XATTR_NAME_STREAM_LEN);
+	stream_name_size = strlen(stream_name);
+	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN;
+	xattr_stream_name_buf = kmalloc(xattr_stream_name_size, GFP_KERNEL);
+	memcpy(xattr_stream_name_buf, XATTR_NAME_STREAM,
+		XATTR_NAME_STREAM_LEN);
 
-	if (stream_size)
-		memcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN],
-			stream_name, stream_size);
+	if (stream_name_size)
+		memcpy(&xattr_stream_name_buf[XATTR_NAME_STREAM_LEN],
+			stream_name, stream_name_size);
 
-	stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+	xattr_stream_name_buf[xattr_stream_name_size] = '\0';
+	*xattr_stream_name = xattr_stream_name_buf;
 
-	*xattr_stream_name = stream_name_buf;
-	return XATTR_NAME_STREAM_LEN + stream_size;
+	return xattr_stream_name_size;
 }

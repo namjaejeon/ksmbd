@@ -2264,11 +2264,17 @@ int smb2_open(struct smb_work *smb_work)
 			goto err_out;
 		}
 
-		rc = smb_vfs_truncate_xattr(path.dentry);
-		if (rc) {
-			cifsd_err("smb_vfs_truncate_xattr is failed, rc %d\n",
-				rc);
-			goto err_out;
+		/*
+		 * destroy xattr only when CreateDisposition is
+		 * FILE_SUPERSEDE
+		 */
+		if (req->CreateDisposition & FILE_SUPERSEDE_LE) {
+			rc = smb_vfs_truncate_xattr(path.dentry);
+			if (rc) {
+				cifsd_err("smb_vfs_truncate_xattr is failed, rc %d\n",
+					rc);
+				goto err_out;
+			}
 		}
 
 	}
@@ -3706,6 +3712,10 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		if (req->InputBufferLength &&
 				(strncmp(&name[XATTR_USER_PREFIX_LEN],
 					 ea_req->name, ea_req->EaNameLength)))
+			continue;
+
+		if (!strncmp(&name[XATTR_USER_PREFIX_LEN],
+			FILE_ATTRIBUTE_PREFIX, FILE_ATTRIBUTE_PREFIX_LEN))
 			continue;
 
 		name_len = strlen(name);
