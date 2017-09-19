@@ -5049,6 +5049,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	{
 		struct smb2_file_all_info *file_info;
 		struct iattr attrs;
+		struct iattr temp_attrs;
 
 		if (!(fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
 			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
@@ -5087,10 +5088,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		if (le64_to_cpu(file_info->ChangeTime)) {
-			attrs.ia_ctime = cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->ChangeTime));
+			temp_attrs.ia_ctime = attrs.ia_ctime =
+			cifs_NTtimeToUnix(le64_to_cpu(file_info->ChangeTime));
 			attrs.ia_valid |= ATTR_CTIME;
-		}
+		} else
+			temp_attrs.ia_ctime = inode->i_ctime;
 
 		if (le64_to_cpu(file_info->LastWriteTime)) {
 			attrs.ia_mtime = cifs_NTtimeToUnix(
@@ -5121,6 +5123,13 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				rc = 0;
 			}
 		}
+
+		/*
+		 * HACK : set ctime here to avoid ctime changed
+		 * when file_info->ChangeTime is zero.
+		 */
+		 attrs.ia_ctime = temp_attrs.ia_ctime;
+		 attrs.ia_valid |= ATTR_CTIME;
 
 		if (attrs.ia_valid) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
