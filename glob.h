@@ -674,7 +674,7 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 int smb_vfs_alloc_size(struct file *filp, loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
-int smb_vfs_remove_xattr(struct file *filp, char *field_name);
+int smb_vfs_remove_xattr(struct path *path, char *field_name);
 int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short get_logical_sector_size(struct inode *inode);
 void get_smb2_sector_size(struct inode *inode,

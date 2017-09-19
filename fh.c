@@ -426,7 +426,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 
 	if (fp->is_stream && (mfp->m_flags & S_DEL_ON_CLS_STREAM)) {
 		mfp->m_flags &= ~S_DEL_ON_CLS_STREAM;
-		err = smb_vfs_remove_xattr(filp, fp->stream.name);
+		err = smb_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n",
 				fp->stream.name);

@@ -3655,7 +3655,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
-	ssize_t buf_free_len, alignment_bytes, rsp_data_cnt = 0;
+	ssize_t buf_free_len, alignment_bytes, next_offset, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 
 	req = (struct smb2_query_info_req *)rq;
@@ -3692,6 +3692,7 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 	prev_eainfo = eainfo;
 	for (name = xattr_list; name - xattr_list < xattr_list_len;
 			name += strlen(name) + 1) {
+
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
 		/*
 		 * CIFS does not support EA other than user.* namespace,
@@ -3750,20 +3751,21 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 
 		eainfo->name[name_len] = '\0';
 		eainfo->EaValueLength = cpu_to_le16(value_len);
-		rsp_data_cnt += offsetof(struct smb2_ea_info, name) +
+		next_offset = offsetof(struct smb2_ea_info, name) +
 			name_len + 1 + value_len;
 
 		/* align next xattr entry at 4 byte bundary */
-		alignment_bytes = ((rsp_data_cnt + 3) & ~3) - rsp_data_cnt;
+		alignment_bytes = ((next_offset + 3) & ~3) - next_offset;
 		if (alignment_bytes) {
 			memset(ptr, '\0', alignment_bytes);
 			ptr += alignment_bytes;
-			rsp_data_cnt += alignment_bytes;
+			next_offset += alignment_bytes;
 			buf_free_len -= alignment_bytes;
 		}
-		eainfo->NextEntryOffset = cpu_to_le32(rsp_data_cnt);
+		eainfo->NextEntryOffset = cpu_to_le32(next_offset);
 		prev_eainfo = eainfo;
 		eainfo = (struct smb2_ea_info *)ptr;
+		rsp_data_cnt += next_offset;
 
 		if (req->InputBufferLength) {
 			cifsd_debug("single entry requested\n");
@@ -4760,11 +4762,33 @@ int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		attr_name[XATTR_USER_PREFIX_LEN + eabuf->EaNameLength] = '\0';
 		value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
 
-		rc = smb_vfs_setxattr(NULL, path, attr_name, value,
+		if (!eabuf->EaValueLength) {
+			rc = smb_find_cont_xattr(path, attr_name,
+				XATTR_USER_PREFIX_LEN + eabuf->EaNameLength,
+				NULL, 0);
+
+			/* delete the EA only when it exits */
+			if (rc > 0) {
+				rc = smb_vfs_remove_xattr(path, attr_name);
+
+				if (rc < 0) {
+					cifsd_err("remove xattr failed(%d)\n",
+						rc);
+					break;
+				}
+			}
+
+			/* if the EA doesn't exist, just do nothing. */
+			rc = 0;
+		} else {
+			rc = smb_vfs_setxattr(NULL, path, attr_name, value,
 				le16_to_cpu(eabuf->EaValueLength), 0);
-		if (rc < 0) {
-			cifsd_err("smb_vfs_setxattr is failed(%d)\n", rc);
-			break;
+
+			if (rc < 0) {
+				cifsd_err("smb_vfs_setxattr is failed(%d)\n",
+					rc);
+				break;
+			}
 		}
 
 		next = le32_to_cpu(eabuf->NextEntryOffset);

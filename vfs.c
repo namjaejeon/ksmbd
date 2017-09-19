@@ -988,6 +988,7 @@ ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
  * @dentry:	dentry of file for getting xattrs
  * @xattr_name:	name of xattr name to query
  * @xattr_buf:	destination buffer xattr value
+ * @flags: if 0, return stored xattr's length only
  *
  * Return:	read xattr value length on success, otherwise error
  */
@@ -1248,9 +1249,9 @@ int smb_vfs_alloc_size(struct file *filp, loff_t len)
 	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
-int smb_vfs_remove_xattr(struct file *filp, char *field_name)
+int smb_vfs_remove_xattr(struct path *path, char *field_name)
 {
-	return vfs_removexattr(filp->f_path.dentry, field_name);
+	return vfs_removexattr(path->dentry, field_name);
 }
 
 int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry)
