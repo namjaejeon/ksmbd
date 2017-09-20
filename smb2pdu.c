@@ -2255,7 +2255,7 @@ int smb2_open(struct smb_work *smb_work)
 	if (!S_ISDIR(path.dentry->d_inode->i_mode) &&
 			open_flags & O_TRUNC) {
 		if (file_present && oplocks_enable)
-			smb_break_all_oplock(conn, NULL,
+			smb_break_all_oplock(smb_work, NULL,
 					path.dentry->d_inode);
 
 		rc = vfs_truncate(&path, 0);
@@ -5224,7 +5224,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 				 * oplock ?
 				 */
 				mutex_lock(&ofile_list_lock);
-				smb_breakII_oplock(sess->conn, fp, NULL);
+				smb_break_all_levII_oplock(sess->conn, fp, NULL,
+					0);
 				mutex_unlock(&ofile_list_lock);
 			}
 			cifsd_debug("fid %llu truncated to newsize %lld\n",
@@ -6211,7 +6212,7 @@ wait:
 	}
 
 	if (oplocks_enable)
-		smb_break_all_oplock(conn, fp, FP_INODE(fp));
+		smb_break_all_oplock(smb_work, fp, FP_INODE(fp));
 
 	rsp->StructureSize = cpu_to_le16(4);
 	cifsd_debug("successful in taking lock\n");
@@ -6708,6 +6709,21 @@ err_out:
 	return 0;
 }
 
+static int check_lease_state(struct oplock_info *opinfo, __le32 req_state)
+{
+	if ((opinfo->NewLeaseState ==
+		(SMB2_LEASE_READ_CACHING | SMB2_LEASE_HANDLE_CACHING))
+		&& !(req_state & SMB2_LEASE_WRITE_CACHING)) {
+		opinfo->NewLeaseState = req_state;
+		return 0;
+	}
+
+	if (opinfo->NewLeaseState == req_state)
+		return 0;
+
+	return 1;
+}
+
 /**
  * smb21_lease_break() - handler for smb2.1 lease break command
  * @smb_work:	smb work containing lease break command buffer
@@ -6747,11 +6763,17 @@ int smb21_lease_break(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (opinfo->NewLeaseState != req->LeaseState) {
+	if (check_lease_state(opinfo, req->LeaseState)) {
 		mutex_unlock(&ofile_list_lock);
 		rsp->hdr.Status = NT_STATUS_REQUEST_NOT_ACCEPTED;
-		cifsd_err("req lease break state is different with opinfo new lease state (opinfo : 0x%x, req : 0x%x)\n",
+		cifsd_debug("req lease state : 0x%x,  expected lease state : 0x%x\n",
 				opinfo->NewLeaseState, req->LeaseState);
+		goto err_out;
+	}
+
+	if (!atomic_read(&opinfo->breaking_cnt)) {
+		mutex_unlock(&ofile_list_lock);
+		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
 
@@ -6780,15 +6802,22 @@ int smb21_lease_break(struct smb_work *smb_work)
 				lease_change_type = OPLOCK_WRITE_TO_NONE;
 			else
 				lease_change_type = OPLOCK_READ_TO_NONE;
-		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING)
-			lease_change_type = OPLOCK_WRITE_TO_READ;
-		else
+		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING) {
+			if (opinfo->CurrentLeaseState &
+					SMB2_LEASE_WRITE_CACHING)
+				lease_change_type = OPLOCK_WRITE_TO_READ;
+			else
+				lease_change_type = OPLOCK_READ_HANDLE_TO_READ;
+		} else
 			lease_change_type = 0;
 	}
 
 	switch (lease_change_type) {
 	case OPLOCK_WRITE_TO_READ:
 		ret = opinfo_write_to_read(ofile, opinfo, req->LeaseState);
+		break;
+	case OPLOCK_READ_HANDLE_TO_READ:
+		ret = opinfo_read_handle_to_read(ofile, opinfo);
 		break;
 	case OPLOCK_WRITE_TO_NONE:
 		ret = opinfo_write_to_none(ofile, opinfo);
@@ -6803,6 +6832,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 
 	lease_state = opinfo->CurrentLeaseState;
 	opinfo->state = OPLOCK_NOT_BREAKING;
+	atomic_dec(&opinfo->breaking_cnt);
 	wake_up_interruptible(&conn->oplock_q);
 	wake_up(&ofile->op_end_wq);
 	mutex_unlock(&ofile_list_lock);

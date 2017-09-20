@@ -40,10 +40,12 @@
 /* Oplock states */
 #define OPLOCK_NOT_BREAKING             0x00
 #define OPLOCK_BREAKING                 0x01
+#define OPLOCK_CLOSING			0x02
 
 #define OPLOCK_WRITE_TO_READ		0x01
-#define OPLOCK_WRITE_TO_NONE		0x02
-#define OPLOCK_READ_TO_NONE		0x04
+#define OPLOCK_READ_HANDLE_TO_READ	0x02
+#define OPLOCK_WRITE_TO_NONE		0x04
+#define OPLOCK_READ_TO_NONE		0x08
 
 #define SMB2_LEASE_KEY_SIZE		16
 extern struct mutex ofile_list_lock;
@@ -51,7 +53,6 @@ extern struct mutex ofile_list_lock;
 struct lease_ctx_info {
 	__u8			LeaseKey[SMB2_LEASE_KEY_SIZE];
 	__le32			CurrentLeaseState;
-	__le32			OldLeaseState;
 	__le32			LeaseFlags;
 	__le64			LeaseDuration;
 };
@@ -69,7 +70,9 @@ struct oplock_info {
 	int                     state;
 	int                     fid;
 	__u16                   Tid;
+	atomic_t		breaking_cnt;
 	struct list_head        op_list;
+	struct list_head        interim_list;
 
 	/* lease info */
 	bool			leased;
@@ -98,17 +101,19 @@ struct ofile_info {
 extern int smb_grant_oplock(struct smb_work *work, int *oplock,
 		int id, struct cifsd_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx);
-extern void smb1_send_oplock_break(struct work_struct *work);
+extern void smb1_send_oplock_break_notification(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
-extern void smb2_send_oplock_break(struct work_struct *work);
+extern void smb2_send_oplock_break_notification(struct work_struct *work);
 #endif
-extern void smb_breakII_oplock(struct connection *conn,
-		struct cifsd_file *fp, struct ofile_info *ofile);
+extern void smb_break_all_levII_oplock(struct connection *conn,
+	struct cifsd_file *fp, struct ofile_info *ofile, int is_trunc);
 
 struct oplock_info *get_matching_opinfo(struct connection *conn,
 		struct ofile_info *ofile, int fid, int fhclose);
 int opinfo_write_to_read(struct ofile_info *ofile,
 		struct oplock_info *opinfo, __le32 lease_state);
+int opinfo_read_handle_to_read(struct ofile_info *ofile,
+		struct oplock_info *opinfo);
 int opinfo_write_to_none(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 int opinfo_read_to_none(struct ofile_info *ofile,
@@ -117,7 +122,7 @@ void close_id_del_oplock(struct connection *conn,
 		struct cifsd_file *fp, unsigned int id);
 void free_opinfo_disconnect(struct connection *conn);
 void dispose_ofile_list(void);
-void smb_break_all_oplock(struct connection *conn,
+void smb_break_all_oplock(struct smb_work *work,
 		struct cifsd_file *fp, struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

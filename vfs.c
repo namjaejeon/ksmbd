@@ -314,7 +314,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
 		mutex_lock(&ofile_list_lock);
-		smb_breakII_oplock(sess->conn, fp, NULL);
+		smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
 		mutex_unlock(&ofile_list_lock);
 	}
 
@@ -924,7 +924,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
 			mutex_lock(&ofile_list_lock);
-			smb_breakII_oplock(sess->conn, fp, NULL);
+			smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
 			mutex_unlock(&ofile_list_lock);
 		} else {
 			inode = file_inode(filp);

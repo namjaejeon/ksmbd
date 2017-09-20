@@ -944,7 +944,6 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		    int flags, __u16 *ret_id, int *oplock, int option,
 		    int fexist)
 {
-	struct connection *conn = work->conn;
 	struct file *filp;
 	int id, err = 0;
 	struct cifsd_file *fp;
@@ -960,7 +959,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
-			smb_break_all_oplock(conn, NULL,
+			smb_break_all_oplock(work, NULL,
 					path->dentry->d_inode);
 		err = vfs_truncate((struct path *)path, 0);
 		if (err)
