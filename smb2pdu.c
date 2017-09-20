@@ -2522,6 +2522,12 @@ reconnect:
 			goto err_out;
 	}
 
+	/* Check delete pending among previous fp before oplock break */
+	if (mfp->m_flags & S_DEL_ON_CLS) {
+		rc = -EBUSY;
+		goto err_out;
+	}
+
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	if (!oplocks_enable || (oplock == SMB2_OPLOCK_LEVEL_LEASE &&
@@ -2554,12 +2560,6 @@ reconnect:
 		rc = smb_check_shared_mode(filp, fp);
 		if (rc < 0)
 			goto err_out;
-	}
-
-	/* Check delete pending among previous fp before oplock break */
-	if (mfp->m_flags & S_DEL_ON_CLS) {
-		rc = -EBUSY;
-		goto err_out;
 	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
