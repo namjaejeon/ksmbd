@@ -677,7 +677,7 @@ int cifsd_delete_durable_state(uint64_t id)
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if (id >= ftab->max_fids - 1) {
+	if (id > ftab->max_fids - 1) {
 		cifsd_err("Invalid id %llu\n", id);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return -EINVAL;
