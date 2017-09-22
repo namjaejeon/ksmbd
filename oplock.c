@@ -365,6 +365,7 @@ int opinfo_read_handle_to_read(struct ofile_info *ofile,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	opinfo->CurrentLeaseState = opinfo->NewLeaseState;
+	opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
 #endif
 	return 0;
 }
@@ -539,7 +540,12 @@ static void close_id_del_lease(struct connection *conn,
 			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
 			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
 			opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
+			opinfo->CurrentLeaseState = SMB2_LEASE_READ_CACHING;
+			opinfo->NewLeaseState = SMB2_LEASE_READ_CACHING;
 			wake_up_interruptible(&conn->oplock_q);
+
+			atomic_set(&opinfo->breaking_cnt, 0);
+			wake_up_interruptible(&conn->oplock_brk);
 
 			list_del(&opinfo->op_list);
 			atomic_dec(&ofile->op_count);
@@ -549,6 +555,7 @@ static void close_id_del_lease(struct connection *conn,
 					opinfo->state == OPLOCK_NOT_BREAKING,
 					OPLOCK_WAIT_TIME);
 			mutex_lock(&ofile_list_lock);
+
 		} else {
 			list_del(&opinfo->op_list);
 			atomic_dec(&ofile->op_count);
@@ -1128,14 +1135,16 @@ int smb2_break_lease_notification(struct ofile_info *ofile,
 				atomic_read(&opinfo->breaking_cnt) == 0,
 				OPLOCK_WAIT_TIME);
 			if (!ret)
-				atomic_dec(&opinfo->breaking_cnt);
+				atomic_set(&opinfo->breaking_cnt, 0);
 		}
 	} else {
 		smb2_send_lease_break_notification(&work->work);
 		if (opinfo->CurrentLeaseState == SMB2_LEASE_READ_CACHING) {
 			opinfo->lock_type = SMB2_OPLOCK_LEVEL_NONE;
 			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
-			list_move(&opinfo->op_list, &ofile->op_none_list);
+			if (opinfo->state != OPLOCK_CLOSING)
+				list_move(&opinfo->op_list,
+					&ofile->op_none_list);
 		}
 	}
 
