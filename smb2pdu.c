@@ -3918,6 +3918,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 	uint64_t id = -1;
 	int rc = 0;
 	int file_infoclass_size;
+	struct inode *inode;
 
 	req = (struct smb2_query_info_req *)smb_work->buf;
 	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
@@ -3959,7 +3960,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		}
 
 		filp = fp->filp;
-		generic_fillattr(filp->f_path.dentry->d_inode, &stat);
+		inode = filp->f_path.dentry->d_inode;
+		generic_fillattr(inode, &stat);
 	}
 	fileinfoclass = req->FileInfoClass;
 
@@ -4015,8 +4017,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 
-		sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64((stat.size + 511) >> 9);
+		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		sinfo->NumberOfLinks = FP_INODE(fp)->i_nlink - delete_pending;
@@ -4074,8 +4075,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
-		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64((stat.size + 511) >> 9);
+		file_info->AllocationSize = cpu_to_le64(inode->i_blocks);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->NumberOfLinks =
@@ -4243,8 +4243,7 @@ out:
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
-		file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-				cpu_to_le64((stat.size + 511) >> 9);
+		file_info->AllocationSize = cpu_to_le64(inode->i_blocks);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->Reserved = cpu_to_le32(0);
@@ -4267,6 +4266,7 @@ out:
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
+	{
 		if (!(fp->daccess & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to read the extented attributes : 0x%x\n",
@@ -4278,18 +4278,6 @@ out:
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		if (rc < 0)
 			return rc;
-		break;
-	case FILE_ALLOCATION_INFORMATION:
-	{
-		struct smb2_file_alloc_info *file_info;
-		file_info = (struct smb2_file_alloc_info *)rsp->Buffer;
-
-		file_info->Attributes = fp->fattr;
-		file_info->ReparseTag = 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_alloc_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_alloc_info));
-		file_infoclass_size = FILE_ALLOCATION_INFORMATION_SIZE;
 		break;
 	}
 	case FILE_POSITION_INFORMATION:
@@ -5185,7 +5173,51 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		break;
 	}
 	case FILE_ALLOCATION_INFORMATION:
-		/* fall through */
+	{
+		/*
+		 * TODO : It's working fine only when store dos attributes
+		 * is not yes. need to implement a logic which works
+		 * properly with any smb.conf option
+		 */
+
+		struct smb2_file_alloc_info *file_alloc_info;
+		loff_t alloc_size;
+		unsigned short logical_sector_size;
+
+		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
+			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_GENERIC_ALL_LE))) {
+			cifsd_err("no right to write data : 0x%x\n",
+				fp->daccess);
+			return -EACCES;
+		}
+
+		file_alloc_info = (struct smb2_file_alloc_info *)req->Buffer;
+		alloc_size = le64_to_cpu(file_alloc_info->AllocationSize);
+		logical_sector_size = get_logical_sector_size(inode);
+
+		if (alloc_size > inode->i_blocks) {
+			rc = smb_vfs_alloc_size(filp,
+				alloc_size*logical_sector_size);
+
+			if (rc) {
+				cifsd_err("smb_vfs_alloc_size is failed : %d\n",
+					rc);
+				return rc;
+			}
+		} else {
+			rc = smb_vfs_truncate(sess, NULL, id,
+				alloc_size*logical_sector_size);
+
+			if (rc) {
+				cifsd_err("truncate failed! fid %llu err %d\n",
+					id, rc);
+				return rc;
+			}
+		}
+
+		break;
+	}
 	case FILE_END_OF_FILE_INFORMATION:
 	{
 		struct smb2_file_eof_info *file_eof_info;
@@ -5233,7 +5265,6 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 		break;
 	}
-
 	case FILE_RENAME_INFORMATION:
 	{
 		struct cifsd_file *parent_fp;

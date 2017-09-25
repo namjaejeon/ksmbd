@@ -1221,8 +1221,7 @@ struct smb2_file_ea_info {
 } __packed;
 
 struct smb2_file_alloc_info {
-	__le32 Attributes;
-	__le32 ReparseTag;
+	__le64 AllocationSize;
 } __packed;
 
 struct smb2_file_disposition_info {
