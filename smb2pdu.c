@@ -4577,6 +4577,33 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 			fs_infoclass_size = FS_SECTOR_SIZE_INFORMATION_SIZE;
 			break;
 		}
+	case FS_CONTROL_INFORMATION:
+		{
+			/*
+			 * TODO : The current implementation is based on
+			 * test result with win7(NTFS) server. It's need to
+			 * modify this to get valid Quota values
+			 * from Linux kernel
+			 */
+
+			 struct smb2_fs_control_info *fs_control_info;
+
+			 fs_control_info =
+				(struct smb2_fs_control_info *)(rsp->Buffer);
+			 fs_control_info->FreeSpaceStartFiltering = 0;
+			 fs_control_info->FreeSpaceThreshold = 0;
+			 fs_control_info->FreeSpaceStopFiltering = 0;
+			 fs_control_info->DefaultQuotaThreshold =
+				0xFFFFFFFFFFFFFFFF;
+			 fs_control_info->DefaultQuotaLimit =
+				0xFFFFFFFFFFFFFFFF;
+			 fs_control_info->Padding = 0;
+			 rsp->OutputBufferLength = cpu_to_le32(48);
+			 inc_rfc1001_len(rsp_org, 48);
+			 fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
+
+			 break;
+		}
 	default:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		path_put(&path);
