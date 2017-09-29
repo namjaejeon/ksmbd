@@ -1362,18 +1362,17 @@ void mfp_free(struct cifsd_mfile *mfp)
 void __init mfp_hash_init(void)
 {
 	unsigned int loop;
+	unsigned long numentries = 16384;
+	unsigned long bucketsize = sizeof(struct hlist_head);
+	unsigned long size;
+
+	mfp_hash_shift = ilog2(numentries);
+	mfp_hash_mask = (1 << mfp_hash_shift) - 1;
+
+	size = bucketsize << mfp_hash_shift;
 
 	/* init master fp hash table */
-	mfp_hashtable =
-		alloc_large_system_hash("Master-fp-cache",
-			sizeof(struct hlist_head),
-			0,
-			16,
-			0,
-			&mfp_hash_shift,
-			&mfp_hash_mask,
-			0,
-			0);
+	mfp_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
 
 	for (loop = 0; loop < (1U << mfp_hash_shift); loop++)
 		INIT_HLIST_HEAD(&mfp_hashtable[loop]);
