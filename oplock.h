@@ -38,9 +38,9 @@
 #define SMB2_OPLOCK_LEVEL_LEASE         0xFF
 
 /* Oplock states */
-#define OPLOCK_NOT_BREAKING             0x00
-#define OPLOCK_BREAKING                 0x01
-#define OPLOCK_CLOSING			0x02
+#define OPLOCK_STATE_NONE	0x00
+#define OPLOCK_ACK_WAIT		0x01
+#define OPLOCK_FREEING		0x02
 
 #define OPLOCK_WRITE_TO_READ		0x01
 #define OPLOCK_READ_HANDLE_TO_READ	0x02
@@ -67,7 +67,7 @@ struct oplock_info {
 	struct cifsd_sess	*sess;
 	struct smb_work		*work;
 	int                     lock_type;
-	int                     state;
+	int                     op_state;
 	int                     fid;
 	__u16                   Tid;
 	atomic_t		breaking_cnt;
@@ -82,6 +82,8 @@ struct oplock_info {
 	__le32			LeaseFlags;
 	__le64			LeaseDuration;
 	atomic_t		LeaseCount;
+	atomic_t		op_count;
+	wait_queue_head_t	op_end_wq;
 	struct list_head	fid_list;
 
 	bool			open_trunc:1;	/* truncate on open */
@@ -95,7 +97,6 @@ struct ofile_info {
 	struct list_head        op_read_list;
 	struct list_head        op_none_list;
 	atomic_t                op_count;
-	wait_queue_head_t	op_end_wq;
 };
 
 extern int smb_grant_oplock(struct smb_work *work, int *oplock,
@@ -146,6 +147,8 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 					  struct cifsd_sess *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id);
+void op_get(struct oplock_info *op);
+void op_put(struct oplock_info *op);
 #endif
 
 #endif /* __CIFSD_OPLOCK_H */

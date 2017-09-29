@@ -54,6 +54,11 @@
 #define S_DEL_ON_CLS		1
 #define S_DEL_ON_CLS_STREAM	2
 
+/* FP STATE */
+#define FP_NEW		0
+#define FP_FREEING	1
+
+
 struct connection;
 struct cifsd_sess;
 
@@ -101,6 +106,7 @@ struct stream {
 };
 
 struct cifsd_mfile {
+	spinlock_t m_lock;
 	atomic_t m_count;
 	struct inode *m_inode;
 	unsigned int m_flags;
@@ -141,6 +147,10 @@ struct cifsd_file {
 	struct hlist_node notify_node;
 	struct list_head queue;
 	struct list_head lock_list;
+	spinlock_t f_lock;
+	wait_queue_head_t wq;
+	atomic_t f_count;
+	int f_state;
 };
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -240,6 +250,8 @@ cifsd_durable_disconnect(struct connection *conn,
 		unsigned int persistent_id, struct file *filp);
 
 void cifsd_update_durable_stat_info(struct cifsd_sess *sess);
+void fp_get(struct cifsd_file *fp);
+void fp_put(struct cifsd_file *fp);
 #endif
 
 #endif /* __CIFSD_FH_H */

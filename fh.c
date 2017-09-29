@@ -27,6 +27,20 @@
 #include <linux/bootmem.h>
 #include <linux/xattr.h>
 
+void fp_get(struct cifsd_file *fp)
+{
+	atomic_inc(&fp->f_count);
+}
+
+void fp_put(struct cifsd_file *fp)
+{
+	if (!fp)
+		return;
+
+	if (atomic_dec_and_test(&fp->f_count))
+		wake_up(&fp->wq);
+}
+
 /**
  * alloc_fid_mem() - alloc memory for fid management
  * @size:	mem allocation request size
@@ -294,7 +308,10 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess_id = sess_id;
 #endif
+	fp->f_state = FP_NEW;
 	INIT_LIST_HEAD(&fp->node);
+	spin_lock_init(&fp->f_lock);
+	init_waitqueue_head(&fp->wq);
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
@@ -329,8 +346,37 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	}
 
 	file = ftab->fileid[id];
+	if (!file) {
+	spin_unlock(&sess->fidtable.fidtable_lock);
+		return NULL;
+	}
+
+	spin_lock(&file->f_lock);
+	if (file->f_state == FP_FREEING) {
+		spin_unlock(&file->f_lock);
+		spin_unlock(&sess->fidtable.fidtable_lock);
+		return NULL;
+	}
+
+	spin_unlock(&file->f_lock);
+	fp_get(file);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 	return file;
+}
+
+static void wait_on_freeing_fp(struct cifsd_file *fp)
+{
+	int rc;
+
+	if (atomic_read(&fp->f_count)) {
+		rc = wait_event_timeout(fp->wq, atomic_read(&fp->f_count) == 0,
+			1000 * HZ);
+		if (!rc) {
+			cifsd_err("fp : %p, f_count : %d\n",
+				fp, atomic_read(&fp->f_count));
+			BUG();
+		}
+	}
 }
 
 /**
@@ -349,10 +395,21 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
 	fp = ftab->fileid[id];
+	ftab->fileid[id] = NULL;
+	spin_lock(&fp->f_lock);
 	if (fp->is_stream)
 		kfree(fp->stream.name);
+	fp->f_mfp = NULL;
+	spin_unlock(&fp->f_lock);
+	fp_put(fp);
+
+	if (atomic_read(&fp->f_count)) {
+		spin_unlock(&sess->fidtable.fidtable_lock);
+		wait_on_freeing_fp(fp);
+		spin_lock(&sess->fidtable.fidtable_lock);
+	}
+
 	kmem_cache_free(cifsd_filp_cache, fp);
-	ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -388,7 +445,14 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		return -ENOENT;
 	}
 
+	spin_lock(&fp->f_lock);
+	mfp = fp->f_mfp;
+	fp->f_state = FP_FREEING;
+	spin_lock(&mfp->m_lock);
 	list_del(&fp->node);
+	spin_unlock(&mfp->m_lock);
+	spin_unlock(&fp->f_lock);
+
 	close_id_del_oplock(sess->conn, fp, id);
 
 	if (fp->islink)
@@ -421,9 +485,6 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		}
 	}
 
-	mfp = fp->f_mfp;
-	atomic_dec(&mfp->m_count);
-
 	if (fp->is_stream && (mfp->m_flags & S_DEL_ON_CLS_STREAM)) {
 		mfp->m_flags &= ~S_DEL_ON_CLS_STREAM;
 		err = smb_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
@@ -433,21 +494,24 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 
 	}
 
-	if (!(atomic_read(&mfp->m_count))) {
+	if (atomic_dec_and_test(&mfp->m_count)) {
+		spin_lock(&mfp->m_lock);
 		if ((mfp->m_flags & S_DEL_ON_CLS)) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
 			mfp->m_flags &= ~S_DEL_ON_CLS;
+			spin_unlock(&mfp->m_lock);
 			smb_vfs_unlink(dir, dentry);
+			spin_lock(&mfp->m_lock);
 		}
+		spin_unlock(&mfp->m_lock);
 
 		mfp_free(mfp);
-		fp->f_mfp = NULL;
 	}
 
-	filp_close(filp, (struct files_struct *)filp);
 	delete_id_from_fidtable(sess, id);
 	cifsd_close_id(&sess->fidtable, id);
+	filp_close(filp, (struct files_struct *)filp);
 	return 0;
 }
 
@@ -1252,6 +1316,7 @@ struct cifsd_mfile *mfp_lookup(struct inode *inode)
 	spin_lock(&mfp_hash_lock);
 	hlist_for_each_entry(mfp, head, m_hash) {
 		if (mfp->m_inode == inode) {
+			atomic_inc(&mfp->m_count);
 			ret_mfp = mfp;
 			break;
 		}
@@ -1281,9 +1346,10 @@ void remove_mfp_hash(struct cifsd_mfile *mfp)
 void mfp_init(struct cifsd_mfile *mfp, struct inode *inode)
 {
 	mfp->m_inode = inode;
-	atomic_set(&mfp->m_count, 0);
+	atomic_set(&mfp->m_count, 1);
 	mfp->m_flags = 0;
 	INIT_LIST_HEAD(&mfp->m_fp_list);
+	spin_lock_init(&mfp->m_lock);
 	insert_mfp_hash(mfp);
 }
 

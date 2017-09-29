@@ -2621,8 +2621,6 @@ reconnect:
 		i_gid_write(FP_INODE(fp), sess->usr->gid.val);
 	}
 
-	atomic_inc(&mfp->m_count);
-
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = oplock;
 	rsp->Reserved = 0;
@@ -2792,7 +2790,10 @@ err_out1:
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
+		if (mfp && atomic_dec_and_test(&mfp->m_count))
+			mfp_free(mfp);
 		if (fp != NULL) {
+			fp_get(fp);
 			filp_close(filp, (struct files_struct *)filp);
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
@@ -3291,6 +3292,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 
 	kfree(path);
 	kfree(srch_ptr);
+	fp_put(dir_fp);
 	return 0;
 
 err_out:
@@ -3304,6 +3306,8 @@ err_out2:
 			(dir_fp->readdir_data.dirent));
 		dir_fp->readdir_data.dirent = NULL;
 	}
+
+	fp_put(dir_fp);
 
 	if (rsp->hdr.Status == 0)
 		rsp->hdr.Status = NT_STATUS_NOT_IMPLEMENTED;
@@ -3357,6 +3361,7 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		fp_put(fp);
 		return -ENOENT;
 	}
 
@@ -3370,6 +3375,7 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 
 	rsp->OutputBufferLength = out_len;
 	inc_rfc1001_len(rsp_org, out_len);
+	fp_put(fp);
 
 	return rc;
 }
@@ -3956,12 +3962,14 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
 			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			fp_put(fp);
 			return -ENOENT;
 		}
 
 		filp = fp->filp;
 		inode = filp->f_path.dentry->d_inode;
 		generic_fillattr(inode, &stat);
+		fp_put(fp);
 	}
 	fileinfoclass = req->FileInfoClass;
 
@@ -4652,7 +4660,8 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		return -ENOENT;
+		ret = -ENOENT;
+		goto out;
 	}
 
 	filp = fp->filp;
@@ -4666,18 +4675,20 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
 			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
 		rc = -EPERM;
-		return rc;
+		goto out;
 	}
 
 	if ((addition_info & DACL_SECINFO) &&
 			(!(fp->daccess & FILE_WRITE_DAC_LE))) {
 		rc = -EPERM;
-		return rc;
+		goto out;
 	}
 
 	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
 
 	cifsd_fattr_to_inode(inode, &fattr);
+out:
+	fp_put(fp);
 	return rc;
 }
 #endif
@@ -5077,7 +5088,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		return -ENOENT;
+		rc = -ENOENT;
+		goto out;
 	}
 
 	filp = fp->filp;
@@ -5095,7 +5107,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to write the attributes : 0x%x\n",
 				fp->daccess);
-			return -EACCES;
+			rc = -EACCES;
+			goto out;
 		}
 
 		file_info = (struct smb2_file_all_info *)req->Buffer;
@@ -5115,7 +5128,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 					rsp->hdr.Status =
 						NT_STATUS_INVALID_PARAMETER;
 					smb2_set_err_rsp(smb_work);
-					return rc;
+					goto out;
 				}
 			}
 		}
@@ -5145,7 +5158,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			if (!S_ISDIR(file_inode(filp)->i_mode)
 				&& file_info->Attributes == ATTR_DIRECTORY) {
 				cifsd_err("can't change a file to a directory\n");
-				return -EINVAL;
+				rc = -EINVAL;
+				goto out;
 			}
 
 			config_attr = &smb_work->tcon->share->config.attr;
@@ -5180,7 +5194,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 				smb2_set_err_rsp(smb_work);
-				return -EPERM;
+				rc = -EPERM;
+				goto out;
 			}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
@@ -5191,7 +5206,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			if (rc) {
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 				smb2_set_err_rsp(smb_work);
-				return rc;
+				goto out;
 			}
 
 			setattr_copy(inode, &attrs);
@@ -5255,7 +5270,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to write data : 0x%x\n",
 				fp->daccess);
-			return -EACCES;
+			rc = -EACCES;
+			goto out;
 		}
 
 		file_eof_info = (struct smb2_file_eof_info *)req->Buffer;
@@ -5274,7 +5290,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 					rsp->hdr.Status =
 						NT_STATUS_INVALID_HANDLE;
 				smb2_set_err_rsp(smb_work);
-				return rc;
+				goto out;
 			}
 
 			if (oplocks_enable) {
@@ -5299,7 +5315,8 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		if (!(fp->daccess & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to delete : 0x%x\n", fp->daccess);
-			return -EACCES;
+			rc = -EACCES;
+			goto out;
 		}
 
 		if (fp->is_stream)
@@ -5309,12 +5326,14 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		if (parent_fp) {
 			if (parent_fp->daccess & FILE_DELETE_LE) {
 				cifsd_err("parent dir is opened with delete access\n");
-				return -ESHARE;
+				rc = -ESHARE;
+				goto out;
 			}
 
 			if (!(parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
 				cifsd_err("parent dir is opened without share delete\n");
-				return -ESHARE;
+				rc = -ESHARE;
+				goto out;
 			}
 		}
 next:
@@ -5331,7 +5350,8 @@ next:
 		if (!(fp->daccess & (FILE_DELETE_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to delete : 0x%x\n", fp->daccess);
-			return -EACCES;
+			rc = -EACCES;
+			goto out;
 		}
 
 		file_info = (struct smb2_file_disposition_info *)req->Buffer;
@@ -5354,7 +5374,8 @@ next:
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to write the extended attributes : 0x%x\n",
 				fp->daccess);
-			return -EACCES;
+			rc = -EACCES;
+			goto out;
 		}
 
 		req = (struct smb2_set_info_req *)smb_work->buf;
@@ -5377,7 +5398,8 @@ next:
 			current_byte_offset & (sector_size-1))) {
 			cifsd_err("CurrentByteOffset is not valid : %llu\n",
 				current_byte_offset);
-			return -EINVAL;
+			rc = -EINVAL;
+			goto out;
 		}
 
 		filp->f_pos = current_byte_offset;
@@ -5397,7 +5419,8 @@ next:
 			&& mode & FILE_SYNCHRONOUS_IO_NONALERT_LE)) {
 			cifsd_err("Mode is not valid : 0x%x\n",
 				le32_to_cpu(mode));
-			return -EINVAL;
+			rc = -EINVAL;
+			goto out;
 		}
 
 		/*
@@ -5416,6 +5439,8 @@ next:
 		rc = -1;
 	}
 
+out:
+	fp_put(fp);
 	return rc;
 }
 
@@ -5942,7 +5967,7 @@ int smb2_lock(struct smb_work *smb_work)
 	struct smb2_lock_req *req;
 	struct smb2_lock_rsp *rsp;
 	struct smb2_lock_element *lock_ele;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp = NULL;
 	struct file_lock *flock = NULL;
 	struct file *filp = NULL;
 	int lock_count;
@@ -6272,6 +6297,7 @@ wait:
 	if (oplocks_enable)
 		smb_break_all_oplock(smb_work, fp, FP_INODE(fp));
 
+	fp_put(fp);
 	rsp->StructureSize = cpu_to_le16(4);
 	cifsd_debug("successful in taking lock\n");
 	rsp->hdr.Status = NT_STATUS_OK;
@@ -6306,6 +6332,7 @@ out:
 		kfree(smb_lock);
 	}
 out2:
+	fp_put(fp);
 	cifsd_err("failed in taking lock(flags : %x)\n", flags);
 	smb2_set_err_rsp(smb_work);
 	return 0;
@@ -6687,10 +6714,11 @@ int smb20_oplock_break(struct smb_work *smb_work)
 		rsp->hdr.Status = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
 		goto err_out;
 	}
+	op_get(opinfo);
 
-	if (opinfo->state == OPLOCK_NOT_BREAKING) {
+	if (opinfo->op_state == OPLOCK_STATE_NONE) {
 		mutex_unlock(&ofile_list_lock);
-		cifsd_err("unexpected oplock state 0x%x\n", opinfo->state);
+		cifsd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
 		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
@@ -6742,9 +6770,10 @@ int smb20_oplock_break(struct smb_work *smb_work)
 				opinfo->lock_type, oplock);
 	}
 
-	opinfo->state = OPLOCK_NOT_BREAKING;
+	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&conn->oplock_q);
-	wake_up(&ofile->op_end_wq);
+	fp_put(fp);
+	op_put(opinfo);
 	mutex_unlock(&ofile_list_lock);
 
 	if (ret < 0) {
@@ -6763,6 +6792,9 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
+	if (opinfo)
+		op_put(opinfo);
+	fp_put(fp);
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -6812,11 +6844,12 @@ int smb21_lease_break(struct smb_work *smb_work)
 		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
+	op_get(opinfo);
 
-	if (opinfo->state == OPLOCK_NOT_BREAKING) {
+	if (opinfo->op_state == OPLOCK_STATE_NONE) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected lease break state 0x%x\n",
-				opinfo->state);
+				opinfo->op_state);
 		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
@@ -6889,10 +6922,10 @@ int smb21_lease_break(struct smb_work *smb_work)
 	}
 
 	lease_state = opinfo->CurrentLeaseState;
-	opinfo->state = OPLOCK_NOT_BREAKING;
 	atomic_dec(&opinfo->breaking_cnt);
+	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&conn->oplock_q);
-	wake_up(&ofile->op_end_wq);
+	op_put(opinfo);
 	mutex_unlock(&ofile_list_lock);
 
 	if (ret < 0) {
@@ -6911,6 +6944,8 @@ int smb21_lease_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
+	if (opinfo)
+		op_put(opinfo);
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -7207,12 +7242,14 @@ out:
 	kfree(pbuf);
 out2:
 	smb_work->send_no_response = 1;
+	fp_put(fp);
 	return 0;
 
 out3:
 	if (rsp->hdr.Status == 0)
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 	smb2_set_err_rsp(smb_work);
+	fp_put(fp);
 	return err;
 }
 

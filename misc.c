@@ -568,11 +568,14 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	struct list_head *cur;
 
 	/*
-	 * Lookup fp in global table, and check desired access and
+	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
+	spin_lock(&curr_fp->f_mfp->m_lock);
 	list_for_each(cur, &curr_fp->f_mfp->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (prev_fp->f_state == FP_FREEING)
+			continue;
 		if (file_inode(filp) == FP_INODE(prev_fp)) {
 			if (prev_fp->is_stream && curr_fp->is_stream) {
 				if (strcmp(prev_fp->stream.name,
@@ -663,6 +666,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 		}
 	}
+	spin_unlock(&curr_fp->f_mfp->m_lock);
 
 	if (!same_stream && !curr_fp->is_stream) {
 		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
@@ -686,9 +690,12 @@ struct cifsd_file *find_fp_using_inode(struct inode *inode)
 
 	list_for_each(cur, &mfp->m_fp_list) {
 		lfp = list_entry(cur, struct cifsd_file, node);
-		if (inode == FP_INODE(lfp))
+		if (inode == FP_INODE(lfp)) {
+			atomic_dec(&mfp->m_count);
 			return lfp;
+		}
 	}
+
 out:
 	return NULL;
 }
