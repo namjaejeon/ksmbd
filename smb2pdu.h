@@ -955,11 +955,11 @@ struct smb2_set_info_rsp {
 #define FILE_FULL_EA_INFORMATION_SIZE         15
 #define FILE_MODE_INFORMATION_SIZE            4
 #define FILE_ALIGNMENT_INFORMATION_SIZE       4
-#define FILE_ALL_INFORMATION_SIZE             100
+#define FILE_ALL_INFORMATION_SIZE             104
 #define FILE_ALLOCATION_INFORMATION_SIZE      19
 #define FILE_END_OF_FILE_INFORMATION_SIZE     20
 #define FILE_ALTERNATE_NAME_INFORMATION_SIZE  8
-#define FILE_STREAM_INFORMATION_SIZE          24
+#define FILE_STREAM_INFORMATION_SIZE          32
 #define FILE_PIPE_INFORMATION_SIZE            23
 #define FILE_PIPE_LOCAL_INFORMATION_SIZE      24
 #define FILE_PIPE_REMOTE_INFORMATION_SIZE     25
@@ -983,7 +983,7 @@ struct smb2_set_info_rsp {
 #define FS_FULL_SIZE_INFORMATION_SIZE  32
 #define FS_SECTOR_SIZE_INFORMATION_SIZE 28
 #define FS_OBJECT_ID_INFORMATION_SIZE 64
-
+#define FS_CONTROL_INFORMATION_SIZE 48
 
 /* FS_ATTRIBUTE_File_System_Name */
 #define FS_TYPE_SUPPORT_SIZE   44
@@ -1069,6 +1069,16 @@ struct smb3_fs_ss_info {
 	__le32 ByteOffsetForPartitionAlignment;
 } __packed;
 
+/* File System Control Information */
+struct smb2_fs_control_info {
+	__le64 FreeSpaceStartFiltering;
+	__le64 FreeSpaceThreshold;
+	__le64 FreeSpaceStopFiltering;
+	__le64 DefaultQuotaThreshold;
+	__le64 DefaultQuotaLimit;
+	__le32 FileSystemControlFlags;
+	__le32 Padding;
+} __packed;
 
 /* partial list of QUERY INFO levels */
 #define FILE_DIRECTORY_INFORMATION	1
@@ -1221,8 +1231,7 @@ struct smb2_file_ea_info {
 } __packed;
 
 struct smb2_file_alloc_info {
-	__le32 Attributes;
-	__le32 ReparseTag;
+	__le64 AllocationSize;
 } __packed;
 
 struct smb2_file_disposition_info {

@@ -389,6 +389,7 @@ struct connection {
 	atomic_t r_count;
 	wait_queue_head_t req_running_q;
 	wait_queue_head_t oplock_q; /* Other server threads */
+	wait_queue_head_t oplock_brk; /* oplock breaking wait */
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
 	struct list_head async_requests;
@@ -485,6 +486,7 @@ struct smb_work {
 	struct cifsd_tcon *tcon;
 
 	struct async_info *async;
+	struct list_head interim_entry;
 };
 
 struct smb_version_ops {
@@ -674,7 +676,7 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 int smb_vfs_alloc_size(struct file *filp, loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
-int smb_vfs_remove_xattr(struct file *filp, char *field_name);
+int smb_vfs_remove_xattr(struct path *path, char *field_name);
 int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short get_logical_sector_size(struct inode *inode);
 void get_smb2_sector_size(struct inode *inode,

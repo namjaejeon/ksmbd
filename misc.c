@@ -568,11 +568,14 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	struct list_head *cur;
 
 	/*
-	 * Lookup fp in global table, and check desired access and
+	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
+	spin_lock(&curr_fp->f_mfp->m_lock);
 	list_for_each(cur, &curr_fp->f_mfp->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (prev_fp->f_state == FP_FREEING)
+			continue;
 		if (file_inode(filp) == FP_INODE(prev_fp)) {
 			if (prev_fp->is_stream && curr_fp->is_stream) {
 				if (strcmp(prev_fp->stream.name,
@@ -663,11 +666,10 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 		}
 	}
+	spin_unlock(&curr_fp->f_mfp->m_lock);
 
 	if (!same_stream && !curr_fp->is_stream) {
-		if (curr_fp->cdoption == FILE_SUPERSEDE_LE ||
-			curr_fp->cdoption == FILE_OVERWRITE_LE ||
-			curr_fp->cdoption == FILE_OVERWRITE_IF_LE) {
+		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
 			smb_vfs_truncate_stream_xattr(
 				curr_fp->filp->f_path.dentry);
 		}
@@ -688,9 +690,12 @@ struct cifsd_file *find_fp_using_inode(struct inode *inode)
 
 	list_for_each(cur, &mfp->m_fp_list) {
 		lfp = list_entry(cur, struct cifsd_file, node);
-		if (inode == FP_INODE(lfp))
+		if (inode == FP_INODE(lfp)) {
+			atomic_dec(&mfp->m_count);
 			return lfp;
+		}
 	}
+
 out:
 	return NULL;
 }
@@ -882,22 +887,22 @@ out:
 
 int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 {
-	int stream_size;
-	char *stream_name_buf;
-	int stream_type_size = 0;
+	int stream_name_size;
+	int xattr_stream_name_size;
+	char *xattr_stream_name_buf;
 
-	stream_size = strlen(stream_name) + XATTR_NAME_STREAM_LEN;
-	stream_name_buf = kmalloc(XATTR_NAME_STREAM_LEN +
-			stream_size + stream_type_size, GFP_KERNEL);
-	memcpy(stream_name_buf, XATTR_NAME_STREAM,
-			XATTR_NAME_STREAM_LEN);
+	stream_name_size = strlen(stream_name);
+	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN;
+	xattr_stream_name_buf = kmalloc(xattr_stream_name_size, GFP_KERNEL);
+	memcpy(xattr_stream_name_buf, XATTR_NAME_STREAM,
+		XATTR_NAME_STREAM_LEN);
 
-	if (stream_size)
-		memcpy(&stream_name_buf[XATTR_NAME_STREAM_LEN],
-			stream_name, stream_size);
+	if (stream_name_size)
+		memcpy(&xattr_stream_name_buf[XATTR_NAME_STREAM_LEN],
+			stream_name, stream_name_size);
 
-	stream_name_buf[XATTR_NAME_STREAM_LEN + stream_size] = '\0';
+	xattr_stream_name_buf[xattr_stream_name_size] = '\0';
+	*xattr_stream_name = xattr_stream_name_buf;
 
-	*xattr_stream_name = stream_name_buf;
-	return XATTR_NAME_STREAM_LEN + stream_size;
+	return xattr_stream_name_size;
 }

@@ -599,6 +599,7 @@ int init_tcp_conn(struct connection *conn, struct socket *sock)
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = SERVER_CAPS;
 	init_waitqueue_head(&conn->oplock_q);
+	init_waitqueue_head(&conn->oplock_brk);
 	spin_lock(&tcp_sess_list_lock);
 	list_add(&conn->tcp_sess, &tcp_sess_list);
 	spin_unlock(&tcp_sess_list_lock);
@@ -628,6 +629,7 @@ static void conn_cleanup(struct connection *conn)
 		vfree(conn->wbuf);
 
 	list_del(&conn->list);
+	free_opinfo_disconnect(conn);
 	kfree(conn);
 }
 

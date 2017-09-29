@@ -1228,9 +1228,9 @@ int smb_locking_andx(struct smb_work *smb_work)
 		return -EINVAL;
 	}
 
-	if (opinfo->state == OPLOCK_NOT_BREAKING) {
+	if (opinfo->op_state == OPLOCK_STATE_NONE) {
 		mutex_unlock(&ofile_list_lock);
-		cifsd_err("unexpected oplock state 0x%x\n", opinfo->state);
+		cifsd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
 		return -EINVAL;
 	}
 
@@ -1239,7 +1239,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 			cifsd_err("lock level mismatch for fid %d\n",
 					req->Fid);
 			mutex_unlock(&ofile_list_lock);
-			opinfo->state = OPLOCK_NOT_BREAKING;
+			opinfo->op_state = OPLOCK_STATE_NONE;
 			return -EINVAL;
 		}
 	} else if (((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
@@ -1247,7 +1247,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 			(oplock == OPLOCK_READ)) {
 		ret = opinfo_write_to_read(ofile, opinfo, 0);
 		if (ret) {
-			opinfo->state = OPLOCK_NOT_BREAKING;
+			opinfo->op_state = OPLOCK_STATE_NONE;
 			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
@@ -1255,15 +1255,15 @@ int smb_locking_andx(struct smb_work *smb_work)
 			(oplock == OPLOCK_NONE)) {
 		ret = opinfo_read_to_none(ofile, opinfo);
 		if (ret) {
-			opinfo->state = OPLOCK_NOT_BREAKING;
+			opinfo->op_state = OPLOCK_STATE_NONE;
 			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
 	}
 
-	opinfo->state = OPLOCK_NOT_BREAKING;
+	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&conn->oplock_q);
-	wake_up(&ofile->op_end_wq);
+	wake_up(&opinfo->op_end_wq);
 	mutex_unlock(&ofile_list_lock);
 
 	return 0;

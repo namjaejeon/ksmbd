@@ -47,6 +47,17 @@ module_param(durable_enable, bool, 0644);
 MODULE_PARM_DESC(durable_enable, "Enable or disable lease. Default: y/Y/1");
 #endif
 
+void op_get(struct oplock_info *op)
+{
+	atomic_inc(&op->op_count);
+}
+
+void op_put(struct oplock_info *op)
+{
+	if (atomic_dec_and_test(&op->op_count))
+		wake_up(&op->op_end_wq);
+}
+
 void release_ofile(struct cifsd_file *fp)
 {
 	struct cifsd_file *tmp_fp;
@@ -66,6 +77,57 @@ void release_ofile(struct cifsd_file *fp)
 }
 
 /**
+ * free_opinfo_disconnect() - free all opinfo created at same conn from
+ * ofile list at disconnection time
+ */
+void free_opinfo_disconnect(struct connection *conn)
+{
+	struct ofile_info *ofile, *tmp1;
+	struct oplock_info *opinfo, *tmp2;
+
+	mutex_lock(&ofile_list_lock);
+	list_for_each_entry_safe(ofile, tmp1, &ofile_list, i_list) {
+		if (atomic_read(&ofile->op_count) > 0) {
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_write_list, op_list) {
+				if (opinfo->conn != conn ||
+					opinfo->op_state == OPLOCK_FREEING)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_read_list, op_list) {
+				if (opinfo->conn != conn ||
+					opinfo->op_state == OPLOCK_FREEING)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+
+			list_for_each_entry_safe(opinfo, tmp2,
+					&ofile->op_none_list, op_list) {
+				if (opinfo->conn != conn ||
+					opinfo->op_state == OPLOCK_FREEING)
+					continue;
+				list_del(&opinfo->op_list);
+				kfree(opinfo);
+				atomic_dec(&ofile->op_count);
+			}
+		}
+
+		if (!atomic_read(&ofile->op_count)) {
+			list_del(&ofile->i_list);
+			kfree(ofile);
+		}
+	}
+	mutex_unlock(&ofile_list_lock);
+}
+
+/**
  * dispose_ofile_list() - free all memory allocated for ofile
  *
  * unlikely that ofile_list will have any remaining entry at rmmod,
@@ -81,6 +143,8 @@ void dispose_ofile_list(void)
 		if (atomic_read(&ofile->op_count) > 0) {
 			list_for_each_entry_safe(opinfo, tmp2,
 					&ofile->op_write_list, op_list) {
+				if (opinfo->op_state == OPLOCK_FREEING)
+					continue;
 				list_del(&opinfo->op_list);
 				kfree(opinfo);
 				atomic_dec(&ofile->op_count);
@@ -88,6 +152,8 @@ void dispose_ofile_list(void)
 
 			list_for_each_entry_safe(opinfo, tmp2,
 					&ofile->op_read_list, op_list) {
+				if (opinfo->op_state == OPLOCK_FREEING)
+					continue;
 				list_del(&opinfo->op_list);
 				kfree(opinfo);
 				atomic_dec(&ofile->op_count);
@@ -95,6 +161,8 @@ void dispose_ofile_list(void)
 
 			list_for_each_entry_safe(opinfo, tmp2,
 					&ofile->op_none_list, op_list) {
+				if (opinfo->op_state == OPLOCK_FREEING)
+					continue;
 				list_del(&opinfo->op_list);
 				kfree(opinfo);
 				atomic_dec(&ofile->op_count);
@@ -129,7 +197,6 @@ struct ofile_info *get_new_ofile(struct inode *inode)
 	INIT_LIST_HEAD(&ofile_new->op_none_list);
 	atomic_set(&ofile_new->op_count, 0);
 	ofile_new->stream_name = NULL;
-	init_waitqueue_head(&ofile_new->op_end_wq);
 	return ofile_new;
 }
 
@@ -154,15 +221,16 @@ static struct oplock_info *get_new_opinfo(struct smb_work *work,
 	if (!opinfo)
 		return NULL;
 
-	opinfo->work = work;
 	opinfo->sess = sess;
 	opinfo->conn = sess->conn;
 	opinfo->lock_type = OPLOCK_NONE;
-	opinfo->state = OPLOCK_NOT_BREAKING;
+	opinfo->op_state = OPLOCK_STATE_NONE;
 	opinfo->fid = id;
 	opinfo->Tid = Tid;
 	INIT_LIST_HEAD(&opinfo->op_list);
 	INIT_LIST_HEAD(&opinfo->fid_list);
+	INIT_LIST_HEAD(&opinfo->interim_list);
+	init_waitqueue_head(&opinfo->op_end_wq);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (lctx) {
@@ -236,13 +304,15 @@ struct oplock_info *get_matching_opinfo(struct connection *conn,
 
 	list_for_each_entry(opinfo, &ofile->op_write_list, op_list) {
 		if (!opinfo->leased && (conn == opinfo->conn) &&
-				(opinfo->fid == fid))
+			(opinfo->fid == fid) &&
+			(opinfo->op_state != OPLOCK_FREEING))
 			return opinfo;
 	}
 
 	list_for_each_entry(opinfo, &ofile->op_read_list, op_list) {
 		if (!opinfo->leased && (conn == opinfo->conn) &&
-				(opinfo->fid == fid))
+			(opinfo->fid == fid) &&
+			(opinfo->op_state != OPLOCK_FREEING))
 			return opinfo;
 	}
 
@@ -252,7 +322,8 @@ struct oplock_info *get_matching_opinfo(struct connection *conn,
 
 	list_for_each_entry(opinfo, &ofile->op_none_list, op_list) {
 		if (!opinfo->leased && (conn == opinfo->conn) &&
-				(opinfo->fid == fid))
+			(opinfo->fid == fid) &&
+			(opinfo->op_state != OPLOCK_FREEING))
 			return opinfo;
 	}
 
@@ -285,13 +356,8 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 		}
 		opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
 
-		if (opinfo->leased) {
-			opinfo->NewLeaseState = SMB2_LEASE_NONE;
-			opinfo->CurrentLeaseState = SMB2_LEASE_READ_CACHING;
-			if (lease_state & SMB2_LEASE_HANDLE_CACHING)
-				opinfo->CurrentLeaseState |=
-					SMB2_LEASE_HANDLE_CACHING;
-		}
+		if (opinfo->leased)
+			opinfo->CurrentLeaseState = opinfo->NewLeaseState;
 #endif
 	} else {
 		if (!((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
@@ -303,6 +369,27 @@ int opinfo_write_to_read(struct ofile_info *ofile,
 	}
 
 	list_move(&opinfo->op_list, &ofile->op_read_list);
+	return 0;
+}
+
+/**
+ * opinfo_read_handle_to_read() - convert a read/handle oplock to read oplock
+ * @ofile:		opened file to be checked for oplock status
+ * @opinfo:		current oplock info
+ * @lease_state:	current lease state
+ *
+ * Return:      0 on success, otherwise -EINVAL
+ */
+int opinfo_read_handle_to_read(struct ofile_info *ofile,
+		struct oplock_info *opinfo)
+{
+	if (!ofile || !opinfo)
+		return -EINVAL;
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	opinfo->CurrentLeaseState = opinfo->NewLeaseState;
+	opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
+#endif
 	return 0;
 }
 
@@ -331,8 +418,7 @@ int opinfo_write_to_none(struct ofile_info *ofile,
 		}
 		opinfo->lock_type = SMB2_OPLOCK_LEVEL_NONE;
 		if (opinfo->leased) {
-			opinfo->NewLeaseState = SMB2_LEASE_NONE;
-			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
+			opinfo->CurrentLeaseState = opinfo->NewLeaseState;
 		}
 #endif
 	} else {
@@ -371,10 +457,8 @@ int opinfo_read_to_none(struct ofile_info *ofile,
 			return -EINVAL;
 		}
 		opinfo->lock_type = SMB2_OPLOCK_LEVEL_NONE;
-		if (opinfo->leased) {
-			opinfo->NewLeaseState = SMB2_LEASE_NONE;
-			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
-		}
+		if (opinfo->leased)
+			opinfo->CurrentLeaseState = opinfo->NewLeaseState;
 #endif
 	} else {
 		if (opinfo->lock_type != OPLOCK_READ) {
@@ -451,6 +535,20 @@ int lease_none_upgrade(struct ofile_info *ofile, struct oplock_info *opinfo,
 	return 0;
 }
 
+static void wait_on_using_opinfo(struct oplock_info *opinfo)
+{
+	int rc;
+
+	rc = wait_event_timeout(opinfo->op_end_wq,
+		atomic_read(&opinfo->op_count) == 0, 1000 * HZ);
+	if (!rc) {
+		cifsd_err("opinfo : %p, lock_type : %d, op_count : %d\n",
+			opinfo, opinfo->lock_type,
+			atomic_read(&opinfo->op_count));
+		BUG();
+	}
+}
+
 /**
  * close_id_del_lease() - release lease object at file close time
  * @conn:     TCP server instance of connection
@@ -470,36 +568,28 @@ static void close_id_del_lease(struct connection *conn,
 	if (!opinfo || !fidinfo)
 		goto out;
 
-	if (atomic_read(&opinfo->LeaseCount) > 1) {
-		list_del(&fidinfo->fid_entry);
-		kfree(fidinfo);
-		atomic_dec(&opinfo->LeaseCount);
-	} else if (atomic_read(&opinfo->LeaseCount) == 1) {
-		if ((opinfo->state == OPLOCK_BREAKING) &&
-			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
-			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
-			opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
+	list_del(&fidinfo->fid_entry);
+	kfree(fidinfo);
+	if (atomic_dec_and_test(&opinfo->LeaseCount)) {
+		if ((opinfo->op_state == OPLOCK_ACK_WAIT) &&
+			(opinfo->CurrentLeaseState &
+				SMB2_LEASE_HANDLE_CACHING ||
+			opinfo->CurrentLeaseState & SMB2_LEASE_WRITE_CACHING)) {
+			opinfo->op_state = OPLOCK_FREEING;
 			wake_up_interruptible(&conn->oplock_q);
-
-			list_del(&opinfo->op_list);
-			atomic_dec(&ofile->op_count);
-			mutex_unlock(&ofile_list_lock);
-			wait_event_timeout(ofile->op_end_wq,
-					opinfo->state == OPLOCK_NOT_BREAKING,
-					OPLOCK_WAIT_TIME);
-			mutex_lock(&ofile_list_lock);
-		} else {
-			list_del(&opinfo->op_list);
-			atomic_dec(&ofile->op_count);
+			atomic_set(&opinfo->breaking_cnt, 0);
+			wake_up_interruptible(&conn->oplock_brk);
 		}
 
-		list_del(&fidinfo->fid_entry);
-		kfree(fidinfo);
+		opinfo->op_state = OPLOCK_FREEING;
+		list_del(&opinfo->op_list);
 		atomic_dec(&opinfo->LeaseCount);
+
+		mutex_unlock(&ofile_list_lock);
+		wait_on_using_opinfo(opinfo);
+		mutex_lock(&ofile_list_lock);
+		atomic_dec(&ofile->op_count);
 		kfree(opinfo);
-	} else {
-		cifsd_err("bad lease cnt %d\n",
-				atomic_read(&opinfo->LeaseCount));
 	}
 
 out:
@@ -541,32 +631,20 @@ void close_id_del_oplock(struct connection *conn,
 	opinfo = get_matching_opinfo(conn, ofile, id, 1);
 	if (!opinfo)
 		goto out;
-	if ((opinfo->state == OPLOCK_BREAKING) &&
-			(opinfo->lock_type == OPLOCK_EXCLUSIVE ||
-			 opinfo->lock_type == OPLOCK_BATCH ||
-			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
-			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
-		if (IS_SMB2(opinfo->conn)) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			opinfo->lock_type = SMB2_OPLOCK_LEVEL_II;
-#endif
-		} else
-			opinfo->lock_type = OPLOCK_READ;
-
+	if ((opinfo->op_state == OPLOCK_ACK_WAIT) &&
+		(opinfo->lock_type == OPLOCK_EXCLUSIVE ||
+		 opinfo->lock_type == OPLOCK_BATCH ||
+		 opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
+		 opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
+		opinfo->op_state = OPLOCK_FREEING;
 		wake_up_interruptible(&conn->oplock_q);
-
-		list_del(&opinfo->op_list);
-		atomic_dec(&ofile->op_count);
-		mutex_unlock(&ofile_list_lock);
-		wait_event_timeout(ofile->op_end_wq,
-				opinfo->state == OPLOCK_NOT_BREAKING,
-				OPLOCK_WAIT_TIME);
-		mutex_lock(&ofile_list_lock);
-	} else {
-		list_del(&opinfo->op_list);
-		atomic_dec(&ofile->op_count);
 	}
 
+	list_del(&opinfo->op_list);
+	mutex_unlock(&ofile_list_lock);
+	wait_on_using_opinfo(opinfo);
+	mutex_lock(&ofile_list_lock);
+	atomic_dec(&ofile->op_count);
 	kfree(opinfo);
 
 out:
@@ -578,10 +656,11 @@ out:
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
- * smb_send_lease_break() - send lease break command from server to client
+ * smb2_send_lease_break_notification() - send lease break command from server
+ * to client
  * @work:     smb work object
  */
-static void smb_send_lease_break(struct work_struct *work)
+static void smb2_send_lease_break_notification(struct work_struct *work)
 {
 	struct smb2_lease_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
@@ -648,123 +727,6 @@ static void smb_send_lease_break(struct work_struct *work)
 #endif
 
 /**
- * smb_breakII_oplock() - send level2 oplock or read lease break command from
- *			server to client
- * @conn:     TCP server instance of connection
- * @fp:		cifsd file pointer
- * @openfile:	open file information
- */
-void smb_breakII_oplock(struct connection *conn,
-		struct cifsd_file *fp, struct ofile_info *openfile)
-{
-	struct ofile_info *ofile;
-	struct oplock_info *opinfo, *optmp;
-	struct list_head *tmp;
-	struct smb_work *work;
-	bool ack_required = 0;
-	struct inode *inode = file_inode(fp->filp);
-
-	if (!(fp && fp->ofile) && !openfile) {
-		if (fp) {
-			inode = file_inode(fp->filp);
-			list_for_each(tmp, &ofile_list) {
-				openfile = list_entry(tmp,
-					struct ofile_info, i_list);
-				if (openfile->inode == inode)
-					break;
-			}
-			if (!openfile)
-				return;
-		} else
-			return;
-	}
-
-	if (openfile)
-		ofile = openfile;
-	else
-		ofile = fp->ofile;
-
-	list_for_each_entry_safe(opinfo, optmp,
-			&ofile->op_read_list, op_list) {
-		if (IS_SMB2(opinfo->conn)) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			if (opinfo->leased && (opinfo->CurrentLeaseState &
-					(~(SMB2_LEASE_READ_CACHING |
-					   SMB2_LEASE_HANDLE_CACHING)))) {
-				cifsd_err("unexpected lease state(0x%x)\n",
-						opinfo->CurrentLeaseState);
-				continue;
-			} else if (opinfo->lock_type !=
-					SMB2_OPLOCK_LEVEL_II) {
-				cifsd_err("unexpected oplock(0x%x)\n",
-						opinfo->lock_type);
-				continue;
-			}
-#endif
-		} else {
-			if (opinfo->lock_type != OPLOCK_READ) {
-				cifsd_err("unexpected oplock(0x%x)\n",
-					opinfo->lock_type);
-				continue;
-			}
-		}
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		if ((fp && fp->lease_granted) && opinfo->leased &&
-				!memcmp(conn->ClientGUID,
-					opinfo->conn->ClientGUID,
-					SMB2_CLIENT_GUID_SIZE) &&
-				!memcmp(fp->LeaseKey,
-					opinfo->LeaseKey,
-					SMB2_LEASE_KEY_SIZE)) {
-			continue;
-		}
-#endif
-
-		work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
-		if (!work) {
-			cifsd_err("cannot allocate memory\n");
-			continue;
-		}
-
-		work->conn = opinfo->conn;
-		work->sess = opinfo->sess;
-		work->buf = (char *)opinfo;
-
-		ack_required = 0;
-		if (IS_SMB2(opinfo->conn)) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			if (opinfo->leased) {
-				/* send lease break */
-				if (opinfo->CurrentLeaseState &
-					(SMB2_LEASE_HANDLE_CACHING |
-					SMB2_LEASE_WRITE_CACHING)) {
-					opinfo->state = OPLOCK_BREAKING;
-					ack_required = 1;
-				}
-
-				opinfo->NewLeaseState = SMB2_LEASE_NONE;
-				smb_send_lease_break(&work->work);
-				if (!ack_required)
-					opinfo->CurrentLeaseState =
-						SMB2_LEASE_NONE;
-			} else {
-				/* send oplock break */
-				smb2_send_oplock_break(&work->work);
-			}
-#endif
-		} else {
-			ack_required = 1;
-			opinfo->state = OPLOCK_BREAKING;
-			smb1_send_oplock_break(&work->work);
-		}
-
-		if (!ack_required)
-			list_move(&opinfo->op_list, &ofile->op_none_list);
-	}
-}
-
-/**
  * smb1_oplock_break_to_levelII() - send smb1 exclusive/batch to level2 oplock
  *		break command from server to client
  * @ofile:	open file object
@@ -772,8 +734,8 @@ void smb_breakII_oplock(struct connection *conn,
  *
  * Return:      0 on success, otherwise error
  */
-static int smb1_oplock_break_to_levelII(struct ofile_info *ofile,
-		struct oplock_info *opinfo)
+static int smb1_oplock_break_notification(struct ofile_info *ofile,
+		struct oplock_info *opinfo, int ack_required)
 {
 	struct connection *conn = opinfo->conn;
 	int ret = 0;
@@ -784,25 +746,32 @@ static int smb1_oplock_break_to_levelII(struct ofile_info *ofile,
 	work->buf = (char *)opinfo;
 	work->conn = conn;
 
-	INIT_WORK(&work->work, smb1_send_oplock_break);
-	schedule_work(&work->work);
+	if (ack_required) {
+		INIT_WORK(&work->work, smb1_send_oplock_break_notification);
+		schedule_work(&work->work);
 
-	/*
-	 * TODO: change to wait_event_interruptible_timeout once oplock break
-	 * notification timeout is decided. In case of oplock break from
-	 * levelII to none, we don't need to wait for client response.
-	 */
-	wait_event_interruptible_timeout(conn->oplock_q,
-			opinfo->lock_type == OPLOCK_READ ||
-			opinfo->lock_type == OPLOCK_NONE,
-			OPLOCK_WAIT_TIME);
+		/*
+		 * TODO: change to wait_event_interruptible_timeout once oplock
+		 * break notification timeout is decided. In case of oplock
+		 * break from levelII to none, we don't need to wait for client
+		 * response.
+		 */
+		wait_event_interruptible_timeout(conn->oplock_q,
+				opinfo->op_state == OPLOCK_STATE_NONE ||
+				opinfo->op_state == OPLOCK_FREEING,
+				OPLOCK_WAIT_TIME);
 
-	/* is this a timeout ? */
-	if (opinfo->lock_type == OPLOCK_EXCLUSIVE ||
-			opinfo->lock_type == OPLOCK_BATCH) {
-		mutex_lock(&ofile_list_lock);
-		ret = opinfo_write_to_read(ofile, opinfo, 0);
-		mutex_unlock(&ofile_list_lock);
+		/* is this a timeout ? */
+		if (opinfo->lock_type == OPLOCK_EXCLUSIVE ||
+				opinfo->lock_type == OPLOCK_BATCH) {
+			mutex_lock(&ofile_list_lock);
+			ret = opinfo_write_to_read(ofile, opinfo, 0);
+			opinfo->op_state = OPLOCK_STATE_NONE;
+			mutex_unlock(&ofile_list_lock);
+		}
+	} else {
+		smb1_send_oplock_break_notification(&work->work);
+		list_move(&opinfo->op_list, &ofile->op_none_list);
 	}
 
 	return ret;
@@ -810,15 +779,15 @@ static int smb1_oplock_break_to_levelII(struct ofile_info *ofile,
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
- * smb2_oplock_break_to_levelII() - send smb2 exclusive/batch to level2 oplock
+ * smb2_oplock_break_notification() - send smb2 exclusive/batch to level2 oplock
  *		break command from server to client
  * @ofile:	open file object
  * @opinfo:	oplock info object
  *
  * Return:      0 on success, otherwise error
  */
-static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
-		struct oplock_info *opinfo)
+static int smb2_oplock_break_notification(struct ofile_info *ofile,
+	struct oplock_info *opinfo, int ack_required)
 {
 	struct connection *conn = opinfo->conn;
 	int ret = 0;
@@ -830,21 +799,29 @@ static int smb2_oplock_break_to_levelII(struct ofile_info *ofile,
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
-	INIT_WORK(&work->work, smb2_send_oplock_break);
-	schedule_work(&work->work);
+	if (ack_required) {
+		INIT_WORK(&work->work, smb2_send_oplock_break_notification);
+		schedule_work(&work->work);
 
-	wait_event_interruptible_timeout(conn->oplock_q,
-			opinfo->lock_type == SMB2_OPLOCK_LEVEL_II ||
-			opinfo->lock_type == SMB2_OPLOCK_LEVEL_NONE,
+		wait_event_interruptible_timeout(conn->oplock_q,
+			opinfo->op_state == OPLOCK_STATE_NONE ||
+			opinfo->op_state == OPLOCK_FREEING,
 			OPLOCK_WAIT_TIME);
 
-	/* is this a timeout ? */
-	if (opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
-			opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) {
-		mutex_lock(&ofile_list_lock);
-		ret = opinfo_write_to_read(ofile, opinfo, 0);
-		mutex_unlock(&ofile_list_lock);
+		/* is this a timeout ? */
+		if (opinfo->op_state != OPLOCK_FREEING &&
+			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
+			opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)) {
+			mutex_lock(&ofile_list_lock);
+			ret = opinfo_write_to_read(ofile, opinfo, 0);
+			opinfo->op_state = OPLOCK_STATE_NONE;
+			mutex_unlock(&ofile_list_lock);
+		}
+	} else {
+		smb2_send_oplock_break_notification(&work->work);
+		list_move(&opinfo->op_list, &ofile->op_none_list);
 	}
+
 	return ret;
 }
 #endif
@@ -1103,11 +1080,101 @@ static struct oplock_info *same_client_has_lease(struct connection *conn,
 }
 #endif
 
+void wait_for_lease_break_ack(struct ofile_info *ofile,
+	struct oplock_info *opinfo)
+{
+	struct connection *conn = opinfo->conn;
+
+	wait_event_interruptible_timeout(conn->oplock_q,
+		opinfo->op_state == OPLOCK_STATE_NONE ||
+		opinfo->op_state == OPLOCK_FREEING,
+		OPLOCK_WAIT_TIME);
+
+	mutex_lock(&ofile_list_lock);
+	/* is this a timeout ? */
+	if (opinfo->op_state != OPLOCK_FREEING &&
+		opinfo->CurrentLeaseState != opinfo->NewLeaseState) {
+		if (opinfo->CurrentLeaseState & SMB2_LEASE_WRITE_CACHING)
+			opinfo_write_to_read(ofile, opinfo,
+				opinfo->CurrentLeaseState);
+		else if (opinfo->CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING)
+			opinfo_read_handle_to_read(ofile, opinfo);
+		else {
+			cifsd_err("invalid lease state in timeout : 0x%x\n",
+				opinfo->CurrentLeaseState);
+			BUG();
+		}
+		opinfo->op_state = OPLOCK_STATE_NONE;
+	}
+	mutex_unlock(&ofile_list_lock);
+}
+
+/**
+ * smb2_break_lease_notification() - break lease when a new client request
+ *			write lease
+ * @ofile:	open file object
+ * @opinfo:	conains lease state information
+ *
+ * Return:	0 on success, otherwise error
+ */
+int smb2_break_lease_notification(struct ofile_info *ofile,
+		struct oplock_info *opinfo, int ack_required)
+{
+	struct connection *conn = opinfo->conn;
+	struct list_head *tmp, *t;
+	struct smb_work *work;
+
+	work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	if (!work)
+		return -ENOMEM;
+
+	work->buf = (char *)opinfo;
+	work->conn = conn;
+	work->sess = opinfo->sess;
+
+	if (ack_required) {
+		list_for_each_safe(tmp, t, &opinfo->interim_list) {
+			struct smb_work *in_work;
+
+			in_work = list_entry(tmp, struct smb_work,
+				interim_entry);
+			smb2_send_interim_resp(in_work);
+			list_del(&in_work->interim_entry);
+		}
+		INIT_WORK(&work->work, smb2_send_lease_break_notification);
+		schedule_work(&work->work);
+		wait_for_lease_break_ack(ofile, opinfo);
+
+		if (!atomic_read(&opinfo->breaking_cnt))
+			wake_up_interruptible(&conn->oplock_brk);
+
+		if (atomic_read(&opinfo->breaking_cnt)) {
+			int ret = 0;
+
+			ret = wait_event_interruptible_timeout(conn->oplock_brk,
+				atomic_read(&opinfo->breaking_cnt) == 0,
+				OPLOCK_WAIT_TIME);
+			if (!ret)
+				atomic_set(&opinfo->breaking_cnt, 0);
+		}
+	} else {
+		smb2_send_lease_break_notification(&work->work);
+		if (opinfo->CurrentLeaseState == SMB2_LEASE_READ_CACHING) {
+			opinfo->lock_type = SMB2_OPLOCK_LEVEL_NONE;
+			opinfo->CurrentLeaseState = SMB2_LEASE_NONE;
+			list_move(&opinfo->op_list, &ofile->op_none_list);
+		}
+	}
+
+	return 0;
+}
+
 static int smb_send_oplock_break_notification(struct ofile_info *ofile,
 	struct oplock_info *brk_opinfo)
 {
 	int err = 0;
 	int is_smb2 = IS_SMB2(brk_opinfo->conn);
+	int ack_required = 0;
 
 	/* Need to break exclusive/batch oplock, write lease or overwrite_if */
 	cifsd_debug("id old = %d(%d) was oplocked\n",
@@ -1122,44 +1189,99 @@ static int smb_send_oplock_break_notification(struct ofile_info *ofile,
 	* from parallel close path. Decrement dummy ref count once
 	* oplock break response is received.
 	*/
-	brk_opinfo->state = OPLOCK_BREAKING;
+
+	if (brk_opinfo->leased) {
+		if (!(brk_opinfo->CurrentLeaseState == SMB2_LEASE_READ_CACHING))
+			atomic_inc(&brk_opinfo->breaking_cnt);
+
+		if (brk_opinfo->op_state == OPLOCK_ACK_WAIT) {
+			/* wait till getting break ack */
+			mutex_unlock(&ofile_list_lock);
+			wait_for_lease_break_ack(ofile, brk_opinfo);
+			mutex_lock(&ofile_list_lock);
+
+			/* Not immediately break to none. */
+			brk_opinfo->open_trunc = 0;
+		}
+
+		if (brk_opinfo->open_trunc) {
+			/*
+			 * Create overwrite break trigger the lease break to
+			 * none.
+			 */
+			brk_opinfo->NewLeaseState = SMB2_LEASE_NONE;
+		} else {
+			if (brk_opinfo->CurrentLeaseState &
+					SMB2_LEASE_WRITE_CACHING) {
+				if (brk_opinfo->CurrentLeaseState &
+					SMB2_LEASE_HANDLE_CACHING)
+					brk_opinfo->NewLeaseState =
+						SMB2_LEASE_READ_CACHING |
+						SMB2_LEASE_HANDLE_CACHING;
+				else
+					brk_opinfo->NewLeaseState =
+						SMB2_LEASE_READ_CACHING;
+			} else {
+				if (brk_opinfo->CurrentLeaseState &
+					SMB2_LEASE_HANDLE_CACHING)
+					brk_opinfo->NewLeaseState =
+						SMB2_LEASE_READ_CACHING;
+				else
+					brk_opinfo->NewLeaseState =
+						SMB2_LEASE_NONE;
+			}
+		}
+
+		if (brk_opinfo->CurrentLeaseState & (SMB2_LEASE_WRITE_CACHING |
+				SMB2_LEASE_HANDLE_CACHING))
+			brk_opinfo->op_state = OPLOCK_ACK_WAIT;
+	} else if (brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH ||
+		brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE)
+		brk_opinfo->op_state = OPLOCK_ACK_WAIT;
+
 	atomic_inc(&ofile->op_count);
 	mutex_unlock(&ofile_list_lock);
 	if (is_smb2) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		if (brk_opinfo->leased) {
-			/* break lease */
-			if (brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH)
-				brk_opinfo->NewLeaseState =
-					SMB2_LEASE_READ_CACHING |
-					SMB2_LEASE_HANDLE_CACHING;
+			if ((brk_opinfo->open_trunc == 1 &&
+				!(brk_opinfo->CurrentLeaseState &
+					SMB2_LEASE_WRITE_CACHING))
+				|| brk_opinfo->CurrentLeaseState ==
+					SMB2_LEASE_READ_CACHING)
+				ack_required = 0;
 			else
-				brk_opinfo->NewLeaseState =
-					SMB2_LEASE_READ_CACHING;
-			err = smb_break_write_lease(ofile, brk_opinfo);
+				ack_required = 1;
+
+			err = smb2_break_lease_notification(ofile, brk_opinfo,
+				ack_required);
 		} else {
 			/* break oplock */
-			err = smb2_oplock_break_to_levelII(ofile, brk_opinfo);
+			if (brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH ||
+				brk_opinfo->lock_type ==
+				SMB2_OPLOCK_LEVEL_EXCLUSIVE)
+				ack_required = 1;
+			err = smb2_oplock_break_notification(ofile, brk_opinfo,
+				ack_required);
 		}
 #endif
 	} else {
-		err = smb1_oplock_break_to_levelII(ofile, brk_opinfo);
+		if ((brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) ||
+			(brk_opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
+			ack_required = 1;
+		err = smb1_oplock_break_notification(ofile, brk_opinfo,
+			ack_required);
 	}
 
 	mutex_lock(&ofile_list_lock);
 	atomic_dec(&ofile->op_count);
 	if (err) {
-		brk_opinfo->state = OPLOCK_NOT_BREAKING;
+		brk_opinfo->op_state = OPLOCK_STATE_NONE;
 		mutex_unlock(&ofile_list_lock);
 		return err;
 	}
 
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->lock_type);
-
-	if (brk_opinfo->state == OPLOCK_BREAKING) {
-		brk_opinfo->state = OPLOCK_NOT_BREAKING;
-		wake_up(&ofile->op_end_wq);
-	}
 
 	return err;
 }
@@ -1301,10 +1423,8 @@ no_oplock:
 		memcpy(fp->LeaseKey, lctx->LeaseKey,
 				SMB2_LEASE_KEY_SIZE);
 		fp->lease_granted = 1;
-		if (opinfo_matching->state) {
+		if (atomic_read(&opinfo_matching->breaking_cnt))
 			lctx->LeaseFlags = SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
-			smb2_send_interim_resp(opinfo_matching->work);
-		}
 		lctx->CurrentLeaseState = opinfo_matching->CurrentLeaseState;
 		*oplock = opinfo_matching->lock_type;
 		mutex_unlock(&ofile_list_lock);
@@ -1320,29 +1440,29 @@ no_oplock:
 	opinfo_old = get_write_oplock(ofile);
 	if (!opinfo_old)
 		goto op_break_not_needed;
+	op_get(opinfo_old);
 
 	if (fp->attrib_only && (fp->cdoption != FILE_OVERWRITE_IF_LE ||
 				fp->cdoption != FILE_OVERWRITE_LE ||
 				fp->cdoption != FILE_SUPERSEDE_LE)) {
 		cifsd_debug("second attrib only open: don't grant oplock\n");
 		*oplock = SMB2_OPLOCK_LEVEL_NONE;
-		mutex_unlock(&ofile_list_lock);
-		kfree(opinfo_new);
-		return 0;
+		goto out;
 	}
 
 	if ((opinfo_old->lock_type != SMB2_OPLOCK_LEVEL_BATCH) &&
 		((inode->i_flags & S_DEL_ON_CLS) ||
 			(*oplock == SMB2_OPLOCK_LEVEL_NONE))) {
 		*oplock = SMB2_OPLOCK_LEVEL_NONE;
-		mutex_unlock(&ofile_list_lock);
-		kfree(opinfo_new);
-		return 0;
+		goto out;
 	}
 
+	list_add(&work->interim_entry, &opinfo_old->interim_list);
 	err = smb_send_oplock_break_notification(ofile, opinfo_old);
 	/* Check op_count to know all oplock was freed by close */
-	if (!atomic_read(&ofile->op_count)) {
+	if (opinfo_old->op_state == OPLOCK_FREEING) {
+		if (atomic_dec_and_test(&opinfo_old->op_count))
+			wake_up(&opinfo_old->op_end_wq);
 		err = 0;
 		goto no_oplock;
 	}
@@ -1352,8 +1472,11 @@ no_oplock:
 		opinfo_new->CurrentLeaseState = opinfo_old->NewLeaseState;
 
 op_break_not_needed:
-	if (!opinfo_old)
+	if (!opinfo_old) {
 		opinfo_old = get_read_oplock(ofile);
+		if (opinfo_old)
+			op_get(opinfo_old);
+	}
 	if (opinfo_old && opinfo_old->leased && !opinfo_new->leased) {
 		if (opinfo_old->CurrentLeaseState & SMB2_LEASE_HANDLE_CACHING) {
 			*oplock = 0;
@@ -1367,6 +1490,8 @@ op_break_not_needed:
 		err = grant_read_oplock(ofile, opinfo_new, oplock, fp, lctx);
 	}
 out:
+	if (opinfo_old && atomic_dec_and_test(&opinfo_old->op_count))
+		wake_up(&opinfo_old->op_end_wq);
 	mutex_unlock(&ofile_list_lock);
 	if (err) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1386,13 +1511,12 @@ out:
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
-void smb_break_write_oplock(struct connection *conn,
-		struct cifsd_file *fp, struct ofile_info *openfile)
+void smb_break_all_write_oplock(struct smb_work *work,
+	struct cifsd_file *fp, struct ofile_info *openfile, int is_trunc)
 {
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo, *tmp;
 	struct inode *inode;
-	int err = 0;
 
 	if (!(fp && fp->ofile) && !openfile)
 		return;
@@ -1407,64 +1531,94 @@ void smb_break_write_oplock(struct connection *conn,
 
 	list_for_each_entry_safe(opinfo, tmp,
 			&ofile->op_write_list, op_list) {
-		opinfo->open_trunc = 1;
+		op_get(opinfo);
+		opinfo->open_trunc = is_trunc;
+		list_add(&work->interim_entry, &opinfo->interim_list);
+		smb_send_oplock_break_notification(ofile, opinfo);
+		op_put(opinfo);
+	}
+}
+
+/**
+ * smb_break_all_levII_oplock() - send level2 oplock or read lease break command
+ *	from server to client
+ * @conn:     TCP server instance of connection
+ * @fp:		cifsd file pointer
+ * @openfile:	open file information
+ */
+void smb_break_all_levII_oplock(struct connection *conn,
+	struct cifsd_file *fp, struct ofile_info *openfile, int is_trunc)
+{
+	struct ofile_info *ofile;
+	struct oplock_info *opinfo, *optmp;
+	struct list_head *tmp;
+	struct inode *inode = file_inode(fp->filp);
+
+	if (!(fp && fp->ofile) && !openfile) {
+		if (fp) {
+			inode = file_inode(fp->filp);
+			list_for_each(tmp, &ofile_list) {
+				openfile = list_entry(tmp,
+					struct ofile_info, i_list);
+				if (openfile->inode == inode)
+					break;
+			}
+			if (!openfile)
+				return;
+		} else
+			return;
+	}
+
+	if (openfile)
+		ofile = openfile;
+	else
+		ofile = fp->ofile;
+
+	list_for_each_entry_safe(opinfo, optmp,
+			&ofile->op_read_list, op_list) {
 		if (IS_SMB2(opinfo->conn)) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
-			cifsd_debug("oplock break for inode %lu\n",
-					inode->i_ino);
-			WARN_ON(!((opinfo->lock_type ==
-						SMB2_OPLOCK_LEVEL_BATCH) ||
-						(opinfo->lock_type ==
-						 SMB2_OPLOCK_LEVEL_EXCLUSIVE)));
-
-			opinfo->state = OPLOCK_BREAKING;
-			atomic_inc(&ofile->op_count);
-			mutex_unlock(&ofile_list_lock);
-			if (opinfo->leased) {
-				/* break lease */
-				opinfo->NewLeaseState = SMB2_LEASE_NONE;
-				err = smb_break_write_lease(ofile, opinfo);
-			} else {
-				/* break oplock */
-				err = smb2_oplock_break_to_levelII(ofile,
-						opinfo);
-			}
-			mutex_lock(&ofile_list_lock);
-			atomic_dec(&ofile->op_count);
-			if (err) {
-				opinfo->state = OPLOCK_NOT_BREAKING;
-				mutex_unlock(&ofile_list_lock);
-				return;
+			if (opinfo->leased && (opinfo->CurrentLeaseState &
+					(~(SMB2_LEASE_READ_CACHING |
+					   SMB2_LEASE_HANDLE_CACHING)))) {
+				cifsd_err("unexpected lease state(0x%x)\n",
+						opinfo->CurrentLeaseState);
+				continue;
+			} else if (opinfo->lock_type !=
+					SMB2_OPLOCK_LEVEL_II) {
+				cifsd_err("unexpected oplock(0x%x)\n",
+						opinfo->lock_type);
+				continue;
 			}
 
-			cifsd_debug("oplock granted %d\n", opinfo->lock_type);
+			if (opinfo->leased && (opinfo->NewLeaseState ==
+					SMB2_LEASE_NONE) &&
+				atomic_read(&opinfo->breaking_cnt))
+				continue;
 #endif
 		} else {
-			cifsd_debug("oplock break for inode %lu\n",
-					inode->i_ino);
-			WARN_ON(!((opinfo->lock_type == OPLOCK_BATCH) ||
-					(opinfo->lock_type ==
-						OPLOCK_EXCLUSIVE)));
-
-			opinfo->state = OPLOCK_BREAKING;
-			atomic_inc(&ofile->op_count);
-			mutex_unlock(&ofile_list_lock);
-			err = smb1_oplock_break_to_levelII(ofile, opinfo);
-			mutex_lock(&ofile_list_lock);
-			atomic_dec(&ofile->op_count);
-			if (err) {
-				opinfo->state = OPLOCK_NOT_BREAKING;
-				mutex_unlock(&ofile_list_lock);
-				return;
+			if (opinfo->lock_type != OPLOCK_READ) {
+				cifsd_err("unexpected oplock(0x%x)\n",
+					opinfo->lock_type);
+				continue;
 			}
-
-			cifsd_debug("oplock granted %d\n", opinfo->lock_type);
 		}
 
-		if (opinfo->state == OPLOCK_BREAKING) {
-			opinfo->state = OPLOCK_NOT_BREAKING;
-			wake_up(&ofile->op_end_wq);
+#ifdef CONFIG_CIFS_SMB2_SERVER
+		if ((fp && fp->lease_granted) && opinfo->leased &&
+				!memcmp(conn->ClientGUID,
+					opinfo->conn->ClientGUID,
+					SMB2_CLIENT_GUID_SIZE) &&
+				!memcmp(fp->LeaseKey,
+					opinfo->LeaseKey,
+					SMB2_LEASE_KEY_SIZE)) {
+			continue;
 		}
+#endif
+		opinfo->open_trunc = is_trunc;
+		op_get(opinfo);
+		smb_send_oplock_break_notification(ofile, opinfo);
+		op_put(opinfo);
 	}
 }
 
@@ -1474,7 +1628,7 @@ void smb_break_write_oplock(struct connection *conn,
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
-void smb_break_all_oplock(struct connection *conn,
+void smb_break_all_oplock(struct smb_work *work,
 		struct cifsd_file *fp, struct inode *inode)
 {
 	struct ofile_info *ofile = NULL;
@@ -1491,14 +1645,15 @@ void smb_break_all_oplock(struct connection *conn,
 	}
 
 	if (file_open) {
-		smb_break_write_oplock(conn, fp, ofile);
-		smb_breakII_oplock(conn, fp, ofile);
+		smb_break_all_write_oplock(work, fp, ofile, 1);
+		smb_break_all_levII_oplock(work->conn, fp, ofile, 1);
 	}
 	mutex_unlock(&ofile_list_lock);
 }
 
 /**
- * smb1_send_oplock_break() - send smb1 oplock break cmd from conn to client
+ * smb1_send_oplock_break_notification() - send smb1 oplock break cmd from conn
+ * to client
  * @work:     smb work object
  *
  * There are two ways this function can be called. 1- while file open we break
@@ -1506,7 +1661,7 @@ void smb_break_all_oplock(struct connection *conn,
  * we break from levelII oplock no oplock.
  * smb_work->buf contains oplock_info.
  */
-void smb1_send_oplock_break(struct work_struct *work)
+void smb1_send_oplock_break_notification(struct work_struct *work)
 {
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct connection *conn = smb_work->conn;
@@ -1578,7 +1733,8 @@ void smb1_send_oplock_break(struct work_struct *work)
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
- * smb2_send_oplock_break() - send smb1 oplock break cmd from conn to client
+ * smb2_send_oplock_break_notification() - send smb1 oplock break cmd from conn
+ * to client
  * @work:     smb work object
  *
  * There are two ways this function can be called. 1- while file open we break
@@ -1586,7 +1742,7 @@ void smb1_send_oplock_break(struct work_struct *work)
  * we break from levelII oplock no oplock.
  * smb_work->buf contains oplock_info.
  */
-void smb2_send_oplock_break(struct work_struct *work)
+void smb2_send_oplock_break_notification(struct work_struct *work)
 {
 	struct smb2_oplock_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
@@ -1604,10 +1760,11 @@ void smb2_send_oplock_break(struct work_struct *work)
 	if (!fp) {
 		mutex_unlock(&conn->srv_mutex);
 		kfree(smb_work);
+		fp_put(fp);
 		return;
 	}
 	persistent_id = fp->persistent_id;
-
+	fp_put(fp);
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
 		mutex_unlock(&conn->srv_mutex);
@@ -1698,10 +1855,7 @@ void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq)
 	buf->lcontext.LeaseKeyLow = *((u64 *)LeaseKey);
 	buf->lcontext.LeaseKeyHigh = *((u64 *)(LeaseKey + 8));
 	buf->lcontext.LeaseFlags = lreq->LeaseFlags;
-	if (lreq->LeaseFlags == SMB2_LEASE_FLAG_BREAK_IN_PROGRESS)
-		buf->lcontext.LeaseState = lreq->OldLeaseState;
-	else
-		buf->lcontext.LeaseState = lreq->CurrentLeaseState;
+	buf->lcontext.LeaseState = lreq->CurrentLeaseState;
 	buf->ccontext.DataOffset = cpu_to_le16(offsetof
 					(struct create_lease, lcontext));
 	buf->ccontext.DataLength = cpu_to_le32(sizeof(struct lease_context));
@@ -1749,7 +1903,6 @@ __u8 parse_lease_state(void *open_req, struct lease_ctx_info *lreq)
 		struct create_lease *lc = (struct create_lease *)cc;
 		*((u64 *)lreq->LeaseKey) = lc->lcontext.LeaseKeyLow;
 		*((u64 *)(lreq->LeaseKey + 8)) = lc->lcontext.LeaseKeyHigh;
-		lreq->OldLeaseState = lc->lcontext.LeaseState;
 		lreq->CurrentLeaseState = lc->lcontext.LeaseState;
 		lreq->LeaseFlags = lc->lcontext.LeaseFlags;
 		lreq->LeaseDuration = lc->lcontext.LeaseDuration;
@@ -1958,7 +2111,7 @@ struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
 	}
 
 out:
-	if (op_found) {
+	if (op_found && opinfo->op_state != OPLOCK_FREEING) {
 		if (fidinfo) {
 			/* this is close path, make sure opinfo has given fid */
 			struct lease_fidinfo *fidinfo_tmp;
@@ -1982,45 +2135,6 @@ out:
 }
 
 /**
- * smb_break_write_lease() - break write lease when a new client request
- *			write lease
- * @ofile:	open file object
- * @opinfo:	conains lease state information
- *
- * Return:	0 on success, otherwise error
- */
-int smb_break_write_lease(struct ofile_info *ofile,
-		struct oplock_info *opinfo)
-{
-	struct connection *conn = opinfo->conn;
-	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
-	if (!work)
-		return -ENOMEM;
-
-	work->buf = (char *)opinfo;
-	work->conn = conn;
-	work->sess = opinfo->sess;
-	INIT_WORK(&work->work, smb_send_lease_break);
-	schedule_work(&work->work);
-
-	wait_event_interruptible_timeout(conn->oplock_q,
-			(opinfo->lock_type == SMB2_OPLOCK_LEVEL_II ||
-			 opinfo->lock_type == SMB2_OPLOCK_LEVEL_NONE),
-			OPLOCK_WAIT_TIME);
-
-	/* is this a timeout ? */
-	if (opinfo->lock_type == SMB2_OPLOCK_LEVEL_EXCLUSIVE ||
-			opinfo->lock_type == SMB2_OPLOCK_LEVEL_BATCH) {
-		mutex_lock(&ofile_list_lock);
-		ret = opinfo_write_to_read(ofile, opinfo,
-				opinfo->CurrentLeaseState);
-		mutex_unlock(&ofile_list_lock);
-	}
-	return ret;
-}
-
-/**
  * cifsd_durable_verify_and_del_oplock() - Check if the file is already
  *					opened on current conn
  * @curr_sess:		current TCP conn session
@@ -2035,7 +2149,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id)
 {
-	struct cifsd_file *fp, *fp_curr;
+	struct cifsd_file *fp = NULL, *fp_curr;
 	struct ofile_info *ofile;
 	struct oplock_info *opinfo;
 	int lock_type;
@@ -2078,11 +2192,11 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 
 	lock_type = opinfo->lock_type;
 	*filp = fp->filp;
-	op_state = opinfo->state;
+	op_state = opinfo->op_state;
 
 	mutex_unlock(&ofile_list_lock);
 
-	if (op_state == OPLOCK_BREAKING) {
+	if (op_state == OPLOCK_ACK_WAIT) {
 		cifsd_err("Oplock is breaking state\n");
 		rc = -EINVAL;
 		goto out;
@@ -2094,12 +2208,18 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 		goto out;
 	}
 
+	fp_put(fp);
+	fp_put(fp_curr);
 	/* Remove the oplock associated with previous conn thread */
 	close_id_del_oplock(prev_sess->conn, fp, fid);
 	delete_id_from_fidtable(prev_sess, fid);
 	cifsd_close_id(&prev_sess->fidtable, fid);
 
+	return 0;
+
 out:
+	fp_put(fp);
+	fp_put(fp_curr);
 	return rc;
 }
 #endif
