@@ -336,10 +336,10 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 }
 
 /**
- * init_smb2_rsp() - initialize smb2 chained response
+ * init_chained_smb2_rsp() - initialize smb2 chained response
  * @smb_work:	smb work containing smb response buffer
  */
-void init_smb2_rsp(struct smb_work *smb_work)
+void init_chained_smb2_rsp(struct smb_work *smb_work)
 {
 	struct smb2_hdr *req;
 	struct smb2_hdr *rsp;
@@ -434,7 +434,7 @@ bool is_chained_smb2_message(struct smb_work *smb_work)
 			smb_work->next_smb2_rcv_hdr_off);
 	if (le32_to_cpu(hdr->NextCommand) > 0) {
 		cifsd_debug("got SMB2 chained command\n");
-		init_smb2_rsp(smb_work);
+		init_chained_smb2_rsp(smb_work);
 		return true;
 	} else if (smb_work->next_smb2_rcv_hdr_off) {
 		/*
@@ -7022,6 +7022,7 @@ int smb2_notify(struct smb_work *smb_work)
 	struct notification *request;
 	struct FileNotifyInformation *out_buf = NULL;
 	struct smb_work *work;
+	uint64_t id = -1;
 	int fd, offset = 0, wd, byte, count = 1024, i = 0;
 	int filename_len, total_len, out_len;
 	int err = 0;
@@ -7035,10 +7036,18 @@ int smb2_notify(struct smb_work *smb_work)
 
 	if (smb_work->next_smb2_rcv_hdr_off) {
 		req = (struct smb2_notify_req *)((char *)req +
-					smb_work->next_smb2_rcv_hdr_off);
+				smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_notify_rsp *)((char *)rsp +
-					smb_work->next_smb2_rsp_hdr_off);
+				smb_work->next_smb2_rsp_hdr_off);
+		if (le64_to_cpu(req->VolatileFileId == -1)) {
+			cifsd_debug("Compound request assigning stored FID = %llu\n",
+				smb_work->cur_local_fid);
+			id = smb_work->cur_local_fid;
+		}
 	}
+
+	if (id == -1)
+		id = le64_to_cpu(req->VolatileFileId);
 
 	if (req->StructureSize != 32) {
 		cifsd_err("malformed packet\n");
@@ -7054,10 +7063,9 @@ int smb2_notify(struct smb_work *smb_work)
 	}
 
 	fp = get_id_from_fidtable(smb_work->sess,
-			le64_to_cpu(req->VolatileFileId));
+			id);
 	if (!fp) {
-		cifsd_err("Invalid file id for lock : %llu\n",
-				le64_to_cpu(req->VolatileFileId));
+		cifsd_err("Invalid file id for lock : %llu\n", id);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		goto out3;
 	}
@@ -7089,9 +7097,9 @@ int smb2_notify(struct smb_work *smb_work)
 
 	notify_req->work = smb_work;
 
-	hash_for_each_possible(smb_work->sess->notify_table, prev_fp, node,
-		(unsigned long)GET_FP_INODE(fp)) {
-		if (GET_FP_INODE(fp) == GET_FP_INODE(prev_fp)) {
+	hash_for_each_possible(smb_work->sess->notify_table, prev_fp,
+		notify_node, (unsigned long)FP_INODE(fp)) {
+		if (FP_INODE(fp) == FP_INODE(prev_fp)) {
 			list_add_tail(&notify_req->queuelist, &prev_fp->queue);
 			goto out2;
 		}
@@ -7112,6 +7120,8 @@ start:
 
 		work = request->work;
 
+		smb2_send_interim_resp(work);
+
 		req = (struct smb2_notify_req *)work->buf;
 		rsp = (struct smb2_notify_rsp *)work->rsp_buf;
 		rsp_org = rsp;
@@ -7129,19 +7139,6 @@ start:
 		set_fs(get_ds());
 		wd = sys_inotify_add_watch(fd, (__force char __user *)p, mask);
 		set_fs(cur_fs);
-
-		spin_lock(&work->conn->request_lock);
-		if (work->async->async_status == ASYNC_CANCEL) {
-			spin_unlock(&work->conn->request_lock);
-			sys_inotify_rm_watch(fd, wd);
-			continue;
-		}
-
-		work->async->async_status = ASYNC_PROG;
-
-		work->async->fd = fd;
-		work->async->wd = wd;
-		spin_unlock(&work->conn->request_lock);
 
 		buf = kmalloc(1024 * (sizeof(struct inotify_event) + 16),
 			GFP_KERNEL);

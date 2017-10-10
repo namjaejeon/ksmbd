@@ -238,16 +238,12 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	switch (nlh->nlmsg_type) {
 	case CIFSD_UEVENT_INIT_CONNECTION:
 		err = cifsd_init_connection(nlh);
-		break;
-	case CIFSD_UEVENT_START_SMBPORT:
 		err = cifsd_create_socket();
 		if (err)
 			cifsd_err("unable to open SMB PORT\n");
 		break;
-	case CIFSD_UEVENT_STOP_SMBPORT:
-		cifsd_close_socket();
-		break;
 	case CIFSD_UEVENT_EXIT_CONNECTION:
+		cifsd_close_socket();
 		err = cifsd_exit_connection(nlh);
 		break;
 	case CIFSD_UEVENT_READ_PIPE_RSP:
