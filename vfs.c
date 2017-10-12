@@ -98,6 +98,28 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 	return err;
 }
 
+static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
+	size_t count)
+{
+	ssize_t v_len;
+	char *stream_buf = NULL;
+	int err;
+
+	cifsd_debug("read stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+	if (v_len == -ENOENT) {
+		cifsd_err("not found stream in xattr : %zd\n", v_len);
+		err = -ENOENT;
+		return err;
+	}
+
+	memcpy(buf, &stream_buf[*pos], count);
+	return v_len > count ? count : v_len;
+}
+
 /**
  * smb_vfs_read() - vfs helper for smb file read
  * @sess:	session
@@ -160,26 +182,13 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		nbytes = -ENOMEM;
 		goto out;
 	}
+
 	if (fp->is_stream) {
-		ssize_t v_len;
-		char *stream_buf = NULL;
-
-		cifsd_debug("read stream data pos : %llu, count : %zd\n",
-			*pos, count);
-
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
-		if (v_len == -ENOENT) {
-			cifsd_err("not found stream in xattr : %zd\n", v_len);
+		nbytes = smb_vfs_stream_read(fp, rbuf, pos, count);
+		if (nbytes < 0)
 			kvfree(rbuf);
-			nbytes = -ENOENT;
-			goto out;
-		}
-
-		memcpy(rbuf, &stream_buf[*pos], count);
-
-		*buf = rbuf;
-		nbytes = v_len > count ? count : v_len;
+		else
+			*buf = rbuf;
 		goto out;
 	}
 
@@ -213,6 +222,56 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 out:
 	fp_put(fp);
 	return nbytes;
+}
+
+static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
+	size_t count)
+{
+	char *stream_buf = NULL, *wbuf;
+	size_t size, v_len;
+	int err = 0;
+
+	cifsd_debug("write stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+	size = *pos + count;
+	if (size > XATTR_SIZE_MAX) {
+		size = XATTR_SIZE_MAX;
+		count = (*pos + count) - XATTR_SIZE_MAX;
+	}
+
+	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+	if (v_len == -ENOENT) {
+		cifsd_err("not found stream in xattr : %zd\n", v_len);
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (v_len < size) {
+		wbuf = alloc_data_mem(size);
+		if (!wbuf) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		if (v_len > 0)
+			memcpy(wbuf, stream_buf, v_len);
+		stream_buf = wbuf;
+	}
+
+	memcpy(&stream_buf[*pos], buf, count);
+
+	err = smb_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			(void *)stream_buf, size);
+	if (err < 0)
+		goto out;
+
+	fp->filp->f_pos = *pos;
+	err = 0;
+out:
+	kvfree(stream_buf);
+	return err;
 }
 
 /**
@@ -265,53 +324,9 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	filp = fp->filp;
 
 	if (fp->is_stream) {
-		char *stream_buf = NULL, *wbuf;
-		size_t size, v_len;
-
-		cifsd_debug("write stream data pos : %llu, count : %zd\n",
-			*pos, count);
-
-		size = *pos + count;
-		if (size > XATTR_SIZE_MAX) {
-			size = XATTR_SIZE_MAX;
-			count = (*pos + count) - XATTR_SIZE_MAX;
-		}
-
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
-		if (v_len == -ENOENT) {
-			cifsd_err("not found stream in xattr : %zd\n", v_len);
-			kvfree(stream_buf);
-			err = -ENOENT;
-			goto out;
-		}
-
-		if (v_len < size) {
-			wbuf = alloc_data_mem(size);
-			if (!wbuf) {
-				kvfree(stream_buf);
-				err = -ENOMEM;
-				goto out;
-			}
-
-			if (v_len > 0) {
-				memcpy(wbuf, stream_buf, v_len);
-				kvfree(stream_buf);
-			}
-			stream_buf = wbuf;
-		}
-
-		memcpy(&stream_buf[*pos], buf, count);
-
-		err = smb_store_cont_xattr(&filp->f_path, fp->stream.name,
-			(void *)stream_buf, size);
-		if (err < 0)
-			goto out;
-
-		kvfree(stream_buf);
-		filp->f_pos = *pos;
-		*written = count;
-		err = 0;
+		err = smb_vfs_stream_write(fp, buf, pos, count);
+		if (!err)
+			*written = count;
 		goto out;
 	}
 
