@@ -856,13 +856,9 @@ int cifsd_stop_tcp_sess(void)
 		conn->tcp_status = CifsExiting;
 		ret = kthread_stop(conn->handler);
 		if (ret) {
-			etype = CIFSD_KEVENT_SMBPORT_CLOSE_FAIL;
 			cifsd_err("failed to stop server thread\n");
 			err = ret;
-		} else
-			etype = CIFSD_KEVENT_SMBPORT_CLOSE_PASS;
-
-		cifsd_kthread_stop_status(etype);
+		}
 	}
 
 	return err;

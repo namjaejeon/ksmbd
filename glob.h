@@ -530,6 +530,11 @@ struct smb2_fs_sector_size {
 	unsigned int optimal_io_size;
 };
 
+struct cifsd_pid_info {
+	struct socket *socket;
+	__u32 cifsd_pid;
+};
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debug_enable)			\
@@ -602,8 +607,9 @@ extern int cifsd_export_init(void);
 extern void cifsd_export_exit(void);
 
 /* cifsd connect functions */
-extern int cifsd_create_socket(void);
-extern int cifsd_start_forker_thread(struct socket *socket);
+extern void terminate_old_forker_thread(void);
+extern int cifsd_create_socket(__u32 cifsd_pid);
+extern int cifsd_start_forker_thread(struct cifsd_pid_info *cisfd_pid_info);
 extern void cifsd_stop_forker_thread(void);
 
 extern void cifsd_close_socket(void);
