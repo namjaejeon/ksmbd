@@ -218,6 +218,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with domain\n");
+		kfree(domain);
 		return ret;
 	}
 
@@ -227,6 +228,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 		cifsd_debug("Could not generate md5 hash\n");
 	}
 
+	kfree(domain);
 	return ret;
 }
 
