@@ -532,20 +532,19 @@ struct smb2_fs_sector_size {
 
 #define cifsd_debug(fmt, ...)					\
 	do {							\
-		if (cifsd_debug_enable)			\
-			printk(KERN_ERR "%s:%d: " fmt,		\
+		if (cifsd_debug_enable)				\
+			pr_err("kcifsd: %s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
 #define cifsd_info(fmt, ...)					\
 	do {							\
-		printk(KERN_INFO "%s:%d: " fmt,			\
-			__func__, __LINE__, ##__VA_ARGS__);	\
+		pr_info("kcifsd: " fmt, ##__VA_ARGS__);		\
 	} while (0)
 
 #define cifsd_err(fmt, ...)					\
 	do {							\
-		printk(KERN_ERR "%s:%d: " fmt,			\
+		pr_err("kcifsd: %s:%d: " fmt,			\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
