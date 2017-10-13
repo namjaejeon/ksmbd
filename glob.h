@@ -537,16 +537,10 @@ struct smb2_fs_sector_size {
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
-#define cifsd_info(fmt, ...)					\
-	do {							\
-		pr_info("kcifsd: " fmt, ##__VA_ARGS__);		\
-	} while (0)
+#define cifsd_info(fmt, ...) pr_info("kcifsd: " fmt, ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...)					\
-	do {							\
-		pr_err("kcifsd: %s:%d: " fmt,			\
-			__func__, __LINE__, ##__VA_ARGS__);	\
-	} while (0)
+#define cifsd_err(fmt, ...) pr_err("kcifsd: %s:%d: " fmt,	\
+			__func__, __LINE__, ##__VA_ARGS__)
 
 static inline unsigned int
 get_rfc1002_length(void *buf)
