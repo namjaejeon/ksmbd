@@ -199,6 +199,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with user\n");
+		kfree(uniname);
 		return ret;
 	}
 
@@ -208,6 +209,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	if (!domain) {
 		cifsd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
+		kfree(uniname);
 		return ret;
 	}
 
@@ -218,6 +220,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with domain\n");
+		kfree(uniname);
 		kfree(domain);
 		return ret;
 	}
@@ -228,6 +231,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 		cifsd_debug("Could not generate md5 hash\n");
 	}
 
+	kfree(uniname);
 	kfree(domain);
 	return ret;
 }
