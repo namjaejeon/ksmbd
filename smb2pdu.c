@@ -5258,6 +5258,17 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			}
 		}
 
+		if (oplocks_enable) {
+			/*
+			 * Do we need to break any of a levelII
+			 * oplock ?
+			 */
+			mutex_lock(&ofile_list_lock);
+			smb_break_all_levII_oplock(sess->conn, fp, NULL,
+					0);
+			mutex_unlock(&ofile_list_lock);
+		}
+
 		break;
 	}
 	case FILE_END_OF_FILE_INFORMATION:
