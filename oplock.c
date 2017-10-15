@@ -1451,8 +1451,7 @@ no_oplock:
 	}
 
 	if ((opinfo_old->lock_type != SMB2_OPLOCK_LEVEL_BATCH) &&
-		((inode->i_flags & S_DEL_ON_CLS) ||
-			(*oplock == SMB2_OPLOCK_LEVEL_NONE))) {
+		(*oplock == SMB2_OPLOCK_LEVEL_NONE)) {
 		*oplock = SMB2_OPLOCK_LEVEL_NONE;
 		goto out;
 	}
