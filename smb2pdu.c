@@ -2383,7 +2383,7 @@ int smb2_open(struct smb_work *smb_work)
 		} else {
 			cifsd_err("Create SMB2_CREATE_SD_BUFFER\n");
 
-			if (!(fp->daccess & FILE_WRITE_DAC_LE)) {
+			if (!(req->DesiredAccess & FILE_WRITE_DAC_LE)) {
 				rc = -EACCES;
 				goto err_out1;
 			}
@@ -2391,7 +2391,6 @@ int smb2_open(struct smb_work *smb_work)
 			if (open_flags & O_CREAT) {
 				struct cifs_ntsd *pntsd;
 				struct cifsd_fattr fattr;
-				struct inode *inode = GET_FP_INODE(fp);
 
 				pntsd = (struct cifs_ntsd *)
 					(((char *) context) +
@@ -2401,7 +2400,8 @@ int smb2_open(struct smb_work *smb_work)
 					le32_to_cpu(context->DataLength),
 					&fattr);
 
-				cifsd_fattr_to_inode(inode, &fattr);
+				cifsd_fattr_to_inode(path.dentry->d_inode,
+					&fattr);
 			}
 		}
 #endif
