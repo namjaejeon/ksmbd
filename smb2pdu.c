@@ -1870,7 +1870,7 @@ int smb2_open(struct smb_work *smb_work)
 	int oplock, open_flags = 0, file_info = 0, len = 0, dlease = 0;
 	int volatile_id = 0;
 	int rc = 0;
-	int durable_open = false;
+	int durable_open = false, create_durable_req = false;
 	int durable_reconnect = false, durable_reopened = false;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
 	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
@@ -2005,12 +2005,11 @@ int smb2_open(struct smb_work *smb_work)
 				cifsd_err("bad name length\n");
 				goto err_out1;
 			}
-		} else if (req->RequestedOplockLevel ==
-				SMB2_OPLOCK_LEVEL_BATCH) {
+		} else {
 			context_name = (char *)context + context->NameOffset;
 			cifsd_debug("context name = %s name offset=%u\n",
 					context_name, context->NameOffset);
-			durable_open = true;
+			create_durable_req = true;
 			cifsd_debug("Request for durable open\n");
 		}
 	}
@@ -2589,8 +2588,17 @@ reconnect:
 
 	/* Get Persistent-ID */
 	if (durable_reopened == false) {
-		durable_open = durable_open &&
-			(oplock == SMB2_OPLOCK_LEVEL_BATCH);
+		if (create_durable_req) {
+			/* If request oplock is lease */
+			if ((req->RequestedOplockLevel ==
+					SMB2_OPLOCK_LEVEL_LEASE) &&
+				(lc.CurrentLeaseState &
+						SMB2_LEASE_HANDLE_CACHING))
+				durable_open = true;
+			else if (oplock == SMB2_OPLOCK_LEVEL_BATCH)
+				durable_open = true;
+		}
+
 		rc = cifsd_insert_in_global_table(sess, volatile_id,
 						       filp, durable_open);
 		if (rc < 0) {
