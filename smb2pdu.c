@@ -1952,7 +1952,7 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out1;
 	}
 
-	if (!(req->DesiredAccess & DISIRED_ACCESS_MASK)) {
+	if (req->DesiredAccess && !(req->DesiredAccess & DISIRED_ACCESS_MASK)) {
 		cifsd_err("Invalid disired access : 0x%x\n",
 			le32_to_cpu(req->DesiredAccess));
 		rc = -EACCES;

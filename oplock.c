@@ -2161,7 +2161,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 	if (fp_curr && fp_curr->sess_id == sess_id) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("File already opened on current conn\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
@@ -2169,7 +2169,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 	if (!fp) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("File struct not found\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
@@ -2177,7 +2177,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 	if (ofile == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected null ofile_info\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
@@ -2185,7 +2185,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 	if (opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_err("Unexpected null oplock_info\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
@@ -2197,13 +2197,13 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 
 	if (op_state == OPLOCK_ACK_WAIT) {
 		cifsd_err("Oplock is breaking state\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
 	if (lock_type != SMB2_OPLOCK_LEVEL_BATCH) {
 		cifsd_err("Oplock is broken from Batch oplock\n");
-		rc = -EINVAL;
+		rc = -EIO;
 		goto out;
 	}
 
