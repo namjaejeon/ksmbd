@@ -1162,6 +1162,11 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
+		/* Check for previous session */
+		if (le64_to_cpu(req->PreviousSessionId))
+			smb2_invalidate_prev_session(
+				le64_to_cpu(req->PreviousSessionId));
+
 		sess = kzalloc(sizeof(struct cifsd_sess), GFP_KERNEL);
 		if (sess == NULL) {
 			rc = -ENOMEM;
@@ -1253,11 +1258,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 
 	if (sess->state & SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
-
-	/* Check for previous session */
-	if (le64_to_cpu(req->PreviousSessionId) != 0)
-		smb2_invalidate_prev_session(
-			le64_to_cpu(req->PreviousSessionId));
 
 	negblob = (NEGOTIATE_MESSAGE *)(req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
