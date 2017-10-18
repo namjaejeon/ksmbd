@@ -130,23 +130,16 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char **buf, size_t count, loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
 	mm_segment_t old_fs;
-	struct cifsd_file *fp;
 	char *rbuf, *name;
 	struct inode *inode;
 	char namebuf[NAME_MAX];
 	int ret;
-
-	fp = get_id_from_fidtable(sess, fid);
-	if (!fp) {
-		cifsd_err("failed to get filp for fid %llu\n", fid);
-		return -ENOENT;
-	}
 
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
@@ -159,18 +152,11 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		goto out;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, p_id);
-		nbytes = -ENOENT;
-		goto out;
-	}
-
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read(%llu)\n", fid);
+			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
 			nbytes = -EACCES;
 			goto out;
 		}
@@ -220,7 +206,6 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	}
 
 out:
-	fp_put(fp);
 	return nbytes;
 }
 
@@ -286,35 +271,20 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
 	struct file *filp;
 	loff_t	offset = *pos;
 	mm_segment_t old_fs;
-	struct cifsd_file *fp;
 	int err = 0;
 
-	fp = get_id_from_fidtable(sess, fid);
-	if (!fp) {
-		cifsd_err("failed to get filp for fid %llu session = 0x%p\n",
-				fid, sess);
-		return -ENOENT;
-	}
-
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-			fp->persistent_id, p_id);
-		err = -ENOENT;
-		goto out;
-	}
-
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 		   FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 		   FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write(%llu)\n", fid);
+			cifsd_err("no right to write(%s)\n", FP_FILENAME(fp));
 			err = -EACCES;
 			goto out;
 		}
@@ -362,12 +332,11 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	if (sync) {
 		err = vfs_fsync_range(filp, offset, offset + *written, 0);
 		if (err < 0)
-			cifsd_err("fsync failed for fid %llu, err = %d\n",
-					fid, err);
+			cifsd_err("fsync failed for filename = %s, err = %d\n",
+					FP_FILENAME(fp), err);
 	}
 
 out:
-	fp_put(fp);
 	return err;
 }
 
@@ -552,7 +521,7 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 		return -ENOENT;
 	}
 
-	if (fp->is_durable && fp->persistent_id != p_id) {
+	if (fp->persistent_id != p_id) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, p_id);
 		return -ENOENT;

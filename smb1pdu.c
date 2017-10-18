@@ -2248,6 +2248,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	struct connection *conn = smb_work->conn;
 	READ_REQ *req = (READ_REQ *)smb_work->buf;
 	READ_RSP *rsp = (READ_RSP *)smb_work->rsp_buf;
+	struct cifsd_file *fp;
 	loff_t pos;
 	size_t count;
 	ssize_t nbytes;
@@ -2255,6 +2256,14 @@ int smb_read_andx(struct smb_work *smb_work)
 
 	if (smb_work->tcon->share->is_pipe == true)
 		return smb_read_andx_pipe(smb_work);
+
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %d\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
 
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 12)
@@ -2272,8 +2281,9 @@ int smb_read_andx(struct smb_work *smb_work)
 		count = CIFS_DEFAULT_IOSIZE;
 	}
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
-	nbytes = smb_vfs_read(smb_work->sess, req->Fid, 0, &smb_work->rdata_buf,
+	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
+	nbytes = smb_vfs_read(smb_work->sess, fp, &smb_work->rdata_buf,
 		count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
@@ -2299,6 +2309,8 @@ int smb_read_andx(struct smb_work *smb_work)
 	smb_work->rdata_cnt = nbytes;
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
+	fp_put(fp);
+
 	/* this is an ANDx command ? */
 	if (req->AndXCommand == 0xFF) {
 		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
@@ -2314,6 +2326,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	}
 
 out:
+	fp_put(fp);
 	if (err)
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 	return err;
@@ -2329,6 +2342,7 @@ int smb_write(struct smb_work *smb_work)
 {
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)smb_work->buf;
 	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)smb_work->rsp_buf;
+	struct cifsd_file *fp = NULL;
 	loff_t pos;
 	size_t count;
 	char *data_buf;
@@ -2338,20 +2352,30 @@ int smb_write(struct smb_work *smb_work)
 	if (req->hdr.WordCount != 5)
 		goto out;
 
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
 	pos = le32_to_cpu(req->Offset);
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
+	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
 	if (!count) {
 		err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
 			pos);
 		nbytes = 0;
 	} else
-		err = smb_vfs_write(smb_work->sess, req->Fid, 0, data_buf,
+		err = smb_vfs_write(smb_work->sess, fp, data_buf,
 			count, &pos, 0, &nbytes);
 
 out:
+	fp_put(fp);
 	rsp->hdr.WordCount = 1;
 	rsp->Written = cpu_to_le16(nbytes & 0xFFFF);
 	rsp->ByteCount = 0;
@@ -2453,6 +2477,7 @@ int smb_write_andx(struct smb_work *smb_work)
 	struct connection *conn = smb_work->conn;
 	WRITE_REQ *req = (WRITE_REQ *)smb_work->buf;
 	WRITE_RSP *rsp = (WRITE_RSP *)smb_work->rsp_buf;
+	struct cifsd_file *fp;
 	bool writethrough = false;
 	loff_t pos;
 	size_t count;
@@ -2463,6 +2488,14 @@ int smb_write_andx(struct smb_work *smb_work)
 	if (smb_work->tcon->share->is_pipe == true) {
 		cifsd_debug("Write ANDX called for IPC$");
 		return smb_write_andx_pipe(smb_work);
+	}
+
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
 	}
 
 	pos = le32_to_cpu(req->OffsetLow);
@@ -2501,12 +2534,14 @@ int smb_write_andx(struct smb_work *smb_work)
 				le16_to_cpu(req->DataOffset));
 	}
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
-	err = smb_vfs_write(smb_work->sess, req->Fid, 0, data_buf, count, &pos,
+	cifsd_debug("filname %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
+	err = smb_vfs_write(smb_work->sess, fp, data_buf, count, &pos,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
 
+	fp_put(fp);
 	/* write success, prepare response */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 6;
@@ -2532,6 +2567,7 @@ int smb_write_andx(struct smb_work *smb_work)
 	}
 
 out:
+	fp_put(fp);
 	if (err == -ENOSPC || err == -EFBIG)
 		rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
 	else

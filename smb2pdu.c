@@ -453,6 +453,41 @@ bool is_chained_smb2_message(struct smb_work *smb_work)
 	return false;
 }
 
+struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+	int64_t req_pid)
+{
+	struct cifsd_file *fp;
+	int64_t vid = -1, pid = -1;
+
+	if (le64_to_cpu(req_vid == -1)) {
+		cifsd_debug("Compound request assigning stored FID = %llu\n",
+				smb_work->cur_local_fid);
+		vid = smb_work->cur_local_fid;
+		pid = smb_work->cur_local_pfid;
+	}
+
+	if (vid == -1)
+		vid = le64_to_cpu(req_vid);
+
+	if (pid == -1)
+		pid = le64_to_cpu(req_pid);
+
+	fp = get_id_from_fidtable(smb_work->sess, vid);
+	if (!fp) {
+		cifsd_debug("Invalid id: %llu\n", vid);
+		return NULL;
+	}
+
+	if (fp->persistent_id != pid) {
+		cifsd_err("persistent id mismatch : %lld, %lld\n",
+				fp->persistent_id, pid);
+		fp_put(fp);
+		fp = NULL;
+	}
+
+	return fp;
+}
+
 /**
  * init_smb2_rsp_hdr() - initialize smb2 response
  * @smb_work:	smb work containing smb request buffer
@@ -3050,7 +3085,6 @@ int smb2_query_dir(struct smb_work *smb_work)
 	struct cifsd_dir_info d_info;
 	int reclen = 0;
 	int rc = 0;
-	uint64_t id = -1;
 	struct kstat kstat;
 	struct smb_kstat smb_kstat;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
@@ -3070,11 +3104,6 @@ int smb2_query_dir(struct smb_work *smb_work)
 				smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_query_directory_rsp *)((char *)rsp +
 				smb_work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId == -1)) {
-			cifsd_debug("Compound request assigning stored FID = %llu\n",
-					smb_work->cur_local_fid);
-			id = smb_work->cur_local_fid;
-		}
 	}
 
 	if (req->StructureSize != 33) {
@@ -3083,28 +3112,17 @@ int smb2_query_dir(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
-
-	dir_fp = get_id_from_fidtable(smb_work->sess, id);
+	dir_fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
 	if (!dir_fp) {
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		cifsd_err("valatile id lookup fail: %llu\n", id);
-		rc = -ENOENT;
-		goto err_out2;
-	}
-
-	if (dir_fp->is_durable && dir_fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				dir_fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		rc = -ENOENT;
 		goto err_out2;
 	}
 
 	if (!(dir_fp->daccess & FILE_LIST_DIRECTORY_LE)) {
-		cifsd_err("no right to enumerate directory (%llu)\n", id);
+		cifsd_err("no right to enumerate directory (%s)\n",
+			FP_FILENAME(dir_fp));
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		rc = -EACCES;
 		goto err_out2;
@@ -3339,7 +3357,6 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 	struct cifsd_file *fp;
 	struct file *filp;
 	int rc = 0;
-	uint64_t id = -1;
 	struct cifs_ntsd *pntsd;
 	struct inode *inode;
 	int out_len;
@@ -3355,22 +3372,10 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 				smb_work->next_smb2_rsp_hdr_off);
 	}
 
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
-
-	fp = get_id_from_fidtable(smb_work->sess, id);
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
 	if (!fp) {
-		cifsd_debug("Invalid id for file info : %llu\n", id);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		return -ENOENT;
-	}
-
-	if (fp->is_durable && fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		fp_put(fp);
 		return -ENOENT;
 	}
 
@@ -3930,7 +3935,6 @@ int smb2_get_info_file(struct smb_work *smb_work)
 	int fileinfoclass = 0;
 	struct file *filp;
 	struct kstat stat;
-	uint64_t id = -1;
 	int rc = 0;
 	int file_infoclass_size;
 	struct inode *inode;
@@ -3944,42 +3948,24 @@ int smb2_get_info_file(struct smb_work *smb_work)
 					smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
 					smb_work->next_smb2_rsp_hdr_off);
-
-		if (le64_to_cpu(req->VolatileFileId) == -1) {
-			cifsd_debug("Compound request assigning stored FID = %llu\n",
-				    smb_work->cur_local_fid);
-			id = smb_work->cur_local_fid;
-		}
 	}
-
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
 
 	if (smb_work->tcon->share->is_pipe == true) {
 		/* smb2 info file called for pipe */
 		return smb2_get_info_file_pipe(smb_work);
-	} else {
-		fp = get_id_from_fidtable(smb_work->sess, id);
-		if (!fp) {
-			cifsd_debug("Invalid id for file info : %llu\n", id);
-			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-			return -ENOENT;
-		}
-
-		if (fp->is_durable && fp->persistent_id !=
-				le64_to_cpu(req->PersistentFileId)) {
-			cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
-			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-			fp_put(fp);
-			return -ENOENT;
-		}
-
-		filp = fp->filp;
-		inode = filp->f_path.dentry->d_inode;
-		generic_fillattr(inode, &stat);
-		fp_put(fp);
 	}
+
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
+	if (!fp) {
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	filp = fp->filp;
+	inode = filp->f_path.dentry->d_inode;
+	generic_fillattr(inode, &stat);
+	fp_put(fp);
 	fileinfoclass = req->FileInfoClass;
 
 	switch (fileinfoclass) {
@@ -4664,7 +4650,7 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 		return -ENOENT;
 	}
 
-	if (fp->is_durable && fp->persistent_id !=
+	if (fp->persistent_id !=
 			le64_to_cpu(req->PersistentFileId)) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
@@ -5092,7 +5078,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		return -ENOENT;
 	}
 
-	if (fp->is_durable && fp->persistent_id !=
+	if (fp->persistent_id !=
 			le64_to_cpu(req->PersistentFileId)) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
@@ -5533,10 +5519,10 @@ int smb2_read(struct smb_work *smb_work)
 {
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp, *rsp_org;
+	struct cifsd_file *fp;
 	loff_t offset;
 	size_t length, mincount;
 	ssize_t nbytes = 0;
-	uint64_t id = -1;
 	int err = 0;
 
 	req = (struct smb2_read_req *)smb_work->buf;
@@ -5549,11 +5535,6 @@ int smb2_read(struct smb_work *smb_work)
 					smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_read_rsp *)((char *)rsp +
 					smb_work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId) == -1) {
-			cifsd_debug("Compound request assigning stored FID = %llu\n",
-				    smb_work->cur_local_fid);
-			id = smb_work->cur_local_fid;
-		}
 	}
 
 	if (req->StructureSize != 49) {
@@ -5567,8 +5548,12 @@ int smb2_read(struct smb_work *smb_work)
 		return smb2_read_pipe(smb_work);
 	}
 
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+			le64_to_cpu(req->PersistentFileId));
+	if (!fp) {
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
 
 	offset = le32_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
@@ -5582,14 +5567,16 @@ int smb2_read(struct smb_work *smb_work)
 		length = CIFS_DEFAULT_IOSIZE;
 	}
 
-	cifsd_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	nbytes = smb_vfs_read(smb_work->sess, id,
-			le64_to_cpu(req->PersistentFileId),
+	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
+		offset, length);
+	nbytes = smb_vfs_read(smb_work->sess, fp,
 			&smb_work->rdata_buf, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
 	}
+
+	fp_put(fp);
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
 		kvfree(smb_work->rdata_buf);
 		smb_work->rdata_buf = NULL;
@@ -5614,7 +5601,7 @@ int smb2_read(struct smb_work *smb_work)
 	return 0;
 
 out:
-
+	fp_put(fp);
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status = NT_STATUS_INVALID_DEVICE_REQUEST;
@@ -5731,12 +5718,12 @@ int smb2_write(struct smb_work *smb_work)
 {
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp, *rsp_org;
+	struct cifsd_file *fp;
 	loff_t offset;
 	size_t length;
 	ssize_t nbytes;
 	char *data_buf;
 	bool writethrough = false;
-	uint64_t id = -1;
 	int err = 0;
 
 	req = (struct smb2_write_req *)smb_work->buf;
@@ -5748,11 +5735,6 @@ int smb2_write(struct smb_work *smb_work)
 				smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_write_rsp *)((char *)rsp +
 				smb_work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId) == -1) {
-			cifsd_debug("Compound request assigning stored FID  = %llu\n",
-				    smb_work->cur_local_fid);
-			id = smb_work->cur_local_fid;
-		}
 	}
 
 	if (req->StructureSize != 49) {
@@ -5766,8 +5748,12 @@ int smb2_write(struct smb_work *smb_work)
 		return smb2_write_pipe(smb_work);
 	}
 
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+			le64_to_cpu(req->PersistentFileId));
+	if (!fp) {
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
 
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
@@ -5794,12 +5780,14 @@ int smb2_write(struct smb_work *smb_work)
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
 
-	cifsd_debug("fid %llu, offset %lld, len %zu\n", id, offset, length);
-	err = smb_vfs_write(smb_work->sess, id,
-		le64_to_cpu(req->PersistentFileId), data_buf, length, &offset,
+	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
+		offset, length);
+	err = smb_vfs_write(smb_work->sess, fp, data_buf, length, &offset,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
+
+	fp_put(fp);
 
 	rsp->StructureSize = cpu_to_le16(17);
 	rsp->DataOffset = 0;
@@ -5811,6 +5799,7 @@ int smb2_write(struct smb_work *smb_work)
 	return 0;
 
 out:
+	fp_put(fp);
 	if (err == -EAGAIN)
 		rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
 	else if (err == -ENOSPC || err == -EFBIG)
@@ -7090,7 +7079,7 @@ int smb2_notify(struct smb_work *smb_work)
 		goto out3;
 	}
 
-	if (fp->is_durable && fp->persistent_id !=
+	if (fp->persistent_id !=
 			le64_to_cpu(req->PersistentFileId)) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, req->PersistentFileId);
