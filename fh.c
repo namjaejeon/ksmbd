@@ -739,6 +739,9 @@ int cifsd_delete_durable_state(uint64_t id)
 	struct cifsd_durable_state *durable_state;
 	struct fidtable *ftab;
 
+	if (!durable_enable)
+		return 0;
+
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
 	if (id > ftab->max_fids - 1) {
