@@ -2599,20 +2599,21 @@ reconnect:
 				durable_open = true;
 		}
 
-		rc = cifsd_insert_in_global_table(sess, volatile_id,
-						       filp, durable_open);
-		if (rc < 0) {
-			cifsd_err("failed to get persistent_id for file\n");
-			durable_open = false;
-			list_del(&fp->node);
-			goto err_out;
-		} else {
+		if (durable_open) {
+			rc = cifsd_insert_in_global_table(sess, volatile_id,
+					filp, durable_open);
+			if (rc < 0) {
+				cifsd_err("failed to get persistent_id for file\n");
+				durable_open = false;
+				list_del(&fp->node);
+				goto err_out;
+			}
 			persistent_id = rc;
 			rc = 0;
-		}
 
-		if (durable_open)
 			fp->is_durable = 1;
+		} else
+			persistent_id = volatile_id;
 	} else if (oplock == SMB2_OPLOCK_LEVEL_BATCH) {
 		/* During durable reconnect able to fetch/verify durable state
 		   but couldn't get batch oplock then we will not come here */
