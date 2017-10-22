@@ -150,7 +150,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	return rc;
 }
 
-int cifsd_kthread_stop_status(int etype)
+static int cifsd_terminate_user_process(int new_cifsd_pid)
 {
 	struct cifsd_uevent *ev;
 	struct nlmsghdr *nlh;
@@ -164,18 +164,35 @@ int cifsd_kthread_stop_status(int etype)
 		return -ENOMEM;
 	}
 	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
-	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
+	nlh = __nlmsg_put(skb, 0, 0, CFISD_KEVENT_USER_DAEMON_EXIST,
+		(len - sizeof(*nlh)), 0);
 	ev = nlmsg_data(nlh);
 	ev->buflen = sizeof(rc);
-	rc = nlmsg_unicast(cifsd_nlsk, skb, pid);
+	rc = nlmsg_unicast(cifsd_nlsk, skb, new_cifsd_pid);
 	return 0;
 }
 
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
+	int err = 0;
+	struct task_struct *cifsd_task;
+
 	cifsd_debug("init connection\n");
-	pid = nlh->nlmsg_pid; /*pid of sending process */
-	return 0;
+
+	rcu_read_lock();
+	cifsd_task = find_task_by_vpid(pid);
+	rcu_read_unlock();
+	if (cifsd_task) {
+		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {
+			cifsd_terminate_user_process(nlh->nlmsg_pid);
+			err = -EPERM;
+		}
+	} else {
+		terminate_old_forker_thread();
+		pid = nlh->nlmsg_pid; /*pid of sending process */
+	}
+
+	return err;
 }
 
 static int cifsd_exit_connection(struct nlmsghdr *nlh)
@@ -238,9 +255,12 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	switch (nlh->nlmsg_type) {
 	case CIFSD_UEVENT_INIT_CONNECTION:
 		err = cifsd_init_connection(nlh);
-		err = cifsd_create_socket();
-		if (err)
-			cifsd_err("unable to open SMB PORT\n");
+		if (!err) {
+			/* No old cifsd task exists */
+			err = cifsd_create_socket(nlh->nlmsg_pid);
+			if (err)
+				cifsd_err("unable to open SMB PORT\n");
+		}
 		break;
 	case CIFSD_UEVENT_EXIT_CONNECTION:
 		cifsd_close_socket();
@@ -308,3 +328,4 @@ void cifsd_net_exit(void)
 {
 	netlink_kernel_release(cifsd_nlsk);
 }
+
