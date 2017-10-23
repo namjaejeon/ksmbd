@@ -268,11 +268,6 @@ uncork:
 out:
 	cifsd_debug("data sent = %d\n", total_len);
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	if (conn->tcp_status == CifsGood && IS_SMB2(conn))
-		cifsd_update_durable_stat_info(work->sess);
-#endif
-
 	return 0;
 }
 

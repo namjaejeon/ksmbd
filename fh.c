@@ -347,7 +347,7 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 
 	file = ftab->fileid[id];
 	if (!file) {
-	spin_unlock(&sess->fidtable.fidtable_lock);
+		spin_unlock(&sess->fidtable.fidtable_lock);
 		return NULL;
 	}
 
@@ -443,6 +443,12 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, p_id);
 		return -ENOENT;
+	}
+
+	if (fp->is_durable) {
+		err = close_persistent_id(fp->persistent_id);
+		if (err)
+			return -ENOENT;
 	}
 
 	spin_lock(&fp->f_lock);
@@ -571,10 +577,12 @@ void destroy_fidtable(struct cifsd_sess *sess)
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			if (file->is_durable)
-				close_persistent_id(file->persistent_id);
-#endif
+			if (file->is_durable) {
+				ftab->fileid[id] = NULL;
+				file->sess_id = -1;
+				file->tid = -1;
+				continue;
+			}
 
 			if (!close_id(sess, id, file->persistent_id) &&
 				sess->conn->stats.open_files_count > 0)
@@ -600,51 +608,24 @@ void destroy_fidtable(struct cifsd_sess *sess)
  *
  * Return:      persistent_id on success, otherwise error number
  */
-int cifsd_insert_in_global_table(struct cifsd_sess *sess,
-				   int volatile_id, struct file *filp,
-				   int durable_open)
+int cifsd_insert_in_global_table(struct cifsd_sess *sess, struct cifsd_file *fp)
 {
-	int rc;
 	int persistent_id;
-	struct cifsd_durable_state *durable_state;
 	struct fidtable *ftab;
 
 	persistent_id = cifsd_get_unused_id(&global_fidtable);
 
 	if (persistent_id < 0) {
 		cifsd_err("failed to get unused persistent_id for file\n");
-		rc = persistent_id;
-		return rc;
+		return persistent_id;
 	}
 
 	cifsd_debug("persistent_id allocated %d", persistent_id);
 
-	/* If not durable open just return the ID.
-	 * No need to store durable state */
-	if (!durable_open)
-		return persistent_id;
-
-	durable_state = kzalloc(sizeof(struct cifsd_durable_state),
-			GFP_KERNEL);
-
-	if (durable_state == NULL) {
-		cifsd_err("persistent_id insert failed\n");
-		cifsd_close_id(&global_fidtable, persistent_id);
-		rc = -ENOMEM;
-		return rc;
-	}
-
-	durable_state->sess = sess;
-	durable_state->volatile_id = volatile_id;
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	durable_state->refcount = 1;
-
-	cifsd_debug("filp stored = 0x%p sess = 0x%p\n", filp, sess);
-
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
 	BUG_ON(ftab->fileid[persistent_id] != NULL);
-	ftab->fileid[persistent_id] = (void *)durable_state;
+	ftab->fileid[persistent_id] = fp;
 	spin_unlock(&global_fidtable.fidtable_lock);
 
 	return persistent_id;
@@ -656,23 +637,22 @@ int cifsd_insert_in_global_table(struct cifsd_sess *sess,
  *
  * Return:      durable state on success, otherwise NULL
  */
-struct cifsd_durable_state *
-cifsd_get_durable_state(uint64_t id)
+struct cifsd_file *cifsd_get_durable_fp(uint64_t pid)
 {
-	struct cifsd_durable_state *durable_state;
+	struct cifsd_file *durable_fp;
 	struct fidtable *ftab;
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if ((id < CIFSD_START_FID) || (id > ftab->max_fids - 1)) {
-		cifsd_err("invalid persistentID (%llu)\n", id);
+	if ((pid < CIFSD_START_FID) || (pid > ftab->max_fids - 1)) {
+		cifsd_err("invalid persistentID (%lld)\n", pid);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;
 	}
 
-	durable_state = (struct cifsd_durable_state *)ftab->fileid[id];
+	durable_fp = ftab->fileid[pid];
 	spin_unlock(&global_fidtable.fidtable_lock);
-	return durable_state;
+	return durable_fp;
 }
 
 /**
@@ -682,95 +662,32 @@ cifsd_get_durable_state(uint64_t id)
  * @volatile_id:	volatile id
  * @filp:		file pointer
  */
-void cifsd_update_durable_state(struct cifsd_sess *sess,
-			     unsigned int persistent_id,
-			     unsigned int volatile_id, struct file *filp)
+int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
+		int tree_id)
 {
-	struct cifsd_durable_state *durable_state;
 	struct fidtable *ftab;
+	unsigned int volatile_id;
 
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-
-	durable_state =
-		(struct cifsd_durable_state *)ftab->fileid[persistent_id];
-
-	durable_state->sess = sess;
-	durable_state->volatile_id = volatile_id;
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	durable_state->refcount++;
-	spin_unlock(&global_fidtable.fidtable_lock);
-	cifsd_debug("durable state updated persistentID (%u)\n",
-		      persistent_id);
-}
-
-/**
- * cifsd_durable_disconnect() - update file stat with durable state
- * @conn:		TCP server instance of connection
- * @persistent_id:	persistent id
- * @filp:		file pointer
- */
-void cifsd_durable_disconnect(struct connection *conn,
-			   unsigned int persistent_id, struct file *filp)
-{
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *ftab;
-
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-
-	durable_state =
-		(struct cifsd_durable_state *)ftab->fileid[persistent_id];
-	BUG_ON(durable_state == NULL);
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	spin_unlock(&global_fidtable.fidtable_lock);
-	cifsd_debug("durable state disconnect persistentID (%u)\n",
-		    persistent_id);
-}
-
-/**
- * cifsd_delete_durable_state() - delete durable state for a id
- * @id:		persistent id
- *
- * Return:      0 or 1 on success, otherwise error number
- */
-int cifsd_delete_durable_state(uint64_t id)
-{
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *ftab;
-
-	if (!durable_enable)
-		return 0;
-
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-	if (id > ftab->max_fids - 1) {
-		cifsd_err("Invalid id %llu\n", id);
-		spin_unlock(&global_fidtable.fidtable_lock);
-		return -EINVAL;
-	}
-	durable_state = (struct cifsd_durable_state *)ftab->fileid[id];
-
-	/* If refcount > 1 return 1 to avoid deletion of persistent-id
-	   from the global_fidtable bitmap */
-	if (durable_state && durable_state->refcount > 1) {
-		--durable_state->refcount;
-		spin_unlock(&global_fidtable.fidtable_lock);
-		return 1;
+	/* Obtain Volatile-ID */
+	volatile_id = cifsd_get_unused_id(&sess->fidtable);
+	if (volatile_id < 0) {
+		cifsd_err("failed to get unused volatile_id for file\n");
+		return volatile_id;
 	}
 
-	/* Check if durable state is associated with file
-	   before deleting persistent id of a opened file,
-	   because opened file may or may not be associated
-	   with a durable handle */
-	if (durable_state) {
-		cifsd_debug("durable state delete persistentID (%llu) refcount = %d\n",
-			    id, durable_state->refcount);
-		kfree(durable_state);
-	}
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	fp->sess_id = sess->sess_id;
+#endif
+	fp->tid = tree_id;
 
-	ftab->fileid[id] = NULL;
-	spin_unlock(&global_fidtable.fidtable_lock);
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
+	WARN_ON(ftab->fileid[volatile_id] != NULL);
+	ftab->fileid[volatile_id] = fp;
+	spin_unlock(&sess->fidtable.fidtable_lock);
+	cifsd_debug("durable file updated volatile ID (%u)\n",
+		      volatile_id);
+
 	return 0;
 }
 
@@ -784,12 +701,6 @@ int close_persistent_id(uint64_t id)
 {
 	int rc = 0;
 
-	rc = cifsd_delete_durable_state(id);
-	if (rc < 0)
-		return rc;
-	else if (rc > 0)
-		return 0;
-
 	rc = cifsd_close_id(&global_fidtable, id);
 	return rc;
 }
@@ -799,7 +710,7 @@ int close_persistent_id(uint64_t id)
  */
 void destroy_global_fidtable(void)
 {
-	struct cifsd_durable_state *durable_state;
+	struct cifsd_file *fp;
 	struct fidtable *ftab;
 	int i;
 
@@ -809,14 +720,15 @@ void destroy_global_fidtable(void)
 	spin_unlock(&global_fidtable.fidtable_lock);
 
 	for (i = 0; i < ftab->max_fids; i++) {
-		durable_state = (struct cifsd_durable_state *)ftab->fileid[i];
-			kfree(durable_state);
-			ftab->fileid[i] = NULL;
+		fp = ftab->fileid[i];
+		kfree(fp);
+		ftab->fileid[i] = NULL;
 	}
 	free_fidtable(ftab);
 }
 #endif
 
+#if 0
 /**
  * cifsd_check_stat_info() - compare durable state and current inode stat
  * @durable_stat:	inode stat stored in durable state
@@ -905,92 +817,6 @@ int cifsd_check_stat_info(struct kstat *durable_stat,
 
 	return 1;
 }
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-/**
- * cifsd_durable_reconnect() - verify durable state on reconnect
- * @curr_conn:	TCP server instance of connection
- * @durable_stat:	durable state of filp
- * @filp:		current inode stat
- *
- * Return:		0 if no mismatch, otherwise error
- */
-int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
-			  struct cifsd_durable_state *durable_state,
-			  struct file **filp)
-{
-	struct kstat stat;
-	struct path *path;
-	int rc = 0;
-
-	rc = cifsd_durable_verify_and_del_oplock(curr_sess,
-						   durable_state->sess,
-						   durable_state->volatile_id,
-						   filp, curr_sess->sess_id);
-
-	if (rc < 0) {
-		*filp = NULL;
-		cifsd_err("Oplock state not consistent\n");
-		return rc;
-	}
-
-	/* Get the current stat info.
-	   Incrementing refcount of filp
-	   because when server thread is destroy_fidtable
-	   will close the filp when old server thread is destroyed*/
-	get_file(*filp);
-	path = &((*filp)->f_path);
-	generic_fillattr(path->dentry->d_inode, &stat);
-
-	if (!cifsd_check_stat_info(&durable_state->stat, &stat)) {
-		cifsd_err("Stat info mismatch file state changed\n");
-		fput(*filp);
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-
-/**
- * cifsd_update_durable_stat_info() - update durable state of all
- *		persistent fid of a server thread
- * @conn:	TCP server instance of connection
- */
-void cifsd_update_durable_stat_info(struct cifsd_sess *sess)
-{
-	struct cifsd_file *fp;
-	struct fidtable *ftab;
-	int id;
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *gtab;
-	struct file *filp;
-	uint64_t p_id;
-
-	if (durable_enable == false || !sess)
-		return;
-
-	spin_lock(&sess->fidtable.fidtable_lock);
-	ftab = sess->fidtable.ftab;
-
-	for (id = 0; id < ftab->max_fids; id++) {
-		fp = ftab->fileid[id];
-		if (fp && fp->is_durable) {
-			/* Mainly for updating kstat info */
-			filp = fp->filp;
-			p_id = fp->persistent_id;
-			spin_lock(&global_fidtable.fidtable_lock);
-
-			gtab = global_fidtable.ftab;
-			durable_state =
-			  (struct cifsd_durable_state *)gtab->fileid[p_id];
-			BUG_ON(durable_state == NULL);
-			generic_fillattr(filp->f_path.dentry->d_inode,
-					 &durable_state->stat);
-			spin_unlock(&global_fidtable.fidtable_lock);
-		}
-	}
-	spin_unlock(&sess->fidtable.fidtable_lock);
-}
 #endif
 
 /* End of persistent-ID functions */
@@ -1059,11 +885,8 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	if (!S_ISDIR(file_inode(filp)->i_mode) &&
 			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
 		/* Client cannot request levelII oplock directly */
-		err = smb_grant_oplock(work, oplock, id, fp, rcv_hdr->Tid,
+		*oplock = smb_grant_oplock(work, *oplock, id, fp, rcv_hdr->Tid,
 			NULL);
-		/* if we enconter an error, no oplock is granted */
-		if (err)
-			*oplock = 0;
 	}
 
 	*ret_id = id;

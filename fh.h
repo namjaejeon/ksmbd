@@ -230,28 +230,18 @@ struct cifsd_mfile *mfp_lookup(struct inode *inode);
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
 int cifsd_insert_in_global_table(struct cifsd_sess *sess,
-				   int volatile_id, struct file *filp,
-				   int durable_open);
+	struct cifsd_file *fp);
 int close_persistent_id(uint64_t id);
 void destroy_global_fidtable(void);
 
 /* Durable handle functions */
-struct cifsd_durable_state *
-	cifsd_get_durable_state(uint64_t persistent_id);
-void
-cifsd_update_durable_state(struct cifsd_sess *sess,
-				unsigned int persistent_id,
-				unsigned int volatile_id,
-				struct file *filp);
+struct cifsd_file *cifsd_get_durable_fp(uint64_t pid);
 
-int cifsd_delete_durable_state(uint64_t persistent_id);
-void
-cifsd_durable_disconnect(struct connection *conn,
-		unsigned int persistent_id, struct file *filp);
+int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
+	int tree_id);
 
-void cifsd_update_durable_stat_info(struct cifsd_sess *sess);
-void fp_get(struct cifsd_file *fp);
-void fp_put(struct cifsd_file *fp);
 #endif
 
+void fp_get(struct cifsd_file *fp);
+void fp_put(struct cifsd_file *fp);
 #endif /* __CIFSD_FH_H */
