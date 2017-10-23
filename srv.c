@@ -844,7 +844,6 @@ int cifsd_stop_tcp_sess(void)
 {
 	int ret;
 	int err = 0;
-	int etype;
 	struct connection *conn, *tmp;
 
 	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
