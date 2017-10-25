@@ -59,11 +59,6 @@ struct lease_ctx_info {
 	int dlease;
 };
 
-struct lease_fidinfo {
-	__u32                   fid;
-	struct list_head        fid_entry;
-};
-
 struct oplock_info {
 	struct connection	*conn;
 	struct cifsd_sess	*sess;
@@ -86,8 +81,6 @@ struct oplock_info {
 	atomic_t		LeaseCount;
 	atomic_t		op_count;
 	wait_queue_head_t	op_end_wq;
-	struct list_head	fid_list;
-
 	bool			open_trunc:1;	/* truncate on open */
 };
 
@@ -134,8 +127,7 @@ void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq);
 struct lease_ctx_info *parse_lease_state(void *open_req);
 __u8 smb2_map_lease_to_oplock(__le32 lease_state);
 struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
-		struct ofile_info **ofile, char *LeaseKey,
-		struct lease_fidinfo **fidinfo, int id);
+		struct ofile_info **ofile, char *LeaseKey, int id);
 int smb_break_write_lease(struct ofile_info *ofile,
 		struct oplock_info *opinfo);
 int lease_read_to_write(struct ofile_info *ofile, struct oplock_info *opinfo);

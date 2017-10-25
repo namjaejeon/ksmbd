@@ -214,9 +214,7 @@ static struct oplock_info *get_new_opinfo(struct smb_work *work,
 {
 	struct cifsd_sess *sess = work->sess;
 	struct oplock_info *opinfo;
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	struct lease_fidinfo *fidinfo;
-#endif
+
 	opinfo = kzalloc(sizeof(struct oplock_info), GFP_NOFS);
 	if (!opinfo)
 		return NULL;
@@ -228,7 +226,6 @@ static struct oplock_info *get_new_opinfo(struct smb_work *work,
 	opinfo->fid = id;
 	opinfo->Tid = Tid;
 	INIT_LIST_HEAD(&opinfo->op_list);
-	INIT_LIST_HEAD(&opinfo->fid_list);
 	INIT_LIST_HEAD(&opinfo->interim_list);
 	init_waitqueue_head(&opinfo->op_end_wq);
 
@@ -239,15 +236,6 @@ static struct oplock_info *get_new_opinfo(struct smb_work *work,
 		opinfo->NewLeaseState = 0;
 		opinfo->LeaseFlags = lctx->flags;
 		opinfo->LeaseDuration = lctx->duration;
-
-		fidinfo = kmalloc(sizeof(struct lease_fidinfo), GFP_NOFS);
-		if (!fidinfo) {
-			kfree(opinfo);
-			return NULL;
-		}
-		INIT_LIST_HEAD(&fidinfo->fid_entry);
-		fidinfo->fid = id;
-		list_add(&fidinfo->fid_entry, &opinfo->fid_list);
 		atomic_set(&opinfo->LeaseCount, 1);
 		opinfo->leased = 1;
 	}
@@ -560,16 +548,12 @@ static void close_id_del_lease(struct connection *conn,
 {
 	struct ofile_info *ofile = NULL;
 	struct oplock_info *opinfo = NULL;
-	struct lease_fidinfo *fidinfo = NULL;
 
 	ofile = fp->ofile;
-	opinfo = get_matching_opinfo_lease(conn, &ofile, fp->LeaseKey,
-			&fidinfo, id);
-	if (!opinfo || !fidinfo)
+	opinfo = get_matching_opinfo_lease(conn, &ofile, fp->LeaseKey, id);
+	if (!opinfo)
 		goto out;
 
-	list_del(&fidinfo->fid_entry);
-	kfree(fidinfo);
 	if (atomic_dec_and_test(&opinfo->LeaseCount)) {
 		if ((opinfo->op_state == OPLOCK_ACK_WAIT) &&
 			(opinfo->CurrentLeaseState &
@@ -1348,18 +1332,11 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, int id,
 	bool oplocked = false;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	struct oplock_info *opinfo_matching = NULL;
-	struct lease_fidinfo *fidinfo = NULL;
 #endif
 
 	opinfo_new = get_new_opinfo(work, id, Tid, lctx);
 	if (!opinfo_new)
 		return SMB2_OPLOCK_LEVEL_NONE;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	if (lctx)
-		fidinfo = list_first_entry(&opinfo_new->fid_list,
-				struct lease_fidinfo, fid_entry);
-#endif
 
 	/* check if the inode is already oplocked */
 	mutex_lock(&ofile_list_lock);
@@ -1380,8 +1357,6 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, int id,
 no_oplock:
 		err = check_same_lease_key_list(sess, lctx);
 		if (err) {
-			list_del(&fidinfo->fid_entry);
-			kfree(fidinfo);
 			kfree(opinfo_new);
 			mutex_unlock(&ofile_list_lock);
 			return err;
@@ -1424,9 +1399,6 @@ no_oplock:
 	/* is lease already granted ? */
 	opinfo_matching = same_client_has_lease(sess->conn, lctx, ofile);
 	if (opinfo_matching) {
-		if (fidinfo)
-			list_move(&fidinfo->fid_entry,
-					&opinfo_matching->fid_list);
 		atomic_inc(&opinfo_matching->LeaseCount);
 		kfree(opinfo_new);
 		fp->ofile = ofile;
@@ -1500,12 +1472,6 @@ out:
 		wake_up(&opinfo_old->op_end_wq);
 	mutex_unlock(&ofile_list_lock);
 	if (err < 0) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		if (lctx && fidinfo) {
-			list_del(&fidinfo->fid_entry);
-			kfree(fidinfo);
-		}
-#endif
 		kfree(opinfo_new);
 		op_level = SMB2_OPLOCK_LEVEL_NONE;
 	}
@@ -2039,7 +2005,7 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
 /*
  * Find lease object(opinfo) for given lease key/fid from lease
  * break/file close path.
- * If needed, return ofile and fidinfo for given lease key/fid.
+ * If needed, return ofile.
  */
 /**
  * get_matching_opinfo_lease() - find a matching lease info object
@@ -2047,18 +2013,16 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
  * @ofile:	opened file to be searched. If NULL polplate this
  *              with ofile of lease owner
  * @LeaseKey:	lease key to be searched for
- * @fidinfo:	check that this fid is associated with lease object
  * @id:		fid containing lease key, local to smb connection
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL
  */
 struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
-		struct ofile_info **ofile, char *LeaseKey,
-		struct lease_fidinfo **fidinfo, int id)
+		struct ofile_info **ofile, char *LeaseKey, int id)
 {
 	struct ofile_info *ofile_tmp = NULL;
 	struct oplock_info *opinfo = NULL;
-	__u8 op_found = 0, fid_found = 0;
+	__u8 op_found = 0;
 
 	if (*ofile) {
 		ofile_tmp = *ofile;
@@ -2075,10 +2039,6 @@ struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
 			op_found = 1;
 			goto out;
 		}
-
-		/* none list needs to be serached only from file close path */
-		if (!fidinfo)
-			goto out;
 
 		opinfo = find_opinfo(&ofile_tmp->op_none_list,
 				conn->ClientGUID, LeaseKey);
@@ -2104,9 +2064,6 @@ struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
 				goto out;
 			}
 
-			if (!fidinfo)
-				goto out;
-
 			opinfo = find_opinfo(&ofile_tmp->op_none_list,
 					conn->ClientGUID, LeaseKey);
 			if (opinfo) {
@@ -2118,25 +2075,8 @@ struct oplock_info *get_matching_opinfo_lease(struct connection *conn,
 	}
 
 out:
-	if (op_found && opinfo->op_state != OPLOCK_FREEING) {
-		if (fidinfo) {
-			/* this is close path, make sure opinfo has given fid */
-			struct lease_fidinfo *fidinfo_tmp;
-			list_for_each_entry(fidinfo_tmp, &opinfo->fid_list,
-					fid_entry) {
-				if (fidinfo_tmp->fid == id) {
-					*fidinfo = fidinfo_tmp;
-					fid_found = 1;
-					break;
-				}
-			}
-
-			if (!fid_found)
-				return NULL;
-
-		}
+	if (op_found && opinfo->op_state != OPLOCK_FREEING)
 		return opinfo;
-	}
 
 	return NULL;
 }

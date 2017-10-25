@@ -6794,8 +6794,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
 			req->LeaseState);
 	mutex_lock(&ofile_list_lock);
-	opinfo = get_matching_opinfo_lease(conn, &ofile, req->LeaseKey,
-			NULL, 0);
+	opinfo = get_matching_opinfo_lease(conn, &ofile, req->LeaseKey, 0);
 	if (ofile == NULL || opinfo == NULL) {
 		mutex_unlock(&ofile_list_lock);
 		cifsd_debug("file not opened\n");
