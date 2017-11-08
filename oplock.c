@@ -1626,7 +1626,7 @@ struct oplock_info *lookup_lease_in_table(struct connection *conn,
 	}
 
 out:
-	return opinfo;
+	return ret_op;
 }
 
 #endif
