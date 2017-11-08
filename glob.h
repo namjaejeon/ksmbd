@@ -672,7 +672,8 @@ int check_lock_range(struct file *filp, loff_t start,
 		loff_t end, unsigned char type);
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
-int smb_vfs_alloc_size(struct file *filp, loff_t len);
+int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+	loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
 int smb_vfs_remove_xattr(struct path *path, char *field_name);

@@ -314,9 +314,7 @@ int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
-		mutex_lock(&ofile_list_lock);
-		smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
-		mutex_unlock(&ofile_list_lock);
+		smb_break_all_levII_oplock(sess->conn, fp, 1);
 	}
 
 	err = vfs_write(filp, buf, count, pos);
@@ -465,7 +463,6 @@ int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 out:
 	if (name)
 		path_put(&path);
-	fp_put(fp);
 	return err;
 }
 
@@ -499,7 +496,6 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 #endif
 	if (err)
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
-	fp_put(fp);
 	return err;
 }
 
@@ -530,7 +526,6 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifsd_err("smb fsync failed, err = %d\n", err);
-	fp_put(fp);
 
 	return err;
 }
@@ -885,7 +880,6 @@ out1:
 	if (abs_oldname)
 		path_put(&oldpath_p);
 
-	fp_put(fp);
 	return err;
 }
 
@@ -929,9 +923,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		filp = fp->filp;
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
-			mutex_lock(&ofile_list_lock);
-			smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
-			mutex_unlock(&ofile_list_lock);
+			smb_break_all_levII_oplock(sess->conn, fp, 1);
 		} else {
 			inode = file_inode(filp);
 			if (size < inode->i_size) {
@@ -951,7 +943,6 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		if (err)
 			cifsd_err("truncate failed for fid %llu err %d\n",
 					fid, err);
-		fp_put(fp);
 	}
 
 	return err;
@@ -1251,9 +1242,12 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 	return err;
 }
 
-int smb_vfs_alloc_size(struct file *filp, loff_t len)
+int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+	loff_t len)
 {
-	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
+	if (oplocks_enable)
+		smb_break_all_levII_oplock(conn, fp, 1);
+	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
 int smb_vfs_remove_xattr(struct path *path, char *field_name)

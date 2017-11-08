@@ -1182,7 +1182,6 @@ int smb_locking_andx(struct smb_work *smb_work)
 	LOCK_RSP *rsp;
 	struct cifsd_file *fp;
 	struct connection *conn = smb_work->conn;
-	struct ofile_info *ofile;
 	struct oplock_info *opinfo;
 	char oplock;
 	int ret = 0;
@@ -1206,57 +1205,38 @@ int smb_locking_andx(struct smb_work *smb_work)
 	oplock = req->OplockLevel;
 
 	/* find fid */
-	mutex_lock(&ofile_list_lock);
 	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
 	if (fp == NULL) {
-		mutex_unlock(&ofile_list_lock);
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
 	}
 
-	ofile = fp->ofile;
-	if (ofile == NULL) {
-		cifsd_err("unexpected null ofile_info\n");
-		mutex_unlock(&ofile_list_lock);
-		return -EINVAL;
-	}
-
-	opinfo = get_matching_opinfo(conn, ofile, req->Fid, 0);
-	if (opinfo == NULL) {
-		cifsd_err("unexpected null oplock_info\n");
-		mutex_unlock(&ofile_list_lock);
-		return -EINVAL;
-	}
-
+	opinfo = fp->f_opinfo;
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
-		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
 		return -EINVAL;
 	}
 
 	if (oplock == OPLOCK_EXCLUSIVE || oplock == OPLOCK_BATCH) {
-		if (opinfo_write_to_none(ofile, opinfo) < 0) {
+		if (opinfo_write_to_none(opinfo) < 0) {
 			cifsd_err("lock level mismatch for fid %d\n",
 					req->Fid);
-			mutex_unlock(&ofile_list_lock);
 			opinfo->op_state = OPLOCK_STATE_NONE;
 			return -EINVAL;
 		}
-	} else if (((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
-				(opinfo->lock_type == OPLOCK_BATCH)) &&
+	} else if (((opinfo->level == OPLOCK_EXCLUSIVE) ||
+				(opinfo->level == OPLOCK_BATCH)) &&
 			(oplock == OPLOCK_READ)) {
-		ret = opinfo_write_to_read(ofile, opinfo, 0);
+		ret = opinfo_write_to_read(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
-			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
-	} else if ((opinfo->lock_type == OPLOCK_READ) &&
+	} else if ((opinfo->level == OPLOCK_READ) &&
 			(oplock == OPLOCK_NONE)) {
-		ret = opinfo_read_to_none(ofile, opinfo);
+		ret = opinfo_read_to_none(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
-			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
 	}
@@ -1264,7 +1244,6 @@ int smb_locking_andx(struct smb_work *smb_work)
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&conn->oplock_q);
 	wake_up(&opinfo->op_end_wq);
-	mutex_unlock(&ofile_list_lock);
 
 	return 0;
 }
@@ -1906,7 +1885,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (fp) {
 		struct cifsd_mfile *mfp;
 
-		mfp = mfp_lookup(FP_INODE(fp));
+		mfp = mfp_lookup_inode(FP_INODE(fp));
 		if (!mfp) {
 			mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
 			if (!mfp) {
@@ -1914,7 +1893,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				goto free_path;
 			}
 
-			mfp_init(mfp, FP_INODE(fp));
+			mfp_init(mfp, fp);
 		}
 
 		/* Add fp to master fp list. */
@@ -2309,8 +2288,6 @@ int smb_read_andx(struct smb_work *smb_work)
 	smb_work->rdata_cnt = nbytes;
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
-	fp_put(fp);
-
 	/* this is an ANDx command ? */
 	if (req->AndXCommand == 0xFF) {
 		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
@@ -2326,7 +2303,6 @@ int smb_read_andx(struct smb_work *smb_work)
 	}
 
 out:
-	fp_put(fp);
 	if (err)
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 	return err;
@@ -2375,7 +2351,6 @@ int smb_write(struct smb_work *smb_work)
 			count, &pos, 0, &nbytes);
 
 out:
-	fp_put(fp);
 	rsp->hdr.WordCount = 1;
 	rsp->Written = cpu_to_le16(nbytes & 0xFFFF);
 	rsp->ByteCount = 0;
@@ -2541,7 +2516,6 @@ int smb_write_andx(struct smb_work *smb_work)
 	if (err < 0)
 		goto out;
 
-	fp_put(fp);
 	/* write success, prepare response */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 6;
@@ -2567,7 +2541,6 @@ int smb_write_andx(struct smb_work *smb_work)
 	}
 
 out:
-	fp_put(fp);
 	if (err == -ENOSPC || err == -EFBIG)
 		rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
 	else

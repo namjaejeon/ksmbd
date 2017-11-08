@@ -624,7 +624,7 @@ static void conn_cleanup(struct connection *conn)
 		vfree(conn->wbuf);
 
 	list_del(&conn->list);
-	free_opinfo_disconnect(conn);
+	destroy_lease_table(conn);
 	kfree(conn);
 }
 
@@ -1045,7 +1045,7 @@ static void __exit exit_smb_server(void)
 	destroy_global_fidtable();
 #endif
 	cifsd_export_exit();
-	dispose_ofile_list();
+	destroy_lease_table(NULL);
 	smb_free_mempools();
 #ifdef CONFIG_CIFSD_ACL
 	exit_cifsd_idmap();

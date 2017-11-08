@@ -51,6 +51,11 @@
 #define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
 #define PARENT_INODE(fp)	fp->filp->f_path.dentry->d_parent->d_inode
 
+#define ATTR_FP(fp) (fp->attrib_only && \
+		(fp->cdoption != FILE_OVERWRITE_IF_LE && \
+		fp->cdoption != FILE_OVERWRITE_LE && \
+		fp->cdoption != FILE_SUPERSEDE_LE))
+
 #define S_DEL_ON_CLS		1
 #define S_DEL_ON_CLS_STREAM	2
 
@@ -108,14 +113,21 @@ struct stream {
 struct cifsd_mfile {
 	spinlock_t m_lock;
 	atomic_t m_count;
+	atomic_t op_count;
 	struct inode *m_inode;
 	unsigned int m_flags;
 	struct hlist_node m_hash;
 	struct list_head m_fp_list;
+	struct oplock_info *m_opinfo;
+	bool has_lease;
+	bool is_stream;
+	char *stream_name;
 };
 
 struct cifsd_file {
+	struct connection *conn;
 	struct cifsd_mfile *f_mfp;
+	struct oplock_info *f_opinfo;
 	struct file *filp;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
@@ -149,7 +161,6 @@ struct cifsd_file {
 	struct list_head lock_list;
 	spinlock_t f_lock;
 	wait_queue_head_t wq;
-	atomic_t f_count;
 	int f_state;
 };
 
@@ -221,11 +232,12 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
 void __init mfp_hash_init(void);
-void mfp_init(struct cifsd_mfile *mfp, struct inode *inode);
+int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp);
 void mfp_free(struct cifsd_mfile *mfp);
 void insert_mfp_hash(struct cifsd_mfile *mfp);
 void remove_mfp_hash(struct cifsd_mfile *mfp);
-struct cifsd_mfile *mfp_lookup(struct inode *inode);
+struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp);
+struct cifsd_mfile *mfp_lookup_inode(struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
@@ -242,6 +254,4 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 
 #endif
 
-void fp_get(struct cifsd_file *fp);
-void fp_put(struct cifsd_file *fp);
 #endif /* __CIFSD_FH_H */
