@@ -6595,6 +6595,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	cifsd_debug("SMB2_OPLOCK_BREAK v_id %llu, p_id %llu request oplock level %d\n",
 			volatile_id, persistent_id, req_oplevel);
 
+	mutex_lock(&lease_list_lock);
 	fp = get_id_from_fidtable(smb_work->sess, volatile_id);
 	if (!fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
@@ -6671,9 +6672,9 @@ int smb20_oplock_break(struct smb_work *smb_work)
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto err_out;
 	}
+	mutex_unlock(&lease_list_lock);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
@@ -6685,6 +6686,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
+	mutex_unlock(&lease_list_lock);
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }
@@ -6725,6 +6727,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
 			req->LeaseState);
+	mutex_lock(&lease_list_lock);
 	opinfo = lookup_lease_in_table(conn, req->LeaseKey);
 	if (opinfo == NULL) {
 		cifsd_debug("file not opened\n");
@@ -6810,10 +6813,10 @@ int smb21_lease_break(struct smb_work *smb_work)
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
-		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto err_out;
 	}
 
+	mutex_unlock(&lease_list_lock);
 	rsp->StructureSize = cpu_to_le16(36);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
@@ -6824,6 +6827,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 	return 0;
 
 err_out:
+	mutex_unlock(&lease_list_lock);
 	smb2_set_err_rsp(smb_work);
 	return 0;
 }

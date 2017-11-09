@@ -34,6 +34,7 @@ bool durable_enable;
 #endif
 
 LIST_HEAD(lease_table_list);
+DEFINE_MUTEX(lease_list_lock);
 
 module_param(oplocks_enable, bool, 0644);
 MODULE_PARM_DESC(oplocks_enable, "Enable or disable oplocks. Default: y/Y/1");
@@ -94,6 +95,16 @@ static int alloc_lease(struct oplock_info *opinfo,
 	opinfo->o_lease = lease;
 
 	return 0;
+}
+
+void free_lease(struct oplock_info *opinfo)
+{
+	struct lease *lease;
+
+	list_del(&opinfo->lease_entry);
+	lease = opinfo->o_lease;
+	opinfo->o_lease = NULL;
+	kfree(lease);
 }
 
 /**
@@ -303,13 +314,7 @@ void close_id_del_oplock(struct connection *conn, struct cifsd_file *fp)
 	if (!opinfo)
 		return;
 
-	if (opinfo->is_lease) {
-		list_del(&opinfo->lease_entry);
-		kfree(opinfo->o_lease);
-	}
-	atomic_dec(&fp->f_mfp->op_count);
 	fp->f_opinfo = NULL;
-
 	if (opinfo->op_state == OPLOCK_ACK_WAIT) {
 		opinfo->op_state = OPLOCK_CLOSING;
 		wake_up_interruptible(&conn->oplock_q);
@@ -317,8 +322,14 @@ void close_id_del_oplock(struct connection *conn, struct cifsd_file *fp)
 			atomic_set(&opinfo->breaking_cnt, 0);
 			wake_up_interruptible(&conn->oplock_brk);
 		}
-	} else
+	} else {
+		mutex_lock(&lease_list_lock);
+		if (opinfo->is_lease)
+			free_lease(opinfo);
+		atomic_dec(&fp->f_mfp->op_count);
 		kfree(opinfo);
+		mutex_unlock(&lease_list_lock);
+	}
 }
 
 
@@ -332,10 +343,10 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 {
 	struct smb2_lease_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct oplock_info *opinfo = (struct oplock_info *)smb_work->buf;
-	struct connection *conn = opinfo->conn;
+	struct lease_break_info *br_info =
+		(struct lease_break_info *)smb_work->buf;
+	struct connection *conn = smb_work->conn;
 	struct smb2_hdr *rsp_hdr;
-	struct lease *lease;
 
 	atomic_inc(&conn->req_running);
 	mutex_lock(&conn->srv_mutex);
@@ -371,14 +382,13 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
 
-	lease = opinfo->o_lease;
-	if (lease->state & (SMB2_LEASE_WRITE_CACHING |
+	if (br_info->curr_state & (SMB2_LEASE_WRITE_CACHING |
 			SMB2_LEASE_HANDLE_CACHING))
 		rsp->Flags = SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED;
 
-	memcpy(rsp->LeaseKey, lease->lease_key, SMB2_LEASE_KEY_SIZE);
-	rsp->CurrentLeaseState = lease->state;
-	rsp->NewLeaseState = lease->new_state;
+	memcpy(rsp->LeaseKey, br_info->lease_key, SMB2_LEASE_KEY_SIZE);
+	rsp->CurrentLeaseState = br_info->curr_state;
+	rsp->NewLeaseState = br_info->new_state;
 	rsp->BreakReason = 0;
 	rsp->AccessMaskHint = 0;
 	rsp->ShareMaskHint = 0;
@@ -459,12 +469,21 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	int ack_required)
 {
 	struct connection *conn = opinfo->conn;
+	struct oplock_break_info *br_info;
 	int ret = 0;
 	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
-	work->buf = (char *)opinfo;
+	br_info = kmalloc(sizeof(struct oplock_break_info), GFP_KERNEL);
+	if (!br_info)
+		return -ENOMEM;
+
+	br_info->level = opinfo->level;
+	br_info->fid = opinfo->fid;
+	br_info->open_trunc = opinfo->open_trunc;
+
+	work->buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -708,12 +727,22 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 	struct connection *conn = opinfo->conn;
 	struct list_head *tmp, *t;
 	struct smb_work *work;
+	struct lease_break_info *br_info;
+	struct lease *lease = opinfo->o_lease;
 
 	work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
 	if (!work)
 		return -ENOMEM;
 
-	work->buf = (char *)opinfo;
+	br_info = kmalloc(sizeof(struct lease_break_info), GFP_KERNEL);
+	if (!br_info)
+		return -ENOMEM;
+
+	br_info->curr_state = lease->state;
+	br_info->new_state = lease->new_state;
+	memcpy(br_info->lease_key, lease->lease_key, SMB2_LEASE_KEY_SIZE);
+
+	work->buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -849,8 +878,12 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
 	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
+		mutex_lock(&lease_list_lock);
+		if (brk_opinfo->is_lease)
+			free_lease(brk_opinfo);
 		kfree(brk_opinfo);
 		err = -ENOENT;
+		mutex_unlock(&lease_list_lock);
 	}
 
 	return err;
@@ -888,8 +921,9 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
 	if (!lctx)
 		return err;
 
+	mutex_lock(&lease_list_lock);
 	if (list_empty(&lease_table_list))
-		return err;
+		goto out;
 
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, sess->conn->ClientGUID,
@@ -911,6 +945,7 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
 	}
 
 out:
+	mutex_unlock(&lease_list_lock);
 	return err;
 }
 
@@ -932,6 +967,7 @@ void add_lease_global_list(struct oplock_info *opinfo)
 	struct lease_table *lb;
 	int added = 0;
 
+	mutex_lock(&lease_list_lock);
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, opinfo->conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE)) {
@@ -949,6 +985,7 @@ void add_lease_global_list(struct oplock_info *opinfo)
 		list_add(&opinfo->lease_entry, &lb->lease_list);
 		list_add(&lb->l_entry, &lease_table_list);
 	}
+	mutex_unlock(&lease_list_lock);
 }
 
 /**
@@ -1089,13 +1126,13 @@ grant_none:
 	}
 out:
 	if (err < 0) {
-		if (opinfo->is_lease) {
-			list_del(&opinfo->lease_entry);
-			kfree(opinfo->o_lease);
-		}
+		mutex_lock(&lease_list_lock);
+		if (opinfo->is_lease)
+			free_lease(opinfo);
 		kfree(opinfo);
 		fp->f_opinfo = NULL;
 		atomic_dec(&mfp->op_count);
+		mutex_unlock(&lease_list_lock);
 	}
 
 	return err;
@@ -1302,7 +1339,8 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	struct smb2_oplock_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct connection *conn = smb_work->conn;
-	struct oplock_info *opinfo = (struct oplock_info *)smb_work->buf;
+	struct oplock_break_info *br_info =
+		(struct oplock_break_info *)smb_work->buf;
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 	int persistent_id;
@@ -1310,8 +1348,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	atomic_inc(&conn->req_running);
 
 	mutex_lock(&conn->srv_mutex);
-
-	fp = get_id_from_fidtable(smb_work->sess, opinfo->fid);
+	fp = get_id_from_fidtable(smb_work->sess, br_info->fid);
 	if (!fp) {
 		mutex_unlock(&conn->srv_mutex);
 		kfree(smb_work);
@@ -1348,16 +1385,16 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	rsp = (struct smb2_oplock_break *)smb_work->rsp_buf;
 
 	rsp->StructureSize = cpu_to_le16(24);
-	if (!opinfo->open_trunc &&
-			(opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
-			opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
+	if (!br_info->open_trunc &&
+			(br_info->level == SMB2_OPLOCK_LEVEL_BATCH ||
+			br_info->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
 		rsp->OplockLevel = 1;
 	else
 		rsp->OplockLevel = 0;
 	rsp->Reserved = 0;
 	rsp->Reserved2 = 0;
 	rsp->PersistentFid = cpu_to_le64(persistent_id);
-	rsp->VolatileFid = cpu_to_le64(opinfo->fid);
+	rsp->VolatileFid = cpu_to_le64(br_info->fid);
 
 	inc_rfc1001_len(rsp, 24);
 

@@ -49,6 +49,8 @@
 
 #define SMB2_LEASE_KEY_SIZE		16
 
+extern struct mutex lease_list_lock;
+
 struct lease_ctx_info {
 	__u8	lease_key[SMB2_LEASE_KEY_SIZE];
 	__le32	req_state;
@@ -89,6 +91,18 @@ struct lease_table {
 	char client_guid[SMB2_CLIENT_GUID_SIZE];
 	struct list_head lease_list;
 	struct list_head l_entry;
+};
+
+struct lease_break_info {
+	int curr_state;
+	int new_state;
+	char lease_key[SMB2_LEASE_KEY_SIZE];
+};
+
+struct oplock_break_info {
+	int level;
+	int open_trunc;
+	int fid;
 };
 
 extern int smb_grant_oplock(struct smb_work *work, int req_op_level,
