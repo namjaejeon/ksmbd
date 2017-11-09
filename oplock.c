@@ -1147,22 +1147,23 @@ out:
 int smb_break_all_write_oplock(struct smb_work *work,
 	struct cifsd_file *fp, int is_trunc)
 {
+	struct cifsd_file *brk_fp;
 	struct cifsd_mfile *mfp;
-	struct oplock_info *opinfo;
+	struct oplock_info *brk_opinfo;
 
 	mfp = fp->f_mfp;
 	if (list_empty(&mfp->m_fp_list))
 		return 0;
-	fp = list_first_entry(&mfp->m_fp_list, struct cifsd_file, node);
-	opinfo = fp->f_opinfo;
-	if (!opinfo || (opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
-		opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+	brk_fp = list_first_entry(&mfp->m_fp_list, struct cifsd_file, node);
+	brk_opinfo = brk_fp->f_opinfo;
+	if (!brk_opinfo || (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
+			brk_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		return 0;
 	}
 
-	opinfo->open_trunc = is_trunc;
-	list_add(&work->interim_entry, &opinfo->interim_list);
-	smb_send_oplock_break_notification(opinfo);
+	brk_opinfo->open_trunc = is_trunc;
+	list_add(&work->interim_entry, &brk_opinfo->interim_list);
+	smb_send_oplock_break_notification(brk_opinfo);
 
 	return 1;
 }
