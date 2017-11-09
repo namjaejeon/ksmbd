@@ -1183,6 +1183,9 @@ void smb_break_all_levII_oplock(struct connection *conn,
 
 	mfp = fp->f_mfp;
 	op = fp->f_opinfo;
+	if (!op)
+		return;
+
 	list_for_each_entry_safe(brk_fp, fptmp, &mfp->m_fp_list, node) {
 		brk_op = brk_fp->f_opinfo;
 		if (IS_SMB2(brk_op->conn)) {
