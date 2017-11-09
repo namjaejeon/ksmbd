@@ -4100,8 +4100,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			if (!stream_buf)
 				break;
 
-			streamlen = sprintf(stream_buf, ":%s:%s",
-				&stream_name[XATTR_NAME_STREAM_LEN],
+			streamlen = snprintf(stream_buf, streamlen + 1,
+				":%s:%s", &stream_name[XATTR_NAME_STREAM_LEN],
 				stream_type);
 
 			file_info = (struct smb2_file_stream_info *)
