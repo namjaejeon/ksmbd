@@ -6201,7 +6201,7 @@ wait:
 		}
 	}
 
-	if (oplocks_enable)
+	if (oplocks_enable && atomic_read(&fp->f_mfp->op_count) > 1)
 		smb_break_all_oplock(smb_work, fp);
 
 	rsp->StructureSize = cpu_to_le16(4);
