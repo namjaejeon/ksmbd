@@ -230,7 +230,7 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
 {
 	void *bitmap;
 
-	if (id >= ftab_desc->ftab->max_fids - 1) {
+	if (id > ftab_desc->ftab->max_fids - 1) {
 		cifsd_debug("Invalid id passed to clear in bitmap\n");
 		return -EINVAL;
 	}
@@ -650,6 +650,22 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 }
 
 /**
+ * delete_durable_id_from_fidtable() - delete a durable id from fid table
+ * @id:	durable id to be deleted from fid table
+ *
+ * delete a durable id from fid table and free associated cifsd file pointer
+ */
+void delete_durable_id_from_fidtable(uint64_t id)
+{
+	struct fidtable *ftab;
+
+	spin_lock(&global_fidtable.fidtable_lock);
+	ftab = global_fidtable.ftab;
+	ftab->fileid[id] = NULL;
+	spin_unlock(&global_fidtable.fidtable_lock);
+}
+
+/**
  * close_persistent_id() - delete a persistent id from global fid table
  * @id:		persistent id
  *
@@ -660,6 +676,8 @@ int close_persistent_id(uint64_t id)
 	int rc = 0;
 
 	rc = cifsd_close_id(&global_fidtable, id);
+	if (!rc)
+		delete_durable_id_from_fidtable(id);
 	return rc;
 }
 
@@ -683,97 +701,6 @@ void destroy_global_fidtable(void)
 		ftab->fileid[i] = NULL;
 	}
 	free_fidtable(ftab);
-}
-#endif
-
-#if 0
-/**
- * cifsd_check_stat_info() - compare durable state and current inode stat
- * @durable_stat:	inode stat stored in durable state
- * @current_stat:	current inode stat
- *
- * Return:		0 if mismatch, 1 if no mismatch
- */
-int cifsd_check_stat_info(struct kstat *durable_stat,
-				struct kstat *current_stat)
-{
-	if (durable_stat->ino != current_stat->ino) {
-		cifsd_err("Inode mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->dev != current_stat->dev) {
-		cifsd_err("Device mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->mode != current_stat->mode) {
-		cifsd_err("Mode mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->nlink != current_stat->nlink) {
-		cifsd_err("Nlink mismatch\n");
-		return 0;
-	}
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	if (!uid_eq(durable_stat->uid, current_stat->uid)) {
-#else
-	if (durable_stat->uid != current_stat->uid) {
-#endif
-		cifsd_err("Uid mismatch\n");
-		return 0;
-	}
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	if (!gid_eq(durable_stat->gid, current_stat->gid)) {
-#else
-	if (durable_stat->gid != current_stat->gid) {
-#endif
-		cifsd_err("Gid mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->rdev != current_stat->rdev) {
-		cifsd_err("Special file devid mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->size != current_stat->size) {
-		cifsd_err("Size mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->atime.tv_sec != current_stat->atime.tv_sec &&
-	    durable_stat->atime.tv_nsec != current_stat->atime.tv_nsec) {
-		cifsd_err("Last access time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->mtime.tv_sec  != current_stat->mtime.tv_sec &&
-	    durable_stat->mtime.tv_nsec != current_stat->mtime.tv_nsec) {
-		cifsd_err("Last modification time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->ctime.tv_sec != current_stat->ctime.tv_sec &&
-	    durable_stat->ctime.tv_nsec != current_stat->ctime.tv_nsec) {
-		cifsd_err("Last status change time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->blksize != current_stat->blksize) {
-		cifsd_err("Block size mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->blocks != current_stat->blocks) {
-		cifsd_err("Block number mismatch\n");
-		return 0;
-	}
-
-	return 1;
 }
 #endif
 

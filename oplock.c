@@ -30,7 +30,7 @@
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 bool lease_enable = true;
-bool durable_enable;
+bool durable_enable = true;
 #endif
 
 LIST_HEAD(lease_table_list);
