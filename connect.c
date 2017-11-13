@@ -238,7 +238,7 @@ int cifsd_create_socket(__u32 cifsd_pid)
 		goto release;
 	}
 
-	cifsd_pid_info = kmalloc(sizeof(cifsd_pid_info), GFP_KERNEL);
+	cifsd_pid_info = kmalloc(sizeof(struct cifsd_pid_info), GFP_KERNEL);
 	if (!cifsd_pid_info)
 		goto release;
 

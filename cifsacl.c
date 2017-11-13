@@ -128,22 +128,24 @@ static struct key_type cifsd_idmap_key_type = {
 static char *
 sid_to_key_str(struct cifs_sid *sidptr, unsigned int type)
 {
-	int i, len;
+	int i, len, buf_size;
 	unsigned int saval;
 	char *sidstr, *strptr;
 	unsigned long long id_auth_val;
 
 	/* 3 bytes for prefix */
-	sidstr = kmalloc(3 + SID_STRING_BASE_SIZE +
-			(SID_STRING_SUBAUTH_SIZE * sidptr->num_subauth),
-			GFP_KERNEL);
+	buf_size = 3 + SID_STRING_BASE_SIZE +
+			(SID_STRING_SUBAUTH_SIZE * sidptr->num_subauth);
+	sidstr = kmalloc(buf_size, GFP_KERNEL);
 	if (!sidstr)
 		return sidstr;
 
 	strptr = sidstr;
-	len = sprintf(strptr, "%cs:S-%hhu", type == SIDOWNER ? 'o' : 'g',
+	len = snprintf(strptr, buf_size, "%cs:S-%hhu",
+			type == SIDOWNER ? 'o' : 'g',
 			sidptr->revision);
 	strptr += len;
+	buf_size -= len;
 
 	/* The authority field is a single 48-bit number */
 	id_auth_val = (unsigned long long)sidptr->authority[5];
@@ -158,16 +160,18 @@ sid_to_key_str(struct cifs_sid *sidptr, unsigned int type)
 	 * expressed as a hex value.
 	 */
 	if (id_auth_val <= UINT_MAX)
-		len = sprintf(strptr, "-%llu", id_auth_val);
+		len = snprintf(strptr, buf_size, "-%llu", id_auth_val);
 	else
-		len = sprintf(strptr, "-0x%llx", id_auth_val);
+		len = snprintf(strptr, buf_size, "-0x%llx", id_auth_val);
 
 	strptr += len;
+	buf_size -= len;
 
 	for (i = 0; i < sidptr->num_subauth; ++i) {
 		saval = le32_to_cpu(sidptr->sub_auth[i]);
-		len = sprintf(strptr, "-%u", saval);
+		len = snprintf(strptr, buf_size, "-%u", saval);
 		strptr += len;
+		buf_size -= len;
 	}
 
 	return sidstr;

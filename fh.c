@@ -945,7 +945,7 @@ int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
 
 	sess->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifsd_pipe),
 			GFP_KERNEL);
-	if (!sess->pipe_desc)
+	if (!sess->pipe_desc[pipe_type])
 		return -ENOMEM;
 
 	pipe_desc = sess->pipe_desc[pipe_type];

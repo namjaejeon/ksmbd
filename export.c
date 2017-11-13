@@ -284,7 +284,7 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 {
 	struct cifsd_usr *usr;
 
-	usr = kmalloc(sizeof(struct cifsd_usr), GFP_KERNEL);
+	usr = kzalloc(sizeof(struct cifsd_usr), GFP_KERNEL);
 	if (!usr)
 		return -ENOMEM;
 

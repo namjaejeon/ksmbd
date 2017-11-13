@@ -4104,8 +4104,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			if (!stream_buf)
 				break;
 
-			streamlen = sprintf(stream_buf, ":%s:%s",
-				&stream_name[XATTR_NAME_STREAM_LEN],
+			streamlen = snprintf(stream_buf, streamlen + 1,
+				":%s:%s", &stream_name[XATTR_NAME_STREAM_LEN],
 				stream_type);
 
 			file_info = (struct smb2_file_stream_info *)
@@ -4465,7 +4465,7 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 
 			obj_info = (struct object_id_info *)(rsp->Buffer);
 
-			if (smb_work->sess->usr->passkey) {
+			if (smb_work->sess->usr->passkey[0]) {
 				smb_E_md4hash(smb_work->sess->usr->passkey,
 					objid, conn->local_nls);
 				memcpy(obj_info->objid, objid, 16);

@@ -344,7 +344,7 @@ smbConvertToUTF16(__le16 *target, const char *source, int srclen,
 	wchar_t tmp;
 
 	if (!mapchars)
-		return smb_strtoUTF16(target, source, PATH_MAX, cp);
+		return smb_strtoUTF16(target, source, srclen, cp);
 
 	for (i = 0, j = 0; i < srclen; j++) {
 		src_char = source[i];
