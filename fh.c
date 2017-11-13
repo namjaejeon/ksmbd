@@ -295,6 +295,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 	fp->sess_id = sess_id;
 #endif
 	fp->f_state = FP_NEW;
+	fp->volatile_id = id;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
 	init_waitqueue_head(&fp->wq);
@@ -625,6 +626,14 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 {
 	struct fidtable *ftab;
 	unsigned int volatile_id;
+	struct cifsd_file *dfp;
+
+	/* find durable fp is still opened */
+	dfp = get_id_from_fidtable(sess, fp->volatile_id);
+	if (dfp) {
+		cifsd_err("find durable fp is still opened\n");
+		return -EIO;
+	}
 
 	/* Obtain Volatile-ID */
 	volatile_id = cifsd_get_unused_id(&sess->fidtable);

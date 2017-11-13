@@ -2621,7 +2621,12 @@ int smb2_open(struct smb_work *smb_work)
 
 reconnect:
 	if (durable_reconnect) {
-		cifsd_reconnect_durable_fp(sess, fp, tree_id);
+		rc = cifsd_reconnect_durable_fp(sess, fp, tree_id);
+		if (rc) {
+			fp = NULL;
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			goto err_out;
+		}
 		file_info = FILE_OPENED;
 	} else if (durable_enable) {
 		if ((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||

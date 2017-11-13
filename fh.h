@@ -142,6 +142,7 @@ struct cifsd_file {
 	bool is_nt_open;
 	bool lease_granted;
 	char LeaseKey[16];
+	unsigned int volatile_id;
 	bool is_durable;
 	uint64_t persistent_id;
 	uint64_t sess_id;
