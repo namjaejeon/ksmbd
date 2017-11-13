@@ -1909,7 +1909,7 @@ int smb2_open(struct smb_work *smb_work)
 	int next_off = 0, tree_id = 0;
 	char *name = NULL, *context_name, *lname = NULL, *pathname = NULL;
 	char *stream_name = NULL, *xattr_stream_name = NULL;
-	bool file_present = true, islink = false;
+	bool file_present = false, created = false, islink = false;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -2143,13 +2143,13 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (rc) {
-		file_present = false;
 		cifsd_debug("can not get linux path for %s, rc = %d\n",
 				name, rc);
 		rc = 0;
-	} else
+	} else {
+		file_present = true;
 		generic_fillattr(path.dentry->d_inode, &stat);
-
+	}
 	if (stream_name) {
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 			if (s_type == DATA_STREAM) {
@@ -2170,10 +2170,7 @@ int smb2_open(struct smb_work *smb_work)
 		}
 
 		if (rc < 0) {
-			if (file_present)
-				goto err_out;
-			else
-				goto err_out1;
+			goto err_out;
 		}
 	}
 
@@ -2245,7 +2242,7 @@ int smb2_open(struct smb_work *smb_work)
 				kfree(name);
 				return rc;
 			}
-
+			created = true;
 			if (ea_buf) {
 				rc = smb2_set_ea(&ea_buf->ea, &path);
 				if (rc)
@@ -2343,7 +2340,7 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (file_present && S_ISDIR(stat.mode))
+	if (S_ISDIR(stat.mode))
 		fp->readdir_data.dirent = NULL;
 
 	fp->cdoption = req->CreateDisposition;
@@ -2553,12 +2550,12 @@ int smb2_open(struct smb_work *smb_work)
 		rc = 0;
 	}
 
-	if (!file_present) {
+	if (created) {
 		i_uid_write(FP_INODE(fp), sess->usr->uid.val);
 		i_gid_write(FP_INODE(fp), sess->usr->gid.val);
 	}
 
-	if (file_present) {
+	if (!created) {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
 			char *create_time = NULL;
@@ -2588,7 +2585,7 @@ int smb2_open(struct smb_work *smb_work)
 	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
 
-	if (file_present) {
+	if (!created) {
 		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
 		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
 			char *file_attribute = NULL;
@@ -2750,8 +2747,10 @@ reconnect:
 	}
 
 err_out:
-	path_put(&path);
-	kfree(name);
+	if (file_present || created)
+		path_put(&path);
+	if (name)
+		kfree(name);
 err_out1:
 	if (rc) {
 		if (rc == -EINVAL)
