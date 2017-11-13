@@ -1010,8 +1010,9 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, int id,
 	int share_ret = 0;
 
 	/* not support directory lease */
-	if (lctx && S_ISDIR(file_inode(fp->filp)->i_mode)) {
-		lctx->dlease = 1;
+	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
+		if (lctx)
+			lctx->dlease = 1;
 		return 0;
 	}
 
@@ -1031,7 +1032,7 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, int id,
 	}
 
 	/* inode does not have any oplock */
-	if (list_empty(&mfp->m_fp_list)) {
+	if (atomic_read(&mfp->op_count) == 1) {
 new_oplock:
 		switch (req_op_level) {
 		case SMB2_OPLOCK_LEVEL_BATCH:
