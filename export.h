@@ -122,6 +122,7 @@ struct cifsd_sess {
 	__u8 Preauth_HashValue[64];
 	struct cifsd_pipe *pipe_desc[MAX_PIPE];
 	wait_queue_head_t pipe_q;
+	wait_queue_head_t notify_q;
 	int ev_state;
 };
 

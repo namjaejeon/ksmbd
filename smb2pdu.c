@@ -88,6 +88,9 @@ struct fs_type_info fs_type[] = {
 	{ "CGROUP",	0x27e0eb},
 	};
 
+/* global variables for notify command */
+struct smb2_inotify_res_info *inotify_res;
+
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	TCP server instance of connection
@@ -1226,6 +1229,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			goto out_err;
 
 		init_waitqueue_head(&sess->pipe_q);
+		init_waitqueue_head(&sess->notify_q);
 		sess->ev_state = NETLINK_REQ_INIT;
 	} else {
 		struct smb2_hdr *req_hdr = (struct smb2_hdr *)smb_work->buf;
@@ -6870,46 +6874,22 @@ err_out:
 	return 0;
 }
 
-#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
-static unsigned int convert_inotify_mask(unsigned int mode)
-{
-	unsigned int mask = 0;
-
-	if (mode & FILE_NOTIFY_CHANGE_NAME)
-		mask |= IN_CREATE | IN_DELETE | IN_MOVED_FROM | IN_MOVED_TO;
-	if (mode & FILE_NOTIFY_CHANGE_ATTRIBUTES)
-		mask |= IN_ATTRIB | IN_MOVED_TO | IN_MOVED_FROM | IN_MODIFY;
-	if (mode & (FILE_NOTIFY_CHANGE_LAST_WRITE |
-		FILE_NOTIFY_CHANGE_LAST_ACCESS | FILE_NOTIFY_CHANGE_EA |
-		FILE_NOTIFY_CHANGE_SECURITY))
-		mask |= IN_ATTRIB;
-
-	return mask;
-}
-
 /**
  * smb2_notify() - handler for smb2 notify request
  * @smb_work:	smb work containing notify command buffer
  *
- * Return:	0
+ * Return:		0
  */
 int smb2_notify(struct smb_work *smb_work)
 {
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp, *rsp_org;
-	struct notification *notify_req;
-	struct cifsd_file *fp, *prev_fp;
-	struct inotify_event *event;
-	struct notification *request;
-	struct FileNotifyInformation *out_buf = NULL;
-	struct smb_work *work;
-	uint64_t id = -1;
-	int fd, offset = 0, wd, byte, count = 1024, i = 0;
-	int filename_len, total_len, out_len;
-	int err = 0;
-	u32 mask;
-	char *p, *pbuf, *buf;
-	mm_segment_t cur_fs = get_fs();
+	struct cifsd_file *fp;
+	int rc = 0;
+	char *path;
+	char *path_buf = NULL;
+	int path_len = 0;
+	struct smb2_inotify_req_info inotify_req_info;
 
 	req = (struct smb2_notify_req *)smb_work->buf;
 	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
@@ -6920,260 +6900,67 @@ int smb2_notify(struct smb_work *smb_work)
 				smb_work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_notify_rsp *)((char *)rsp +
 				smb_work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId == -1)) {
-			cifsd_debug("Compound request assigning stored FID = %llu\n",
-				smb_work->cur_local_fid);
-			id = smb_work->cur_local_fid;
-		}
 	}
-
-	if (id == -1)
-		id = le64_to_cpu(req->VolatileFileId);
 
 	if (req->StructureSize != 32) {
 		cifsd_err("malformed packet\n");
 		smb_work->send_no_response = 1;
-		return 0;
+		goto out;
 	}
 
 	if (smb_work->next_smb2_rcv_hdr_off &&
 			le32_to_cpu(req->hdr.NextCommand)) {
 		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
 		smb2_set_err_rsp(smb_work);
-		return 0;
+		goto out;
 	}
 
-	fp = get_id_from_fidtable(smb_work->sess,
-			id);
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
 	if (!fp) {
-		cifsd_err("Invalid file id for lock : %llu\n", id);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto out3;
+		rc = -ENOENT;
+		goto out;
 	}
 
-	if (fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto out3;
+	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!path_buf) {
+		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+		rc = -ENOENT;
+		goto out;
 	}
 
-	pbuf = kzalloc(PATH_MAX, GFP_KERNEL);
-	if (!pbuf)
-		goto out3;
-
-	p = d_path(&(fp->filp->f_path), pbuf, PATH_MAX);
-	if (IS_ERR(p)) {
-		kfree(pbuf);
-		goto out3;
+	path = d_path(&(fp->filp->f_path), path_buf, PATH_MAX);
+	if (IS_ERR(path)) {
+		cifsd_err("Failed to get complete dir path\n");
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		rc = PTR_ERR(path);
+		goto out;
 	}
+	path_len = strlen(path);
 
-	notify_req = kmalloc(sizeof(struct notification), GFP_KERNEL);
-	if (!notify_req)
-		goto out3;
+	/* TODO : implement recursive monitoring */
+	inotify_req_info.watch_tree_flag = 0;
+	inotify_req_info.CompletionFilter = req->CompletionFileter;
+	inotify_req_info.path_len = path_len;
 
-	notify_req->mode = le32_to_cpu(req->CompletionFileter);
-	cifsd_debug("CompletionFileter : 0x%x\n", notify_req->mode);
-
-	notify_req->work = smb_work;
-
-	hash_for_each_possible(smb_work->sess->notify_table, prev_fp,
-		notify_node, (unsigned long)FP_INODE(fp)) {
-		if (FP_INODE(fp) == FP_INODE(prev_fp)) {
-			list_add_tail(&notify_req->queuelist, &prev_fp->queue);
-			goto out2;
-		}
-	}
-
-	INIT_LIST_HEAD(&fp->queue);
-	list_add_tail(&notify_req->queuelist, &fp->queue);
-
-	fd = sys_inotify_init();
-
-start:
-	while (!list_empty(&fp->queue)) {
-		request = list_first_entry_or_null(&fp->queue,
-			struct notification, queuelist);
-		if (!request)
-			continue;
-		list_del_init(&request->queuelist);
-
-		work = request->work;
-
-		smb2_send_interim_resp(work);
-
-		req = (struct smb2_notify_req *)work->buf;
-		rsp = (struct smb2_notify_rsp *)work->rsp_buf;
-		rsp_org = rsp;
-
-		out_len = le32_to_cpu(req->OutputBufferLength);
-
-		mask = convert_inotify_mask(request->mode);
-		if (!mask) {
-			list_add_tail(&request->queuelist, &fp->queue);
-			continue;
-		}
-
-		kfree(request);
-
-		set_fs(get_ds());
-		wd = sys_inotify_add_watch(fd, (__force char __user *)p, mask);
-		set_fs(cur_fs);
-
-		buf = kmalloc(1024 * (sizeof(struct inotify_event) + 16),
-			GFP_KERNEL);
-		if (!buf)
-			break;
-
-		rsp->hdr.Flags |= SMB2_FLAGS_ASYNC_COMMAND;
-		rsp->hdr.Id.AsyncId = cpu_to_le64(work->async->async_id);
-
-		/* Send interim Response to inform asynchronous request */
-		cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
-			work->async->async_id);
-		smb2_set_err_rsp(work);
-		rsp->hdr.Status = NT_STATUS_PENDING;
-		work->multiRsp = 1;
-		smb_send_rsp(work);
-		work->multiRsp = 0;
-
-		cifsd_debug("watching filename : %s, mask : 0x%x\n", p, mask);
-		set_fs(get_ds());
-		byte = sys_read(fd, (__force char __user *)buf, count);
-		set_fs(cur_fs);
-		if (byte < 0) {
-			cifsd_err("event read failed : %d\n", byte);
-			sys_inotify_rm_watch(fd, wd);
-			continue;
-		}
-
-		i = 0;
-		total_len = 0;
-		while (i < byte) {
-			if (i >= out_len) {
-				cifsd_err("buffer length(%d) is greater than output's one (%d) of request\n",
-					i, out_len);
-				rsp->hdr.Status = NT_STATUS_NOTIFY_ENUM_DIR;
-				goto out;
-			}
-
-			out_buf = (struct FileNotifyInformation *)
-				&rsp->Buffer[offset];
-			event = (struct inotify_event *) &buf[i];
-			cifsd_debug("event->mask : 0x%x, event length : %d\n",
-				event->mask, event->len);
-
-			if (event->mask & (IN_IGNORED | IN_UNMOUNT |
-					IN_Q_OVERFLOW) || !event->len) {
-				rsp->hdr.Status = NT_STATUS_CANCELLED;
-				smb2_set_err_rsp(work);
-				smb_send_rsp(work);
-				remove_async_id(work->async->async_id);
-				goto start;
-			}
-
-			if (event->mask & IN_CREATE) {
-				cifsd_err("get file creation event\n");
-				out_buf->Action = FILE_ACTION_ADDED;
-			} else if (event->mask & (IN_DELETE | IN_DELETE_SELF)) {
-				cifsd_err("get file deletion event\n");
-				out_buf->Action = FILE_ACTION_REMOVED;
-			} else if (event->mask & (IN_ATTRIB | IN_MODIFY)) {
-				cifsd_err("get file modification event\n");
-				out_buf->Action = FILE_ACTION_MODIFIED;
-			} else if (event->mask & IN_MOVED_FROM) {
-				cifsd_err("get file rename(from old) event\n");
-				out_buf->Action = FILE_ACTION_RENAMED_OLD_NAME;
-			} else if (event->mask & IN_MOVED_TO) {
-				cifsd_err("get file rename(to new) event\n");
-				out_buf->Action = FILE_ACTION_RENAMED_NEW_NAME;
-			}
-			/* TODO : add named stream notify */
-
-			i += sizeof(struct inotify_event) + event->len;
-			filename_len =
-				smbConvertToUTF16((__le16 *)out_buf->FileName,
-				event->name, event->len,
-				work->sess->conn->local_nls, 0);
-			filename_len *= 2;
-			out_buf->FileNameLength = cpu_to_le32(filename_len);
-			offset = 12 + filename_len;
-			total_len += offset;
-			out_buf->NextEntryOffset = cpu_to_le32(offset);
-		}
-
-		out_buf->NextEntryOffset = 0;
-
-		rsp->hdr.Status = NT_STATUS_OK;
-		rsp->StructureSize = cpu_to_le16(9);
-		rsp->OutputBufferOffset = cpu_to_le16(72);
-		rsp->OutputBufferLength = cpu_to_le32(total_len);
-		inc_rfc1001_len(rsp_org, 8 + total_len);
-
-out:
-		smb_send_rsp(work);
-		remove_async_id(work->async->async_id);
-		sys_inotify_rm_watch(fd, wd);
-	}
-
-	kfree(pbuf);
-out2:
-	smb_work->send_no_response = 1;
-	return 0;
-
-out3:
-	if (rsp->hdr.Status == 0)
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-	smb2_set_err_rsp(smb_work);
-	return err;
-}
-
-#else
-/**
- * smb2_notify() - handler for smb2 notify request
- * @smb_work:   smb work containing notify command buffer
- *
- * Return:      0
- */
-int smb2_notify(struct smb_work *smb_work)
-{
-	struct smb2_notify_req *req;
-	struct smb2_notify_rsp *rsp, *rsp_org;
-
-	req = (struct smb2_notify_req *)smb_work->buf;
-	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
-	rsp_org = rsp;
-
-	if (smb_work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_notify_req *)((char *)req +
-				smb_work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_notify_rsp *)((char *)rsp +
-				smb_work->next_smb2_rsp_hdr_off);
-	}
-
-	if (req->StructureSize != 32) {
-		cifsd_err("malformed packet\n");
-		smb_work->send_no_response = 1;
-		return 0;
-	}
-
-	if (smb_work->next_smb2_rcv_hdr_off &&
-			le32_to_cpu(req->hdr.NextCommand)) {
-		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
-		smb2_set_err_rsp(smb_work);
-		return 0;
-	}
+	rc = cifsd_sendmsg_notify(smb_work->sess,
+		sizeof(inotify_req_info)+path_len,
+		&inotify_req_info, path);
 
 	rsp->hdr.Status = NT_STATUS_OK;
 	rsp->StructureSize = cpu_to_le16(9);
-	rsp->OutputBufferLength = cpu_to_le32(0);
-	rsp->OutputBufferOffset = cpu_to_le16(0);
-	rsp->Buffer[0] = 0;
-	inc_rfc1001_len(rsp_org, 9);
-	return 0;
+	rsp->OutputBufferOffset = cpu_to_le16(72);
+	rsp->OutputBufferLength = inotify_res->output_buffer_length;
+
+	memcpy(rsp->Buffer, &(inotify_res->file_notify_info[0]),
+		sizeof(struct FileNotifyInformation) + NAME_MAX);
+	inc_rfc1001_len(rsp_org, 8 + rsp->OutputBufferLength);
+
+out:
+	kfree(path_buf);
+	return rc;
 }
-#endif
 
 /**
  * smb2_is_sign_req() - handler for checking packet signing status

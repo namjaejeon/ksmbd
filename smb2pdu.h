@@ -800,13 +800,6 @@ struct smb2_notify_rsp {
 #define FILE_ACTION_MODIFIED_STREAM	0x00000008
 #define FILE_ACTION_REMOVED_BY_DELETE	0x00000009
 
-struct FileNotifyInformation {
-	__le32 NextEntryOffset;
-	__le32 Action;
-	__le32 FileNameLength;
-	char FileName[0];
-} __packed;
-
 #define SMB2_LOCKFLAG_SHARED		0x0001
 #define SMB2_LOCKFLAG_EXCLUSIVE		0x0002
 #define SMB2_LOCKFLAG_UNLOCK		0x0004
