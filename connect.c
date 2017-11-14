@@ -287,9 +287,7 @@ static int cifsd_do_fork(void *p)
 		cifsd_task = find_task_by_vpid(cifsd_pid);
 		rcu_read_unlock();
 		if (cifsd_task) {
-			if (!strncmp(cifsd_task->comm, "cifsd", 5))
-				cifsd_debug("cifsd is alive\n");
-			else {
+			if (strncmp(cifsd_task->comm, "cifsd", 5)) {
 				cifsd_err("cifsd is not alive\n");
 				break;
 			}
