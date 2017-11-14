@@ -2627,6 +2627,7 @@ reconnect:
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 			goto err_out;
 		}
+		generic_fillattr(FP_INODE(fp), &stat);
 		file_info = FILE_OPENED;
 	} else if (durable_enable) {
 		if ((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
@@ -2684,8 +2685,8 @@ reconnect:
 
 	rsp->Reserved2 = 0;
 
-	rsp->PersistentFileId = cpu_to_le64(persistent_id);
-	rsp->VolatileFileId = cpu_to_le64(volatile_id);
+	rsp->PersistentFileId = cpu_to_le64(fp->persistent_id);
+	rsp->VolatileFileId = cpu_to_le64(fp->volatile_id);
 	rsp->CreateContextsOffset = 0;
 	rsp->CreateContextsLength = 0;
 	inc_rfc1001_len(rsp_org, 88); /* StructureSize - 1*/
