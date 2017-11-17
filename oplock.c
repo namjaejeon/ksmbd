@@ -109,9 +109,7 @@ void free_lease(struct oplock_info *opinfo)
 
 /**
  * opinfo_write_to_read() - convert a write oplock to read oplock
- * @ofile:		opened file to be checked for oplock status
  * @opinfo:		current oplock info
- * @lease_state:	current lease state
  *
  * Return:      0 on success, otherwise -EINVAL
  */
@@ -147,9 +145,7 @@ int opinfo_write_to_read(struct oplock_info *opinfo)
 
 /**
  * opinfo_read_handle_to_read() - convert a read/handle oplock to read oplock
- * @ofile:		opened file to be checked for oplock status
  * @opinfo:		current oplock info
- * @lease_state:	current lease state
  *
  * Return:      0 on success, otherwise -EINVAL
  */
@@ -166,7 +162,6 @@ int opinfo_read_handle_to_read(struct oplock_info *opinfo)
 
 /**
  * opinfo_write_to_none() - convert a write oplock to none
- * @ofile:	opened file to be checked for oplock status
  * @opinfo:	current oplock info
  *
  * Return:      0 on success, otherwise -EINVAL
@@ -203,7 +198,6 @@ int opinfo_write_to_none(struct oplock_info *opinfo)
 
 /**
  * opinfo_read_to_none() - convert a write read to none
- * @ofile:	opened file to be checked for oplock status
  * @opinfo:	current oplock info
  *
  * Return:      0 on success, otherwise -EINVAL
@@ -238,7 +232,6 @@ int opinfo_read_to_none(struct oplock_info *opinfo)
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * lease_read_to_write() - upgrade lease state from read to write
- * @ofile:	opened file to be checked for oplock status
  * @opinfo:	current lease info
  *
  * Return:      0 on success, otherwise -EINVAL
@@ -264,9 +257,8 @@ int lease_read_to_write(struct oplock_info *opinfo)
 
 /**
  * lease_none_upgrade() - upgrade lease state from none
- * @ofile:	opened file to be checked for oplock status
  * @opinfo:	current lease info
- * @curr_state:	current lease state
+ * @new_state:	new lease state
  *
  * Return:	0 on success, otherwise -EINVAL
  */
@@ -409,8 +401,8 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 /**
  * smb1_oplock_break_notification() - send smb1 exclusive/batch to level2 oplock
  *		break command from server to client
- * @ofile:	open file object
- * @opinfo:	oplock info object
+ * @opinfo:		oplock info object
+ * @ack_required	if requiring ack
  *
  * Return:      0 on success, otherwise error
  */
@@ -460,8 +452,8 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 /**
  * smb2_oplock_break_notification() - send smb2 exclusive/batch to level2 oplock
  *		break command from server to client
- * @ofile:	open file object
- * @opinfo:	oplock info object
+ * @opinfo:		oplock info object
+ * @ack_required	if requiring ack
  *
  * Return:      0 on success, otherwise error
  */
@@ -514,9 +506,8 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 
 /**
  * grant_write_oplock() - grant exclusive/batch oplock or write lease
- * @ofile:	open file object
  * @opinfo_new:	new oplock info object
- * @fp:		cifsd file pointer
+ * @req_oplock: request oplock
  * @lctx:	lease context information
  *
  * Return:      0
@@ -543,7 +534,6 @@ static void grant_write_oplock(struct oplock_info *opinfo_new, int req_oplock,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (lctx) {
 		lease->state = lctx->req_state;
-		lctx->rsp_state = lease->state;
 		memcpy(lease->lease_key, lctx->lease_key,
 				SMB2_LEASE_KEY_SIZE);
 	}
@@ -552,9 +542,7 @@ static void grant_write_oplock(struct oplock_info *opinfo_new, int req_oplock,
 
 /**
  * grant_read_oplock() - grant level2 oplock or read lease
- * @ofile:	open file object
  * @opinfo_new:	new oplock info object
- * @fp:		cifsd file pointer
  * @lctx:	lease context information
  *
  * Return:      0
@@ -576,7 +564,6 @@ static void grant_read_oplock(struct oplock_info *opinfo_new,
 		lease->state = SMB2_LEASE_READ_CACHING;
 		if (lctx->req_state & SMB2_LEASE_HANDLE_CACHING)
 			lease->state |= SMB2_LEASE_HANDLE_CACHING;
-		lctx->rsp_state = lease->state;
 		memcpy(lease->lease_key, lctx->lease_key,
 				SMB2_LEASE_KEY_SIZE);
 	}
@@ -585,9 +572,7 @@ static void grant_read_oplock(struct oplock_info *opinfo_new,
 
 /**
  * grant_none_oplock() - grant none oplock or none lease
- * @ofile:	open file object
  * @opinfo_new:	new oplock info object
- * @fp:		cifsd file pointer
  * @lctx:	lease context information
  *
  * Return:      0
@@ -607,7 +592,6 @@ static void grant_none_oplock(struct oplock_info *opinfo_new,
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (lctx) {
 		lease->state = 0;
-		lctx->rsp_state = 0;
 		memcpy(lease->lease_key, lctx->lease_key,
 			SMB2_LEASE_KEY_SIZE);
 	}
@@ -640,9 +624,9 @@ static inline int compare_guid_key(struct oplock_info *opinfo,
 /**
  * same_client_has_lease() - check whether current lease request is
  *		from lease owner of file
- * @conn:     TCP server instance of connection
- * @lctx:	lease context information
- * @ofile:	open file object
+ * @mfp:		master file pointer
+ * @client_guid:	Client GUID
+ * @lctx:		lease context information
  *
  * Return:      oplock(lease) object on success, otherwise NULL
  */
@@ -717,8 +701,8 @@ void wait_for_lease_break_ack(struct oplock_info *opinfo)
 /**
  * smb2_break_lease_notification() - break lease when a new client request
  *			write lease
- * @ofile:	open file object
- * @opinfo:	conains lease state information
+ * @opinfo:		conains lease state information
+ * @ack_required:	if requring ack
  *
  * Return:	0 on success, otherwise error
  */
@@ -790,14 +774,6 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 	/* Need to break exclusive/batch oplock, write lease or overwrite_if */
 	cifsd_debug("request to send oplock(level : 0x%x) break notification\n",
 		brk_opinfo->level);
-
-	/*
-	* Don't wait for oplock break while grabbing mutex.
-	* As conn mutex is released here for sending oplock break,
-	* take a dummy ref count on ofile to prevent it getting freed
-	* from parallel close path. Decrement dummy ref count once
-	* oplock break response is received.
-	*/
 
 	if (brk_opinfo->is_lease) {
 		struct lease *lease = brk_opinfo->o_lease;
@@ -892,23 +868,24 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 void destroy_lease_table(struct connection *conn)
 {
 	struct lease_table *lb, *lbtmp;
+	struct oplock_info *opinfo, *optmp;
 
-	if (list_empty(&lease_table_list))
+	mutex_lock(&lease_list_lock);
+	if (list_empty(&lease_table_list)) {
+		mutex_unlock(&lease_list_lock);
 		return;
+	}
 
 	list_for_each_entry_safe(lb, lbtmp, &lease_table_list, l_entry) {
 		if (conn && memcmp(lb->client_guid, conn->ClientGUID,
-			SMB2_CLIENT_GUID_SIZE))
+					SMB2_CLIENT_GUID_SIZE))
 			continue;
-
-		if (!list_empty(&lb->lease_list)) {
-			cifsd_err("lease table list is not empty\n");
-			WARN_ON(1);
+		if (list_empty(&lb->lease_list)) {
+			list_del(&lb->l_entry);
+			kfree(lb);
 		}
-
-		list_del(&lb->l_entry);
-		kfree(lb);
 	}
+	mutex_unlock(&lease_list_lock);
 }
 
 int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
@@ -1067,7 +1044,6 @@ new_oplock:
 			copy_lease(m_opinfo, opinfo);
 			if (atomic_read(&m_opinfo->breaking_cnt))
 				lctx->flags = SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
-			lctx->rsp_state = opinfo->o_lease->state;
 			return 0;
 		}
 	}
@@ -1415,7 +1391,6 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 		wake_up_all(&conn->req_running_q);
 }
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * smb2_map_lease_to_oplock() - map lease state to corresponding oplock type
  * @lease_state:     lease type
@@ -1441,16 +1416,16 @@ __u8 smb2_map_lease_to_oplock(__le32 lease_state)
  * @rbuf:	buffer to create lease context response
  * @lreq:	buffer to stored parsed lease state information
  */
-void create_lease_buf(u8 *rbuf, struct lease_ctx_info *lreq)
+void create_lease_buf(u8 *rbuf, struct lease *lease)
 {
 	struct create_lease *buf = (struct create_lease *)rbuf;
-	char *LeaseKey = (char *)&lreq->lease_key;
+	char *LeaseKey = (char *)&lease->lease_key;
 
 	memset(buf, 0, sizeof(struct create_lease));
 	buf->lcontext.LeaseKeyLow = *((u64 *)LeaseKey);
 	buf->lcontext.LeaseKeyHigh = *((u64 *)(LeaseKey + 8));
-	buf->lcontext.LeaseFlags = lreq->flags;
-	buf->lcontext.LeaseState = lreq->rsp_state;
+	buf->lcontext.LeaseFlags = lease->flags;
+	buf->lcontext.LeaseState = lease->state;
 	buf->ccontext.DataOffset = cpu_to_le16(offsetof
 					(struct create_lease, lcontext));
 	buf->ccontext.DataLength = cpu_to_le32(sizeof(struct lease_context));
@@ -1626,15 +1601,11 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
 /*
  * Find lease object(opinfo) for given lease key/fid from lease
  * break/file close path.
- * If needed, return ofile.
  */
 /**
- * get_matching_opinfo_lease() - find a matching lease info object
- * @conn:     TCP server instance of connection
- * @ofile:	opened file to be searched. If NULL polplate this
- *              with ofile of lease owner
- * @LeaseKey:	lease key to be searched for
- * @id:		fid containing lease key, local to smb connection
+ * lookup_lease_in_table() - find a matching lease info object
+ * @conn:	TCP server instance of connection
+ * @lease_key:	lease key to be searched for
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL
  */
@@ -1671,6 +1642,27 @@ out:
 	return ret_op;
 }
 
-#endif
+int smb2_check_durable_oplock(struct cifsd_file *fp,
+	struct lease_ctx_info *lctx, char *name, int version)
+{
+	struct oplock_info *opinfo = fp->f_opinfo;
 
+	if (opinfo->is_lease) {
+		if (version == 1 && !lctx) {
+			cifsd_err("open does not include lease\n");
+			return -EBADF;
+		}
+		if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
+					SMB2_LEASE_KEY_SIZE)) {
+			cifsd_err("invalid lease key\n");
+			return -EBADF;
+		}
+		if (name && strcmp(fp->filename, name)) {
+			cifsd_err("invalid name reconnect %s\n", name);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
 #endif

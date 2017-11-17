@@ -126,9 +126,12 @@ struct cifsd_mfile {
 
 struct cifsd_file {
 	struct connection *conn;
+	struct cifsd_sess *sess;
+	struct cifsd_tcon *tcon;
 	struct cifsd_mfile *f_mfp;
 	struct oplock_info *f_opinfo;
 	struct file *filp;
+	char *filename;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
 	struct timespec open_time;
@@ -138,15 +141,10 @@ struct cifsd_file {
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */
-	struct ofile_info *ofile;
 	bool is_nt_open;
-	bool lease_granted;
-	char LeaseKey[16];
 	unsigned int volatile_id;
 	bool is_durable;
 	uint64_t persistent_id;
-	uint64_t sess_id;
-	uint32_t tid;
 	__le32 daccess;
 	__le32 saccess;
 	__le32 coption;
@@ -217,7 +215,8 @@ struct fidtable_desc {
 };
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
-void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id);
+void close_opens_from_fibtable(struct cifsd_sess *sess,
+	struct cifsd_tcon *tcon);
 void destroy_fidtable(struct cifsd_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
@@ -228,8 +227,8 @@ unsigned int get_pipe_type(char *pipename);
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
-		uint32_t tree_id, unsigned int id, struct file *filp);
+insert_id_in_fidtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon,
+	unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
 void __init mfp_hash_init(void);
@@ -249,10 +248,8 @@ void destroy_global_fidtable(void);
 
 /* Durable handle functions */
 struct cifsd_file *cifsd_get_durable_fp(uint64_t pid);
-
 int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
-	int tree_id);
-
+	struct cifsd_tcon *tcon);
 #endif
 
 #endif /* __CIFSD_FH_H */

@@ -145,7 +145,6 @@ int cifsd_readv_from_socket(struct connection *conn,
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
 				iov, segs, to_read, 0);
-
 		if (conn->tcp_status == CifsExiting) {
 			total_read = -ESHUTDOWN;
 			break;

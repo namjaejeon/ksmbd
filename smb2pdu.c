@@ -1198,6 +1198,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	rsp->SecurityBufferLength = 0;
 	inc_rfc1001_len(rsp, 9);
 
+
 	if (!req->hdr.SessionId) {
 		/* Check for previous session */
 		if (le64_to_cpu(req->PreviousSessionId))
@@ -1733,9 +1734,9 @@ int smb2_tree_disconnect(struct smb_work *smb_work)
 		path_put(&tcon->share_path);
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
+	close_opens_from_fibtable(sess, tcon);
 	kfree(tcon);
 
-	close_opens_from_fibtable(sess, le32_to_cpu(req->hdr.Id.SyncId.TreeId));
 	return 0;
 }
 
@@ -1887,6 +1888,7 @@ int smb2_open(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
@@ -1897,6 +1899,7 @@ int smb2_open(struct smb_work *smb_work)
 	struct kstat stat;
 	struct create_context *context;
 	struct create_durable *recon_state;
+	struct create_durable_v2 *recon_state_v2;
 	struct lease_ctx_info *lc = NULL;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
@@ -1907,7 +1910,7 @@ int smb2_open(struct smb_work *smb_work)
 	int req_op_level = 0, rsp_op_level = 0, open_flags = 0, file_info = 0;
 	int volatile_id = 0;
 	int rc = 0, len = 0;
-	int durable_open = false, durable_reconnect = false;
+	int durable_open = false, recon_ver = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
 	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
 	int next_off = 0, tree_id = 0;
@@ -1942,9 +1945,122 @@ int smb2_open(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (smb_work->tcon->share->is_pipe == true) {
+	if (tcon->share->is_pipe == true) {
 		cifsd_debug("IPC pipe create request\n");
 		return create_smb2_pipe(smb_work);
+	}
+
+	if (req->NameLength) {
+		if ((req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
+			*(char *)req->Buffer == '\\') {
+			cifsd_err("not allow directory name included leadning slash\n");
+			rc = -EINVAL;
+			goto err_out1;
+		}
+
+		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
+		if (IS_ERR(name)) {
+			rc = PTR_ERR(name);
+			goto err_out1;
+		}
+	} else {
+		share = find_matching_share(rsp->hdr.Id.SyncId.TreeId);
+		if (!share) {
+			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+			rc = -ENOMEM;
+			goto err_out1;
+		}
+
+		len = strlen(share->path);
+		cifsd_debug("[%s] %d\n", __func__, len);
+		name = kmalloc(len + 1, GFP_KERNEL);
+		if (!name) {
+			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+			rc = -ENOMEM;
+			goto err_out1;
+		}
+
+		memcpy(name, share->path, len);
+		*(name + len) = '\0';
+	}
+
+	cifsd_debug("converted name = %s\n", name);
+	if (strchr(name, ':')) {
+		rc = parse_stream_name(name, &stream_name, &s_type);
+		if (rc < 0)
+			goto err_out1;
+	}
+
+	rc = check_invalid_char(name);
+	if (rc < 0)
+		goto err_out1;
+
+	req_op_level = req->RequestedOplockLevel;
+	if (req->CreateContextsOffset) {
+		if (!durable_enable)
+			goto dh_out;
+
+		context = smb2_find_context_vals(
+			req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifsd_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
+			recon_state = (struct create_durable *)context;
+			recon_ver = 1;
+			persistent_id = le64_to_cpu(
+				recon_state->Data.Fid.PersistentFileId);
+			fp = cifsd_get_durable_fp(persistent_id);
+			if (!fp) {
+				cifsd_err(
+					"Failed to get Durable handle state\n");
+				rc = -EBADF;
+				goto err_out1;
+			}
+
+			cifsd_debug("reconnect Persistent-id from reconnect = %llu\n",
+				persistent_id);
+		}
+
+		context = smb2_find_context_vals(
+			req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2);
+		if (IS_ERR(context)) {
+			rc = PTR_ERR(context);
+			if (rc == -EINVAL) {
+				cifsd_err("bad name length\n");
+				goto err_out1;
+			}
+		} else {
+			recon_state_v2 = (struct create_durable_v2 *)context;
+			recon_ver = 2;
+			persistent_id = le64_to_cpu(
+				recon_state_v2->Fid.PersistentFileId);
+			fp = cifsd_get_durable_fp(persistent_id);
+			if (!fp) {
+				cifsd_err(
+					"Failed to get Durable handle state\n");
+				rc = -EBADF;
+				goto err_out1;
+			}
+
+			cifsd_debug("reconnect v2 Persistent-id from reconnect = %llu\n",
+				persistent_id);
+		}
+
+dh_out:
+		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE || recon_ver == 2) {
+			lc = parse_lease_state(req);
+			if (!lc) {
+				rc = -ENOENT;
+				goto err_out;
+			}
+		}
+
+		if (recon_ver)
+			goto reconnect;
 	}
 
 	if (req->ImpersonationLevel > IL_DELEGATE) {
@@ -2004,35 +2120,6 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	tree_id = le32_to_cpu(req->hdr.Id.SyncId.TreeId);
-	if (req->CreateContextsOffset && durable_enable) {
-		context = smb2_find_context_vals(
-			req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT);
-		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
-				goto err_out1;
-			}
-		} else {
-			recon_state = (struct create_durable *)context;
-			durable_reconnect = true;
-			persistent_id = le64_to_cpu(
-				recon_state->Data.Fid.PersistentFileId);
-			fp = cifsd_get_durable_fp(persistent_id);
-			if (!fp) {
-				cifsd_err(
-					"Failed to get Durable handle state\n");
-				rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-				rc = -EIO;
-				goto err_out1;
-			}
-
-			cifsd_debug("Persistent-id from reconnect = %llu\n",
-				persistent_id);
-			goto reconnect;
-		}
-	}
-
 	if (req->CreateContextsOffset) {
 		/* Parse non-durable handle create contexts */
 		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER);
@@ -2064,7 +2151,7 @@ int smb2_open(struct smb_work *smb_work)
 				(struct create_mxac_req *)context;
 			cifsd_debug("get query maximal access context (timestamp : %llu)\n",
 				le64_to_cpu(mxac_req->Timestamp));
-			maximal_access = smb_work->tcon->maximal_access;
+			maximal_access = tcon->maximal_access;
 		}
 
 		context = smb2_find_context_vals(req,
@@ -2077,57 +2164,11 @@ int smb2_open(struct smb_work *smb_work)
 			}
 		} else {
 			cifsd_debug("get timewarp context\n");
-			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-			rc = -EIO;
+			rc = -EBADF;
 			goto err_out1;
 		}
 
 	}
-
-	if (req->NameLength) {
-		if ((req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
-			*(char *)req->Buffer == '\\') {
-			cifsd_err("not allow directory name included leadning slash\n");
-			rc = -EINVAL;
-			goto err_out1;
-		}
-
-		name = smb2_get_name(req->Buffer, req->NameLength, smb_work);
-		if (IS_ERR(name)) {
-			rc = PTR_ERR(name);
-			goto err_out1;
-		}
-	} else {
-		share = find_matching_share(rsp->hdr.Id.SyncId.TreeId);
-		if (!share) {
-			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-			rc = -ENOMEM;
-			goto err_out1;
-		}
-
-		len = strlen(share->path);
-		cifsd_debug("[%s] %d\n", __func__, len);
-		name = kmalloc(len + 1, GFP_KERNEL);
-		if (!name) {
-			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-			rc = -ENOMEM;
-			goto err_out1;
-		}
-
-		memcpy(name, share->path, len);
-		*(name + len) = '\0';
-	}
-
-	cifsd_debug("converted name = %s\n", name);
-	if (strchr(name, ':')) {
-		rc = parse_stream_name(name, &stream_name, &s_type);
-		if (rc < 0)
-			goto err_out1;
-	}
-
-	rc = check_invalid_char(name);
-	if (rc < 0)
-		goto err_out1;
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		/*
@@ -2198,12 +2239,11 @@ int smb2_open(struct smb_work *smb_work)
 
 	if (!stream_name && file_present &&
 		(req->CreateDisposition == FILE_CREATE_LE)) {
-		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
-		rc = -EIO;
+		rc = -EBADF;
 		goto err_out;
 	}
 
-	if (smb_work->tcon->writeable)
+	if (tcon->writeable)
 		open_flags = smb2_create_open_flags(file_present,
 			req->DesiredAccess, req->CreateDisposition);
 	else
@@ -2254,7 +2294,7 @@ int smb2_open(struct smb_work *smb_work)
 			}
 		} else {
 			kfree(name);
-			if (smb_work->tcon->writeable) {
+			if (tcon->writeable) {
 				cifsd_debug("returning as file does not exist\n");
 				rsp->hdr.Status =
 					NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -2335,8 +2375,7 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	cifsd_debug("volatile_id returned: %d\n", volatile_id);
-	fp = insert_id_in_fidtable(smb_work->sess, sess->sess_id,
-		tree_id, volatile_id, filp);
+	fp = insert_id_in_fidtable(sess, tcon, volatile_id, filp);
 	if (fp == NULL) {
 		cifsd_err("volatile_id insert failed\n");
 		cifsd_close_id(&sess->fidtable, volatile_id);
@@ -2347,6 +2386,7 @@ int smb2_open(struct smb_work *smb_work)
 	if (S_ISDIR(stat.mode))
 		fp->readdir_data.dirent = NULL;
 
+	fp->filename = name;
 	fp->cdoption = req->CreateDisposition;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
@@ -2445,9 +2485,7 @@ int smb2_open(struct smb_work *smb_work)
 			if (fp->cdoption == FILE_OPEN_LE) {
 				cifsd_err("failed to find stream name in xattr, rc : %d\n",
 						rc);
-				rsp->hdr.Status =
-					NT_STATUS_OBJECT_NAME_NOT_FOUND;
-				rc = -EIO;
+				rc = -EBADF;
 				goto err_out;
 			}
 
@@ -2502,16 +2540,10 @@ int smb2_open(struct smb_work *smb_work)
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
-	req_op_level = req->RequestedOplockLevel;
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
 		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
 		rsp_op_level = SMB2_OPLOCK_LEVEL_NONE;
 	} else if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
-		lc = parse_lease_state(req);
-		if (!lc) {
-			rc = -ENOENT;
-			goto err_out;
-		}
 		req_op_level = smb2_map_lease_to_oplock(lc->req_state);
 		cifsd_debug("lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
 				name, req_op_level, lc->req_state);
@@ -2561,7 +2593,7 @@ int smb2_open(struct smb_work *smb_work)
 
 	if (!created) {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
-		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
 			rc = smb_find_cont_xattr(&path,
@@ -2576,7 +2608,7 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
-		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			rc = smb_store_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				(void *)&fp->create_time, CREATIOM_TIME_LEN);
@@ -2591,7 +2623,7 @@ int smb2_open(struct smb_work *smb_work)
 
 	if (!created) {
 		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
-		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *file_attribute = NULL;
 
 			rc = smb_find_cont_xattr(&path,
@@ -2607,7 +2639,7 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	} else {
 		/* set XATTR_NAME_FILE_ATTRIBUTE with req->FileAttributes */
-		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			rc = smb_store_cont_xattr(&path,
 				XATTR_NAME_FILE_ATTRIBUTE,
 				(void *)&fp->fattr, FILE_ATTRIBUTE_LEN);
@@ -2620,18 +2652,23 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 reconnect:
-	if (durable_reconnect) {
-		rc = cifsd_reconnect_durable_fp(sess, fp, tree_id);
+	if (recon_ver) {
+		rc = smb2_check_durable_oplock(fp, lc, name, recon_ver);
 		if (rc) {
 			fp = NULL;
-			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			goto err_out;
+		}
+		rc = cifsd_reconnect_durable_fp(sess, fp, tcon);
+		if (rc) {
+			fp = NULL;
 			goto err_out;
 		}
 		generic_fillattr(FP_INODE(fp), &stat);
 		file_info = FILE_OPENED;
 	} else if (durable_enable) {
-		if ((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
-			(req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
+		if (req->CreateContextsOffset &&
+			((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
+			(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 			context = smb2_find_context_vals(req,
 					SMB2_CREATE_DURABLE_HANDLE_REQUEST);
 			if (IS_ERR(context)) {
@@ -2640,6 +2677,7 @@ reconnect:
 					cifsd_err("bad name length\n");
 					goto err_out1;
 				}
+				rc = 0;
 			} else {
 				context_name = (char *)context +
 					context->NameOffset;
@@ -2692,15 +2730,14 @@ reconnect:
 	inc_rfc1001_len(rsp_org, 88); /* StructureSize - 1*/
 
 	/* If lease is request send lease context response */
-	if (lc && !lc->dlease &&
-		req->RequestedOplockLevel == SMB2_OPLOCK_LEVEL_LEASE) {
+	if (fp->f_opinfo && fp->f_opinfo->is_lease) {
 		cifsd_debug("lease granted on(%s) lease state 0x%x\n",
-				name, lc->rsp_state);
+				name, fp->f_opinfo->o_lease->state);
 		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
 
 		lease_ccontext = (struct create_context *)rsp->Buffer;
 		contxt_cnt++;
-		create_lease_buf(rsp->Buffer, lc);
+		create_lease_buf(rsp->Buffer, fp->f_opinfo->o_lease);
 		rsp->CreateContextsLength =
 			cpu_to_le32(conn->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_lease_size);
@@ -2742,7 +2779,7 @@ reconnect:
 			rsp->CreateContextsLength);
 		contxt_cnt++;
 		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			stat.ino, smb_work->tcon->share->tid);
+			stat.ino, tcon->share->tid);
 		rsp->CreateContextsLength +=
 			cpu_to_le32(conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
@@ -2759,8 +2796,6 @@ reconnect:
 err_out:
 	if (file_present || created)
 		path_put(&path);
-	if (name)
-		kfree(name);
 err_out1:
 	if (rc) {
 		if (rc == -EINVAL)
@@ -2775,6 +2810,8 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
 		else if (rc == -EBUSY)
 			rsp->hdr.Status = NT_STATUS_DELETE_PENDING;
+		else if (rc == -EBADF)
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;

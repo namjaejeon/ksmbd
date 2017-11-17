@@ -646,12 +646,14 @@ void free_channel_list(struct cifsd_sess *sess)
 
 void smb_delete_session(struct cifsd_sess *sess)
 {
+	mutex_lock(&lease_list_lock);
 	sess->valid = 0;
 	list_del(&sess->cifsd_ses_list);
 	list_del(&sess->cifsd_ses_global_list);
 	free_channel_list(sess);
 	destroy_fidtable(sess);
 	kfree(sess);
+	mutex_unlock(&lease_list_lock);
 }
 
 /**
@@ -675,8 +677,9 @@ static int tcp_sess_kthread(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop() &&
-			conn->tcp_status != CifsExiting &&
-				!conn_unresponsive(conn)) {
+		conn->tcp_status != CifsExiting &&
+		!conn_unresponsive(conn)) {
+
 		if (try_to_freeze())
 			continue;
 
@@ -686,9 +689,10 @@ static int tcp_sess_kthread(void *p)
 		buf = conn->smallbuf;
 		pdu_length = 4; /* enough to get RFC1001 header */
 		length = cifsd_read_from_socket(conn, buf, pdu_length);
-		if (length != pdu_length)
+		if (length != pdu_length) {
 			/* 7 seconds passed. It should be break */
 			break;
+		}
 
 		conn->total_read = length;
 		if (!is_smb_request(conn, buf[0]))
@@ -759,7 +763,6 @@ static int tcp_sess_kthread(void *p)
 	if (conn->sess_count) {
 		struct cifsd_sess *sess;
 		struct list_head *tmp, *t;
-
 		list_for_each_safe(tmp, t, &conn->cifsd_sess) {
 			sess = list_entry(tmp, struct cifsd_sess,
 							cifsd_ses_list);

@@ -277,8 +277,8 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
-		uint32_t tree_id, unsigned int id, struct file *filp)
+insert_id_in_fidtable(struct cifsd_sess *sess,
+	struct cifsd_tcon *tcon, unsigned int id, struct file *filp)
 {
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
@@ -290,9 +290,10 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 	}
 
 	fp->filp = filp;
-	fp->tid = tree_id;
+	fp->conn = sess->conn;
+	fp->tcon = tcon;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	fp->sess_id = sess_id;
+	fp->sess = sess;
 #endif
 	fp->f_state = FP_NEW;
 	fp->volatile_id = id;
@@ -368,6 +369,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
 	spin_lock(&fp->f_lock);
+	kfree(fp->filename);
 	if (fp->is_stream)
 		kfree(fp->stream.name);
 	fp->f_mfp = NULL;
@@ -493,7 +495,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
+void close_opens_from_fibtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -505,7 +507,7 @@ void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file && file->tid == tree_id) {
+		if (file && file->tcon == tcon) {
 			if (!close_id(sess, id, file->persistent_id) &&
 				sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
@@ -538,8 +540,9 @@ void destroy_fidtable(struct cifsd_sess *sess)
 		if (file) {
 			if (file->is_durable) {
 				ftab->fileid[id] = NULL;
-				file->sess_id = -1;
-				file->tid = -1;
+				file->conn = NULL;
+				file->sess = NULL;
+				file->tcon = NULL;
 				continue;
 			}
 
@@ -622,7 +625,7 @@ struct cifsd_file *cifsd_get_durable_fp(uint64_t pid)
  * @filp:		file pointer
  */
 int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
-		int tree_id)
+	struct cifsd_tcon *tcon)
 {
 	struct fidtable *ftab;
 	unsigned int volatile_id;
@@ -632,20 +635,21 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 	dfp = get_id_from_fidtable(sess, fp->volatile_id);
 	if (dfp) {
 		cifsd_err("find durable fp is still opened\n");
-		return -EIO;
+		return -EBADF;
 	}
 
 	/* Obtain Volatile-ID */
 	volatile_id = cifsd_get_unused_id(&sess->fidtable);
 	if (volatile_id < 0) {
 		cifsd_err("failed to get unused volatile_id for file\n");
-		return volatile_id;
+		return -EBADF;
 	}
 
+	fp->conn = sess->conn;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	fp->sess_id = sess->sess_id;
+	fp->sess = sess;
 #endif
-	fp->tid = tree_id;
+	fp->tcon = tcon;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
@@ -754,8 +758,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	smb_vfs_set_fadvise(filp, option);
 
 	sess_id = work->sess == NULL ? 0 : work->sess->sess_id;
-	fp = insert_id_in_fidtable(work->sess, sess_id,
-		le16_to_cpu(rcv_hdr->Tid), id, filp);
+	fp = insert_id_in_fidtable(work->sess, work->tcon, id, filp);
 	if (fp == NULL) {
 		fput(filp);
 		cifsd_err("id insert failed\n");

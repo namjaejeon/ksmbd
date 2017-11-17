@@ -508,6 +508,18 @@ struct create_durable {
 	} Data;
 } __packed;
 
+struct create_durable_v2 {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct {
+		__u64 PersistentFileId;
+		__u64 VolatileFileId;
+	} Fid;
+	__u8 CreateGuid[16];
+	__le32 Flags;
+} __packed;
+
+
 struct create_mxac_req {
 	struct create_context ccontext;
 	__u8   Name[8];
