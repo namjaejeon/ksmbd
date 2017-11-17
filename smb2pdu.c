@@ -6897,6 +6897,8 @@ int smb2_notify(struct smb_work *smb_work)
 	int path_len = 0;
 	struct smb2_inotify_req_info inotify_req_info;
 
+	smb2_send_interim_resp(smb_work);
+
 	req = (struct smb2_notify_req *)smb_work->buf;
 	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
 	rsp_org = rsp;
