@@ -515,6 +515,23 @@ void close_opens_from_fibtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon)
 	}
 }
 
+static inline bool is_reconnectable(struct cifsd_file *fp)
+{
+	struct oplock_info *opinfo = fp->f_opinfo;
+	int reconn = 0;
+
+	if (fp->is_resilient || fp->is_persistent)
+		reconn = 1;
+	else if (fp->is_durable && opinfo->is_lease &&
+			opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING)
+		reconn = 1;
+
+	else if (fp->is_durable && opinfo->level == SMB2_OPLOCK_LEVEL_BATCH)
+		reconn = 1;
+
+	return reconn;
+}
+
 /**
  * destroy_fidtable() - destroy a fid table for given cifsd thread
  * @sess:	session
@@ -538,8 +555,7 @@ void destroy_fidtable(struct cifsd_sess *sess)
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
-			if (file->is_durable) {
-				ftab->fileid[id] = NULL;
+			if (is_reconnectable(file)) {
 				file->conn = NULL;
 				file->sess = NULL;
 				file->tcon = NULL;

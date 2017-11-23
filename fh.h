@@ -144,6 +144,8 @@ struct cifsd_file {
 	bool is_nt_open;
 	unsigned int volatile_id;
 	bool is_durable;
+	bool is_resilient;
+	bool is_persistent;
 	uint64_t persistent_id;
 	__le32 daccess;
 	__le32 saccess;

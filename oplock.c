@@ -868,7 +868,6 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 void destroy_lease_table(struct connection *conn)
 {
 	struct lease_table *lb, *lbtmp;
-	struct oplock_info *opinfo, *optmp;
 
 	mutex_lock(&lease_list_lock);
 	if (list_empty(&lease_table_list)) {
