@@ -249,7 +249,7 @@ int close_persistent_id(uint64_t id);
 void destroy_global_fidtable(void);
 
 /* Durable handle functions */
-struct cifsd_file *cifsd_get_durable_fp(uint64_t pid);
+struct cifsd_file *cifsd_get_global_fp(uint64_t pid);
 int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 	struct cifsd_tcon *tcon);
 #endif

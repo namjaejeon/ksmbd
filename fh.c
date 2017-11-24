@@ -400,22 +400,21 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	int err;
 
 	fp = get_id_from_fidtable(sess, id);
+	if (fp && fp->is_durable && fp->persistent_id != p_id) {
+		cifsd_err("persistent id mismatch : %llu, %llu\n",
+			fp->persistent_id, p_id);
+		return -ENOENT;
+	}
+
+	fp = cifsd_get_global_fp(p_id);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
 	}
 
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, p_id);
+	err = close_persistent_id(fp->persistent_id);
+	if (err)
 		return -ENOENT;
-	}
-
-	if (fp->is_durable) {
-		err = close_persistent_id(fp->persistent_id);
-		if (err)
-			return -ENOENT;
-	}
 
 	spin_lock(&fp->f_lock);
 	mfp = fp->f_mfp;
@@ -610,12 +609,12 @@ int cifsd_insert_in_global_table(struct cifsd_sess *sess, struct cifsd_file *fp)
 }
 
 /**
- * cifsd_get_durable_state() - get durable state info for a fid
+ * cifsd_get_global_fp() - get durable state info for a fid
  * @id:		persistent id
  *
  * Return:      durable state on success, otherwise NULL
  */
-struct cifsd_file *cifsd_get_durable_fp(uint64_t pid)
+struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 {
 	struct cifsd_file *durable_fp;
 	struct fidtable *ftab;

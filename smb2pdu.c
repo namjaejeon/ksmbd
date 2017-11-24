@@ -2013,7 +2013,7 @@ int smb2_open(struct smb_work *smb_work)
 			recon_ver = 1;
 			persistent_id = le64_to_cpu(
 				recon_state->Data.Fid.PersistentFileId);
-			fp = cifsd_get_durable_fp(persistent_id);
+			fp = cifsd_get_global_fp(persistent_id);
 			if (!fp) {
 				cifsd_err(
 					"Failed to get Durable handle state\n");
@@ -2038,7 +2038,8 @@ int smb2_open(struct smb_work *smb_work)
 			recon_ver = 2;
 			persistent_id = le64_to_cpu(
 				recon_state_v2->Fid.PersistentFileId);
-			fp = cifsd_get_durable_fp(persistent_id);
+			fp = cifsd_get_global_fp(persistent_id);
+
 			if (!fp) {
 				cifsd_err(
 					"Failed to get Durable handle state\n");
@@ -2685,28 +2686,20 @@ reconnect:
 					context_name, context->NameOffset);
 				cifsd_debug("Request for durable open\n");
 				durable_open = 1;
+				fp->is_durable = 1;
 			}
 
 		}
-
-		/* Get Persistent-ID */
-		if (durable_open) {
-			rc = cifsd_insert_in_global_table(sess, fp);
-			if (rc < 0) {
-				cifsd_err("failed to get persistent_id for file\n");
-				durable_open = false;
-				list_del(&fp->node);
-				goto err_out;
-			}
-			persistent_id = rc;
-			rc = 0;
-
-			fp->is_durable = 1;
-		} else
-			persistent_id = volatile_id;
-
-		fp->persistent_id = persistent_id;
 	}
+
+	/* Get Persistent-ID */
+	persistent_id = cifsd_insert_in_global_table(sess, fp);
+	if (persistent_id < 0) {
+		cifsd_err("persistent id insert failed\n");
+		rc = -ENOMEM;
+		goto err_out;
+	}
+	fp->persistent_id = persistent_id;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
