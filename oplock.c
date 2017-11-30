@@ -854,6 +854,7 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 		mutex_lock(&lease_list_lock);
 		if (brk_opinfo->is_lease)
 			free_lease(brk_opinfo);
+		atomic_dec(&(brk_opinfo->o_fp->f_mfp->op_count));
 		kfree(brk_opinfo);
 		err = -ENOENT;
 		mutex_unlock(&lease_list_lock);
