@@ -90,6 +90,8 @@ extern bool global_signing;
 
 extern struct list_head global_lock_list;
 
+extern struct smb2_inotify_res_info *inotify_res;
+
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
 
@@ -388,8 +390,6 @@ struct connection {
 	/* References which are made for this Server object*/
 	atomic_t r_count;
 	wait_queue_head_t req_running_q;
-	wait_queue_head_t oplock_q; /* Other server threads */
-	wait_queue_head_t oplock_brk; /* oplock breaking wait */
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
 	struct list_head async_requests;
@@ -530,24 +530,41 @@ struct smb2_fs_sector_size {
 	unsigned int optimal_io_size;
 };
 
+struct cifsd_pid_info {
+	struct socket *socket;
+	__u32 cifsd_pid;
+};
+
+struct smb2_inotify_req_info {
+	__le16 watch_tree_flag;
+	__le32 CompletionFilter;
+	__u32 path_len;
+	char dir_path[];
+};
+
+struct FileNotifyInformation {
+	__le32 NextEntryOffset;
+	__le32 Action;
+	__le32 FileNameLength;
+	__le16 FileName[];
+};
+
+struct smb2_inotify_res_info {
+	__u32 output_buffer_length;
+	struct FileNotifyInformation file_notify_info[];
+};
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
-		if (cifsd_debug_enable)			\
-			printk(KERN_ERR "%s:%d: " fmt,		\
+		if (cifsd_debug_enable)				\
+			pr_err("kcifsd: %s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
-#define cifsd_info(fmt, ...)					\
-	do {							\
-		printk(KERN_INFO "%s:%d: " fmt,			\
-			__func__, __LINE__, ##__VA_ARGS__);	\
-	} while (0)
+#define cifsd_info(fmt, ...) pr_info("kcifsd: " fmt, ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...)					\
-	do {							\
-		printk(KERN_ERR "%s:%d: " fmt,			\
-			__func__, __LINE__, ##__VA_ARGS__);	\
-	} while (0)
+#define cifsd_err(fmt, ...) pr_err("kcifsd: %s:%d: " fmt,	\
+			__func__, __LINE__, ##__VA_ARGS__)
 
 static inline unsigned int
 get_rfc1002_length(void *buf)
@@ -602,8 +619,9 @@ extern int cifsd_export_init(void);
 extern void cifsd_export_exit(void);
 
 /* cifsd connect functions */
-extern int cifsd_create_socket(void);
-extern int cifsd_start_forker_thread(struct socket *socket);
+extern void terminate_old_forker_thread(void);
+extern int cifsd_create_socket(__u32 cifsd_pid);
+extern int cifsd_start_forker_thread(struct cifsd_pid_info *cisfd_pid_info);
 extern void cifsd_stop_forker_thread(void);
 
 extern void cifsd_close_socket(void);
@@ -639,9 +657,9 @@ extern int construct_xattr_stream_name(char *stream_name,
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char **buf, size_t count, loff_t *pos);
-int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
 int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 		struct kstat *stat);
@@ -673,7 +691,8 @@ int check_lock_range(struct file *filp, loff_t start,
 		loff_t end, unsigned char type);
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
-int smb_vfs_alloc_size(struct file *filp, loff_t len);
+int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+	loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
 int smb_vfs_remove_xattr(struct path *path, char *field_name);
@@ -749,6 +768,10 @@ void cifsd_net_exit(void);
 int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
+int cifsd_sendmsg_notify(struct cifsd_sess *sess,
+		unsigned int data_size,
+		struct smb2_inotify_req_info *inotify_req_info,
+		char *path);
 int cifsd_kthread_stop_status(int etype);
 
 /* asn1 functions */

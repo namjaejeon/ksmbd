@@ -268,11 +268,6 @@ uncork:
 out:
 	cifsd_debug("data sent = %d\n", total_len);
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	if (conn->tcp_status == CifsGood && IS_SMB2(conn))
-		cifsd_update_durable_stat_info(work->sess);
-#endif
-
 	return 0;
 }
 
@@ -598,8 +593,6 @@ int init_tcp_conn(struct connection *conn, struct socket *sock)
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = SERVER_CAPS;
-	init_waitqueue_head(&conn->oplock_q);
-	init_waitqueue_head(&conn->oplock_brk);
 	spin_lock(&tcp_sess_list_lock);
 	list_add(&conn->tcp_sess, &tcp_sess_list);
 	spin_unlock(&tcp_sess_list_lock);
@@ -629,7 +622,7 @@ static void conn_cleanup(struct connection *conn)
 		vfree(conn->wbuf);
 
 	list_del(&conn->list);
-	free_opinfo_disconnect(conn);
+	destroy_lease_table(conn);
 	kfree(conn);
 }
 
@@ -680,8 +673,9 @@ static int tcp_sess_kthread(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop() &&
-			conn->tcp_status != CifsExiting &&
-				!conn_unresponsive(conn)) {
+		conn->tcp_status != CifsExiting &&
+		!conn_unresponsive(conn)) {
+
 		if (try_to_freeze())
 			continue;
 
@@ -691,9 +685,10 @@ static int tcp_sess_kthread(void *p)
 		buf = conn->smallbuf;
 		pdu_length = 4; /* enough to get RFC1001 header */
 		length = cifsd_read_from_socket(conn, buf, pdu_length);
-		if (length != pdu_length)
+		if (length != pdu_length) {
 			/* 7 seconds passed. It should be break */
 			break;
+		}
 
 		conn->total_read = length;
 		if (!is_smb_request(conn, buf[0]))
@@ -764,7 +759,6 @@ static int tcp_sess_kthread(void *p)
 	if (conn->sess_count) {
 		struct cifsd_sess *sess;
 		struct list_head *tmp, *t;
-
 		list_for_each_safe(tmp, t, &conn->cifsd_sess) {
 			sess = list_entry(tmp, struct cifsd_sess,
 							cifsd_ses_list);
@@ -849,20 +843,15 @@ int cifsd_stop_tcp_sess(void)
 {
 	int ret;
 	int err = 0;
-	int etype;
 	struct connection *conn, *tmp;
 
 	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
 		conn->tcp_status = CifsExiting;
 		ret = kthread_stop(conn->handler);
 		if (ret) {
-			etype = CIFSD_KEVENT_SMBPORT_CLOSE_FAIL;
 			cifsd_err("failed to stop server thread\n");
 			err = ret;
-		} else
-			etype = CIFSD_KEVENT_SMBPORT_CLOSE_PASS;
-
-		cifsd_kthread_stop_status(etype);
+		}
 	}
 
 	return err;
@@ -1055,7 +1044,7 @@ static void __exit exit_smb_server(void)
 	destroy_global_fidtable();
 #endif
 	cifsd_export_exit();
-	dispose_ofile_list();
+	destroy_lease_table(NULL);
 	smb_free_mempools();
 #ifdef CONFIG_CIFSD_ACL
 	exit_cifsd_idmap();

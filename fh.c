@@ -27,20 +27,6 @@
 #include <linux/bootmem.h>
 #include <linux/xattr.h>
 
-void fp_get(struct cifsd_file *fp)
-{
-	atomic_inc(&fp->f_count);
-}
-
-void fp_put(struct cifsd_file *fp)
-{
-	if (!fp)
-		return;
-
-	if (atomic_dec_and_test(&fp->f_count))
-		wake_up(&fp->wq);
-}
-
 /**
  * alloc_fid_mem() - alloc memory for fid management
  * @size:	mem allocation request size
@@ -244,7 +230,7 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
 {
 	void *bitmap;
 
-	if (id >= ftab_desc->ftab->max_fids - 1) {
+	if (id > ftab_desc->ftab->max_fids - 1) {
 		cifsd_debug("Invalid id passed to clear in bitmap\n");
 		return -EINVAL;
 	}
@@ -291,8 +277,8 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
-		uint32_t tree_id, unsigned int id, struct file *filp)
+insert_id_in_fidtable(struct cifsd_sess *sess,
+	struct cifsd_tcon *tcon, unsigned int id, struct file *filp)
 {
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
@@ -304,11 +290,13 @@ insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
 	}
 
 	fp->filp = filp;
-	fp->tid = tree_id;
+	fp->conn = sess->conn;
+	fp->tcon = tcon;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	fp->sess_id = sess_id;
+	fp->sess = sess;
 #endif
 	fp->f_state = FP_NEW;
+	fp->volatile_id = id;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
 	init_waitqueue_head(&fp->wq);
@@ -337,6 +325,9 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	struct cifsd_file *file;
 	struct fidtable *ftab;
 
+	if (!sess)
+		return NULL;
+
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
 	if ((id < CIFSD_START_FID) || (id > ftab->max_fids - 1)) {
@@ -347,7 +338,7 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 
 	file = ftab->fileid[id];
 	if (!file) {
-	spin_unlock(&sess->fidtable.fidtable_lock);
+		spin_unlock(&sess->fidtable.fidtable_lock);
 		return NULL;
 	}
 
@@ -359,24 +350,8 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	}
 
 	spin_unlock(&file->f_lock);
-	fp_get(file);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 	return file;
-}
-
-static void wait_on_freeing_fp(struct cifsd_file *fp)
-{
-	int rc;
-
-	if (atomic_read(&fp->f_count)) {
-		rc = wait_event_timeout(fp->wq, atomic_read(&fp->f_count) == 0,
-			1000 * HZ);
-		if (!rc) {
-			cifsd_err("fp : %p, f_count : %d\n",
-				fp, atomic_read(&fp->f_count));
-			BUG();
-		}
-	}
 }
 
 /**
@@ -388,28 +363,15 @@ static void wait_on_freeing_fp(struct cifsd_file *fp)
  */
 void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 {
-	struct cifsd_file *fp;
 	struct fidtable *ftab;
+
+	if (!sess)
+		return;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
-	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
-	spin_lock(&fp->f_lock);
-	if (fp->is_stream)
-		kfree(fp->stream.name);
-	fp->f_mfp = NULL;
-	spin_unlock(&fp->f_lock);
-	fp_put(fp);
-
-	if (atomic_read(&fp->f_count)) {
-		spin_unlock(&sess->fidtable.fidtable_lock);
-		wait_on_freeing_fp(fp);
-		spin_lock(&sess->fidtable.fidtable_lock);
-	}
-
-	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -434,15 +396,16 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	int err;
 
 	fp = get_id_from_fidtable(sess, id);
+	if (fp && fp->is_durable && fp->persistent_id != p_id) {
+		cifsd_err("persistent id mismatch : %llu, %llu\n",
+			fp->persistent_id, p_id);
+		return -ENOENT;
+	}
+
+	fp = cifsd_get_global_fp(p_id);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
-	}
-
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, p_id);
-		return -ENOENT;
 	}
 
 	spin_lock(&fp->f_lock);
@@ -453,7 +416,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	spin_unlock(&mfp->m_lock);
 	spin_unlock(&fp->f_lock);
 
-	close_id_del_oplock(sess->conn, fp, id);
+	close_id_del_oplock(fp);
 
 	if (fp->islink)
 		filp = fp->lfilp;
@@ -510,8 +473,12 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	}
 
 	delete_id_from_fidtable(sess, id);
-	cifsd_close_id(&sess->fidtable, id);
+	if (sess)
+		cifsd_close_id(&sess->fidtable, id);
 	filp_close(filp, (struct files_struct *)filp);
+	err = close_persistent_id(fp->persistent_id);
+	if (err)
+		return -ENOENT;
 	return 0;
 }
 
@@ -523,7 +490,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
+void close_opens_from_fibtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -535,17 +502,32 @@ void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id)
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file && file->tid == tree_id) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			if (file->is_durable)
-				close_persistent_id(file->persistent_id);
-#endif
+		if (file && file->tcon == tcon) {
 			if (!close_id(sess, id, file->persistent_id) &&
 				sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
-
 		}
 	}
+}
+
+static inline bool is_reconnectable(struct cifsd_file *fp)
+{
+	struct oplock_info *opinfo = fp->f_opinfo;
+	int reconn = 0;
+
+	if (fp->f_opinfo->op_state != OPLOCK_STATE_NONE)
+		return 0;
+
+	if (fp->is_resilient || fp->is_persistent)
+		reconn = 1;
+	else if (fp->is_durable && opinfo->is_lease &&
+			opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING)
+		reconn = 1;
+
+	else if (fp->is_durable && opinfo->level == SMB2_OPLOCK_LEVEL_BATCH)
+		reconn = 1;
+
+	return reconn;
 }
 
 /**
@@ -568,13 +550,16 @@ void destroy_fidtable(struct cifsd_sess *sess)
 
 	if (!ftab)
 		return;
+
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-			if (file->is_durable)
-				close_persistent_id(file->persistent_id);
-#endif
+			if (is_reconnectable(file)) {
+				file->conn = NULL;
+				file->sess = NULL;
+				file->tcon = NULL;
+				continue;
+			}
 
 			if (!close_id(sess, id, file->persistent_id) &&
 				sess->conn->stats.open_files_count > 0)
@@ -600,79 +585,51 @@ void destroy_fidtable(struct cifsd_sess *sess)
  *
  * Return:      persistent_id on success, otherwise error number
  */
-int cifsd_insert_in_global_table(struct cifsd_sess *sess,
-				   int volatile_id, struct file *filp,
-				   int durable_open)
+int cifsd_insert_in_global_table(struct cifsd_sess *sess, struct cifsd_file *fp)
 {
-	int rc;
 	int persistent_id;
-	struct cifsd_durable_state *durable_state;
 	struct fidtable *ftab;
 
 	persistent_id = cifsd_get_unused_id(&global_fidtable);
 
 	if (persistent_id < 0) {
 		cifsd_err("failed to get unused persistent_id for file\n");
-		rc = persistent_id;
-		return rc;
+		return persistent_id;
 	}
 
 	cifsd_debug("persistent_id allocated %d", persistent_id);
 
-	/* If not durable open just return the ID.
-	 * No need to store durable state */
-	if (!durable_open)
-		return persistent_id;
-
-	durable_state = kzalloc(sizeof(struct cifsd_durable_state),
-			GFP_KERNEL);
-
-	if (durable_state == NULL) {
-		cifsd_err("persistent_id insert failed\n");
-		cifsd_close_id(&global_fidtable, persistent_id);
-		rc = -ENOMEM;
-		return rc;
-	}
-
-	durable_state->sess = sess;
-	durable_state->volatile_id = volatile_id;
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	durable_state->refcount = 1;
-
-	cifsd_debug("filp stored = 0x%p sess = 0x%p\n", filp, sess);
-
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
 	BUG_ON(ftab->fileid[persistent_id] != NULL);
-	ftab->fileid[persistent_id] = (void *)durable_state;
+	ftab->fileid[persistent_id] = fp;
 	spin_unlock(&global_fidtable.fidtable_lock);
 
 	return persistent_id;
 }
 
 /**
- * cifsd_get_durable_state() - get durable state info for a fid
+ * cifsd_get_global_fp() - get durable state info for a fid
  * @id:		persistent id
  *
  * Return:      durable state on success, otherwise NULL
  */
-struct cifsd_durable_state *
-cifsd_get_durable_state(uint64_t id)
+struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 {
-	struct cifsd_durable_state *durable_state;
+	struct cifsd_file *durable_fp;
 	struct fidtable *ftab;
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if ((id < CIFSD_START_FID) || (id > ftab->max_fids - 1)) {
-		cifsd_err("invalid persistentID (%llu)\n", id);
+	if ((pid < CIFSD_START_FID) || (pid > ftab->max_fids - 1)) {
+		cifsd_err("invalid persistentID (%lld)\n", pid);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;
 	}
 
-	durable_state = (struct cifsd_durable_state *)ftab->fileid[id];
+	durable_fp = ftab->fileid[pid];
 	spin_unlock(&global_fidtable.fidtable_lock);
-	return durable_state;
+	return durable_fp;
 }
 
 /**
@@ -682,93 +639,73 @@ cifsd_get_durable_state(uint64_t id)
  * @volatile_id:	volatile id
  * @filp:		file pointer
  */
-void cifsd_update_durable_state(struct cifsd_sess *sess,
-			     unsigned int persistent_id,
-			     unsigned int volatile_id, struct file *filp)
+int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
+	struct cifsd_tcon *tcon)
 {
-	struct cifsd_durable_state *durable_state;
 	struct fidtable *ftab;
+	unsigned int volatile_id;
+	struct cifsd_file *dfp;
 
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-
-	durable_state =
-		(struct cifsd_durable_state *)ftab->fileid[persistent_id];
-
-	durable_state->sess = sess;
-	durable_state->volatile_id = volatile_id;
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	durable_state->refcount++;
-	spin_unlock(&global_fidtable.fidtable_lock);
-	cifsd_debug("durable state updated persistentID (%u)\n",
-		      persistent_id);
-}
-
-/**
- * cifsd_durable_disconnect() - update file stat with durable state
- * @conn:		TCP server instance of connection
- * @persistent_id:	persistent id
- * @filp:		file pointer
- */
-void cifsd_durable_disconnect(struct connection *conn,
-			   unsigned int persistent_id, struct file *filp)
-{
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *ftab;
-
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-
-	durable_state =
-		(struct cifsd_durable_state *)ftab->fileid[persistent_id];
-	BUG_ON(durable_state == NULL);
-	generic_fillattr(filp->f_path.dentry->d_inode, &durable_state->stat);
-	spin_unlock(&global_fidtable.fidtable_lock);
-	cifsd_debug("durable state disconnect persistentID (%u)\n",
-		    persistent_id);
-}
-
-/**
- * cifsd_delete_durable_state() - delete durable state for a id
- * @id:		persistent id
- *
- * Return:      0 or 1 on success, otherwise error number
- */
-int cifsd_delete_durable_state(uint64_t id)
-{
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *ftab;
-
-	spin_lock(&global_fidtable.fidtable_lock);
-	ftab = global_fidtable.ftab;
-	if (id > ftab->max_fids - 1) {
-		cifsd_err("Invalid id %llu\n", id);
-		spin_unlock(&global_fidtable.fidtable_lock);
-		return -EINVAL;
-	}
-	durable_state = (struct cifsd_durable_state *)ftab->fileid[id];
-
-	/* If refcount > 1 return 1 to avoid deletion of persistent-id
-	   from the global_fidtable bitmap */
-	if (durable_state && durable_state->refcount > 1) {
-		--durable_state->refcount;
-		spin_unlock(&global_fidtable.fidtable_lock);
-		return 1;
+	if (!fp->is_durable || fp->conn || fp->sess) {
+		cifsd_err("invalid durable fp, is_durable : %d, conn : %p, sess : %p\n",
+			fp->is_durable, fp->conn, fp->sess);
+		return -EBADF;
 	}
 
-	/* Check if durable state is associated with file
-	   before deleting persistent id of a opened file,
-	   because opened file may or may not be associated
-	   with a durable handle */
-	if (durable_state) {
-		cifsd_debug("durable state delete persistentID (%llu) refcount = %d\n",
-			    id, durable_state->refcount);
-		kfree(durable_state);
+	/* find durable fp is still opened */
+	dfp = get_id_from_fidtable(sess, fp->volatile_id);
+	if (dfp) {
+		cifsd_err("find durable fp is still opened\n");
+		return -EBADF;
 	}
 
-	ftab->fileid[id] = NULL;
-	spin_unlock(&global_fidtable.fidtable_lock);
+	/* Obtain Volatile-ID */
+	volatile_id = cifsd_get_unused_id(&sess->fidtable);
+	if (volatile_id < 0) {
+		cifsd_err("failed to get unused volatile_id for file\n");
+		return -EBADF;
+	}
+
+	fp->conn = sess->conn;
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	fp->sess = sess;
+#endif
+	fp->tcon = tcon;
+
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
+	WARN_ON(ftab->fileid[volatile_id] != NULL);
+	ftab->fileid[volatile_id] = fp;
+	spin_unlock(&sess->fidtable.fidtable_lock);
+	cifsd_debug("durable file updated volatile ID (%u)\n",
+		      volatile_id);
+
 	return 0;
+}
+
+/**
+ * delete_durable_id_from_fidtable() - delete a durable id from fid table
+ * @id:	durable id to be deleted from fid table
+ *
+ * delete a durable id from fid table and free associated cifsd file pointer
+ */
+void delete_durable_id_from_fidtable(uint64_t id)
+{
+	struct cifsd_file *fp;
+	struct fidtable *ftab;
+
+	spin_lock(&global_fidtable.fidtable_lock);
+	ftab = global_fidtable.ftab;
+	fp = ftab->fileid[id];
+	ftab->fileid[id] = NULL;
+	spin_lock(&fp->f_lock);
+	kfree(fp->filename);
+	if (fp->is_stream)
+		kfree(fp->stream.name);
+	fp->f_mfp = NULL;
+	spin_unlock(&fp->f_lock);
+	kmem_cache_free(cifsd_filp_cache, fp);
+	spin_unlock(&global_fidtable.fidtable_lock);
 }
 
 /**
@@ -781,13 +718,9 @@ int close_persistent_id(uint64_t id)
 {
 	int rc = 0;
 
-	rc = cifsd_delete_durable_state(id);
-	if (rc < 0)
-		return rc;
-	else if (rc > 0)
-		return 0;
-
 	rc = cifsd_close_id(&global_fidtable, id);
+	if (!rc)
+		delete_durable_id_from_fidtable(id);
 	return rc;
 }
 
@@ -796,7 +729,7 @@ int close_persistent_id(uint64_t id)
  */
 void destroy_global_fidtable(void)
 {
-	struct cifsd_durable_state *durable_state;
+	struct cifsd_file *fp;
 	struct fidtable *ftab;
 	int i;
 
@@ -806,187 +739,11 @@ void destroy_global_fidtable(void)
 	spin_unlock(&global_fidtable.fidtable_lock);
 
 	for (i = 0; i < ftab->max_fids; i++) {
-		durable_state = (struct cifsd_durable_state *)ftab->fileid[i];
-			kfree(durable_state);
-			ftab->fileid[i] = NULL;
+		fp = ftab->fileid[i];
+		kfree(fp);
+		ftab->fileid[i] = NULL;
 	}
 	free_fidtable(ftab);
-}
-#endif
-
-/**
- * cifsd_check_stat_info() - compare durable state and current inode stat
- * @durable_stat:	inode stat stored in durable state
- * @current_stat:	current inode stat
- *
- * Return:		0 if mismatch, 1 if no mismatch
- */
-int cifsd_check_stat_info(struct kstat *durable_stat,
-				struct kstat *current_stat)
-{
-	if (durable_stat->ino != current_stat->ino) {
-		cifsd_err("Inode mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->dev != current_stat->dev) {
-		cifsd_err("Device mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->mode != current_stat->mode) {
-		cifsd_err("Mode mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->nlink != current_stat->nlink) {
-		cifsd_err("Nlink mismatch\n");
-		return 0;
-	}
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	if (!uid_eq(durable_stat->uid, current_stat->uid)) {
-#else
-	if (durable_stat->uid != current_stat->uid) {
-#endif
-		cifsd_err("Uid mismatch\n");
-		return 0;
-	}
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	if (!gid_eq(durable_stat->gid, current_stat->gid)) {
-#else
-	if (durable_stat->gid != current_stat->gid) {
-#endif
-		cifsd_err("Gid mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->rdev != current_stat->rdev) {
-		cifsd_err("Special file devid mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->size != current_stat->size) {
-		cifsd_err("Size mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->atime.tv_sec != current_stat->atime.tv_sec &&
-	    durable_stat->atime.tv_nsec != current_stat->atime.tv_nsec) {
-		cifsd_err("Last access time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->mtime.tv_sec  != current_stat->mtime.tv_sec &&
-	    durable_stat->mtime.tv_nsec != current_stat->mtime.tv_nsec) {
-		cifsd_err("Last modification time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->ctime.tv_sec != current_stat->ctime.tv_sec &&
-	    durable_stat->ctime.tv_nsec != current_stat->ctime.tv_nsec) {
-		cifsd_err("Last status change time mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->blksize != current_stat->blksize) {
-		cifsd_err("Block size mismatch\n");
-		return 0;
-	}
-
-	if (durable_stat->blocks != current_stat->blocks) {
-		cifsd_err("Block number mismatch\n");
-		return 0;
-	}
-
-	return 1;
-}
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-/**
- * cifsd_durable_reconnect() - verify durable state on reconnect
- * @curr_conn:	TCP server instance of connection
- * @durable_stat:	durable state of filp
- * @filp:		current inode stat
- *
- * Return:		0 if no mismatch, otherwise error
- */
-int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
-			  struct cifsd_durable_state *durable_state,
-			  struct file **filp)
-{
-	struct kstat stat;
-	struct path *path;
-	int rc = 0;
-
-	rc = cifsd_durable_verify_and_del_oplock(curr_sess,
-						   durable_state->sess,
-						   durable_state->volatile_id,
-						   filp, curr_sess->sess_id);
-
-	if (rc < 0) {
-		*filp = NULL;
-		cifsd_err("Oplock state not consistent\n");
-		return rc;
-	}
-
-	/* Get the current stat info.
-	   Incrementing refcount of filp
-	   because when server thread is destroy_fidtable
-	   will close the filp when old server thread is destroyed*/
-	get_file(*filp);
-	path = &((*filp)->f_path);
-	generic_fillattr(path->dentry->d_inode, &stat);
-
-	if (!cifsd_check_stat_info(&durable_state->stat, &stat)) {
-		cifsd_err("Stat info mismatch file state changed\n");
-		fput(*filp);
-		rc = -EINVAL;
-	}
-
-	return rc;
-}
-
-/**
- * cifsd_update_durable_stat_info() - update durable state of all
- *		persistent fid of a server thread
- * @conn:	TCP server instance of connection
- */
-void cifsd_update_durable_stat_info(struct cifsd_sess *sess)
-{
-	struct cifsd_file *fp;
-	struct fidtable *ftab;
-	int id;
-	struct cifsd_durable_state *durable_state;
-	struct fidtable *gtab;
-	struct file *filp;
-	uint64_t p_id;
-
-	if (durable_enable == false || !sess)
-		return;
-
-	spin_lock(&sess->fidtable.fidtable_lock);
-	ftab = sess->fidtable.ftab;
-
-	for (id = 0; id < ftab->max_fids; id++) {
-		fp = ftab->fileid[id];
-		if (fp && fp->is_durable) {
-			/* Mainly for updating kstat info */
-			filp = fp->filp;
-			p_id = fp->persistent_id;
-			spin_lock(&global_fidtable.fidtable_lock);
-
-			gtab = global_fidtable.ftab;
-			durable_state =
-			  (struct cifsd_durable_state *)gtab->fileid[p_id];
-			BUG_ON(durable_state == NULL);
-			generic_fillattr(filp->f_path.dentry->d_inode,
-					 &durable_state->stat);
-			spin_unlock(&global_fidtable.fidtable_lock);
-		}
-	}
-	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 #endif
 
@@ -1021,15 +778,6 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	if (id < 0)
 		return id;
 
-	if (flags & O_TRUNC) {
-		if (oplocks_enable && fexist)
-			smb_break_all_oplock(work, NULL,
-					path->dentry->d_inode);
-		err = vfs_truncate((struct path *)path, 0);
-		if (err)
-			goto err_out;
-	}
-
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
@@ -1040,12 +788,19 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	smb_vfs_set_fadvise(filp, option);
 
 	sess_id = work->sess == NULL ? 0 : work->sess->sess_id;
-	fp = insert_id_in_fidtable(work->sess, sess_id,
-		le16_to_cpu(rcv_hdr->Tid), id, filp);
+	fp = insert_id_in_fidtable(work->sess, work->tcon, id, filp);
 	if (fp == NULL) {
 		fput(filp);
 		cifsd_err("id insert failed\n");
 		goto err_out;
+	}
+
+	if (flags & O_TRUNC) {
+		if (oplocks_enable && fexist)
+			smb_break_all_oplock(work, fp);
+		err = vfs_truncate((struct path *)path, 0);
+		if (err)
+			goto err_out;
 	}
 
 	INIT_LIST_HEAD(&fp->lock_list);
@@ -1056,11 +811,8 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	if (!S_ISDIR(file_inode(filp)->i_mode) &&
 			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
 		/* Client cannot request levelII oplock directly */
-		err = smb_grant_oplock(work, oplock, id, fp, rcv_hdr->Tid,
+		*oplock = smb_grant_oplock(work, *oplock, id, fp, rcv_hdr->Tid,
 			NULL);
-		/* if we enconter an error, no oplock is granted */
-		if (err)
-			*oplock = 0;
 	}
 
 	*ret_id = id;
@@ -1235,7 +987,7 @@ int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
 
 	sess->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifsd_pipe),
 			GFP_KERNEL);
-	if (!sess->pipe_desc)
+	if (!sess->pipe_desc[pipe_type])
 		return -ENOMEM;
 
 	pipe_desc = sess->pipe_desc[pipe_type];
@@ -1307,7 +1059,45 @@ static unsigned long mfp_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & mfp_hash_mask;
 }
 
-struct cifsd_mfile *mfp_lookup(struct inode *inode)
+static inline int check_stream_mfp(struct cifsd_mfile *mfp,
+	struct cifsd_file *fp)
+{
+	int ret = 0;
+
+	if (mfp->is_stream != fp->is_stream)
+		return 1;
+
+	if (mfp->is_stream && fp->is_stream)
+		ret = strncasecmp(mfp->stream_name, fp->stream.name,
+			fp->stream.size);
+	return ret;
+}
+
+struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp)
+{
+	struct inode *inode = FP_INODE(fp);
+	struct hlist_head *head = mfp_hashtable +
+		mfp_hash(inode->i_sb, inode->i_ino);
+	struct cifsd_mfile *mfp = NULL, *ret_mfp = NULL;
+	int ret;
+
+	spin_lock(&mfp_hash_lock);
+	hlist_for_each_entry(mfp, head, m_hash) {
+		if (mfp->m_inode == inode) {
+			ret = check_stream_mfp(mfp, fp);
+			if (ret)
+				continue;
+			atomic_inc(&mfp->m_count);
+			ret_mfp = mfp;
+			break;
+		}
+	}
+	spin_unlock(&mfp_hash_lock);
+
+	return ret_mfp;
+}
+
+struct cifsd_mfile *mfp_lookup_inode(struct inode *inode)
 {
 	struct hlist_head *head = mfp_hashtable +
 		mfp_hash(inode->i_sb, inode->i_ino);
@@ -1343,19 +1133,33 @@ void remove_mfp_hash(struct cifsd_mfile *mfp)
 	spin_unlock(&mfp_hash_lock);
 }
 
-void mfp_init(struct cifsd_mfile *mfp, struct inode *inode)
+int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 {
-	mfp->m_inode = inode;
+	mfp->m_inode = FP_INODE(fp);
 	atomic_set(&mfp->m_count, 1);
+	atomic_set(&mfp->op_count, 0);
 	mfp->m_flags = 0;
 	INIT_LIST_HEAD(&mfp->m_fp_list);
 	spin_lock_init(&mfp->m_lock);
 	insert_mfp_hash(mfp);
+	mfp->is_stream = false;
+
+	if (fp->is_stream) {
+		mfp->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
+		if (!mfp->stream_name)
+			return -ENOMEM;
+		strncpy(mfp->stream_name, fp->stream.name, fp->stream.size);
+		mfp->is_stream = true;
+	}
+
+	return 0;
 }
 
 void mfp_free(struct cifsd_mfile *mfp)
 {
 	remove_mfp_hash(mfp);
+	if (mfp->is_stream)
+		kfree(mfp->stream_name);
 	kfree(mfp);
 }
 

@@ -145,7 +145,6 @@ int cifsd_readv_from_socket(struct connection *conn,
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
 				iov, segs, to_read, 0);
-
 		if (conn->tcp_status == CifsExiting) {
 			total_read = -ESHUTDOWN;
 			break;
@@ -192,12 +191,13 @@ int cifsd_read_from_socket(struct connection *conn, char *buf,
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-int cifsd_create_socket(void)
+int cifsd_create_socket(__u32 cifsd_pid)
 {
 	int ret;
 	struct socket *socket = NULL;
 	struct sockaddr_in sin;
 	int opt = 1;
+	struct cifsd_pid_info *cifsd_pid_info = NULL;
 
 	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &socket);
 	if (ret)
@@ -237,7 +237,14 @@ int cifsd_create_socket(void)
 		goto release;
 	}
 
-	ret = cifsd_start_forker_thread(socket);
+	cifsd_pid_info = kmalloc(sizeof(struct cifsd_pid_info), GFP_KERNEL);
+	if (!cifsd_pid_info)
+		goto release;
+
+	cifsd_pid_info->socket = socket;
+	cifsd_pid_info->cifsd_pid = cifsd_pid;
+
+	ret = cifsd_start_forker_thread(cifsd_pid_info);
 	if (ret) {
 		cifsd_err("failed to run forker thread(%d)\n", ret);
 		goto release;
@@ -264,13 +271,29 @@ release:
  */
 static int cifsd_do_fork(void *p)
 {
-	struct socket *socket = p;
+	struct cifsd_pid_info *cifsd_pid_info = (struct cifsd_pid_info *)p;
+	struct socket *socket = cifsd_pid_info->socket;
+	__u32 cifsd_pid = cifsd_pid_info->cifsd_pid;
+	struct task_struct *cifsd_task;
 	int ret;
 	struct socket *newsock = NULL;
 
 	while (!kthread_should_stop()) {
 		if (deny_new_conn)
 			continue;
+
+		rcu_read_lock();
+		cifsd_task = find_task_by_vpid(cifsd_pid);
+		rcu_read_unlock();
+		if (cifsd_task) {
+			if (strncmp(cifsd_task->comm, "cifsd", 5)) {
+				cifsd_err("cifsd is not alive\n");
+				break;
+			}
+		} else {
+			cifsd_err("cifsd is not alive\n");
+			break;
+		}
 
 		ret = kernel_accept(socket, &newsock, O_NONBLOCK);
 		if (ret) {
@@ -291,8 +314,16 @@ static int cifsd_do_fork(void *p)
 		cifsd_err("failed to shutdown socket cleanly\n");
 
 	sock_release(socket);
+	kfree(cifsd_pid_info);
+	cifsd_forkerd = NULL;
 
 	return 0;
+}
+
+void terminate_old_forker_thread(void)
+{
+	if (cifsd_forkerd)
+		cifsd_stop_forker_thread();
 }
 
 /**
@@ -302,14 +333,16 @@ static int cifsd_do_fork(void *p)
  * on port 445 for new SMB connection requests. It creates per connection
  * server threads(kcifsd/x)
  *
+ * @cifsd_pid_info:	struct pointer which has cifsd's pid and
+ *	socket pointer members
  * Return:	0 on success or error number
  */
-int cifsd_start_forker_thread(struct socket *socket)
+int cifsd_start_forker_thread(struct cifsd_pid_info *cifsd_pid_info)
 {
 	int rc;
 
 	deny_new_conn = 0;
-	cifsd_forkerd = kthread_run(cifsd_do_fork, socket, "kcifsd/0");
+	cifsd_forkerd = kthread_run(cifsd_do_fork, cifsd_pid_info, "kcifsd/0");
 	if (IS_ERR(cifsd_forkerd)) {
 		rc = PTR_ERR(cifsd_forkerd);
 		cifsd_forkerd = NULL;
@@ -333,6 +366,7 @@ void cifsd_stop_forker_thread(void)
 		if (ret)
 			cifsd_err("failed to stop forker thread\n");
 	}
+
 	cifsd_forkerd = NULL;
 }
 

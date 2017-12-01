@@ -684,7 +684,7 @@ struct cifsd_file *find_fp_using_inode(struct inode *inode)
 	struct cifsd_mfile *mfp;
 	struct list_head *cur;
 
-	mfp = mfp_lookup(inode);
+	mfp = mfp_lookup_inode(inode);
 	if (!mfp)
 		goto out;
 
@@ -892,7 +892,7 @@ int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 	char *xattr_stream_name_buf;
 
 	stream_name_size = strlen(stream_name);
-	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN;
+	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN + 1;
 	xattr_stream_name_buf = kmalloc(xattr_stream_name_size, GFP_KERNEL);
 	memcpy(xattr_stream_name_buf, XATTR_NAME_STREAM,
 		XATTR_NAME_STREAM_LEN);
@@ -901,7 +901,7 @@ int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 		memcpy(&xattr_stream_name_buf[XATTR_NAME_STREAM_LEN],
 			stream_name, stream_name_size);
 
-	xattr_stream_name_buf[xattr_stream_name_size] = '\0';
+	xattr_stream_name_buf[xattr_stream_name_size - 1] = '\0';
 	*xattr_stream_name = xattr_stream_name_buf;
 
 	return xattr_stream_name_size;

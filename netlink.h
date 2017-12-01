@@ -42,6 +42,7 @@ enum cifsd_uevent_e {
 	CIFSD_UEVENT_IOCTL_PIPE_RSP,
 	CIFSD_UEVENT_LANMAN_PIPE_RSP,
 	CIFSD_UEVENT_EXIT_CONNECTION,
+	CIFSD_UEVENT_INOTIFY_RESPONSE,
 
 	/* up events: kernel space to userspace */
 	CIFSD_KEVENT_CREATE_PIPE     = 100,
@@ -50,8 +51,8 @@ enum cifsd_uevent_e {
 	CIFSD_KEVENT_IOCTL_PIPE,
 	CIFSD_KEVENT_LANMAN_PIPE,
 	CIFSD_KEVENT_DESTROY_PIPE,
-	CIFSD_KEVENT_SMBPORT_CLOSE_FAIL,
-	CIFSD_KEVENT_SMBPORT_CLOSE_PASS,
+	CFISD_KEVENT_USER_DAEMON_EXIST,
+	CIFSD_KEVENT_INOTIFY_REQUEST,
 };
 
 struct cifsd_uevent {
@@ -60,6 +61,8 @@ struct cifsd_uevent {
 	__u64		conn_handle;
 	unsigned int	buflen;
 	unsigned int	pipe_type;
+	char codepage[CIFSD_CODEPAGE_LEN];
+
 	union {
 		/* messages u -> k */
 		unsigned int	nt_status;

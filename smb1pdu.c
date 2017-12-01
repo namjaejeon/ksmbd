@@ -496,9 +496,9 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 	/* delete tcon from sess tcon list and decrease sess tcon count */
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
+	close_opens_from_fibtable(sess, tcon);
 	kfree(tcon);
 
-	close_opens_from_fibtable(sess, le16_to_cpu(req_hdr->Tid));
 	return 0;
 }
 
@@ -1181,8 +1181,6 @@ int smb_locking_andx(struct smb_work *smb_work)
 	LOCK_REQ *req;
 	LOCK_RSP *rsp;
 	struct cifsd_file *fp;
-	struct connection *conn = smb_work->conn;
-	struct ofile_info *ofile;
 	struct oplock_info *opinfo;
 	char oplock;
 	int ret = 0;
@@ -1206,65 +1204,45 @@ int smb_locking_andx(struct smb_work *smb_work)
 	oplock = req->OplockLevel;
 
 	/* find fid */
-	mutex_lock(&ofile_list_lock);
 	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
 	if (fp == NULL) {
-		mutex_unlock(&ofile_list_lock);
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
 	}
 
-	ofile = fp->ofile;
-	if (ofile == NULL) {
-		cifsd_err("unexpected null ofile_info\n");
-		mutex_unlock(&ofile_list_lock);
-		return -EINVAL;
-	}
-
-	opinfo = get_matching_opinfo(conn, ofile, req->Fid, 0);
-	if (opinfo == NULL) {
-		cifsd_err("unexpected null oplock_info\n");
-		mutex_unlock(&ofile_list_lock);
-		return -EINVAL;
-	}
-
+	opinfo = fp->f_opinfo;
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
-		mutex_unlock(&ofile_list_lock);
 		cifsd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
 		return -EINVAL;
 	}
 
 	if (oplock == OPLOCK_EXCLUSIVE || oplock == OPLOCK_BATCH) {
-		if (opinfo_write_to_none(ofile, opinfo) < 0) {
+		if (opinfo_write_to_none(opinfo) < 0) {
 			cifsd_err("lock level mismatch for fid %d\n",
 					req->Fid);
-			mutex_unlock(&ofile_list_lock);
 			opinfo->op_state = OPLOCK_STATE_NONE;
 			return -EINVAL;
 		}
-	} else if (((opinfo->lock_type == OPLOCK_EXCLUSIVE) ||
-				(opinfo->lock_type == OPLOCK_BATCH)) &&
+	} else if (((opinfo->level == OPLOCK_EXCLUSIVE) ||
+				(opinfo->level == OPLOCK_BATCH)) &&
 			(oplock == OPLOCK_READ)) {
-		ret = opinfo_write_to_read(ofile, opinfo, 0);
+		ret = opinfo_write_to_read(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
-			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
-	} else if ((opinfo->lock_type == OPLOCK_READ) &&
+	} else if ((opinfo->level == OPLOCK_READ) &&
 			(oplock == OPLOCK_NONE)) {
-		ret = opinfo_read_to_none(ofile, opinfo);
+		ret = opinfo_read_to_none(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
-			mutex_unlock(&ofile_list_lock);
 			return -EINVAL;
 		}
 	}
 
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&conn->oplock_q);
+	wake_up_interruptible(&opinfo->oplock_q);
 	wake_up(&opinfo->op_end_wq);
-	mutex_unlock(&ofile_list_lock);
 
 	return 0;
 }
@@ -1906,7 +1884,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (fp) {
 		struct cifsd_mfile *mfp;
 
-		mfp = mfp_lookup(FP_INODE(fp));
+		mfp = mfp_lookup_inode(FP_INODE(fp));
 		if (!mfp) {
 			mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
 			if (!mfp) {
@@ -1914,7 +1892,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				goto free_path;
 			}
 
-			mfp_init(mfp, FP_INODE(fp));
+			mfp_init(mfp, fp);
 		}
 
 		/* Add fp to master fp list. */
@@ -2248,6 +2226,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	struct connection *conn = smb_work->conn;
 	READ_REQ *req = (READ_REQ *)smb_work->buf;
 	READ_RSP *rsp = (READ_RSP *)smb_work->rsp_buf;
+	struct cifsd_file *fp;
 	loff_t pos;
 	size_t count;
 	ssize_t nbytes;
@@ -2255,6 +2234,14 @@ int smb_read_andx(struct smb_work *smb_work)
 
 	if (smb_work->tcon->share->is_pipe == true)
 		return smb_read_andx_pipe(smb_work);
+
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %d\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
 
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 12)
@@ -2272,8 +2259,9 @@ int smb_read_andx(struct smb_work *smb_work)
 		count = CIFS_DEFAULT_IOSIZE;
 	}
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
-	nbytes = smb_vfs_read(smb_work->sess, req->Fid, 0, &smb_work->rdata_buf,
+	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
+	nbytes = smb_vfs_read(smb_work->sess, fp, &smb_work->rdata_buf,
 		count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
@@ -2329,6 +2317,7 @@ int smb_write(struct smb_work *smb_work)
 {
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)smb_work->buf;
 	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)smb_work->rsp_buf;
+	struct cifsd_file *fp = NULL;
 	loff_t pos;
 	size_t count;
 	char *data_buf;
@@ -2338,17 +2327,26 @@ int smb_write(struct smb_work *smb_work)
 	if (req->hdr.WordCount != 5)
 		goto out;
 
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
 	pos = le32_to_cpu(req->Offset);
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
+	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
 	if (!count) {
 		err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
 			pos);
 		nbytes = 0;
 	} else
-		err = smb_vfs_write(smb_work->sess, req->Fid, 0, data_buf,
+		err = smb_vfs_write(smb_work->sess, fp, data_buf,
 			count, &pos, 0, &nbytes);
 
 out:
@@ -2453,6 +2451,7 @@ int smb_write_andx(struct smb_work *smb_work)
 	struct connection *conn = smb_work->conn;
 	WRITE_REQ *req = (WRITE_REQ *)smb_work->buf;
 	WRITE_RSP *rsp = (WRITE_RSP *)smb_work->rsp_buf;
+	struct cifsd_file *fp;
 	bool writethrough = false;
 	loff_t pos;
 	size_t count;
@@ -2463,6 +2462,14 @@ int smb_write_andx(struct smb_work *smb_work)
 	if (smb_work->tcon->share->is_pipe == true) {
 		cifsd_debug("Write ANDX called for IPC$");
 		return smb_write_andx_pipe(smb_work);
+	}
+
+	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
 	}
 
 	pos = le32_to_cpu(req->OffsetLow);
@@ -2501,8 +2508,9 @@ int smb_write_andx(struct smb_work *smb_work)
 				le16_to_cpu(req->DataOffset));
 	}
 
-	cifsd_debug("fid %u, offset %lld, count %zu\n", req->Fid, pos, count);
-	err = smb_vfs_write(smb_work->sess, req->Fid, 0, data_buf, count, &pos,
+	cifsd_debug("filname %s, offset %lld, count %zu\n", FP_FILENAME(fp),
+		pos, count);
+	err = smb_vfs_write(smb_work->sess, fp, data_buf, count, &pos,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;

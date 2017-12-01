@@ -51,13 +51,17 @@
 #define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
 #define PARENT_INODE(fp)	fp->filp->f_path.dentry->d_parent->d_inode
 
+#define ATTR_FP(fp) (fp->attrib_only && \
+		(fp->cdoption != FILE_OVERWRITE_IF_LE && \
+		fp->cdoption != FILE_OVERWRITE_LE && \
+		fp->cdoption != FILE_SUPERSEDE_LE))
+
 #define S_DEL_ON_CLS		1
 #define S_DEL_ON_CLS_STREAM	2
 
 /* FP STATE */
 #define FP_NEW		0
 #define FP_FREEING	1
-
 
 struct connection;
 struct cifsd_sess;
@@ -108,15 +112,25 @@ struct stream {
 struct cifsd_mfile {
 	spinlock_t m_lock;
 	atomic_t m_count;
+	atomic_t op_count;
 	struct inode *m_inode;
 	unsigned int m_flags;
 	struct hlist_node m_hash;
 	struct list_head m_fp_list;
+	struct oplock_info *m_opinfo;
+	bool has_lease;
+	bool is_stream;
+	char *stream_name;
 };
 
 struct cifsd_file {
+	struct connection *conn;
+	struct cifsd_sess *sess;
+	struct cifsd_tcon *tcon;
 	struct cifsd_mfile *f_mfp;
+	struct oplock_info *f_opinfo;
 	struct file *filp;
+	char *filename;
 	/* Will be used for in case of symlink */
 	struct file *lfilp;
 	struct timespec open_time;
@@ -126,14 +140,12 @@ struct cifsd_file {
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */
-	struct ofile_info *ofile;
 	bool is_nt_open;
-	bool lease_granted;
-	char LeaseKey[16];
+	unsigned int volatile_id;
 	bool is_durable;
+	bool is_resilient;
+	bool is_persistent;
 	uint64_t persistent_id;
-	uint64_t sess_id;
-	uint32_t tid;
 	__le32 daccess;
 	__le32 saccess;
 	__le32 coption;
@@ -149,7 +161,6 @@ struct cifsd_file {
 	struct list_head lock_list;
 	spinlock_t f_lock;
 	wait_queue_head_t wq;
-	atomic_t f_count;
 	int f_state;
 };
 
@@ -205,7 +216,8 @@ struct fidtable_desc {
 };
 
 int init_fidtable(struct fidtable_desc *ftab_desc);
-void close_opens_from_fibtable(struct cifsd_sess *sess, uint32_t tree_id);
+void close_opens_from_fibtable(struct cifsd_sess *sess,
+	struct cifsd_tcon *tcon);
 void destroy_fidtable(struct cifsd_sess *sess);
 void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
@@ -216,42 +228,29 @@ unsigned int get_pipe_type(char *pipename);
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess, uint64_t sess_id,
-		uint32_t tree_id, unsigned int id, struct file *filp);
+insert_id_in_fidtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon,
+	unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
 void __init mfp_hash_init(void);
-void mfp_init(struct cifsd_mfile *mfp, struct inode *inode);
+int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp);
 void mfp_free(struct cifsd_mfile *mfp);
 void insert_mfp_hash(struct cifsd_mfile *mfp);
 void remove_mfp_hash(struct cifsd_mfile *mfp);
-struct cifsd_mfile *mfp_lookup(struct inode *inode);
+struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp);
+struct cifsd_mfile *mfp_lookup_inode(struct inode *inode);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
 int cifsd_insert_in_global_table(struct cifsd_sess *sess,
-				   int volatile_id, struct file *filp,
-				   int durable_open);
+	struct cifsd_file *fp);
 int close_persistent_id(uint64_t id);
 void destroy_global_fidtable(void);
 
 /* Durable handle functions */
-struct cifsd_durable_state *
-	cifsd_get_durable_state(uint64_t persistent_id);
-void
-cifsd_update_durable_state(struct cifsd_sess *sess,
-				unsigned int persistent_id,
-				unsigned int volatile_id,
-				struct file *filp);
-
-int cifsd_delete_durable_state(uint64_t persistent_id);
-void
-cifsd_durable_disconnect(struct connection *conn,
-		unsigned int persistent_id, struct file *filp);
-
-void cifsd_update_durable_stat_info(struct cifsd_sess *sess);
-void fp_get(struct cifsd_file *fp);
-void fp_put(struct cifsd_file *fp);
+struct cifsd_file *cifsd_get_global_fp(uint64_t pid);
+int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
+	struct cifsd_tcon *tcon);
 #endif
 
 #endif /* __CIFSD_FH_H */

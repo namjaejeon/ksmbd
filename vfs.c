@@ -98,6 +98,28 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 	return err;
 }
 
+static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
+	size_t count)
+{
+	ssize_t v_len;
+	char *stream_buf = NULL;
+	int err;
+
+	cifsd_debug("read stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+	if (v_len == -ENOENT) {
+		cifsd_err("not found stream in xattr : %zd\n", v_len);
+		err = -ENOENT;
+		return err;
+	}
+
+	memcpy(buf, &stream_buf[*pos], count);
+	return v_len > count ? count : v_len;
+}
+
 /**
  * smb_vfs_read() - vfs helper for smb file read
  * @sess:	session
@@ -108,23 +130,16 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char **buf, size_t count, loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
 	mm_segment_t old_fs;
-	struct cifsd_file *fp;
 	char *rbuf, *name;
 	struct inode *inode;
 	char namebuf[NAME_MAX];
 	int ret;
-
-	fp = get_id_from_fidtable(sess, fid);
-	if (!fp) {
-		cifsd_err("failed to get filp for fid %llu\n", fid);
-		return -ENOENT;
-	}
 
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
@@ -137,18 +152,11 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		goto out;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, p_id);
-		nbytes = -ENOENT;
-		goto out;
-	}
-
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read(%llu)\n", fid);
+			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
 			nbytes = -EACCES;
 			goto out;
 		}
@@ -160,26 +168,13 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 		nbytes = -ENOMEM;
 		goto out;
 	}
+
 	if (fp->is_stream) {
-		ssize_t v_len;
-		char *stream_buf = NULL;
-
-		cifsd_debug("read stream data pos : %llu, count : %zd\n",
-			*pos, count);
-
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
-		if (v_len == -ENOENT) {
-			cifsd_err("not found stream in xattr : %zd\n", v_len);
+		nbytes = smb_vfs_stream_read(fp, rbuf, pos, count);
+		if (nbytes < 0)
 			kvfree(rbuf);
-			nbytes = -ENOENT;
-			goto out;
-		}
-
-		memcpy(rbuf, &stream_buf[*pos], count);
-
-		*buf = rbuf;
-		nbytes = v_len > count ? count : v_len;
+		else
+			*buf = rbuf;
 		goto out;
 	}
 
@@ -211,8 +206,57 @@ int smb_vfs_read(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	}
 
 out:
-	fp_put(fp);
 	return nbytes;
+}
+
+static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
+	size_t count)
+{
+	char *stream_buf = NULL, *wbuf;
+	size_t size, v_len;
+	int err = 0;
+
+	cifsd_debug("write stream data pos : %llu, count : %zd\n",
+			*pos, count);
+
+	size = *pos + count;
+	if (size > XATTR_SIZE_MAX) {
+		size = XATTR_SIZE_MAX;
+		count = (*pos + count) - XATTR_SIZE_MAX;
+	}
+
+	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			fp->stream.size, &stream_buf, 1);
+	if (v_len == -ENOENT) {
+		cifsd_err("not found stream in xattr : %zd\n", v_len);
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (v_len < size) {
+		wbuf = alloc_data_mem(size);
+		if (!wbuf) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		if (v_len > 0)
+			memcpy(wbuf, stream_buf, v_len);
+		stream_buf = wbuf;
+	}
+
+	memcpy(&stream_buf[*pos], buf, count);
+
+	err = smb_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
+			(void *)stream_buf, size);
+	if (err < 0)
+		goto out;
+
+	fp->filp->f_pos = *pos;
+	err = 0;
+out:
+	kvfree(stream_buf);
+	return err;
 }
 
 /**
@@ -227,35 +271,20 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
+int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
 	struct file *filp;
 	loff_t	offset = *pos;
 	mm_segment_t old_fs;
-	struct cifsd_file *fp;
 	int err = 0;
 
-	fp = get_id_from_fidtable(sess, fid);
-	if (!fp) {
-		cifsd_err("failed to get filp for fid %llu session = 0x%p\n",
-				fid, sess);
-		return -ENOENT;
-	}
-
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-			fp->persistent_id, p_id);
-		err = -ENOENT;
-		goto out;
-	}
-
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 		   FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
 		   FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write(%llu)\n", fid);
+			cifsd_err("no right to write(%s)\n", FP_FILENAME(fp));
 			err = -EACCES;
 			goto out;
 		}
@@ -265,53 +294,9 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	filp = fp->filp;
 
 	if (fp->is_stream) {
-		char *stream_buf = NULL, *wbuf;
-		size_t size, v_len;
-
-		cifsd_debug("write stream data pos : %llu, count : %zd\n",
-			*pos, count);
-
-		size = *pos + count;
-		if (size > XATTR_SIZE_MAX) {
-			size = XATTR_SIZE_MAX;
-			count = (*pos + count) - XATTR_SIZE_MAX;
-		}
-
-		v_len = smb_find_cont_xattr(&filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
-		if (v_len == -ENOENT) {
-			cifsd_err("not found stream in xattr : %zd\n", v_len);
-			kvfree(stream_buf);
-			err = -ENOENT;
-			goto out;
-		}
-
-		if (v_len < size) {
-			wbuf = alloc_data_mem(size);
-			if (!wbuf) {
-				kvfree(stream_buf);
-				err = -ENOMEM;
-				goto out;
-			}
-
-			if (v_len > 0) {
-				memcpy(wbuf, stream_buf, v_len);
-				kvfree(stream_buf);
-			}
-			stream_buf = wbuf;
-		}
-
-		memcpy(&stream_buf[*pos], buf, count);
-
-		err = smb_store_cont_xattr(&filp->f_path, fp->stream.name,
-			(void *)stream_buf, size);
-		if (err < 0)
-			goto out;
-
-		kvfree(stream_buf);
-		filp->f_pos = *pos;
-		*written = count;
-		err = 0;
+		err = smb_vfs_stream_write(fp, buf, pos, count);
+		if (!err)
+			*written = count;
 		goto out;
 	}
 
@@ -329,9 +314,7 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
-		mutex_lock(&ofile_list_lock);
-		smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
-		mutex_unlock(&ofile_list_lock);
+		smb_break_all_levII_oplock(sess->conn, fp, 1);
 	}
 
 	err = vfs_write(filp, buf, count, pos);
@@ -347,12 +330,11 @@ int smb_vfs_write(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id,
 	if (sync) {
 		err = vfs_fsync_range(filp, offset, offset + *written, 0);
 		if (err < 0)
-			cifsd_err("fsync failed for fid %llu, err = %d\n",
-					fid, err);
+			cifsd_err("fsync failed for filename = %s, err = %d\n",
+					FP_FILENAME(fp), err);
 	}
 
 out:
-	fp_put(fp);
 	return err;
 }
 
@@ -481,7 +463,6 @@ int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 out:
 	if (name)
 		path_put(&path);
-	fp_put(fp);
 	return err;
 }
 
@@ -515,7 +496,6 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 #endif
 	if (err)
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
-	fp_put(fp);
 	return err;
 }
 
@@ -537,7 +517,7 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 		return -ENOENT;
 	}
 
-	if (fp->is_durable && fp->persistent_id != p_id) {
+	if (fp->persistent_id != p_id) {
 		cifsd_err("persistent id mismatch : %llu, %llu\n",
 				fp->persistent_id, p_id);
 		return -ENOENT;
@@ -546,7 +526,6 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifsd_err("smb fsync failed, err = %d\n", err);
-	fp_put(fp);
 
 	return err;
 }
@@ -901,7 +880,6 @@ out1:
 	if (abs_oldname)
 		path_put(&oldpath_p);
 
-	fp_put(fp);
 	return err;
 }
 
@@ -945,9 +923,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		filp = fp->filp;
 		if (oplocks_enable) {
 			/* Do we need to break any of a levelII oplock? */
-			mutex_lock(&ofile_list_lock);
-			smb_break_all_levII_oplock(sess->conn, fp, NULL, 1);
-			mutex_unlock(&ofile_list_lock);
+			smb_break_all_levII_oplock(sess->conn, fp, 1);
 		} else {
 			inode = file_inode(filp);
 			if (size < inode->i_size) {
@@ -967,7 +943,6 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		if (err)
 			cifsd_err("truncate failed for fid %llu err %d\n",
 					fid, err);
-		fp_put(fp);
 	}
 
 	return err;
@@ -1267,9 +1242,12 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 	return err;
 }
 
-int smb_vfs_alloc_size(struct file *filp, loff_t len)
+int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+	loff_t len)
 {
-	return vfs_fallocate(filp, FALLOC_FL_KEEP_SIZE, 0, len);
+	if (oplocks_enable)
+		smb_break_all_levII_oplock(conn, fp, 1);
+	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
 int smb_vfs_remove_xattr(struct path *path, char *field_name)

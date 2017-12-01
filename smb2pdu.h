@@ -440,6 +440,10 @@ struct smb2_tree_disconnect_rsp {
 #define SMB2_CREATE_TIMEWARP_REQUEST		"TWrp"
 #define SMB2_CREATE_QUERY_ON_DISK_ID		"QFid"
 #define SMB2_CREATE_REQUEST_LEASE		"RqLs"
+#define SMB2_CREATE_DURABLE_HANDLE_REQUEST_V2   "DH2Q"
+#define SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2 "DH2C"
+#define SMB2_CREATE_APP_INSTANCE_ID     0x45BCA66AEFA7F74A9008FA462E144D74
+#define SVHDX_OPEN_DEVICE_CONTEXT       0x83CE6F1AD851E0986E34401CC9BCFCE9
 
 struct smb2_create_req {
 	struct smb2_hdr hdr;
@@ -503,6 +507,18 @@ struct create_durable {
 		} Fid;
 	} Data;
 } __packed;
+
+struct create_durable_v2 {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct {
+		__u64 PersistentFileId;
+		__u64 VolatileFileId;
+	} Fid;
+	__u8 CreateGuid[16];
+	__le32 Flags;
+} __packed;
+
 
 struct create_mxac_req {
 	struct create_context ccontext;
@@ -795,13 +811,6 @@ struct smb2_notify_rsp {
 #define FILE_ACTION_REMOVED_STREAM	0x00000007
 #define FILE_ACTION_MODIFIED_STREAM	0x00000008
 #define FILE_ACTION_REMOVED_BY_DELETE	0x00000009
-
-struct FileNotifyInformation {
-	__le32 NextEntryOffset;
-	__le32 Action;
-	__le32 FileNameLength;
-	char FileName[0];
-} __packed;
 
 #define SMB2_LOCKFLAG_SHARED		0x0001
 #define SMB2_LOCKFLAG_EXCLUSIVE		0x0002
