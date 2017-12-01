@@ -390,8 +390,6 @@ struct connection {
 	/* References which are made for this Server object*/
 	atomic_t r_count;
 	wait_queue_head_t req_running_q;
-	wait_queue_head_t oplock_q; /* Other server threads */
-	wait_queue_head_t oplock_brk; /* oplock breaking wait */
 	spinlock_t request_lock; /* lock to protect requests list*/
 	struct list_head requests;
 	struct list_head async_requests;

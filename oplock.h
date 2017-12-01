@@ -71,10 +71,11 @@ struct oplock_info {
 	struct connection	*conn;
 	struct cifsd_sess	*sess;
 	struct smb_work		*work;
+	bool			is_smb2;
 	struct cifsd_file	*o_fp;
 	int                     level;
 	int                     op_state;
-	int                     fid;
+	uint64_t                fid;
 	__u16                   Tid;
 	atomic_t		breaking_cnt;
 	bool			is_lease;
@@ -82,6 +83,8 @@ struct oplock_info {
 	struct list_head        interim_list;
 	struct list_head        op_entry;
 	struct list_head        lease_entry;
+	wait_queue_head_t oplock_q; /* Other server threads */
+	wait_queue_head_t oplock_brk; /* oplock breaking wait */
 	wait_queue_head_t	op_end_wq;
 	bool			open_trunc:1;	/* truncate on open */
 };
@@ -105,7 +108,7 @@ struct oplock_break_info {
 };
 
 extern int smb_grant_oplock(struct smb_work *work, int req_op_level,
-		int id, struct cifsd_file *fp, __u16 Tid,
+		uint64_t id, struct cifsd_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx);
 extern void smb1_send_oplock_break_notification(struct work_struct *work);
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -118,7 +121,7 @@ int opinfo_write_to_read(struct oplock_info *opinfo);
 int opinfo_read_handle_to_read(struct oplock_info *opinfo);
 int opinfo_write_to_none(struct oplock_info *opinfo);
 int opinfo_read_to_none(struct oplock_info *opinfo);
-void close_id_del_oplock(struct connection *conn, struct cifsd_file *fp);
+void close_id_del_oplock(struct cifsd_file *fp);
 void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER

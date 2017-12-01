@@ -325,6 +325,9 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	struct cifsd_file *file;
 	struct fidtable *ftab;
 
+	if (!sess)
+		return NULL;
+
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
 	if ((id < CIFSD_START_FID) || (id > ftab->max_fids - 1)) {
@@ -360,22 +363,15 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
  */
 void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 {
-	struct cifsd_file *fp;
 	struct fidtable *ftab;
+
+	if (!sess)
+		return;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
 	BUG_ON(!ftab->fileid[id]);
-	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
-	spin_lock(&fp->f_lock);
-	kfree(fp->filename);
-	if (fp->is_stream)
-		kfree(fp->stream.name);
-	fp->f_mfp = NULL;
-	spin_unlock(&fp->f_lock);
-
-	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -412,10 +408,6 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		return -EINVAL;
 	}
 
-	err = close_persistent_id(fp->persistent_id);
-	if (err)
-		return -ENOENT;
-
 	spin_lock(&fp->f_lock);
 	mfp = fp->f_mfp;
 	fp->f_state = FP_FREEING;
@@ -424,7 +416,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	spin_unlock(&mfp->m_lock);
 	spin_unlock(&fp->f_lock);
 
-	close_id_del_oplock(sess->conn, fp);
+	close_id_del_oplock(fp);
 
 	if (fp->islink)
 		filp = fp->lfilp;
@@ -481,8 +473,12 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	}
 
 	delete_id_from_fidtable(sess, id);
-	cifsd_close_id(&sess->fidtable, id);
+	if (sess)
+		cifsd_close_id(&sess->fidtable, id);
 	filp_close(filp, (struct files_struct *)filp);
+	err = close_persistent_id(fp->persistent_id);
+	if (err)
+		return -ENOENT;
 	return 0;
 }
 
@@ -519,6 +515,9 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	struct oplock_info *opinfo = fp->f_opinfo;
 	int reconn = 0;
 
+	if (fp->f_opinfo->op_state != OPLOCK_STATE_NONE)
+		return 0;
+
 	if (fp->is_resilient || fp->is_persistent)
 		reconn = 1;
 	else if (fp->is_durable && opinfo->is_lease &&
@@ -551,6 +550,7 @@ void destroy_fidtable(struct cifsd_sess *sess)
 
 	if (!ftab)
 		return;
+
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
 		if (file) {
@@ -646,6 +646,12 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 	unsigned int volatile_id;
 	struct cifsd_file *dfp;
 
+	if (!fp->is_durable || fp->conn || fp->sess) {
+		cifsd_err("invalid durable fp, is_durable : %d, conn : %p, sess : %p\n",
+			fp->is_durable, fp->conn, fp->sess);
+		return -EBADF;
+	}
+
 	/* find durable fp is still opened */
 	dfp = get_id_from_fidtable(sess, fp->volatile_id);
 	if (dfp) {
@@ -685,11 +691,20 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
  */
 void delete_durable_id_from_fidtable(uint64_t id)
 {
+	struct cifsd_file *fp;
 	struct fidtable *ftab;
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
+	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
+	spin_lock(&fp->f_lock);
+	kfree(fp->filename);
+	if (fp->is_stream)
+		kfree(fp->stream.name);
+	fp->f_mfp = NULL;
+	spin_unlock(&fp->f_lock);
+	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&global_fidtable.fidtable_lock);
 }
 

@@ -1181,7 +1181,6 @@ int smb_locking_andx(struct smb_work *smb_work)
 	LOCK_REQ *req;
 	LOCK_RSP *rsp;
 	struct cifsd_file *fp;
-	struct connection *conn = smb_work->conn;
 	struct oplock_info *opinfo;
 	char oplock;
 	int ret = 0;
@@ -1242,7 +1241,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	}
 
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&conn->oplock_q);
+	wake_up_interruptible(&opinfo->oplock_q);
 	wake_up(&opinfo->op_end_wq);
 
 	return 0;

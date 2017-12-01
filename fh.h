@@ -63,7 +63,6 @@
 #define FP_NEW		0
 #define FP_FREEING	1
 
-
 struct connection;
 struct cifsd_sess;
 

@@ -593,8 +593,6 @@ int init_tcp_conn(struct connection *conn, struct socket *sock)
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = SERVER_CAPS;
-	init_waitqueue_head(&conn->oplock_q);
-	init_waitqueue_head(&conn->oplock_brk);
 	spin_lock(&tcp_sess_list_lock);
 	list_add(&conn->tcp_sess, &tcp_sess_list);
 	spin_unlock(&tcp_sess_list_lock);
@@ -646,14 +644,12 @@ void free_channel_list(struct cifsd_sess *sess)
 
 void smb_delete_session(struct cifsd_sess *sess)
 {
-	mutex_lock(&lease_list_lock);
 	sess->valid = 0;
 	list_del(&sess->cifsd_ses_list);
 	list_del(&sess->cifsd_ses_global_list);
 	free_channel_list(sess);
 	destroy_fidtable(sess);
 	kfree(sess);
-	mutex_unlock(&lease_list_lock);
 }
 
 /**

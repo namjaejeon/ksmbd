@@ -1878,6 +1878,29 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	return 0;
 }
 
+int close_disconnected_handle(struct inode *inode)
+{
+	struct cifsd_mfile *mfp;
+	bool unlinked = true;
+
+	mfp = mfp_lookup_inode(inode);
+	if (mfp) {
+		struct cifsd_file *fp, *fptmp;
+
+		atomic_dec(&mfp->m_count);
+		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
+			if (!fp->conn) {
+				if (mfp->m_flags & S_DEL_ON_CLS)
+					unlinked = false;
+				close_id(fp->sess, fp->volatile_id,
+					fp->persistent_id);
+			}
+		}
+	}
+
+	return unlinked;
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @smb_work:	smb work containing request buffer
@@ -2052,13 +2075,8 @@ int smb2_open(struct smb_work *smb_work)
 		}
 
 dh_out:
-		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE || recon_ver == 2) {
+		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE || recon_ver)
 			lc = parse_lease_state(req);
-			if (!lc) {
-				rc = -ENOENT;
-				goto err_out;
-			}
-		}
 
 		if (recon_ver)
 			goto reconnect;
@@ -2244,6 +2262,9 @@ dh_out:
 		goto err_out;
 	}
 
+	if (file_present)
+		file_present = close_disconnected_handle(path.dentry->d_inode);
+
 	if (tcon->writeable)
 		open_flags = smb2_create_open_flags(file_present,
 			req->DesiredAccess, req->CreateDisposition);
@@ -2393,6 +2414,15 @@ dh_out:
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
 	INIT_LIST_HEAD(&fp->lock_list);
+
+	/* Get Persistent-ID */
+	persistent_id = cifsd_insert_in_global_table(sess, fp);
+	if (persistent_id < 0) {
+		cifsd_err("persistent id insert failed\n");
+		rc = -ENOMEM;
+		goto err_out;
+	}
+	fp->persistent_id = persistent_id;
 
 	if (req->CreateContextsOffset) {
 		struct create_alloc_size_req *az_req;
@@ -2552,12 +2582,12 @@ dh_out:
 		if (rc)
 			goto err_out;
 		rc = smb_grant_oplock(smb_work, req_op_level,
-			volatile_id, fp, tree_id, lc);
+			persistent_id, fp, tree_id, lc);
 		if (rc < 0)
 			goto err_out;
 	} else {
 		rc = smb_grant_oplock(smb_work, req_op_level,
-			volatile_id, fp, tree_id, NULL);
+			persistent_id, fp, tree_id, NULL);
 		if (rc < 0)
 			goto err_out;
 	}
@@ -2691,15 +2721,6 @@ reconnect:
 
 		}
 	}
-
-	/* Get Persistent-ID */
-	persistent_id = cifsd_insert_in_global_table(sess, fp);
-	if (persistent_id < 0) {
-		cifsd_err("persistent id insert failed\n");
-		rc = -ENOMEM;
-		goto err_out;
-	}
-	fp->persistent_id = persistent_id;
 
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
@@ -6616,7 +6637,6 @@ out:
  */
 int smb20_oplock_break(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
 	struct smb2_oplock_break *req;
 	struct smb2_oplock_break *rsp;
 	struct cifsd_file *fp;
@@ -6707,7 +6727,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 	}
 
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&conn->oplock_q);
+	wake_up_interruptible(&opinfo->oplock_q);
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
@@ -6848,7 +6868,7 @@ int smb21_lease_break(struct smb_work *smb_work)
 	lease_state = lease->state;
 	atomic_dec(&opinfo->breaking_cnt);
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&conn->oplock_q);
+	wake_up_interruptible(&opinfo->oplock_q);
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
