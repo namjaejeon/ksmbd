@@ -333,16 +333,18 @@ static int cifsd_notify_rsp(struct nlmsghdr *nlh)
 	cifsd_debug("noti_info_res_buf->file_notify_info[0].Action : %d\n",
 		noti_info_res_buf->file_notify_info[0].Action);
 
-	inotify_res = kmalloc(inotify_res_size + file_noti_size + NAME_MAX,
+	sess->inotify_res = kmalloc(inotify_res_size
+		+ file_noti_size + NAME_MAX,
 		GFP_KERNEL);
-	memcpy(inotify_res, noti_info_res_buf,
+	memcpy(sess->inotify_res, noti_info_res_buf,
 		inotify_res_size + file_noti_size + NAME_MAX);
 
-	if (!inotify_res)
+	if (!sess->inotify_res)
 		return -ENOMEM;
 
 	sess->ev_state = NETLINK_REQ_RECV;
 	wake_up_interruptible(&sess->notify_q);
+
 	return 0;
 }
 

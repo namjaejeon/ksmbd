@@ -121,6 +121,7 @@ struct cifsd_sess {
 	int state;
 	__u8 Preauth_HashValue[64];
 	struct cifsd_pipe *pipe_desc[MAX_PIPE];
+	struct smb2_inotify_res_info *inotify_res;
 	wait_queue_head_t pipe_q;
 	wait_queue_head_t notify_q;
 	int ev_state;
