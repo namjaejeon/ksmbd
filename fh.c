@@ -515,7 +515,10 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	struct oplock_info *opinfo = fp->f_opinfo;
 	int reconn = 0;
 
-	if (fp->f_opinfo->op_state != OPLOCK_STATE_NONE)
+	if (!opinfo)
+		return 0;
+
+	if (opinfo->op_state != OPLOCK_STATE_NONE)
 		return 0;
 
 	if (fp->is_resilient || fp->is_persistent)

@@ -90,8 +90,6 @@ extern bool global_signing;
 
 extern struct list_head global_lock_list;
 
-extern struct smb2_inotify_res_info *inotify_res;
-
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
 

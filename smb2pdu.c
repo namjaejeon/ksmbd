@@ -88,9 +88,6 @@ struct fs_type_info fs_type[] = {
 	{ "CGROUP",	0x27e0eb},
 	};
 
-/* global variables for notify command */
-struct smb2_inotify_res_info *inotify_res;
-
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	TCP server instance of connection
@@ -6930,6 +6927,7 @@ err_out:
 	return 0;
 }
 
+#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
 /**
  * smb2_notify() - handler for smb2 notify request
  * @smb_work:	smb work containing notify command buffer
@@ -6940,14 +6938,15 @@ int smb2_notify(struct smb_work *smb_work)
 {
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp, *rsp_org;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp, *prev_fp;
+	struct notification *notify_req;
+	struct notification *request;
+	struct smb_work *work;
 	int rc = 0;
 	char *path;
 	char *path_buf = NULL;
 	int path_len = 0;
 	struct smb2_inotify_req_info inotify_req_info;
-
-	smb2_send_interim_resp(smb_work);
 
 	req = (struct smb2_notify_req *)smb_work->buf;
 	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
@@ -6962,15 +6961,13 @@ int smb2_notify(struct smb_work *smb_work)
 
 	if (req->StructureSize != 32) {
 		cifsd_err("malformed packet\n");
-		smb_work->send_no_response = 1;
-		goto out;
+		goto out1;
 	}
 
 	if (smb_work->next_smb2_rcv_hdr_off &&
 			le32_to_cpu(req->hdr.NextCommand)) {
 		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
-		smb2_set_err_rsp(smb_work);
-		goto out;
+		goto out2;
 	}
 
 	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
@@ -6978,14 +6975,30 @@ int smb2_notify(struct smb_work *smb_work)
 	if (!fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		rc = -ENOENT;
-		goto out;
+		goto out2;
 	}
 
 	path_buf = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!path_buf) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		rc = -ENOENT;
-		goto out;
+		goto out2;
+	}
+
+	notify_req = kmalloc(sizeof(struct notification), GFP_KERNEL);
+	if (!notify_req) {
+		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
+		rc = -ENOENT;
+		goto out2;
+	}
+	notify_req->work = smb_work;
+
+	hash_for_each_possible(smb_work->sess->notify_table, prev_fp,
+		notify_node, (unsigned long)FP_INODE(fp)) {
+		if (FP_INODE(fp) == FP_INODE(prev_fp)) {
+			list_add_tail(&notify_req->queuelist, &prev_fp->queue);
+			goto out1;
+		}
 	}
 
 	path = d_path(&(fp->filp->f_path), path_buf, PATH_MAX);
@@ -6993,32 +7006,108 @@ int smb2_notify(struct smb_work *smb_work)
 		cifsd_err("Failed to get complete dir path\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = PTR_ERR(path);
-		goto out;
+		kfree(path_buf);
+		goto out2;
 	}
 	path_len = strlen(path);
 
-	/* TODO : implement recursive monitoring */
-	inotify_req_info.watch_tree_flag = 0;
-	inotify_req_info.CompletionFilter = req->CompletionFileter;
-	inotify_req_info.path_len = path_len;
+	INIT_LIST_HEAD(&fp->queue);
+	list_add_tail(&notify_req->queuelist, &fp->queue);
 
-	rc = cifsd_sendmsg_notify(smb_work->sess,
-		sizeof(inotify_req_info)+path_len,
-		&inotify_req_info, path);
+	while (!list_empty(&fp->queue)) {
+		request = list_first_entry_or_null(&fp->queue,
+			struct notification, queuelist);
+		if (!request)
+			continue;
+		list_del_init(&request->queuelist);
+
+		work = request->work;
+		smb2_send_interim_resp(work);
+		req = (struct smb2_notify_req *)work->buf;
+		rsp = (struct smb2_notify_rsp *)work->rsp_buf;
+		rsp_org = rsp;
+
+		/* TODO : implement recursive monitoring */
+		inotify_req_info.watch_tree_flag = 0;
+		inotify_req_info.CompletionFilter = req->CompletionFileter;
+		inotify_req_info.path_len = path_len;
+
+		rc = cifsd_sendmsg_notify(work->sess,
+			sizeof(inotify_req_info)+path_len,
+			&inotify_req_info, path);
+
+		rsp->hdr.Status = NT_STATUS_OK;
+		rsp->StructureSize = cpu_to_le16(9);
+		rsp->OutputBufferOffset = cpu_to_le16(72);
+		rsp->OutputBufferLength =
+		work->sess->inotify_res->output_buffer_length;
+
+		memcpy(rsp->Buffer,
+			&(work->sess->inotify_res->file_notify_info[0]),
+			sizeof(struct FileNotifyInformation) + NAME_MAX);
+		inc_rfc1001_len(rsp_org, 8 + rsp->OutputBufferLength);
+		smb_send_rsp(work);
+		kfree(path_buf);
+		kfree(work->sess->inotify_res);
+	}
+
+out1:
+	smb_work->send_no_response = 1;
+	return 0;
+
+out2:
+	if (rsp->hdr.Status == 0)
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+	smb2_set_err_rsp(smb_work);
+	return rc;
+}
+#else
+
+/**
+ * smb2_notify() - handler for smb2 notify request
+ * @smb_work:   smb work containing notify command buffer
+ *
+ * Return:      0
+ */
+int smb2_notify(struct smb_work *smb_work)
+{
+	struct smb2_notify_req *req;
+	struct smb2_notify_rsp *rsp, *rsp_org;
+
+	req = (struct smb2_notify_req *)smb_work->buf;
+	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+	req = (struct smb2_notify_req *)((char *)req +
+		smb_work->next_smb2_rcv_hdr_off);
+	rsp = (struct smb2_notify_rsp *)((char *)rsp +
+		smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	if (req->StructureSize != 32) {
+		cifsd_err("malformed packet\n");
+		smb_work->send_no_response = 1;
+		return 0;
+	}
+
+	if (smb_work->next_smb2_rcv_hdr_off &&
+		le32_to_cpu(req->hdr.NextCommand)) {
+		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
+		smb2_set_err_rsp(smb_work);
+		return 0;
+	}
 
 	rsp->hdr.Status = NT_STATUS_OK;
 	rsp->StructureSize = cpu_to_le16(9);
-	rsp->OutputBufferOffset = cpu_to_le16(72);
-	rsp->OutputBufferLength = inotify_res->output_buffer_length;
+	rsp->OutputBufferLength = cpu_to_le32(0);
+	rsp->OutputBufferOffset = cpu_to_le16(0);
+	rsp->Buffer[0] = 0;
+	inc_rfc1001_len(rsp_org, 9);
 
-	memcpy(rsp->Buffer, &(inotify_res->file_notify_info[0]),
-		sizeof(struct FileNotifyInformation) + NAME_MAX);
-	inc_rfc1001_len(rsp_org, 8 + rsp->OutputBufferLength);
-
-out:
-	kfree(path_buf);
-	return rc;
+	return 0;
 }
+#endif
 
 /**
  * smb2_is_sign_req() - handler for checking packet signing status
