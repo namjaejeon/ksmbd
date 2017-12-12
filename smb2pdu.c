@@ -6927,6 +6927,7 @@ err_out:
 	return 0;
 }
 
+#ifdef CONFIG_SMB2_NOTIFY_SUPPORT
 /**
  * smb2_notify() - handler for smb2 notify request
  * @smb_work:	smb work containing notify command buffer
@@ -7060,6 +7061,53 @@ out2:
 	smb2_set_err_rsp(smb_work);
 	return rc;
 }
+#else
+
+/**
+ * smb2_notify() - handler for smb2 notify request
+ * @smb_work:   smb work containing notify command buffer
+ *
+ * Return:      0
+ */
+int smb2_notify(struct smb_work *smb_work)
+{
+	struct smb2_notify_req *req;
+	struct smb2_notify_rsp *rsp, *rsp_org;
+
+	req = (struct smb2_notify_req *)smb_work->buf;
+	rsp = (struct smb2_notify_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+	req = (struct smb2_notify_req *)((char *)req +
+		smb_work->next_smb2_rcv_hdr_off);
+	rsp = (struct smb2_notify_rsp *)((char *)rsp +
+		smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	if (req->StructureSize != 32) {
+		cifsd_err("malformed packet\n");
+		smb_work->send_no_response = 1;
+		return 0;
+	}
+
+	if (smb_work->next_smb2_rcv_hdr_off &&
+		le32_to_cpu(req->hdr.NextCommand)) {
+		rsp->hdr.Status = NT_STATUS_INTERNAL_ERROR;
+		smb2_set_err_rsp(smb_work);
+		return 0;
+	}
+
+	rsp->hdr.Status = NT_STATUS_OK;
+	rsp->StructureSize = cpu_to_le16(9);
+	rsp->OutputBufferLength = cpu_to_le32(0);
+	rsp->OutputBufferOffset = cpu_to_le16(0);
+	rsp->Buffer[0] = 0;
+	inc_rfc1001_len(rsp_org, 9);
+
+	return 0;
+}
+#endif
 
 /**
  * smb2_is_sign_req() - handler for checking packet signing status
