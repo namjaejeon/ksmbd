@@ -31,12 +31,6 @@
 #define SHARE_MAX_DATA_LEN	PATH_MAX
 #define MAX_NT_PWD_LEN		128
 
-/*
- * There could be 2 ways to add path to an export list.
- * One is static, via a conf file. Other is dynamic, via sysfs entry.
- */
-struct cifsd_sysfs_obj *sysobj;
-
 LIST_HEAD(cifsd_usr_list);
 LIST_HEAD(cifsd_share_list);
 LIST_HEAD(cifsd_connection_list);
@@ -888,24 +882,8 @@ int cifsd_debug_store(const char *buf)
 }
 
 /**
- * debug_show() - show debug print enable disable setting
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing debug print setting
- *
- * Return:      output buffer length
- */
-static ssize_t debug_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_debug_enable);
-}
-
- /**
  * cifsd_caseless_search_store() - enable disable case insensitive
-		search of files
+ search of files
  * @buf:	buffer containing case setting
  *
  * Return:      0: success, -EINVAL: on fail
@@ -923,22 +901,6 @@ int cifsd_caseless_search_store(const char *buf)
 		cifsd_caseless_search = 0;
 
 	return 0;
-}
-
-/**
- * caseless_search_show() - show caseless search enable disable setting status
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing caseless search setting
- *
- * Return:      output buffer length
- */
-static ssize_t caseless_search_show(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_caseless_search);
 }
 
 enum {
@@ -1528,39 +1490,6 @@ static ssize_t show_share_config(char *buf, int offset,
 }
 
 /**
- * config_show() - show config setting
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing config setting
- *
- * Return:      output buffer length
- */
-static ssize_t config_show(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   char *buf)
-
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	int cum = 0;
-	int ret = 0;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		/* no need to show IPC$ share details */
-		if (!share->path)
-			continue;
-
-		ret = show_share_config(buf, cum, share);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	return cum;
-}
-
-/**
  * config_store() - update config settings
  * @kobj:	kobject of the modules
  * @kobj_attr:	kobject attribute of the modules
@@ -1742,82 +1671,6 @@ out:
 	return ret;
 }
 
-/* cifsd sysfs entries */
-static ssize_t cifsd_attr_show(struct kobject *kobj,
-				 struct attribute *attr, char *buf)
-{
-	struct kobj_attribute *kobj_attr =
-			container_of(attr, struct kobj_attribute, attr);
-	return kobj_attr->show(kobj, kobj_attr, buf);
-}
-
-
-static ssize_t cifsd_attr_store(struct kobject *kobj,
-				  struct attribute *attr,
-				  const char *buf, size_t len)
-{
-	struct kobj_attribute *kobj_attr =
-			container_of(attr, struct kobj_attribute, attr);
-	return kobj_attr->store(kobj, kobj_attr, buf, len);
-}
-
-#define SMB_ATTR(_name) \
-	static struct kobj_attribute _name##_attr = \
-__ATTR(_name, 0755, _name##_show, _name##_store)
-
-struct cifsd_sysfs_obj {
-	struct kobject kobj;
-	struct completion kobj_unregister;
-};
-
-static const struct sysfs_ops cifsd_attr_ops = {
-	.show   = cifsd_attr_show,
-	.store  = cifsd_attr_store,
-};
-
-static void cifsd_attr_release(struct kobject *kobj)
-{
-	complete(&sysobj->kobj_unregister);
-}
-
-struct kobj_type cifsdfs_ktype  = {
-	.sysfs_ops      = &cifsd_attr_ops,
-	.release        = cifsd_attr_release,
-};
-
-/**
- * cifsd_init_sysfs_parser() - init cifsd sysfs entries
- *
- * Return:      0 on success, otherwise error
- */
-static int cifsd_init_sysfs_parser(void)
-{
-	int ret;
-	sysobj = kzalloc(sizeof(struct cifsd_sysfs_obj), GFP_NOFS);
-	if (!sysobj)
-		return -ENOMEM;
-
-	init_completion(&sysobj->kobj_unregister);
-	ret = kobject_init_and_add(&sysobj->kobj, &cifsdfs_ktype,
-							fs_kobj, "cifsd");
-	if (ret)
-		kfree(sysobj);
-
-	return 0;
-}
-
-/**
- * cifsd_init_sysfs_parser() - cleanup cifsd sysfs entries at modules exit
- *
- * Return:      0 on success, otherwise error
- */
-static void exit_sysfs_parser(void)
-{
-	kobject_put(&sysobj->kobj);
-	wait_for_completion(&sysobj->kobj_unregister);
-	kfree(sysobj);
-}
-
 /**
  * cifsd_add_IPC_share() - add share entry for IPC$ pipe with tid = 1
  *
@@ -1910,15 +1763,8 @@ int cifsd_export_init(void)
 	if (rc)
 		return rc;
 
-	rc = cifsd_init_sysfs_parser();
-	if (rc) {
-		cifsd_share_free();
-		return rc;
-	}
-
 	rc = cifsd_init_global_params();
 	if (rc) {
-		exit_sysfs_parser();
 		cifsd_share_free();
 		return rc;
 	}
@@ -1932,7 +1778,6 @@ int cifsd_export_init(void)
  */
 void cifsd_export_exit(void)
 {
-	exit_sysfs_parser();
 	cifsd_free_global_params();
 	cifsd_user_free();
 	cifsd_share_free();

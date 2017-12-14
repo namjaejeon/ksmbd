@@ -156,10 +156,6 @@ static inline unsigned int get_attr_##name(unsigned long *val)	\
 	return test_bit(bit, val);				\
 }
 
-/*
- * There could be 2 ways to add path to an export list.
- * One is static, via a conf file. Other is dynamic, via sysfs entry.
- */
 SHARE_ATTR(SH_AVAILABLE, available)	/* default: enabled */
 SHARE_ATTR(SH_BROWSABLE, browsable)	/* default: enabled */
 SHARE_ATTR(SH_GUESTOK, guestok)		/* default: disabled */

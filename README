@@ -80,7 +80,7 @@ mail address:
 KERNEL |--- kcifsd/0(forker kthread)
 ---------------||---------------------------------------------------------------
 USER           ||
-               || communication using NETLINK and sysfs
+               || communication using NETLINK
                ||  ______________________________________________
                || |                                              |
              cifsd   <<= DCE/RPC, WINREG                         |
