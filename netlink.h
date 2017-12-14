@@ -32,6 +32,12 @@
 #define CIFSD_CODEPAGE_LEN	32
 #define CIFSD_USERNAME_LEN	33
 
+#ifdef IPV6_SUPPORTED
+#define MAX_IPLEN 128
+#else
+#define MAX_IPLEN 16
+#endif
+
 enum cifsd_uevent_e {
 	CIFSD_UEVENT_UNKNOWN            = 0,
 
@@ -43,6 +49,10 @@ enum cifsd_uevent_e {
 	CIFSD_UEVENT_LANMAN_PIPE_RSP,
 	CIFSD_UEVENT_EXIT_CONNECTION,
 	CIFSD_UEVENT_INOTIFY_RESPONSE,
+
+	CIFSSTAT_UEVENT_INIT_CONNECTION,
+	CIFSSTAT_UEVENT_READ_STAT,
+	CIFSSTAT_UEVENT_READ_STAT_RSP,
 
 	/* up events: kernel space to userspace */
 	CIFSD_KEVENT_CREATE_PIPE     = 100,
@@ -85,6 +95,9 @@ struct cifsd_uevent {
 			unsigned int	data_count;
 			unsigned int	param_count;
 		} l_pipe_rsp;
+		struct msg_read_stat_response {
+			unsigned int	unused;
+		} r_stat_rsp;
 	} u;
 
 	union {
@@ -112,6 +125,10 @@ struct cifsd_uevent {
 			char	codepage[CIFSD_CODEPAGE_LEN];
 			char	username[CIFSD_USERNAME_LEN];
 		} l_pipe;
+		struct msg_read_stat {
+			__u64           flag;
+			char    statip[MAX_IPLEN];
+		} r_stat;
 	} k;
 	char buffer[0];
 };

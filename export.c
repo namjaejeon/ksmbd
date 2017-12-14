@@ -1674,40 +1674,38 @@ static ssize_t stat_store(struct kobject *kobj,
 }
 
 /**
- * stat_show() - show cifsd stat
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsstat_show() - show cifsd stat
  * @buf:	buffer containing stat info
+ * @ip:		containing ip for client stat
+ * @flag:	flag for extracting cifsstat info
  *
  * Return:      output buffer length
  */
-static ssize_t stat_show(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		char *buf)
+int cifsstat_show(char *buf, char *ip, int flag)
 {
 	struct list_head *tmp;
 	struct connection *conn;
 	int ret = 0;
 
-	if (!strlen(statIP)) {
+	if (flag & O_SERVER) {
 		ret = show_server_stat(buf);
+		flag &= ~O_SERVER;
 		goto out;
-	} else {
+	} else if (flag & O_CLIENT) {
 		int len1, len2;
-		len1 = strlen(statIP);
 
+		len1 = strlen(ip);
 		list_for_each(tmp, &cifsd_connection_list) {
 			conn = list_entry(tmp, struct connection, list);
 			len2 = strlen(conn->peeraddr);
-			if (len1 == len2 && !strncmp(statIP,
+			if (len1 == len2 && !strncmp(ip,
 				conn->peeraddr, len1)) {
 				ret = show_client_stat(buf, conn);
 				break;
 			}
 		}
-		memset(statIP, 0, MAX_ADDRBUFLEN);
+		flag &= ~O_CLIENT;
 	}
-
 out:
 	return ret;
 }
@@ -1740,7 +1738,6 @@ SMB_ATTR(user);
 SMB_ATTR(debug);
 SMB_ATTR(caseless_search);
 SMB_ATTR(config);
-SMB_ATTR(stat);
 
 static struct attribute *cifsd_sysfs_attrs[] = {
 	&share_attr.attr,
@@ -1748,7 +1745,6 @@ static struct attribute *cifsd_sysfs_attrs[] = {
 	&debug_attr.attr,
 	&caseless_search_attr.attr,
 	&config_attr.attr,
-	&stat_attr.attr,
 	NULL,
 };
 

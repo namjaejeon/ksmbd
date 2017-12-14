@@ -36,6 +36,8 @@ struct sock *cifsd_nlsk;
 static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
+static int cifsstat_pid;
+
 static int cifsd_nlsk_poll(struct cifsd_sess *sess)
 {
 	int rc;
@@ -143,8 +145,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	mutex_unlock(&nlsk_mutex);
 	if (unlikely(rc == -ESRCH))
 		cifsd_err("Cannot notify userspace of event %u "
-				". Check cifsd daemon\n",
-				etype);
+				". Check cifsd daemon\n", etype);
 
 	if (unlikely(rc)) {
 		cifsd_err("failed to send message, err %d\n", rc);
@@ -159,6 +160,54 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	sess->ev_state = NETLINK_REQ_COMPLETED;
 	return rc;
 }
+
+int cifsd_usendmsg(struct cifsd_uevent *rsp_ev, int upid,
+	unsigned int data_size, char *data)
+{
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
+	struct cifsd_uevent *ev;
+	int etype = rsp_ev->type;
+	int ev_sz;
+	struct cifsd_usr *user;
+	int rc;
+	int len = nlmsg_total_size(sizeof(*ev) + data_size);
+
+	if (unlikely(data_size > NETLINK_CIFSD_MAX_PAYLOAD)) {
+		cifsd_err("too big(%u) message\n", data_size);
+		return -EOVERFLOW;
+	}
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (unlikely(!skb)) {
+		cifsd_err("ignored event (%u): len %d\n", etype, len);
+		return -ENOMEM;
+	}
+
+	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
+	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
+	ev = nlmsg_data(nlh);
+	ev_sz = sizeof(struct cifsd_uevent);
+	memset(ev, 0, ev_sz);
+	memcpy(ev, rsp_ev, ev_sz);
+
+	if (data_size) {
+		ev->buflen = data_size;
+		memcpy(ev->buffer, data, data_size + 1);
+	}
+
+	rc = nlmsg_unicast(cifsd_nlsk, skb, upid);
+	if (unlikely(rc == -ESRCH))
+		cifsd_err("Cannot notify userspace of event %u "
+				". Check cifsd daemon\n",
+				etype);
+	if (unlikely(rc)) {
+		cifsd_err("failed to send message, err %d\n", rc);
+		return rc;
+	}
+	return rc;
+}
+
 
 int cifsd_sendmsg_notify(struct cifsd_sess *sess,
 	unsigned int data_size,
@@ -270,6 +319,59 @@ static int cifsd_exit_connection(struct nlmsghdr *nlh)
 	return 0;
 }
 
+/**
+ * cifsstat_init_connection() - handler for cifsstat init
+ * @nlh:       netlink message header
+ *
+ * Return:	0: on success
+ */
+static int cifsstat_init_connection(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init connection\n");
+	cifsstat_pid = nlh->nlmsg_pid;
+	return 0;
+}
+
+/**
+ * cifsd_stat_read() - handler for cifsd stat read
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_stat_read(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev;
+	struct cifsd_uevent rsp_ev;
+	int flag;
+	char *buf;
+	char *client_ip;
+	int ret = 0;
+
+	ev = nlmsg_data(nlh);
+	flag = ev->k.r_stat.flag;
+	client_ip = ev->k.r_stat.statip;
+	buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ret = cifsstat_show(buf, client_ip, flag);
+	if (!ret)
+		cifsd_err("get stat failed\n");
+
+out:
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSSTAT_UEVENT_READ_STAT_RSP;
+	rsp_ev.error = ret;
+	rsp_ev.k.r_stat.flag = flag;
+	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
+	if (ret)
+		cifsd_err(" stat respond failed, err %d\n", ret);
+
+	kfree(buf);
+	return ret;
+}
+
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
 	struct cifsd_sess *sess;
@@ -377,6 +479,12 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSD_UEVENT_INOTIFY_RESPONSE:
 		err = cifsd_notify_rsp(nlh);
+		break;
+	case CIFSSTAT_UEVENT_INIT_CONNECTION:
+		err = cifsstat_init_connection(nlh);
+		break;
+	case CIFSSTAT_UEVENT_READ_STAT:
+		err = cifsd_stat_read(nlh);
 		break;
 	default:
 		err = -EINVAL;

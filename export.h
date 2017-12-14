@@ -68,6 +68,9 @@ extern spinlock_t connect_list_lock;
 #define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
+#define O_SERVER 1
+#define O_CLIENT 2
+
 extern int cifsd_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
@@ -254,4 +257,5 @@ struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
 int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
+int cifsstat_show(char *buf, char *ip, int flag);
 #endif /* __CIFSD_EXPORT_H */
