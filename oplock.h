@@ -132,8 +132,8 @@ __u8 smb2_map_lease_to_oplock(__le32 lease_state);
 int lease_read_to_write(struct oplock_info *opinfo);
 
 /* Durable related functions */
-void create_durable_buf(char *buf);
 void create_durable_rsp_buf(char *buf);
+void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
 void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);
 struct create_context *smb2_find_context_vals(void *open_req, char *str);

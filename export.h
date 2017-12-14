@@ -188,6 +188,7 @@ struct cifsd_share {
 	/* global list of shares */
 	struct list_head list;
 	int writeable;
+	unsigned int type;
 };
 
 /* cifsd_tcon is coupled with cifsd_share */
@@ -249,11 +250,6 @@ extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
 			unsigned int tid);
 struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess);
-#ifdef CONFIG_CIFS_SMB2_SERVER
-int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
-		struct cifsd_durable_state *durable_state,
-		struct file **filp);
-#endif
 struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);

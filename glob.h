@@ -78,7 +78,6 @@ extern int cifsd_debug_enable;
 extern int cifsd_caseless_search;
 extern bool oplocks_enable;
 extern bool lease_enable;
-extern bool durable_enable;
 extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
@@ -206,6 +205,7 @@ extern struct list_head global_lock_list;
 #define SMB2_MAX_CREDITS 8192
 
 #define SMB2_CLIENT_GUID_SIZE		16
+#define SMB2_CREATE_GUID_SIZE		16
 
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
@@ -294,6 +294,7 @@ struct smb_version_values {
 	__u16           signing_required;
 	size_t          create_lease_size;
 	size_t          create_durable_size;
+	size_t          create_durable_v2_size;
 	size_t          create_mxac_size;
 	size_t          create_disk_id_size;
 };

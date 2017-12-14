@@ -162,16 +162,11 @@ struct cifsd_file {
 	spinlock_t f_lock;
 	wait_queue_head_t wq;
 	int f_state;
+	char client_guid[16];
+	char create_guid[16];
+	char app_instance_id[16];
+	int durable_timeout;
 };
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-struct cifsd_durable_state {
-	struct cifsd_sess *sess;
-	int volatile_id;
-	struct kstat stat;
-	int refcount;
-};
-#endif
 
 enum cifsd_pipe_type {
 	SRVSVC,
@@ -251,6 +246,8 @@ void destroy_global_fidtable(void);
 struct cifsd_file *cifsd_get_global_fp(uint64_t pid);
 int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 	struct cifsd_tcon *tcon);
+struct cifsd_file *lookup_fp_clguid(char *createguid);
+struct cifsd_file *lookup_fp_app_id(char *app_id);
 #endif
 
 #endif /* __CIFSD_FH_H */

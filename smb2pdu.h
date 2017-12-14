@@ -145,6 +145,7 @@ struct smb2_pdu {
 #define SMB2_FLAGS_RELATED_OPERATIONS	__constant_cpu_to_le32(0x00000004)
 #define SMB2_FLAGS_SIGNED		__constant_cpu_to_le32(0x00000008)
 #define SMB2_FLAGS_DFS_OPERATIONS	__constant_cpu_to_le32(0x10000000)
+#define SMB2_FLAGS_REPLAY_OPERATIONS	__constant_cpu_to_le32(0x20000000)
 
 /*
  *	Definitions for SMB2 Protocol Data Units (network frames)
@@ -442,7 +443,8 @@ struct smb2_tree_disconnect_rsp {
 #define SMB2_CREATE_REQUEST_LEASE		"RqLs"
 #define SMB2_CREATE_DURABLE_HANDLE_REQUEST_V2   "DH2Q"
 #define SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2 "DH2C"
-#define SMB2_CREATE_APP_INSTANCE_ID     0x45BCA66AEFA7F74A9008FA462E144D74
+#define SMB2_CREATE_APP_INSTANCE_ID     "\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74"
+ #define SMB2_CREATE_APP_INSTANCE_VERSION	"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10"
 #define SVHDX_OPEN_DEVICE_CONTEXT       0x83CE6F1AD851E0986E34401CC9BCFCE9
 
 struct smb2_create_req {
@@ -496,7 +498,16 @@ struct create_context {
 	__u8 Buffer[0];
 } __packed;
 
-struct create_durable {
+struct create_durable_req_v2 {
+	struct create_context ccontext;
+	__u8   Name[8];
+	__le32 Timeout;
+	__le32 Flags;
+	__u8 Reserved[8];
+	__u8 CreateGuid[16];
+} __packed;
+
+struct create_durable_reconn_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	union {
@@ -508,7 +519,7 @@ struct create_durable {
 	} Data;
 } __packed;
 
-struct create_durable_v2 {
+struct create_durable_reconn_v2_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	struct {
@@ -519,6 +530,21 @@ struct create_durable_v2 {
 	__le32 Flags;
 } __packed;
 
+struct create_app_inst_id {
+	struct create_context ccontext;
+	__u8 Name[8];
+	__u8 Reserved[8];
+	__u8 AppInstanceId[16];
+} __packed;
+
+struct create_app_inst_id_vers {
+	struct create_context ccontext;
+	__u8 Name[8];
+	__u8 Reserved[2];
+	__u8 Padding[4];
+	__le64 AppInstanceVersionHigh;
+	__le64 AppInstanceVersionLow;
+} __packed;
 
 struct create_mxac_req {
 	struct create_context ccontext;
@@ -539,6 +565,13 @@ struct create_durable_rsp {
 		__u8  Reserved[8];
 		__u64 data;
 	} Data;
+} __packed;
+
+struct create_durable_v2_rsp {
+	struct create_context ccontext;
+	__u8   Name[8];
+	__le32 Timeout;
+	__le32 Flags;
 } __packed;
 
 struct create_mxac_rsp {

@@ -370,8 +370,8 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
-	BUG_ON(!ftab->fileid[id]);
-	ftab->fileid[id] = NULL;
+	if (ftab->fileid[id])
+		ftab->fileid[id] = NULL;
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -394,13 +394,6 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
 	int err;
-
-	fp = get_id_from_fidtable(sess, id);
-	if (fp && fp->is_durable && fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-			fp->persistent_id, p_id);
-		return -ENOENT;
-	}
 
 	fp = cifsd_get_global_fp(p_id);
 	if (!fp) {
@@ -633,6 +626,48 @@ struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 	durable_fp = ftab->fileid[pid];
 	spin_unlock(&global_fidtable.fidtable_lock);
 	return durable_fp;
+}
+
+struct cifsd_file *lookup_fp_clguid(char *createguid)
+{
+	struct cifsd_file *fp = NULL;
+	struct fidtable *ftab;
+	int i;
+
+	spin_lock(&global_fidtable.fidtable_lock);
+	ftab = global_fidtable.ftab;
+	spin_unlock(&global_fidtable.fidtable_lock);
+
+	for (i = 0; i < ftab->max_fids; i++) {
+		fp = ftab->fileid[i];
+		if (fp && !memcmp(fp->create_guid, createguid,
+			SMB2_CREATE_GUID_SIZE))
+			break;
+		fp = NULL;
+	}
+
+	return fp;
+}
+
+struct cifsd_file *lookup_fp_app_id(char *app_id)
+{
+	struct cifsd_file *fp = NULL;
+	struct fidtable *ftab;
+	int i;
+
+	spin_lock(&global_fidtable.fidtable_lock);
+	ftab = global_fidtable.ftab;
+	spin_unlock(&global_fidtable.fidtable_lock);
+
+	for (i = 0; i < ftab->max_fids; i++) {
+		fp = ftab->fileid[i];
+		if (fp && !memcmp(fp->app_instance_id, app_id,
+			SMB2_CREATE_GUID_SIZE))
+			break;
+		fp = NULL;
+	}
+
+	return fp;
 }
 
 /**
