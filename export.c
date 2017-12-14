@@ -867,29 +867,24 @@ out:
 }
 
 /**
- * debug_store() - enable debug prints
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsd_debug_store() - enable debug prints
  * @buf:	buffer containing debug enable disable setting
- * @len:	buf length of debug enable disable setting
  *
- * Return:      debug setting buf length
+ * Return:	0: on success, -EINVAL on fail
  */
-static ssize_t debug_store(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   const char *buf, size_t len)
+int cifsd_debug_store(const char *buf)
 {
 	long int value;
 
 	if (kstrtol(buf, 10, &value))
-		return len;
+		return -EINVAL;
 
 	if (value > 0)
 		cifsd_debug_enable = value;
 	else if (value == 0)
 		cifsd_debug_enable = 0;
 
-	return len;
+	return 0;
 }
 
 /**
@@ -1774,11 +1769,9 @@ static ssize_t cifsd_attr_store(struct kobject *kobj,
 	static struct kobj_attribute _name##_attr = \
 __ATTR(_name, 0755, _name##_show, _name##_store)
 
-SMB_ATTR(debug);
 SMB_ATTR(caseless_search);
 
 static struct attribute *cifsd_sysfs_attrs[] = {
-	&debug_attr.attr,
 	&caseless_search_attr.attr,
 	NULL,
 };

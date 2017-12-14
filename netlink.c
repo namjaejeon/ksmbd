@@ -456,6 +456,28 @@ static int cifsadmin_remove_user(struct nlmsghdr *nlh)
 }
 
 /**
+ * cifsd_kernel_debug() - handler for cifsd debug enable/disable setting
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_kernel_debug(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsd_debug_store(ev->buffer);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_KERNEL_DEBUG_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("cifsd kernel debug setting failed, err %d\n", ret);
+
+	return ret;
+}
+/**
  * cifsstat_init_connection() - handler for cifsstat init
  * @nlh:       netlink message header
  *
@@ -703,6 +725,9 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSADMIN_KEVENT_REMOVE_USER:
 		err = cifsadmin_remove_user(nlh);
+		break;
+	case CIFSADMIN_KEVENT_KERNEL_DEBUG:
+		err = cifsd_kernel_debug(nlh);
 		break;
 	case CIFSSTAT_UEVENT_INIT_CONNECTION:
 		err = cifsstat_init_connection(nlh);
