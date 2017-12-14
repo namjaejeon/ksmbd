@@ -903,30 +903,26 @@ static ssize_t debug_show(struct kobject *kobj,
 	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_debug_enable);
 }
 
-/**
- * caseless_search_store() - enable disable case insensitive search of files
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ /**
+ * cifsd_caseless_search_store() - enable disable case insensitive
+		search of files
  * @buf:	buffer containing case setting
- * @len:	buf length of case setting
  *
- * Return:      case setting buf length
+ * Return:      0: success, -EINVAL: on fail
  */
-static ssize_t caseless_search_store(struct kobject *kobj,
-				     struct kobj_attribute *kobj_attr,
-				     const char *buf, size_t len)
+int cifsd_caseless_search_store(const char *buf)
 {
 	long int value;
 
 	if (kstrtol(buf, 10, &value))
-		goto out;
+		return -EINVAL;
+
 	if (value > 0)
 		cifsd_caseless_search = 1;
 	else if (value == 0)
 		cifsd_caseless_search = 0;
 
-out:
-	return len;
+	return 0;
 }
 
 /**
@@ -1769,13 +1765,6 @@ static ssize_t cifsd_attr_store(struct kobject *kobj,
 	static struct kobj_attribute _name##_attr = \
 __ATTR(_name, 0755, _name##_show, _name##_store)
 
-SMB_ATTR(caseless_search);
-
-static struct attribute *cifsd_sysfs_attrs[] = {
-	&caseless_search_attr.attr,
-	NULL,
-};
-
 struct cifsd_sysfs_obj {
 	struct kobject kobj;
 	struct completion kobj_unregister;
@@ -1792,7 +1781,6 @@ static void cifsd_attr_release(struct kobject *kobj)
 }
 
 struct kobj_type cifsdfs_ktype  = {
-	.default_attrs  = cifsd_sysfs_attrs,
 	.sysfs_ops      = &cifsd_attr_ops,
 	.release        = cifsd_attr_release,
 };
