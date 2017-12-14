@@ -260,4 +260,6 @@ int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
 int cifsstat_show(char *buf, char *ip, int flag);
 int cifsadmin_user_query(char *username);
 int cifsadmin_user_del(char *username);
+int cifsd_user_store(const char *buf, size_t len);
+int cifsd_config_store(const char *buf, size_t len);
 #endif /* __CIFSD_EXPORT_H */

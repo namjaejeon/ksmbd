@@ -818,17 +818,13 @@ int cifsadmin_user_del(char *username)
 }
 
 /**
- * user_store() - add a user in valid user list
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsd_user_store() - add a user in valid user list
  * @buf:	buffer containing user name to be added
  * @len:	user name buf length
  *
  * Return:      user name buf length on success, otherwise error
  */
-static ssize_t user_store(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  const char *buf, size_t len)
+int cifsd_user_store(const char *buf, size_t len)
 {
 	char *usrname, *passwd;
 	int rc, i;
@@ -850,7 +846,6 @@ static ssize_t user_store(struct kobject *kobj,
 				kstrtouint(parse_ptr[3], 10, &gid.val)) {
 			goto out;
 		}
-
 		cifsd_debug("uid : %u, gid %u\n", uid.val, gid.val);
 	} else {
 		uid.val = 0;
@@ -1603,6 +1598,21 @@ static ssize_t config_store(struct kobject *kobj,
 }
 
 /**
+ * cifsd_config_store() - update config settings
+ * @buf:	buffer containing config setting
+ * @len:	buf length of config setting
+ *
+ * Return:      config setting buf length
+ */
+
+int cifsd_config_store(const char *buf, size_t len)
+{
+	if (cifsd_parse_share_options(buf))
+		return -EINVAL;
+
+	return len;
+}
+/**
  * show_server_stat() - show cifsd server stat
  * @buf:	destination buffer for stat info
  *
@@ -1774,17 +1784,13 @@ static ssize_t cifsd_attr_store(struct kobject *kobj,
 __ATTR(_name, 0755, _name##_show, _name##_store)
 
 SMB_ATTR(share);
-SMB_ATTR(user);
 SMB_ATTR(debug);
 SMB_ATTR(caseless_search);
-SMB_ATTR(config);
 
 static struct attribute *cifsd_sysfs_attrs[] = {
 	&share_attr.attr,
-	&user_attr.attr,
 	&debug_attr.attr,
 	&caseless_search_attr.attr,
-	&config_attr.attr,
 	NULL,
 };
 

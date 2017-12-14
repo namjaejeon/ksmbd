@@ -291,6 +291,74 @@ static int cifsd_terminate_user_process(int new_cifsd_pid)
 	return 0;
 }
 
+/** cifsd_early_init() - handler for cifsd early init
+ *		initialize pid
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_early_init(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init cifsd early connection\n");
+	pid = nlh->nlmsg_pid;
+
+	return 0;
+}
+
+/** cifsd_config_user() - handler to export user to user list
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_config_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	char *user_entry;
+	int len;
+	int ret = 0;
+
+	if (!ev->buflen) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = cifsd_user_store(ev->buffer, ev->buflen);
+
+out:
+	rsp_ev.type = CIFSD_UEVENT_CONFIG_USER_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, pid, 0, NULL);
+	if (ret)
+		cifsd_err("failed to send event, err %d\n", ret);
+	return ret;
+}
+
+/** cifsd_config_share() - handler to update config setting
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_config_share(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	if (!ev->buflen) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = cifsd_config_store(ev->buffer, ev->buflen);
+
+out:
+	rsp_ev.type = CIFSD_UEVENT_CONFIG_SHARE_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, pid, 0, NULL);
+	if (ret)
+		cifsd_err("failed to send event, err %d\n", ret);
+	return ret;
+}
+
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
 	int err = 0;
@@ -525,6 +593,15 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 			nlh->nlmsg_type, nlh->nlmsg_pid);
 
 	switch (nlh->nlmsg_type) {
+	case CIFSD_KEVENT_EARLY_INIT:
+		err = cifsd_early_init(nlh);
+		break;
+	case CIFSD_KEVENT_CONFIG_USER:
+		err = cifsd_config_user(nlh);
+		break;
+	case CIFSD_KEVENT_CONFIG_SHARE:
+		err = cifsd_config_share(nlh);
+		break;
 	case CIFSD_UEVENT_INIT_CONNECTION:
 		err = cifsd_init_connection(nlh);
 		if (!err) {
