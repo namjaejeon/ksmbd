@@ -778,6 +778,46 @@ static ssize_t user_show(struct kobject *kobj,
 }
 
 /**
+ * cifsadmin_user_query() - search a user from user list
+ * @username:	buffer containing user name to search
+ *
+ * Return:	0: for username found
+ *	  -EINVAL: if not found from cifsd user list
+ */
+int cifsadmin_user_query(char *username)
+{
+	struct cifsd_usr *usr;
+
+	usr = cifsd_is_user_present(username);
+	if (usr && !strcmp(username, usr->name))
+		return 0;
+
+	return -EINVAL;
+}
+
+/**
+ * cifsadmin_user_del() - delete a user from user list
+ * @username:	buffer containing user name to delete
+ *
+ * Return:      0: for username found and deleted
+ *	  -EINVAL: if not found from cifsd user list
+ */
+int cifsadmin_user_del(char *username)
+{
+	struct cifsd_usr *usr;
+
+	usr = cifsd_is_user_present(username);
+	if (usr && !strcmp(username, usr->name)) {
+		list_del(&usr->list);
+		kfree(usr->name);
+		kfree(usr);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+/**
  * user_store() - add a user in valid user list
  * @kobj:	kobject of the modules
  * @kobj_attr:	kobject attribute of the modules

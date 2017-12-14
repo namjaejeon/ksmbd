@@ -258,4 +258,6 @@ struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
 int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
 int cifsstat_show(char *buf, char *ip, int flag);
+int cifsadmin_user_query(char *username);
+int cifsadmin_user_del(char *username);
 #endif /* __CIFSD_EXPORT_H */

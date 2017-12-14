@@ -37,6 +37,7 @@ static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
 static int cifsstat_pid;
+static int cifsadmin_pid;
 
 static int cifsd_nlsk_poll(struct cifsd_sess *sess)
 {
@@ -319,6 +320,72 @@ static int cifsd_exit_connection(struct nlmsghdr *nlh)
 	return 0;
 }
 
+/** cifsadmin_init_connection() - handler for cifsdadmin init
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_init_connection(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init connection\n");
+	cifsadmin_pid = nlh->nlmsg_pid;
+	return 0;
+}
+
+/**
+ * cifsadmin_query_user() - handler for cifsd user query
+ *            and respond the requested user is present in
+ *            cifsd user list or not
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_query_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	char *username = ev->k.u_query.username;
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsadmin_user_query(username);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_QUERY_USER_RSP;
+	rsp_ev.error = ret;
+	strncpy(rsp_ev.k.u_query.username, username, strlen(username));
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("query user respond failed, err %d\n", ret);
+
+	return ret;
+}
+
+/**
+ * cifsadmin_remove_user() - handler for cifsd user remove
+ *            and respond the requested user is removed
+ *            from cifsd user list or not
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_remove_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	char *username = ev->k.u_del.username;
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsadmin_user_del(username);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_REMOVE_USER_RSP;
+	rsp_ev.error = ev->error;
+	strncpy(rsp_ev.k.u_del.username, username, strlen(username));
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("remove user respond failed, err %d\n", ret);
+
+	return ret;
+}
+
 /**
  * cifsstat_init_connection() - handler for cifsstat init
  * @nlh:       netlink message header
@@ -479,6 +546,15 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSD_UEVENT_INOTIFY_RESPONSE:
 		err = cifsd_notify_rsp(nlh);
+		break;
+	case CIFSADMIN_UEVENT_INIT_CONNECTION:
+		err = cifsadmin_init_connection(nlh);
+		break;
+	case CIFSADMIN_KEVENT_QUERY_USER:
+		err = cifsadmin_query_user(nlh);
+		break;
+	case CIFSADMIN_KEVENT_REMOVE_USER:
+		err = cifsadmin_remove_user(nlh);
 		break;
 	case CIFSSTAT_UEVENT_INIT_CONNECTION:
 		err = cifsstat_init_connection(nlh);
