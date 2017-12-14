@@ -669,16 +669,12 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 }
 
 /**
- * share_show() - show a list of exported shares
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing share list output
+ * cifsd_share_show() - show a list of exported shares
+ * @buf:       buffer containing share list output
  *
  * Return:      output buffer length
- */
-static ssize_t share_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
+ **/
+int cifsd_share_show(char *buf)
 {
 	struct cifsd_share *share;
 	struct list_head *tmp;
@@ -747,17 +743,12 @@ static ssize_t share_store(struct kobject *kobj,
 }
 
 /**
- * user_show() - show a list of added user
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing user list output
- *
+ * cifsd_user_show() - show a list of added user
+ * @buf:       buffer containing user list output
+
  * Return:      output buffer length
  */
-static ssize_t user_show(struct kobject *kobj,
-			 struct kobj_attribute *kobj_attr,
-			 char *buf)
-
+int cifsd_user_show(char *buf)
 {
 	struct cifsd_usr *usr, *tmp;
 	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
@@ -1783,12 +1774,10 @@ static ssize_t cifsd_attr_store(struct kobject *kobj,
 	static struct kobj_attribute _name##_attr = \
 __ATTR(_name, 0755, _name##_show, _name##_store)
 
-SMB_ATTR(share);
 SMB_ATTR(debug);
 SMB_ATTR(caseless_search);
 
 static struct attribute *cifsd_sysfs_attrs[] = {
-	&share_attr.attr,
 	&debug_attr.attr,
 	&caseless_search_attr.attr,
 	NULL,
