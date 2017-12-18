@@ -313,14 +313,18 @@ void close_id_del_oplock(struct cifsd_file *fp)
 			atomic_set(&opinfo->breaking_cnt, 0);
 			wake_up_interruptible(&opinfo->oplock_brk);
 		}
+		wait_event_timeout(opinfo->op_end_wq,
+				opinfo->op_state == OPLOCK_STATE_NONE,
+				OPLOCK_WAIT_TIME);
 	} else {
-		mutex_lock(&lease_list_lock);
-		if (opinfo->is_lease)
-			free_lease(opinfo);
 		atomic_dec(&fp->f_mfp->op_count);
-		kfree(opinfo);
-		mutex_unlock(&lease_list_lock);
 	}
+
+	mutex_lock(&lease_list_lock);
+	if (opinfo->is_lease)
+		free_lease(opinfo);
+	kfree(opinfo);
+	mutex_unlock(&lease_list_lock);
 }
 
 
@@ -851,13 +855,10 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
 	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
-		mutex_lock(&lease_list_lock);
-		if (brk_opinfo->is_lease)
-			free_lease(brk_opinfo);
+		brk_opinfo->op_state = OPLOCK_STATE_NONE;
 		atomic_dec(&(brk_opinfo->o_fp->f_mfp->op_count));
-		kfree(brk_opinfo);
+		wake_up_interruptible(&brk_opinfo->op_end_wq);
 		err = -ENOENT;
-		mutex_unlock(&lease_list_lock);
 	}
 
 	return err;
