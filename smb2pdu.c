@@ -3812,6 +3812,9 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 		(get_rfc1002_length(rsp_org) + 4)
 		- sizeof(struct smb2_query_info_rsp);
 
+	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
+		buf_free_len = le32_to_cpu(req->OutputBufferLength);
+
 	rc = smb_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
 	if (rc < 0) {
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
@@ -3869,11 +3872,16 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 			goto out;
 		}
 
+		buf_free_len -= value_len;
+		if (buf_free_len < 0) {
+			kvfree(buf);
+			break;
+		}
+
 		memcpy(ptr, buf, value_len);
 		kvfree(buf);
 
 		ptr += value_len;
-		buf_free_len -= value_len;
 		eainfo->Flags = 0;
 		eainfo->EaNameLength = name_len;
 
