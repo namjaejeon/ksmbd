@@ -6743,7 +6743,8 @@ int smb2_ioctl(struct smb_work *smb_work)
 	if (!smb_work->sess->sign && cnt_code ==
 		FSCTL_VALIDATE_NEGOTIATE_INFO) {
 		if (conn->ops->is_sign_req &&
-			conn->ops->is_sign_req(smb_work, SMB2_IOCTL_HE)) {
+			conn->ops->is_sign_req(smb_work, SMB2_IOCTL_HE) &&
+			conn->dialect >= SMB30_PROT_ID) {
 			struct channel *chann;
 
 			chann = lookup_chann_list(smb_work->sess);
