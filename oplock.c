@@ -1676,7 +1676,7 @@ int smb2_check_durable_oplock(struct cifsd_file *fp,
 {
 	struct oplock_info *opinfo = fp->f_opinfo;
 
-	if (opinfo->is_lease) {
+	if (opinfo && opinfo->is_lease) {
 		if (!lctx) {
 			cifsd_err("open does not include lease\n");
 			return -EBADF;
