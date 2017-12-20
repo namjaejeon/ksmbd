@@ -396,7 +396,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	int err;
 
 	fp = cifsd_get_global_fp(p_id);
-	if (!fp) {
+	if (!fp || fp->sess != sess) {
 		cifsd_debug("Invalid id for close: %llu\n", id);
 		return -EINVAL;
 	}
