@@ -36,6 +36,10 @@ struct sock *cifsd_nlsk;
 static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
+static int cifsd_early_pid;
+static int cifsstat_pid;
+static int cifsadmin_pid;
+
 static int cifsd_nlsk_poll(struct cifsd_sess *sess)
 {
 	int rc;
@@ -143,8 +147,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	mutex_unlock(&nlsk_mutex);
 	if (unlikely(rc == -ESRCH))
 		cifsd_err("Cannot notify userspace of event %u "
-				". Check cifsd daemon\n",
-				etype);
+				". Check cifsd daemon\n", etype);
 
 	if (unlikely(rc)) {
 		cifsd_err("failed to send message, err %d\n", rc);
@@ -159,6 +162,54 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	sess->ev_state = NETLINK_REQ_COMPLETED;
 	return rc;
 }
+
+int cifsd_usendmsg(struct cifsd_uevent *rsp_ev, int upid,
+	unsigned int data_size, char *data)
+{
+	struct nlmsghdr *nlh;
+	struct sk_buff *skb;
+	struct cifsd_uevent *ev;
+	int etype = rsp_ev->type;
+	int ev_sz;
+	struct cifsd_usr *user;
+	int rc;
+	int len = nlmsg_total_size(sizeof(*ev) + data_size);
+
+	if (unlikely(data_size > NETLINK_CIFSD_MAX_PAYLOAD)) {
+		cifsd_err("too big(%u) message\n", data_size);
+		return -EOVERFLOW;
+	}
+
+	skb = alloc_skb(len, GFP_KERNEL);
+	if (unlikely(!skb)) {
+		cifsd_err("ignored event (%u): len %d\n", etype, len);
+		return -ENOMEM;
+	}
+
+	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
+	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
+	ev = nlmsg_data(nlh);
+	ev_sz = sizeof(struct cifsd_uevent);
+	memset(ev, 0, ev_sz);
+	memcpy(ev, rsp_ev, ev_sz);
+
+	if (data_size) {
+		ev->buflen = data_size;
+		memcpy(ev->buffer, data, data_size + 1);
+	}
+
+	rc = nlmsg_unicast(cifsd_nlsk, skb, upid);
+	if (unlikely(rc == -ESRCH))
+		cifsd_err("Cannot notify userspace of event %u "
+				". Check cifsd daemon\n",
+				etype);
+	if (unlikely(rc)) {
+		cifsd_err("failed to send message, err %d\n", rc);
+		return rc;
+	}
+	return rc;
+}
+
 
 int cifsd_sendmsg_notify(struct cifsd_sess *sess,
 	unsigned int data_size,
@@ -241,6 +292,74 @@ static int cifsd_terminate_user_process(int new_cifsd_pid)
 	return 0;
 }
 
+/** cifsd_early_init() - handler for cifsd early init
+ *		initialize pid
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_early_init(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init cifsd early connection\n");
+	cifsd_early_pid = nlh->nlmsg_pid;
+
+	return 0;
+}
+
+/** cifsd_config_user() - handler to export user to user list
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_config_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	char *user_entry;
+	int len;
+	int ret = 0;
+
+	if (!ev->buflen) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = cifsd_user_store(ev->buffer, ev->buflen);
+
+out:
+	rsp_ev.type = CIFSD_UEVENT_CONFIG_USER_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsd_early_pid, 0, NULL);
+	if (ret)
+		cifsd_err("failed to send event, err %d\n", ret);
+	return ret;
+}
+
+/** cifsd_config_share() - handler to update config setting
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_config_share(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	if (!ev->buflen) {
+		ret = -EINVAL;
+		goto out;
+	}
+	ret = cifsd_config_store(ev->buffer, ev->buflen);
+
+out:
+	rsp_ev.type = CIFSD_UEVENT_CONFIG_SHARE_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsd_early_pid, 0, NULL);
+	if (ret)
+		cifsd_err("failed to send event, err %d\n", ret);
+	return ret;
+}
+
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
 	int err = 0;
@@ -268,6 +387,242 @@ static int cifsd_exit_connection(struct nlmsghdr *nlh)
 {
 	cifsd_debug("exit connection\n");
 	return 0;
+}
+
+/** cifsadmin_init_connection() - handler for cifsdadmin init
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_init_connection(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init connection\n");
+	cifsadmin_pid = nlh->nlmsg_pid;
+	return 0;
+}
+
+/**
+ * cifsadmin_query_user() - handler for cifsd user query
+ *            and respond the requested user is present in
+ *            cifsd user list or not
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_query_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	char *username = ev->k.u_query.username;
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsadmin_user_query(username);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_QUERY_USER_RSP;
+	rsp_ev.error = ret;
+	strncpy(rsp_ev.k.u_query.username, username, strlen(username));
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("query user respond failed, err %d\n", ret);
+
+	return ret;
+}
+
+/**
+ * cifsadmin_remove_user() - handler for cifsd user remove
+ *            and respond the requested user is removed
+ *            from cifsd user list or not
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsadmin_remove_user(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	char *username = ev->k.u_del.username;
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsadmin_user_del(username);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_REMOVE_USER_RSP;
+	rsp_ev.error = ev->error;
+	strncpy(rsp_ev.k.u_del.username, username, strlen(username));
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("remove user respond failed, err %d\n", ret);
+
+	return ret;
+}
+
+/**
+ * cifsd_kernel_debug() - handler for cifsd debug enable/disable setting
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_kernel_debug(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsd_debug_store(ev->buffer);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_KERNEL_DEBUG_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("cifsd kernel debug setting failed, err %d\n", ret);
+
+	return ret;
+}
+
+/**
+ * cifsd_kernel_caseless_search() - handler for cifsd
+ *		caseless search setting
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_kernel_caseless_search(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev = nlmsg_data(nlh);
+	struct cifsd_uevent rsp_ev;
+	int ret;
+
+	ret = cifsd_caseless_search_store(ev->buffer);
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSADMIN_UEVENT_CASELESS_SEARCH_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
+	if (ret)
+		cifsd_err("cifsd caseless search setting failed, err %d\n",
+				ret);
+	return ret;
+}
+
+/**
+ * cifsstat_init_connection() - handler for cifsstat init
+ * @nlh:       netlink message header
+ *
+ * Return:	0: on success
+ */
+static int cifsstat_init_connection(struct nlmsghdr *nlh)
+{
+	cifsd_debug("init connection\n");
+	cifsstat_pid = nlh->nlmsg_pid;
+	return 0;
+}
+
+/**
+ * cifsd_stat_read() - handler for cifsd stat read
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_stat_read(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev;
+	struct cifsd_uevent rsp_ev;
+	int flag;
+	char *buf;
+	char *client_ip;
+	int ret = 0;
+
+	ev = nlmsg_data(nlh);
+	flag = ev->k.r_stat.flag;
+	client_ip = ev->k.r_stat.statip;
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ret = cifsstat_show(buf, client_ip, flag);
+	if (!ret)
+		cifsd_err("get stat failed\n");
+
+out:
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSSTAT_UEVENT_READ_STAT_RSP;
+	rsp_ev.error = ret;
+	rsp_ev.k.r_stat.flag = flag;
+	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
+	if (ret)
+		cifsd_err(" stat respond failed, err %d\n", ret);
+
+	kfree(buf);
+	return ret;
+}
+
+/**
+ * cifsd_userlist() - handler to list exported cifsd users
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_userlist(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev;
+	struct cifsd_uevent rsp_ev;
+	char *buf;
+	int ret;
+
+	ev = nlmsg_data(nlh);
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ret = cifsd_user_show(buf);
+	if (!ret)
+		cifsd_err("get user list failed\n");
+
+out:
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSSTAT_UEVENT_LIST_USER_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
+	if (ret)
+		cifsd_err(" user list respond failed, err %d\n", ret);
+
+	kfree(buf);
+	return ret;
+}
+
+/**
+ * cifsd_sharelist() - handler to list exported cifsd shares
+ * @nlh:       netlink message header
+ *
+ * Return:      0: on success
+ */
+static int cifsd_sharelist(struct nlmsghdr *nlh)
+{
+	struct cifsd_uevent *ev;
+	struct cifsd_uevent rsp_ev;
+	char *buf;
+	int ret;
+
+	ev = nlmsg_data(nlh);
+	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	ret = cifsd_share_show(buf);
+	if (!ret)
+		cifsd_err("get share list failed\n");
+
+out:
+	memset(&rsp_ev, 0, sizeof(rsp_ev));
+	rsp_ev.type = CIFSSTAT_UEVENT_LIST_SHARE_RSP;
+	rsp_ev.error = ret;
+	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
+	if (ret)
+		cifsd_err(" share list respond failed, err %d\n", ret);
+
+	kfree(buf);
+	return ret;
 }
 
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
@@ -356,6 +711,15 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 			nlh->nlmsg_type, nlh->nlmsg_pid);
 
 	switch (nlh->nlmsg_type) {
+	case CIFSD_KEVENT_EARLY_INIT:
+		err = cifsd_early_init(nlh);
+		break;
+	case CIFSD_KEVENT_CONFIG_USER:
+		err = cifsd_config_user(nlh);
+		break;
+	case CIFSD_KEVENT_CONFIG_SHARE:
+		err = cifsd_config_share(nlh);
+		break;
 	case CIFSD_UEVENT_INIT_CONNECTION:
 		err = cifsd_init_connection(nlh);
 		if (!err) {
@@ -377,6 +741,33 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSD_UEVENT_INOTIFY_RESPONSE:
 		err = cifsd_notify_rsp(nlh);
+		break;
+	case CIFSADMIN_UEVENT_INIT_CONNECTION:
+		err = cifsadmin_init_connection(nlh);
+		break;
+	case CIFSADMIN_KEVENT_QUERY_USER:
+		err = cifsadmin_query_user(nlh);
+		break;
+	case CIFSADMIN_KEVENT_REMOVE_USER:
+		err = cifsadmin_remove_user(nlh);
+		break;
+	case CIFSADMIN_KEVENT_KERNEL_DEBUG:
+		err = cifsd_kernel_debug(nlh);
+		break;
+	case CIFSADMIN_KEVENT_CASELESS_SEARCH:
+		err = cifsd_kernel_caseless_search(nlh);
+		break;
+	case CIFSSTAT_UEVENT_INIT_CONNECTION:
+		err = cifsstat_init_connection(nlh);
+		break;
+	case CIFSSTAT_UEVENT_READ_STAT:
+		err = cifsd_stat_read(nlh);
+		break;
+	case CIFSSTAT_UEVENT_LIST_USER:
+		err = cifsd_userlist(nlh);
+		break;
+	case CIFSSTAT_UEVENT_LIST_SHARE:
+		err = cifsd_sharelist(nlh);
 		break;
 	default:
 		err = -EINVAL;

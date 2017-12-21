@@ -68,6 +68,9 @@ extern spinlock_t connect_list_lock;
 #define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
+#define O_SERVER 1
+#define O_CLIENT 2
+
 extern int cifsd_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
@@ -153,10 +156,6 @@ static inline unsigned int get_attr_##name(unsigned long *val)	\
 	return test_bit(bit, val);				\
 }
 
-/*
- * There could be 2 ways to add path to an export list.
- * One is static, via a conf file. Other is dynamic, via sysfs entry.
- */
 SHARE_ATTR(SH_AVAILABLE, available)	/* default: enabled */
 SHARE_ATTR(SH_BROWSABLE, browsable)	/* default: enabled */
 SHARE_ATTR(SH_GUESTOK, guestok)		/* default: disabled */
@@ -188,6 +187,7 @@ struct cifsd_share {
 	/* global list of shares */
 	struct list_head list;
 	int writeable;
+	unsigned int type;
 };
 
 /* cifsd_tcon is coupled with cifsd_share */
@@ -249,13 +249,17 @@ extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
 			unsigned int tid);
 struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess);
-#ifdef CONFIG_CIFS_SMB2_SERVER
-int cifsd_durable_reconnect(struct cifsd_sess *curr_sess,
-		struct cifsd_durable_state *durable_state,
-		struct file **filp);
-#endif
 struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
 int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
+int cifsstat_show(char *buf, char *ip, int flag);
+int cifsadmin_user_query(char *username);
+int cifsadmin_user_del(char *username);
+int cifsd_user_store(const char *buf, size_t len);
+int cifsd_config_store(const char *buf, size_t len);
+int cifsd_user_show(char *buf);
+int cifsd_share_show(char *buf);
+int cifsd_debug_store(const char *buf);
+int cifsd_caseless_search_store(const char *buf);
 #endif /* __CIFSD_EXPORT_H */

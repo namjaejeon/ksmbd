@@ -585,6 +585,11 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				same_stream = 1;
 			}
 
+			if (prev_fp->is_durable) {
+				prev_fp->is_durable = 0;
+				continue;
+			}
+
 			if (prev_fp->attrib_only != curr_fp->attrib_only)
 				continue;
 

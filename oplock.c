@@ -30,7 +30,6 @@
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 bool lease_enable = true;
-bool durable_enable = true;
 #endif
 
 LIST_HEAD(lease_table_list);
@@ -42,9 +41,6 @@ MODULE_PARM_DESC(oplocks_enable, "Enable or disable oplocks. Default: y/Y/1");
 #ifdef CONFIG_CIFS_SMB2_SERVER
 module_param(lease_enable, bool, 0644);
 MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
-
-module_param(durable_enable, bool, 0644);
-MODULE_PARM_DESC(durable_enable, "Enable or disable lease. Default: y/Y/1");
 #endif
 
 /**
@@ -317,14 +313,18 @@ void close_id_del_oplock(struct cifsd_file *fp)
 			atomic_set(&opinfo->breaking_cnt, 0);
 			wake_up_interruptible(&opinfo->oplock_brk);
 		}
+		wait_event_timeout(opinfo->op_end_wq,
+				opinfo->op_state == OPLOCK_STATE_NONE,
+				OPLOCK_WAIT_TIME);
 	} else {
-		mutex_lock(&lease_list_lock);
-		if (opinfo->is_lease)
-			free_lease(opinfo);
 		atomic_dec(&fp->f_mfp->op_count);
-		kfree(opinfo);
-		mutex_unlock(&lease_list_lock);
 	}
+
+	mutex_lock(&lease_list_lock);
+	if (opinfo->is_lease)
+		free_lease(opinfo);
+	kfree(opinfo);
+	mutex_unlock(&lease_list_lock);
 }
 
 
@@ -855,12 +855,10 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
 	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
-		mutex_lock(&lease_list_lock);
-		if (brk_opinfo->is_lease)
-			free_lease(brk_opinfo);
-		kfree(brk_opinfo);
+		brk_opinfo->op_state = OPLOCK_STATE_NONE;
+		atomic_dec(&(brk_opinfo->o_fp->f_mfp->op_count));
+		wake_up_interruptible(&brk_opinfo->op_end_wq);
 		err = -ENOENT;
-		mutex_unlock(&lease_list_lock);
 	}
 
 	return err;
@@ -1162,8 +1160,6 @@ void smb_break_all_levII_oplock(struct connection *conn,
 
 	mfp = fp->f_mfp;
 	op = fp->f_opinfo;
-	if (!op)
-		return;
 
 	list_for_each_entry_safe(brk_fp, fptmp, &mfp->m_fp_list, node) {
 		brk_op = brk_fp->f_opinfo;
@@ -1502,6 +1498,7 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 	char *name;
 	bool found = false;
 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
+	int len;
 
 	data_offset = (char *)req + 4 + le32_to_cpu(req->CreateContextsOffset);
 	cc = (struct create_context *)data_offset;
@@ -1511,7 +1508,8 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 		if (le16_to_cpu(cc->NameLength) < 4)
 			return ERR_PTR(-EINVAL);
 
-		if (strncmp(name, str, 4)) {
+		len = strlen(str);
+		if (strncmp(name, str, len)) {
 			next = le32_to_cpu(cc->Next);
 			continue;
 		}
@@ -1546,6 +1544,33 @@ void create_durable_rsp_buf(char *cc)
 	buf->Name[1] = 'H';
 	buf->Name[2] = 'n';
 	buf->Name[3] = 'Q';
+}
+
+/**
+ * create_durable_buf() - create durable handle v2 context
+ * @cc:	buffer to create durable context response
+ */
+void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp)
+{
+	struct create_durable_v2_rsp *buf;
+
+	buf = (struct create_durable_v2_rsp *)cc;
+	memset(buf, 0, sizeof(struct create_durable_rsp));
+	buf->ccontext.DataOffset = cpu_to_le16(offsetof
+			(struct create_durable_rsp, Data));
+	buf->ccontext.DataLength = cpu_to_le32(8);
+	buf->ccontext.NameOffset = cpu_to_le16(offsetof
+			(struct create_durable_rsp, Name));
+	buf->ccontext.NameLength = cpu_to_le16(4);
+	/* SMB2_CREATE_DURABLE_HANDLE_RESPONSE_V2 is "DH2Q" */
+	buf->Name[0] = 'D';
+	buf->Name[1] = 'H';
+	buf->Name[2] = '2';
+	buf->Name[3] = 'Q';
+
+	buf->Timeout = fp->durable_timeout;
+	if (fp->is_persistent)
+		buf->Flags = SMB2_FLAGS_REPLAY_OPERATIONS;
 }
 
 /**
@@ -1649,8 +1674,8 @@ int smb2_check_durable_oplock(struct cifsd_file *fp,
 {
 	struct oplock_info *opinfo = fp->f_opinfo;
 
-	if (opinfo->is_lease) {
-		if (version == 1 && !lctx) {
+	if (opinfo && opinfo->is_lease) {
+		if (!lctx) {
 			cifsd_err("open does not include lease\n");
 			return -EBADF;
 		}

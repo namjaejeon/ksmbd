@@ -31,12 +31,6 @@
 #define SHARE_MAX_DATA_LEN	PATH_MAX
 #define MAX_NT_PWD_LEN		128
 
-/*
- * There could be 2 ways to add path to an export list.
- * One is static, via a conf file. Other is dynamic, via sysfs entry.
- */
-struct cifsd_sysfs_obj *sysobj;
-
 LIST_HEAD(cifsd_usr_list);
 LIST_HEAD(cifsd_share_list);
 LIST_HEAD(cifsd_connection_list);
@@ -669,16 +663,12 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 }
 
 /**
- * share_show() - show a list of exported shares
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing share list output
+ * cifsd_share_show() - show a list of exported shares
+ * @buf:       buffer containing share list output
  *
  * Return:      output buffer length
- */
-static ssize_t share_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
+ **/
+int cifsd_share_show(char *buf)
 {
 	struct cifsd_share *share;
 	struct list_head *tmp;
@@ -747,17 +737,12 @@ static ssize_t share_store(struct kobject *kobj,
 }
 
 /**
- * user_show() - show a list of added user
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing user list output
- *
+ * cifsd_user_show() - show a list of added user
+ * @buf:       buffer containing user list output
+
  * Return:      output buffer length
  */
-static ssize_t user_show(struct kobject *kobj,
-			 struct kobj_attribute *kobj_attr,
-			 char *buf)
-
+int cifsd_user_show(char *buf)
 {
 	struct cifsd_usr *usr, *tmp;
 	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
@@ -778,17 +763,53 @@ static ssize_t user_show(struct kobject *kobj,
 }
 
 /**
- * user_store() - add a user in valid user list
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsadmin_user_query() - search a user from user list
+ * @username:	buffer containing user name to search
+ *
+ * Return:	0: for username found
+ *	  -EINVAL: if not found from cifsd user list
+ */
+int cifsadmin_user_query(char *username)
+{
+	struct cifsd_usr *usr;
+
+	usr = cifsd_is_user_present(username);
+	if (usr && !strcmp(username, usr->name))
+		return 0;
+
+	return -EINVAL;
+}
+
+/**
+ * cifsadmin_user_del() - delete a user from user list
+ * @username:	buffer containing user name to delete
+ *
+ * Return:      0: for username found and deleted
+ *	  -EINVAL: if not found from cifsd user list
+ */
+int cifsadmin_user_del(char *username)
+{
+	struct cifsd_usr *usr;
+
+	usr = cifsd_is_user_present(username);
+	if (usr && !strcmp(username, usr->name)) {
+		list_del(&usr->list);
+		kfree(usr->name);
+		kfree(usr);
+		return 0;
+	}
+
+	return -EINVAL;
+}
+
+/**
+ * cifsd_user_store() - add a user in valid user list
  * @buf:	buffer containing user name to be added
  * @len:	user name buf length
  *
  * Return:      user name buf length on success, otherwise error
  */
-static ssize_t user_store(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  const char *buf, size_t len)
+int cifsd_user_store(const char *buf, size_t len)
 {
 	char *usrname, *passwd;
 	int rc, i;
@@ -810,7 +831,6 @@ static ssize_t user_store(struct kobject *kobj,
 				kstrtouint(parse_ptr[3], 10, &gid.val)) {
 			goto out;
 		}
-
 		cifsd_debug("uid : %u, gid %u\n", uid.val, gid.val);
 	} else {
 		uid.val = 0;
@@ -841,87 +861,46 @@ out:
 }
 
 /**
- * debug_store() - enable debug prints
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsd_debug_store() - enable debug prints
  * @buf:	buffer containing debug enable disable setting
- * @len:	buf length of debug enable disable setting
  *
- * Return:      debug setting buf length
+ * Return:	0: on success, -EINVAL on fail
  */
-static ssize_t debug_store(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   const char *buf, size_t len)
+int cifsd_debug_store(const char *buf)
 {
 	long int value;
 
 	if (kstrtol(buf, 10, &value))
-		return len;
+		return -EINVAL;
 
 	if (value > 0)
 		cifsd_debug_enable = value;
 	else if (value == 0)
 		cifsd_debug_enable = 0;
 
-	return len;
+	return 0;
 }
 
 /**
- * debug_show() - show debug print enable disable setting
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing debug print setting
- *
- * Return:      output buffer length
- */
-static ssize_t debug_show(struct kobject *kobj,
-			  struct kobj_attribute *kobj_attr,
-			  char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_debug_enable);
-}
-
-/**
- * caseless_search_store() - enable disable case insensitive search of files
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsd_caseless_search_store() - enable disable case insensitive
+ search of files
  * @buf:	buffer containing case setting
- * @len:	buf length of case setting
  *
- * Return:      case setting buf length
+ * Return:      0: success, -EINVAL: on fail
  */
-static ssize_t caseless_search_store(struct kobject *kobj,
-				     struct kobj_attribute *kobj_attr,
-				     const char *buf, size_t len)
+int cifsd_caseless_search_store(const char *buf)
 {
 	long int value;
 
 	if (kstrtol(buf, 10, &value))
-		goto out;
+		return -EINVAL;
+
 	if (value > 0)
 		cifsd_caseless_search = 1;
 	else if (value == 0)
 		cifsd_caseless_search = 0;
 
-out:
-	return len;
-}
-
-/**
- * caseless_search_show() - show caseless search enable disable setting status
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing caseless search setting
- *
- * Return:      output buffer length
- */
-static ssize_t caseless_search_show(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		char *buf)
-
-{
-	return snprintf(buf, PAGE_SIZE, "%d\n", cifsd_caseless_search);
+	return 0;
 }
 
 enum {
@@ -1511,39 +1490,6 @@ static ssize_t show_share_config(char *buf, int offset,
 }
 
 /**
- * config_show() - show config setting
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing config setting
- *
- * Return:      output buffer length
- */
-static ssize_t config_show(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   char *buf)
-
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	int cum = 0;
-	int ret = 0;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		/* no need to show IPC$ share details */
-		if (!share->path)
-			continue;
-
-		ret = show_share_config(buf, cum, share);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	return cum;
-}
-
-/**
  * config_store() - update config settings
  * @kobj:	kobject of the modules
  * @kobj_attr:	kobject attribute of the modules
@@ -1562,6 +1508,21 @@ static ssize_t config_store(struct kobject *kobj,
 	return len;
 }
 
+/**
+ * cifsd_config_store() - update config settings
+ * @buf:	buffer containing config setting
+ * @len:	buf length of config setting
+ *
+ * Return:      config setting buf length
+ */
+
+int cifsd_config_store(const char *buf, size_t len)
+{
+	if (cifsd_parse_share_options(buf))
+		return -EINVAL;
+
+	return len;
+}
 /**
  * show_server_stat() - show cifsd server stat
  * @buf:	destination buffer for stat info
@@ -1674,136 +1635,40 @@ static ssize_t stat_store(struct kobject *kobj,
 }
 
 /**
- * stat_show() - show cifsd stat
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
+ * cifsstat_show() - show cifsd stat
  * @buf:	buffer containing stat info
+ * @ip:		containing ip for client stat
+ * @flag:	flag for extracting cifsstat info
  *
  * Return:      output buffer length
  */
-static ssize_t stat_show(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		char *buf)
+int cifsstat_show(char *buf, char *ip, int flag)
 {
 	struct list_head *tmp;
 	struct connection *conn;
 	int ret = 0;
 
-	if (!strlen(statIP)) {
+	if (flag & O_SERVER) {
 		ret = show_server_stat(buf);
+		flag &= ~O_SERVER;
 		goto out;
-	} else {
+	} else if (flag & O_CLIENT) {
 		int len1, len2;
-		len1 = strlen(statIP);
 
+		len1 = strlen(ip);
 		list_for_each(tmp, &cifsd_connection_list) {
 			conn = list_entry(tmp, struct connection, list);
 			len2 = strlen(conn->peeraddr);
-			if (len1 == len2 && !strncmp(statIP,
+			if (len1 == len2 && !strncmp(ip,
 				conn->peeraddr, len1)) {
 				ret = show_client_stat(buf, conn);
 				break;
 			}
 		}
-		memset(statIP, 0, MAX_ADDRBUFLEN);
+		flag &= ~O_CLIENT;
 	}
-
 out:
 	return ret;
-}
-
-/* cifsd sysfs entries */
-static ssize_t cifsd_attr_show(struct kobject *kobj,
-				 struct attribute *attr, char *buf)
-{
-	struct kobj_attribute *kobj_attr =
-			container_of(attr, struct kobj_attribute, attr);
-	return kobj_attr->show(kobj, kobj_attr, buf);
-}
-
-
-static ssize_t cifsd_attr_store(struct kobject *kobj,
-				  struct attribute *attr,
-				  const char *buf, size_t len)
-{
-	struct kobj_attribute *kobj_attr =
-			container_of(attr, struct kobj_attribute, attr);
-	return kobj_attr->store(kobj, kobj_attr, buf, len);
-}
-
-#define SMB_ATTR(_name) \
-	static struct kobj_attribute _name##_attr = \
-__ATTR(_name, 0755, _name##_show, _name##_store)
-
-SMB_ATTR(share);
-SMB_ATTR(user);
-SMB_ATTR(debug);
-SMB_ATTR(caseless_search);
-SMB_ATTR(config);
-SMB_ATTR(stat);
-
-static struct attribute *cifsd_sysfs_attrs[] = {
-	&share_attr.attr,
-	&user_attr.attr,
-	&debug_attr.attr,
-	&caseless_search_attr.attr,
-	&config_attr.attr,
-	&stat_attr.attr,
-	NULL,
-};
-
-struct cifsd_sysfs_obj {
-	struct kobject kobj;
-	struct completion kobj_unregister;
-};
-
-static const struct sysfs_ops cifsd_attr_ops = {
-	.show   = cifsd_attr_show,
-	.store  = cifsd_attr_store,
-};
-
-static void cifsd_attr_release(struct kobject *kobj)
-{
-	complete(&sysobj->kobj_unregister);
-}
-
-struct kobj_type cifsdfs_ktype  = {
-	.default_attrs  = cifsd_sysfs_attrs,
-	.sysfs_ops      = &cifsd_attr_ops,
-	.release        = cifsd_attr_release,
-};
-
-/**
- * cifsd_init_sysfs_parser() - init cifsd sysfs entries
- *
- * Return:      0 on success, otherwise error
- */
-static int cifsd_init_sysfs_parser(void)
-{
-	int ret;
-	sysobj = kzalloc(sizeof(struct cifsd_sysfs_obj), GFP_NOFS);
-	if (!sysobj)
-		return -ENOMEM;
-
-	init_completion(&sysobj->kobj_unregister);
-	ret = kobject_init_and_add(&sysobj->kobj, &cifsdfs_ktype,
-							fs_kobj, "cifsd");
-	if (ret)
-		kfree(sysobj);
-
-	return 0;
-}
-
-/**
- * cifsd_init_sysfs_parser() - cleanup cifsd sysfs entries at modules exit
- *
- * Return:      0 on success, otherwise error
- */
-static void exit_sysfs_parser(void)
-{
-	kobject_put(&sysobj->kobj);
-	wait_for_completion(&sysobj->kobj_unregister);
-	kfree(sysobj);
 }
 
 /**
@@ -1898,15 +1763,8 @@ int cifsd_export_init(void)
 	if (rc)
 		return rc;
 
-	rc = cifsd_init_sysfs_parser();
-	if (rc) {
-		cifsd_share_free();
-		return rc;
-	}
-
 	rc = cifsd_init_global_params();
 	if (rc) {
-		exit_sysfs_parser();
 		cifsd_share_free();
 		return rc;
 	}
@@ -1920,7 +1778,6 @@ int cifsd_export_init(void)
  */
 void cifsd_export_exit(void)
 {
-	exit_sysfs_parser();
 	cifsd_free_global_params();
 	cifsd_user_free();
 	cifsd_share_free();
