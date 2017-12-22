@@ -364,14 +364,22 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 {
 	struct fidtable *ftab;
+	struct cifsd_file *fp;
 
 	if (!sess)
 		return;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
-	if (ftab->fileid[id])
-		ftab->fileid[id] = NULL;
+	fp = ftab->fileid[id];
+	ftab->fileid[id] = NULL;
+	spin_lock(&fp->f_lock);
+	kfree(fp->filename);
+	if (fp->is_stream)
+		kfree(fp->stream.name);
+	fp->f_mfp = NULL;
+	spin_unlock(&fp->f_lock);
+	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -395,10 +403,18 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	fp = cifsd_get_global_fp(p_id);
-	if (!fp || fp->sess != sess) {
-		cifsd_debug("Invalid id for close: %llu\n", id);
-		return -EINVAL;
+	if (IS_SMB2(sess->conn)) {
+		fp = cifsd_get_global_fp(p_id);
+		if (!fp || fp->sess != sess) {
+			cifsd_err("Invalid id for close: %llu\n", p_id);
+			return -EINVAL;
+		}
+	} else {
+		fp = get_id_from_fidtable(sess, id);
+		if (!fp) {
+			cifsd_err("Invalid id for close: %llu\n", id);
+			return -EINVAL;
+		}
 	}
 
 	spin_lock(&fp->f_lock);
@@ -465,13 +481,15 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		mfp_free(mfp);
 	}
 
+	if (IS_SMB2(sess->conn)) {
+		err = close_persistent_id(fp->persistent_id);
+		if (err)
+			return -ENOENT;
+	}
 	delete_id_from_fidtable(sess, id);
 	if (sess)
 		cifsd_close_id(&sess->fidtable, id);
 	filp_close(filp, (struct files_struct *)filp);
-	err = close_persistent_id(fp->persistent_id);
-	if (err)
-		return -ENOENT;
 	return 0;
 }
 
@@ -729,20 +747,11 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
  */
 void delete_durable_id_from_fidtable(uint64_t id)
 {
-	struct cifsd_file *fp;
 	struct fidtable *ftab;
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
-	spin_lock(&fp->f_lock);
-	kfree(fp->filename);
-	if (fp->is_stream)
-		kfree(fp->stream.name);
-	fp->f_mfp = NULL;
-	spin_unlock(&fp->f_lock);
-	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&global_fidtable.fidtable_lock);
 }
 
