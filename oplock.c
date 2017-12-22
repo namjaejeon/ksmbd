@@ -1163,6 +1163,9 @@ void smb_break_all_levII_oplock(struct connection *conn,
 
 	list_for_each_entry_safe(brk_fp, fptmp, &mfp->m_fp_list, node) {
 		brk_op = brk_fp->f_opinfo;
+		if (!brk_op)
+			continue;
+
 		if (brk_op->is_smb2) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			if (brk_op->is_lease && (brk_op->o_lease->state &

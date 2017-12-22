@@ -808,6 +808,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	struct cifsd_file *fp;
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)work->buf;
 	uint64_t sess_id;
+	struct cifsd_mfile *mfp;
 
 	/* first init id as invalid id - 0xFFFF ? */
 	*ret_id = 0xFFFF;
@@ -832,6 +833,22 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		cifsd_err("id insert failed\n");
 		goto err_out;
 	}
+
+	mfp = mfp_lookup_inode(FP_INODE(fp));
+	if (!mfp) {
+		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+		if (!mfp) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+
+		mfp_init(mfp, fp);
+	}
+
+	/* Add fp to master fp list. */
+	list_add(&fp->node, &mfp->m_fp_list);
+	atomic_inc(&mfp->m_count);
+	fp->f_mfp = mfp;
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)

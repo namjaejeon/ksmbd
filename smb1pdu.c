@@ -1882,29 +1882,11 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	fp = get_id_from_fidtable(sess, fid);
 	if (fp) {
-		struct cifsd_mfile *mfp;
-
-		mfp = mfp_lookup_inode(FP_INODE(fp));
-		if (!mfp) {
-			mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-			if (!mfp) {
-				err = -ENOMEM;
-				goto free_path;
-			}
-
-			mfp_init(mfp, fp);
-		}
-
-		/* Add fp to master fp list. */
-		list_add(&fp->node, &mfp->m_fp_list);
-		atomic_inc(&mfp->m_count);
-		fp->f_mfp = mfp;
-
 		if (le32_to_cpu(req->DesiredAccess) & DELETE)
 			fp->is_nt_open = 1;
 		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
 				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
-			mfp->m_flags |= S_DEL_ON_CLS;
+			fp->f_mfp->m_flags |= S_DEL_ON_CLS;
 	}
 
 	/* open success, send back response */
