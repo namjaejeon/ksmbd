@@ -40,7 +40,6 @@ __u16 vid = 1;
 __u16 tid = 1;
 int cifsd_debug_enable;
 int cifsd_caseless_search;
-static char statIP[MAX_ADDRBUFLEN];
 static inline void free_share(struct cifsd_share *share);
 
 /* Number of shares defined on server */
@@ -574,34 +573,6 @@ struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess)
 }
 
 /**
- * check_sharepath() - check if a share path is already exported
- * @path:	share path to check
- *
- * Return:      false if share is already exported, otherwise true
- */
-static bool check_sharepath(char *path)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	int srclen, targetlen = 0;
-
-	srclen = strlen(path);
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path) {
-			targetlen = strlen(share->path);
-			if (srclen == targetlen) {
-				if (!strncmp(path, share->path, srclen))
-					return false;
-			}
-		}
-	}
-
-	return true;
-}
-
-/**
  * getUser() - check if a user name is already added
  * @name:	user name to be checked
  * @pass:	user password
@@ -691,49 +662,6 @@ int cifsd_share_show(char *buf)
 	}
 
 	return total;
-}
-
-/**
- * share_store() - add a share path in exported share list
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing share path to be exported
- * @len:	share name buf length
- *
- * Return:      share name buf length on success, otherwise error
- */
-static ssize_t share_store(struct kobject *kobj,
-			   struct kobj_attribute *kobj_attr,
-			   const char *buf, size_t len)
-{
-	char *share, *path;
-	int rc;
-	char *parse_ptr[2];
-
-	rc = parse_user_strings(buf, parse_ptr, 2, len);
-	if (rc < 2)
-		return -EINVAL;
-
-	share = parse_ptr[0];
-	path = parse_ptr[1];
-
-	/* check if sharepath is already exported */
-	rc = check_sharepath(path);
-	if (!rc) {
-		cifsd_err("path %s is already exported\n", path);
-		kfree(share);
-		kfree(path);
-		return -EEXIST;
-	}
-
-	rc = add_share(share, path);
-	if (rc) {
-		kfree(share);
-		kfree(path);
-		return rc;
-	}
-
-	return len;
 }
 
 /**
@@ -1327,188 +1255,6 @@ config_err:
 }
 
 /**
- * show_share_config() - show cifsd share config
- * @buf:	destination buffer for config info
- * @offset:	offset in destination buffer
- * @share:	show config info of this share
- *
- * Return:      output buffer length
- */
-static ssize_t show_share_config(char *buf, int offset,
-		struct cifsd_share *share)
-{
-	int cum = offset;
-	int ret = 0;
-	int limit = PAGE_SIZE - offset;
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum, "[%s]\n",
-				share->sharename);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.comment) {
-		ret = snprintf(buf + cum, limit - cum, "\tcomment = %s\n",
-				share->config.comment);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum, "\tpath = %s\n",
-				share->path);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.allow_hosts) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tallow hosts = %s\n",
-				share->config.allow_hosts);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.deny_hosts) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tdeny hosts = %s\n",
-				share->config.deny_hosts);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.invalid_users) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tinvalid users = %s\n",
-				share->config.invalid_users);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.read_list) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tread list = %s\n",
-				share->config.read_list);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.valid_users) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tvalid users = %s\n",
-				share->config.valid_users);
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tavailable = %d\n",
-				get_attr_available(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tbrowsable = %d\n",
-				get_attr_browsable(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tguest ok = %d\n",
-				get_attr_guestok(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tguest only = %d\n",
-				get_attr_guestonly(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum, "\toplocks = %d\n",
-				get_attr_oplocks(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\twriteable = %d\n",
-				share->writeable);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\tmax connections = %u\n",
-				share->config.max_connections);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	if (cum < limit && share->config.write_list) {
-		ret = snprintf(buf + cum, limit - cum,
-				"\twrite list = %s\n",
-				share->config.write_list);
-		if (ret < 0)
-			return cum;
-	}
-
-	if (cum < limit) {
-		ret = snprintf(buf + cum, limit - cum,
-			"\tstore dos attributes = %d\n",
-			get_attr_store_dos(&share->config.attr));
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	return cum;
-}
-
-/**
- * config_store() - update config settings
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing config setting
- * @len:	buf length of config setting
- *
- * Return:      config setting buf length
- */
-static ssize_t config_store(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		const char *buf, size_t len)
-{
-	if (cifsd_parse_share_options(buf))
-		return -EINVAL;
-
-	return len;
-}
-
-/**
  * cifsd_config_store() - update config settings
  * @buf:	buffer containing config setting
  * @len:	buf length of config setting
@@ -1613,25 +1359,6 @@ static ssize_t show_client_stat(char *buf, struct connection *conn)
 	}
 
 	return cum;
-}
-
-/**
- * stat_store() - update client stat IP
- * @kobj:	kobject of the modules
- * @kobj_attr:	kobject attribute of the modules
- * @buf:	buffer containing config setting
- * @len:	buf length of client stat IP setting
- *
- * Return:      client stat IP setting buf length
- */
-static ssize_t stat_store(struct kobject *kobj,
-		struct kobj_attribute *kobj_attr,
-		const char *buf, size_t len)
-{
-	if (len > 1 && len < MAX_ADDRBUFLEN)
-		strncpy(statIP, buf, len);
-
-	return len;
 }
 
 /**
