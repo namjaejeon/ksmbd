@@ -1595,13 +1595,14 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct path path;
 	struct kstat stat;
 	int oplock_flags, file_info, open_flags, access_flags;
 	char *name;
 	char *conv_name;
 	bool file_present = true, extended_reply;
-	__u64 alloc_size = 0, create_time;
+	__u64 alloc_size = 0;
 	__u16 fid;
 	umode_t mode = 0;
 	int err;
@@ -1934,16 +1935,32 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	else
 		rsp->CreateAction = cpu_to_le32(file_info);
 
+	if (file_present) {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
+			char *create_time = NULL;
 
-	create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-			cifs_UnixTimeToNT(stat.mtime),
-			cifs_UnixTimeToNT(stat.atime));
+			err = smb_find_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			if (err > 0)
+				fp->create_time = *((__u64 *)create_time);
+			kvfree(create_time);
+			err = 0;
+		}
+	} else {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
+			err = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			if (err)
+				cifsd_debug("failed to store creation time in EA\n");
+			err = 0;
+		}
+	}
 
-	if (!create_time)
-		create_time = min(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime));
-
-	rsp->CreationTime = cpu_to_le64(create_time);
+	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
@@ -7323,6 +7340,9 @@ int smb_setattr(struct smb_work *smb_work)
 
 	if (attrs.ia_mode)
 		attrs.ia_valid |= ATTR_MODE;
+
+	attrs.ia_mtime.tv_sec = le32_to_cpu(req->LastWriteTime);
+	attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 
 	err = smb_vfs_setattr(smb_work->sess, name, 0, &attrs);
 	if (err)
