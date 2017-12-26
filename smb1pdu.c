@@ -3395,14 +3395,6 @@ int query_path_info(struct smb_work *smb_work)
 	struct path path;
 	struct kstat st;
 	int rc;
-	FILE_ALL_INFO *ainfo;
-	FILE_UNIX_BASIC_INFO *unix_info;
-	FILE_BASIC_INFO *basic_info;
-	FILE_STANDARD_INFO *standard_info;
-	FILE_INFO_STANDARD *infos;
-	FILE_EA_INFO *ea_info;
-	ALT_NAME_INFO *alt_name_info;
-	struct file_internal_info *iinfo;
 	char *ptr;
 
 	if (smb_work->tcon->share->is_pipe == true) {
@@ -3443,6 +3435,9 @@ int query_path_info(struct smb_work *smb_work)
 
 	switch (req_params->InformationLevel) {
 	case SMB_INFO_STANDARD:
+	{
+		FILE_INFO_STANDARD *infos;
+
 		cifsd_debug("SMB_INFO_STANDARD\n");
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
@@ -3475,7 +3470,11 @@ int query_path_info(struct smb_work *smb_work)
 		rsp->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_STANDARD_INFO:
+	{
+		FILE_STANDARD_INFO *standard_info;
+
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3503,8 +3502,11 @@ int query_path_info(struct smb_work *smb_work)
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_BASIC_INFO:
+	{
+		FILE_BASIC_INFO *basic_info;
+
 		cifsd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3545,8 +3547,11 @@ int query_path_info(struct smb_work *smb_work)
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_EA_INFO:
+	{
+		FILE_EA_INFO *ea_info;
+
 		cifsd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3570,8 +3575,11 @@ int query_path_info(struct smb_work *smb_work)
 		ea_info->EaSize = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_ALL_INFO:
+	{
+		FILE_ALL_INFO *ainfo;
+
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3617,7 +3625,11 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->FileNameLength = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_ALT_NAME_INFO:
+	{
+		ALT_NAME_INFO *alt_name_info;
+
 		cifsd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3642,7 +3654,11 @@ int query_path_info(struct smb_work *smb_work)
 				name, alt_name_info->FileName);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
+	{
+		FILE_UNIX_BASIC_INFO *unix_info;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 0;
@@ -3662,7 +3678,11 @@ int query_path_info(struct smb_work *smb_work)
 		init_unix_info(unix_info, &st);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_INTERNAL_INFO:
+	{
+		struct file_internal_info *iinfo;
+
 		cifsd_debug("SMB_QUERY_FILE_INTERNAL_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3684,6 +3704,7 @@ int query_path_info(struct smb_work *smb_work)
 		iinfo->UniqueId = cpu_to_le64(st.ino);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_LINK:
 		cifsd_debug("SMB_QUERY_FILE_UNIX_LINK\n");
 		rc = smb_readlink(smb_work, &path);
@@ -6137,6 +6158,7 @@ int query_file_info_pipe(struct smb_work *smb_work)
  */
 int query_file_info(struct smb_work *smb_work)
 {
+	struct connection *conn = smb_work->conn;
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
@@ -6145,11 +6167,6 @@ int query_file_info(struct smb_work *smb_work)
 	struct cifsd_file *fp;
 	struct kstat st;
 	struct file *filp;
-	FILE_STANDARD_INFO *standard_info;
-	FILE_BASIC_INFO *basic_info;
-	FILE_EA_INFO *ea_info;
-	FILE_UNIX_BASIC_INFO *uinfo;
-	FILE_ALL_INFO *ainfo;
 	__u16 fid;
 	char *ptr;
 	int rc = 0;
@@ -6185,6 +6202,9 @@ int query_file_info(struct smb_work *smb_work)
 	switch (req_params->InformationLevel) {
 
 	case SMB_QUERY_FILE_STANDARD_INFO:
+	{
+		FILE_STANDARD_INFO *standard_info;
+
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6212,7 +6232,11 @@ int query_file_info(struct smb_work *smb_work)
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_BASIC_INFO:
+	{
+		FILE_BASIC_INFO *basic_info;
+
 		cifsd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6246,8 +6270,11 @@ int query_file_info(struct smb_work *smb_work)
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_EA_INFO:
+	{
+		FILE_EA_INFO *ea_info;
+
 		cifsd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6271,7 +6298,11 @@ int query_file_info(struct smb_work *smb_work)
 		ea_info->EaSize = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
+	{
+		FILE_UNIX_BASIC_INFO *uinfo;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6295,7 +6326,54 @@ int query_file_info(struct smb_work *smb_work)
 		init_unix_info(uinfo, &st);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
+	case SMB_QUERY_FILE_NAME_INFO:
+	{
+		FILE_NAME_INFO *name_info;
+		int uni_filename_len;
+		char *filename;
+
+		cifsd_debug("SMB_QUERY_FILE_NAME_INFO\n");
+		ptr = (char *)&rsp->Pad + 1;
+		memset(ptr, 0, 4);
+		name_info = (FILE_NAME_INFO *)(ptr + 4);
+
+		filename = convert_to_nt_pathname(fp->filename,
+			smb_work->tcon->share->path);
+		if (!filename) {
+			rc = -EIO;
+			goto err_out;
+		}
+		uni_filename_len = smbConvertToUTF16(
+				(__le16 *)name_info->FileName,
+				filename, PATH_MAX,
+				conn->local_nls, 0);
+		kfree(filename);
+		uni_filename_len *= 2;
+		name_info->FileNameLength = cpu_to_le32(uni_filename_len);
+
+		rsp_hdr->WordCount = 10;
+		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalDataCount = uni_filename_len + 4;
+		rsp->t2.Reserved = 0;
+		rsp->t2.ParameterCount = 2;
+		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterDisplacement = 0;
+		rsp->t2.DataCount = uni_filename_len + 4;
+		rsp->t2.DataOffset = 60;
+		rsp->t2.DataDisplacement = 0;
+		rsp->t2.SetupCount = 0;
+		rsp->t2.Reserved1 = 0;
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
+		rsp->ByteCount = 2 + uni_filename_len + 4 + 3;
+		rsp->Pad = 0;
+		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		break;
+	}
 	case SMB_QUERY_FILE_ALL_INFO:
+	{
+		FILE_ALL_INFO *ainfo;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6334,6 +6412,7 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->FileNameLength = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	default:
 		cifsd_err("query path info not implemnted for %x\n",
 				req_params->InformationLevel);

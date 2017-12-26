@@ -1250,6 +1250,11 @@ typedef struct {
 	char FileName[1];
 } __attribute__((packed)) ALT_NAME_INFO;
 
+typedef struct {
+	__le32 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FILE_NAME_INFO;
+
 typedef struct { /* data block encoding of response to level 263 QPathInfo */
 	__le64 CreationTime;
 	__le64 LastAccessTime;

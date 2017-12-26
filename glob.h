@@ -652,6 +652,7 @@ extern int check_invalid_char(char *filename);
 extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
 extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
+extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);

@@ -911,3 +911,27 @@ int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 
 	return xattr_stream_name_size;
 }
+
+/**
+ * convert_to_nt_pathname() - extract and return windows path string
+ *      whose share directory prefix was removed from file path
+ * @filename : unix filename
+ * @sharepath: share path string
+ *
+ * Return : windows path string or error
+ */
+
+char *convert_to_nt_pathname(char *filename, char *sharepath)
+{
+	char *ab_pathname = NULL;
+	int len;
+
+	len = strlen(sharepath);
+	if (!strncmp(filename, sharepath, len)) {
+		ab_pathname = kmalloc(strlen(filename) - len, GFP_KERNEL);
+		strcpy(ab_pathname, &filename[len]);
+		convert_delimiter(ab_pathname, 1);
+	}
+
+	return ab_pathname;
+}
