@@ -354,6 +354,30 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	return file;
 }
 
+struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
+	char *filename)
+{
+	struct cifsd_file *file = NULL;
+	struct fidtable *ftab;
+	int id;
+
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
+	spin_unlock(&sess->fidtable.fidtable_lock);
+
+	if (!ftab)
+		return NULL;
+
+	for (id = 0; id < ftab->max_fids; id++) {
+		file = ftab->fileid[id];
+		if (file && !strcmp(file->filename, filename))
+			break;
+		file = NULL;
+	}
+
+	return file;
+}
+
 /**
  * delete_id_from_fidtable() - delete a fid from fid table
  * @conn:	TCP server instance of connection
@@ -808,9 +832,9 @@ void destroy_global_fidtable(void)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_dentry_open(struct smb_work *work, const struct path *path,
-		    int flags, __u16 *ret_id, int *oplock, int option,
-		    int fexist)
+struct cifsd_file *smb_dentry_open(struct smb_work *work,
+	const struct path *path, int flags, __u16 *ret_id,
+	int *oplock, int option, int fexist)
 {
 	struct file *filp;
 	int id, err = 0;
@@ -824,7 +848,7 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 
 	id = cifsd_get_unused_id(&work->sess->fidtable);
 	if (id < 0)
-		return id;
+		return NULL;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -880,11 +904,11 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	}
 
 	*ret_id = id;
-	return 0;
+	return fp;
 
 err_out:
 	cifsd_close_id(&work->sess->fidtable, id);
-	return err;
+	return NULL;
 }
 
 /**

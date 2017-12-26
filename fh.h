@@ -248,6 +248,8 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
 	struct cifsd_tcon *tcon);
 struct cifsd_file *lookup_fp_clguid(char *createguid);
 struct cifsd_file *lookup_fp_app_id(char *app_id);
+struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
+	char *filename);
 #endif
 
 #endif /* __CIFSD_FH_H */

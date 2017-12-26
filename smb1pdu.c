@@ -1874,20 +1874,18 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	}
 
 	/* open  file and get FID */
-	err = smb_dentry_open(smb_work, &path, open_flags,
-			      &fid, &oplock_flags,
-				le32_to_cpu(req->CreateOptions), file_present);
-	if (err)
+	fp = smb_dentry_open(smb_work, &path, open_flags,
+		&fid, &oplock_flags, le32_to_cpu(req->CreateOptions),
+		file_present);
+	if (!fp)
 		goto free_path;
+	fp->filename = conv_name;
 
-	fp = get_id_from_fidtable(sess, fid);
-	if (fp) {
-		if (le32_to_cpu(req->DesiredAccess) & DELETE)
-			fp->is_nt_open = 1;
-		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
-				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
-			fp->f_mfp->m_flags |= S_DEL_ON_CLS;
-	}
+	if (le32_to_cpu(req->DesiredAccess) & DELETE)
+		fp->is_nt_open = 1;
+	if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
+			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
+		fp->f_mfp->m_flags |= S_DEL_ON_CLS;
 
 	/* open success, send back response */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -2011,7 +2009,6 @@ out:
 		rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 	}
-	smb_put_name(conv_name);
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -4239,6 +4236,7 @@ int smb_posix_open(struct smb_work *smb_work)
 	char *name;
 	bool file_present = true;
 	int err;
+	struct cifsd_file *fp;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
@@ -4332,10 +4330,11 @@ int smb_posix_open(struct smb_work *smb_work)
 		}
 	}
 
-	err = smb_dentry_open(smb_work, &path, posix_open_flags,
+	fp = smb_dentry_open(smb_work, &path, posix_open_flags,
 			      &fid, &oplock_flags, 0, file_present);
-	if (err)
+	if (!fp)
 		goto free_path;
+	fp->filename = name;
 
 prepare_rsp:
 	/* open/mkdir success, send back response */
@@ -4425,7 +4424,6 @@ out:
 		pSMB_rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 	}
-	smb_put_name(name);
 	return err;
 }
 
@@ -5312,17 +5310,10 @@ int find_first(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	rc = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
+	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
 			&oplock, 0, 1);
-	if (rc) {
+	if (dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
-		path_put(&path);
-		goto err_out;
-	}
-
-	dir_fp = get_id_from_fidtable(sess, sid);
-	if (!dir_fp) {
-		cifsd_debug("error invalid sid\n");
 		path_put(&path);
 		rc = -EINVAL;
 		goto err_out;
@@ -6737,16 +6728,23 @@ int smb_unlink(struct smb_work *smb_work)
 	DELETE_FILE_RSP *rsp = (DELETE_FILE_RSP *)smb_work->rsp_buf;
 	char *name;
 	int err;
+	struct cifsd_file *fp;
 
 	name = smb_get_name(req->fileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_vfs_remove_file(name);
+	fp = find_fp_using_filename(smb_work->sess, name);
+	if (fp)
+		err = -ESHARE;
+	else
+		err = smb_vfs_remove_file(name);
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_FILE_IS_A_DIRECTORY;
+		else if (err == -ESHARE)
+			rsp->hdr.Status.CifsError = NT_STATUS_SHARING_VIOLATION;
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -7124,6 +7122,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	__u16 fid;
 	umode_t mode = 0;
 	int err;
+	struct cifsd_file *fp;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
@@ -7198,10 +7197,11 @@ int smb_open_andx(struct smb_work *smb_work)
 	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
-	err = smb_dentry_open(smb_work, &path, open_flags,
+	fp = smb_dentry_open(smb_work, &path, open_flags,
 			&fid, &oplock_flags, 0, file_present);
-	if (err)
+	if (!fp)
 		goto free_path;
+	fp->filename = name;
 
 	/* open success, send back response */
 	if (file_present) {
@@ -7260,7 +7260,6 @@ out:
 	} else
 		conn->stats.open_files_count++;
 
-	smb_put_name(name);
 	if (!rsp->hdr.WordCount)
 		return err;
 
