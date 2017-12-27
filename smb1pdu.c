@@ -5358,13 +5358,14 @@ int find_first(struct smb_work *smb_work)
 
 	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
 			&oplock, 0, 1);
-	if (dir_fp) {
+	if (!dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
 		rc = -EINVAL;
 		goto err_out;
 	}
 
+	dir_fp->filename = dirpath;
 	dir_fp->readdir_data.dirent = r_data.dirent;
 	dir_fp->readdir_data.used = 0;
 	dir_fp->readdir_data.full = 0;
@@ -5501,7 +5502,6 @@ int find_first(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + data_count + params_count + 1 +
 				data_alignment_offset));
 	kfree(srch_ptr);
-	smb_put_name(dirpath);
 	return 0;
 
 err_out:
@@ -5519,7 +5519,6 @@ err_out:
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
-	smb_put_name(dirpath);
 	return 0;
 }
 
