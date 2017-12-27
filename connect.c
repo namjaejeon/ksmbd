@@ -283,7 +283,7 @@ static int cifsd_do_fork(void *p)
 			continue;
 
 		rcu_read_lock();
-		cifsd_task = find_task_by_vpid(cifsd_pid);
+		cifsd_task = pid_task(find_vpid(cifsd_pid), PIDTYPE_PID);
 		rcu_read_unlock();
 		if (cifsd_task) {
 			if (strncmp(cifsd_task->comm, "cifsd", 5)) {

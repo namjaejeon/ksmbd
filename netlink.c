@@ -365,7 +365,7 @@ static int cifsd_init_connection(struct nlmsghdr *nlh)
 	cifsd_debug("init connection\n");
 
 	rcu_read_lock();
-	cifsd_task = find_task_by_vpid(pid);
+	cifsd_task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	rcu_read_unlock();
 	if (cifsd_task) {
 		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {

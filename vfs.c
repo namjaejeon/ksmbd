@@ -135,11 +135,13 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
-	mm_segment_t old_fs;
 	char *rbuf, *name;
 	struct inode *inode;
 	char namebuf[NAME_MAX];
 	int ret;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	mm_segment_t old_fs;
+#endif
 
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
@@ -188,11 +190,15 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 		goto out;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 
 	nbytes = vfs_read(filp, rbuf, count, pos);
 	set_fs(old_fs);
+#else
+	nbytes = kernel_read(filp, rbuf, count, pos);
+#endif
 	if (nbytes < 0) {
 		name = d_path(&filp->f_path, namebuf, sizeof(namebuf));
 		if (IS_ERR(name))
@@ -276,8 +282,10 @@ int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 {
 	struct file *filp;
 	loff_t	offset = *pos;
-	mm_segment_t old_fs;
 	int err = 0;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	mm_segment_t old_fs;
+#endif
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	if (sess->conn->connection_type) {
@@ -309,16 +317,20 @@ int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 		goto out;
 	}
 
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
 	if (oplocks_enable) {
 		/* Do we need to break any of a levelII oplock? */
 		smb_break_all_levII_oplock(sess->conn, fp, 1);
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
 	err = vfs_write(filp, buf, count, pos);
 	set_fs(old_fs);
+#else
+	err = kernel_write(filp, buf, count, pos);
+#endif
+
 	if (err < 0) {
 		cifsd_debug("smb write failed, err = %d\n", err);
 		goto out;
