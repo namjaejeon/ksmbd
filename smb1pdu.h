@@ -1250,6 +1250,11 @@ typedef struct {
 	char FileName[1];
 } __attribute__((packed)) ALT_NAME_INFO;
 
+typedef struct {
+	__le32 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FILE_NAME_INFO;
+
 typedef struct { /* data block encoding of response to level 263 QPathInfo */
 	__le64 CreationTime;
 	__le64 LastAccessTime;
@@ -1878,8 +1883,7 @@ struct cifs_posix_acl { /* access conrol list  (ACL) */
 typedef struct smb_com_setattr_req {
 	struct smb_hdr hdr; /* wct = 8 */
 	__le16 attr;
-	__le16 time_low;
-	__le16 time_high;
+	__le32 LastWriteTime;
 	__le16 reserved[5]; /* must be zero */
 	__u16  ByteCount;
 	__u8   BufferFormat; /* 4 = ASCII */

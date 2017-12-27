@@ -286,6 +286,9 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct connection *conn = smb_work->conn;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	struct timespec ts;
+#endif
 	init_smb2_0_server(conn);
 	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
 
@@ -325,9 +328,13 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = SMBMaxBufSize;
 	rsp->MaxWriteSize = SMBMaxBufSize;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	ktime_get_real_ts(&ts);
+	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
+#else
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
+#endif
 	rsp->ServerStartTime = 0;
-
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = 0;
 	inc_rfc1001_len(rsp, 65);
@@ -1049,6 +1056,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 	struct smb2_negotiate_rsp *rsp;
 	unsigned int limit;
 	int err;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	struct timespec ts;
+#endif
 
 	req = (struct smb2_negotiate_req *)smb_work->buf;
 	rsp = (struct smb2_negotiate_rsp *)smb_work->rsp_buf;
@@ -1128,7 +1138,12 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	ktime_get_real_ts(&ts);
+	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
+#else
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
+#endif
 	rsp->ServerStartTime = 0;
 	rsp->NegotiateContextOffset = cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 	cifsd_debug("negotiate context count %d\n",
@@ -4012,38 +4027,6 @@ int buffer_check_err(int reqOutputBufferLength, struct smb2_query_info_rsp *rsp,
 }
 
 /**
- * find_absolute_pathname() - extract and return absolute path string
- *	whose share directory prefix was removed from file path
- * @path: file path
- * @buf: buffer to return value in
- *
- * Return : absolute path string or error
- */
-
-static char *find_absolute_pathname(struct path *path, char *buf)
-{
-	char *ab_pathname;
-
-	ab_pathname = d_path(path, buf, PAGE_SIZE);
-	if (IS_ERR(ab_pathname)) {
-		cifsd_err("d_path failed %ld\n", PTR_ERR(ab_pathname));
-		return ab_pathname;
-	}
-
-	/* remove share directory path */
-	/* TODO : need to consider a case that share directory is not 1 depth */
-	strsep(&ab_pathname, "/");
-	strsep(&ab_pathname, "/");
-
-	if (!ab_pathname)
-		ab_pathname = "\\";
-
-	convert_delimiter(ab_pathname, 1);
-
-	return ab_pathname;
-}
-
-/**
  * smb2_get_info_file() - handler for smb2 query info command
  * @smb_work:	smb work containing query info request buffer
  *
@@ -4171,7 +4154,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 	case FILE_ALL_INFORMATION:
 	{
 		struct smb2_file_all_info *file_info;
-		char *filename, *buf;
+		char *filename;
 		int uni_filename_len;
 		unsigned int delete_pending;
 
@@ -4183,10 +4166,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			return -EACCES;
 		}
 
-		buf = kmalloc(PAGE_SIZE, GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-		filename = find_absolute_pathname(&filp->f_path, buf);
+		filename = convert_to_nt_pathname(fp->filename,
+			smb_work->tcon->share->path);
 		cifsd_debug("filename = %s\n", filename);
 		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
@@ -4228,7 +4209,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_ALL_INFORMATION_SIZE;
 
-		kfree(buf);
+		kfree(filename);
 		break;
 	}
 	case FILE_ALTERNATE_NAME_INFORMATION:

@@ -773,6 +773,9 @@ int smb_negotiate(struct smb_work *smb_work)
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)smb_work->rsp_buf;
 	NEGOTIATE_REQ *neg_req = (NEGOTIATE_REQ *)smb_work->buf;
 	__le64 time;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	struct timespec ts;
+#endif
 
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(conn->tcp_status == CifsGood);
@@ -809,7 +812,12 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->Capabilities = SERVER_CAPS;
 
 	/* System time is anyway ignored by clients */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
+	ktime_get_real_ts(&ts);
+	time = cpu_to_le64(cifs_UnixTimeToNT(ts));
+#else
 	time = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
+#endif
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
@@ -1595,13 +1603,14 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct path path;
 	struct kstat stat;
 	int oplock_flags, file_info, open_flags, access_flags;
 	char *name;
 	char *conv_name;
 	bool file_present = true, extended_reply;
-	__u64 alloc_size = 0, create_time;
+	__u64 alloc_size = 0;
 	__u16 fid;
 	umode_t mode = 0;
 	int err;
@@ -1874,38 +1883,18 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	}
 
 	/* open  file and get FID */
-	err = smb_dentry_open(smb_work, &path, open_flags,
-			      &fid, &oplock_flags,
-				le32_to_cpu(req->CreateOptions), file_present);
-	if (err)
+	fp = smb_dentry_open(smb_work, &path, open_flags,
+		&fid, &oplock_flags, le32_to_cpu(req->CreateOptions),
+		file_present);
+	if (!fp)
 		goto free_path;
+	fp->filename = conv_name;
 
-	fp = get_id_from_fidtable(sess, fid);
-	if (fp) {
-		struct cifsd_mfile *mfp;
-
-		mfp = mfp_lookup_inode(FP_INODE(fp));
-		if (!mfp) {
-			mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-			if (!mfp) {
-				err = -ENOMEM;
-				goto free_path;
-			}
-
-			mfp_init(mfp, fp);
-		}
-
-		/* Add fp to master fp list. */
-		list_add(&fp->node, &mfp->m_fp_list);
-		atomic_inc(&mfp->m_count);
-		fp->f_mfp = mfp;
-
-		if (le32_to_cpu(req->DesiredAccess) & DELETE)
-			fp->is_nt_open = 1;
-		if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
-				(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
-			mfp->m_flags |= S_DEL_ON_CLS;
-	}
+	if (le32_to_cpu(req->DesiredAccess) & DELETE)
+		fp->is_nt_open = 1;
+	if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
+			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
+		fp->f_mfp->m_flags |= S_DEL_ON_CLS;
 
 	/* open success, send back response */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -1954,16 +1943,32 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	else
 		rsp->CreateAction = cpu_to_le32(file_info);
 
+	if (file_present) {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
+			char *create_time = NULL;
 
-	create_time = min3(cifs_UnixTimeToNT(stat.ctime),
-			cifs_UnixTimeToNT(stat.mtime),
-			cifs_UnixTimeToNT(stat.atime));
+			err = smb_find_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			if (err > 0)
+				fp->create_time = *((__u64 *)create_time);
+			kvfree(create_time);
+			err = 0;
+		}
+	} else {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&tcon->share->config.attr)) {
+			err = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			if (err)
+				cifsd_debug("failed to store creation time in EA\n");
+			err = 0;
+		}
+	}
 
-	if (!create_time)
-		create_time = min(cifs_UnixTimeToNT(stat.ctime),
-				cifs_UnixTimeToNT(stat.mtime));
-
-	rsp->CreationTime = cpu_to_le64(create_time);
+	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
@@ -2029,7 +2034,6 @@ out:
 		rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 	}
-	smb_put_name(conv_name);
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -3399,14 +3403,6 @@ int query_path_info(struct smb_work *smb_work)
 	struct path path;
 	struct kstat st;
 	int rc;
-	FILE_ALL_INFO *ainfo;
-	FILE_UNIX_BASIC_INFO *unix_info;
-	FILE_BASIC_INFO *basic_info;
-	FILE_STANDARD_INFO *standard_info;
-	FILE_INFO_STANDARD *infos;
-	FILE_EA_INFO *ea_info;
-	ALT_NAME_INFO *alt_name_info;
-	struct file_internal_info *iinfo;
 	char *ptr;
 
 	if (smb_work->tcon->share->is_pipe == true) {
@@ -3447,6 +3443,9 @@ int query_path_info(struct smb_work *smb_work)
 
 	switch (req_params->InformationLevel) {
 	case SMB_INFO_STANDARD:
+	{
+		FILE_INFO_STANDARD *infos;
+
 		cifsd_debug("SMB_INFO_STANDARD\n");
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
@@ -3479,7 +3478,11 @@ int query_path_info(struct smb_work *smb_work)
 		rsp->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_STANDARD_INFO:
+	{
+		FILE_STANDARD_INFO *standard_info;
+
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3507,8 +3510,11 @@ int query_path_info(struct smb_work *smb_work)
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_BASIC_INFO:
+	{
+		FILE_BASIC_INFO *basic_info;
+
 		cifsd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3549,8 +3555,11 @@ int query_path_info(struct smb_work *smb_work)
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_EA_INFO:
+	{
+		FILE_EA_INFO *ea_info;
+
 		cifsd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3574,8 +3583,11 @@ int query_path_info(struct smb_work *smb_work)
 		ea_info->EaSize = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_ALL_INFO:
+	{
+		FILE_ALL_INFO *ainfo;
+
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3621,7 +3633,11 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->FileNameLength = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_ALT_NAME_INFO:
+	{
+		ALT_NAME_INFO *alt_name_info;
+
 		cifsd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3646,7 +3662,11 @@ int query_path_info(struct smb_work *smb_work)
 				name, alt_name_info->FileName);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
+	{
+		FILE_UNIX_BASIC_INFO *unix_info;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 0;
@@ -3666,7 +3686,11 @@ int query_path_info(struct smb_work *smb_work)
 		init_unix_info(unix_info, &st);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_INTERNAL_INFO:
+	{
+		struct file_internal_info *iinfo;
+
 		cifsd_debug("SMB_QUERY_FILE_INTERNAL_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -3688,6 +3712,7 @@ int query_path_info(struct smb_work *smb_work)
 		iinfo->UniqueId = cpu_to_le64(st.ino);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_LINK:
 		cifsd_debug("SMB_QUERY_FILE_UNIX_LINK\n");
 		rc = smb_readlink(smb_work, &path);
@@ -4257,6 +4282,7 @@ int smb_posix_open(struct smb_work *smb_work)
 	char *name;
 	bool file_present = true;
 	int err;
+	struct cifsd_file *fp;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
@@ -4350,10 +4376,11 @@ int smb_posix_open(struct smb_work *smb_work)
 		}
 	}
 
-	err = smb_dentry_open(smb_work, &path, posix_open_flags,
+	fp = smb_dentry_open(smb_work, &path, posix_open_flags,
 			      &fid, &oplock_flags, 0, file_present);
-	if (err)
+	if (!fp)
 		goto free_path;
+	fp->filename = name;
 
 prepare_rsp:
 	/* open/mkdir success, send back response */
@@ -4443,7 +4470,6 @@ out:
 		pSMB_rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 	}
-	smb_put_name(name);
 	return err;
 }
 
@@ -5330,17 +5356,10 @@ int find_first(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	rc = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
+	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
 			&oplock, 0, 1);
-	if (rc) {
+	if (dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
-		path_put(&path);
-		goto err_out;
-	}
-
-	dir_fp = get_id_from_fidtable(sess, sid);
-	if (!dir_fp) {
-		cifsd_debug("error invalid sid\n");
 		path_put(&path);
 		rc = -EINVAL;
 		goto err_out;
@@ -6147,6 +6166,7 @@ int query_file_info_pipe(struct smb_work *smb_work)
  */
 int query_file_info(struct smb_work *smb_work)
 {
+	struct connection *conn = smb_work->conn;
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
@@ -6155,11 +6175,6 @@ int query_file_info(struct smb_work *smb_work)
 	struct cifsd_file *fp;
 	struct kstat st;
 	struct file *filp;
-	FILE_STANDARD_INFO *standard_info;
-	FILE_BASIC_INFO *basic_info;
-	FILE_EA_INFO *ea_info;
-	FILE_UNIX_BASIC_INFO *uinfo;
-	FILE_ALL_INFO *ainfo;
 	__u16 fid;
 	char *ptr;
 	int rc = 0;
@@ -6195,6 +6210,9 @@ int query_file_info(struct smb_work *smb_work)
 	switch (req_params->InformationLevel) {
 
 	case SMB_QUERY_FILE_STANDARD_INFO:
+	{
+		FILE_STANDARD_INFO *standard_info;
+
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6222,7 +6240,11 @@ int query_file_info(struct smb_work *smb_work)
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_BASIC_INFO:
+	{
+		FILE_BASIC_INFO *basic_info;
+
 		cifsd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6256,8 +6278,11 @@ int query_file_info(struct smb_work *smb_work)
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
-
+	}
 	case SMB_QUERY_FILE_EA_INFO:
+	{
+		FILE_EA_INFO *ea_info;
+
 		cifsd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6281,7 +6306,11 @@ int query_file_info(struct smb_work *smb_work)
 		ea_info->EaSize = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
+	{
+		FILE_UNIX_BASIC_INFO *uinfo;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6305,7 +6334,54 @@ int query_file_info(struct smb_work *smb_work)
 		init_unix_info(uinfo, &st);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
+	case SMB_QUERY_FILE_NAME_INFO:
+	{
+		FILE_NAME_INFO *name_info;
+		int uni_filename_len;
+		char *filename;
+
+		cifsd_debug("SMB_QUERY_FILE_NAME_INFO\n");
+		ptr = (char *)&rsp->Pad + 1;
+		memset(ptr, 0, 4);
+		name_info = (FILE_NAME_INFO *)(ptr + 4);
+
+		filename = convert_to_nt_pathname(fp->filename,
+			smb_work->tcon->share->path);
+		if (!filename) {
+			rc = -EIO;
+			goto err_out;
+		}
+		uni_filename_len = smbConvertToUTF16(
+				(__le16 *)name_info->FileName,
+				filename, PATH_MAX,
+				conn->local_nls, 0);
+		kfree(filename);
+		uni_filename_len *= 2;
+		name_info->FileNameLength = cpu_to_le32(uni_filename_len);
+
+		rsp_hdr->WordCount = 10;
+		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalDataCount = uni_filename_len + 4;
+		rsp->t2.Reserved = 0;
+		rsp->t2.ParameterCount = 2;
+		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterDisplacement = 0;
+		rsp->t2.DataCount = uni_filename_len + 4;
+		rsp->t2.DataOffset = 60;
+		rsp->t2.DataDisplacement = 0;
+		rsp->t2.SetupCount = 0;
+		rsp->t2.Reserved1 = 0;
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
+		rsp->ByteCount = 2 + uni_filename_len + 4 + 3;
+		rsp->Pad = 0;
+		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		break;
+	}
 	case SMB_QUERY_FILE_ALL_INFO:
+	{
+		FILE_ALL_INFO *ainfo;
+
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -6344,6 +6420,7 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->FileNameLength = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
+	}
 	default:
 		cifsd_err("query path info not implemnted for %x\n",
 				req_params->InformationLevel);
@@ -6755,16 +6832,23 @@ int smb_unlink(struct smb_work *smb_work)
 	DELETE_FILE_RSP *rsp = (DELETE_FILE_RSP *)smb_work->rsp_buf;
 	char *name;
 	int err;
+	struct cifsd_file *fp;
 
 	name = smb_get_name(req->fileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
-	err = smb_vfs_remove_file(name);
+	fp = find_fp_using_filename(smb_work->sess, name);
+	if (fp)
+		err = -ESHARE;
+	else
+		err = smb_vfs_remove_file(name);
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_FILE_IS_A_DIRECTORY;
+		else if (err == -ESHARE)
+			rsp->hdr.Status.CifsError = NT_STATUS_SHARING_VIOLATION;
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -7142,6 +7226,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	__u16 fid;
 	umode_t mode = 0;
 	int err;
+	struct cifsd_file *fp;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
@@ -7216,10 +7301,11 @@ int smb_open_andx(struct smb_work *smb_work)
 	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
-	err = smb_dentry_open(smb_work, &path, open_flags,
+	fp = smb_dentry_open(smb_work, &path, open_flags,
 			&fid, &oplock_flags, 0, file_present);
-	if (err)
+	if (!fp)
 		goto free_path;
+	fp->filename = name;
 
 	/* open success, send back response */
 	if (file_present) {
@@ -7278,7 +7364,6 @@ out:
 	} else
 		conn->stats.open_files_count++;
 
-	smb_put_name(name);
 	if (!rsp->hdr.WordCount)
 		return err;
 
@@ -7342,6 +7427,9 @@ int smb_setattr(struct smb_work *smb_work)
 
 	if (attrs.ia_mode)
 		attrs.ia_valid |= ATTR_MODE;
+
+	attrs.ia_mtime.tv_sec = le32_to_cpu(req->LastWriteTime);
+	attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 
 	err = smb_vfs_setattr(smb_work->sess, name, 0, &attrs);
 	if (err)

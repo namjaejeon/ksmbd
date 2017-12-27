@@ -354,6 +354,30 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	return file;
 }
 
+struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
+	char *filename)
+{
+	struct cifsd_file *file = NULL;
+	struct fidtable *ftab;
+	int id;
+
+	spin_lock(&sess->fidtable.fidtable_lock);
+	ftab = sess->fidtable.ftab;
+	spin_unlock(&sess->fidtable.fidtable_lock);
+
+	if (!ftab)
+		return NULL;
+
+	for (id = 0; id < ftab->max_fids; id++) {
+		file = ftab->fileid[id];
+		if (file && !strcmp(file->filename, filename))
+			break;
+		file = NULL;
+	}
+
+	return file;
+}
+
 /**
  * delete_id_from_fidtable() - delete a fid from fid table
  * @conn:	TCP server instance of connection
@@ -364,14 +388,22 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 {
 	struct fidtable *ftab;
+	struct cifsd_file *fp;
 
 	if (!sess)
 		return;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
-	if (ftab->fileid[id])
-		ftab->fileid[id] = NULL;
+	fp = ftab->fileid[id];
+	ftab->fileid[id] = NULL;
+	spin_lock(&fp->f_lock);
+	kfree(fp->filename);
+	if (fp->is_stream)
+		kfree(fp->stream.name);
+	fp->f_mfp = NULL;
+	spin_unlock(&fp->f_lock);
+	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -395,10 +427,18 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	fp = cifsd_get_global_fp(p_id);
-	if (!fp || fp->sess != sess) {
-		cifsd_debug("Invalid id for close: %llu\n", id);
-		return -EINVAL;
+	if (IS_SMB2(sess->conn)) {
+		fp = cifsd_get_global_fp(p_id);
+		if (!fp || fp->sess != sess) {
+			cifsd_err("Invalid id for close: %llu\n", p_id);
+			return -EINVAL;
+		}
+	} else {
+		fp = get_id_from_fidtable(sess, id);
+		if (!fp) {
+			cifsd_err("Invalid id for close: %llu\n", id);
+			return -EINVAL;
+		}
 	}
 
 	spin_lock(&fp->f_lock);
@@ -465,13 +505,15 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		mfp_free(mfp);
 	}
 
+	if (IS_SMB2(sess->conn)) {
+		err = close_persistent_id(fp->persistent_id);
+		if (err)
+			return -ENOENT;
+	}
 	delete_id_from_fidtable(sess, id);
 	if (sess)
 		cifsd_close_id(&sess->fidtable, id);
 	filp_close(filp, (struct files_struct *)filp);
-	err = close_persistent_id(fp->persistent_id);
-	if (err)
-		return -ENOENT;
 	return 0;
 }
 
@@ -729,20 +771,11 @@ int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
  */
 void delete_durable_id_from_fidtable(uint64_t id)
 {
-	struct cifsd_file *fp;
 	struct fidtable *ftab;
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	fp = ftab->fileid[id];
 	ftab->fileid[id] = NULL;
-	spin_lock(&fp->f_lock);
-	kfree(fp->filename);
-	if (fp->is_stream)
-		kfree(fp->stream.name);
-	fp->f_mfp = NULL;
-	spin_unlock(&fp->f_lock);
-	kmem_cache_free(cifsd_filp_cache, fp);
 	spin_unlock(&global_fidtable.fidtable_lock);
 }
 
@@ -799,22 +832,23 @@ void destroy_global_fidtable(void)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_dentry_open(struct smb_work *work, const struct path *path,
-		    int flags, __u16 *ret_id, int *oplock, int option,
-		    int fexist)
+struct cifsd_file *smb_dentry_open(struct smb_work *work,
+	const struct path *path, int flags, __u16 *ret_id,
+	int *oplock, int option, int fexist)
 {
 	struct file *filp;
 	int id, err = 0;
 	struct cifsd_file *fp;
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)work->buf;
 	uint64_t sess_id;
+	struct cifsd_mfile *mfp;
 
 	/* first init id as invalid id - 0xFFFF ? */
 	*ret_id = 0xFFFF;
 
 	id = cifsd_get_unused_id(&work->sess->fidtable);
 	if (id < 0)
-		return id;
+		return NULL;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -832,6 +866,22 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 		cifsd_err("id insert failed\n");
 		goto err_out;
 	}
+
+	mfp = mfp_lookup_inode(FP_INODE(fp));
+	if (!mfp) {
+		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+		if (!mfp) {
+			err = -ENOMEM;
+			goto err_out;
+		}
+
+		mfp_init(mfp, fp);
+	}
+
+	/* Add fp to master fp list. */
+	list_add(&fp->node, &mfp->m_fp_list);
+	atomic_inc(&mfp->m_count);
+	fp->f_mfp = mfp;
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
@@ -854,11 +904,11 @@ int smb_dentry_open(struct smb_work *work, const struct path *path,
 	}
 
 	*ret_id = id;
-	return 0;
+	return fp;
 
 err_out:
 	cifsd_close_id(&work->sess->fidtable, id);
-	return err;
+	return NULL;
 }
 
 /**

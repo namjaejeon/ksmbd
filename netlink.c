@@ -171,7 +171,6 @@ int cifsd_usendmsg(struct cifsd_uevent *rsp_ev, int upid,
 	struct cifsd_uevent *ev;
 	int etype = rsp_ev->type;
 	int ev_sz;
-	struct cifsd_usr *user;
 	int rc;
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 
@@ -315,8 +314,6 @@ static int cifsd_config_user(struct nlmsghdr *nlh)
 {
 	struct cifsd_uevent *ev = nlmsg_data(nlh);
 	struct cifsd_uevent rsp_ev;
-	char *user_entry;
-	int len;
 	int ret = 0;
 
 	if (!ev->buflen) {
@@ -368,7 +365,7 @@ static int cifsd_init_connection(struct nlmsghdr *nlh)
 	cifsd_debug("init connection\n");
 
 	rcu_read_lock();
-	cifsd_task = find_task_by_vpid(pid);
+	cifsd_task = pid_task(find_vpid(pid), PIDTYPE_PID);
 	rcu_read_unlock();
 	if (cifsd_task) {
 		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {

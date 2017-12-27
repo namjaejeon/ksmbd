@@ -652,6 +652,7 @@ extern int check_invalid_char(char *filename);
 extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
 extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
+extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
@@ -665,9 +666,9 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 		uint64_t fid, struct iattr *attrs);
 int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id);
-int smb_dentry_open(struct smb_work *work, const struct path *path,
-		int flags, __u16 *fid, int *oplock, int option,
-		int fexist);
+struct cifsd_file *smb_dentry_open(struct smb_work *work,
+	const struct path *path, int flags, __u16 *fid,
+	int *oplock, int option, int fexist);
 int smb_vfs_remove_file(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
