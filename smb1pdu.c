@@ -1971,7 +1971,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
+	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 
 	rsp->FileAttributes = cpu_to_le32(smb_get_dos_attr(&stat));
 	rsp->AllocationSize = cpu_to_le64(stat.blocks << 9);
@@ -2842,11 +2842,11 @@ int unix_info_to_attr(FILE_UNIX_BASIC_INFO *unix_info,
  * @time:	store dos style time
  * @date:	store dos style date
  */
-void unix_to_dos_time(struct timespec *ts, __le16 *time, __le16 *date)
+void unix_to_dos_time(struct timespec ts, __le16 *time, __le16 *date)
 {
 	struct tm t;
 	__u16 val;
-	time_to_tm(ts->tv_sec,
+	time_to_tm(ts.tv_sec,
 			(-sys_tz.tz_minuteswest) * 60, &t);
 
 
@@ -3399,15 +3399,23 @@ int query_path_info(struct smb_work *smb_work)
 	struct connection *conn = smb_work->conn;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
 	TRANSACTION2_QPI_REQ_PARAMS *req_params;
-	char *name;
+	char *name = NULL;
 	struct path path;
 	struct kstat st;
 	int rc;
 	char *ptr;
+	__u64 create_time = 0;
 
 	if (smb_work->tcon->share->is_pipe == true) {
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		return 0;
+	}
+
+	if (req_hdr->WordCount != 15) {
+		cifsd_err("word count mismatch: expected 15 got %d\n",
+				req_hdr->WordCount);
+		rc = -EINVAL;
+		goto out;
 	}
 
 	req_params = (TRANSACTION2_QPI_REQ_PARAMS *)(smb_work->buf +
@@ -3434,11 +3442,16 @@ int query_path_info(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	if (req_hdr->WordCount != 15) {
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				req_hdr->WordCount);
-		rc = -EINVAL;
-		goto err_out;
+	if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		char *ctime = NULL;
+
+		rc = smb_find_cont_xattr(&path,
+			XATTR_NAME_CREATION_TIME,
+			XATTR_NAME_CREATION_TIME_LEN, &ctime, 1);
+		if (rc > 0)
+			create_time = *((__u64 *)ctime);
+		kvfree(ctime);
+		rc = 0;
 	}
 
 	switch (req_params->InformationLevel) {
@@ -3450,12 +3463,12 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		infos = (FILE_INFO_STANDARD *)(ptr + 4);
-		unix_to_dos_time(&st.ctime, &infos->CreationDate,
-						&infos->CreationTime);
-		unix_to_dos_time(&st.atime, &infos->LastAccessDate,
-						&infos->LastAccessTime);
-		unix_to_dos_time(&st.mtime, &infos->LastWriteDate,
-						&infos->LastWriteTime);
+		unix_to_dos_time(cifs_NTtimeToUnix(create_time),
+			&infos->CreationDate, &infos->CreationTime);
+		unix_to_dos_time(st.atime, &infos->LastAccessDate,
+				&infos->LastAccessTime);
+		unix_to_dos_time(st.mtime, &infos->LastWriteDate,
+				&infos->LastWriteTime);
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
 		infos->Attributes = S_ISDIR(st.mode) ?
@@ -3535,21 +3548,13 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		basic_info = (FILE_BASIC_INFO *)(ptr + 4);
-		basic_info->CreationTime = cpu_to_le64(min3(
-					cifs_UnixTimeToNT(st.ctime),
-					cifs_UnixTimeToNT(st.mtime),
-					cifs_UnixTimeToNT(st.atime)));
-
-		if (!le64_to_cpu(basic_info->CreationTime))
-			basic_info->CreationTime = cpu_to_le64(min(
-						cifs_UnixTimeToNT(st.ctime),
-						cifs_UnixTimeToNT(st.mtime)));
+		basic_info->CreationTime = cpu_to_le64(create_time);
 		basic_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
 		basic_info->LastWriteTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
+			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
 					 ATTR_DIRECTORY : ATTR_NORMAL;
 		basic_info->Pad = 0;
@@ -3615,11 +3620,11 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		ainfo = (FILE_ALL_INFO *) (ptr + 4);
-		ainfo->CreationTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		ainfo->CreationTime = cpu_to_le64(create_time);
 		ainfo->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
+		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = S_ISDIR(st.mode) ?
 					ATTR_DIRECTORY : ATTR_NORMAL;
 		ainfo->Pad1 = 0;
@@ -6265,13 +6270,13 @@ int query_file_info(struct smb_work *smb_work)
 		memset(ptr, 0, 4);
 		basic_info = (FILE_BASIC_INFO *)(ptr + 4);
 		basic_info->CreationTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+			cpu_to_le64(fp->create_time);
 		basic_info->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
 		basic_info->LastWriteTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
+			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
 			ATTR_DIRECTORY : ATTR_NORMAL;
 		basic_info->Pad = 0;
@@ -6401,11 +6406,11 @@ int query_file_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		ainfo = (FILE_ALL_INFO *)(ptr + 4);
-		ainfo->CreationTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		ainfo->CreationTime = cpu_to_le64(fp->create_time);
 		ainfo->LastAccessTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
+		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
 				ATTR_DIRECTORY : ATTR_NORMAL);
 		ainfo->Pad1 = 0;
@@ -6612,6 +6617,26 @@ int create_dir(struct smb_work *smb_work)
 	} else
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
+	if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		__u64 create_time;
+		struct kstat stat;
+		struct path path;
+
+		err = smb_kern_path(name, 0, &path, 1);
+		if (!err) {
+			generic_fillattr(path.dentry->d_inode, &stat);
+			create_time = cifs_UnixTimeToNT(stat.ctime);
+
+			err = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&create_time, CREATIOM_TIME_LEN);
+			if (err)
+				cifsd_debug("failed to store creation time in EA\n");
+			err = 0;
+		}
+		path_put(&path);
+	}
+
 	memset(&rsp->hdr.WordCount, 0, 3);
 	smb_put_name(name);
 	return err;
@@ -6666,6 +6691,26 @@ int smb_mkdir(struct smb_work *smb_work)
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
 		rsp->hdr.WordCount = 0;
 		rsp->ByteCount = 0;
+	}
+
+	if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+		__u64 create_time;
+		struct kstat stat;
+		struct path path;
+
+		err = smb_kern_path(name, 0, &path, 1);
+		if (!err) {
+			generic_fillattr(path.dentry->d_inode, &stat);
+			create_time = cifs_UnixTimeToNT(stat.ctime);
+
+			err = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&create_time, CREATIOM_TIME_LEN);
+			if (err)
+				cifsd_debug("failed to store creation time in EA\n");
+			err = 0;
+		}
+		path_put(&path);
 	}
 
 	smb_put_name(name);
@@ -7318,6 +7363,31 @@ int smb_open_andx(struct smb_work *smb_work)
 
 	if (oplock_flags)
 		file_info |= SMBOPEN_LOCK_GRANTED;
+
+	if (file_present) {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			char *create_time = NULL;
+
+			err = smb_find_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			if (err > 0)
+				fp->create_time = *((__u64 *)create_time);
+			kvfree(create_time);
+			err = 0;
+		}
+	} else {
+		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
+		if (get_attr_store_dos(&smb_work->tcon->share->config.attr)) {
+			err = smb_store_cont_xattr(&path,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			if (err)
+				cifsd_debug("failed to store creation time in EA\n");
+			err = 0;
+		}
+	}
 
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
