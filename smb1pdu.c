@@ -5375,6 +5375,8 @@ int find_first(struct smb_work *smb_work)
 	dir_fp->readdir_data.used = 0;
 	dir_fp->readdir_data.full = 0;
 	dir_fp->dirent_offset = 0;
+	dir_fp->readdir_data.file_attr =
+		le16_to_cpu(req_params->SearchAttributes);
 
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
@@ -5420,6 +5422,15 @@ int find_first(struct smb_work *smb_work)
 		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
+
+		if (dir_fp->readdir_data.file_attr &
+			SMB_SEARCH_ATTRIBUTE_DIRECTORY && de->d_type != DT_DIR)
+			continue;
+
+		if (dir_fp->readdir_data.file_attr &
+			SMB_SEARCH_ATTRIBUTE_ARCHIVE && (de->d_type == DT_DIR ||
+			(!strcmp(de->name, ".") || !strcmp(de->name, ".."))))
+			continue;
 
 		smb_kstat.kstat = &kstat;
 		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
@@ -5650,6 +5661,15 @@ int find_next(struct smb_work *smb_work)
 		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
+
+		if (dir_fp->readdir_data.file_attr &
+			SMB_SEARCH_ATTRIBUTE_DIRECTORY && de->d_type != DT_DIR)
+			continue;
+
+		if (dir_fp->readdir_data.file_attr &
+			SMB_SEARCH_ATTRIBUTE_ARCHIVE && (de->d_type == DT_DIR ||
+			(!strcmp(de->name, ".") || !strcmp(de->name, ".."))))
+			continue;
 
 		smb_kstat.kstat = &kstat;
 		namestr = read_next_entry(smb_work, &smb_kstat, de, dirpath);
