@@ -923,12 +923,18 @@ int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
 
 char *convert_to_nt_pathname(char *filename, char *sharepath)
 {
-	char *ab_pathname = NULL;
+	char *ab_pathname;
 	int len;
 
+	ab_pathname = kmalloc(strlen(filename), GFP_KERNEL);
+	if (!ab_pathname)
+		return NULL;
+
+	ab_pathname[0] = '\\';
+	ab_pathname[1] = '\0';
+
 	len = strlen(sharepath);
-	if (!strncmp(filename, sharepath, len)) {
-		ab_pathname = kmalloc(strlen(filename) - len, GFP_KERNEL);
+	if (!strncmp(filename, sharepath, len) && strlen(filename) != len) {
 		strcpy(ab_pathname, &filename[len]);
 		convert_delimiter(ab_pathname, 1);
 	}

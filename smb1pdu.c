@@ -6373,7 +6373,7 @@ int query_file_info(struct smb_work *smb_work)
 		filename = convert_to_nt_pathname(fp->filename,
 			smb_work->tcon->share->path);
 		if (!filename) {
-			rc = -EIO;
+			rc = -ENOMEM;
 			goto err_out;
 		}
 		uni_filename_len = smbConvertToUTF16(

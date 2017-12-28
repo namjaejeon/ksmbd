@@ -4168,6 +4168,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 
 		filename = convert_to_nt_pathname(fp->filename,
 			smb_work->tcon->share->path);
+		if (!filename)
+			return -ENOMEM;
 		cifsd_debug("filename = %s\n", filename);
 		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
