@@ -789,9 +789,13 @@ int close_persistent_id(uint64_t id)
 {
 	int rc = 0;
 
+	if (id > global_fidtable.ftab->max_fids - 1) {
+		cifsd_debug("Invalid id passed to clear in bitmap\n");
+		return -EINVAL;
+	}
+
+	delete_durable_id_from_fidtable(id);
 	rc = cifsd_close_id(&global_fidtable, id);
-	if (!rc)
-		delete_durable_id_from_fidtable(id);
 	return rc;
 }
 

@@ -720,6 +720,21 @@ typedef struct smb_com_open_req {       /* also handles create */
 #define ATTR_NO_BUFFERING    0x20000000
 #define ATTR_WRITE_THROUGH   0x80000000
 
+
+/* Basic file attributes */
+#define SMB_FILE_ATTRIBUTE_NORMAL	0x0000
+#define SMB_FILE_ATTRIBUTE_READONLY	0x0001
+#define SMB_FILE_ATTRIBUTE_HIDDEN	0x0002
+#define SMB_FILE_ATTRIBUTE_SYSTEM	0x0004
+#define SMB_FILE_ATTRIBUTE_VOLUME	0x0008
+#define SMB_FILE_ATTRIBUTE_DIRECTORY	0x0010
+#define SMB_FILE_ATTRIBUTE_ARCHIVE	0x0020
+#define SMB_SEARCH_ATTRIBUTE_READONLY	0x0100
+#define SMB_SEARCH_ATTRIBUTE_HIDDEN	0x0200
+#define SMB_SEARCH_ATTRIBUTE_SYSTEM	0x0400
+#define SMB_SEARCH_ATTRIBUTE_DIRECTORY	0x1000
+#define SMB_SEARCH_ATTRIBUTE_ARCHIVE	0x2000
+
 typedef struct smb_com_open_rsp {
 	struct smb_hdr hdr;     /* wct = 34 BB */
 	__u8 AndXCommand;
