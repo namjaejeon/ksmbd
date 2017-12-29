@@ -1569,13 +1569,14 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	if (IS_ERR(treename)) {
 		cifsd_err("treename is NULL\n");
 		rc = PTR_ERR(treename);
-		goto out_err;
+		goto out_err1;
 	}
 
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
+		kfree(treename);
 		rc = PTR_ERR(name);
-		goto out_err;
+		goto out_err1;
 	}
 
 	cifsd_debug("tree connect request for tree %s treename %s\n",
@@ -1621,6 +1622,9 @@ int smb2_tree_connect(struct smb_work *smb_work)
 	tcon->maximal_access = le32_to_cpu(rsp->MaximalAccess);
 
 out_err:
+	kfree(treename);
+	kfree(name);
+out_err1:
 	rsp->StructureSize = cpu_to_le16(16);
 	rsp->Capabilities = 0;
 	rsp->Reserved = 0;
@@ -1646,8 +1650,6 @@ out_err:
 	default:
 		rsp->hdr.Status = NT_STATUS_OK;
 	}
-	kfree(treename);
-	kfree(name);
 	return rc;
 }
 

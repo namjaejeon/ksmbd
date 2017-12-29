@@ -578,12 +578,13 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	if (IS_ERR(treename)) {
 		cifsd_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
 		rc = PTR_ERR(treename);
-		goto out_err;
+		goto out_err1;
 	}
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
+		kfree(treename);
 		rc = PTR_ERR(name);
-		goto out_err;
+		goto out_err1;
 	}
 
 	cifsd_debug("tree connect request for tree %s\n", name);
@@ -638,6 +639,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	}
 
 out_err:
+	kfree(treename);
+	kfree(name);
+out_err1:
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
@@ -678,8 +682,6 @@ out_err:
 	if (!sess ||  !sess->tcon_count)
 		conn->tcp_status = CifsExiting;
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
-	kfree(treename);
-	kfree(name);
 	return rc;
 }
 
