@@ -5129,7 +5129,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
 
 	id = le64_to_cpu(req->VolatileFileId);
-	pid = le64_to_cpu(req->VolatileFileId);
+	pid = le64_to_cpu(req->PersistentFileId);
 	fp = get_fp(smb_work, id, pid);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", id);

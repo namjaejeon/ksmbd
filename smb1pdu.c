@@ -320,10 +320,8 @@ char *extract_sharename(char *treename)
 	char *dst;
 
 	/* skip double chars at the beginning */
-	while (strchr(treename, '\\')) {
+	while (strchr(treename, '\\'))
 		strsep(&treename, "\\");
-		cifsd_err("treename : %s\n", treename);
-	}
 	len = strlen(treename);
 
 	/* caller has to free the memory */
