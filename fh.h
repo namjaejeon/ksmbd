@@ -251,6 +251,8 @@ struct cifsd_file *lookup_fp_clguid(char *createguid);
 struct cifsd_file *lookup_fp_app_id(char *app_id);
 struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
 	char *filename);
+struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+	int64_t req_pid);
 #endif
 
 #endif /* __CIFSD_FH_H */

@@ -460,40 +460,6 @@ bool is_chained_smb2_message(struct smb_work *smb_work)
 	return false;
 }
 
-struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
-	int64_t req_pid)
-{
-	struct cifsd_file *fp;
-	int64_t vid = -1, pid = -1;
-
-	if (le64_to_cpu(req_vid == -1)) {
-		cifsd_debug("Compound request assigning stored FID = %llu\n",
-				smb_work->cur_local_fid);
-		vid = smb_work->cur_local_fid;
-		pid = smb_work->cur_local_pfid;
-	}
-
-	if (vid == -1)
-		vid = le64_to_cpu(req_vid);
-
-	if (pid == -1)
-		pid = le64_to_cpu(req_pid);
-
-	fp = get_id_from_fidtable(smb_work->sess, vid);
-	if (!fp) {
-		cifsd_debug("Invalid id: %llu\n", vid);
-		return NULL;
-	}
-
-	if (fp->persistent_id != pid) {
-		cifsd_err("persistent id mismatch : %lld, %lld\n",
-				fp->persistent_id, pid);
-		fp = NULL;
-	}
-
-	return fp;
-}
-
 /**
  * init_smb2_rsp_hdr() - initialize smb2 response
  * @smb_work:	smb work containing smb request buffer
@@ -3722,17 +3688,10 @@ int smb2_close(struct smb_work *smb_work)
 	cifsd_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
 
-	fp = get_id_from_fidtable(smb_work->sess, volatile_id);
+	fp = get_fp(smb_work, volatile_id, persistent_id);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", volatile_id);
 		err = -EINVAL;
-		goto out;
-	}
-
-	if (fp->is_durable && fp->persistent_id != persistent_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-			fp->persistent_id, persistent_id);
-		err = -ENOENT;
 		goto out;
 	}
 
@@ -4739,7 +4698,7 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 	struct smb2_set_info_rsp *rsp;
 	struct cifsd_file *fp;
 	struct cifsd_sess *sess = smb_work->sess;
-	uint64_t id;
+	uint64_t id, pid;
 	int rc = 0;
 	struct file *filp;
 	struct inode *inode;
@@ -4751,19 +4710,11 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
 
 	id = le64_to_cpu(req->VolatileFileId);
-	fp = get_id_from_fidtable(sess, id);
+	pid = le64_to_cpu(req->PersistentFileId);
+	fp = get_fp(smb_work, id, pid);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", id);
 		return -ENOENT;
-	}
-
-	if (fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		ret = -ENOENT;
-		goto out;
 	}
 
 	filp = fp->filp;
@@ -5169,7 +5120,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	struct smb2_set_info_rsp *rsp;
 	struct cifsd_file *fp;
 	struct cifsd_sess *sess = smb_work->sess;
-	uint64_t id;
+	uint64_t id, pid;
 	int rc = 0;
 	struct file *filp;
 	struct inode *inode;
@@ -5178,19 +5129,11 @@ int smb2_set_info_file(struct smb_work *smb_work)
 	rsp = (struct smb2_set_info_rsp *)smb_work->rsp_buf;
 
 	id = le64_to_cpu(req->VolatileFileId);
-	fp = get_id_from_fidtable(sess, id);
+	pid = le64_to_cpu(req->VolatileFileId);
+	fp = get_fp(smb_work, id, pid);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %llu\n", id);
 		return -ENOENT;
-	}
-
-	if (fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		rc = -ENOENT;
-		goto out;
 	}
 
 	filp = fp->filp;
@@ -6078,19 +6021,11 @@ int smb2_lock(struct smb_work *smb_work)
 	}
 
 	cifsd_debug("Recieved lock request\n");
-	fp = get_id_from_fidtable(smb_work->sess,
-			le64_to_cpu(req->VolatileFileId));
+	fp = get_fp(smb_work, le64_to_cpu(req->VolatileFileId),
+		le64_to_cpu(req->PersistentFileId));
 	if (!fp) {
 		cifsd_debug("Invalid file id for lock : %llu\n",
 				le64_to_cpu(req->VolatileFileId));
-		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto out2;
-	}
-
-	if (fp->persistent_id !=
-			le64_to_cpu(req->PersistentFileId)) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, req->PersistentFileId);
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		goto out2;
 	}
@@ -6777,7 +6712,7 @@ int smb20_oplock_break(struct smb_work *smb_work)
 			volatile_id, persistent_id, req_oplevel);
 
 	mutex_lock(&lease_list_lock);
-	fp = get_id_from_fidtable(smb_work->sess, volatile_id);
+	fp = get_fp(smb_work, volatile_id, persistent_id);
 	if (!fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		goto err_out;

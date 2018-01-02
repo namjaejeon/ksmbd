@@ -354,6 +354,47 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	return file;
 }
 
+struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+	int64_t req_pid)
+{
+	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
+	struct cifsd_file *fp;
+	int64_t vid = -1, pid = -1;
+
+	if (le64_to_cpu(req_vid == -1)) {
+		cifsd_debug("Compound request assigning stored FID = %llu\n",
+				smb_work->cur_local_fid);
+		vid = smb_work->cur_local_fid;
+		pid = smb_work->cur_local_pfid;
+	}
+
+	if (vid == -1)
+		vid = req_vid;
+
+	if (pid == -1)
+		pid = req_pid;
+
+	fp = get_id_from_fidtable(smb_work->sess, vid);
+	if (!fp) {
+		cifsd_debug("Invalid id: %llu\n", vid);
+		return NULL;
+	}
+
+	if (fp->sess != sess || fp->tcon != tcon) {
+		cifsd_err("invalid sess or tcon\n");
+		return NULL;
+	}
+
+	if (IS_SMB2(smb_work->conn) && fp->persistent_id != pid) {
+		cifsd_err("persistent id mismatch : %lld, %lld\n",
+				fp->persistent_id, pid);
+		fp = NULL;
+	}
+
+	return fp;
+}
+
 struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
 	char *filename)
 {

@@ -314,24 +314,20 @@ char *andx_response_buffer(char *buf)
  *
  * Return:      share name on success, otherwise error
  */
-char *extract_sharename(const char *treename)
+char *extract_sharename(char *treename)
 {
-	const char *src;
-	char *delim, *dst;
 	int len;
+	char *dst;
 
 	/* skip double chars at the beginning */
-	src = treename + 2;
-
-	/* share name is always preceded by '\\' now */
-	delim = strchr(src, '\\');
-	if (!delim)
-		return ERR_PTR(-EINVAL);
-	delim++;
-	len = strlen(delim);
+	while (strchr(treename, '\\')) {
+		strsep(&treename, "\\");
+		cifsd_err("treename : %s\n", treename);
+	}
+	len = strlen(treename);
 
 	/* caller has to free the memory */
-	dst = kstrndup(delim, len, GFP_KERNEL);
+	dst = kstrndup(treename, len, GFP_KERNEL);
 	if (!dst)
 		return ERR_PTR(-ENOMEM);
 
@@ -1214,7 +1210,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	oplock = req->OplockLevel;
 
 	/* find fid */
-	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (fp == NULL) {
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
@@ -2241,7 +2237,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	if (smb_work->tcon->share->is_pipe == true)
 		return smb_read_andx_pipe(smb_work);
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %d\n",
 			le16_to_cpu(req->Fid));
@@ -2324,6 +2320,8 @@ int smb_write(struct smb_work *smb_work)
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)smb_work->buf;
 	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)smb_work->rsp_buf;
 	struct cifsd_file *fp = NULL;
+	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
 	loff_t pos;
 	size_t count;
 	char *data_buf;
@@ -2333,10 +2331,15 @@ int smb_write(struct smb_work *smb_work)
 	if (req->hdr.WordCount != 5)
 		goto out;
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n",
 			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	if (fp->sess != sess || fp->tcon != tcon) {
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -2470,7 +2473,7 @@ int smb_write_andx(struct smb_work *smb_work)
 		return smb_write_andx_pipe(smb_work);
 	}
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n",
 			le16_to_cpu(req->Fid));
@@ -5595,7 +5598,7 @@ int find_next(struct smb_work *smb_work)
 	cifsd_debug("FileName after unicode conversion %s\n", name);
 	kfree(name);
 
-	dir_fp = get_id_from_fidtable(sess, sid);
+	dir_fp = get_fp(smb_work, sid, 0);
 	if (!dir_fp) {
 		cifsd_debug("error invalid sid\n");
 		rc = -EINVAL;
@@ -5985,7 +5988,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 	disp_info =  (char *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
 
-	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %d\n", req->Fid);
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -6221,8 +6224,8 @@ int query_file_info(struct smb_work *smb_work)
 		return query_file_info_pipe(smb_work);
 	}
 
-	fid = cpu_to_le16(req_params->Fid);
-	fp = get_id_from_fidtable(smb_work->sess, fid);
+	fid = le16_to_cpu(req_params->Fid);
+	fp = get_fp(smb_work, fid, 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", fid);
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
