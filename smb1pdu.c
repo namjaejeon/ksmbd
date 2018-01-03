@@ -543,6 +543,8 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	struct cifsd_tcon *tcon;
 	struct cifsd_sess *sess = smb_work->sess;
 	bool can_write;
+	char *dev_type;
+	int dev_flags = 0;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -561,13 +563,20 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	}
 
 	/* check if valid tree name is present in request or not */
-	if (!req->PasswordLength)
+	if (!req->PasswordLength) {
 		treename = smb_strndup_from_utf16(req->Password + 1,
 				256, true, conn->local_nls);
-	else
+		dev_type = smb_strndup_from_utf16(req->Password + 1 +
+			((strlen(treename) + 1) * 2), 256, false,
+			conn->local_nls);
+	} else {
 		treename = smb_strndup_from_utf16(req->Password +
 				req->PasswordLength, 256, true,
 				conn->local_nls);
+		dev_type = smb_strndup_from_utf16(req->Password +
+			req->PasswordLength + ((strlen(treename) + 1) * 2),
+			256, false, conn->local_nls);
+	}
 
 	if (IS_ERR(treename)) {
 		cifsd_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
@@ -581,7 +590,8 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 		goto out_err1;
 	}
 
-	cifsd_debug("tree connect request for tree %s\n", name);
+	cifsd_debug("tree connect request for tree %s, dev_type : %s\n",
+		name, dev_type);
 
 	share = get_cifsd_share(conn, sess, name, &can_write);
 	if (IS_ERR(share)) {
@@ -592,6 +602,28 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	tcon = construct_cifsd_tcon(share, sess);
 	if (IS_ERR(tcon)) {
 		rc = PTR_ERR(tcon);
+		goto out_err;
+	}
+
+	if (!strcmp(dev_type, "A:"))
+		dev_flags = 1;
+	else if (!strncmp(dev_type, "LPT", 3))
+		dev_flags = 2;
+	else if (!strcmp(dev_type, "IPC"))
+		dev_flags = 3;
+	else if (!strcmp(dev_type, "COMM"))
+		dev_flags = 4;
+	else if (!strcmp(dev_type, "?????"))
+		dev_flags = 5;
+
+	if (!strncmp("IPC$", name, 4)) {
+		if (dev_flags < 3) {
+			rc = -ENODEV;
+			goto out_err;
+		}
+		tcon->share->is_pipe = true;
+	} else if (!dev_flags || (dev_flags > 1 && dev_flags < 5)) {
+		rc = -ENODEV;
 		goto out_err;
 	}
 
@@ -606,9 +638,6 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	rsp->MaximalShareAccessRights = (FILE_READ_RIGHTS |
 					FILE_EXEC_RIGHTS | FILE_WRITE_RIGHTS);
 	rsp->GuestMaximalShareAccessRights = 0;
-
-	if (!strncmp("IPC$", name, 4))
-		tcon->share->is_pipe = true;
 
 	set_service_type(conn, share, rsp);
 
@@ -654,6 +683,9 @@ out_err1:
 		break;
 	case -EACCES:
 		rsp_hdr->Status.CifsError = NT_STATUS_ACCESS_DENIED;
+		break;
+	case -ENODEV:
+		rsp_hdr->Status.CifsError = NT_STATUS_BAD_DEVICE_TYPE;
 		break;
 	case -EINVAL:
 		if (!req)
