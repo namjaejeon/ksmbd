@@ -468,7 +468,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	if (IS_SMB2(sess->conn)) {
+	if (p_id > 0) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
 			cifsd_err("Invalid id for close: %llu\n", p_id);
@@ -546,14 +546,16 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		mfp_free(mfp);
 	}
 
-	if (IS_SMB2(sess->conn)) {
+	if (p_id > 0) {
 		err = close_persistent_id(fp->persistent_id);
 		if (err)
 			return -ENOENT;
 	}
-	delete_id_from_fidtable(sess, id);
-	if (sess)
+
+	if (sess) {
+		delete_id_from_fidtable(sess, id);
 		cifsd_close_id(&sess->fidtable, id);
+	}
 	filp_close(filp, (struct files_struct *)filp);
 	return 0;
 }
