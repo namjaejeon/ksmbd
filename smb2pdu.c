@@ -2498,6 +2498,23 @@ int smb2_open(struct smb_work *smb_work)
 	}
 	fp->persistent_id = persistent_id;
 
+	mfp = mfp_lookup(fp);
+	if (!mfp) {
+		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+		if (!mfp) {
+			rc = -ENOMEM;
+			goto err_out;
+		}
+
+		rc = mfp_init(mfp, fp);
+		if (rc) {
+			cifsd_err("mfp initialized failed\n");
+			rc = -ENOMEM;
+			goto err_out;
+		}
+	}
+	fp->f_mfp = mfp;
+
 	if (req->CreateContextsOffset) {
 		struct create_alloc_size_req *az_req;
 
@@ -2598,23 +2615,6 @@ int smb2_open(struct smb_work *smb_work)
 		}
 		rc = 0;
 	}
-
-	mfp = mfp_lookup(fp);
-	if (!mfp) {
-		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-		if (!mfp) {
-			rc = -ENOMEM;
-			goto err_out;
-		}
-
-		rc = mfp_init(mfp, fp);
-		if (rc) {
-			cifsd_err("mfp initialized failed\n");
-			rc = -ENOMEM;
-			goto err_out;
-		}
-	}
-	fp->f_mfp = mfp;
 
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
