@@ -468,6 +468,10 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
+	if (!sess) {
+		cifsd_err("Session is NULL!\n");
+		return -EINVAL;
+	}
 	if (IS_SMB2(sess->conn)) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
