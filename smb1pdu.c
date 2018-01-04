@@ -1648,7 +1648,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct cifsd_file *fp;
-
+	int oplock_rsp = OPLOCK_NONE;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 	if (smb_work->tcon->share->is_pipe == true) {
@@ -1919,11 +1919,12 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-		&fid, &oplock_flags, le32_to_cpu(req->CreateOptions),
+		&fid, oplock_flags, le32_to_cpu(req->CreateOptions),
 		file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = conv_name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	if (le32_to_cpu(req->DesiredAccess) & DELETE)
 		fp->is_nt_open = 1;
@@ -1969,7 +1970,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
-	rsp->OplockLevel = oplock_flags;
+	rsp->OplockLevel = oplock_rsp;
 	rsp->Fid = fid;
 
 	if ((le32_to_cpu(req->CreateDisposition) == FILE_SUPERSEDE) &&
@@ -4330,6 +4331,7 @@ int smb_posix_open(struct smb_work *smb_work)
 	bool file_present = true;
 	int err;
 	struct cifsd_file *fp;
+	int oplock_rsp = OPLOCK_NONE;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
@@ -4431,10 +4433,11 @@ int smb_posix_open(struct smb_work *smb_work)
 	}
 
 	fp = smb_dentry_open(smb_work, &path, posix_open_flags,
-			      &fid, &oplock_flags, 0, file_present);
+			      &fid, oplock_flags, 0, file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 prepare_rsp:
 	/* open/mkdir success, send back response */
@@ -4444,7 +4447,7 @@ prepare_rsp:
 	psx_rsp = (OPEN_PSX_RSP *)(((char *)&pSMB_rsp->hdr.Protocol) +
 			data_offset);
 
-	psx_rsp->OplockFlags = cpu_to_le16(oplock_flags);
+	psx_rsp->OplockFlags = oplock_rsp;
 	psx_rsp->Fid = fid;
 
 	if (file_present) {
@@ -5371,7 +5374,6 @@ int find_first(struct smb_work *smb_work)
 	int data_count = 0;
 	int num_entry = 0;
 	int last_entry_offset = 0;
-	int oplock = 0;
 	int rc = 0, reclen = 0;
 	int out_buf_len;
 	__u16 sid;
@@ -5411,7 +5413,7 @@ int find_first(struct smb_work *smb_work)
 	}
 
 	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
-			&oplock, 0, 1);
+			0, 0, 1);
 	if (!dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
@@ -7340,6 +7342,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	umode_t mode = 0;
 	int err;
 	struct cifsd_file *fp;
+	int oplock_rsp = OPLOCK_NONE;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
@@ -7423,10 +7426,11 @@ int smb_open_andx(struct smb_work *smb_work)
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-			&fid, &oplock_flags, 0, file_present);
+			&fid, oplock_flags, 0, file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	/* open success, send back response */
 	if (file_present) {
@@ -7438,7 +7442,7 @@ int smb_open_andx(struct smb_work *smb_work)
 		file_info = F_CREATED;
 	}
 
-	if (oplock_flags)
+	if (oplock_rsp)
 		file_info |= SMBOPEN_LOCK_GRANTED;
 
 	if (file_present) {

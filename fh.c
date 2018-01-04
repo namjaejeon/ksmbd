@@ -871,7 +871,7 @@ void destroy_global_fidtable(void)
  * @path:	path of dentry to be opened
  * @flags:	open flags
  * @ret_id:	fid returned on this
- * @oplock:	return oplock state granted on file
+ * @open_flags:	return oplock state granted on file
  * @option:	file access pattern options for fadvise
  * @fexist:	file already present or not
  *
@@ -879,7 +879,7 @@ void destroy_global_fidtable(void)
  */
 struct cifsd_file *smb_dentry_open(struct smb_work *work,
 	const struct path *path, int flags, __u16 *ret_id,
-	int *oplock, int option, int fexist)
+	int open_flags, int option, int fexist)
 {
 	struct file *filp;
 	int id, err = 0;
@@ -938,13 +938,10 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 
 	INIT_LIST_HEAD(&fp->lock_list);
 
-	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode))
-		*oplock = OPLOCK_NONE;
-
-	if (!S_ISDIR(file_inode(filp)->i_mode) &&
-			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
+	if (oplocks_enable && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Client cannot request levelII oplock directly */
-		*oplock = smb_grant_oplock(work, *oplock, id, fp, rcv_hdr->Tid,
+		smb_grant_oplock(work, open_flags &
+			(REQ_OPLOCK | REQ_BATCHOPLOCK), id, fp, rcv_hdr->Tid,
 			NULL);
 	}
 
