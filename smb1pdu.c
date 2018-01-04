@@ -1773,6 +1773,13 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (IS_ERR(conv_name))
 		return PTR_ERR(conv_name);
 
+	err = check_invalid_char(conv_name);
+	if (err < 0) {
+		kfree(conv_name);
+		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
+
 	err = smb_kern_path(conv_name, 0, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
@@ -1879,7 +1886,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				err = -EACCES;
 				cifsd_debug("returning as user does not have permission to write\n");
 			} else {
-				err = -ENOENT;
+				err = -EBADF;
 				cifsd_debug("returning as file does not exist\n");
 			}
 		}
@@ -4327,6 +4334,13 @@ int smb_posix_open(struct smb_work *smb_work)
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
+
+	err = check_invalid_char(name);
+	if (err < 0) {
+		kfree(name);
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
 
 	err = smb_kern_path(name, 0, &path, 0);
 	if (err) {
@@ -7350,6 +7364,14 @@ int smb_open_andx(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
+	err = check_invalid_char(name);
+	if (err < 0) {
+		kfree(name);
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
+
 	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
 	if (err)
 		file_present = false;
@@ -7362,7 +7384,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	open_flags = convert_open_flags(file_present, le16_to_cpu(req->Mode),
 			le16_to_cpu(req->OpenFunction));
 	if (open_flags < 0) {
-		cifsd_debug("create_dispostion returned %d\n", err);
+		cifsd_debug("create_dispostion returned %d\n", open_flags);
 		if (file_present)
 			goto free_path;
 		else
