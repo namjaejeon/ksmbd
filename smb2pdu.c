@@ -5198,6 +5198,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 		if (le32_to_cpu(file_info->Attributes)) {
 			unsigned long *config_attr;
+			struct kstat stat;
 
 			if (!S_ISDIR(file_inode(filp)->i_mode)
 				&& file_info->Attributes == ATTR_DIRECTORY) {
@@ -5207,7 +5208,9 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			}
 
 			config_attr = &smb_work->tcon->share->config.attr;
-			fp->fattr = file_info->Attributes;
+			generic_fillattr(inode, &stat);
+			fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+					le32_to_cpu(file_info->Attributes)));
 			if (get_attr_store_dos(config_attr)) {
 				rc = smb_store_cont_xattr(&fp->filp->f_path,
 						XATTR_NAME_FILE_ATTRIBUTE,
