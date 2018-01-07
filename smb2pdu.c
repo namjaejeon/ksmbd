@@ -3361,8 +3361,10 @@ int smb2_query_dir(struct smb_work *smb_work)
 		}
 
 		/* dot and dotdot entries are already reserved */
-		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
+		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name)) {
+			kfree(d_info.name);
 			continue;
+		}
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
