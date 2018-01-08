@@ -5573,12 +5573,12 @@ int find_first(struct smb_work *smb_work)
 
 err_out:
 	if (dir_fp && dir_fp->readdir_data.dirent) {
-		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
 			dir_fp->readdir_data.dirent = NULL;
 		}
+		path_put(&(dir_fp->filp->f_path));
+		close_id(sess, sid, 0);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
