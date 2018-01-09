@@ -4239,7 +4239,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		char *stream_type;
 		struct path *path = &filp->f_path;
 		ssize_t xattr_list_len;
-		int nbytes = 0, streamlen, next;
+		int nbytes = 0, streamlen, stream_name_len, next;
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
@@ -4262,8 +4262,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 				STREAM_PREFIX, STREAM_PREFIX_LEN))
 				continue;
 
-			streamlen = strlen(stream_name) - (XATTR_USER_PREFIX_LEN
-				+ STREAM_PREFIX_LEN);
+			stream_name_len = streamlen = strlen(stream_name) -
+				(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
 
 			if (fp->stream.type == 2) {
 				streamlen += 17;
@@ -4293,9 +4293,9 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			kfree(stream_buf);
 			file_info->StreamNameLength = cpu_to_le32(streamlen);
 			file_info->StreamSize =
-				cpu_to_le64(streamlen);
+				cpu_to_le64(stream_name_len);
 			file_info->StreamAllocationSize =
-				cpu_to_le64(XATTR_SIZE_MAX);
+				cpu_to_le64(stream_name_len);
 
 			next = sizeof(struct smb2_file_stream_info)
 				+ streamlen;
