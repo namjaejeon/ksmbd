@@ -4273,6 +4273,8 @@ int smb2_get_info_file(struct smb_work *smb_work)
 				stream_type = "$DATA";
 			}
 
+			/* plus :: size */
+			streamlen += 2;
 			stream_buf = kmalloc(streamlen + 1, GFP_KERNEL);
 			if (!stream_buf)
 				break;
