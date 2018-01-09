@@ -3482,6 +3482,42 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 
 	return rc;
 }
+#else
+
+static int smb2_get_info_sec(struct smb_work *smb_work)
+{
+	struct smb2_query_info_req *req;
+	struct smb2_query_info_rsp *rsp, *rsp_org;
+	int rc = 0;
+	struct cifs_ntsd *pntsd;
+	int out_len;
+
+	req = (struct smb2_query_info_req *)smb_work->buf;
+	rsp = (struct smb2_query_info_rsp *)smb_work->rsp_buf;
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_query_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
+
+	pntsd = (struct cifs_ntsd *) rsp->Buffer;
+	out_len = sizeof(struct cifs_ntsd);
+
+	pntsd->revision = 1;
+	pntsd->type = 1;
+	pntsd->osidoffset = 0;
+	pntsd->gsidoffset = 0;
+	pntsd->sacloffset = 0;
+	pntsd->dacloffset = 0;
+
+	rsp->OutputBufferLength = out_len;
+	inc_rfc1001_len(rsp_org, out_len);
+
+	return rc;
+}
 #endif
 
 /**
@@ -3525,12 +3561,10 @@ int smb2_query_info(struct smb_work *smb_work)
 		cifsd_debug("GOT SMB2_O_INFO_FILESYSTEM\n");
 		rc = smb2_get_info_filesystem(smb_work);
 		break;
-#ifdef CONFIG_CIFSD_ACL
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
 		rc = smb2_get_info_sec(smb_work);
 		break;
-#endif
 	default:
 		cifsd_debug("InfoType %d not supported yet\n", req->InfoType);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
