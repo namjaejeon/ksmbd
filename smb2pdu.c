@@ -3507,7 +3507,7 @@ static int smb2_get_info_sec(struct smb_work *smb_work)
 	out_len = sizeof(struct cifs_ntsd);
 
 	pntsd->revision = 1;
-	pntsd->type = 1;
+	pntsd->type = 0x9000;
 	pntsd->osidoffset = 0;
 	pntsd->gsidoffset = 0;
 	pntsd->sacloffset = 0;
