@@ -2814,7 +2814,7 @@ reconnect:
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
 	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64((stat.size + 511) >> 9);
+		cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	rsp->FileAttributes = fp->fattr;
 
@@ -4122,7 +4122,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 
-		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks);
+		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		sinfo->NumberOfLinks = FP_INODE(fp)->i_nlink - delete_pending;
@@ -4180,7 +4180,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
-		file_info->AllocationSize = cpu_to_le64(inode->i_blocks);
+		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->NumberOfLinks =
@@ -4350,7 +4350,7 @@ out:
 		file_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
 		file_info->Attributes = fp->fattr;
-		file_info->AllocationSize = cpu_to_le64(inode->i_blocks);
+		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
 		file_info->Reserved = cpu_to_le32(0);
@@ -5308,7 +5308,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		 */
 
 		struct smb2_file_alloc_info *file_alloc_info;
-		loff_t alloc_size;
+		loff_t alloc_blks;
 		unsigned short logical_sector_size;
 
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
@@ -5320,12 +5320,12 @@ int smb2_set_info_file(struct smb_work *smb_work)
 		}
 
 		file_alloc_info = (struct smb2_file_alloc_info *)req->Buffer;
-		alloc_size = le64_to_cpu(file_alloc_info->AllocationSize);
+		alloc_blks = le64_to_cpu(file_alloc_info->AllocationSize) >> 9;
 		logical_sector_size = get_logical_sector_size(inode);
 
-		if (alloc_size > inode->i_blocks) {
+		if (alloc_blks > inode->i_blocks) {
 			rc = smb_vfs_alloc_size(sess->conn, fp,
-				alloc_size*logical_sector_size);
+				alloc_blks * logical_sector_size);
 
 			if (rc) {
 				cifsd_err("smb_vfs_alloc_size is failed : %d\n",
@@ -5334,7 +5334,7 @@ int smb2_set_info_file(struct smb_work *smb_work)
 			}
 		} else {
 			rc = smb_vfs_truncate(sess, NULL, id,
-				alloc_size*logical_sector_size);
+				alloc_blks * logical_sector_size);
 
 			if (rc) {
 				cifsd_err("truncate failed! fid %llu err %d\n",
