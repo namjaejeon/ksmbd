@@ -2928,11 +2928,13 @@ err_out1:
 
 		if (mfp && atomic_dec_and_test(&mfp->m_count))
 			mfp_free(mfp);
-		if (fp != NULL) {
-			filp_close(filp, (struct files_struct *)filp);
+		if (fp) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
+		if (filp)
+			filp_close(filp, (struct files_struct *)filp);
+
 		smb2_set_err_rsp(smb_work);
 	} else
 		conn->stats.open_files_count++;
