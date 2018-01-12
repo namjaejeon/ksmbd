@@ -922,12 +922,16 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 			goto err_out;
 		}
 
-		mfp_init(mfp, fp);
+		err = mfp_init(mfp, fp);
+		if (err) {
+			cifsd_err("mfp initialized failed\n");
+			err = -ENOMEM;
+			goto err_out;
+		}
 	}
 
 	/* Add fp to master fp list. */
 	list_add(&fp->node, &mfp->m_fp_list);
-	atomic_inc(&mfp->m_count);
 	fp->f_mfp = mfp;
 
 	if (flags & O_TRUNC) {
