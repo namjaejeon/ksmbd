@@ -354,6 +354,47 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	return file;
 }
 
+struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+	int64_t req_pid)
+{
+	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
+	struct cifsd_file *fp;
+	int64_t vid = -1, pid = -1;
+
+	if (le64_to_cpu(req_vid == -1)) {
+		cifsd_debug("Compound request assigning stored FID = %llu\n",
+				smb_work->cur_local_fid);
+		vid = smb_work->cur_local_fid;
+		pid = smb_work->cur_local_pfid;
+	}
+
+	if (vid == -1)
+		vid = req_vid;
+
+	if (pid == -1)
+		pid = req_pid;
+
+	fp = get_id_from_fidtable(smb_work->sess, vid);
+	if (!fp) {
+		cifsd_debug("Invalid id: %llu\n", vid);
+		return NULL;
+	}
+
+	if (fp->sess != sess || fp->tcon != tcon) {
+		cifsd_err("invalid sess or tcon\n");
+		return NULL;
+	}
+
+	if (IS_SMB2(smb_work->conn) && fp->persistent_id != pid) {
+		cifsd_err("persistent id mismatch : %lld, %lld\n",
+				fp->persistent_id, pid);
+		fp = NULL;
+	}
+
+	return fp;
+}
+
 struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
 	char *filename)
 {
@@ -427,7 +468,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	if (IS_SMB2(sess->conn)) {
+	if (p_id > 0) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
 			cifsd_err("Invalid id for close: %llu\n", p_id);
@@ -505,14 +546,16 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		mfp_free(mfp);
 	}
 
-	if (IS_SMB2(sess->conn)) {
+	if (p_id > 0) {
 		err = close_persistent_id(fp->persistent_id);
 		if (err)
 			return -ENOENT;
 	}
-	delete_id_from_fidtable(sess, id);
-	if (sess)
+
+	if (sess) {
+		delete_id_from_fidtable(sess, id);
 		cifsd_close_id(&sess->fidtable, id);
+	}
 	filp_close(filp, (struct files_struct *)filp);
 	return 0;
 }
@@ -830,7 +873,7 @@ void destroy_global_fidtable(void)
  * @path:	path of dentry to be opened
  * @flags:	open flags
  * @ret_id:	fid returned on this
- * @oplock:	return oplock state granted on file
+ * @open_flags:	return oplock state granted on file
  * @option:	file access pattern options for fadvise
  * @fexist:	file already present or not
  *
@@ -838,7 +881,7 @@ void destroy_global_fidtable(void)
  */
 struct cifsd_file *smb_dentry_open(struct smb_work *work,
 	const struct path *path, int flags, __u16 *ret_id,
-	int *oplock, int option, int fexist)
+	int open_flags, int option, int fexist)
 {
 	struct file *filp;
 	int id, err = 0;
@@ -879,12 +922,16 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 			goto err_out;
 		}
 
-		mfp_init(mfp, fp);
+		err = mfp_init(mfp, fp);
+		if (err) {
+			cifsd_err("mfp initialized failed\n");
+			err = -ENOMEM;
+			goto err_out;
+		}
 	}
 
 	/* Add fp to master fp list. */
 	list_add(&fp->node, &mfp->m_fp_list);
-	atomic_inc(&mfp->m_count);
 	fp->f_mfp = mfp;
 
 	if (flags & O_TRUNC) {
@@ -897,13 +944,10 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 
 	INIT_LIST_HEAD(&fp->lock_list);
 
-	if (!oplocks_enable || S_ISDIR(file_inode(filp)->i_mode))
-		*oplock = OPLOCK_NONE;
-
-	if (!S_ISDIR(file_inode(filp)->i_mode) &&
-			(*oplock & (REQ_BATCHOPLOCK | REQ_OPLOCK))) {
+	if (oplocks_enable && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Client cannot request levelII oplock directly */
-		*oplock = smb_grant_oplock(work, *oplock, id, fp, rcv_hdr->Tid,
+		smb_grant_oplock(work, open_flags &
+			(REQ_OPLOCK | REQ_BATCHOPLOCK), id, fp, rcv_hdr->Tid,
 			NULL);
 	}
 

@@ -314,24 +314,18 @@ char *andx_response_buffer(char *buf)
  *
  * Return:      share name on success, otherwise error
  */
-char *extract_sharename(const char *treename)
+char *extract_sharename(char *treename)
 {
-	const char *src;
-	char *delim, *dst;
 	int len;
+	char *dst;
 
 	/* skip double chars at the beginning */
-	src = treename + 2;
-
-	/* share name is always preceded by '\\' now */
-	delim = strchr(src, '\\');
-	if (!delim)
-		return ERR_PTR(-EINVAL);
-	delim++;
-	len = strlen(delim);
+	while (strchr(treename, '\\'))
+		strsep(&treename, "\\");
+	len = strlen(treename);
 
 	/* caller has to free the memory */
-	dst = kstrndup(delim, len, GFP_KERNEL);
+	dst = kstrndup(treename, len, GFP_KERNEL);
 	if (!dst)
 		return ERR_PTR(-ENOMEM);
 
@@ -549,6 +543,8 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	struct cifsd_tcon *tcon;
 	struct cifsd_sess *sess = smb_work->sess;
 	bool can_write;
+	char *dev_type;
+	int dev_flags = 0;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -567,26 +563,35 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	}
 
 	/* check if valid tree name is present in request or not */
-	if (!req->PasswordLength)
+	if (!req->PasswordLength) {
 		treename = smb_strndup_from_utf16(req->Password + 1,
 				256, true, conn->local_nls);
-	else
+		dev_type = smb_strndup_from_utf16(req->Password + 1 +
+			((strlen(treename) + 1) * 2), 256, false,
+			conn->local_nls);
+	} else {
 		treename = smb_strndup_from_utf16(req->Password +
 				req->PasswordLength, 256, true,
 				conn->local_nls);
+		dev_type = smb_strndup_from_utf16(req->Password +
+			req->PasswordLength + ((strlen(treename) + 1) * 2),
+			256, false, conn->local_nls);
+	}
 
 	if (IS_ERR(treename)) {
 		cifsd_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
 		rc = PTR_ERR(treename);
-		goto out_err;
+		goto out_err1;
 	}
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
+		kfree(treename);
 		rc = PTR_ERR(name);
-		goto out_err;
+		goto out_err1;
 	}
 
-	cifsd_debug("tree connect request for tree %s\n", name);
+	cifsd_debug("tree connect request for tree %s, dev_type : %s\n",
+		name, dev_type);
 
 	share = get_cifsd_share(conn, sess, name, &can_write);
 	if (IS_ERR(share)) {
@@ -597,6 +602,28 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	tcon = construct_cifsd_tcon(share, sess);
 	if (IS_ERR(tcon)) {
 		rc = PTR_ERR(tcon);
+		goto out_err;
+	}
+
+	if (!strcmp(dev_type, "A:"))
+		dev_flags = 1;
+	else if (!strncmp(dev_type, "LPT", 3))
+		dev_flags = 2;
+	else if (!strcmp(dev_type, "IPC"))
+		dev_flags = 3;
+	else if (!strcmp(dev_type, "COMM"))
+		dev_flags = 4;
+	else if (!strcmp(dev_type, "?????"))
+		dev_flags = 5;
+
+	if (!strncmp("IPC$", name, 4)) {
+		if (dev_flags < 3) {
+			rc = -ENODEV;
+			goto out_err;
+		}
+		tcon->share->is_pipe = true;
+	} else if (!dev_flags || (dev_flags > 1 && dev_flags < 5)) {
+		rc = -ENODEV;
 		goto out_err;
 	}
 
@@ -611,9 +638,6 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	rsp->MaximalShareAccessRights = (FILE_READ_RIGHTS |
 					FILE_EXEC_RIGHTS | FILE_WRITE_RIGHTS);
 	rsp->GuestMaximalShareAccessRights = 0;
-
-	if (!strncmp("IPC$", name, 4))
-		tcon->share->is_pipe = true;
 
 	set_service_type(conn, share, rsp);
 
@@ -638,6 +662,9 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	}
 
 out_err:
+	kfree(treename);
+	kfree(name);
+out_err1:
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
@@ -656,6 +683,9 @@ out_err:
 		break;
 	case -EACCES:
 		rsp_hdr->Status.CifsError = NT_STATUS_ACCESS_DENIED;
+		break;
+	case -ENODEV:
+		rsp_hdr->Status.CifsError = NT_STATUS_BAD_DEVICE_TYPE;
 		break;
 	case -EINVAL:
 		if (!req)
@@ -678,8 +708,6 @@ out_err:
 	if (!sess ||  !sess->tcon_count)
 		conn->tcp_status = CifsExiting;
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
-	kfree(treename);
-	kfree(name);
 	return rc;
 }
 
@@ -1212,7 +1240,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	oplock = req->OplockLevel;
 
 	/* find fid */
-	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (fp == NULL) {
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
@@ -1620,7 +1648,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct cifsd_file *fp;
-
+	int oplock_rsp = OPLOCK_NONE;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 	if (smb_work->tcon->share->is_pipe == true) {
@@ -1745,6 +1773,13 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (IS_ERR(conv_name))
 		return PTR_ERR(conv_name);
 
+	err = check_invalid_char(conv_name);
+	if (err < 0) {
+		kfree(conv_name);
+		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
+
 	err = smb_kern_path(conv_name, 0, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
@@ -1851,7 +1886,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				err = -EACCES;
 				cifsd_debug("returning as user does not have permission to write\n");
 			} else {
-				err = -ENOENT;
+				err = -EBADF;
 				cifsd_debug("returning as file does not exist\n");
 			}
 		}
@@ -1884,11 +1919,12 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-		&fid, &oplock_flags, le32_to_cpu(req->CreateOptions),
+		&fid, oplock_flags, le32_to_cpu(req->CreateOptions),
 		file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = conv_name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	if (le32_to_cpu(req->DesiredAccess) & DELETE)
 		fp->is_nt_open = 1;
@@ -1934,7 +1970,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
-	rsp->OplockLevel = oplock_flags;
+	rsp->OplockLevel = oplock_rsp;
 	rsp->Fid = fid;
 
 	if ((le32_to_cpu(req->CreateDisposition) == FILE_SUPERSEDE) &&
@@ -2239,7 +2275,7 @@ int smb_read_andx(struct smb_work *smb_work)
 	if (smb_work->tcon->share->is_pipe == true)
 		return smb_read_andx_pipe(smb_work);
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %d\n",
 			le16_to_cpu(req->Fid));
@@ -2322,6 +2358,8 @@ int smb_write(struct smb_work *smb_work)
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)smb_work->buf;
 	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)smb_work->rsp_buf;
 	struct cifsd_file *fp = NULL;
+	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_tcon *tcon = smb_work->tcon;
 	loff_t pos;
 	size_t count;
 	char *data_buf;
@@ -2331,10 +2369,15 @@ int smb_write(struct smb_work *smb_work)
 	if (req->hdr.WordCount != 5)
 		goto out;
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n",
 			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	if (fp->sess != sess || fp->tcon != tcon) {
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -2468,7 +2511,7 @@ int smb_write_andx(struct smb_work *smb_work)
 		return smb_write_andx_pipe(smb_work);
 	}
 
-	fp = get_id_from_fidtable(smb_work->sess, le16_to_cpu(req->Fid));
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n",
 			le16_to_cpu(req->Fid));
@@ -4288,10 +4331,18 @@ int smb_posix_open(struct smb_work *smb_work)
 	bool file_present = true;
 	int err;
 	struct cifsd_file *fp;
+	int oplock_rsp = OPLOCK_NONE;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
+
+	err = check_invalid_char(name);
+	if (err < 0) {
+		kfree(name);
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
 
 	err = smb_kern_path(name, 0, &path, 0);
 	if (err) {
@@ -4382,10 +4433,11 @@ int smb_posix_open(struct smb_work *smb_work)
 	}
 
 	fp = smb_dentry_open(smb_work, &path, posix_open_flags,
-			      &fid, &oplock_flags, 0, file_present);
+			      &fid, oplock_flags, 0, file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 prepare_rsp:
 	/* open/mkdir success, send back response */
@@ -4395,7 +4447,7 @@ prepare_rsp:
 	psx_rsp = (OPEN_PSX_RSP *)(((char *)&pSMB_rsp->hdr.Protocol) +
 			data_offset);
 
-	psx_rsp->OplockFlags = cpu_to_le16(oplock_flags);
+	psx_rsp->OplockFlags = oplock_rsp;
 	psx_rsp->Fid = fid;
 
 	if (file_present) {
@@ -5322,7 +5374,6 @@ int find_first(struct smb_work *smb_work)
 	int data_count = 0;
 	int num_entry = 0;
 	int last_entry_offset = 0;
-	int oplock = 0;
 	int rc = 0, reclen = 0;
 	int out_buf_len;
 	__u16 sid;
@@ -5362,7 +5413,7 @@ int find_first(struct smb_work *smb_work)
 	}
 
 	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
-			&oplock, 0, 1);
+			0, 0, 1);
 	if (!dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
@@ -5522,12 +5573,12 @@ int find_first(struct smb_work *smb_work)
 
 err_out:
 	if (dir_fp && dir_fp->readdir_data.dirent) {
-		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
 			dir_fp->readdir_data.dirent = NULL;
 		}
+		path_put(&(dir_fp->filp->f_path));
+		close_id(sess, sid, 0);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -5593,7 +5644,7 @@ int find_next(struct smb_work *smb_work)
 	cifsd_debug("FileName after unicode conversion %s\n", name);
 	kfree(name);
 
-	dir_fp = get_id_from_fidtable(sess, sid);
+	dir_fp = get_fp(smb_work, sid, 0);
 	if (!dir_fp) {
 		cifsd_debug("error invalid sid\n");
 		rc = -EINVAL;
@@ -5983,7 +6034,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 	disp_info =  (char *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
 
-	fp = get_id_from_fidtable(smb_work->sess, req->Fid);
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %d\n", req->Fid);
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -6219,8 +6270,8 @@ int query_file_info(struct smb_work *smb_work)
 		return query_file_info_pipe(smb_work);
 	}
 
-	fid = cpu_to_le16(req_params->Fid);
-	fp = get_id_from_fidtable(smb_work->sess, fid);
+	fid = le16_to_cpu(req_params->Fid);
+	fp = get_fp(smb_work, fid, 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", fid);
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -7291,6 +7342,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	umode_t mode = 0;
 	int err;
 	struct cifsd_file *fp;
+	int oplock_rsp = OPLOCK_NONE;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
@@ -7315,6 +7367,14 @@ int smb_open_andx(struct smb_work *smb_work)
 	if (IS_ERR(name))
 		return PTR_ERR(name);
 
+	err = check_invalid_char(name);
+	if (err < 0) {
+		kfree(name);
+		rsp->hdr.Status.CifsError =
+			NT_STATUS_OBJECT_NAME_INVALID;
+		return err;
+	}
+
 	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
 	if (err)
 		file_present = false;
@@ -7327,7 +7387,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	open_flags = convert_open_flags(file_present, le16_to_cpu(req->Mode),
 			le16_to_cpu(req->OpenFunction));
 	if (open_flags < 0) {
-		cifsd_debug("create_dispostion returned %d\n", err);
+		cifsd_debug("create_dispostion returned %d\n", open_flags);
 		if (file_present)
 			goto free_path;
 		else
@@ -7366,10 +7426,11 @@ int smb_open_andx(struct smb_work *smb_work)
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-			&fid, &oplock_flags, 0, file_present);
+			&fid, oplock_flags, 0, file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	/* open success, send back response */
 	if (file_present) {
@@ -7381,7 +7442,7 @@ int smb_open_andx(struct smb_work *smb_work)
 		file_info = F_CREATED;
 	}
 
-	if (oplock_flags)
+	if (oplock_rsp)
 		file_info |= SMBOPEN_LOCK_GRANTED;
 
 	if (file_present) {

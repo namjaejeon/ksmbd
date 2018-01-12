@@ -827,7 +827,7 @@ int check_invalid_char(char *filename)
 	/* Check invalid character in stream name */
 	for (i = 0; i < len; i++) {
 		if (!is_char_allowed(&filename[i])) {
-			cifsd_err("found invalid character : %c\n",
+			cifsd_err("found invalid character : 0x%x\n",
 					filename[i]);
 			rc = -ENOENT;
 			break;

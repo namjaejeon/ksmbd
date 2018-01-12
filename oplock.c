@@ -1010,6 +1010,8 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, uint64_t pid,
 	if (atomic_read(&mfp->op_count) == 1) {
 new_oplock:
 		switch (req_op_level) {
+		case REQ_OPLOCK:
+		case REQ_BATCHOPLOCK:
 		case SMB2_OPLOCK_LEVEL_BATCH:
 		case SMB2_OPLOCK_LEVEL_EXCLUSIVE:
 			grant_write_oplock(opinfo,
