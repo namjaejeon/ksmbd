@@ -2024,7 +2024,6 @@ int smb2_open(struct smb_work *smb_work)
 				cifsd_err(
 					"Failed to get Durable handle state\n");
 				rc = -EBADF;
-				fp = NULL;
 				goto err_out1;
 			}
 
@@ -2043,7 +2042,6 @@ int smb2_open(struct smb_work *smb_work)
 		} else {
 			if (recon_ver) {
 				rc = -EINVAL;
-				fp = NULL;
 				goto err_out1;
 			}
 
@@ -2098,7 +2096,6 @@ int smb2_open(struct smb_work *smb_work)
 		} else {
 			if (recon_ver == 2) {
 				rc = -EINVAL;
-				fp = NULL;
 				goto err_out1;
 			}
 
@@ -2122,7 +2119,6 @@ int smb2_open(struct smb_work *smb_work)
 		} else {
 			if (recon_ver) {
 				rc = -EINVAL;
-				fp = NULL;
 				goto err_out1;
 			}
 			durable_v2_blob =
@@ -2787,20 +2783,17 @@ reconnect:
 		if (recon_ver == 2 && memcmp(fp->create_guid,
 			recon_state_v2->CreateGuid, SMB2_CREATE_GUID_SIZE)) {
 			rc = -EBADF;
-			fp = NULL;
 			goto err_out1;
 		}
 
 		rc = smb2_check_durable_oplock(fp, lc, name, recon_ver);
-		if (rc) {
-			fp = NULL;
+		if (rc)
 			goto err_out;
-		}
+
 		rc = cifsd_reconnect_durable_fp(sess, fp, tcon);
-		if (rc) {
-			fp = NULL;
+		if (rc)
 			goto err_out;
-		}
+
 		generic_fillattr(FP_INODE(fp), &stat);
 		file_info = FILE_OPENED;
 	}
@@ -2928,7 +2921,7 @@ err_out1:
 
 		if (mfp && atomic_dec_and_test(&mfp->m_count))
 			mfp_free(mfp);
-		if (fp) {
+		if (volatile_id) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
