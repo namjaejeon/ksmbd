@@ -2497,6 +2497,31 @@ int smb2_open(struct smb_work *smb_work)
 	}
 	fp->persistent_id = persistent_id;
 
+	if (stream_name) {
+		xattr_stream_size = construct_xattr_stream_name(stream_name,
+			&xattr_stream_name);
+
+		fp->is_stream = true;
+		fp->stream.name = xattr_stream_name;
+		fp->stream.type = s_type;
+		fp->stream.size = xattr_stream_size;
+
+		/* Check if there is stream prefix in xattr space */
+		rc = smb_find_cont_xattr(&path, xattr_stream_name,
+				xattr_stream_size, NULL, 0);
+		if (rc < 0) {
+			if (fp->cdoption == FILE_OPEN_LE) {
+				cifsd_err("failed to find stream name in xattr, rc : %d\n",
+						rc);
+				rc = -EBADF;
+				goto err_out;
+			}
+
+			store_stream = 1;
+		}
+		rc = 0;
+	}
+
 	mfp = mfp_lookup(fp);
 	if (!mfp) {
 		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
@@ -2588,31 +2613,6 @@ int smb2_open(struct smb_work *smb_work)
 	if (islink) {
 		fp->lfilp = lfilp;
 		fp->islink = islink;
-	}
-
-	if (stream_name) {
-		xattr_stream_size = construct_xattr_stream_name(stream_name,
-			&xattr_stream_name);
-
-		fp->is_stream = true;
-		fp->stream.name = xattr_stream_name;
-		fp->stream.type = s_type;
-		fp->stream.size = xattr_stream_size;
-
-		/* Check if there is stream prefix in xattr space */
-		rc = smb_find_cont_xattr(&path, xattr_stream_name,
-				xattr_stream_size, NULL, 0);
-		if (rc < 0) {
-			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_err("failed to find stream name in xattr, rc : %d\n",
-						rc);
-				rc = -EBADF;
-				goto err_out;
-			}
-
-			store_stream = 1;
-		}
-		rc = 0;
 	}
 
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
