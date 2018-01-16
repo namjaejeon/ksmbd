@@ -2003,7 +2003,7 @@ int smb2_open(struct smb_work *smb_work)
 		goto err_out1;
 
 	req_op_level = req->RequestedOplockLevel;
-	if (req->CreateContextsOffset) {
+	if (durable_enable && req->CreateContextsOffset) {
 		context = smb2_find_context_vals(
 			req, SMB2_CREATE_DURABLE_HANDLE_RECONNECT_V2);
 		if (IS_ERR(context)) {
@@ -2150,6 +2150,9 @@ int smb2_open(struct smb_work *smb_work)
 
 		if (recon_ver)
 			goto reconnect;
+	} else {
+		if (oplocks_enable && req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
+			lc = parse_lease_state(req);
 	}
 
 	if (req->ImpersonationLevel > IL_DELEGATE) {
