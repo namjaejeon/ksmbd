@@ -1676,7 +1676,7 @@ out:
 }
 
 int smb2_check_durable_oplock(struct cifsd_file *fp,
-	struct lease_ctx_info *lctx, char *name, int version)
+	struct lease_ctx_info *lctx, char *name)
 {
 	struct oplock_info *opinfo = fp->f_opinfo;
 

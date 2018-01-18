@@ -147,7 +147,7 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
 	struct lease_ctx_info *lctx);
 void destroy_lease_table(struct connection *conn);
 int smb2_check_durable_oplock(struct cifsd_file *fp,
-	struct lease_ctx_info *lctx, char *name, int version);
+	struct lease_ctx_info *lctx, char *name);
 #endif
 
 #endif /* __CIFSD_OPLOCK_H */
