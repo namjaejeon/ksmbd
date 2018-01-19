@@ -668,8 +668,7 @@ int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 		uint64_t fid, struct iattr *attrs);
 int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id);
 struct cifsd_file *smb_dentry_open(struct smb_work *work,
-	const struct path *path, int flags, __u16 *fid,
-	int open_flags, int option, int fexist);
+	const struct path *path, int flags, int option, int fexist);
 int smb_vfs_remove_file(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);

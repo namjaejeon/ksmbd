@@ -2086,7 +2086,7 @@ int smb2_open(struct smb_work *smb_work)
 	umode_t mode = 0;
 	__le32 *next_ptr = NULL;
 	uint64_t persistent_id = 0;
-	int req_op_level = 0, rsp_op_level = 0, open_flags = 0, file_info = 0;
+	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int volatile_id = 0;
 	int rc = 0, len = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
@@ -2096,6 +2096,7 @@ int smb2_open(struct smb_work *smb_work)
 	char *stream_name = NULL, *xattr_stream_name = NULL;
 	bool file_present = false, created = false, islink = false;
 	struct durable_info d_info;
+	int share_ret;
 
 	req = (struct smb2_create_req *)smb_work->buf;
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
@@ -2690,9 +2691,13 @@ int smb2_open(struct smb_work *smb_work)
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
+	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
 		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
-		rsp_op_level = SMB2_OPLOCK_LEVEL_NONE;
+		if (share_ret < 0 && !S_ISDIR(FP_INODE(fp)->i_mode)) {
+			rc = share_ret;
+			goto err_out;
+		}
 	} else if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
 		req_op_level = smb2_map_lease_to_oplock(lc->req_state);
 		cifsd_debug("lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
@@ -2701,12 +2706,12 @@ int smb2_open(struct smb_work *smb_work)
 		if (rc)
 			goto err_out;
 		rc = smb_grant_oplock(smb_work, req_op_level,
-			persistent_id, fp, tree_id, lc);
+			persistent_id, fp, tree_id, lc, share_ret);
 		if (rc < 0)
 			goto err_out;
 	} else {
 		rc = smb_grant_oplock(smb_work, req_op_level,
-			persistent_id, fp, tree_id, NULL);
+			persistent_id, fp, tree_id, NULL, share_ret);
 		if (rc < 0)
 			goto err_out;
 	}
@@ -2936,7 +2941,7 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		else if (rc == -ENOENT)
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
-		else if (rc == -ESHARE)
+		else if (rc == -EPERM)
 			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
 		else if (rc == -EBUSY)
 			rsp->hdr.Status = NT_STATUS_DELETE_PENDING;

@@ -1639,7 +1639,6 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	char *conv_name;
 	bool file_present = true, extended_reply;
 	__u64 alloc_size = 0;
-	__u16 fid;
 	umode_t mode = 0;
 	int err;
 	int create_directory = 0;
@@ -1647,8 +1646,9 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	char *root = NULL;
 	bool is_unicode;
 	bool is_relative_root = false;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
+	int share_ret;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 	if (smb_work->tcon->share->is_pipe == true) {
@@ -1772,6 +1772,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	kfree(name);
 	if (IS_ERR(conv_name))
 		return PTR_ERR(conv_name);
+
+	cifsd_err("conv_name : %s\n", conv_name);
 
 	err = check_invalid_char(conv_name);
 	if (err < 0) {
@@ -1919,11 +1921,32 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-		&fid, oplock_flags, le32_to_cpu(req->CreateOptions),
+		le32_to_cpu(req->CreateOptions),
 		file_present);
-	if (!fp)
+	if (IS_ERR(fp)) {
+		err = PTR_ERR(fp);
+		cifsd_err("\n");
 		goto free_path;
+	}
 	fp->filename = conv_name;
+	fp->daccess = req->DesiredAccess;
+	fp->saccess = req->ShareAccess;
+
+	share_ret = smb_check_shared_mode(fp->filp, fp);
+	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
+		/* Client cannot request levelII oplock directly */
+		err = smb_grant_oplock(smb_work, oplock_flags &
+			(REQ_OPLOCK | REQ_BATCHOPLOCK), fp->volatile_id, fp,
+			le16_to_cpu(req->hdr.Tid), NULL, share_ret);
+		if (err)
+			goto free_path;
+	} else {
+		if (share_ret < 0) {
+			err = -EPERM;
+			goto free_path;
+		}
+	}
+
 	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	if (le32_to_cpu(req->DesiredAccess) & DELETE)
@@ -1957,8 +1980,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	if (alloc_size && (file_info == F_CREATED ||
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
-			err = smb_vfs_truncate(sess, NULL, (uint64_t)fid,
-				alloc_size);
+			err = smb_vfs_truncate(sess, NULL,
+				(uint64_t)fp->volatile_id, alloc_size);
 			if (err) {
 				cifsd_err("failed to expand file, err = %d\n",
 						err);
@@ -1971,7 +1994,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
 	rsp->OplockLevel = oplock_rsp;
-	rsp->Fid = fid;
+	rsp->Fid = fp->volatile_id;
 
 	if ((le32_to_cpu(req->CreateDisposition) == FILE_SUPERSEDE) &&
 			(file_info == F_OVERWRITTEN))
@@ -2046,6 +2069,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 free_path:
 	path_put(&path);
 out:
+	cifsd_err("err : %d\n", err);
 	switch (err) {
 	case 0:
 		conn->stats.open_files_count++;
@@ -2063,12 +2087,23 @@ out:
 	case -EACCES:
 		rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
 		break;
+	case -EPERM:
+		rsp->hdr.Status.CifsError = NT_STATUS_SHARING_VIOLATION;
+		break;
 	case -ENOENT:
 		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		break;
 	default:
 		rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
+	}
+
+	if (err && fp) {
+		list_del(&fp->node);
+		if (atomic_dec_and_test(&fp->f_mfp->m_count))
+			mfp_free(fp->f_mfp);
+		cifsd_close_id(&sess->fidtable, fp->volatile_id);
+		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
 
 	if (!rsp->hdr.WordCount)
@@ -4319,18 +4354,19 @@ int smb_posix_open(struct smb_work *smb_work)
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 		(TRANSACTION2_SPI_RSP *)smb_work->rsp_buf;
 	struct connection *conn = smb_work->conn;
+	struct cifsd_sess *sess = smb_work->sess;
 	OPEN_PSX_REQ *psx_req;
 	OPEN_PSX_RSP *psx_rsp;
 	FILE_UNIX_BASIC_INFO *unix_info;
 	struct path path;
 	struct kstat stat;
-	__u16 data_offset, rsp_info_level, fid, file_info = 0;
+	__u16 data_offset, rsp_info_level, file_info = 0;
 	__u32 oplock_flags, posix_open_flags;
 	umode_t mode;
 	char *name;
 	bool file_present = true;
 	int err;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 
 	name = smb_get_name(pSMB_req->FileName, PATH_MAX, smb_work, false);
@@ -4416,7 +4452,6 @@ int smb_posix_open(struct smb_work *smb_work)
 		}
 		cifsd_debug("mkdir done for %s, inode %lu\n",
 				name, path.dentry->d_inode->i_ino);
-		fid = 0;
 		goto prepare_rsp;
 	}
 
@@ -4433,10 +4468,23 @@ int smb_posix_open(struct smb_work *smb_work)
 	}
 
 	fp = smb_dentry_open(smb_work, &path, posix_open_flags,
-			      &fid, oplock_flags, 0, file_present);
-	if (!fp)
+			0, file_present);
+	if (IS_ERR(fp)) {
+		err = PTR_ERR(fp);
+		cifsd_err("\n");
 		goto free_path;
+	}
 	fp->filename = name;
+
+	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
+		/* Client cannot request levelII oplock directly */
+		err = smb_grant_oplock(smb_work, oplock_flags &
+			(REQ_OPLOCK | REQ_BATCHOPLOCK), fp->volatile_id, fp,
+			le16_to_cpu(pSMB_req->hdr.Tid), NULL, 0);
+		if (err)
+			goto free_path;
+	}
+
 	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 prepare_rsp:
@@ -4448,7 +4496,7 @@ prepare_rsp:
 			data_offset);
 
 	psx_rsp->OplockFlags = oplock_rsp;
-	psx_rsp->Fid = fid;
+	psx_rsp->Fid = fp != NULL ? fp->volatile_id : 0;
 
 	if (file_present) {
 		if (!(posix_open_flags & O_TRUNC))
@@ -4527,6 +4575,15 @@ out:
 		pSMB_rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
 	}
+
+	if (err && fp) {
+		list_del(&fp->node);
+		if (atomic_dec_and_test(&fp->f_mfp->m_count))
+			mfp_free(fp->f_mfp);
+		cifsd_close_id(&sess->fidtable, fp->volatile_id);
+		delete_id_from_fidtable(sess, fp->volatile_id);
+	}
+
 	return err;
 }
 
@@ -5376,7 +5433,6 @@ int find_first(struct smb_work *smb_work)
 	int last_entry_offset = 0;
 	int rc = 0, reclen = 0;
 	int out_buf_len;
-	__u16 sid;
 	char *bufptr = NULL;
 	char *namestr = NULL;
 	char *dirpath = NULL;
@@ -5412,8 +5468,7 @@ int find_first(struct smb_work *smb_work)
 		goto err_out;
 	}
 
-	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, &sid,
-			0, 0, 1);
+	dir_fp = smb_dentry_open(smb_work, &path, O_RDONLY, 0, 1);
 	if (!dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
@@ -5533,7 +5588,7 @@ int find_first(struct smb_work *smb_work)
 
 	params = (T2_FFIRST_RSP_PARMS *)((char *)rsp +
 			sizeof(TRANSACTION2_RSP));
-	params->SearchHandle = cpu_to_le16(sid);
+	params->SearchHandle = cpu_to_le16(dir_fp->volatile_id);
 	params->SearchCount = cpu_to_le16(num_entry);
 
 	if (out_buf_len < 0) {
@@ -5545,7 +5600,7 @@ int find_first(struct smb_work *smb_work)
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
+		close_id(sess, dir_fp->volatile_id, 0);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -5578,7 +5633,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
+		close_id(sess, dir_fp->volatile_id, 0);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -7333,15 +7388,15 @@ int smb_open_andx(struct smb_work *smb_work)
 	OPENX_REQ *req = (OPENX_REQ *)smb_work->buf;
 	OPENX_RSP *rsp = (OPENX_RSP *)smb_work->rsp_buf;
 	struct connection *conn = smb_work->conn;
+	struct cifsd_sess *sess = smb_work->sess;
 	struct path path;
 	struct kstat stat;
 	int oplock_flags, file_info, open_flags;
 	char *name;
 	bool file_present = true;
-	__u16 fid;
 	umode_t mode = 0;
 	int err;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
@@ -7426,10 +7481,20 @@ int smb_open_andx(struct smb_work *smb_work)
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
-			&fid, oplock_flags, 0, file_present);
+			0, file_present);
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+
+	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
+		/* Client cannot request levelII oplock directly */
+		err = smb_grant_oplock(smb_work, oplock_flags &
+			(REQ_OPLOCK | REQ_BATCHOPLOCK), fp->volatile_id, fp,
+			le16_to_cpu(req->hdr.Tid), NULL, 0);
+		if (err)
+			goto free_path;
+	}
+
 	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
 	/* open success, send back response */
@@ -7473,7 +7538,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 0x0F;
-	rsp->Fid = fid;
+	rsp->Fid = fp->volatile_id;
 	rsp->FileAttributes = cpu_to_le16(ATTR_NORMAL);
 	rsp->LastWriteTime = cpu_to_le32(stat.mtime.tv_sec);
 	rsp->EndOfFile = cpu_to_le32(stat.size);
@@ -7513,6 +7578,14 @@ out:
 				NT_STATUS_UNEXPECTED_IO_ERROR;
 	} else
 		conn->stats.open_files_count++;
+
+	if (err && fp) {
+		list_del(&fp->node);
+		if (atomic_dec_and_test(&fp->f_mfp->m_count))
+			mfp_free(fp->f_mfp);
+		cifsd_close_id(&sess->fidtable, fp->volatile_id);
+		delete_id_from_fidtable(sess, fp->volatile_id);
+	}
 
 	if (!rsp->hdr.WordCount)
 		return err;
