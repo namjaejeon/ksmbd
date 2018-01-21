@@ -2093,6 +2093,9 @@ out:
 	case -ENOENT:
 		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		break;
+	case -EBUSY:
+		rsp->hdr.Status.CifsError = NT_STATUS_DELETE_PENDING;
+		break;
 	default:
 		rsp->hdr.Status.CifsError =
 			NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -4570,6 +4573,9 @@ out:
 	case -ENOENT:
 		pSMB_rsp->hdr.Status.CifsError =
 			NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		break;
+	case -EBUSY:
+		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_DELETE_PENDING;
 		break;
 	default:
 		pSMB_rsp->hdr.Status.CifsError =
@@ -7573,6 +7579,8 @@ out:
 		else if (err == -EMFILE)
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_TOO_MANY_OPENED_FILES;
+		else if (err ==  -EBUSY)
+			rsp->hdr.Status.CifsError = NT_STATUS_DELETE_PENDING;
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_UNEXPECTED_IO_ERROR;
