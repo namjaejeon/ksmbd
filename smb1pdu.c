@@ -3539,13 +3539,16 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_INFO_STANDARD:
 	{
 		FILE_INFO_STANDARD *infos;
-		struct cifsd_file *fp;
+		struct cifsd_mfile *mfp;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		fp = find_fp_using_filename(smb_work->sess, name);
-		if (fp && fp->f_mfp->m_flags & S_DEL_ON_CLS) {
-			rc = -EBUSY;
-			goto err_out;
+		mfp = mfp_lookup_inode(path.dentry->d_inode);
+		if (mfp) {
+			atomic_dec(&mfp->m_count);
+			if (mfp->m_flags & S_DEL_ON_CLS) {
+				rc = -EBUSY;
+				goto err_out;
+			}
 		}
 
 		ptr = (char *)&rsp->Pad + 1;
@@ -3583,14 +3586,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
-		struct cifsd_file *fp;
+		struct cifsd_mfile *mfp;
 		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		fp = find_fp_using_filename(smb_work->sess, name);
-		if (fp)
-			delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
-
+		mfp = mfp_lookup_inode(path.dentry->d_inode);
+		if (mfp) {
+			delete_pending = mfp->m_flags & S_DEL_ON_CLS;
+			atomic_dec(&mfp->m_count);
+		}
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -3687,14 +3691,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
-		struct cifsd_file *fp;
+		struct cifsd_mfile *mfp;
 		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
-		fp = find_fp_using_filename(smb_work->sess, name);
-		if (fp)
-			delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
-
+		mfp = mfp_lookup_inode(path.dentry->d_inode);
+		if (mfp) {
+			delete_pending = mfp->m_flags & S_DEL_ON_CLS;
+			atomic_dec(&mfp->m_count);
+		}
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		/* add unicode name length of name */
