@@ -141,7 +141,6 @@ struct cifsd_file {
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */
-	bool is_nt_open;
 	unsigned int volatile_id;
 	bool is_durable;
 	bool is_resilient;
