@@ -1668,6 +1668,11 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 			rsp->hdr.Status.CifsError = NT_STATUS_ACCESS_DENIED;
 			return -EPERM;
 		}
+
+		if (le32_to_cpu(req->FileAttributes) & ATTR_READONLY) {
+			rsp->hdr.Status.CifsError = NT_STATUS_CANNOT_DELETE;
+			return -EPERM;
+		}
 	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DIRECTORY_FILE_LE) {
