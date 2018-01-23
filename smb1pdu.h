@@ -1254,6 +1254,7 @@ typedef struct {
 	__le32 NumberOfLinks;
 	__u8 DeletePending;
 	__u8 Directory;
+	__le16 Reserved;
 } __attribute__((packed)) FILE_STANDARD_INFO;
 
 typedef struct {

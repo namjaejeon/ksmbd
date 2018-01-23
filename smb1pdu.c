@@ -3539,8 +3539,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_INFO_STANDARD:
 	{
 		FILE_INFO_STANDARD *infos;
+		struct cifsd_file *fp;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
+		fp = find_fp_using_filename(smb_work->sess, name);
+		if (fp && fp->f_mfp->m_flags & S_DEL_ON_CLS) {
+			rc = -EBUSY;
+			goto err_out;
+		}
+
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		infos = (FILE_INFO_STANDARD *)(ptr + 4);
@@ -3576,8 +3583,14 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
+		struct cifsd_file *fp;
+		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
+		fp = find_fp_using_filename(smb_work->sess, name);
+		if (fp)
+			delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -3599,8 +3612,9 @@ int query_path_info(struct smb_work *smb_work)
 		standard_info = (FILE_STANDARD_INFO *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(st.nlink);
-		standard_info->DeletePending = 0;
+		standard_info->NumberOfLinks = cpu_to_le32(st.nlink) -
+			delete_pending;
+		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -3673,8 +3687,14 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
+		struct cifsd_file *fp;
+		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
+		fp = find_fp_using_filename(smb_work->sess, name);
+		if (fp)
+			delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		/* add unicode name length of name */
@@ -3711,8 +3731,8 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(st.nlink);
-		ainfo->DeletePending = 0;
+		ainfo->NumberOfLinks = cpu_to_le32(st.nlink) - delete_pending;
+		ainfo->DeletePending = delete_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
@@ -3899,6 +3919,8 @@ int smb_trans2(struct smb_work *smb_work)
 
 	if (err) {
 		cifsd_debug("smb_trans2 failed with error %d\n", err);
+		if (err == -EBUSY)
+			rsp_hdr->Status.CifsError = NT_STATUS_DELETE_PENDING;
 		return err;
 	}
 
@@ -5449,6 +5471,7 @@ int find_first(struct smb_work *smb_work)
 #endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
+	int header_size;
 
 	if (!r_data.dirent) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
@@ -5496,11 +5519,11 @@ int find_first(struct smb_work *smb_work)
 	bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) + params_count
 			+ data_alignment_offset);
 
+	header_size = sizeof(TRANSACTION2_RSP) + params_count +
+		data_alignment_offset;
 	out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
-				sizeof(FILE_UNIX_INFO)),
-			MAX_CIFS_LOOKUP_BUFFER_SIZE) -
-		(sizeof(TRANSACTION2_RSP) +
-		 params_count + data_alignment_offset);
+					sizeof(FILE_UNIX_INFO)) + header_size,
+				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
@@ -5557,13 +5580,9 @@ int find_first(struct smb_work *smb_work)
 		if (srch_ptr) {
 			cifsd_debug("Single entry requested\n");
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-			if (strlen(srch_ptr) != de->namelen ||
-				strncasecmp(de->name, srch_ptr,
-					de->namelen)) {
+			if (strcasecmp(namestr, srch_ptr)) {
 #else
-			if (strlen(srch_ptr) != de->namelen ||
-					strnicmp(de->name, srch_ptr,
-						de->namelen)) {
+			if (stricmp(namestr, srch_ptr)) {
 #endif
 					kfree(namestr);
 					continue;
@@ -5690,6 +5709,7 @@ int find_next(struct smb_work *smb_work)
 		.ctx.actor = smb_filldir,
 #endif
 	};
+	int header_size;
 
 	req_params = (TRANSACTION2_FNEXT_REQ_PARAMS *)(smb_work->buf +
 			req->ParameterOffset + 4);
@@ -5735,12 +5755,12 @@ int find_next(struct smb_work *smb_work)
 	bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
 			params_count + data_alignment_offset);
 
-	out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
-				sizeof(FILE_UNIX_INFO)),
-			MAX_CIFS_LOOKUP_BUFFER_SIZE) -
-		(sizeof(TRANSACTION2_RSP) + params_count +
-		 data_alignment_offset);
+	header_size = sizeof(TRANSACTION2_RSP) + params_count +
+		data_alignment_offset;
 
+	out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
+					sizeof(FILE_UNIX_INFO)) + header_size,
+				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
@@ -6120,7 +6140,8 @@ int smb_set_dispostion(struct smb_work *smb_work)
 			return -ENOTEMPTY;
 		}
 		fp->f_mfp->m_flags |= S_DEL_ON_CLS;
-	}
+	} else
+		fp->f_mfp->m_flags &= ~S_DEL_ON_CLS;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
@@ -6348,8 +6369,10 @@ int query_file_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
+		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
+		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -6371,8 +6394,9 @@ int query_file_info(struct smb_work *smb_work)
 		standard_info = (FILE_STANDARD_INFO *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(st.nlink);
-		standard_info->DeletePending = 0;
+		standard_info->NumberOfLinks = cpu_to_le32(st.nlink) -
+			delete_pending;
+		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -6517,8 +6541,10 @@ int query_file_info(struct smb_work *smb_work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
+		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
+		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_ALL_INFO);
@@ -6548,8 +6574,8 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(st.nlink);
-		ainfo->DeletePending = 0;
+		ainfo->NumberOfLinks = cpu_to_le32(st.nlink) - delete_pending;
+		ainfo->DeletePending = delete_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
