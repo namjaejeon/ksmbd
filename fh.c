@@ -1145,6 +1145,9 @@ int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
 	case WINREG:
 		pipe_desc->pipe_type = WINREG;
 		break;
+	case LSARPC:
+		pipe_desc->pipe_type = LSARPC;
+		break;
 	default:
 		cifsd_err("pipe type :%d not supported\n", pipe_type);
 		return -EINVAL;

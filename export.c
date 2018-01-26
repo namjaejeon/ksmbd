@@ -62,6 +62,8 @@ struct cifsd_pipe_table cifsd_pipes[] = {
 	{"wkssvc", SRVSVC},
 	{"\\winreg", WINREG},
 	{"winreg", WINREG},
+	{"\\lsarpc", LSARPC},
+	{"lsarpc", LSARPC},
 };
 unsigned int npipes = ARRAY_SIZE(cifsd_pipes);
 
