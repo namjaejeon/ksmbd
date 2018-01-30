@@ -3147,7 +3147,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	}
 
 	if (utfname) {
-		d_info->num_entry = d_info->data_count;
+		d_info->last_entry_offset = d_info->data_count;
 		d_info->data_count += next_entry_offset;
 		d_info->out_buf_len -= next_entry_offset;
 		d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
@@ -3159,45 +3159,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 			next_entry_offset, d_info->data_count);
 
 	return 0;
-}
-
-static int smb_populate_dot_dotdot_entries(struct connection *conn,
-	__u8 file_info_class, struct cifsd_file *dir,
-	struct cifsd_dir_info *d_info, char *search_patten)
-{
-	int i, rc = 0;
-
-	for (i = 0; i < 2; i++) {
-		struct kstat kstat;
-		struct smb_kstat smb_kstat;
-
-		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
-			if (i == 0)
-				d_info->name = ".";
-			else
-				d_info->name = "..";
-
-			if (!is_matched(d_info->name, search_patten)) {
-				dir->dot_dotdot[i] = 1;
-				continue;
-			}
-
-			generic_fillattr(PARENT_INODE(dir), &kstat);
-
-			smb_kstat.kstat = &kstat;
-			rc = smb2_populate_readdir_entry(conn, file_info_class,
-				d_info, &smb_kstat);
-			if (rc)
-				break;
-
-			if (d_info->out_buf_len <= 0)
-				break;
-
-			dir->dot_dotdot[i] = 1;
-		}
-	}
-
-	return rc;
 }
 
 /**
@@ -3352,7 +3313,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 		 * in first response
 		 */
 		rc = smb_populate_dot_dotdot_entries(conn,
-			req->FileInformationClass, dir_fp, &d_info, srch_ptr);
+			req->FileInformationClass, dir_fp, &d_info,
+			srch_ptr, smb2_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -3442,7 +3404,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 		inc_rfc1001_len(rsp_org, 9);
 	} else {
 		((FILE_DIRECTORY_INFO *)
-		 ((char *)rsp->Buffer + d_info.num_entry))->NextEntryOffset = 0;
+		((char *)rsp->Buffer + d_info.last_entry_offset))
+		->NextEntryOffset = 0;
 
 		rsp->StructureSize = cpu_to_le16(9);
 		rsp->OutputBufferOffset = cpu_to_le16(72);
