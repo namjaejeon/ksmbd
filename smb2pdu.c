@@ -1872,7 +1872,7 @@ int close_disconnected_handle(struct inode *inode)
 		atomic_dec(&mfp->m_count);
 		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
 			if (!fp->conn) {
-				if (mfp->m_flags & S_DEL_ON_CLS)
+				if (mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
 					unlinked = false;
 				close_id(fp->sess, fp->volatile_id,
 					fp->persistent_id);
@@ -4148,7 +4148,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		unsigned int delete_pending;
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
-		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
 
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -4196,7 +4196,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		if (!filename)
 			return -ENOMEM;
 		cifsd_debug("filename = %s\n", filename);
-		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -5464,9 +5464,9 @@ next:
 				rsp->hdr.Status = NT_STATUS_DIRECTORY_NOT_EMPTY;
 				rc = -1;
 			} else
-				fp->f_mfp->m_flags |= S_DEL_ON_CLS;
+				fp->f_mfp->m_flags |= S_DEL_PENDING;
 		} else
-			fp->f_mfp->m_flags &= ~S_DEL_ON_CLS;
+			fp->f_mfp->m_flags &= ~S_DEL_PENDING;
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:

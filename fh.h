@@ -56,8 +56,9 @@
 		fp->cdoption != FILE_OVERWRITE_LE && \
 		fp->cdoption != FILE_SUPERSEDE_LE))
 
-#define S_DEL_ON_CLS		1
-#define S_DEL_ON_CLS_STREAM	2
+#define S_DEL_PENDING		1
+#define S_DEL_ON_CLS		2
+#define S_DEL_ON_CLS_STREAM	4
 
 /* FP STATE */
 #define FP_NEW		0

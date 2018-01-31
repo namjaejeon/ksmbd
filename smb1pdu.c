@@ -1849,21 +1849,24 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 			le32_to_cpu(req->CreateDisposition), file_present);
 
 	if (open_flags < 0) {
-		cifsd_debug("create_dispostion returned %d\n", err);
+		cifsd_debug("create_dispostion returned %d\n", open_flags);
 		if (file_present) {
 			if (!(((struct smb_hdr *)smb_work->buf)->Flags2 &
 						SMBFLG2_ERR_STATUS)) {
 				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
 				rsp->hdr.Status.DosError.Error = ERRfilexists;
-			} else
+			} else if (open_flags == -EINVAL)
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_INVALID_PARAMETER;
+			else
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_OBJECT_NAME_COLLISION;
-
 			memset(&rsp->hdr.WordCount, 0, 3);
-
 			goto free_path;
-		} else
+		} else {
+			err = -ENOENT;
 			goto out;
+		}
 	} else {
 		if (file_present && S_ISFIFO(stat.mode))
 			open_flags |= O_NONBLOCK;
@@ -1951,7 +1954,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 			goto free_path;
 		}
 
-		if (fp->f_mfp->m_flags & S_DEL_ON_CLS) {
+		if (fp->f_mfp->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
 			goto out;
 		}
@@ -3558,7 +3561,7 @@ int query_path_info(struct smb_work *smb_work)
 		mfp = mfp_lookup_inode(path.dentry->d_inode);
 		if (mfp) {
 			atomic_dec(&mfp->m_count);
-			if (mfp->m_flags & S_DEL_ON_CLS) {
+			if (mfp->m_flags & S_DEL_PENDING) {
 				rc = -EBUSY;
 				goto err_out;
 			}
@@ -3605,7 +3608,7 @@ int query_path_info(struct smb_work *smb_work)
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		mfp = mfp_lookup_inode(path.dentry->d_inode);
 		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_ON_CLS;
+			delete_pending = mfp->m_flags & S_DEL_PENDING;
 			atomic_dec(&mfp->m_count);
 		}
 		rsp_hdr->WordCount = 10;
@@ -3710,7 +3713,7 @@ int query_path_info(struct smb_work *smb_work)
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
 		mfp = mfp_lookup_inode(path.dentry->d_inode);
 		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_ON_CLS;
+			delete_pending = mfp->m_flags & S_DEL_PENDING;
 			atomic_dec(&mfp->m_count);
 		}
 		rsp_hdr->WordCount = 10;
@@ -6157,9 +6160,9 @@ int smb_set_dispostion(struct smb_work *smb_work)
 				NT_STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
 		}
-		fp->f_mfp->m_flags |= S_DEL_ON_CLS;
+		fp->f_mfp->m_flags |= S_DEL_PENDING;
 	} else
-		fp->f_mfp->m_flags &= ~S_DEL_ON_CLS;
+		fp->f_mfp->m_flags &= ~S_DEL_PENDING;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
@@ -6390,7 +6393,7 @@ int query_file_info(struct smb_work *smb_work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -6562,7 +6565,7 @@ int query_file_info(struct smb_work *smb_work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
-		delete_pending = fp->f_mfp->m_flags & S_DEL_ON_CLS;
+		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_ALL_INFO);
@@ -7495,8 +7498,10 @@ int smb_open_andx(struct smb_work *smb_work)
 		cifsd_debug("create_dispostion returned %d\n", open_flags);
 		if (file_present)
 			goto free_path;
-		else
+		else {
+			err = -ENOENT;
 			goto out;
+		}
 	}
 
 	if (file_present && !(stat.mode & S_IWUGO)) {
@@ -7623,8 +7628,11 @@ out:
 		else if (err == -EMFILE)
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_TOO_MANY_OPENED_FILES;
-		else if (err ==  -EBUSY)
+		else if (err == -EBUSY)
 			rsp->hdr.Status.CifsError = NT_STATUS_DELETE_PENDING;
+		else if (err == -ENOENT)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		else
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_UNEXPECTED_IO_ERROR;

@@ -533,7 +533,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 
 	if (atomic_dec_and_test(&mfp->m_count)) {
 		spin_lock(&mfp->m_lock);
-		if ((mfp->m_flags & S_DEL_ON_CLS)) {
+		if ((mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
 			mfp->m_flags &= ~S_DEL_ON_CLS;
@@ -544,7 +544,8 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		spin_unlock(&mfp->m_lock);
 
 		mfp_free(mfp);
-	}
+	} else if (mfp->m_flags & S_DEL_ON_CLS)
+		mfp->m_flags |= S_DEL_PENDING;
 
 	if (p_id > 0) {
 		err = close_persistent_id(fp->persistent_id);

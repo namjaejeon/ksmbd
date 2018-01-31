@@ -1079,7 +1079,7 @@ op_break_not_needed:
 	}
 
 	/* Check delete pending among previous fp before oplock break */
-	if (mfp->m_flags & S_DEL_ON_CLS) {
+	if (mfp->m_flags & S_DEL_PENDING) {
 		err = -EBUSY;
 		goto out;
 	}
