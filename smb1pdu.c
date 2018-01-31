@@ -1959,7 +1959,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 
 	oplock_rsp = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 
-	if (le32_to_cpu(req->DesiredAccess) & DELETE)
+	if (le32_to_cpu(req->DesiredAccess) & (DELETE | GENERIC_ALL))
 		fp->is_nt_open = 1;
 	if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
 			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
