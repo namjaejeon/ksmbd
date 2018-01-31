@@ -1842,8 +1842,8 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		goto free_path;
 	}
 
-	oplock_flags = le32_to_cpu(req->OpenFlags);
-	extended_reply = oplock_flags & REQ_EXTENDED_INFO;
+	oplock_flags = le32_to_cpu(req->OpenFlags) & (REQ_OPLOCK | REQ_BATCHOPLOCK);
+	extended_reply = le32_to_cpu(req->OpenFlags) & REQ_EXTENDED_INFO;
 	open_flags = file_create_dispostion_flags(
 			le32_to_cpu(req->CreateDisposition), file_present);
 
@@ -1938,17 +1938,22 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	fp->saccess = req->ShareAccess;
 
 	share_ret = smb_check_shared_mode(fp->filp, fp);
-	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
+	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
+		oplock_flags) {
 		/* Client cannot request levelII oplock directly */
-		err = smb_grant_oplock(smb_work, oplock_flags &
-			(REQ_OPLOCK | REQ_BATCHOPLOCK), fp->volatile_id, fp,
-			le16_to_cpu(req->hdr.Tid), NULL, share_ret);
+		err = smb_grant_oplock(smb_work, oplock_flags, fp->volatile_id,
+			fp, le16_to_cpu(req->hdr.Tid), NULL, share_ret);
 		if (err)
 			goto free_path;
 	} else {
 		if (share_ret < 0) {
 			err = -EPERM;
 			goto free_path;
+		}
+
+		if (fp->f_mfp->m_flags & S_DEL_ON_CLS) {
+			err = -EBUSY;
+			goto out;
 		}
 	}
 
@@ -7524,11 +7529,11 @@ int smb_open_andx(struct smb_work *smb_work)
 		goto free_path;
 	fp->filename = name;
 
-	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
+	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
+		oplock_flags) {
 		/* Client cannot request levelII oplock directly */
-		err = smb_grant_oplock(smb_work, oplock_flags &
-			(REQ_OPLOCK | REQ_BATCHOPLOCK), fp->volatile_id, fp,
-			le16_to_cpu(req->hdr.Tid), NULL, 0);
+		err = smb_grant_oplock(smb_work, oplock_flags, fp->volatile_id,
+			fp, le16_to_cpu(req->hdr.Tid), NULL, 0);
 		if (err)
 			goto free_path;
 	}
