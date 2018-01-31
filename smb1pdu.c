@@ -3632,7 +3632,7 @@ int query_path_info(struct smb_work *smb_work)
 		standard_info = (FILE_STANDARD_INFO *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(st.nlink) -
+		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
 			delete_pending;
 		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
@@ -3752,7 +3752,8 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(st.nlink) - delete_pending;
+		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
+			delete_pending;
 		ainfo->DeletePending = delete_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
@@ -6415,7 +6416,7 @@ int query_file_info(struct smb_work *smb_work)
 		standard_info = (FILE_STANDARD_INFO *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(st.nlink) -
+		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
 			delete_pending;
 		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
@@ -6595,7 +6596,8 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(st.nlink) - delete_pending;
+		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
+			delete_pending;
 		ainfo->DeletePending = delete_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;

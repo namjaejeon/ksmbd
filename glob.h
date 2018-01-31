@@ -613,6 +613,7 @@ int switch_req_buf(struct connection *conn);
 int negotiate_dialect(void *buf);
 struct cifsd_sess *lookup_session_on_server(struct connection *conn,
 		uint64_t sess_id);
+int get_nlink(struct kstat *st);
 
 /* cifsd export functions */
 extern int cifsd_export_init(void);

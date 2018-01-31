@@ -1872,7 +1872,8 @@ int close_disconnected_handle(struct inode *inode)
 		atomic_dec(&mfp->m_count);
 		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
 			if (!fp->conn) {
-				if (mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
+				if (mfp->m_flags &
+					(S_DEL_ON_CLS | S_DEL_PENDING))
 					unlinked = false;
 				close_id(fp->sess, fp->volatile_id,
 					fp->persistent_id);
@@ -4153,7 +4154,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		sinfo->NumberOfLinks = FP_INODE(fp)->i_nlink - delete_pending;
+		sinfo->NumberOfLinks = get_nlink(&stat) - delete_pending;
 		sinfo->DeletePending = delete_pending;
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		rsp->OutputBufferLength =
@@ -4211,8 +4212,7 @@ int smb2_get_info_file(struct smb_work *smb_work)
 		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		file_info->NumberOfLinks =
-			FP_INODE(fp)->i_nlink - delete_pending;
+		file_info->NumberOfLinks = get_nlink(&stat) - delete_pending;
 		file_info->DeletePending = delete_pending;
 		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		file_info->Pad2 = 0;

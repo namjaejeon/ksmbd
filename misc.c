@@ -941,3 +941,14 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 
 	return ab_pathname;
 }
+
+int get_nlink(struct kstat *st)
+{
+	int nlink;
+
+	nlink = st->nlink;
+	if (S_ISDIR(st->mode))
+		nlink--;
+
+	return nlink;
+}
