@@ -2030,6 +2030,9 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		}
 	}
 
+	/* Add fp to master fp list. */
+	list_add(&fp->node, &fp->f_mfp->m_fp_list);
+
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
 	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));

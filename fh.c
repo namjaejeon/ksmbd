@@ -925,10 +925,7 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 		}
 	}
 
-	/* Add fp to master fp list. */
-	list_add(&fp->node, &mfp->m_fp_list);
 	fp->f_mfp = mfp;
-
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
 			smb_break_all_oplock(work, fp);
