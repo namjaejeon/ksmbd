@@ -2075,7 +2075,7 @@ int smb2_open(struct smb_work *smb_work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifsd_share *share;
-	struct cifsd_mfile *mfp = NULL;
+	struct cifsd_mfile *mfp = NULL, *parent_mfp;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
@@ -2450,6 +2450,12 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	}
 
+	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
+	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
+		rc = -EBUSY;
+		goto err_out;
+	}
+
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		rc = PTR_ERR(filp);
@@ -2720,8 +2726,11 @@ int smb2_open(struct smb_work *smb_work)
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		if (fp->is_stream)
 			mfp->m_flags |= S_DEL_ON_CLS_STREAM;
-		else
-			mfp->m_flags |= S_DEL_ON_CLS;
+		else {
+			fp->delete_on_close = 1;
+			if (file_info == F_CREATED)
+				fp->f_mfp->m_flags |= S_DEL_ON_CLS;
+		}
 	}
 
 	/* Add fp to master fp list. */

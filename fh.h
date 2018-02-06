@@ -56,9 +56,9 @@
 		fp->cdoption != FILE_OVERWRITE_LE && \
 		fp->cdoption != FILE_SUPERSEDE_LE))
 
-#define S_DEL_PENDING		1
-#define S_DEL_ON_CLS		2
-#define S_DEL_ON_CLS_STREAM	4
+#define S_DEL_PENDING			1
+#define S_DEL_ON_CLS			2
+#define S_DEL_ON_CLS_STREAM		8
 
 /* FP STATE */
 #define FP_NEW		0
@@ -130,6 +130,7 @@ struct cifsd_file {
 	struct cifsd_sess *sess;
 	struct cifsd_tcon *tcon;
 	struct cifsd_mfile *f_mfp;
+	struct cifsd_mfile *parent_mfp;
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
@@ -147,6 +148,7 @@ struct cifsd_file {
 	bool is_resilient;
 	bool is_persistent;
 	bool is_nt_open;
+	bool delete_on_close;
 	uint64_t persistent_id;
 	__le32 daccess;
 	__le32 saccess;
