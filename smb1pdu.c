@@ -2707,13 +2707,31 @@ int smb_flush(struct smb_work *smb_work)
 {
 	FLUSH_REQ *req = (FLUSH_REQ *)smb_work->buf;
 	FLUSH_RSP *rsp = (FLUSH_RSP *)smb_work->rsp_buf;
-	int err;
+	struct cifsd_sess *sess = smb_work->sess;
+	struct cifsd_file *file;
+	struct fidtable *ftab;
+	int err = 0, id;
 
 	cifsd_debug("SMB_COM_FLUSH called for fid %u\n", req->FileID);
 
-	err = smb_vfs_fsync(smb_work->sess, req->FileID, 0);
-	if (err)
-		goto out;
+	if (req->FileID == 0xFFFF) {
+		spin_lock(&sess->fidtable.fidtable_lock);
+		ftab = sess->fidtable.ftab;
+		spin_unlock(&sess->fidtable.fidtable_lock);
+
+		for (id = 0; id < ftab->max_fids; id++) {
+			file = ftab->fileid[id];
+			if (file) {
+				err = smb_vfs_fsync(sess, file->volatile_id, 0);
+				if (err)
+					goto out;
+			}
+		}
+	} else {
+		err = smb_vfs_fsync(smb_work->sess, req->FileID, 0);
+		if (err)
+			goto out;
+	}
 
 	/* file fsync success, return response to server */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
