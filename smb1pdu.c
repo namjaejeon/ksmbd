@@ -3733,6 +3733,8 @@ int query_path_info(struct smb_work *smb_work)
 		FILE_ALL_INFO *ainfo;
 		struct cifsd_mfile *mfp;
 		unsigned int delete_pending = 0;
+		char *filename;
+		int uni_filename_len, total_count = 72;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
 		mfp = mfp_lookup_inode(path.dentry->d_inode);
@@ -3740,23 +3742,14 @@ int query_path_info(struct smb_work *smb_work)
 			delete_pending = mfp->m_flags & S_DEL_PENDING;
 			atomic_dec(&mfp->m_count);
 		}
-		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		/* add unicode name length of name */
-		rsp->t2.TotalDataCount = 72 + 0;
-		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
-		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 72;
-		rsp->t2.DataOffset = 60;
-		rsp->t2.DataDisplacement = 0;
-		rsp->t2.SetupCount = 0;
-		rsp->t2.Reserved1 = 0;
-		/* 2 for paramater count + 72 data count +
-		   3 pad (1pad1 + 2 pad2) */
-		rsp->ByteCount = 77;
-		rsp->Pad = 0;
+
+		filename = convert_to_nt_pathname(name,
+				smb_work->tcon->share->path);
+		if (!filename) {
+			rc = -ENOMEM;
+			goto err_out;
+		}
+
 		/*
 		 * Observation: sizeof smb_hdr is 33 bytes(including word count)
 		 * After that: trans2 response 22 bytes when stepcount 0 and
@@ -3782,7 +3775,32 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
-		ainfo->FileNameLength = 0;
+		uni_filename_len = smbConvertToUTF16(
+				(__le16 *)ainfo->FileName,
+				filename, PATH_MAX,
+				conn->local_nls, 0);
+		kfree(filename);
+		uni_filename_len *= 2;
+		ainfo->FileNameLength = cpu_to_le32(uni_filename_len);
+		total_count += uni_filename_len;
+
+		rsp_hdr->WordCount = 10;
+		rsp->t2.TotalParameterCount = 2;
+		/* add unicode name length of name */
+		rsp->t2.TotalDataCount = total_count;
+		rsp->t2.Reserved = 0;
+		rsp->t2.ParameterCount = 2;
+		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterDisplacement = 0;
+		rsp->t2.DataCount = total_count;
+		rsp->t2.DataOffset = 60;
+		rsp->t2.DataDisplacement = 0;
+		rsp->t2.SetupCount = 0;
+		rsp->t2.Reserved1 = 0;
+		/* 2 for paramater count + 72 data count +
+		   + filename length + 3 pad (1pad1 + 2 pad2) */
+		rsp->ByteCount = 5 + total_count;
+		rsp->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
 	}
