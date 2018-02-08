@@ -4879,8 +4879,9 @@ int smb_set_ea(struct smb_work *smb_work)
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
 	struct fealist *eabuf;
+	struct fea *ea;
 	char *fname, *attr_name = NULL, *value;
-	int rc = 0;
+	int rc = 0, list_len, i, next = 0;
 
 	fname = smb_get_name(req->FileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(fname))
@@ -4888,42 +4889,37 @@ int smb_set_ea(struct smb_work *smb_work)
 
 	eabuf = (struct fealist *)(((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
-	if (strlen(eabuf->list[0].name) >
-			(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN)) {
-		smb_put_name(fname);
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		return -ERANGE;
-	}
 
-	if (le32_to_cpu(eabuf->list_len) != (sizeof(*eabuf) +
-				eabuf->list[0].name_len +
-				le16_to_cpu(eabuf->list[0].value_len))) {
-		cifsd_err("bad EA\n");
-		smb_put_name(fname);
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		return -EINVAL;
-	}
+	list_len = le32_to_cpu(eabuf->list_len) - 4;
+	ea = (struct fea *)eabuf->list;
 
-	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
-	if (!attr_name) {
-		rc = -ENOMEM;
-		goto out;
-	}
+	for (i = 0; list_len >= 0 && ea->name_len != 0; i++, list_len -= next) {
+		next = ea->name_len + le16_to_cpu(ea->value_len) + 4;
 
-	memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
-	memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->list[0].name,
-			eabuf->list[0].name_len);
-	attr_name[XATTR_USER_PREFIX_LEN + eabuf->list[0].name_len] = '\0';
-	value = (char *)&eabuf->list[0].name + eabuf->list[0].name_len + 1;
-	cifsd_debug("name: <%s>, name_len %u, value_len %u\n",
-			eabuf->list[0].name, eabuf->list[0].name_len,
-			le16_to_cpu(eabuf->list[0].value_len));
+		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+		if (!attr_name) {
+			rc = -ENOMEM;
+			goto out;
+		}
 
-	rc = smb_vfs_setxattr(fname, NULL, attr_name, value,
-			le16_to_cpu(eabuf->list[0].value_len), 0);
-	if (rc < 0) {
-		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
-		goto out;
+		memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
+		memcpy(&attr_name[XATTR_USER_PREFIX_LEN], ea->name,
+				ea->name_len);
+		attr_name[XATTR_USER_PREFIX_LEN + ea->name_len] = '\0';
+		value = (char *)&ea->name + ea->name_len + 1;
+		cifsd_debug("name: <%s>, name_len %u, value_len %u\n",
+			ea->name, ea->name_len, le16_to_cpu(ea->value_len));
+
+		rc = smb_vfs_setxattr(fname, NULL, attr_name, value,
+				le16_to_cpu(ea->value_len), 0);
+		if (rc < 0) {
+			kfree(attr_name);
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_UNEXPECTED_IO_ERROR;
+			goto out;
+		}
+		kfree(attr_name);
+		ea += next;
 	}
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
@@ -4948,7 +4944,6 @@ int smb_set_ea(struct smb_work *smb_work)
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 
 out:
-	kfree(attr_name);
 	smb_put_name(fname);
 	return rc;
 }
@@ -6758,6 +6753,9 @@ int set_file_info(struct smb_work *smb_work)
 	}
 
 	switch (info_level) {
+	case SMB_SET_FILE_EA:
+		err = smb_set_ea(smb_work);
+		break;
 	case SMB_SET_FILE_ALLOCATION_INFO2:
 		/* fall through */
 	case SMB_SET_FILE_ALLOCATION_INFO:
