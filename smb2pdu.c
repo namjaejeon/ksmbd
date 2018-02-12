@@ -2959,6 +2959,8 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		else if (rc == -EMFILE)
 			rsp->hdr.Status = NT_STATUS_DUPLICATE_OBJECTID;
+		else if (rc == -ENXIO)
+			rsp->hdr.Status = NT_STATUS_NO_SUCH_DEVICE;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
@@ -2968,7 +2970,7 @@ err_out1:
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
-		if (filp)
+		if (!IS_ERR(filp))
 			filp_close(filp, (struct files_struct *)filp);
 
 		smb2_set_err_rsp(smb_work);
