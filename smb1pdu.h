@@ -1876,7 +1876,7 @@ struct fea {
 
 struct fealist {
 	__le32 list_len;
-	struct fea list[1];
+	__u8 list[1];
 } __attribute__((packed));
 
 /* POSIX ACL set/query path info structures */
