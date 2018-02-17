@@ -2970,7 +2970,7 @@ err_out1:
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
-		if (!IS_ERR(filp))
+		if (filp && !IS_ERR(filp))
 			filp_close(filp, (struct files_struct *)filp);
 
 		smb2_set_err_rsp(smb_work);
