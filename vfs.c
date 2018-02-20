@@ -1313,9 +1313,11 @@ out:
 unsigned short get_logical_sector_size(struct inode *inode)
 {
 	struct request_queue *q;
-	unsigned short ret_val;
+	unsigned short ret_val = 512;
 
-	ret_val = 512;
+	if(!inode->i_sb->s_bdev)
+		return ret_val;
+
 	q = inode->i_sb->s_bdev->bd_disk->queue;
 
 	if (q && q->limits.logical_block_size)
