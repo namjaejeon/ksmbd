@@ -2993,7 +2993,7 @@ err_out1:
  * Return:	0 on success, otherwise error
  */
 static int smb2_populate_readdir_entry(struct connection *conn,
-	int info_level, struct cifsd_dir_info *d_info,
+	int info_level, int *last_entry_offset, struct cifsd_dir_info *d_info,
 	struct smb_kstat *smb_kstat)
 {
 	int name_len;
@@ -3161,45 +3161,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 	return 0;
 }
 
-static int smb_populate_dot_dotdot_entries(struct connection *conn,
-	__u8 file_info_class, struct cifsd_file *dir,
-	struct cifsd_dir_info *d_info, char *search_patten)
-{
-	int i, rc = 0;
-
-	for (i = 0; i < 2; i++) {
-		struct kstat kstat;
-		struct smb_kstat smb_kstat;
-
-		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
-			if (i == 0)
-				d_info->name = ".";
-			else
-				d_info->name = "..";
-
-			if (!is_matched(d_info->name, search_patten)) {
-				dir->dot_dotdot[i] = 1;
-				continue;
-			}
-
-			generic_fillattr(PARENT_INODE(dir), &kstat);
-
-			smb_kstat.kstat = &kstat;
-			rc = smb2_populate_readdir_entry(conn, file_info_class,
-				d_info, &smb_kstat);
-			if (rc)
-				break;
-
-			if (d_info->out_buf_len <= 0)
-				break;
-
-			dir->dot_dotdot[i] = 1;
-		}
-	}
-
-	return rc;
-}
-
 /**
  * smb2_query_dir() - handler for smb2 readdir i.e. query dir command
  * @smb_work:	smb work containing query dir request buffer
@@ -3351,8 +3312,8 @@ int smb2_query_dir(struct smb_work *smb_work)
 		 * reserve dot and dotdot entries in head of buffer
 		 * in first response
 		 */
-		rc = smb_populate_dot_dotdot_entries(conn,
-			req->FileInformationClass, dir_fp, &d_info, srch_ptr);
+		rc = smb_populate_dot_dotdot_entries(conn, req->FileInformationClass,
+			NULL, dir_fp, &d_info, srch_ptr, smb2_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -3408,7 +3369,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &d_info, &smb_kstat);
+				req->FileInformationClass, NULL, &d_info, &smb_kstat);
 			if (rc)	{
 				kfree(d_info.name);
 				goto err_out;
