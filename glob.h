@@ -511,10 +511,10 @@ struct smb_version_cmds {
 struct cifsd_dir_info {
 	char *name;
 	char *bufptr;
-	struct kstat kstat;
-	int data_count;
 	int out_buf_len;
 	int num_entry;
+	int data_count;
+	int last_entry_offset;
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
@@ -733,8 +733,8 @@ extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int smb_send_rsp(struct smb_work *smb_work);
 bool conn_unresponsive(struct connection *conn);
-/* trans2 functions */
 
+/* trans2 functions */
 int query_fs_info(struct smb_work *smb_work);
 void create_trans2_reply(struct smb_work *smb_work, __u16 count);
 char *convert_to_unix_name(char *name, int tid);
@@ -762,6 +762,11 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment);
+int smb_populate_dot_dotdot_entries(struct connection *conn,
+		int info_level, struct cifsd_file *dir,
+		struct cifsd_dir_info *d_info, char *search_pattern,
+		int (*populate_readdir_entry_fn)(struct connection *,
+		int, struct cifsd_dir_info *, struct smb_kstat *));
 
 /* netlink functions */
 int cifsd_net_init(void);
