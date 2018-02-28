@@ -176,7 +176,6 @@ enum cifsd_pipe_type {
 	SRVSVC,
 	WINREG,
 	LANMAN,
-	LSARPC,
 	MAX_PIPE
 };
 

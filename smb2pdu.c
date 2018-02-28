@@ -1449,9 +1449,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			if (!sess->sign && ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || global_signing) ||
-				(conn->dialect == SMB311_PROT_ID))) {
-				if (conn->dialect >= SMB30_PROT_ID &&
-					conn->ops->compute_signingkey) {
+				(conn->dialect >= SMB30_PROT_ID))) {
+				if (conn->ops->compute_signingkey) {
 					rc = conn->ops->compute_signingkey(
 						sess, chann->smb3signingkey,
 						SMB3_SIGN_KEY_SIZE);
@@ -1809,6 +1808,7 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 
 	rsp = (struct smb2_create_rsp *)smb_work->rsp_buf;
 	req = (struct smb2_create_req *)smb_work->buf;
+
 	name = smb_strndup_from_utf16(req->Buffer, req->NameLength, 1,
 				smb_work->conn->local_nls);
 	if (IS_ERR(name)) {
@@ -6702,23 +6702,6 @@ int smb2_ioctl(struct smb_work *smb_work)
 	rsp->flags = cpu_to_le32(0);
 	rsp->Reserved2 = cpu_to_le32(0);
 	inc_rfc1001_len(rsp_org, 48 + nbytes);
-
-	if (!smb_work->sess->sign && cnt_code ==
-		FSCTL_VALIDATE_NEGOTIATE_INFO) {
-		if (conn->ops->is_sign_req &&
-			conn->ops->is_sign_req(smb_work, SMB2_IOCTL_HE) &&
-			conn->dialect >= SMB30_PROT_ID) {
-			struct channel *chann;
-
-			chann = lookup_chann_list(smb_work->sess);
-			ret = conn->ops->compute_signingkey(smb_work->sess,
-				chann->smb3signingkey, SMB3_SIGN_KEY_SIZE);
-			if (ret)
-				cifsd_err("SMB3 sesskey generation failed\n");
-			else
-				conn->ops->set_sign_rsp(smb_work);
-		}
-	}
 
 	return 0;
 
