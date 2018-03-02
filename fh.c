@@ -448,6 +448,41 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
+static void inherit_delete_pending(struct cifsd_file *fp)
+{
+	struct list_head *cur;
+	struct cifsd_file *prev_fp;
+	struct cifsd_mfile *mfp = fp->f_mfp;
+
+	fp->delete_on_close = 0;
+
+	spin_lock(&mfp->m_lock);
+	list_for_each_prev(cur, &mfp->m_fp_list) {
+		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (fp != prev_fp && (fp->sess == prev_fp->sess ||
+				mfp->m_flags & S_DEL_ON_CLS))
+			mfp->m_flags |= S_DEL_PENDING;
+	}
+	spin_unlock(&mfp->m_lock);
+}
+
+static void invalidate_delete_on_close(struct cifsd_file *fp)
+{
+	struct list_head *cur;
+	struct cifsd_file *prev_fp;
+	struct cifsd_mfile *mfp = fp->f_mfp;
+
+	spin_lock(&mfp->m_lock);
+	list_for_each_prev(cur, &mfp->m_fp_list) {
+		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (fp == prev_fp)
+			break;
+		if (fp->sess == prev_fp->sess)
+			prev_fp->delete_on_close = 0;
+	}
+	spin_unlock(&mfp->m_lock);
+}
+
 /**
  * close_id() - close filp for a fid and delete it from fid table
  * @conn:	TCP server instance of connection
@@ -482,8 +517,15 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		}
 	}
 
-	spin_lock(&fp->f_lock);
 	mfp = fp->f_mfp;
+	if (atomic_read(&mfp->m_count) >= 2) {
+		if (fp->delete_on_close)
+			inherit_delete_pending(fp);
+		else
+			invalidate_delete_on_close(fp);
+	}
+
+	spin_lock(&fp->f_lock);
 	fp->f_state = FP_FREEING;
 	spin_lock(&mfp->m_lock);
 	list_del(&fp->node);
@@ -533,7 +575,8 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 
 	if (atomic_dec_and_test(&mfp->m_count)) {
 		spin_lock(&mfp->m_lock);
-		if ((mfp->m_flags & S_DEL_ON_CLS)) {
+		if ((mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) ||
+				fp->delete_on_close) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
 			mfp->m_flags &= ~S_DEL_ON_CLS;
@@ -873,45 +916,41 @@ void destroy_global_fidtable(void)
  * @path:	path of dentry to be opened
  * @flags:	open flags
  * @ret_id:	fid returned on this
- * @open_flags:	return oplock state granted on file
  * @option:	file access pattern options for fadvise
  * @fexist:	file already present or not
  *
  * Return:	0 on success, otherwise error
  */
 struct cifsd_file *smb_dentry_open(struct smb_work *work,
-	const struct path *path, int flags, __u16 *ret_id,
-	int open_flags, int option, int fexist)
+	const struct path *path, int flags, int option, int fexist)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	int id, err = 0;
-	struct cifsd_file *fp;
-	struct smb_hdr *rcv_hdr = (struct smb_hdr *)work->buf;
+	struct cifsd_file *fp = NULL;
 	uint64_t sess_id;
 	struct cifsd_mfile *mfp;
-
-	/* first init id as invalid id - 0xFFFF ? */
-	*ret_id = 0xFFFF;
-
-	id = cifsd_get_unused_id(&work->sess->fidtable);
-	if (id < 0)
-		return NULL;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		err = PTR_ERR(filp);
 		cifsd_err("dentry open failed, err %d\n", err);
-		goto err_out;
+		return ERR_PTR(err);
 	}
 
 	smb_vfs_set_fadvise(filp, option);
 
-	sess_id = work->sess == NULL ? 0 : work->sess->sess_id;
-	fp = insert_id_in_fidtable(work->sess, work->tcon, id, filp);
+	sess_id = sess == NULL ? 0 : sess->sess_id;
+	id = cifsd_get_unused_id(&sess->fidtable);
+	if (id < 0)
+		goto err_out3;
+
+	cifsd_debug("allocate volatile id : %d\n", id);
+	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
 	if (fp == NULL) {
-		fput(filp);
+		err = -ENOMEM;
 		cifsd_err("id insert failed\n");
-		goto err_out;
+		goto err_out2;
 	}
 
 	mfp = mfp_lookup_inode(FP_INODE(fp));
@@ -919,21 +958,19 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
 		if (!mfp) {
 			err = -ENOMEM;
-			goto err_out;
+			goto err_out1;
 		}
 
 		err = mfp_init(mfp, fp);
 		if (err) {
 			cifsd_err("mfp initialized failed\n");
 			err = -ENOMEM;
-			goto err_out;
+			kfree(mfp);
+			goto err_out1;
 		}
 	}
 
-	/* Add fp to master fp list. */
-	list_add(&fp->node, &mfp->m_fp_list);
 	fp->f_mfp = mfp;
-
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
 			smb_break_all_oplock(work, fp);
@@ -944,19 +981,24 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 
 	INIT_LIST_HEAD(&fp->lock_list);
 
-	if (oplocks_enable && !S_ISDIR(file_inode(filp)->i_mode)) {
-		/* Client cannot request levelII oplock directly */
-		smb_grant_oplock(work, open_flags &
-			(REQ_OPLOCK | REQ_BATCHOPLOCK), id, fp, rcv_hdr->Tid,
-			NULL);
-	}
-
-	*ret_id = id;
 	return fp;
 
 err_out:
-	cifsd_close_id(&work->sess->fidtable, id);
-	return NULL;
+	list_del(&fp->node);
+	if (mfp && atomic_dec_and_test(&mfp->m_count))
+		mfp_free(mfp);
+err_out1:
+	delete_id_from_fidtable(sess, id);
+err_out2:
+	cifsd_close_id(&sess->fidtable, id);
+err_out3:
+	fput(filp);
+
+	if (err) {
+		fp = ERR_PTR(err);
+		cifsd_err("err : %d\n", err);
+	}
+	return fp;
 }
 
 /**
@@ -967,6 +1009,8 @@ err_out:
  */
 bool is_dir_empty(struct cifsd_file *fp)
 {
+	struct path dir_path;
+	struct file *filp;
 	struct smb_readdir_data r_data = {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
@@ -974,18 +1018,38 @@ bool is_dir_empty(struct cifsd_file *fp)
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
 		.dirent_count = 0
 	};
+	int err;
 
 	if (!r_data.dirent)
 		return false;
 
-	smb_vfs_readdir(fp->filp, smb_filldir, &r_data);
-	cifsd_debug("dirent_count = %d\n", r_data.dirent_count);
+	err = smb_kern_path(fp->filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+			&dir_path, 0);
+	if (err < 0)
+		return false;
+
+	filp = dentry_open(&dir_path, O_RDONLY | O_LARGEFILE, current_cred());
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		fput(filp);
+		cifsd_err("dentry open failed, err %d\n", err);
+		return false;
+	}
+
+	r_data.used = 0;
+	r_data.full = 0;
+
+	err = smb_vfs_readdir(filp, smb_filldir, &r_data);
 	if (r_data.dirent_count > 2) {
+		fput(filp);
+		path_put(&dir_path);
 		free_page((unsigned long)(r_data.dirent));
 		return false;
 	}
 
 	free_page((unsigned long)(r_data.dirent));
+	fput(filp);
+	path_put(&dir_path);
 	return true;
 }
 

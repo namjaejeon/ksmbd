@@ -599,7 +599,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have share delete\n");
 				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
-				rc = -ESHARE;
+				rc = -EPERM;
 				break;
 			}
 
@@ -618,7 +618,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have share read\n");
 				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
-				rc = -ESHARE;
+				rc = -EPERM;
 				break;
 			}
 
@@ -630,7 +630,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have share write\n");
 				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
-				rc = -ESHARE;
+				rc = EPERM;
 				break;
 			}
 
@@ -642,7 +642,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have desired read access\n");
 				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
-				rc = -ESHARE;
+				rc = -EPERM;
 				break;
 			}
 
@@ -654,7 +654,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have desired write access\n");
 				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
-				rc = -ESHARE;
+				rc = -EPERM;
 				break;
 			}
 
@@ -665,7 +665,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have desired delete access\n");
 				cifsd_err("previous file's desired access : 0x%x, current file's share access : 0x%x\n",
 					prev_fp->daccess, curr_fp->saccess);
-				rc = -ESHARE;
+				rc = -EPERM;
 				break;
 			}
 
@@ -940,4 +940,15 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 	}
 
 	return ab_pathname;
+}
+
+int get_nlink(struct kstat *st)
+{
+	int nlink;
+
+	nlink = st->nlink;
+	if (S_ISDIR(st->mode))
+		nlink--;
+
+	return nlink;
 }

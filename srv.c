@@ -592,7 +592,7 @@ int init_tcp_conn(struct connection *conn, struct socket *sock)
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
-	conn->srv_cap = SERVER_CAPS;
+	conn->srv_cap = 0;
 	spin_lock(&tcp_sess_list_lock);
 	list_add(&conn->tcp_sess, &tcp_sess_list);
 	spin_unlock(&tcp_sess_list_lock);

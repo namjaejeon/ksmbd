@@ -30,6 +30,7 @@
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 bool lease_enable = true;
+bool durable_enable = true;
 #endif
 
 LIST_HEAD(lease_table_list);
@@ -975,14 +976,14 @@ void add_lease_global_list(struct oplock_info *opinfo)
  * Return:      0 on success, otherwise error
  */
 int smb_grant_oplock(struct smb_work *work, int req_op_level, uint64_t pid,
-	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx)
+	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
+	int share_ret)
 {
 	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_mfile *mfp = fp->f_mfp;
 	struct cifsd_file *prev_fp;
-	int share_ret = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
@@ -1053,10 +1054,8 @@ new_oplock:
 	prev_fp = list_first_entry(&mfp->m_fp_list, struct cifsd_file, node);
 	prev_opinfo = prev_fp->f_opinfo;
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (share_ret < 0 &&
-		(prev_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE &&
-		!S_ISDIR(FP_INODE(fp)->i_mode))) {
+		(prev_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		err = share_ret;
 		goto out;
 	}
@@ -1080,7 +1079,7 @@ op_break_not_needed:
 	}
 
 	/* Check delete pending among previous fp before oplock break */
-	if (mfp->m_flags & S_DEL_ON_CLS) {
+	if (mfp->m_flags & S_DEL_PENDING) {
 		err = -EBUSY;
 		goto out;
 	}
@@ -1675,7 +1674,7 @@ out:
 }
 
 int smb2_check_durable_oplock(struct cifsd_file *fp,
-	struct lease_ctx_info *lctx, char *name, int version)
+	struct lease_ctx_info *lctx, char *name)
 {
 	struct oplock_info *opinfo = fp->f_opinfo;
 

@@ -1254,6 +1254,7 @@ typedef struct {
 	__le32 NumberOfLinks;
 	__u8 DeletePending;
 	__u8 Directory;
+	__le16 Reserved;
 } __attribute__((packed)) FILE_STANDARD_INFO;
 
 typedef struct {
@@ -1875,7 +1876,7 @@ struct fea {
 
 struct fealist {
 	__le32 list_len;
-	struct fea list[1];
+	__u8 list[1];
 } __attribute__((packed));
 
 /* POSIX ACL set/query path info structures */
