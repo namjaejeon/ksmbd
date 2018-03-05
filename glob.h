@@ -761,7 +761,7 @@ void fill_file_attributes(struct smb_work *smb_work,
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment);
+		int alignment, bool no_namelen_field);
 int smb_populate_dot_dotdot_entries(struct connection *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,

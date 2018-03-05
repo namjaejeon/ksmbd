@@ -3008,7 +3008,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(FILE_FULL_DIRECTORY_INFO), conn->local_nls,
 			&name_len, &next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -3018,8 +3018,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		ffdinfo->EaSize = 0;
 
 		memcpy(ffdinfo->FileName, utfname, name_len);
-		ffdinfo->FileName[name_len] = 0;
-		ffdinfo->FileName[name_len + 1] = 0;
 		ffdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3030,7 +3028,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(FILE_BOTH_DIRECTORY_INFO), conn->local_nls,
 			&name_len, &next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
@@ -3042,8 +3040,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fbdinfo->Reserved = 0;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
-		fbdinfo->FileName[name_len] = 0;
-		fbdinfo->FileName[name_len + 1] = 0;
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3054,7 +3050,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(FILE_DIRECTORY_INFO), conn->local_nls, &name_len,
 			&next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -3063,8 +3059,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
-		fdinfo->FileName[name_len] = 0;
-		fdinfo->FileName[name_len + 1] = 0;
 		fdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3075,7 +3069,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(FILE_NAMES_INFO), conn->local_nls, &name_len,
 			&next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -3084,8 +3078,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
-		fninfo->FileName[name_len] = 0;
-		fninfo->FileName[name_len + 1] = 0;
 		fninfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3096,7 +3088,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(SEARCH_ID_FULL_DIR_INFO), conn->local_nls,
 			&name_len, &next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -3108,8 +3100,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
 
 		memcpy(dinfo->FileName, utfname, name_len);
-		dinfo->FileName[name_len] = 0;
-		dinfo->FileName[name_len + 1] = 0;
 		dinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}
@@ -3120,7 +3110,7 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 			sizeof(FILE_ID_BOTH_DIRECTORY_INFO), conn->local_nls,
 			&name_len, &next_entry_offset, &d_info->out_buf_len,
-			&d_info->data_count, 7);
+			&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -3136,8 +3126,6 @@ static int smb2_populate_readdir_entry(struct connection *conn,
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
 		memcpy(fibdinfo->FileName, utfname, name_len);
-		fibdinfo->FileName[name_len] = 0;
-		fibdinfo->FileName[name_len + 1] = 0;
 		fibdinfo->NextEntryOffset = next_entry_offset;
 		break;
 	}

@@ -5310,6 +5310,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
  * @next_entry_offset:  offset of dentry
  * @buf_len:            response buffer length
  * @data_count:         used response buffer size
+ * @no_namelen_field:	flag which shows if a namelen field flag exist
  *
  * Return:      return error if next entry could not fit in current response
  *              buffer, otherwise return encode buffer.
@@ -5317,7 +5318,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment)
+		int alignment, bool no_namelen_field)
 {
 	char *enc_buf;
 
@@ -5328,6 +5329,11 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
 			namestr, len, local_nls, 0);
 	*name_len *= 2;
+	if (no_namelen_field) {
+		enc_buf[*name_len] = '\0';
+		enc_buf[*name_len+1] = '\0';
+		*name_len += 2;
+	}
 
 	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
 
@@ -5370,8 +5376,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5392,8 +5398,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_FULL_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5416,8 +5422,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5443,8 +5449,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(SEARCH_ID_FULL_DIR_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5469,8 +5475,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_UNIX_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, true);
 		if (!utfname)
 			break;
 
