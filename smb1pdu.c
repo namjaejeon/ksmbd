@@ -3603,7 +3603,7 @@ int query_path_info(struct smb_work *smb_work)
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
 		infos->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		infos->EASize = 0;
 
 		rsp_hdr->WordCount = 10;
@@ -3695,7 +3695,7 @@ int query_path_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-					 ATTR_DIRECTORY : ATTR_NORMAL;
+					 ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -3808,7 +3808,7 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
@@ -6545,7 +6545,7 @@ int query_file_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
+			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -6681,7 +6681,7 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
-				ATTR_DIRECTORY : ATTR_NORMAL);
+				ATTR_DIRECTORY : ATTR_ARCHIVE);
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
