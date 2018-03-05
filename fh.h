@@ -100,8 +100,8 @@ struct cifsd_lock {
 	unsigned int flags;
 	unsigned int cmd;
 	int zero_len;
-	loff_t start;
-	loff_t end;
+	unsigned long long start;
+	unsigned long long end;
 	struct smb_work *work;
 };
 
