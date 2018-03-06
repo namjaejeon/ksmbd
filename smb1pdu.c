@@ -3840,7 +3840,7 @@ int query_path_info(struct smb_work *smb_work)
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
 		infos->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		infos->EASize = 0;
 
 		rsp_hdr->WordCount = 10;
@@ -3932,7 +3932,7 @@ int query_path_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-					 ATTR_DIRECTORY : ATTR_NORMAL;
+					 ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -4045,7 +4045,7 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
@@ -4087,16 +4087,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_ALT_NAME_INFO:
 	{
 		ALT_NAME_INFO *alt_name_info;
+		char *base;
 
 		cifsd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = 20;
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = 2;
 		rsp->t2.ParameterOffset = 56;
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 20;
 		rsp->t2.DataOffset = 60;
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
@@ -4108,9 +4107,19 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
+
+		base = strrchr(name, '/');
+		if (base == NULL)
+			base = name;
+		else
+			base += 1;
 		alt_name_info->FileNameLength = smb_get_shortname(conn,
-				name, alt_name_info->FileName);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+			base, alt_name_info->FileName);
+		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
+		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
+
+		inc_rfc1001_len(rsp_hdr, (4 + alt_name_info->FileNameLength
+			+ rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -5548,6 +5557,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
  * @next_entry_offset:  offset of dentry
  * @buf_len:            response buffer length
  * @data_count:         used response buffer size
+ * @no_namelen_field:	flag which shows if a namelen field flag exist
  *
  * Return:      return error if next entry could not fit in current response
  *              buffer, otherwise return encode buffer.
@@ -5555,7 +5565,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment)
+		int alignment, bool no_namelen_field)
 {
 	char *enc_buf;
 
@@ -5566,6 +5576,11 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
 			namestr, len, local_nls, 0);
 	*name_len *= 2;
+	if (no_namelen_field) {
+		enc_buf[*name_len] = '\0';
+		enc_buf[*name_len+1] = '\0';
+		*name_len += 2;
+	}
 
 	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
 
@@ -5608,8 +5623,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5630,8 +5645,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_FULL_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5654,8 +5669,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5663,9 +5678,9 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			fill_common_info(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = 0;
+		fbdinfo->ShortNameLength = smb_get_shortname(conn,
+			d_info->name, fbdinfo->ShortName);
 		fbdinfo->Reserved = 0;
-		memset(fbdinfo->ShortName, '\0', 24);
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
@@ -5681,8 +5696,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(SEARCH_ID_FULL_DIR_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5707,8 +5722,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_UNIX_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, true);
 		if (!utfname)
 			break;
 
@@ -6777,7 +6792,7 @@ int query_file_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
+			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -6913,7 +6928,7 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
-				ATTR_DIRECTORY : ATTR_NORMAL);
+				ATTR_DIRECTORY : ATTR_ARCHIVE);
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
