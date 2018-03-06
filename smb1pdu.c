@@ -3850,16 +3850,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_ALT_NAME_INFO:
 	{
 		ALT_NAME_INFO *alt_name_info;
+		char *base;
 
 		cifsd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = 20;
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = 2;
 		rsp->t2.ParameterOffset = 56;
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 20;
 		rsp->t2.DataOffset = 60;
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
@@ -3871,9 +3870,19 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
+
+		base = strrchr(name, '/');
+		if (base == NULL)
+			base = name;
+		else
+			base += 1;
 		alt_name_info->FileNameLength = smb_get_shortname(conn,
-				name, alt_name_info->FileName);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+			base, alt_name_info->FileName);
+		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
+		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
+
+		inc_rfc1001_len(rsp_hdr, (4 + alt_name_info->FileNameLength
+			+ rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -5431,9 +5440,9 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			fill_common_info(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = 0;
+		fbdinfo->ShortNameLength = smb_get_shortname(conn,
+			d_info->name, fbdinfo->ShortName);
 		fbdinfo->Reserved = 0;
-		memset(fbdinfo->ShortName, '\0', 24);
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
