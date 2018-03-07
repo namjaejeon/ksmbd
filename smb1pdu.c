@@ -1248,7 +1248,8 @@ int lock_oplock_release(struct cifsd_file *fp, int type, int oplock_level)
 }
 
 static struct cifsd_lock *smb_lock_init(struct file_lock *flock,
-		unsigned int cmd, int mode, struct list_head *lock_list)
+		unsigned int cmd, int mode, unsigned long long offset,
+		unsigned long long length, struct list_head *lock_list)
 {
 	struct cifsd_lock *lock;
 
@@ -1258,8 +1259,8 @@ static struct cifsd_lock *smb_lock_init(struct file_lock *flock,
 
 	lock->cmd = cmd;
 	lock->fl = flock;
-	lock->start = flock->fl_start;
-	lock->end = flock->fl_end;
+	lock->start = offset;
+	lock->end = offset + length;
 	lock->flags = mode;
 	if (lock->start == lock->end)
 		lock->zero_len = 1;
@@ -1290,6 +1291,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	struct file_lock *flock = NULL;
 	unsigned int cmd = 0;
 	LIST_HEAD(lock_list);
+	LIST_HEAD(rollback_list);
 	int locked;
 	const unsigned long long loff_max = ~0;
 
@@ -1369,32 +1371,41 @@ int smb_locking_andx(struct smb_work *smb_work)
 			}
 		}
 
-		flock->fl_start = offset;
-
-		if (flock->fl_start > loff_max) {
+		if (offset > loff_max) {
 			cifsd_err("Invalid lock range requested\n");
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
 		}
 
-		if (length > (loff_max - flock->fl_start) + 1) {
+		if (offset > 0 && length > (loff_max - offset) + 1) {
 			cifsd_err("Invalid lock range requested\n");
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
 		}
 
-		flock->fl_end = flock->fl_start + length;
-		cifsd_debug("locking offset : %llu, length : %llu\n",
+		cifsd_debug("locking offset : %llx, length : %llu\n",
 			offset, length);
 
-		smb_lock = smb_lock_init(flock, cmd, req->LockType, &lock_list);
+		if (offset > OFFSET_MAX)
+			flock->fl_start = OFFSET_MAX;
+		else
+			flock->fl_start = offset;
+		if (offset + length > OFFSET_MAX)
+			flock->fl_end = OFFSET_MAX;
+		else
+			flock->fl_end = offset + length;
+
+		smb_lock = smb_lock_init(flock, cmd, req->LockType, offset,
+			length, &lock_list);
 		if (!smb_lock)
 			goto out;
 	}
 
 	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		int zero_lock = 0;
+
 		list_del(&smb_lock->llist);
 		/* check locks in global list */
 		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
@@ -1406,8 +1417,10 @@ int smb_locking_andx(struct smb_work *smb_work)
 					(cmp_lock->start <= smb_lock->end &&
 					 cmp_lock->end >= smb_lock->end)) {
 
-				if (cmp_lock->zero_len && smb_lock->zero_len)
-					goto out_loop;
+				if (cmp_lock->zero_len && smb_lock->zero_len) {
+					zero_lock = 1;
+					break;
+				}
 
 				cifsd_err("Not allow lock operation on exclusive lock range\n");
 				if ((smb_lock->start >> 63) == 0 &&
@@ -1421,6 +1434,13 @@ int smb_locking_andx(struct smb_work *smb_work)
 			}
 		}
 
+		if (zero_lock)
+			continue;
+		if (smb_lock->zero_len) {
+			err = 0;
+			goto skip;
+		}
+
 		flock = smb_lock->fl;
 retry:
 		err = smb_vfs_lock(filp, smb_lock->cmd, flock);
@@ -1428,6 +1448,8 @@ retry:
 			cifsd_err("would have to wait for getting lock\n");
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
+			list_add(&smb_lock->llist, &rollback_list);
+			list_add(&smb_lock->flist, &fp->lock_list);
 wait:
 			err = wait_event_interruptible_timeout(
 				flock->fl_wait, !flock->fl_next,
@@ -1435,19 +1457,21 @@ wait:
 			if (err) {
 				list_del(&smb_lock->llist);
 				list_del(&smb_lock->glist);
+				list_del(&smb_lock->flist);
 				goto retry;
 			} else
 				goto wait;
 		} else if (!err) {
+skip:
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
+			list_add(&smb_lock->llist, &rollback_list);
+			list_add(&smb_lock->flist, &fp->lock_list);
 			cifsd_err("successful in taking lock\n");
-		} else {
+		} else if (err < 0) {
 			rsp->hdr.Status.CifsError = NT_STATUS_LOCK_NOT_GRANTED;
 			goto out;
 		}
-out_loop:
-		cifsd_debug("looping\n");
 	}
 
 	unlock_ele = req->Locks + (sizeof(LOCKING_ANDX_RANGE) * lock_count);
@@ -1478,24 +1502,33 @@ out_loop:
 
 		}
 
-		flock->fl_start = offset;
-		flock->fl_end = flock->fl_start + length;
 		cifsd_debug("unlock offset : %llx, length : %llu\n",
 			offset, length);
+
+		if (offset > OFFSET_MAX)
+			flock->fl_start = OFFSET_MAX;
+		else
+			flock->fl_start = offset;
+		if (offset + length > OFFSET_MAX)
+			flock->fl_end = OFFSET_MAX;
+		else
+			flock->fl_end = offset + length;
 
 		locked = 0;
 		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
 			if (file_inode(cmp_lock->fl->fl_file) !=
 				file_inode(flock->fl_file))
 				continue;
-			if ((cmp_lock->start == flock->fl_start &&
-				 cmp_lock->end == flock->fl_end)) {
+
+			if ((cmp_lock->start == offset &&
+				 cmp_lock->end == offset + length)) {
 				locked = 1;
 				break;
 			}
 		}
 
 		if (!locked) {
+			locks_free_lock(flock);
 			rsp->hdr.Status.CifsError = NT_STATUS_RANGE_NOT_LOCKED;
 			goto out;
 		}
@@ -1504,6 +1537,9 @@ out_loop:
 		if (!err) {
 			cifsd_debug("File unlocked\n");
 			list_del(&cmp_lock->glist);
+			list_del(&cmp_lock->flist);
+			locks_free_lock(cmp_lock->fl);
+			kfree(cmp_lock);
 		} else if (err == -ENOENT) {
 			rsp->hdr.Status.CifsError = NT_STATUS_RANGE_NOT_LOCKED;
 			goto out;
@@ -1528,6 +1564,31 @@ out_loop:
 	return err;
 
 out:
+	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		locks_free_lock(smb_lock->fl);
+		list_del(&smb_lock->llist);
+		kfree(smb_lock);
+	}
+
+	list_for_each_entry_safe(smb_lock, tmp, &rollback_list, llist) {
+		struct file_lock *rlock = NULL;
+
+		rlock = smb_flock_init(filp);
+		rlock->fl_type = F_UNLCK;
+		rlock->fl_start = smb_lock->start;
+		rlock->fl_end = smb_lock->end;
+
+		err = smb_vfs_lock(filp, 0, rlock);
+		if (err)
+			cifsd_err("rollback unlock fail : %d\n", err);
+		list_del(&smb_lock->llist);
+		list_del(&smb_lock->glist);
+		list_del(&smb_lock->flist);
+		locks_free_lock(smb_lock->fl);
+		locks_free_lock(rlock);
+		kfree(smb_lock);
+	}
+
 	cifsd_err("failed in taking lock\n");
 	return err;
 }
@@ -2193,6 +2254,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	fp->filename = conv_name;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
+	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
@@ -2588,6 +2650,13 @@ int smb_read_andx(struct smb_work *smb_work)
 		return -ENOENT;
 	}
 
+	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
+		cifsd_err("Not match with request Pid %d\n",
+			le16_to_cpu(req->hdr.Pid));
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+		return -EINVAL;
+	}
+
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 12)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
@@ -2820,6 +2889,13 @@ int smb_write_andx(struct smb_work *smb_work)
 		return -ENOENT;
 	}
 
+	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
+		cifsd_err("Not match with request Pid %d\n",
+			le16_to_cpu(req->hdr.Pid));
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+		return -EINVAL;
+	}
+
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 14)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
@@ -2882,6 +2958,8 @@ int smb_write_andx(struct smb_work *smb_work)
 		return rsp->AndXCommand; /* More processing required */
 	}
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return 0;
 
 out:
 	if (err == -ENOSPC || err == -EFBIG)
@@ -4846,6 +4924,7 @@ int smb_posix_open(struct smb_work *smb_work)
 		goto free_path;
 	}
 	fp->filename = name;
+	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
 		/* Client cannot request levelII oplock directly */
@@ -7885,6 +7964,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&

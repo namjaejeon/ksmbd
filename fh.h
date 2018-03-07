@@ -170,6 +170,7 @@ struct cifsd_file {
 	char create_guid[16];
 	char app_instance_id[16];
 	int durable_timeout;
+	int pid;
 };
 
 enum cifsd_pipe_type {
