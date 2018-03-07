@@ -194,6 +194,8 @@ void smb2_set_err_rsp(struct smb_work *smb_work)
 	if (err_rsp->hdr.Status != cpu_to_le32(NT_STATUS_STOPPED_ON_SYMLINK)) {
 		err_rsp->StructureSize =
 			cpu_to_le16(SMB2_ERROR_STRUCTURE_SIZE2);
+		err_rsp->ErrorContextCount = 0;
+		err_rsp->Reserved = 0;
 		err_rsp->ByteCount = 0;
 		err_rsp->ErrorData[0] = 0;
 		inc_rfc1001_len(rsp, SMB2_ERROR_STRUCTURE_SIZE2);
@@ -1072,12 +1074,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 		init_smb2_0_server(conn);
 		break;
 	case BAD_PROT_ID:
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		return 0;
 	default:
-		cifsd_err("Server dialect :%x not supported\n",
-							conn->dialect);
+		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		smb2_set_err_rsp(smb_work);
 		return 0;
 	}
 	rsp->Capabilities = conn->srv_cap;
