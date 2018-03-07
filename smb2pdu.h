@@ -161,7 +161,8 @@ struct smb2_pdu {
 struct smb2_err_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize;
-	__le16 Reserved; /* MBZ */
+	__u8   ErrorContextCount;
+	__u8   Reserved;
 	__le32 ByteCount;  /* even if zero, at least one byte follows */
 	__u8   ErrorData[1];  /* variable length */
 } __packed;
