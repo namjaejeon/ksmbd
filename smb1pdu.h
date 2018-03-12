@@ -467,14 +467,20 @@ struct andx_block {
 	__le16 AndXOffset;
 } __attribute__((packed));
 
-typedef struct locking_andx_range {
+typedef struct locking_andx_range64 {
 	__le16 Pid;
 	__le16 Pad;
 	__le32 OffsetHigh;
 	__le32 OffsetLow;
 	__le32 LengthHigh;
 	__le32 LengthLow;
-} __attribute__((packed)) LOCKING_ANDX_RANGE;
+} __attribute__((packed)) LOCKING_ANDX_RANGE64;
+
+typedef struct locking_andx_range32 {
+	__le16 Pid;
+	__le32 Offset;
+	__le32 Length;
+} __attribute__((packed)) LOCKING_ANDX_RANGE32;
 
 #define LOCKING_ANDX_SHARED_LOCK     0x01
 #define LOCKING_ANDX_OPLOCK_RELEASE  0x02
@@ -494,7 +500,7 @@ typedef struct smb_com_lock_req {
 	__le16 NumberOfUnlocks;
 	__le16 NumberOfLocks;
 	__le16 ByteCount;
-	LOCKING_ANDX_RANGE Locks[1];
+	char *Locks[1];
 } __attribute__((packed)) LOCK_REQ;
 
 typedef struct smb_com_lock_rsp {

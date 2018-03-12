@@ -1283,7 +1283,8 @@ int smb_locking_andx(struct smb_work *smb_work)
 	LOCK_RSP *rsp;
 	struct cifsd_file *fp;
 	int err = 0;
-	LOCKING_ANDX_RANGE *lock_ele, *unlock_ele;
+	LOCKING_ANDX_RANGE32 *lock_ele32 = NULL, *unlock_ele32 = NULL;
+	LOCKING_ANDX_RANGE64 *lock_ele64 = NULL, *unlock_ele64 = NULL;
 	struct file *filp = NULL;
 	struct cifsd_lock *smb_lock = NULL, *cmp_lock, *tmp;
 	int i, lock_count, unlock_count;
@@ -1317,10 +1318,14 @@ int smb_locking_andx(struct smb_work *smb_work)
 	filp = fp->filp;
 	lock_count = le16_to_cpu(req->NumberOfLocks);
 	unlock_count = le16_to_cpu(req->NumberOfUnlocks);
-	lock_ele = req->Locks;
 
 	cifsd_debug("lock count is %d, unlock_count : %d\n",
 		lock_count, unlock_count);
+
+	if (req->LockType & LOCKING_ANDX_LARGE_FILES)
+		lock_ele64 = (LOCKING_ANDX_RANGE64 *)req->Locks;
+	else
+		lock_ele32 = (LOCKING_ANDX_RANGE32 *)req->Locks;
 
 	for (i = 0; i < lock_count; i++) {
 		flock = smb_flock_init(filp);
@@ -1354,22 +1359,20 @@ int smb_locking_andx(struct smb_work *smb_work)
 		if (req->LockType & LOCKING_ANDX_CANCEL_LOCK)
 			cifsd_err("lock LOCKING_ANDX_CANCEL_LOCK\n");
 
-		offset = (loff_t)le32_to_cpu(lock_ele[i].OffsetLow);
-		length = (loff_t)le64_to_cpu(lock_ele[i].LengthLow);
-
 		if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
+			offset = (unsigned long long)le32_to_cpu(
+					lock_ele64[i].OffsetLow);
+			length = (unsigned long long)le32_to_cpu(
+					lock_ele64[i].LengthLow);
 			offset |= (unsigned long long)le32_to_cpu(
-					lock_ele[i].OffsetHigh) << 32;
+					lock_ele64[i].OffsetHigh) << 32;
 			length |= (unsigned long long)le32_to_cpu(
-					lock_ele[i].LengthHigh) << 32;
+					lock_ele64[i].LengthHigh) << 32;
 		} else {
-			if (le32_to_cpu(lock_ele[i].OffsetHigh) > 0 ||
-				le32_to_cpu(lock_ele[i].LengthHigh) > 0) {
-				cifsd_err("lock range is over without large file mode\n");
-				rsp->hdr.Status.CifsError =
-					NT_STATUS_LOCK_NOT_GRANTED;
-				goto out;
-			}
+			offset = (unsigned long long)le32_to_cpu(
+				lock_ele32[i].Offset);
+			length = (unsigned long long)le32_to_cpu(
+				lock_ele32[i].Length);
 		}
 
 		if (offset > loff_max) {
@@ -1512,7 +1515,13 @@ skip:
 		}
 	}
 
-	unlock_ele = req->Locks + (sizeof(LOCKING_ANDX_RANGE) * lock_count);
+	if (req->LockType & LOCKING_ANDX_LARGE_FILES)
+		unlock_ele64 = (LOCKING_ANDX_RANGE64 *)(req->Locks +
+				(sizeof(LOCKING_ANDX_RANGE64) * lock_count));
+	else
+		unlock_ele32 = (LOCKING_ANDX_RANGE32 *)(req->Locks +
+				(sizeof(LOCKING_ANDX_RANGE32) * lock_count));
+
 	for (i = 0; i < unlock_count; i++) {
 		flock = smb_flock_init(filp);
 		if (!flock)
@@ -1521,23 +1530,20 @@ skip:
 		flock->fl_type = F_UNLCK;
 		cmd = 0;
 
-		offset = (loff_t)le32_to_cpu(unlock_ele[i].OffsetLow);
-		length = (loff_t)le64_to_cpu(unlock_ele[i].LengthLow);
-
 		if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
+			offset = (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].OffsetLow);
+			length = (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].LengthLow);
 			offset |= (unsigned long long)le32_to_cpu(
-					unlock_ele[i].OffsetHigh) << 32;
+					unlock_ele64[i].OffsetHigh) << 32;
 			length |= (unsigned long long)le32_to_cpu(
-					unlock_ele[i].LengthHigh) << 32;
+					unlock_ele64[i].LengthHigh) << 32;
 		} else {
-			if (le32_to_cpu(unlock_ele[i].OffsetHigh) > 0 ||
-				le32_to_cpu(unlock_ele[i].LengthHigh) > 0) {
-				cifsd_err("unlock range is over without large file mode\n");
-				rsp->hdr.Status.CifsError =
-					NT_STATUS_LOCK_NOT_GRANTED;
-				goto out;
-			}
-
+			offset = (unsigned long long)le32_to_cpu(
+				unlock_ele32[i].Offset);
+			length = (unsigned long long)le32_to_cpu(
+				unlock_ele32[i].Length);
 		}
 
 		cifsd_debug("unlock offset : %llx, length : %llu\n",
