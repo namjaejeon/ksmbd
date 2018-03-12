@@ -1292,14 +1292,15 @@ int smb_locking_andx(struct smb_work *smb_work)
 	unsigned int cmd = 0;
 	LIST_HEAD(lock_list);
 	LIST_HEAD(rollback_list);
-	int locked;
+	int locked, timeout;
 	const unsigned long long loff_max = ~0;
 
 	req = (LOCK_REQ *)smb_work->buf;
 	rsp = (LOCK_RSP *)smb_work->rsp_buf;
 
-	cifsd_debug("got oplock brk for fid %d lock type = 0x%x\n",
-		      req->Fid, req->LockType);
+	timeout = le32_to_cpu(req->Timeout);
+	cifsd_debug("got oplock brk for fid %d lock type = 0x%x, timeout : %d\n",
+		      req->Fid, req->LockType, timeout);
 
 	/* find fid */
 	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
@@ -1404,7 +1405,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	}
 
 	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
-		int zero_lock = 0;
+		int same_zero_lock = 0;
 
 		list_del(&smb_lock->llist);
 		/* check locks in global list */
@@ -1412,29 +1413,66 @@ int smb_locking_andx(struct smb_work *smb_work)
 			if (file_inode(cmp_lock->fl->fl_file) !=
 				file_inode(smb_lock->fl->fl_file))
 				continue;
-			if ((cmp_lock->start <= smb_lock->start &&
-					cmp_lock->end >= smb_lock->start) ||
-					(cmp_lock->start <= smb_lock->end &&
-					 cmp_lock->end >= smb_lock->end)) {
 
-				if (cmp_lock->zero_len && smb_lock->zero_len) {
-					zero_lock = 1;
-					break;
+			if (smb_lock->zero_len &&
+				cmp_lock->start == smb_lock->start &&
+				cmp_lock->end == smb_lock->end) {
+				same_zero_lock = 1;
+				break;
+			}
+
+			/* check zero byte lock range */
+			if (cmp_lock->zero_len && !smb_lock->zero_len &&
+					cmp_lock->start > smb_lock->start &&
+					cmp_lock->start < smb_lock->end) {
+				cifsd_err("previous lock conflict with zero byte lock range\n");
+				err = -EPERM;
+			} else if (smb_lock->zero_len && !cmp_lock->zero_len &&
+				smb_lock->start > cmp_lock->start &&
+				smb_lock->start < cmp_lock->end) {
+				cifsd_err("current lock conflict with zero byte lock range\n");
+				err = -EPERM;
+			} else if (((cmp_lock->start <= smb_lock->start &&
+				cmp_lock->end > smb_lock->start) ||
+				(cmp_lock->start < smb_lock->end &&
+				 cmp_lock->end >= smb_lock->end)) &&
+				!cmp_lock->zero_len && !smb_lock->zero_len) {
+				cifsd_err("Not allow lock operation on exclusive lock range\n");
+				err = -EPERM;
+			}
+
+			if (err) {
+				/* Clean error cache */
+				if ((smb_lock->zero_len &&
+						fp->cflock_cnt > 1) ||
+					(timeout && (fp->llock_fstart ==
+							smb_lock->start))) {
+					cifsd_debug("clean error cache\n");
+					fp->cflock_cnt = 0;
 				}
 
-				cifsd_err("Not allow lock operation on exclusive lock range\n");
-				if ((smb_lock->start >> 63) == 0 &&
-					smb_lock->start >= 0xEF000000)
+				if (timeout > 0 ||
+					(fp->cflock_cnt > 0 &&
+					fp->llock_fstart == smb_lock->start) ||
+					((smb_lock->start >> 63) == 0 &&
+					smb_lock->start >= 0xEF000000)) {
+					if (timeout) {
+						cifsd_debug("waiting error response for timeout : %d\n",
+							timeout);
+						msleep(timeout);
+					}
 					rsp->hdr.Status.CifsError =
 						NT_STATUS_FILE_LOCK_CONFLICT;
-				else
+				} else
 					rsp->hdr.Status.CifsError =
 						NT_STATUS_LOCK_NOT_GRANTED;
+				fp->cflock_cnt++;
+				fp->llock_fstart = smb_lock->start;
 				goto out;
 			}
 		}
 
-		if (zero_lock)
+		if (same_zero_lock)
 			continue;
 		if (smb_lock->zero_len) {
 			err = 0;
@@ -1540,6 +1578,7 @@ skip:
 			list_del(&cmp_lock->flist);
 			locks_free_lock(cmp_lock->fl);
 			kfree(cmp_lock);
+			fp->cflock_cnt = 0;
 		} else if (err == -ENOENT) {
 			rsp->hdr.Status.CifsError = NT_STATUS_RANGE_NOT_LOCKED;
 			goto out;
