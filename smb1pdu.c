@@ -1327,6 +1327,17 @@ int smb_locking_andx(struct smb_work *smb_work)
 	else
 		lock_ele32 = (LOCKING_ANDX_RANGE32 *)req->Locks;
 
+	if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE) {
+		cifsd_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
+		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+		rsp->hdr.Status.DosError.Error = ERRnoatomiclocks;
+		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
+		goto out;
+	}
+
+	if (req->LockType & LOCKING_ANDX_CANCEL_LOCK)
+		cifsd_err("lock type: LOCKING_ANDX_CANCEL_LOCK\n");
+
 	for (i = 0; i < lock_count; i++) {
 		flock = smb_flock_init(filp);
 		if (!flock)
@@ -1352,12 +1363,6 @@ int smb_locking_andx(struct smb_work *smb_work)
 			flock->fl_type = F_WRLCK;
 			flock->fl_flags |= FL_SLEEP;
 		}
-
-		if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE)
-			cifsd_err("lock LOCKING_ANDX_CHANGE_LOCKTYPE\n");
-
-		if (req->LockType & LOCKING_ANDX_CANCEL_LOCK)
-			cifsd_err("lock LOCKING_ANDX_CANCEL_LOCK\n");
 
 		if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
 			offset = (unsigned long long)le32_to_cpu(
