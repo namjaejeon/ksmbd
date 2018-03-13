@@ -290,13 +290,13 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 			usr->vuid = vid++;
 			usr->guest = false;
 			usr->name = name;
-			memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
+			usr->passkey = pass;
 		}
 	} else{
 		usr->vuid = vid++;
 		usr->guest = false;
 		usr->name = name;
-		memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
+		usr->passkey = pass;
 	}
 
 	usr->uid.val = uid.val;
@@ -591,8 +591,7 @@ static bool getUser(char *name, char *pass)
 			kfree(usr);
 			return false;
 		}
-		memcpy(usr->passkey, pass,
-				CIFS_NTHASH_SIZE);
+		usr->passkey = pass;
 		return false;
 	}
 
@@ -781,18 +780,18 @@ int cifsd_user_store(const char *buf, size_t len)
 		goto out;
 
 	/*
-	 * Success. Now the weird part. cifsd_usr has a pointer to
-	 * our conf[CONF_USER], but keep conf[CONF_PASSWD], gid and
-	 * uid in local variables. So we free all of conf[] entries
-	 * on error, but we need to keep CONF_USER alive on success.
+	 * Success. cifsd_usr keeps pointers to conf[CONF_USER] and
+	 * conf[CONF_PASSWD]. So we free all of conf[] entries on error,
+	 * but we need to keep CONF_USER and CONF_PASSWD alive on success.
 	 */
 	ret = len;
 out:
 	kfree(conf[CONF_GID]);
 	kfree(conf[CONF_UID]);
-	kfree(conf[CONF_PASSWD]);
-	if (ret != len)
+	if (ret != len) {
+		kfree(conf[CONF_PASSWD]);
 		kfree(conf[CONF_USER]);
+	}
 	return ret;
 }
 

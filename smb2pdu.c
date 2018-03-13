@@ -4630,7 +4630,7 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 
 			obj_info = (struct object_id_info *)(rsp->Buffer);
 
-			if (smb_work->sess->usr->passkey[0]) {
+			if (smb_work->sess->usr->passkey) {
 				smb_E_md4hash(smb_work->sess->usr->passkey,
 					objid, conn->local_nls);
 				memcpy(obj_info->objid, objid, 16);
