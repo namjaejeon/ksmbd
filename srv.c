@@ -858,6 +858,27 @@ int cifsd_stop_tcp_sess(void)
 }
 
 /**
+ * smb_free_mempools() - free smb request/response mempools
+ */
+static void smb_free_mempools(void)
+{
+	mempool_destroy(cifsd_req_poolp);
+	kmem_cache_destroy(cifsd_req_cachep);
+
+	mempool_destroy(cifsd_sm_req_poolp);
+	kmem_cache_destroy(cifsd_sm_req_cachep);
+
+	mempool_destroy(cifsd_rsp_poolp);
+	kmem_cache_destroy(cifsd_rsp_cachep);
+
+	mempool_destroy(cifsd_sm_rsp_poolp);
+	kmem_cache_destroy(cifsd_sm_rsp_cachep);
+
+	kmem_cache_destroy(cifsd_work_cache);
+	kmem_cache_destroy(cifsd_filp_cache);
+}
+
+/**
  * smb_initialize_mempool() - initialize mempool for smb request/response
  *
  * Return:	0 on success, otherwise -ENOMEM
@@ -873,13 +894,13 @@ static int smb_initialize_mempool(void)
 			SLAB_HWCACHE_ALIGN, NULL);
 
 	if (cifsd_req_cachep == NULL)
-		goto err_out1;
+		goto error_out;
 
 	cifsd_req_poolp = mempool_create_slab_pool(smb_min_rcv,
 			cifsd_req_cachep);
 
 	if (cifsd_req_poolp == NULL)
-		goto err_out2;
+		goto error_out;
 
 	/* Initialize small request pool */
 	cifsd_sm_req_cachep = kmem_cache_create("cifsd_small_rq",
@@ -887,26 +908,26 @@ static int smb_initialize_mempool(void)
 			NULL);
 
 	if (cifsd_sm_req_cachep == NULL)
-		goto err_out3;
+		goto error_out;
 
 	cifsd_sm_req_poolp = mempool_create_slab_pool(smb_min_small,
 			cifsd_sm_req_cachep);
 
 	if (cifsd_sm_req_poolp == NULL)
-		goto err_out4;
+		goto error_out;
 
 	cifsd_sm_rsp_cachep = kmem_cache_create("cifsd_small_rsp",
 			MAX_CIFS_SMALL_BUFFER_SIZE, 0, SLAB_HWCACHE_ALIGN,
 			NULL);
 
 	if (cifsd_sm_rsp_cachep == NULL)
-		goto err_out5;
+		goto error_out;
 
 	cifsd_sm_rsp_poolp = mempool_create_slab_pool(smb_min_small,
 			cifsd_sm_rsp_cachep);
 
 	if (cifsd_sm_rsp_poolp == NULL)
-		goto err_out6;
+		goto error_out;
 
 	cifsd_rsp_cachep = kmem_cache_create("cifsd_rsp",
 			SMBMaxBufSize + max_hdr_size, 0,
@@ -914,68 +935,32 @@ static int smb_initialize_mempool(void)
 			NULL);
 
 	if (cifsd_rsp_cachep == NULL)
-		goto err_out7;
+		goto error_out;
 
 	cifsd_rsp_poolp = mempool_create_slab_pool(cifs_min_send,
 			cifsd_rsp_cachep);
 
 	if (cifsd_rsp_poolp == NULL)
-		goto err_out8;
+		goto error_out;
 
 	cifsd_work_cache = kmem_cache_create("cifsd_work_cache",
 					sizeof(struct smb_work), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
 	if (cifsd_work_cache == NULL)
-		goto err_out9;
+		goto error_out;
 
 	cifsd_filp_cache = kmem_cache_create("cifsd_file_cache",
 					sizeof(struct cifsd_file), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
 	if (cifsd_filp_cache == NULL)
-		goto err_out10;
+		goto error_out;
 
 	return 0;
 
-err_out10:
-	kmem_cache_destroy(cifsd_work_cache);
-err_out9:
-	mempool_destroy(cifsd_rsp_poolp);
-err_out8:
-	kmem_cache_destroy(cifsd_rsp_cachep);
-err_out7:
-	mempool_destroy(cifsd_sm_rsp_poolp);
-err_out6:
-	kmem_cache_destroy(cifsd_sm_rsp_cachep);
-err_out5:
-	mempool_destroy(cifsd_sm_req_poolp);
-err_out4:
-	kmem_cache_destroy(cifsd_sm_req_cachep);
-err_out3:
-	mempool_destroy(cifsd_req_poolp);
-err_out2:
-	kmem_cache_destroy(cifsd_req_cachep);
-err_out1:
+error_out:
 	cifsd_err("failed to allocate memory\n");
+	smb_free_mempools();
 	return -ENOMEM;
-}
-
-/**
- * smb_free_mempools() - free smb request/response mempools
- */
-void smb_free_mempools(void)
-{
-	mempool_destroy(cifsd_req_poolp);
-	kmem_cache_destroy(cifsd_req_cachep);
-	mempool_destroy(cifsd_sm_req_poolp);
-	kmem_cache_destroy(cifsd_sm_req_cachep);
-
-	mempool_destroy(cifsd_rsp_poolp);
-	kmem_cache_destroy(cifsd_rsp_cachep);
-	mempool_destroy(cifsd_sm_rsp_poolp);
-	kmem_cache_destroy(cifsd_sm_rsp_cachep);
-
-	kmem_cache_destroy(cifsd_work_cache);
-	kmem_cache_destroy(cifsd_filp_cache);
 }
 
 /**
