@@ -744,7 +744,7 @@ int cifsd_user_store(const char *buf, size_t len)
 		CONF_UID,
 		CONF_GID,
 	};
-	char *conf[CONF_GID + 1];
+	char *conf[CONF_GID + 1] = {0};
 	kuid_t uid;
 	kgid_t gid;
 	int ret;
