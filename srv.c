@@ -144,7 +144,7 @@ out:
  *
  * Return:	true on success, otherwise NULL
  */
-static bool allocate_buffers(struct connection *conn)
+static void allocate_buffers(struct connection *conn)
 {
 	/*
 	 * We allocate small and big buffers from mempool() with GFP_NOFS,
@@ -166,7 +166,6 @@ static bool allocate_buffers(struct connection *conn)
 		memset(conn->bigbuf, 0, HEADER_SIZE(conn));
 	if (conn->smallbuf)
 		memset(conn->smallbuf, 0, HEADER_SIZE(conn));
-	return true;
 }
 
 /**
@@ -663,8 +662,7 @@ static int tcp_sess_kthread(void *p)
 		if (try_to_freeze())
 			continue;
 
-		if (!allocate_buffers(conn))
-			continue;
+		allocate_buffers(conn);
 
 		buf = conn->smallbuf;
 		pdu_length = 4; /* enough to get RFC1001 header */
