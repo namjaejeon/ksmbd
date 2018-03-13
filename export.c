@@ -318,6 +318,7 @@ static void cifsd_user_free(void)
 	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
 		list_del(&usr->list);
 		kfree(usr->name);
+		kfree(usr->passkey);
 		kfree(usr);
 	}
 }
@@ -722,6 +723,7 @@ int cifsadmin_user_del(char *username)
 	if (usr && !strcmp(username, usr->name)) {
 		list_del(&usr->list);
 		kfree(usr->name);
+		kfree(usr->passkey);
 		kfree(usr);
 		return 0;
 	}
