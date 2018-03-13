@@ -627,11 +627,14 @@ static void free_channel_list(struct cifsd_sess *sess)
 
 void smb_delete_session(struct cifsd_sess *sess)
 {
+	cifsd_debug("delete session ID: %llu, session count: %d\n", sess->sess_id, sess->conn->sess_count);
+
 	sess->valid = 0;
 	list_del(&sess->cifsd_ses_list);
 	list_del(&sess->cifsd_ses_global_list);
 	free_channel_list(sess);
 	destroy_fidtable(sess);
+	sess->conn->sess_count--;
 	kfree(sess);
 }
 
