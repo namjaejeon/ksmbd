@@ -74,7 +74,7 @@ unsigned int alloc_roundup_size = 1048576;
  * Return:	pointer to large response buffer on success,
  *		otherwise NULL
  */
-struct smb_hdr *cifsd_buf_get(void)
+static struct smb_hdr *cifsd_buf_get(void)
 {
 	struct smb_hdr *hdr;
 	size_t buf_size = sizeof(struct smb_hdr);
@@ -101,7 +101,7 @@ struct smb_hdr *cifsd_buf_get(void)
  * Return:	pointer to small response buffer on success,
  *		otherwise NULL
  */
-struct smb_hdr *smb_small_buf_get(void)
+static struct smb_hdr *smb_small_buf_get(void)
 {
 	/* No need to memset smallbuf as we will fill hdr anyway */
 	return mempool_alloc(cifsd_sm_req_poolp, GFP_NOFS | __GFP_ZERO);
@@ -193,7 +193,6 @@ static bool allocate_buffers(struct connection *conn)
  */
 int smb_send_rsp(struct smb_work *work)
 {
-
 	struct connection *conn = work->conn;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
 	struct socket *sock = conn->sock;
@@ -272,71 +271,6 @@ out:
 }
 
 /**
- * queue_dynamic_work_helper() - helper function to queue smb request
- *		work to worker thread
- * @conn:     TCP server instance of connection
- */
-void queue_dynamic_work_helper(struct connection *conn)
-{
-	struct smb_work *work =	kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
-	if (!work) {
-		cifsd_err("allocation for work failed\n");
-		return;
-	}
-
-	/*
-	 * Increment ref count for the Server object, as after this
-	 * only fallback point is from handle_smb_work
-	 */
-	atomic_inc(&conn->r_count);
-	work->conn = conn;
-
-	if (conn->wbuf) {
-		work->buf = conn->wbuf;
-		work->req_wbuf = 1;
-		conn->wbuf = NULL;
-	} else if (conn->large_buf) {
-		work->buf = conn->bigbuf;
-		work->large_buf = 1;
-		conn->large_buf = false;
-		conn->bigbuf = NULL;
-	} else {
-		work->buf = conn->smallbuf;
-		conn->smallbuf = NULL;
-	}
-
-	add_request_to_queue(work);
-
-	/* update activity on connection */
-	conn->last_active = jiffies;
-	INIT_WORK(&work->work, handle_smb_work);
-	schedule_work(&work->work);
-}
-
-/**
- * queue_dynamic_work() - queue a smb request to worker thread queue
- *		for proccessing smb command and sending response
- * @conn:     TCP server instance of connection
- *
- * read remaining data from socket create and submit work.
- */
-void queue_dynamic_work(struct connection *conn, char *buf)
-{
-	int ret;
-
-	dump_smb_msg(buf, HEADER_SIZE(conn));
-
-	/* check if the message is ok */
-	ret = check_smb_message(buf);
-	if (ret) {
-		cifsd_debug("Malformed smb request\n");
-		return;
-	}
-
-	queue_dynamic_work_helper(conn);
-}
-
-/**
  * check_conn_state() - check state of server thread connection
  * @smb_work:     smb work containing server thread information
  *
@@ -389,7 +323,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
  *
  * called by kworker threads to processing remaining smb work requests
  */
-void handle_smb_work(struct work_struct *work)
+static void handle_smb_work(struct work_struct *work)
 {
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct connection *conn = smb_work->conn;
@@ -564,13 +498,79 @@ nosend:
 }
 
 /**
+ * queue_dynamic_work_helper() - helper function to queue smb request
+ *		work to worker thread
+ * @conn:     TCP server instance of connection
+ */
+static void queue_dynamic_work_helper(struct connection *conn)
+{
+	struct smb_work *work =	kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	if (!work) {
+		cifsd_err("allocation for work failed\n");
+		return;
+	}
+
+	/*
+	 * Increment ref count for the Server object, as after this
+	 * only fallback point is from handle_smb_work
+	 */
+	atomic_inc(&conn->r_count);
+	work->conn = conn;
+
+	if (conn->wbuf) {
+		work->buf = conn->wbuf;
+		work->req_wbuf = 1;
+		conn->wbuf = NULL;
+	} else if (conn->large_buf) {
+		work->buf = conn->bigbuf;
+		work->large_buf = 1;
+		conn->large_buf = false;
+		conn->bigbuf = NULL;
+	} else {
+		work->buf = conn->smallbuf;
+		conn->smallbuf = NULL;
+	}
+
+	add_request_to_queue(work);
+
+	/* update activity on connection */
+	conn->last_active = jiffies;
+	INIT_WORK(&work->work, handle_smb_work);
+	schedule_work(&work->work);
+}
+
+/**
+ * queue_dynamic_work() - queue a smb request to worker thread queue
+ *		for proccessing smb command and sending response
+ * @conn:     TCP server instance of connection
+ *
+ * read remaining data from socket create and submit work.
+ */
+static void queue_dynamic_work(struct connection *conn, char *buf)
+{
+	int ret;
+
+	dump_smb_msg(buf, HEADER_SIZE(conn));
+
+	/* check if the message is ok */
+	ret = check_smb_message(buf);
+	if (ret) {
+		cifsd_debug("Malformed smb request\n");
+		return;
+	}
+
+	queue_dynamic_work_helper(conn);
+}
+
+
+/**
  * init_tcp_conn() - intialize tcp server thread for a new connection
  * @conn:     TCP server instance of connection
  * @sock:	socket associated with new connection
  *
  * Return:	0 on success, otherwise -ENOMEM
  */
-int init_tcp_conn(struct connection *conn, struct socket *sock)
+static int init_tcp_conn(struct connection *conn, struct socket *sock)
 {
 	int rc = 0;
 
@@ -626,7 +626,7 @@ static void conn_cleanup(struct connection *conn)
 	kfree(conn);
 }
 
-void free_channel_list(struct cifsd_sess *sess)
+static void free_channel_list(struct cifsd_sess *sess)
 {
 	struct channel *chann;
 	struct list_head *tmp, *t;
