@@ -69,14 +69,13 @@ LIST_HEAD(global_lock_list);
 unsigned int alloc_roundup_size = 1048576;
 
 /**
- * cifsd_buf_get() - get large response buffer
+ * alloc_huge_response_buffer() - get large response buffer
  *
  * Return:	pointer to large response buffer on success,
  *		otherwise NULL
  */
-static struct smb_hdr *cifsd_buf_get(void)
+static struct smb_hdr *alloc_huge_response_buffer(void)
 {
-	struct smb_hdr *hdr;
 	size_t buf_size = sizeof(struct smb_hdr);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -86,25 +85,19 @@ static struct smb_hdr *cifsd_buf_get(void)
 	 */
 	buf_size = sizeof(struct smb2_hdr);
 #endif
-	hdr = mempool_alloc(cifsd_req_poolp, GFP_NOFS | __GFP_ZERO);
-
-	/* clear the first few header bytes */
-	if (hdr)
-		memset(hdr, 0, buf_size + 3);
-
-	return hdr;
+	return mempool_alloc(cifsd_req_poolp, GFP_NOFS);
 }
 
 /**
- * cifsd_buf_get() - get small response buffer
+ * alloc_small_response_buffer() - get small response buffer
  *
  * Return:	pointer to small response buffer on success,
  *		otherwise NULL
  */
-static struct smb_hdr *smb_small_buf_get(void)
+static struct smb_hdr *alloc_small_response_buffer(void)
 {
 	/* No need to memset smallbuf as we will fill hdr anyway */
-	return mempool_alloc(cifsd_sm_req_poolp, GFP_NOFS | __GFP_ZERO);
+	return mempool_alloc(cifsd_sm_req_poolp, GFP_NOFS);
 }
 
 /**
@@ -151,35 +144,28 @@ out:
  *
  * Return:	true on success, otherwise NULL
  */
-static bool allocate_buffers(struct connection *conn)
+static void allocate_buffers(struct connection *conn)
 {
-	if (!conn->bigbuf) {
-		conn->bigbuf = (char *)cifsd_buf_get();
-		if (!conn->bigbuf) {
-			cifsd_debug("No memory for large SMB response\n");
-			msleep(3000);
-			/* retry will check if exiting */
-			return false;
-		}
-	} else if (conn->large_buf) {
-		/* we are reusing a dirty large buf, clear its start */
+	/*
+	 * We allocate small and big buffers from mempool() with GFP_NOFS,
+	 * which permits ___GFP_DIRECT_RECLAIM and ___GFP_KSWAPD_RECLAIM.
+	 * So mempool() will not return NULL, it will sleep until it will
+	 * be able to allocate the requested memory.
+	 */
+	if (!conn->bigbuf)
+		conn->bigbuf = (char *)alloc_huge_response_buffer();
+	if (!conn->smallbuf)
+		conn->smallbuf = (char *)alloc_small_response_buffer();
+
+	/*
+	 * Either we are reusing the existing buffers, or got the
+	 * new ones we still need to zero them out. Passing GFP_ZERO
+	 * to mempool() is not valid and mempool() WARNs about it.
+	 */
+	if (conn->bigbuf)
 		memset(conn->bigbuf, 0, HEADER_SIZE(conn));
-	}
-
-	if (!conn->smallbuf) {
-		conn->smallbuf = (char *)smb_small_buf_get();
-		if (!conn->smallbuf) {
-			cifsd_debug("No memory for SMB response\n");
-			/* retry will check if exiting */
-			return false;
-		}
-		/* beginning of smb buffer is cleared in our buf_get */
-	} else {
-		/* if existing small buf clear beginning */
+	if (conn->smallbuf)
 		memset(conn->smallbuf, 0, HEADER_SIZE(conn));
-	}
-
-	return true;
 }
 
 /**
@@ -614,12 +600,9 @@ static void conn_cleanup(struct connection *conn)
 	sock_release(conn->sock);
 	conn->sock = NULL;
 
-	if (conn->bigbuf)
-		mempool_free(conn->bigbuf, cifsd_req_poolp);
-	if (conn->smallbuf)
-		mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
-	if (conn->wbuf)
-		vfree(conn->wbuf);
+	mempool_free(conn->bigbuf, cifsd_req_poolp);
+	mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
+	vfree(conn->wbuf);
 
 	list_del(&conn->list);
 	destroy_lease_table(conn);
@@ -679,8 +662,7 @@ static int tcp_sess_kthread(void *p)
 		if (try_to_freeze())
 			continue;
 
-		if (!allocate_buffers(conn))
-			continue;
+		allocate_buffers(conn);
 
 		buf = conn->smallbuf;
 		pdu_length = 4; /* enough to get RFC1001 header */

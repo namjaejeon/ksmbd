@@ -4641,8 +4641,8 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 			obj_info->extended_info.version = 1;
 			obj_info->extended_info.release = 1;
 			obj_info->extended_info.rel_date = 0;
-			memcpy(obj_info->extended_info.version_string,
-				"1.1.0", STRING_LENGTH);
+			strncpy(obj_info->extended_info.version_string,
+					"1.1.0", STRING_LENGTH);
 			rsp->OutputBufferLength = cpu_to_le32(64);
 			inc_rfc1001_len(rsp_org, 64);
 			fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
