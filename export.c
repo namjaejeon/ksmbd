@@ -290,13 +290,13 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 			usr->vuid = vid++;
 			usr->guest = false;
 			usr->name = name;
-			memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
+			usr->passkey = pass;
 		}
 	} else{
 		usr->vuid = vid++;
 		usr->guest = false;
 		usr->name = name;
-		memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
+		usr->passkey = pass;
 	}
 
 	usr->uid.val = uid.val;
@@ -591,8 +591,7 @@ static bool getUser(char *name, char *pass)
 			kfree(usr);
 			return false;
 		}
-		memcpy(usr->passkey, pass,
-				CIFS_NTHASH_SIZE);
+		usr->passkey = pass;
 		return false;
 	}
 
@@ -739,53 +738,61 @@ int cifsadmin_user_del(char *username)
  */
 int cifsd_user_store(const char *buf, size_t len)
 {
-	char *usrname, *passwd;
-	int rc, i;
-	char *parse_ptr[4] = {0};
+	enum {
+		CONF_USER,
+		CONF_PASSWD,
+		CONF_UID,
+		CONF_GID,
+	};
+	char *conf[CONF_GID + 1];
 	kuid_t uid;
 	kgid_t gid;
+	int ret;
 
-	rc = parse_user_strings(buf, parse_ptr, 4, len);
-	if (rc < 2) {
+	uid.val = 0;
+	gid.val = 0;
+
+	ret = parse_user_strings(buf, conf, ARRAY_SIZE(conf), len);
+	if (ret < 2) {
 		cifsd_err("[%s] <usr:pass> format err\n", __func__);
+		ret = -EINVAL;
 		goto out;
 	}
 
-	usrname = parse_ptr[0];
-	passwd = parse_ptr[1];
-
-	if (rc > 2) {
-		if (kstrtouint(parse_ptr[2], 10, &uid.val) ||
-				kstrtouint(parse_ptr[3], 10, &gid.val)) {
+	if (ret > 2) {
+		ret = -EINVAL;
+		if (kstrtouint(conf[CONF_UID], 10, &uid.val))
 			goto out;
-		}
+		if (kstrtouint(conf[CONF_GID], 10, &gid.val))
+			goto out;
 		cifsd_debug("uid : %u, gid %u\n", uid.val, gid.val);
-	} else {
-		uid.val = 0;
-		gid.val = 0;
 	}
 
 	/* check if user is already present*/
-	rc = getUser(usrname, passwd);
-	if (!rc) {
-		kfree(usrname);
-		kfree(passwd);
-	} else {
-		rc = add_user(usrname, passwd, uid, gid);
-		kfree(passwd);
-		if (rc) {
-			kfree(usrname);
-			if (rc == -ENOMEM)
-				goto out;
-		}
+	ret = getUser(conf[CONF_USER], conf[CONF_PASSWD]);
+	if (ret == 0) {
+		ret = len;
+		goto out;
 	}
 
-	return len;
-out:
-	for (i = 0; i < 4; i++)
-		kfree(parse_ptr[i]);
+	ret = add_user(conf[CONF_USER], conf[CONF_PASSWD], uid, gid);
+	if (ret)
+		goto out;
 
-	return -EINVAL;
+	/*
+	 * Success. cifsd_usr keeps pointers to conf[CONF_USER] and
+	 * conf[CONF_PASSWD]. So we free all of conf[] entries on error,
+	 * but we need to keep CONF_USER and CONF_PASSWD alive on success.
+	 */
+	ret = len;
+out:
+	kfree(conf[CONF_GID]);
+	kfree(conf[CONF_UID]);
+	if (ret != len) {
+		kfree(conf[CONF_PASSWD]);
+		kfree(conf[CONF_USER]);
+	}
+	return ret;
 }
 
 /**

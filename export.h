@@ -89,7 +89,7 @@ enum {
 
 struct cifsd_usr {
 	char	*name;
-	char	passkey[CIFS_NTHASH_SIZE];
+	char	*passkey; /* max size CIFS_NTHASH_SIZE */
 	kuid_t	uid;
 	kgid_t	gid;
 	__le32	sess_uid;
