@@ -281,24 +281,16 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 	if (!usr)
 		return -ENOMEM;
 
-	if (guestAccountName) {
-		if (strcmp(guestAccountName, name) == 0) {
-			usr->vuid = 0;
-			usr->guest = true;
-			usr->name = guestAccountName;
-		} else{
-			usr->vuid = vid++;
-			usr->guest = false;
-			usr->name = name;
-			usr->passkey = pass;
-		}
+	if (guestAccountName && strcmp(guestAccountName, name) == 0) {
+		usr->vuid = 0;
+		usr->guest = true;
 	} else{
 		usr->vuid = vid++;
 		usr->guest = false;
-		usr->name = name;
-		usr->passkey = pass;
 	}
 
+	usr->name = name;
+	usr->passkey = pass;
 	usr->uid.val = uid.val;
 	usr->gid.val = gid.val;
 	usr->sess_uid = 0;
