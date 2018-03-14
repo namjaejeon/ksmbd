@@ -348,33 +348,56 @@ static int parse_user_strings(const char *src, char **str, int exp_num,
 	return s_num;
 }
 
-/**
- * chktkn() - utility function to validate user or host
- * @userslist:	list of allowed or denied user or host
- * @str2:	check if this user or host is present in userslist
- *
- * Return:      1 if str2 is present in userslist, otherwise 0
- */
-static int chktkn(char *userslist, char *str2)
+static char *strim_conflist_entry(char *p, char *limit)
 {
-	char *token;
-	char *dup, *dup_orig;
+	while ((p < limit) && (*p == ',' || *p == '\t' || *p == ' '))
+		p++;
+	return p < limit ? p : NULL;
+}
 
-	if (userslist) {
-		dup_orig = dup = kstrdup(userslist, GFP_KERNEL);
-		if (!dup)
-			return -ENOMEM;
+/*
+ * conflist_search() - looks up for a key in smb.conf config list
+ * @list:	config string (must not be NULL)
+ * @key:	key to lookup for
+ *
+ * Return:	0 when entry found, -ENOENT when not found
+ */
+static int conflist_search(char *list, char *key)
+{
+	char *begin = list, *end;
 
-		while ((token = strsep(&dup, "	, ")) != NULL) {
-			if (!strcmp(token, str2)) {
-				kfree(dup_orig);
-				return 1;
-			}
+	/*
+	 * From smb.conf
+	 *    This parameter is a comma, space, or tab delimited set of
+	 *    hosts which are permitted to access a service
+	 */
+	while ((end = strpbrk(begin, "\t, "))) {
+		char e;
+
+		if (end - begin < 2) {
+			begin++;
+			continue;
 		}
-		kfree(dup_orig);
-		return -ENOENT;
+
+		begin = strim_conflist_entry(begin, end);
+		if (!begin)
+			return -ENOENT;
+
+		e = *end;
+		*end = '\0';
+
+		if (!strcmp(begin, key))
+			return 0;
+		*end = e;
+		begin = end + 1;
 	}
-	return 0;
+
+	begin = strim_conflist_entry(begin, list + strlen(list) - 1);
+	if (!begin)
+		return -ENOENT;
+	if (!strcmp(begin, key))
+		return 0;
+	return -ENOENT;
 }
 
 /**
@@ -382,111 +405,92 @@ static int chktkn(char *userslist, char *str2)
  * @cip:	host ip to be checked
  * @share:	share config containing allowed and denied list of client ip
  *
- * Return:      1 if cip is allowed access to share, otherwise 0
+ * Return:      0 if cip is allowed access to share, otherwise
  */
-int validate_host(char *cip, struct cifsd_share *share)
+static int validate_host(char *cip, struct cifsd_share *share)
 {
-	char *alist = share->config.allow_hosts;
-	char *dlist = share->config.deny_hosts;
-	int allow, deny;
-	int asz = 0;
-	int dsz = 0;
+	char *allow_list = share->config.allow_hosts;
+	char *deny_list = share->config.deny_hosts;
 
-	if (alist)
-		asz = strlen(alist);
-	if (dlist)
-		dsz = strlen(dlist);
+	if (!allow_list && !deny_list)
+		return 0;
 
-	if (!asz && !dsz)
-		return 1;
+	if (allow_list) {
+		if (conflist_search(allow_list, cip) == -ENOENT)
+			return -EACCES;
+		/*
+		 * "allow hosts" list takes precedence over "deny hosts" list,
+		 *  No further checking needed
+		 */
+		return 0;
+	}
 
-	allow = chktkn(alist, cip);
-	if (allow == -ENOENT)
-		return -EACCES;
-	else if (allow < 0)
-		return allow;
-
-	/*
-	 * "allow hosts" list takes precedence over "deny hosts" list,
-	 *  No further checking needed
-	 */
-	if (allow > 0)
-		return 1;
-
-	deny = chktkn(dlist, cip);
-	if (deny < 0)
-		return -ENOMEM;
-
-	if (!asz && deny)
+	if (deny_list && conflist_search(deny_list, cip) == 0)
 		return -EACCES;
 
 	/*
 	 * Default is always allowed - So, when there is no allowed list
 	 * and no entry in Deny, then switch to default behaviour
 	 */
-	return 1;
+	return 0;
 }
 
 /**
- * validate_usr() - check if an user is allowed or denied access of a share
+ * validate_user() - check if a user is allowed or denied access to a share
  * @usr:	user to be checked
  * @share:	share config containing allowed and denied list of users
  *
- * Return:      1 if usr is allowed access to share, otherwise error
+ * Return:      0 if usr is allowed access to share, otherwise error
  */
-int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
-	bool *can_write)
+static int validate_user(struct cifsd_sess *sess,
+			  struct cifsd_share *share,
+			  bool *can_write)
 {
 	char *vlist = share->config.valid_users;
 	char *ilist = share->config.invalid_users;
 	char *wlist = share->config.write_list;
 	char *rlist = share->config.read_list;
-	int ret;
 
 	/* for share IPC$, does not support smb.conf share parameters*/
 	if (!share->path)
-		return 1;
+		return 0;
 
 	/* if "guest = ok, no checking of users required "*/
 	/*
-	* if guest ok not set, but guestAccountname
-	* mapped with valid share path
-	*/
+	 * if guest ok not set, but guestAccountname
+	 * mapped with valid share path
+	 */
 	if (get_attr_guestok(&share->config.attr)) {
 		cifsd_debug("guest login on to share %s\n",
 				share->sharename);
-		return 1;
+		return 0;
 	}
 
 	/* name should not be present in "invalid users" */
-	ret = chktkn(ilist, sess->usr->name);
-	if (ret == -ENOMEM)
-		return -ENOMEM;
-	if (ret > 0)
+	if (ilist && conflist_search(ilist, sess->usr->name) == 0)
 		return -EACCES;
 
 	*can_write = (share->writeable == 1) ? true : false;
 	/* if user present in read list, sess will be readable */
-	ret = chktkn(rlist, sess->usr->name);
-	if (ret > 0)
+	if (rlist && conflist_search(rlist, sess->usr->name) == 0)
 		*can_write = false;
 
 	/* if user present in write list, make user session writeable */
-	ret = chktkn(wlist, sess->usr->name);
-	if (ret > 0)
+	if (wlist && conflist_search(wlist, sess->usr->name) == 0)
 		*can_write = true;
 
 	/* if "valid users" list is empty then any user can login */
 	if (!vlist)
-		return 1;
+		return 0;
 
 	/* user exists in "valid users" list? */
-	return chktkn(vlist, sess->usr->name);
+	return conflist_search(vlist, sess->usr->name);
 }
 
 struct cifsd_share *get_cifsd_share(struct connection *conn,
-		struct cifsd_sess *sess,
-		char *sharename, bool *can_write)
+				    struct cifsd_sess *sess,
+				    char *sharename,
+				    bool *can_write)
 {
 	struct list_head *tmp;
 	struct cifsd_share *share;
@@ -494,25 +498,27 @@ struct cifsd_share *get_cifsd_share(struct connection *conn,
 
 	list_for_each(tmp, &cifsd_share_list) {
 		share = list_entry(tmp, struct cifsd_share, list);
+
 		cifsd_debug("comparing(%s) with treename %s\n",
 				sharename, share->sharename);
-		if (!strcasecmp(share->sharename, sharename)) {
-			rc = validate_host(conn->peeraddr, share);
-			if (rc < 0) {
-				cifsd_err(
-				"[host:%s] not allowed for [share:%s]\n"
-				, conn->peeraddr, share->sharename);
-				return ERR_PTR(rc);
-			}
-			rc = validate_usr(sess, share, can_write);
-			if (rc < 0) {
-				cifsd_err(
-				"[user:%s] not authorised for [share:%s]\n",
-				sess->usr->name, share->sharename);
-				return ERR_PTR(rc);
-			}
-			return share;
+
+		if (strcasecmp(share->sharename, sharename))
+			continue;
+
+		rc = validate_host(conn->peeraddr, share);
+		if (rc != 0) {
+			cifsd_err("[host:%s] not allowed for [share:%s]\n",
+				  conn->peeraddr, share->sharename);
+			return ERR_PTR(rc);
 		}
+
+		rc = validate_user(sess, share, can_write);
+		if (rc != 0) {
+			cifsd_err("[user:%s] not authorised for [share:%s]\n",
+				  sess->usr->name, share->sharename);
+			return ERR_PTR(rc);
+		}
+		return share;
 	}
 	cifsd_debug("Tree(%s) not exported on connection\n", sharename);
 	return ERR_PTR(-ENOENT);

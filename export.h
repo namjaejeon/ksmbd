@@ -220,9 +220,6 @@ extern int get_protocol_idx(char *str);
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
 extern struct cifsd_share *find_matching_share(__u16 tid);
-int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
-	bool *can_write);
-int validate_host(char *cip, struct cifsd_share *share);
 int process_ntlm(struct cifsd_sess *sess, char *pw_buf);
 int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name);
