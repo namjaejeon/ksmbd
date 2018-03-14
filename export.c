@@ -167,10 +167,10 @@ static bool __add_share(struct cifsd_share *share, char *sharename,
 }
 
 /**
- * init_params() - initialize config parameters of a share
+ * init_share() - initialize config parameters of a share
  * @share:	share instance to be initialized
  */
-static void init_params(struct cifsd_share *share)
+static void init_share(struct cifsd_share *share)
 {
 	set_attr_available(&share->config.attr);
 	set_attr_browsable(&share->config.attr);
@@ -198,7 +198,7 @@ static int add_share(char *sharename, char *pathname)
 	if (!share)
 		return -ENOMEM;
 
-	init_params(share);
+	init_share(share);
 
 	ret = __add_share(share, sharename, pathname);
 	if (!ret) {
@@ -281,24 +281,16 @@ static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
 	if (!usr)
 		return -ENOMEM;
 
-	if (guestAccountName) {
-		if (strcmp(guestAccountName, name) == 0) {
-			usr->vuid = 0;
-			usr->guest = true;
-			usr->name = guestAccountName;
-		} else{
-			usr->vuid = vid++;
-			usr->guest = false;
-			usr->name = name;
-			usr->passkey = pass;
-		}
+	if (guestAccountName && strcmp(guestAccountName, name) == 0) {
+		usr->vuid = 0;
+		usr->guest = true;
 	} else{
 		usr->vuid = vid++;
 		usr->guest = false;
-		usr->name = name;
-		usr->passkey = pass;
 	}
 
+	usr->name = name;
+	usr->passkey = pass;
 	usr->uid.val = uid.val;
 	usr->gid.val = gid.val;
 	usr->sess_uid = 0;
@@ -634,7 +626,7 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 	if (!share)
 		return ERR_PTR(-ENOMEM);
 
-	init_params(share);
+	init_share(share);
 	*alloc_share = 1;
 	return share;
 }
