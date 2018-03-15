@@ -895,7 +895,7 @@ static int cifsd_parse_global_options(char *configdata)
 			if (cifsd_get_config_str(args, &guestAccountName))
 				goto out_nomem;
 
-			user_name = kstrdup(user_name, GFP_KERNEL);
+			user_name = kstrdup(guestAccountName, GFP_KERNEL);
 			if (!user_name)
 				goto out_nomem;
 
