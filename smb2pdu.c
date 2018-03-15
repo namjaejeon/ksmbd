@@ -1073,6 +1073,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 	case SMB20_PROT_ID:
 		init_smb2_0_server(conn);
 		break;
+	case SMB2X_PROT_ID:
+		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		break;
 	case BAD_PROT_ID:
 	default:
 		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
