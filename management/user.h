@@ -19,9 +19,9 @@
 #ifndef __USER_MANAGEMENT_H__
 #define __USER_MANAGEMENT_H__
 
-#include <linux/refcount.h>
 #include <linux/workqueue.h>
 #include <linux/hashtable.h>
+#include <linux/uidgid.h>
 
 #define UF_GUEST_ACCOUNT	(1 << 0)
 #define UF_PENDING_REMOVAL	(1 << 1)
@@ -34,7 +34,7 @@ struct cifsd_user {
 	kuid_t			uid;
 	kgid_t			gid;
 
-	refcount_t		refcount;
+	atomic_t		refcount;
 	struct hlist_node	hlist;
 	struct work_struct	free_work;
 
@@ -46,14 +46,14 @@ extern void __put_cifsd_user(struct cifsd_user *user);
 
 static inline void put_cifsd_user(struct cifsd_user *user)
 {
-	if (!refcount_dec_and_test(&user->refcount))
+	if (!atomic_dec_and_test(&user->refcount))
 		return;
 	__put_cifsd_user(user);
 }
 
 static inline struct cifsd_user *get_cifsd_user(struct cifsd_user *user)
 {
-	if (!refcount_inc_not_zero(&user->refcount))
+	if (!atomic_inc_not_zero(&user->refcount))
 		return NULL;
 	return user;
 }
