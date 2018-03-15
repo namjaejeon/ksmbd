@@ -363,7 +363,8 @@ int smb_check_user_session(struct smb_work *smb_work)
 	rc = -EINVAL;
 	list_for_each(tmp, &conn->cifsd_sess) {
 		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
-		if (sess->usr->vuid == req_hdr->Uid && sess->valid) {
+		if (user_smb1_vuid(sess->user) == req_hdr->Uid &&
+				sess->valid) {
 			smb_work->sess = sess;
 			rc = 1;
 			break;
@@ -434,6 +435,9 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	/* setting CifsExiting here may race with start_tcp_sess */
 	conn->tcp_status = CifsNeedReconnect;
+
+	put_cifsd_user(sess->user);
+	sess->user = NULL;
 
 	/*
 	 * We cannot discard session in case some request are already running.
@@ -919,16 +923,16 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 		sess->tcon_count = 0;
 
 		cifsd_debug("session setup request for user %s\n", name);
-		sess->usr = cifsd_is_user_present(name);
+		sess->user = cifsd_is_user_present(name);
 		kfree(name);
-		if (!sess->usr) {
+		if (!sess->user) {
 			cifsd_err("user not present in database\n");
 			rc = -EINVAL;
 			goto out_err;
 		}
 
-		rsp_hdr->Uid = sess->usr->vuid;
-		sess->sess_id = sess->usr->vuid;
+		rsp_hdr->Uid = user_smb1_vuid(sess->user);
+		sess->sess_id = user_smb1_vuid(sess->user);
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
 		cifsd_debug("generate session ID : %llu, Uid : %u\n",
@@ -942,7 +946,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
 
-	if (sess->usr->guest)
+	if (user_guest(sess->user))
 		goto no_password_check;
 
 	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
@@ -952,7 +956,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			pSMB->req_no_secext.CaseInsensitivePasswordLength);
 		if (rc) {
 			cifsd_err("ntlm authentication failed for user %s\n",
-				sess->usr->name);
+				user_name(sess->user));
 			goto out_err;
 		}
 	} else {
@@ -960,7 +964,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 		offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
 			pSMB->req_no_secext.CaseSensitivePasswordLength +
-			((strlen(sess->usr->name) + 1) * 2);
+			((strlen(user_name(sess->user)) + 1) * 2);
 
 		ntdomain = smb_strndup_from_utf16(
 			pSMB->req_no_secext.CaseInsensitivePassword +
@@ -978,7 +982,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			CIFS_ENCPWD_SIZE, ntdomain);
 		if (rc) {
 			cifsd_err("authentication failed for user %s\n",
-				sess->usr->name);
+				user_name(sess->user));
 			goto out_err;
 		}
 	}
@@ -989,7 +993,6 @@ no_password_check:
 	   we have set max vcn as 1 */
 	WARN_ON(conn->sess_count);
 
-	sess->usr->ucount++;
 	conn->sess_count++;
 	rc = init_fidtable(&sess->fidtable);
 	if (rc < 0)
@@ -1009,8 +1012,8 @@ no_password_check:
 	inc_rfc1001_len(rsp_hdr, 6);
 
 	/* setup unique client id. TODO: create a list */
-	rsp_hdr->Uid = sess->usr->vuid;
-	conn->vuid = sess->usr->vuid;
+	rsp_hdr->Uid = user_smb1_vuid(sess->user);
+	conn->vuid = user_smb1_vuid(sess->user);
 
 	conn->tcp_status = CifsGood;
 

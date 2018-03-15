@@ -169,7 +169,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	ret = crypto_shash_setkey(sess->conn->secmech.hmacmd5,
-		sess->usr->passkey, CIFS_ENCPWD_SIZE);
+		user_passkey(sess->user), CIFS_ENCPWD_SIZE);
 	if (ret) {
 		cifsd_debug("Could not set NT Hash as a key\n");
 		return ret;
@@ -182,7 +182,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	/* convert user_name to unicode */
-	len = strlen(sess->usr->name);
+	len = strlen(user_name(sess->user));
 	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!uniname) {
 		ret = -ENOMEM;
@@ -190,7 +190,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	if (len) {
-		len = smb_strtoUTF16(uniname, sess->usr->name, len,
+		len = smb_strtoUTF16(uniname, user_name(sess->user), len,
 			sess->conn->local_nls);
 		UniStrupr(uniname);
 	}
@@ -251,14 +251,16 @@ int process_ntlm(struct cifsd_sess *sess, char *pw_buf)
 	char key[CIFS_AUTH_RESP_SIZE];
 
 	memset(p21, '\0', 21);
-	memcpy(p21, sess->usr->passkey, CIFS_NTHASH_SIZE);
+	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
 	rc = E_P24(p21, sess->ntlmssp.cryptkey, key);
 	if (rc) {
 		cifsd_err("password processing failed\n");
 		return rc;
 	}
 
-	smb_mdfour(sess->sess_key, sess->usr->passkey, CIFS_SMB1_SESSKEY_SIZE);
+	smb_mdfour(sess->sess_key,
+			user_passkey(sess->user),
+			CIFS_SMB1_SESSKEY_SIZE);
 	memcpy(sess->sess_key + CIFS_SMB1_SESSKEY_SIZE, key,
 		CIFS_AUTH_RESP_SIZE);
 	sess->sequence_number = 1;
