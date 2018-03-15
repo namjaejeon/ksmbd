@@ -125,7 +125,7 @@ static void __um_add_new_user(struct cifsd_user *user,
 	user->gid.val = gid.val;
 
 	user->smb1_vuid = get_next_vuid();
-	refcount_set(&user->refcount, 1);
+	atomic_set(&user->refcount, 1);
 
 	INIT_WORK(&user->free_work, deferred_user_free);
 	hash_add(users_table, &user->hlist, um_hash(name));
