@@ -21,6 +21,7 @@
 
 #include <linux/workqueue.h>
 #include <linux/hashtable.h>
+#include <linux/uidgid.h>
 
 #define UF_GUEST_ACCOUNT	(1 << 0)
 #define UF_PENDING_REMOVAL	(1 << 1)
