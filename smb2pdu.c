@@ -1410,8 +1410,8 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		}
 
 		cifsd_debug("session setup request for user %s\n", username);
-		sess->usr = cifsd_is_user_present(username);
-		if (!sess->usr) {
+		sess->user = cifsd_is_user_present(username);
+		if (!sess->user) {
 			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
 				username);
 			kfree(username);
@@ -1421,7 +1421,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		}
 		kfree(username);
 
-		if (sess->usr->guest) {
+		if (user_guest(sess->user)) {
 			if (conn->sign) {
 				cifsd_debug("Guest login not allowed when signing enabled\n");
 				rc = -EACCES;
@@ -1785,6 +1785,9 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	sess->valid = 0;
 	sess->state = SMB2_SESSION_EXPIRED;
+
+	put_cifsd_user(sess->user);
+	sess->user = NULL;
 
 	/* let start_tcp_sess free connection info now */
 	conn->tcp_status = CifsNeedNegotiate;
@@ -2752,8 +2755,8 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	if (created) {
-		i_uid_write(FP_INODE(fp), sess->usr->uid.val);
-		i_gid_write(FP_INODE(fp), sess->usr->gid.val);
+		i_uid_write(FP_INODE(fp), user_uid(sess->user).val);
+		i_gid_write(FP_INODE(fp), user_gid(sess->user).val);
 	}
 
 	if (!created) {
@@ -4630,8 +4633,8 @@ int smb2_get_info_filesystem(struct smb_work *smb_work)
 
 			obj_info = (struct object_id_info *)(rsp->Buffer);
 
-			if (!smb_work->sess->usr->guest) {
-				smb_E_md4hash(smb_work->sess->usr->passkey,
+			if (!user_guest(smb_work->sess->user)) {
+				smb_E_md4hash(user_passkey(smb_work->sess->user),
 					objid, conn->local_nls);
 				memcpy(obj_info->objid, objid, 16);
 			} else

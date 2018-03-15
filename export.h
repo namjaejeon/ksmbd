@@ -25,6 +25,8 @@
 #include "smb1pdu.h"
 #include "ntlmssp.h"
 
+#include "management/user.h"
+
 #ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
 #endif
@@ -35,7 +37,6 @@
 extern int cifsd_debug_enable;
 
 /* Global list containing exported points */
-extern struct list_head cifsd_usr_list;
 extern struct list_head cifsd_share_list;
 extern struct list_head cifsd_connection_list;
 extern struct list_head cifsd_session_list;
@@ -87,24 +88,9 @@ enum {
 	MANDATORY
 };
 
-struct cifsd_usr {
-	char	*name;
-	char	*passkey; /* max size CIFS_NTHASH_SIZE */
-	kuid_t	uid;
-	kgid_t	gid;
-	__le32	sess_uid;
-	bool	guest;
-	/* global list of cifsd users */
-	struct	list_head list;
-	__u16	vuid;
-	/* how many connection have this user */
-	int	ucount;
-	/* unsigned int capabilities; what for */
-};
-
-/* cifsd_sess coupled with cifsd_usr */
+/* cifsd_sess coupled with cifsd_user */
 struct cifsd_sess {
-	struct cifsd_usr *usr;
+	struct cifsd_user *user;
 	struct connection *conn;
 	struct list_head cifsd_ses_list;
 	struct list_head cifsd_ses_global_list;
@@ -238,14 +224,14 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
 int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
 	unsigned int key_size);
-extern struct cifsd_usr *cifsd_is_user_present(char *name);
+extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct connection *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);
 extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 		struct cifsd_sess *sess);
 extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
 			unsigned int tid);
-struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess);
+struct cifsd_user *get_smb_session_user(struct cifsd_sess *sess);
 struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
