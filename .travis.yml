@@ -1,0 +1,9 @@
+
+language: c
+
+notifications:
+ - email: true
+
+script:
+ # Compilation
+ - echo 'Hello World'
