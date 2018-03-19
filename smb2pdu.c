@@ -1028,6 +1028,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 	struct timespec ts;
 #endif
 
+	cifsd_debug("Recieved negotiate request\n");
+
 	req = (struct smb2_negotiate_req *)smb_work->buf;
 	rsp = (struct smb2_negotiate_rsp *)smb_work->rsp_buf;
 
@@ -1037,10 +1039,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 		return 0;
 	}
 
-	cifsd_debug("%s: Recieved negotiate request\n", __func__);
 	if (req->StructureSize != 36 || req->DialectCount == 0) {
 		cifsd_err("malformed packet\n");
-		smb_work->send_no_response = 1;
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		smb2_set_err_rsp(smb_work);
 		return 0;
 	}
 
