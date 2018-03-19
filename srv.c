@@ -775,23 +775,12 @@ int connect_tcp_sess(struct socket *sock)
 	struct sockaddr *csin = (struct sockaddr *)&caddr;
 	int rc = 0;
 	struct connection *conn;
-
-/*
- * FIXME this is ugly, must be dropped.
- */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 15, 0)
 	int cslen;
 
 	if (kernel_getpeername(sock, csin, &cslen) < 0) {
 		cifsd_err("client ip resolution failed\n");
 		return -EINVAL;
 	}
-#else
-	if (kernel_getpeername(sock, csin) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#endif
 
 	conn = kzalloc(sizeof(struct connection), GFP_KERNEL);
 	if (conn == NULL) {
