@@ -1043,6 +1043,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		cifsd_err("malformed packet\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		smb2_set_err_rsp(smb_work);
+		conn->need_neg = false;
 		return 0;
 	}
 
@@ -1076,12 +1077,12 @@ int smb2_negotiate(struct smb_work *smb_work)
 		init_smb2_0_server(conn);
 		break;
 	case SMB2X_PROT_ID:
-		conn->need_neg = false;
 	case BAD_PROT_ID:
 	default:
 		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		smb2_set_err_rsp(smb_work);
+		conn->need_neg = false;
 		return 0;
 	}
 	rsp->Capabilities = conn->srv_cap;
