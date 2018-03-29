@@ -1184,6 +1184,7 @@ typedef struct {
 #define SMB_SET_FILE_UNIX_INFO2         0x20b
 #define SMB_SET_FILE_BASIC_INFO2        0x3ec
 #define SMB_SET_FILE_RENAME_INFORMATION 0x3f2 /* BB check if qpathinfo too */
+#define SMB_SET_FILE_DISPOSITION_INFORMATION   0x3f5   /* alias for 0x102 */
 #define SMB_FILE_ALL_INFO2              0x3fa
 #define SMB_SET_FILE_ALLOCATION_INFO2   0x3fb
 #define SMB_SET_FILE_END_OF_FILE_INFO2  0x3fc

@@ -7211,6 +7211,7 @@ int set_file_info(struct smb_work *smb_work)
 		err = smb_set_unix_fileinfo(smb_work);
 		break;
 	case SMB_SET_FILE_DISPOSITION_INFO:
+	case SMB_SET_FILE_DISPOSITION_INFORMATION:
 		err = smb_set_dispostion(smb_work);
 		break;
 	case SMB_SET_FILE_BASIC_INFO2:
