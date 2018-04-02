@@ -877,8 +877,11 @@ __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 	return attr;
 }
 
-/* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes */
-#define OFFSET_OF_NEG_CONTEXT 0xd0  /* sizeof(struct smb2_negotiate_rsp) - 4 */
+/* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
+ * sizeof(struct smb2_negotiate_rsp) - 4 =
+ * header(64) + response(64) + GSS_LENGTH(74) + GSS_PADDING(6)
+ */
+#define OFFSET_OF_NEG_CONTEXT	0xd0
 
 #define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
 #define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
@@ -917,7 +920,7 @@ assemble_neg_contexts(struct connection *conn,
 	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
 		conn->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
-	inc_rfc1001_len(rsp, 4 + sizeof(struct smb2_preauth_neg_context));
+	inc_rfc1001_len(rsp, sizeof(struct smb2_preauth_neg_context));
 
 	if (conn->CipherId) {
 		/* Add 2 to size to round to 8 byte boundary */
@@ -1053,7 +1056,6 @@ int smb2_negotiate(struct smb_work *smb_work)
 	switch (conn->dialect) {
 	case SMB311_PROT_ID:
 		init_smb3_11_server(conn);
-		rsp->NegotiateContextOffset = cpu_to_le32(208);
 		err = deassemble_neg_contexts(conn, req);
 		if (err != NT_STATUS_OK) {
 			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -1062,6 +1064,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 		calc_preauth_integrity_hash(conn, smb_work->buf,
 			conn->Preauth_HashValue);
+		rsp->NegotiateContextOffset =
+			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 		assemble_neg_contexts(conn, rsp);
 		break;
 	case SMB302_PROT_ID:
@@ -1116,16 +1120,18 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 #endif
 	rsp->ServerStartTime = 0;
-	rsp->NegotiateContextOffset = cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
-	cifsd_debug("negotiate context count %d\n",
-				le16_to_cpu(rsp->NegotiateContextCount));
+	cifsd_debug("negotiate context offset %d, count %d\n",
+		le32_to_cpu(rsp->NegotiateContextOffset),
+		le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = 74;
+	rsp->SecurityBufferLength = GSS_LENGTH;
 	memcpy(((char *)(&rsp->hdr) +
 		sizeof(rsp->hdr.smb2_buf_length)) +
-		rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, 74);
-	inc_rfc1001_len(rsp, 64 + 74);
+		rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
+		GSS_LENGTH + GSS_PADDING);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 

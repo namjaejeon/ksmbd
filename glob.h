@@ -84,7 +84,9 @@ extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
-extern char NEGOTIATE_GSS_HEADER[74];
+#define GSS_LENGTH		74
+#define GSS_PADDING		6
+extern char NEGOTIATE_GSS_HEADER[GSS_LENGTH];
 
 extern bool global_signing;
 
