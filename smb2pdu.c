@@ -1023,7 +1023,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
 	unsigned int limit;
-	int err;
+	int rc = 0, err;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	struct timespec ts;
 #endif
@@ -1036,15 +1036,14 @@ int smb2_negotiate(struct smb_work *smb_work)
 	if (conn->tcp_status == CifsGood) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		smb_work->send_no_response = 1;
-		return 0;
+		goto out;
 	}
 
 	if (req->StructureSize != 36 || req->DialectCount == 0) {
 		cifsd_err("malformed packet\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		smb2_set_err_rsp(smb_work);
-		conn->need_neg = false;
-		return 0;
+		rc = -EINVAL;
+		goto err_out;
 	}
 
 	conn->dialect = negotiate_dialect(smb_work->buf);
@@ -1055,8 +1054,10 @@ int smb2_negotiate(struct smb_work *smb_work)
 		init_smb3_11_server(conn);
 		err = deassemble_neg_contexts(conn, req);
 		if (err != NT_STATUS_OK) {
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-			return -EINVAL;
+			cifsd_err("deassemble_neg_contexts error(0x%x)\n", err);
+			rsp->hdr.Status = err;
+			rc = -EINVAL;
+			goto err_out;
 		}
 
 		calc_preauth_integrity_hash(conn, smb_work->buf,
@@ -1081,9 +1082,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 	default:
 		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		smb2_set_err_rsp(smb_work);
-		conn->need_neg = false;
-		return 0;
+		rc = -EINVAL;
+		goto err_out;
 	}
 	rsp->Capabilities = conn->srv_cap;
 
@@ -1138,9 +1138,14 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 	conn->srv_sec_mode = rsp->SecurityMode;
 	conn->tcp_status = CifsNeedNegotiate;
-	conn->need_neg = false;
-	return 0;
 
+err_out:
+	if(rc < 0)
+		smb2_set_err_rsp(smb_work);
+
+out:
+	conn->need_neg = false;
+	return rc;
 }
 
 /**
