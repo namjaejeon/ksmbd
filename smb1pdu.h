@@ -1495,6 +1495,35 @@ extern int get_dfs_referral(struct smb_work *smb_work);
 /* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
 
 typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le16 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_STANDARD;
+
+typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le32 EASize;
+	__u8 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_QUERY_EA_SIZE;
+
+typedef struct {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
