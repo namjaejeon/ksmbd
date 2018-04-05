@@ -100,8 +100,8 @@ struct cifsd_lock {
 	unsigned int flags;
 	unsigned int cmd;
 	int zero_len;
-	loff_t start;
-	loff_t end;
+	unsigned long long start;
+	unsigned long long end;
 	struct smb_work *work;
 };
 
@@ -170,6 +170,9 @@ struct cifsd_file {
 	char create_guid[16];
 	char app_instance_id[16];
 	int durable_timeout;
+	int pid; /* for SMB1 */
+	unsigned int cflock_cnt; /* conflict lock fail count for SMB1 */
+	unsigned long long llock_fstart; /* last lock failure start offset for SMB1 */
 };
 
 enum cifsd_pipe_type {

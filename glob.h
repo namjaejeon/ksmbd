@@ -84,7 +84,9 @@ extern unsigned int alloc_roundup_size;
 extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
-extern char NEGOTIATE_GSS_HEADER[74];
+#define GSS_LENGTH		74
+#define GSS_PADDING		6
+extern char NEGOTIATE_GSS_HEADER[GSS_LENGTH];
 
 extern bool global_signing;
 
@@ -722,7 +724,6 @@ extern int connect_tcp_sess(struct socket *sock);
 extern int cifsd_read_from_socket(struct connection *conn, char *buf,
 		unsigned int to_read);
 
-extern void handle_smb_work(struct work_struct *work);
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
@@ -761,7 +762,7 @@ void fill_file_attributes(struct smb_work *smb_work,
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment);
+		int alignment, bool no_namelen_field);
 int smb_populate_dot_dotdot_entries(struct connection *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,

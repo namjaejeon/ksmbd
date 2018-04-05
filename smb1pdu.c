@@ -363,7 +363,8 @@ int smb_check_user_session(struct smb_work *smb_work)
 	rc = -EINVAL;
 	list_for_each(tmp, &conn->cifsd_sess) {
 		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
-		if (sess->usr->vuid == req_hdr->Uid && sess->valid) {
+		if (user_smb1_vuid(sess->user) == req_hdr->Uid &&
+				sess->valid) {
 			smb_work->sess = sess;
 			rc = 1;
 			break;
@@ -434,6 +435,9 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	/* setting CifsExiting here may race with start_tcp_sess */
 	conn->tcp_status = CifsNeedReconnect;
+
+	put_cifsd_user(sess->user);
+	sess->user = NULL;
 
 	/*
 	 * We cannot discard session in case some request are already running.
@@ -646,20 +650,18 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 	/* For each extra andx response, we have to add 1 byte,
 		 for wc and 2 bytes for byte count */
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
-	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return 0;
-	} else {
-		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(rsp_hdr);
-		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
 
+	/* this is an ANDx command ? */
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(rsp_hdr);
+	if (req->AndXCommand != 0xFF) {
+		/* adjust response */
+		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return 0;
 
 out_err:
 	kfree(treename);
@@ -668,7 +670,7 @@ out_err1:
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = 0;
+	rsp->AndXOffset = get_rfc1002_length(rsp_hdr);
 	rsp->OptionalSupport = 0;
 	rsp->MaximalShareAccessRights = 0;
 	rsp->GuestMaximalShareAccessRights = 0;
@@ -921,16 +923,16 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 		sess->tcon_count = 0;
 
 		cifsd_debug("session setup request for user %s\n", name);
-		sess->usr = cifsd_is_user_present(name);
+		sess->user = cifsd_is_user_present(name);
 		kfree(name);
-		if (!sess->usr) {
+		if (!sess->user) {
 			cifsd_err("user not present in database\n");
 			rc = -EINVAL;
 			goto out_err;
 		}
 
-		rsp_hdr->Uid = sess->usr->vuid;
-		sess->sess_id = sess->usr->vuid;
+		rsp_hdr->Uid = user_smb1_vuid(sess->user);
+		sess->sess_id = user_smb1_vuid(sess->user);
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
 		cifsd_debug("generate session ID : %llu, Uid : %u\n",
@@ -944,7 +946,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
 
-	if (sess->usr->guest)
+	if (user_guest(sess->user))
 		goto no_password_check;
 
 	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
@@ -954,7 +956,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			pSMB->req_no_secext.CaseInsensitivePasswordLength);
 		if (rc) {
 			cifsd_err("ntlm authentication failed for user %s\n",
-				sess->usr->name);
+				user_name(sess->user));
 			goto out_err;
 		}
 	} else {
@@ -962,7 +964,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 		offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
 			pSMB->req_no_secext.CaseSensitivePasswordLength +
-			((strlen(sess->usr->name) + 1) * 2);
+			((strlen(user_name(sess->user)) + 1) * 2);
 
 		ntdomain = smb_strndup_from_utf16(
 			pSMB->req_no_secext.CaseInsensitivePassword +
@@ -980,7 +982,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 			CIFS_ENCPWD_SIZE, ntdomain);
 		if (rc) {
 			cifsd_err("authentication failed for user %s\n",
-				sess->usr->name);
+				user_name(sess->user));
 			goto out_err;
 		}
 	}
@@ -991,7 +993,6 @@ no_password_check:
 	   we have set max vcn as 1 */
 	WARN_ON(conn->sess_count);
 
-	sess->usr->ucount++;
 	conn->sess_count++;
 	rc = init_fidtable(&sess->fidtable);
 	if (rc < 0)
@@ -1011,8 +1012,8 @@ no_password_check:
 	inc_rfc1001_len(rsp_hdr, 6);
 
 	/* setup unique client id. TODO: create a list */
-	rsp_hdr->Uid = sess->usr->vuid;
-	conn->vuid = sess->usr->vuid;
+	rsp_hdr->Uid = user_smb1_vuid(sess->user);
+	conn->vuid = user_smb1_vuid(sess->user);
 
 	conn->tcp_status = CifsGood;
 
@@ -1206,45 +1207,13 @@ __u32 smb_get_dos_attr(struct kstat *stat)
 	return attr;
 }
 
-/**
- * smb_locking_andx() - received oplock break response from client
- * @smb_work:	smb work containing oplock break command
- *
- * Return:	0 on success, otherwise error
- */
-int smb_locking_andx(struct smb_work *smb_work)
+int lock_oplock_release(struct cifsd_file *fp, int type, int oplock_level)
 {
-	LOCK_REQ *req;
-	LOCK_RSP *rsp;
-	struct cifsd_file *fp;
 	struct oplock_info *opinfo;
-	char oplock;
-	int ret = 0;
+	int ret;
 
-	if (!oplocks_enable)
-		return -ENOSYS;
-
-	req = (LOCK_REQ *)smb_work->buf;
-	rsp = (LOCK_RSP *)smb_work->rsp_buf;
-
-	if (!(req->LockType & LOCKING_ANDX_OPLOCK_RELEASE)) {
-		cifsd_err("LockType %d not supported in smb_locking_andx\n",
-			    req->LockType);
-		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SUPPORTED;
-		rsp->ByteCount = 0;
-		return 0;
-	}
-	cifsd_debug("got oplock brk for fid %d level OplockLevel = %d\n",
-		      req->Fid, req->OplockLevel);
-
-	oplock = req->OplockLevel;
-
-	/* find fid */
-	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
-	if (fp == NULL) {
-		cifsd_err("cannot obtain fid for %d\n", req->Fid);
-		return -EINVAL;
-	}
+	cifsd_debug("got oplock brk for level OplockLevel = %d\n",
+		      oplock_level);
 
 	opinfo = fp->f_opinfo;
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
@@ -1252,23 +1221,21 @@ int smb_locking_andx(struct smb_work *smb_work)
 		return -EINVAL;
 	}
 
-	if (oplock == OPLOCK_EXCLUSIVE || oplock == OPLOCK_BATCH) {
+	if (oplock_level == OPLOCK_EXCLUSIVE || oplock_level == OPLOCK_BATCH) {
 		if (opinfo_write_to_none(opinfo) < 0) {
-			cifsd_err("lock level mismatch for fid %d\n",
-					req->Fid);
 			opinfo->op_state = OPLOCK_STATE_NONE;
 			return -EINVAL;
 		}
 	} else if (((opinfo->level == OPLOCK_EXCLUSIVE) ||
 				(opinfo->level == OPLOCK_BATCH)) &&
-			(oplock == OPLOCK_READ)) {
+			(oplock_level == OPLOCK_READ)) {
 		ret = opinfo_write_to_read(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
 			return -EINVAL;
 		}
 	} else if ((opinfo->level == OPLOCK_READ) &&
-			(oplock == OPLOCK_NONE)) {
+			(oplock_level == OPLOCK_NONE)) {
 		ret = opinfo_read_to_none(opinfo);
 		if (ret) {
 			opinfo->op_state = OPLOCK_STATE_NONE;
@@ -1281,6 +1248,402 @@ int smb_locking_andx(struct smb_work *smb_work)
 	wake_up(&opinfo->op_end_wq);
 
 	return 0;
+}
+
+static struct cifsd_lock *smb_lock_init(struct file_lock *flock,
+		unsigned int cmd, int mode, unsigned long long offset,
+		unsigned long long length, struct list_head *lock_list)
+{
+	struct cifsd_lock *lock;
+
+	lock = kzalloc(sizeof(struct cifsd_lock), GFP_KERNEL);
+	if (!lock)
+		return NULL;
+
+	lock->cmd = cmd;
+	lock->fl = flock;
+	lock->start = offset;
+	lock->end = offset + length;
+	lock->flags = mode;
+	if (lock->start == lock->end)
+		lock->zero_len = 1;
+	INIT_LIST_HEAD(&lock->llist);
+	INIT_LIST_HEAD(&lock->glist);
+	list_add_tail(&lock->llist, lock_list);
+
+	return lock;
+}
+
+/**
+ * smb_locking_andx() - received oplock break response from client
+ * @smb_work:	smb work containing oplock break command
+ *
+ * Return:	0 on success, otherwise error
+ */
+int smb_locking_andx(struct smb_work *smb_work)
+{
+	LOCK_REQ *req;
+	LOCK_RSP *rsp;
+	struct cifsd_file *fp;
+	int err = 0;
+	LOCKING_ANDX_RANGE32 *lock_ele32 = NULL, *unlock_ele32 = NULL;
+	LOCKING_ANDX_RANGE64 *lock_ele64 = NULL, *unlock_ele64 = NULL;
+	struct file *filp = NULL;
+	struct cifsd_lock *smb_lock = NULL, *cmp_lock, *tmp;
+	int i, lock_count, unlock_count;
+	unsigned long long offset, length;
+	struct file_lock *flock = NULL;
+	unsigned int cmd = 0;
+	LIST_HEAD(lock_list);
+	LIST_HEAD(rollback_list);
+	int locked, timeout;
+	const unsigned long long loff_max = ~0;
+
+	req = (LOCK_REQ *)smb_work->buf;
+	rsp = (LOCK_RSP *)smb_work->rsp_buf;
+
+	timeout = le32_to_cpu(req->Timeout);
+	cifsd_debug("got oplock brk for fid %d lock type = 0x%x, timeout : %d\n",
+		      req->Fid, req->LockType, timeout);
+
+	/* find fid */
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
+	if (fp == NULL) {
+		cifsd_err("cannot obtain fid for %d\n", req->Fid);
+		return -EINVAL;
+	}
+
+	if (req->LockType & LOCKING_ANDX_OPLOCK_RELEASE) {
+		cifsd_err("lock type is oplock release\n");
+		err = lock_oplock_release(fp, req->LockType, req->OplockLevel);
+	}
+
+	filp = fp->filp;
+	lock_count = le16_to_cpu(req->NumberOfLocks);
+	unlock_count = le16_to_cpu(req->NumberOfUnlocks);
+
+	cifsd_debug("lock count is %d, unlock_count : %d\n",
+		lock_count, unlock_count);
+
+	if (req->LockType & LOCKING_ANDX_LARGE_FILES)
+		lock_ele64 = (LOCKING_ANDX_RANGE64 *)req->Locks;
+	else
+		lock_ele32 = (LOCKING_ANDX_RANGE32 *)req->Locks;
+
+	if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE) {
+		cifsd_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
+		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
+		rsp->hdr.Status.DosError.Error = ERRnoatomiclocks;
+		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
+		goto out;
+	}
+
+	if (req->LockType & LOCKING_ANDX_CANCEL_LOCK)
+		cifsd_err("lock type: LOCKING_ANDX_CANCEL_LOCK\n");
+
+	for (i = 0; i < lock_count; i++) {
+		flock = smb_flock_init(filp);
+		if (!flock)
+			goto out;
+
+		if (req->LockType & LOCKING_ANDX_SHARED_LOCK) {
+			cifsd_err("received shared request\n");
+			if (!(filp->f_mode & FMODE_READ)) {
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLKW;
+			flock->fl_type = F_RDLCK;
+		} else {
+			cifsd_err("received exclusive request\n");
+			if (!(filp->f_mode & FMODE_WRITE)) {
+				rsp->hdr.Status.CifsError =
+					NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			cmd = F_SETLKW;
+			flock->fl_type = F_WRLCK;
+			flock->fl_flags |= FL_SLEEP;
+		}
+
+		if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
+			offset = (unsigned long long)le32_to_cpu(
+					lock_ele64[i].OffsetLow);
+			length = (unsigned long long)le32_to_cpu(
+					lock_ele64[i].LengthLow);
+			offset |= (unsigned long long)le32_to_cpu(
+					lock_ele64[i].OffsetHigh) << 32;
+			length |= (unsigned long long)le32_to_cpu(
+					lock_ele64[i].LengthHigh) << 32;
+		} else {
+			offset = (unsigned long long)le32_to_cpu(
+				lock_ele32[i].Offset);
+			length = (unsigned long long)le32_to_cpu(
+				lock_ele32[i].Length);
+		}
+
+		if (offset > loff_max) {
+			cifsd_err("Invalid lock range requested\n");
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_INVALID_LOCK_RANGE;
+			goto out;
+		}
+
+		if (offset > 0 && length > (loff_max - offset) + 1) {
+			cifsd_err("Invalid lock range requested\n");
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_INVALID_LOCK_RANGE;
+			goto out;
+		}
+
+		cifsd_debug("locking offset : %llx, length : %llu\n",
+			offset, length);
+
+		if (offset > OFFSET_MAX)
+			flock->fl_start = OFFSET_MAX;
+		else
+			flock->fl_start = offset;
+		if (offset + length > OFFSET_MAX)
+			flock->fl_end = OFFSET_MAX;
+		else
+			flock->fl_end = offset + length;
+
+		smb_lock = smb_lock_init(flock, cmd, req->LockType, offset,
+			length, &lock_list);
+		if (!smb_lock)
+			goto out;
+	}
+
+	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		int same_zero_lock = 0;
+
+		list_del(&smb_lock->llist);
+		/* check locks in global list */
+		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+			if (file_inode(cmp_lock->fl->fl_file) !=
+				file_inode(smb_lock->fl->fl_file))
+				continue;
+
+			if (smb_lock->zero_len &&
+				cmp_lock->start == smb_lock->start &&
+				cmp_lock->end == smb_lock->end) {
+				same_zero_lock = 1;
+				break;
+			}
+
+			/* check zero byte lock range */
+			if (cmp_lock->zero_len && !smb_lock->zero_len &&
+					cmp_lock->start > smb_lock->start &&
+					cmp_lock->start < smb_lock->end) {
+				cifsd_err("previous lock conflict with zero byte lock range\n");
+				err = -EPERM;
+			} else if (smb_lock->zero_len && !cmp_lock->zero_len &&
+				smb_lock->start > cmp_lock->start &&
+				smb_lock->start < cmp_lock->end) {
+				cifsd_err("current lock conflict with zero byte lock range\n");
+				err = -EPERM;
+			} else if (((cmp_lock->start <= smb_lock->start &&
+				cmp_lock->end > smb_lock->start) ||
+				(cmp_lock->start < smb_lock->end &&
+				 cmp_lock->end >= smb_lock->end)) &&
+				!cmp_lock->zero_len && !smb_lock->zero_len) {
+				cifsd_err("Not allow lock operation on exclusive lock range\n");
+				err = -EPERM;
+			}
+
+			if (err) {
+				/* Clean error cache */
+				if ((smb_lock->zero_len &&
+						fp->cflock_cnt > 1) ||
+					(timeout && (fp->llock_fstart ==
+							smb_lock->start))) {
+					cifsd_debug("clean error cache\n");
+					fp->cflock_cnt = 0;
+				}
+
+				if (timeout > 0 ||
+					(fp->cflock_cnt > 0 &&
+					fp->llock_fstart == smb_lock->start) ||
+					((smb_lock->start >> 63) == 0 &&
+					smb_lock->start >= 0xEF000000)) {
+					if (timeout) {
+						cifsd_debug("waiting error response for timeout : %d\n",
+							timeout);
+						msleep(timeout);
+					}
+					rsp->hdr.Status.CifsError =
+						NT_STATUS_FILE_LOCK_CONFLICT;
+				} else
+					rsp->hdr.Status.CifsError =
+						NT_STATUS_LOCK_NOT_GRANTED;
+				fp->cflock_cnt++;
+				fp->llock_fstart = smb_lock->start;
+				goto out;
+			}
+		}
+
+		if (same_zero_lock)
+			continue;
+		if (smb_lock->zero_len) {
+			err = 0;
+			goto skip;
+		}
+
+		flock = smb_lock->fl;
+retry:
+		err = smb_vfs_lock(filp, smb_lock->cmd, flock);
+		if (err == FILE_LOCK_DEFERRED) {
+			cifsd_err("would have to wait for getting lock\n");
+			list_add_tail(&smb_lock->glist,
+					&global_lock_list);
+			list_add(&smb_lock->llist, &rollback_list);
+			list_add(&smb_lock->flist, &fp->lock_list);
+wait:
+			err = wait_event_interruptible_timeout(
+				flock->fl_wait, !flock->fl_next,
+				msecs_to_jiffies(10));
+			if (err) {
+				list_del(&smb_lock->llist);
+				list_del(&smb_lock->glist);
+				list_del(&smb_lock->flist);
+				goto retry;
+			} else
+				goto wait;
+		} else if (!err) {
+skip:
+			list_add_tail(&smb_lock->glist,
+					&global_lock_list);
+			list_add(&smb_lock->llist, &rollback_list);
+			list_add(&smb_lock->flist, &fp->lock_list);
+			cifsd_err("successful in taking lock\n");
+		} else if (err < 0) {
+			rsp->hdr.Status.CifsError = NT_STATUS_LOCK_NOT_GRANTED;
+			goto out;
+		}
+	}
+
+	if (req->LockType & LOCKING_ANDX_LARGE_FILES)
+		unlock_ele64 = (LOCKING_ANDX_RANGE64 *)(req->Locks +
+				(sizeof(LOCKING_ANDX_RANGE64) * lock_count));
+	else
+		unlock_ele32 = (LOCKING_ANDX_RANGE32 *)(req->Locks +
+				(sizeof(LOCKING_ANDX_RANGE32) * lock_count));
+
+	for (i = 0; i < unlock_count; i++) {
+		flock = smb_flock_init(filp);
+		if (!flock)
+			goto out;
+
+		flock->fl_type = F_UNLCK;
+		cmd = 0;
+
+		if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
+			offset = (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].OffsetLow);
+			length = (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].LengthLow);
+			offset |= (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].OffsetHigh) << 32;
+			length |= (unsigned long long)le32_to_cpu(
+					unlock_ele64[i].LengthHigh) << 32;
+		} else {
+			offset = (unsigned long long)le32_to_cpu(
+				unlock_ele32[i].Offset);
+			length = (unsigned long long)le32_to_cpu(
+				unlock_ele32[i].Length);
+		}
+
+		cifsd_debug("unlock offset : %llx, length : %llu\n",
+			offset, length);
+
+		if (offset > OFFSET_MAX)
+			flock->fl_start = OFFSET_MAX;
+		else
+			flock->fl_start = offset;
+		if (offset + length > OFFSET_MAX)
+			flock->fl_end = OFFSET_MAX;
+		else
+			flock->fl_end = offset + length;
+
+		locked = 0;
+		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+			if (file_inode(cmp_lock->fl->fl_file) !=
+				file_inode(flock->fl_file))
+				continue;
+
+			if ((cmp_lock->start == offset &&
+				 cmp_lock->end == offset + length)) {
+				locked = 1;
+				break;
+			}
+		}
+
+		if (!locked) {
+			locks_free_lock(flock);
+			rsp->hdr.Status.CifsError = NT_STATUS_RANGE_NOT_LOCKED;
+			goto out;
+		}
+
+		err = smb_vfs_lock(filp, cmd, flock);
+		if (!err) {
+			cifsd_debug("File unlocked\n");
+			list_del(&cmp_lock->glist);
+			list_del(&cmp_lock->flist);
+			locks_free_lock(cmp_lock->fl);
+			kfree(cmp_lock);
+			fp->cflock_cnt = 0;
+		} else if (err == -ENOENT) {
+			rsp->hdr.Status.CifsError = NT_STATUS_RANGE_NOT_LOCKED;
+			goto out;
+		}
+		locks_free_lock(flock);
+	}
+
+	rsp->hdr.WordCount = 2;
+	rsp->ByteCount = 0;
+	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
+
+	/* this is an ANDx command ? */
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
+		/* adjust response */
+		rsp->AndXCommand = req->AndXCommand;
+		return rsp->AndXCommand; /* More processing required */
+	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return err;
+
+out:
+	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
+		locks_free_lock(smb_lock->fl);
+		list_del(&smb_lock->llist);
+		kfree(smb_lock);
+	}
+
+	list_for_each_entry_safe(smb_lock, tmp, &rollback_list, llist) {
+		struct file_lock *rlock = NULL;
+
+		rlock = smb_flock_init(filp);
+		rlock->fl_type = F_UNLCK;
+		rlock->fl_start = smb_lock->start;
+		rlock->fl_end = smb_lock->end;
+
+		err = smb_vfs_lock(filp, 0, rlock);
+		if (err)
+			cifsd_err("rollback unlock fail : %d\n", err);
+		list_del(&smb_lock->llist);
+		list_del(&smb_lock->glist);
+		list_del(&smb_lock->flist);
+		locks_free_lock(smb_lock->fl);
+		locks_free_lock(rlock);
+		kfree(smb_lock);
+	}
+
+	cifsd_err("failed in taking lock\n");
+	return err;
 }
 
 /**
@@ -1902,7 +2265,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 		goto free_path;
 	}
 
-	cifsd_debug("filename : %s, open_flags = 0x%x\n", conv_name,
+	cifsd_err("filename : %s, open_flags = 0x%x\n", conv_name,
 		open_flags);
 	if (!file_present && (open_flags & O_CREAT)) {
 
@@ -1944,6 +2307,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	fp->filename = conv_name;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
+	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
@@ -2092,6 +2456,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 free_path:
 	path_put(&path);
 out:
+	cifsd_err("err : %d\n", err);
 	switch (err) {
 	case 0:
 		conn->stats.open_files_count++;
@@ -2135,19 +2500,17 @@ out:
 		return err;
 
 	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return err;
-	} else {
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
-
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return err;
+
 }
 
 /**
@@ -2300,19 +2663,16 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 + nbytes));
 
 	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return ret;
-	} else {
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
+	return ret;
 }
 
 /**
@@ -2341,6 +2701,13 @@ int smb_read_andx(struct smb_work *smb_work)
 			le16_to_cpu(req->Fid));
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
 		return -ENOENT;
+	}
+
+	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
+		cifsd_err("Not match with request Pid %d\n",
+			le16_to_cpu(req->hdr.Pid));
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+		return -EINVAL;
 	}
 
 	pos = le32_to_cpu(req->OffsetLow);
@@ -2388,18 +2755,14 @@ int smb_read_andx(struct smb_work *smb_work)
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
 	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return err;
-	} else {
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 out:
 	if (err)
@@ -2533,18 +2896,18 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
 	rsp->Reserved = 0;
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return ret;
-	} else {
+
+	/* this is an ANDx command ? */
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return ret;
 }
 
 /**
@@ -2577,6 +2940,13 @@ int smb_write_andx(struct smb_work *smb_work)
 			le16_to_cpu(req->Fid));
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
 		return -ENOENT;
+	}
+
+	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
+		cifsd_err("Not match with request Pid %d\n",
+			le16_to_cpu(req->hdr.Pid));
+		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
+		return -EINVAL;
 	}
 
 	pos = le32_to_cpu(req->OffsetLow);
@@ -2633,18 +3003,16 @@ int smb_write_andx(struct smb_work *smb_work)
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
 
 	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return err;
-	} else {
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return 0;
 
 out:
 	if (err == -ENOSPC || err == -EFBIG)
@@ -3603,7 +3971,7 @@ int query_path_info(struct smb_work *smb_work)
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
 		infos->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		infos->EASize = 0;
 
 		rsp_hdr->WordCount = 10;
@@ -3695,7 +4063,7 @@ int query_path_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-					 ATTR_DIRECTORY : ATTR_NORMAL;
+					 ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -3808,7 +4176,7 @@ int query_path_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_NORMAL;
+					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
@@ -3850,16 +4218,15 @@ int query_path_info(struct smb_work *smb_work)
 	case SMB_QUERY_ALT_NAME_INFO:
 	{
 		ALT_NAME_INFO *alt_name_info;
+		char *base;
 
 		cifsd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = 20;
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = 2;
 		rsp->t2.ParameterOffset = 56;
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 20;
 		rsp->t2.DataOffset = 60;
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
@@ -3871,9 +4238,19 @@ int query_path_info(struct smb_work *smb_work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
+
+		base = strrchr(name, '/');
+		if (base == NULL)
+			base = name;
+		else
+			base += 1;
 		alt_name_info->FileNameLength = smb_get_shortname(conn,
-				name, alt_name_info->FileName);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+			base, alt_name_info->FileName);
+		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
+		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
+
+		inc_rfc1001_len(rsp_hdr, (4 + alt_name_info->FileNameLength
+			+ rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -4334,7 +4711,7 @@ static char *smb_get_dir_name(const char *src, const int maxlen,
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
-	char *wild_card_pos, *pattern_pos, *pattern = NULL;
+	char *pattern_pos, *pattern = NULL;
 	int pattern_len;
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
@@ -4541,7 +4918,7 @@ int smb_posix_open(struct smb_work *smb_work)
 			goto out;
 	}
 
-	cifsd_debug("filename : %s, posix_open_flags : %x\n", name,
+	cifsd_err("filename : %s, posix_open_flags : %x\n", name,
 		posix_open_flags);
 	mode = (umode_t) le64_to_cpu(psx_req->Permissions);
 	rsp_info_level = le16_to_cpu(psx_req->Level);
@@ -4600,6 +4977,7 @@ int smb_posix_open(struct smb_work *smb_work)
 		goto free_path;
 	}
 	fp->filename = name;
+	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode)) {
 		/* Client cannot request levelII oplock directly */
@@ -4678,6 +5056,7 @@ prepare_rsp:
 free_path:
 	path_put(&path);
 out:
+	cifsd_err("err : %d\n", err);
 	switch (err) {
 	case 0:
 		conn->stats.open_files_count++;
@@ -5310,6 +5689,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
  * @next_entry_offset:  offset of dentry
  * @buf_len:            response buffer length
  * @data_count:         used response buffer size
+ * @no_namelen_field:	flag which shows if a namelen field flag exist
  *
  * Return:      return error if next entry could not fit in current response
  *              buffer, otherwise return encode buffer.
@@ -5317,7 +5697,7 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment)
+		int alignment, bool no_namelen_field)
 {
 	char *enc_buf;
 
@@ -5328,6 +5708,11 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
 			namestr, len, local_nls, 0);
 	*name_len *= 2;
+	if (no_namelen_field) {
+		enc_buf[*name_len] = '\0';
+		enc_buf[*name_len+1] = '\0';
+		*name_len += 2;
+	}
 
 	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
 
@@ -5370,8 +5755,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5392,8 +5777,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_FULL_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5416,8 +5801,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5425,9 +5810,9 @@ static int smb_populate_readdir_entry(struct connection *conn,
 			fill_common_info(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = 0;
+		fbdinfo->ShortNameLength = smb_get_shortname(conn,
+			d_info->name, fbdinfo->ShortName);
 		fbdinfo->Reserved = 0;
-		memset(fbdinfo->ShortName, '\0', 24);
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
 		memset((char *)fbdinfo + sizeof(FILE_BOTH_DIRECTORY_INFO) - 1 +
@@ -5443,8 +5828,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(SEARCH_ID_FULL_DIR_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, false);
 		if (!utfname)
 			break;
 
@@ -5469,8 +5854,8 @@ static int smb_populate_readdir_entry(struct connection *conn,
 		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
 				sizeof(FILE_UNIX_INFO),
 				conn->local_nls, &name_len,
-				&next_entry_offset,
-				&d_info->out_buf_len, &d_info->data_count, 3);
+				&next_entry_offset, &d_info->out_buf_len,
+				&d_info->data_count, 3, true);
 		if (!utfname)
 			break;
 
@@ -6539,7 +6924,7 @@ int query_file_info(struct smb_work *smb_work)
 		basic_info->ChangeTime =
 			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-			ATTR_DIRECTORY : ATTR_NORMAL;
+			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
@@ -6675,7 +7060,7 @@ int query_file_info(struct smb_work *smb_work)
 		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
 		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
-				ATTR_DIRECTORY : ATTR_NORMAL);
+				ATTR_DIRECTORY : ATTR_ARCHIVE);
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
@@ -7624,7 +8009,7 @@ int smb_open_andx(struct smb_work *smb_work)
 		goto free_path;
 	}
 
-	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
+	cifsd_err("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
 	fp = smb_dentry_open(smb_work, &path, open_flags,
@@ -7632,6 +8017,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	if (!fp)
 		goto free_path;
 	fp->filename = name;
+	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
@@ -7727,6 +8113,7 @@ int smb_open_andx(struct smb_work *smb_work)
 free_path:
 	path_put(&path);
 out:
+	cifsd_err("err : %d\n", err);
 	if (err) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
@@ -7756,19 +8143,16 @@ out:
 		return err;
 
 	/* this is an ANDx command ? */
-	if (req->AndXCommand == 0xFF) {
-		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		rsp->AndXReserved = 0;
-		rsp->AndXOffset = 0;
-		return err;
-	} else {
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
-		rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 		rsp->AndXCommand = req->AndXCommand;
-		rsp->AndXReserved = 0;
-
 		return rsp->AndXCommand; /* More processing required */
 	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+	return err;
 }
 
 /**

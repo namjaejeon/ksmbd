@@ -76,7 +76,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	struct cifsd_uevent *ev;
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 	int rc;
-	struct cifsd_usr *user;
+	struct cifsd_user *user;
 	struct cifsd_pipe *pipe_desc = sess->pipe_desc[pipe_type];
 
 	if (unlikely(!pipe_desc))
@@ -126,7 +126,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 				CIFSD_CODEPAGE_LEN - 1);
 		user = get_smb_session_user(sess);
 		if (user)
-			strncpy(ev->k.l_pipe.username, user->name,
+			strncpy(ev->k.l_pipe.username, user_name(user),
 					CIFSD_USERNAME_LEN - 1);
 		break;
 	default:
