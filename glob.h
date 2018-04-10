@@ -58,10 +58,6 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
-extern struct kmem_cache *cifsd_req_cachep;
-extern mempool_t *cifsd_req_poolp;
-extern struct kmem_cache *cifsd_sm_req_cachep;
-extern mempool_t *cifsd_sm_req_poolp;
 extern struct kmem_cache *cifsd_sm_rsp_cachep;
 extern mempool_t *cifsd_sm_rsp_poolp;
 extern struct kmem_cache *cifsd_rsp_cachep;
@@ -361,9 +357,7 @@ struct connection {
 	unsigned int			srv_cap;
 	struct kvec			*iov;
 	unsigned int			nr_iov;
-	char				*smallbuf;
-	char				*bigbuf;
-	char				*wbuf;
+	void 				*request_buf;
 	struct nls_table		*local_nls;
 	unsigned int			total_read;
 	/* This session will become part of global tcp session list */
@@ -418,7 +412,6 @@ struct connection {
 	bool				sec_mskerberos;
 	bool				sign;
 	bool				need_neg;
-	bool				large_buf;
 	bool				oplocks:1;
 	bool				use_spnego:1;
 	__le16				vuid;
@@ -486,10 +479,6 @@ struct smb_work {
 	__u64				cur_local_fid;
 	__u64				cur_local_pfid;
 
-	/* Large write request */
-	bool				req_wbuf:1;
-	/* If valid response, is pointer to large buf */
-	bool				large_buf:1;
 	bool				rsp_large_buf:1;
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool multiRsp:1;
@@ -629,8 +618,7 @@ char *
 smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 	bool converted);
 void smb_put_name(void *name);
-bool is_smb_request(struct connection *conn, unsigned char type);
-int switch_req_buf(struct connection *conn);
+bool is_smb_request(struct connection *conn);
 int negotiate_dialect(void *buf);
 struct cifsd_sess *lookup_session_on_server(struct connection *conn,
 		uint64_t sess_id);

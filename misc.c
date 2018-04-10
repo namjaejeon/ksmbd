@@ -217,52 +217,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 }
 
 /**
- * switch_req_buf() - switch to big request buffer
- * @conn:     TCP server instance of connection
- *
- * Return:      0 on success, otherwise -ENOMEM
- */
-int switch_req_buf(struct connection *conn)
-{
-	char *buf = conn->smallbuf;
-	unsigned int pdu_length = get_rfc1002_length(buf);
-	unsigned int hdr_len;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	hdr_len = MAX_SMB2_HDR_SIZE;
-#else
-	hdr_len = MAX_CIFS_HDR_SIZE;
-#endif
-
-	/* request can fit in large request buffer i.e. < 64K */
-	if (pdu_length <= SMBMaxBufSize + hdr_len - 4) {
-		cifsd_debug("switching to large buffer\n");
-		conn->large_buf = true;
-		memcpy(conn->bigbuf, buf, conn->total_read);
-	} else if (pdu_length <= CIFS_DEFAULT_IOSIZE + hdr_len - 4) {
-		/* allocate big buffer for large write request i.e. > 64K */
-		conn->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
-		if (!conn->wbuf) {
-			cifsd_debug("failed to alloc mem\n");
-			return -ENOMEM;
-		}
-		memcpy(conn->wbuf, buf, conn->total_read);
-
-		/* as wbuf is used for request, free both small and big buf */
-		mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
-		mempool_free(conn->bigbuf, cifsd_req_poolp);
-		conn->large_buf = false;
-		conn->smallbuf = NULL;
-		conn->bigbuf = NULL;
-	} else {
-		cifsd_debug("SMB request too long (%u bytes)\n", pdu_length);
-		return -ECONNABORTED;
-	}
-
-	return 0;
-}
-
-/**
  * switch_rsp_buf() - switch to large response buffer
  * @smb_work:	smb request work
  *
@@ -299,8 +253,10 @@ int switch_rsp_buf(struct smb_work *smb_work)
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct connection *conn, unsigned char type)
+bool is_smb_request(struct connection *conn)
 {
+	int type = *(char *)conn->request_buf;
+
 	switch (type) {
 	case RFC1002_SESSION_MESSAGE:
 		/* Regular SMB request */
