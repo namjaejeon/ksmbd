@@ -19,6 +19,11 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/inetdevice.h>
+#include <net/addrconf.h>
+#include <linux/syscalls.h>
+#include <linux/inotify.h>
+
 #include "glob.h"
 #include "export.h"
 #include "smb2pdu.h"
@@ -26,10 +31,7 @@
 #include "oplock.h"
 #include "cifsacl.h"
 
-#include <linux/inetdevice.h>
-#include <net/addrconf.h>
-#include <linux/syscalls.h>
-#include <linux/inotify.h>
+#include "buffer_pool.h"
 
 bool multi_channel_enable;
 
@@ -5646,16 +5648,21 @@ int smb2_read(struct smb_work *smb_work)
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
-	nbytes = smb_vfs_read(smb_work->sess, fp,
-			&smb_work->aux_payload_buf, length, &offset);
+
+	smb_work->aux_payload_buf = cifsd_alloc_response(length);
+	if (!smb_work->aux_payload_buf) {
+		err = nbytes;
+		goto out;
+	}
+
+	nbytes = smb_vfs_read(smb_work, fp, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
 	}
 
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
-		kvfree(AUX_PAYLOAD(smb_work));
-		smb_work->aux_payload_buf = NULL;
+		cifsd_free_response(AUX_PAYLOAD(smb_work));
 		rsp->hdr.Status = NT_STATUS_END_OF_FILE;
 		smb2_set_err_rsp(smb_work);
 		return 0;

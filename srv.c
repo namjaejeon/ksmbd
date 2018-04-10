@@ -222,9 +222,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 	else
 		mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 
-	if (HAS_AUX_PAYLOAD(smb_work))
-		kvfree(AUX_PAYLOAD(smb_work));
-
+	cifsd_free_response(AUX_PAYLOAD(smb_work));
 	cifsd_free_request(REQUEST_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 }

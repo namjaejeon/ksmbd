@@ -21,10 +21,12 @@
 #include <linux/math64.h>
 #include <linux/fs.h>
 #include <linux/posix_acl_xattr.h>
+
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 #include "oplock.h"
+#include "buffer_pool.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
@@ -2729,8 +2731,14 @@ int smb_read_andx(struct smb_work *smb_work)
 
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
-	nbytes = smb_vfs_read(smb_work->sess, fp, &smb_work->aux_payload_buf,
-		count, &pos);
+
+	smb_work->aux_payload_buf = cifsd_alloc_request(count);
+	if (!smb_work->aux_payload_buf) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	nbytes = smb_vfs_read(smb_work, fp, count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;

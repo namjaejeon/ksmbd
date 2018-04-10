@@ -673,8 +673,8 @@ extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 /* smb vfs functions */
 int smb_vfs_create(const char *name, umode_t mode);
 int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
-	char **buf, size_t count, loff_t *pos);
+int smb_vfs_read(struct smb_work *work, struct cifsd_file *fp,
+		 size_t count, loff_t *pos);
 int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
 int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
