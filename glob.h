@@ -430,18 +430,6 @@ struct connection {
 	char				*mechToken;
 };
 
-struct trans_state {
-	struct list_head	trans_list;
-	__le16			mid;
-	__le16			uid;
-	char			*rcv_buf;
-	char			*rsp_buf;
-	int			total_param;
-	int			got_param;
-	int			total_data;
-	int			got_data;
-};
-
 enum asyncEnum {
 	ASYNC_PROG = 1,
 	ASYNC_CANCEL,
