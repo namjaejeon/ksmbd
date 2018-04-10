@@ -455,8 +455,8 @@ bool is_chained_smb2_message(struct smb_work *smb_work)
 		if (len) {
 			cifsd_debug("padding len %u\n", len);
 			inc_rfc1001_len(RESPONSE_BUF(smb_work), len);
-			if (smb_work->rdata_buf)
-				smb_work->rrsp_hdr_size += len;
+			if (HAS_AUX_PAYLOAD(smb_work))
+				smb_work->aux_payload_sz += len;
 		}
 	}
 	return false;
@@ -5647,15 +5647,15 @@ int smb2_read(struct smb_work *smb_work)
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
 	nbytes = smb_vfs_read(smb_work->sess, fp,
-			&smb_work->rdata_buf, length, &offset);
+			&smb_work->aux_payload_buf, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
 	}
 
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
-		kvfree(smb_work->rdata_buf);
-		smb_work->rdata_buf = NULL;
+		kvfree(AUX_PAYLOAD(smb_work));
+		smb_work->aux_payload_buf = NULL;
 		rsp->hdr.Status = NT_STATUS_END_OF_FILE;
 		smb2_set_err_rsp(smb_work);
 		return 0;
@@ -5671,8 +5671,8 @@ int smb2_read(struct smb_work *smb_work)
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp_org, 16);
-	smb_work->rrsp_hdr_size = get_rfc1002_length(rsp_org) + 4;
-	smb_work->rdata_cnt = nbytes;
+	smb_work->aux_payload_hdr_sz = get_rfc1002_length(rsp_org) + 4;
+	smb_work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(rsp_org, nbytes);
 	return 0;
 
@@ -7274,11 +7274,11 @@ void smb2_set_sign_rsp(struct smb_work *work)
 	iov[0].iov_base = rsp_hdr->ProtocolId;
 	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
 
-	if (work->rdata_buf) {
-		iov[0].iov_len -= work->rdata_cnt;
+	if (HAS_AUX_PAYLOAD(work)) {
+		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);
 
-		iov[1].iov_base = work->rdata_buf;
-		iov[1].iov_len = work->rdata_cnt;
+		iov[1].iov_base = AUX_PAYLOAD(work);
+		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
 		n_vec++;
 	}
 
@@ -7382,10 +7382,10 @@ void smb3_set_sign_rsp(struct smb_work *work)
 	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
 	iov[0].iov_base = hdr->ProtocolId;
 	iov[0].iov_len = len;
-	if (work->rdata_buf) {
-		iov[0].iov_len -= work->rdata_cnt;
-		iov[1].iov_base = work->rdata_buf;
-		iov[1].iov_len = work->rdata_cnt;
+	if (HAS_AUX_PAYLOAD(work)) {
+		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);
+		iov[1].iov_base = AUX_PAYLOAD(work);
+		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
 		n_vec++;
 	}
 

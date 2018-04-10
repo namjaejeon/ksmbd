@@ -136,7 +136,7 @@ int smb_send_rsp(struct smb_work *work)
 		return -ENOMEM;
 	}
 
-	if (!work->rdata_buf) {
+	if (!HAS_AUX_PAYLOAD(work)) {
 		iov.iov_len = get_rfc1002_length(rsp_hdr) + 4;
 		iov.iov_base = rsp_hdr;
 
@@ -153,7 +153,7 @@ int smb_send_rsp(struct smb_work *work)
 
 		/* write read smb header on socket*/
 		iov.iov_base = rsp_hdr;
-		iov.iov_len = work->rrsp_hdr_size;
+		iov.iov_len = AUX_PAYLOAD_HDR_SIZE(work);
 
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
 		if (len < 0) {
@@ -163,8 +163,8 @@ int smb_send_rsp(struct smb_work *work)
 		total_len = len;
 
 		/* write data read from file on socket*/
-		iov.iov_base = work->rdata_buf;
-		iov.iov_len = work->rdata_cnt;
+		iov.iov_base = AUX_PAYLOAD(work);
+		iov.iov_len = AUX_PAYLOAD_SIZE(work);
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
 		if (len < 0) {
 			cifsd_err("err3 %d while sending data\n", len);
@@ -222,8 +222,8 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 	else
 		mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 
-	if (smb_work->rdata_buf)
-		kvfree(smb_work->rdata_buf);
+	if (HAS_AUX_PAYLOAD(smb_work))
+		kvfree(AUX_PAYLOAD(smb_work));
 
 	cifsd_free_request(REQUEST_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);

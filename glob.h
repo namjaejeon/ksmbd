@@ -458,11 +458,11 @@ struct smb_work {
 	__u64				cur_local_sess_id;
 
 	/* Read data buffer */
-	char				*rdata_buf;
+	char				*aux_payload_buf;
 	/* Read data count */
-	unsigned int			rdata_cnt;
+	unsigned int			aux_payload_sz;
 	/* Read response smb header size */
-	unsigned int			rrsp_hdr_size;
+	unsigned int			aux_payload_hdr_sz;
 
 	struct work_struct		work;
 
@@ -498,6 +498,11 @@ struct smb_work {
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
 #define REQUEST_BUF(w)		(void *)((w)->request_buf)
+
+#define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_buf != NULL)
+#define AUX_PAYLOAD(w)		(void *)((w)->aux_payload_buf)
+#define AUX_PAYLOAD_SIZE(w)	((w)->aux_payload_sz)
+#define AUX_PAYLOAD_HDR_SIZE(w)	((w)->aux_payload_hdr_sz)
 
 struct smb_version_ops {
 	int (*get_cmd_val)(struct smb_work *swork);

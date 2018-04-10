@@ -2729,7 +2729,7 @@ int smb_read_andx(struct smb_work *smb_work)
 
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
-	nbytes = smb_vfs_read(smb_work->sess, fp, &smb_work->rdata_buf,
+	nbytes = smb_vfs_read(smb_work->sess, fp, &smb_work->aux_payload_buf,
 		count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
@@ -2751,8 +2751,8 @@ int smb_read_andx(struct smb_work *smb_work)
 
 	rsp->ByteCount = cpu_to_le16(nbytes);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	smb_work->rrsp_hdr_size = get_rfc1002_length(rsp) + 4;
-	smb_work->rdata_cnt = nbytes;
+	smb_work->aux_payload_hdr_sz = get_rfc1002_length(rsp) + 4;
+	smb_work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
 	/* this is an ANDx command ? */
@@ -8291,11 +8291,11 @@ void smb1_set_sign_rsp(struct smb_work *work)
 	iov[0].iov_base = rsp_hdr->Protocol;
 	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb_buf_length);
 
-	if (work->rdata_buf) {
-		iov[0].iov_len -= work->rdata_cnt;
+	if (HAS_AUX_PAYLOAD(work)) {
+		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);
 
-		iov[1].iov_base = work->rdata_buf;
-		iov[1].iov_len = work->rdata_cnt;
+		iov[1].iov_base = AUX_PAYLOAD(work);
+		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
 		n_vec++;
 	}
 
