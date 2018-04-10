@@ -449,41 +449,58 @@ struct async_info {
 
 /* one of these for every pending CIFS request at the connection */
 struct smb_work {
-	int type;
-	struct list_head qhead;		/* works waiting on reply
-							from this connection */
-	struct list_head request_entry;	/* list head at conn->requests */
-	struct connection *conn; /* server corresponding to this mid */
-	unsigned long when_alloc;	/* when mid was created */
-	struct	work_struct work;
-	/* mid_receive_t *receive; */	/* call receive callback */
-	/* mid_callback_t *callback; */	/* call completion callback
-							depends on command */
-	char	*buf;			/* pointer to received SMB header */
-	__le16 command;			/* smb command code */
-	char *rdata_buf;		/* read data buffer */
-	unsigned int rdata_cnt;		/* read data count */
-	unsigned int rrsp_hdr_size;	/* read response smb header size */
-	char *rsp_buf;			/* response buffer */
+	/* Server corresponding to this mid */
+	struct connection		*conn;
+	/* List head at conn->requests */
+	struct list_head		request_entry;
+	struct cifsd_sess		*sess;
+
+	/* Pointer to received SMB header */
+	char				*buf;
+	/* Response buffer */
+	char				*rsp_buf;
+
+	struct cifsd_tcon		*tcon;
+	__u64				cur_local_sess_id;
+
+	/* Read data buffer */
+	char				*rdata_buf;
+	/* Read data count */
+	unsigned int			rdata_cnt;
+	/* Read response smb header size */
+	unsigned int			rrsp_hdr_size;
+
+	struct work_struct		work;
+
+	int				type;
+	/* Workers waiting on reply from this connection */
+	struct list_head		qhead;
+
 	int next_smb2_rcv_hdr_off;	/* Next cmd hdr in compound req buf*/
 	int next_smb2_rsp_hdr_off;	/* Next cmd hdr in compound rsp buf*/
-	__u64 cur_local_fid;		/* Current Local FID assigned compound
-					   response if SMB2 CREATE command is
-					   present in compound request*/
-	__u64 cur_local_pfid;
-	__u64 cur_local_sess_id;
-	bool req_wbuf:1;		/* large write request */
-	bool large_buf:1;		/* if valid response, is pointer
-							to large buf */
-	bool rsp_large_buf:1;
-	bool multiRsp:1;		/* multiple responses
-					   for one request e.g. SMB ECHO */
-	bool multiEnd:1;		/* both received */
-	bool send_no_response:1;	/* no response for cancelled request */
-	bool added_in_request_list:1;	/* added in conn->requests list */
+	/*
+	 * Current Local FID assigned compound response if SMB2 CREATE
+	 * command is present in compound request
+	 */
+	__u64				cur_local_fid;
+	__u64				cur_local_pfid;
 
-	struct cifsd_sess *sess;
-	struct cifsd_tcon *tcon;
+	/* Large write request */
+	bool				req_wbuf:1;
+	/* If valid response, is pointer to large buf */
+	bool				large_buf:1;
+	bool				rsp_large_buf:1;
+	/* Multiple responses for one request e.g. SMB ECHO */
+	bool multiRsp:1;
+	/* Both received */
+	bool				multiEnd:1;
+	/* No response for cancelled request */
+	bool				send_no_response:1;
+	/* Added in conn->requests list */
+	bool				added_in_request_list:1;
+
+	/* smb command code */
+	__le16				command;
 
 	struct async_info *async;
 	struct list_head interim_entry;
