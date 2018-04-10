@@ -453,13 +453,13 @@ struct smb_work {
 	struct connection		*conn;
 	/* List head at conn->requests */
 	struct list_head		request_entry;
-	struct cifsd_sess		*sess;
 
 	/* Pointer to received SMB header */
-	char				*buf;
+	char				*request_buf;
 	/* Response buffer */
 	char				*response_buf;
 
+	struct cifsd_sess		*sess;
 	struct cifsd_tcon		*tcon;
 	__u64				cur_local_sess_id;
 
@@ -507,6 +507,7 @@ struct smb_work {
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
+#define REQUEST_BUF(w)		(void *)((w)->request_buf)
 
 struct smb_version_ops {
 	int (*get_cmd_val)(struct smb_work *swork);

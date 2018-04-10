@@ -284,12 +284,12 @@ static inline int check_conn_state(struct smb_work *smb_work)
 static void free_workitem_buffers(struct smb_work *smb_work)
 {
 	if (smb_work->req_wbuf)
-		vfree(smb_work->buf);
+		vfree(REQUEST_BUF(smb_work));
 	else {
 		if (smb_work->large_buf)
-			mempool_free(smb_work->buf, cifsd_req_poolp);
+			mempool_free(REQUEST_BUF(smb_work), cifsd_req_poolp);
 		else
-			mempool_free(smb_work->buf, cifsd_sm_req_poolp);
+			mempool_free(REQUEST_BUF(smb_work), cifsd_sm_req_poolp);
 	}
 
 	if (smb_work->rsp_large_buf)
@@ -503,16 +503,16 @@ static void queue_dynamic_work_helper(struct connection *conn)
 	work->conn = conn;
 
 	if (conn->wbuf) {
-		work->buf = conn->wbuf;
+		work->request_buf = conn->wbuf;
 		work->req_wbuf = 1;
 		conn->wbuf = NULL;
 	} else if (conn->large_buf) {
-		work->buf = conn->bigbuf;
+		work->request_buf = conn->bigbuf;
 		work->large_buf = 1;
 		conn->large_buf = false;
 		conn->bigbuf = NULL;
 	} else {
-		work->buf = conn->smallbuf;
+		work->request_buf = conn->smallbuf;
 		conn->smallbuf = NULL;
 	}
 

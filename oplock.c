@@ -342,7 +342,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	struct smb2_lease_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct lease_break_info *br_info =
-		(struct lease_break_info *)smb_work->buf;
+		(struct lease_break_info *)REQUEST_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct smb2_hdr *rsp_hdr;
 
@@ -421,7 +421,7 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 	if (!work)
 		return -ENOMEM;
 
-	work->buf = (char *)opinfo;
+	work->request_buf = (char *)opinfo;
 	work->conn = conn;
 
 	if (ack_required) {
@@ -483,7 +483,7 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	br_info->fid = opinfo->fid;
 	br_info->open_trunc = opinfo->open_trunc;
 
-	work->buf = (char *)br_info;
+	work->request_buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -735,7 +735,7 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 	br_info->new_state = lease->new_state;
 	memcpy(br_info->lease_key, lease->lease_key, SMB2_LEASE_KEY_SIZE);
 
-	work->buf = (char *)br_info;
+	work->request_buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -1240,7 +1240,7 @@ void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * smb_work->buf contains oplock_info.
+ * REQUEST_BUF(smb_work) contains oplock_info.
  */
 void smb1_send_oplock_break_notification(struct work_struct *work)
 {
@@ -1248,7 +1248,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	struct connection *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)smb_work->buf;
+	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(smb_work);
 
 	atomic_inc(&conn->req_running);
 
@@ -1320,7 +1320,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * smb_work->buf contains oplock_info.
+ * REQUEST_BUF(smb_work) contains oplock_info.
  */
 void smb2_send_oplock_break_notification(struct work_struct *work)
 {
@@ -1328,7 +1328,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct connection *conn = smb_work->conn;
 	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)smb_work->buf;
+		(struct oplock_break_info *)REQUEST_BUF(smb_work);
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 	int persistent_id;

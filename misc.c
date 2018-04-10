@@ -149,9 +149,9 @@ void add_request_to_queue(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	struct list_head *requests_queue = NULL;
+	struct smb2_hdr *hdr = REQUEST_BUF(smb_work);
 
-	if (*(__le32 *)((struct smb2_hdr *)smb_work->buf)->ProtocolId ==
-			SMB2_PROTO_NUMBER) {
+	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		unsigned int command = conn->ops->get_cmd_val(smb_work);
 
 		if (command != SMB2_CANCEL) {
