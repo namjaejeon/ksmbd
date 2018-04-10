@@ -32,10 +32,11 @@
 #include <linux/sched/signal.h>
 #endif
 
+#include "buffer_pool.h"
+
 bool global_signing;
 unsigned long server_start_time;
 
-struct kmem_cache *cifsd_work_cache;
 struct kmem_cache *cifsd_filp_cache;
 
 struct kmem_cache *cifsd_req_cachep;
@@ -300,7 +301,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 
 	if (smb_work->rdata_buf)
 		kvfree(smb_work->rdata_buf);
-	kmem_cache_free(cifsd_work_cache, smb_work);
+	cifsd_free_work_struct(smb_work);
 }
 
 /**
@@ -490,7 +491,7 @@ nosend:
  */
 static void queue_dynamic_work_helper(struct connection *conn)
 {
-	struct smb_work *work =	kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	struct smb_work *work = cifsd_alloc_work_struct();
 	if (!work) {
 		cifsd_err("allocation for work failed\n");
 		return;
@@ -866,7 +867,6 @@ static void smb_free_mempools(void)
 	mempool_destroy(cifsd_sm_rsp_poolp);
 	kmem_cache_destroy(cifsd_sm_rsp_cachep);
 
-	kmem_cache_destroy(cifsd_work_cache);
 	kmem_cache_destroy(cifsd_filp_cache);
 }
 
@@ -935,12 +935,6 @@ static int smb_initialize_mempool(void)
 	if (cifsd_rsp_poolp == NULL)
 		goto error_out;
 
-	cifsd_work_cache = kmem_cache_create("cifsd_work_cache",
-					sizeof(struct smb_work), 0,
-					SLAB_HWCACHE_ALIGN, NULL);
-	if (cifsd_work_cache == NULL)
-		goto error_out;
-
 	cifsd_filp_cache = kmem_cache_create("cifsd_file_cache",
 					sizeof(struct cifsd_file), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
@@ -952,6 +946,7 @@ static int smb_initialize_mempool(void)
 error_out:
 	cifsd_err("failed to allocate memory\n");
 	smb_free_mempools();
+	cifsd_destroy_buffer_pools();
 	return -ENOMEM;
 }
 
@@ -973,6 +968,10 @@ static int __init init_smb_server(void)
 	rc = smb_initialize_mempool();
 	if (rc)
 		return rc;
+
+	rc = cifsd_init_buffer_pools();
+	if (rc)
+		goto err1;
 
 	rc = cifsd_export_init();
 	if (rc)
@@ -1006,6 +1005,7 @@ err2:
 	cifsd_export_exit();
 err1:
 	smb_free_mempools();
+	cifsd_destroy_buffer_pools();
 	return rc;
 }
 
@@ -1023,6 +1023,7 @@ static void __exit exit_smb_server(void)
 	cifsd_export_exit();
 	destroy_lease_table(NULL);
 	smb_free_mempools();
+	cifsd_destroy_buffer_pools();
 #ifdef CONFIG_CIFSD_ACL
 	exit_cifsd_idmap();
 #endif
