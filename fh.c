@@ -19,13 +19,14 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/bootmem.h>
+#include <linux/xattr.h>
+
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 #include "oplock.h"
-
-#include <linux/bootmem.h>
-#include <linux/xattr.h>
+#include "buffer_pool.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -283,7 +284,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess,
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
 
-	fp = kmem_cache_zalloc(cifsd_filp_cache, GFP_NOFS);
+	fp = cifsd_alloc_file_struct();
 	if (!fp) {
 		cifsd_err("Failed to allocate memory for id (%u)\n", id);
 		return NULL;
@@ -444,7 +445,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 		kfree(fp->stream.name);
 	fp->f_mfp = NULL;
 	spin_unlock(&fp->f_lock);
-	kmem_cache_free(cifsd_filp_cache, fp);
+	cifsd_free_file_struct(fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 

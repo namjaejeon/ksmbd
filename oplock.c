@@ -27,6 +27,8 @@
 #endif
 #include "oplock.h"
 
+#include "buffer_pool.h"
+
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 bool lease_enable = true;
@@ -59,7 +61,7 @@ static struct oplock_info *alloc_opinfo(struct smb_work *work,
 	struct cifsd_sess *sess = work->sess;
 	struct oplock_info *opinfo;
 
-	opinfo = kzalloc(sizeof(struct oplock_info), GFP_NOFS);
+	opinfo = kzalloc(sizeof(struct oplock_info), GFP_KERNEL);
 	if (!opinfo)
 		return NULL;
 
@@ -340,7 +342,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	struct smb2_lease_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct lease_break_info *br_info =
-		(struct lease_break_info *)smb_work->buf;
+		(struct lease_break_info *)REQUEST_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct smb2_hdr *rsp_hdr;
 
@@ -350,11 +352,11 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_debug("smb2_allocate_rsp_buf failed! ");
 		mutex_unlock(&conn->srv_mutex);
-		kfree(smb_work);
+		cifsd_free_work_struct(smb_work);
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -373,7 +375,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = (struct smb2_lease_break *)smb_work->rsp_buf;
+	rsp = (struct smb2_lease_break *)RESPONSE_BUF(smb_work);
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
@@ -391,8 +393,8 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 
 	inc_rfc1001_len(rsp, 44);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
-	kfree(smb_work);
+	cifsd_free_response(RESPONSE_BUF(smb_work));
+	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 
 	atomic_dec(&conn->req_running);
@@ -415,11 +417,11 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 {
 	struct connection *conn = opinfo->conn;
 	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	struct smb_work *work = cifsd_alloc_work_struct();
 	if (!work)
 		return -ENOMEM;
 
-	work->buf = (char *)opinfo;
+	work->request_buf = (char *)opinfo;
 	work->conn = conn;
 
 	if (ack_required) {
@@ -467,19 +469,21 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	struct connection *conn = opinfo->conn;
 	struct oplock_break_info *br_info;
 	int ret = 0;
-	struct smb_work *work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	struct smb_work *work = cifsd_alloc_work_struct();
 	if (!work)
 		return -ENOMEM;
 
 	br_info = kmalloc(sizeof(struct oplock_break_info), GFP_KERNEL);
-	if (!br_info)
+	if (!br_info) {
+		cifsd_free_work_struct(work);
 		return -ENOMEM;
+	}
 
 	br_info->level = opinfo->level;
 	br_info->fid = opinfo->fid;
 	br_info->open_trunc = opinfo->open_trunc;
 
-	work->buf = (char *)br_info;
+	work->request_buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -717,19 +721,21 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 	struct lease_break_info *br_info;
 	struct lease *lease = opinfo->o_lease;
 
-	work = kmem_cache_zalloc(cifsd_work_cache, GFP_NOFS);
+	work = cifsd_alloc_work_struct();
 	if (!work)
 		return -ENOMEM;
 
 	br_info = kmalloc(sizeof(struct lease_break_info), GFP_KERNEL);
-	if (!br_info)
+	if (!br_info) {
+		cifsd_free_work_struct(work);
 		return -ENOMEM;
+	}
 
 	br_info->curr_state = lease->state;
 	br_info->new_state = lease->new_state;
 	memcpy(br_info->lease_key, lease->lease_key, SMB2_LEASE_KEY_SIZE);
 
-	work->buf = (char *)br_info;
+	work->request_buf = (char *)br_info;
 	work->conn = conn;
 	work->sess = opinfo->sess;
 
@@ -1234,7 +1240,7 @@ void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * smb_work->buf contains oplock_info.
+ * REQUEST_BUF(smb_work) contains oplock_info.
  */
 void smb1_send_oplock_break_notification(struct work_struct *work)
 {
@@ -1242,22 +1248,21 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	struct connection *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)smb_work->buf;
+	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(smb_work);
 
 	atomic_inc(&conn->req_running);
 
 	mutex_lock(&conn->srv_mutex);
 
-	smb_work->rsp_large_buf = false;
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
 		mutex_unlock(&conn->srv_mutex);
-		kfree(smb_work);
+		cifsd_free_work_struct(smb_work);
 		return;
 	}
 
 	/* Init response header */
-	rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	/* wct is 8 for locking andx */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2 + 8*2);
 	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE(conn) - 1 + 8*2);
@@ -1277,7 +1282,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	rsp_hdr->WordCount = 8;
 
 	/* Init locking request */
-	req = (LOCK_REQ *)smb_work->rsp_buf;
+	req = (LOCK_REQ *)RESPONSE_BUF(smb_work);
 
 	req->AndXCommand = 0xFF;
 	req->AndXReserved = 0;
@@ -1296,8 +1301,8 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
-	kmem_cache_free(cifsd_work_cache, smb_work);
+	cifsd_free_response(RESPONSE_BUF(smb_work));
+	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 
 	atomic_dec(&conn->req_running);
@@ -1314,7 +1319,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * smb_work->buf contains oplock_info.
+ * REQUEST_BUF(smb_work) contains oplock_info.
  */
 void smb2_send_oplock_break_notification(struct work_struct *work)
 {
@@ -1322,7 +1327,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct connection *conn = smb_work->conn;
 	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)smb_work->buf;
+		(struct oplock_break_info *)REQUEST_BUF(smb_work);
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 	int persistent_id;
@@ -1333,7 +1338,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	fp = cifsd_get_global_fp(br_info->fid);
 	if (!fp) {
 		mutex_unlock(&conn->srv_mutex);
-		kfree(smb_work);
+		cifsd_free_work_struct(smb_work);
 		return;
 	}
 
@@ -1341,11 +1346,11 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
 		mutex_unlock(&conn->srv_mutex);
-		kfree(smb_work);
+		cifsd_free_work_struct(smb_work);
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -1365,7 +1370,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	memset(rsp_hdr->Signature, 0, 16);
 
 
-	rsp = (struct smb2_oplock_break *)smb_work->rsp_buf;
+	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(smb_work);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -1384,8 +1389,8 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
-	kfree(smb_work);
+	cifsd_free_response(RESPONSE_BUF(smb_work));
+	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 
 	atomic_dec(&conn->req_running);
