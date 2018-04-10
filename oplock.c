@@ -61,7 +61,7 @@ static struct oplock_info *alloc_opinfo(struct smb_work *work,
 	struct cifsd_sess *sess = work->sess;
 	struct oplock_info *opinfo;
 
-	opinfo = kzalloc(sizeof(struct oplock_info), GFP_NOFS);
+	opinfo = kzalloc(sizeof(struct oplock_info), GFP_KERNEL);
 	if (!opinfo)
 		return NULL;
 

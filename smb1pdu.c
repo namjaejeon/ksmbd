@@ -749,7 +749,7 @@ int smb_rename(struct smb_work *smb_work)
 		goto out;
 	}
 
-	tmp_name = kmalloc(PATH_MAX, GFP_NOFS);
+	tmp_name = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!tmp_name) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 		rc = -ENOMEM;

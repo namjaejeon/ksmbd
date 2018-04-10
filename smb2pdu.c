@@ -4935,7 +4935,7 @@ int smb2_create_link(struct smb_work *smb_work, struct file *filp)
 	file_info = (struct smb2_file_link_info *)req->Buffer;
 
 	cifsd_debug("setting FILE_LINK_INFORMATION\n");
-	pathname = kmalloc(PATH_MAX, GFP_NOFS);
+	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!pathname) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		return -ENOMEM;
@@ -5020,7 +5020,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 	file_info = (struct smb2_file_rename_info *)req->Buffer;
 
 	cifsd_debug("setting FILE_RENAME_INFO\n");
-	pathname = kmalloc(PATH_MAX, GFP_NOFS);
+	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!pathname) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		return -ENOMEM;
@@ -5084,7 +5084,7 @@ int smb2_rename(struct smb_work *smb_work, struct file *filp, int old_fid)
 		goto out;
 	}
 
-	tmp_name = kmalloc(PATH_MAX, GFP_NOFS);
+	tmp_name = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!tmp_name) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		rc = -ENOMEM;

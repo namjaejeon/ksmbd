@@ -74,7 +74,7 @@ static struct kvec *get_conn_iovec(struct connection *conn,
 		return conn->iov;
 
 	/* not big enough -- allocate a new one and release the old */
-	new_iov = kmalloc(sizeof(*new_iov) * nr_segs, GFP_NOFS);
+	new_iov = kmalloc(sizeof(*new_iov) * nr_segs, GFP_KERNEL);
 	if (new_iov) {
 		kfree(conn->iov);
 		conn->iov = new_iov;
