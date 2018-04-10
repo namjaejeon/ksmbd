@@ -343,90 +343,103 @@ struct preauth_session {
 };
 
 struct connection {
-	struct socket *sock;
-	unsigned short family;
-	int srv_count; /* reference counter */
-	int sess_count; /* number of sessions attached with this connection */
-	struct smb_version_values   *vals;
+	struct socket			*sock;
+	unsigned short			family;
+	/* Reference counter */
+	int				srv_count;
+	/* The number of sessions attached with this connection */
+	int				sess_count;
+	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
-	unsigned int    max_cmds;
-	char *hostname;
-	struct mutex srv_mutex;
-	enum statusEnum tcp_status;
-	__u16 cli_sec_mode;
-	__u16 srv_sec_mode;
-	bool sign;
-	__u16 dialect; /* dialect index that server chose */
-	bool oplocks:1;
-	bool use_spnego:1;
-	unsigned int maxReq;
-	unsigned int cli_cap;
-	unsigned int srv_cap;
-	bool	need_neg;
-	bool    large_buf;
-	struct kvec *iov;
-	unsigned int nr_iov;
-	char    *smallbuf;
-	char    *bigbuf;
-	char    *wbuf;
-	struct nls_table *local_nls;
-	unsigned int total_read;
+	unsigned int			max_cmds;
+	char				*hostname;
+	struct mutex			srv_mutex;
+	enum statusEnum			tcp_status;
+	unsigned int			maxReq;
+	unsigned int			cli_cap;
+	unsigned int			srv_cap;
+	struct kvec			*iov;
+	unsigned int			nr_iov;
+	char				*smallbuf;
+	char				*bigbuf;
+	char				*wbuf;
+	struct nls_table		*local_nls;
+	unsigned int			total_read;
 	/* This session will become part of global tcp session list */
-	struct list_head tcp_sess;
+	struct list_head		tcp_sess;
 	/* smb session 1 per user */
-	struct list_head cifsd_sess;
-	struct task_struct *handler;
-	int th_id;
-	__le16 vuid;
-	int num_files_open;
-	unsigned long last_active;
-	struct timespec create_time;
+	struct list_head		cifsd_sess;
+	struct task_struct		*handler;
+	int				th_id;
+	int				num_files_open;
+	unsigned long			last_active;
+	struct timespec			create_time;
 	/* pending trans request table */
-	struct trans_state *recent_trans;
-	struct list_head trans_list;
+	struct trans_state		*recent_trans;
+	struct list_head		trans_list;
 	/* How many request are running currently */
-	atomic_t req_running;
+	atomic_t			req_running;
 	/* References which are made for this Server object*/
-	atomic_t r_count;
-	wait_queue_head_t req_running_q;
-	spinlock_t request_lock; /* lock to protect requests list*/
-	struct list_head requests;
-	struct list_head async_requests;
-	int max_credits;
-	int credits_granted;
-	char peeraddr[MAX_ADDRBUFLEN];
-	int connection_type;
-	struct cifsd_stats stats;
-	struct list_head list;
+	atomic_t			r_count;
+	wait_queue_head_t		req_running_q;
+	/* Lock to protect requests list*/
+	spinlock_t			request_lock;
+	struct list_head		requests;
+	struct list_head		async_requests;
+	int				max_credits;
+	int				credits_granted;
+	char				peeraddr[MAX_ADDRBUFLEN];
+	int				connection_type;
+	struct cifsd_stats		stats;
+	struct list_head		list;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	char ClientGUID[SMB2_CLIENT_GUID_SIZE];
+	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
 #endif
-	struct cifs_secmech secmech;
-	char ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
+	struct cifs_secmech		secmech;
+	/* Used by ntlmssp */
+	char				ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE];
 
-	int Preauth_HashId; /* PreAuth integrity Hash ID */
-	__u8 Preauth_HashValue[64]; /* PreAuth integrity Hash Value */
-	int CipherId;
+	/* PreAuth integrity Hash ID */
+	int				Preauth_HashId;
+	/* PreAuth integrity Hash Value */
+	__u8				Preauth_HashValue[64];
+	int				CipherId;
 
-	struct list_head p_sess_table;	/* PreAuthSession Table */
-	bool sec_ntlmssp;		/* supports NTLMSSP */
-	bool sec_kerberosu2u;		/* supports U2U Kerberos */
-	bool sec_kerberos;		/* supports plain Kerberos */
-	bool sec_mskerberos;		/* supports legacy MS Kerberos */
-	char *mechToken;
+	/* PreAuthSession Table */
+	struct list_head		p_sess_table;
+	/* Supports NTLMSSP */
+	bool				sec_ntlmssp;
+	/* Supports U2U Kerberos */
+	bool				sec_kerberosu2u;
+	/* Supports plain Kerberos */
+	bool				sec_kerberos;
+	/* Supports legacy MS Kerberos */
+	bool				sec_mskerberos;
+	bool				sign;
+	bool				need_neg;
+	bool				large_buf;
+	bool				oplocks:1;
+	bool				use_spnego:1;
+	__le16				vuid;
+	__u16				cli_sec_mode;
+	__u16				srv_sec_mode;
+	/* dialect index that server chose */
+	__u16				dialect;
+
+	char				*mechToken;
 };
 
 struct trans_state {
-	struct list_head trans_list;
-	__le16		mid;
-	__le16		uid;
-	char		*rcv_buf;
-	char		*rsp_buf;
-	int		total_param;
-	int		got_param;
-	int		total_data;
-	int		got_data;
+	struct list_head	trans_list;
+	__le16			mid;
+	__le16			uid;
+	char			*rcv_buf;
+	char			*rsp_buf;
+	int			total_param;
+	int			got_param;
+	int			total_data;
+	int			got_data;
 };
 
 enum asyncEnum {
