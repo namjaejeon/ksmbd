@@ -458,7 +458,7 @@ struct smb_work {
 	/* Pointer to received SMB header */
 	char				*buf;
 	/* Response buffer */
-	char				*rsp_buf;
+	char				*response_buf;
 
 	struct cifsd_tcon		*tcon;
 	__u64				cur_local_sess_id;
@@ -505,6 +505,8 @@ struct smb_work {
 	struct async_info *async;
 	struct list_head interim_entry;
 };
+
+#define RESPONSE_BUF(w)		(void *)((w)->response_buf)
 
 struct smb_version_ops {
 	int (*get_cmd_val)(struct smb_work *swork);

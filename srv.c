@@ -179,7 +179,7 @@ static void allocate_buffers(struct connection *conn)
 int smb_send_rsp(struct smb_work *work)
 {
 	struct connection *conn = work->conn;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
+	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
 	struct socket *sock = conn->sock;
 	struct kvec iov;
 	struct msghdr smb_msg = {};
@@ -268,7 +268,7 @@ static inline int check_conn_state(struct smb_work *smb_work)
 
 	if (conn->tcp_status == CifsExiting ||
 			conn->tcp_status == CifsNeedReconnect) {
-		rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+		rsp_hdr = RESPONSE_BUF(smb_work);
 		rsp_hdr->Status.CifsError = NT_STATUS_CONNECTION_DISCONNECTED;
 		return 1;
 	}
@@ -293,9 +293,9 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 	}
 
 	if (smb_work->rsp_large_buf)
-		mempool_free(smb_work->rsp_buf, cifsd_rsp_poolp);
+		mempool_free(RESPONSE_BUF(smb_work), cifsd_rsp_poolp);
 	else
-		mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+		mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 
 	if (smb_work->rdata_buf)
 		kvfree(smb_work->rdata_buf);

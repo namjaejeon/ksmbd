@@ -166,7 +166,7 @@ static inline int is_smbreq_unicode(struct smb_hdr *hdr)
  */
 void set_smb_rsp_status(struct smb_work *smb_work, unsigned int err)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *) smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(smb_work);
 	rsp_hdr->Status.CifsError = err;
 }
 
@@ -182,7 +182,7 @@ int init_smb_rsp_hdr(struct smb_work *smb_work)
 	struct smb_hdr *rsp_hdr;
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)smb_work->buf;
 
-	rsp_hdr = (struct smb_hdr *) smb_work->rsp_buf;
+	rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(smb_work);
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2);
 
 	/* remove 4 byte direct TCP header, add 1 byte wc and 2 byte bcc */
@@ -258,14 +258,15 @@ int smb_allocate_rsp_buf(struct smb_work *smb_work)
 
 	if (need_large_buf) {
 		smb_work->rsp_large_buf = true;
-		smb_work->rsp_buf = mempool_alloc(cifsd_rsp_poolp, GFP_NOFS);
+		smb_work->response_buf = mempool_alloc(cifsd_rsp_poolp,
+						       GFP_NOFS);
 	} else {
 		smb_work->rsp_large_buf = false;
-		smb_work->rsp_buf = mempool_alloc(cifsd_sm_rsp_poolp,
-								GFP_NOFS);
+		smb_work->response_buf = mempool_alloc(cifsd_sm_rsp_poolp,
+						       GFP_NOFS);
 	}
 
-	if (smb_work->rsp_buf == NULL) {
+	if (RESPONSE_BUF(smb_work) == NULL) {
 		cifsd_err("failed to alloc response buffer, large_buf %d\n",
 				smb_work->rsp_large_buf);
 		return -ENOMEM;
@@ -479,7 +480,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 int smb_tree_disconnect(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct cifsd_sess *sess = smb_work->sess;
 
@@ -537,7 +538,7 @@ void set_service_type(struct connection *conn,
 int smb_tree_connect_andx(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	TCONX_REQ *req;
 	TCONX_RSP_EXT *rsp;
@@ -555,7 +556,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 		cifsd_debug("SMB_COM_TREE_CONNECT_ANDX is part of ANDX");
 		req = (TCONX_REQ *)andx_request_buffer(smb_work->buf,
 						SMB_COM_TREE_CONNECT_ANDX);
-		rsp = (TCONX_RSP_EXT *)andx_response_buffer(smb_work->rsp_buf);
+		rsp = (TCONX_RSP_EXT *)andx_response_buffer(RESPONSE_BUF(smb_work));
 		extra_byte = 3;
 		if (!req) {
 			rc = -EINVAL;
@@ -722,7 +723,7 @@ out_err1:
 int smb_rename(struct smb_work *smb_work)
 {
 	RENAME_REQ *req = (RENAME_REQ *)smb_work->buf;
-	RENAME_RSP *rsp = (RENAME_RSP *)smb_work->rsp_buf;
+	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	char *abs_oldname, *abs_newname, *tmp_name = NULL;
@@ -800,7 +801,7 @@ out:
 int smb_negotiate(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
-	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)smb_work->rsp_buf;
+	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(smb_work);
 	NEGOTIATE_REQ *neg_req = (NEGOTIATE_REQ *)smb_work->buf;
 	__le64 time;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
@@ -878,14 +879,14 @@ int smb_negotiate(struct smb_work *smb_work)
 int smb_session_setup_andx(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = NULL;
 	char *name;
 	int offset, rc;
 
 	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)smb_work->buf;
-	SESSION_SETUP_ANDX *response = (SESSION_SETUP_ANDX *)smb_work->rsp_buf;
+	SESSION_SETUP_ANDX *response = (SESSION_SETUP_ANDX *)RESPONSE_BUF(smb_work);
 
 	/* This triggers with cifs client. cifs client needs fixing */
 	WARN_ON(req_hdr->WordCount != 13);
@@ -1300,7 +1301,7 @@ int smb_locking_andx(struct smb_work *smb_work)
 	const unsigned long long loff_max = ~0;
 
 	req = (LOCK_REQ *)smb_work->buf;
-	rsp = (LOCK_RSP *)smb_work->rsp_buf;
+	rsp = (LOCK_RSP *)RESPONSE_BUF(smb_work);
 
 	timeout = le32_to_cpu(req->Timeout);
 	cifsd_debug("got oplock brk for fid %d lock type = 0x%x, timeout : %d\n",
@@ -1702,7 +1703,7 @@ int smb_trans(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	TRANS_REQ *req = (TRANS_REQ *)smb_work->buf;
-	TRANS_RSP *rsp = (TRANS_RSP *)smb_work->rsp_buf;
+	TRANS_RSP *rsp = (TRANS_RSP *)RESPONSE_BUF(smb_work);
 	TRANS_PIPE_REQ *pipe_req = (TRANS_PIPE_REQ *)smb_work->buf;
 	struct cifsd_pipe *pipe_desc;
 	__u16 subcommand;
@@ -1890,7 +1891,7 @@ out:
 int create_andx_pipe(struct smb_work *smb_work)
 {
 	OPEN_REQ *req = (OPEN_REQ *)smb_work->buf;
-	OPEN_EXT_RSP *rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
+	OPEN_EXT_RSP *rsp = (OPEN_EXT_RSP *)RESPONSE_BUF(smb_work);
 	unsigned int pipe_type;
 	char *name;
 	int rc = 0;
@@ -1990,8 +1991,8 @@ out:
 int smb_nt_create_andx(struct smb_work *smb_work)
 {
 	OPEN_REQ *req = (OPEN_REQ *)smb_work->buf;
-	OPEN_RSP *rsp = (OPEN_RSP *)smb_work->rsp_buf;
-	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)smb_work->rsp_buf;
+	OPEN_RSP *rsp = (OPEN_RSP *)RESPONSE_BUF(smb_work);
+	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_tcon *tcon = smb_work->tcon;
@@ -2522,7 +2523,7 @@ out:
 int smb_close_pipe(struct smb_work *smb_work)
 {
 	CLOSE_REQ *req = (CLOSE_REQ *)smb_work->buf;
-	CLOSE_RSP *rsp = (CLOSE_RSP *)smb_work->rsp_buf;
+	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_pipe *pipe_desc;
 	int id;
 	int rc = 0;
@@ -2556,7 +2557,7 @@ int smb_close_pipe(struct smb_work *smb_work)
 int smb_close(struct smb_work *smb_work)
 {
 	CLOSE_REQ *req = (CLOSE_REQ *)smb_work->buf;
-	CLOSE_RSP *rsp = (CLOSE_RSP *)smb_work->rsp_buf;
+	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	int err = 0;
 
@@ -2602,7 +2603,7 @@ out:
 int smb_read_andx_pipe(struct smb_work *smb_work)
 {
 	READ_REQ *req = (READ_REQ *)smb_work->buf;
-	READ_RSP *rsp = (READ_RSP *)smb_work->rsp_buf;
+	READ_RSP *rsp = (READ_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_pipe *pipe_desc;
 	char *data_buf;
 	int ret = 0, nbytes = 0;
@@ -2685,7 +2686,7 @@ int smb_read_andx(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	READ_REQ *req = (READ_REQ *)smb_work->buf;
-	READ_RSP *rsp = (READ_RSP *)smb_work->rsp_buf;
+	READ_RSP *rsp = (READ_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp;
 	loff_t pos;
 	size_t count;
@@ -2779,7 +2780,7 @@ out:
 int smb_write(struct smb_work *smb_work)
 {
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)smb_work->buf;
-	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)smb_work->rsp_buf;
+	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp = NULL;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_tcon *tcon = smb_work->tcon;
@@ -2846,7 +2847,7 @@ out:
 int smb_write_andx_pipe(struct smb_work *smb_work)
 {
 	WRITE_REQ *req = (WRITE_REQ *)smb_work->buf;
-	WRITE_RSP *rsp = (WRITE_RSP *)smb_work->rsp_buf;
+	WRITE_RSP *rsp = (WRITE_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_pipe *pipe_desc;
 	int ret = 0;
 	size_t count = 0;
@@ -2920,7 +2921,7 @@ int smb_write_andx(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	WRITE_REQ *req = (WRITE_REQ *)smb_work->buf;
-	WRITE_RSP *rsp = (WRITE_RSP *)smb_work->rsp_buf;
+	WRITE_RSP *rsp = (WRITE_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp;
 	bool writethrough = false;
 	loff_t pos;
@@ -3031,7 +3032,7 @@ out:
 int smb_echo(struct smb_work *smb_work)
 {
 	ECHO_REQ *req = (ECHO_REQ *)smb_work->buf;
-	ECHO_RSP *rsp = (ECHO_RSP *)smb_work->rsp_buf;
+	ECHO_RSP *rsp = (ECHO_RSP *)RESPONSE_BUF(smb_work);
 	__u16 data_count;
 	int i;
 
@@ -3074,7 +3075,7 @@ int smb_echo(struct smb_work *smb_work)
 int smb_flush(struct smb_work *smb_work)
 {
 	FLUSH_REQ *req = (FLUSH_REQ *)smb_work->buf;
-	FLUSH_RSP *rsp = (FLUSH_RSP *)smb_work->rsp_buf;
+	FLUSH_RSP *rsp = (FLUSH_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -3549,13 +3550,13 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
  */
 int smb_get_acl(struct smb_work *smb_work, struct path *path)
 {
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	char *buf = NULL;
 	int rc = 0, value_len;
 	struct cifs_posix_acl *aclbuf;
 	__u16 rsp_data_cnt = 0;
 
-	aclbuf = (struct cifs_posix_acl *)(smb_work->rsp_buf +
+	aclbuf = (struct cifs_posix_acl *)(RESPONSE_BUF(smb_work) +
 			sizeof(TRANSACTION2_RSP) + 4);
 
 	aclbuf->version = cpu_to_le16(CIFS_ACL_VERSION);
@@ -3613,7 +3614,7 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 int smb_set_acl(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	struct cifs_posix_acl *wire_acl_data;
 	char *fname, *buf = NULL;
 	int rc = 0, acl_type = 0, value_len;
@@ -3702,7 +3703,7 @@ out:
 int smb_readlink(struct smb_work *smb_work, struct path *path)
 {
 	TRANSACTION2_QPI_REQ *req = (TRANSACTION2_QPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	int err, name_len;
 	char *buf, *ptr;
 
@@ -3731,7 +3732,7 @@ int smb_readlink(struct smb_work *smb_work, struct path *path)
 			err = -ENOMEM;
 			goto out;
 		}
-		rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+		rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	}
 	err = 0;
 
@@ -3780,10 +3781,10 @@ out:
 int smb_get_ea(struct smb_work *smb_work, struct path *path)
 {
 	struct connection *conn = smb_work->conn;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
-	struct fealist *eabuf = (struct fealist *)(smb_work->rsp_buf +
+	struct fealist *eabuf = (struct fealist *)(RESPONSE_BUF(smb_work) +
 			sizeof(TRANSACTION2_RSP) + 4);
 	struct fea *temp_fea;
 	ssize_t buf_free_len;
@@ -3883,10 +3884,10 @@ out:
 int query_path_info(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
 	struct connection *conn = smb_work->conn;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_QPI_REQ_PARAMS *req_params;
 	char *name = NULL;
 	struct path path;
@@ -4344,7 +4345,7 @@ out:
 int smb_trans2(struct smb_work *smb_work)
 {
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	int err = 0;
 	u16 sub_command = req->SubCommand;
 
@@ -4421,7 +4422,7 @@ int set_fs_info(struct smb_work *smb_work)
 {
 	TRANSACTION2_SETFSI_REQ *req = (TRANSACTION2_SETFSI_REQ *)smb_work->buf;
 	TRANSACTION2_SETFSI_RSP	*rsp =
-				(TRANSACTION2_SETFSI_RSP *)smb_work->rsp_buf;
+				(TRANSACTION2_SETFSI_RSP *)RESPONSE_BUF(smb_work);
 	int info_level = req->InformationLevel;
 
 	switch (info_level) {
@@ -4462,7 +4463,7 @@ int query_fs_info(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_QFSI_REQ_PARAMS *req_params;
 	struct connection *conn = smb_work->conn;
 	struct kstatfs stfs;
@@ -4651,7 +4652,7 @@ smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 		bool converted)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *wild_card_pos;
@@ -4708,7 +4709,7 @@ static char *smb_get_dir_name(const char *src, const int maxlen,
 		struct smb_work *smb_work, char **srch_ptr)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *pattern_pos, *pattern = NULL;
@@ -4854,7 +4855,7 @@ int smb_posix_open(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
-		(TRANSACTION2_SPI_RSP *)smb_work->rsp_buf;
+		(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	OPEN_PSX_REQ *psx_req;
@@ -5102,7 +5103,7 @@ out:
 int smb_posix_unlink(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	UNLINK_PSX_RSP *psx_rsp = NULL;
 	char *name;
 	int rc = 0;
@@ -5156,7 +5157,7 @@ out:
 int smb_set_time_pathinfo(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	FILE_BASIC_INFO *info;
 	struct iattr attrs;
 	char *name;
@@ -5232,7 +5233,7 @@ done:
 int smb_set_unix_pathinfo(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	FILE_UNIX_BASIC_INFO *unix_info;
 	struct iattr attrs;
 	char *name;
@@ -5292,7 +5293,7 @@ out:
 int smb_set_ea(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	struct fealist *eabuf;
 	struct fea *ea;
 	char *fname, *attr_name = NULL, *value;
@@ -5373,7 +5374,7 @@ out:
 int smb_set_file_size_pinfo(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	struct file_end_of_file_info *eofinfo;
 	char *name = NULL;
 	loff_t newsize;
@@ -5426,7 +5427,7 @@ int set_path_info(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
-				(TRANSACTION2_SPI_RSP *)smb_work->rsp_buf;
+				(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(smb_work);
 	__u16 info_level, total_param;
 	int err = 0;
 
@@ -5938,11 +5939,11 @@ int smb_populate_dot_dotdot_entries(struct connection *conn,
  */
 int find_first(struct smb_work *smb_work)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_FFIRST_REQ_PARAMS *req_params;
 	T2_FFIRST_RSP_PARMS *params = NULL;
 	struct path path;
@@ -6175,11 +6176,11 @@ err_out:
  */
 int find_next(struct smb_work *smb_work)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_FNEXT_REQ_PARAMS *req_params;
 	T2_FNEXT_RSP_PARMS *params = NULL;
 	struct smb_dirent *de;
@@ -6379,8 +6380,8 @@ err_out:
  */
 void create_trans2_reply(struct smb_work *smb_work, __u16 count)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 
 	rsp_hdr->WordCount = 0x0A;
 	rsp->t2.TotalParameterCount = 0;
@@ -6415,7 +6416,7 @@ int smb_set_unix_fileinfo(struct smb_work *smb_work)
 	int err = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 	unix_info =  (FILE_UNIX_BASIC_INFO *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
 
@@ -6474,7 +6475,7 @@ int smb_set_file_size_finfo(struct smb_work *smb_work)
 	int err = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
@@ -6529,7 +6530,7 @@ int smb_set_alloc_size(struct smb_work *smb_work)
 	int err = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 
 	allocinfo =  (struct file_allocation_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
@@ -6600,7 +6601,7 @@ int smb_set_dispostion(struct smb_work *smb_work)
 
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 	disp_info =  (char *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
 
@@ -6672,7 +6673,7 @@ int smb_set_time_fileinfo(struct smb_work *smb_work)
 	int err = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 
 	info = (FILE_BASIC_INFO *)(((char *) &req->hdr.Protocol) +
 			le16_to_cpu(req->DataOffset));
@@ -6740,8 +6741,8 @@ done:
  */
 int query_file_info_pipe(struct smb_work *smb_work)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
 	TRANSACTION2_QFI_REQ_PARAMS *req_params;
 	FILE_STANDARD_INFO *standard_info;
@@ -6815,9 +6816,9 @@ int query_file_info(struct smb_work *smb_work)
 {
 	struct connection *conn = smb_work->conn;
 	struct smb_hdr *req_hdr = (struct smb_hdr *)smb_work->buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_QFI_REQ_PARAMS *req_params;
 	struct cifsd_file *fp;
 	struct kstat st;
@@ -7102,7 +7103,7 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	int rc = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 	info =  (struct set_file_rename *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
@@ -7165,7 +7166,7 @@ int set_file_info(struct smb_work *smb_work)
 	int err = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)smb_work->buf;
-	rsp = (struct smb_com_transaction2_sfi_rsp *)smb_work->rsp_buf;
+	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(smb_work);
 	info_level = le16_to_cpu(req->InformationLevel);
 	total_param = le16_to_cpu(req->TotalParameterCount);
 	if (total_param < 4) {
@@ -7232,7 +7233,7 @@ int set_file_info(struct smb_work *smb_work)
 int create_dir(struct smb_work *smb_work)
 {
 	struct smb_trans2_req *req = (struct smb_trans2_req *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
@@ -7299,7 +7300,7 @@ int create_dir(struct smb_work *smb_work)
  */
 int get_dfs_referral(struct smb_work *smb_work)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 
 	rsp_hdr->Status.CifsError = NT_STATUS_NOT_SUPPORTED;
 	return 0;
@@ -7314,7 +7315,7 @@ int get_dfs_referral(struct smb_work *smb_work)
 int smb_mkdir(struct smb_work *smb_work)
 {
 	CREATE_DIRECTORY_REQ *req = (CREATE_DIRECTORY_REQ *)smb_work->buf;
-	CREATE_DIRECTORY_RSP *rsp = (CREATE_DIRECTORY_RSP *)smb_work->rsp_buf;
+	CREATE_DIRECTORY_RSP *rsp = (CREATE_DIRECTORY_RSP *)RESPONSE_BUF(smb_work);
 	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
@@ -7377,7 +7378,7 @@ int smb_mkdir(struct smb_work *smb_work)
 int smb_checkdir(struct smb_work *smb_work)
 {
 	CHECK_DIRECTORY_REQ *req = (CHECK_DIRECTORY_REQ *)smb_work->buf;
-	CHECK_DIRECTORY_RSP *rsp = (CHECK_DIRECTORY_RSP *)smb_work->rsp_buf;
+	CHECK_DIRECTORY_RSP *rsp = (CHECK_DIRECTORY_RSP *)RESPONSE_BUF(smb_work);
 	struct path path;
 	struct kstat stat;
 	char *name, *last;
@@ -7470,7 +7471,7 @@ int smb_checkdir(struct smb_work *smb_work)
  */
 int smb_process_exit(struct smb_work *smb_work)
 {
-	PROCESS_EXIT_RSP *rsp = (PROCESS_EXIT_RSP *)smb_work->rsp_buf;
+	PROCESS_EXIT_RSP *rsp = (PROCESS_EXIT_RSP *)RESPONSE_BUF(smb_work);
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 0;
@@ -7487,7 +7488,7 @@ int smb_process_exit(struct smb_work *smb_work)
 int smb_rmdir(struct smb_work *smb_work)
 {
 	DELETE_DIRECTORY_REQ *req = (DELETE_DIRECTORY_REQ *)smb_work->buf;
-	DELETE_DIRECTORY_RSP *rsp = (DELETE_DIRECTORY_RSP *)smb_work->rsp_buf;
+	DELETE_DIRECTORY_RSP *rsp = (DELETE_DIRECTORY_RSP *)RESPONSE_BUF(smb_work);
 	char *name;
 	int err;
 
@@ -7522,7 +7523,7 @@ int smb_rmdir(struct smb_work *smb_work)
 int smb_unlink(struct smb_work *smb_work)
 {
 	DELETE_FILE_REQ *req = (DELETE_FILE_REQ *)smb_work->buf;
-	DELETE_FILE_RSP *rsp = (DELETE_FILE_RSP *)smb_work->rsp_buf;
+	DELETE_FILE_RSP *rsp = (DELETE_FILE_RSP *)RESPONSE_BUF(smb_work);
 	char *name;
 	int err;
 	struct cifsd_file *fp;
@@ -7602,7 +7603,7 @@ int smb_nt_cancel(struct smb_work *smb_work)
 int smb_nt_rename(struct smb_work *smb_work)
 {
 	NT_RENAME_REQ *req = (NT_RENAME_REQ *)smb_work->buf;
-	RENAME_RSP *rsp = (RENAME_RSP *)smb_work->rsp_buf;
+	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(smb_work);
 	char *oldname, *newname;
 	int oldname_len, err;
 
@@ -7653,7 +7654,7 @@ int smb_nt_rename(struct smb_work *smb_work)
 int smb_creat_hardlink(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	char *oldname, *newname, *oldname_offset;
 	int err;
 
@@ -7705,7 +7706,7 @@ out:
 int smb_creat_symlink(struct smb_work *smb_work)
 {
 	TRANSACTION2_SPI_REQ *req = (TRANSACTION2_SPI_REQ *)smb_work->buf;
-	TRANSACTION2_SPI_RSP *rsp = (TRANSACTION2_SPI_RSP *)smb_work->rsp_buf;
+	TRANSACTION2_SPI_RSP *rsp = (TRANSACTION2_SPI_RSP *)RESPONSE_BUF(smb_work);
 	char *name, *symname, *name_offset;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	int err;
@@ -7766,7 +7767,7 @@ int smb_creat_symlink(struct smb_work *smb_work)
 int smb_query_info(struct smb_work *smb_work)
 {
 	QUERY_INFORMATION_REQ *req = (QUERY_INFORMATION_REQ *)smb_work->buf;
-	QUERY_INFORMATION_RSP *rsp = (QUERY_INFORMATION_RSP *)smb_work->rsp_buf;
+	QUERY_INFORMATION_RSP *rsp = (QUERY_INFORMATION_RSP *)RESPONSE_BUF(smb_work);
 	struct path path;
 	struct kstat st;
 	char *name;
@@ -7819,7 +7820,7 @@ out:
 int smb_closedir(struct smb_work *smb_work)
 {
 	FINDCLOSE_REQ *req = (FINDCLOSE_REQ *)smb_work->buf;
-	CLOSE_RSP *rsp = (CLOSE_RSP *)smb_work->rsp_buf;
+	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(smb_work);
 	int err;
 
 	cifsd_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
@@ -7909,7 +7910,7 @@ int convert_open_flags(bool file_present, __u16 mode, __u16 dispostion)
 int smb_open_andx(struct smb_work *smb_work)
 {
 	OPENX_REQ *req = (OPENX_REQ *)smb_work->buf;
-	OPENX_RSP *rsp = (OPENX_RSP *)smb_work->rsp_buf;
+	OPENX_RSP *rsp = (OPENX_RSP *)RESPONSE_BUF(smb_work);
 	struct connection *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct path path;
@@ -8173,7 +8174,7 @@ int smb_setattr(struct smb_work *smb_work)
 	__u16 dos_attr;
 
 	req = (SETATTR_REQ *)smb_work->buf;
-	rsp = (SETATTR_RSP *)smb_work->rsp_buf;
+	rsp = (SETATTR_RSP *)RESPONSE_BUF(smb_work);
 	name = smb_get_name(req->fileName, PATH_MAX, smb_work, false);
 	if (IS_ERR(name))
 		return PTR_ERR(name);
@@ -8277,7 +8278,7 @@ int smb1_check_sign_req(struct smb_work *work)
  */
 void smb1_set_sign_rsp(struct smb_work *work)
 {
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->rsp_buf;
+	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	char signature[20];
 	struct kvec iov[2];
 	int n_vec = 1;

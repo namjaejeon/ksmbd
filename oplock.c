@@ -356,7 +356,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -375,7 +375,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = (struct smb2_lease_break *)smb_work->rsp_buf;
+	rsp = (struct smb2_lease_break *)RESPONSE_BUF(smb_work);
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
@@ -393,7 +393,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 
 	inc_rfc1001_len(rsp, 44);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+	mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 
@@ -1263,7 +1263,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	}
 
 	/* Init response header */
-	rsp_hdr = (struct smb_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	/* wct is 8 for locking andx */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2 + 8*2);
 	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE(conn) - 1 + 8*2);
@@ -1283,7 +1283,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	rsp_hdr->WordCount = 8;
 
 	/* Init locking request */
-	req = (LOCK_REQ *)smb_work->rsp_buf;
+	req = (LOCK_REQ *)RESPONSE_BUF(smb_work);
 
 	req->AndXCommand = 0xFF;
 	req->AndXReserved = 0;
@@ -1302,7 +1302,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+	mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 
@@ -1351,7 +1351,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)smb_work->rsp_buf;
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -1371,7 +1371,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	memset(rsp_hdr->Signature, 0, 16);
 
 
-	rsp = (struct smb2_oplock_break *)smb_work->rsp_buf;
+	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(smb_work);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -1390,7 +1390,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 	smb_send_rsp(smb_work);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+	mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
 

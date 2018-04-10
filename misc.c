@@ -284,10 +284,10 @@ int switch_rsp_buf(struct smb_work *smb_work)
 
 	/* free small buf and switch to large rsp buffer */
 	cifsd_debug("switching to large rsp buf\n");
-	memcpy(buf, smb_work->rsp_buf, MAX_CIFS_SMALL_BUFFER_SIZE);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
+	memcpy(buf, RESPONSE_BUF(smb_work), MAX_CIFS_SMALL_BUFFER_SIZE);
+	mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
 
-	smb_work->rsp_buf = buf;
+	smb_work->response_buf = buf;
 	smb_work->rsp_large_buf = true;
 	return 0;
 }
