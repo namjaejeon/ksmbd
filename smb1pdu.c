@@ -228,7 +228,9 @@ int smb_allocate_rsp_buf(struct smb_work *smb_work)
 {
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	unsigned char cmd = hdr->Command;
-	bool need_large_buf = false;
+	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
+	size_t large_sz = SMBMaxBufSize + MAX_CIFS_HDR_SIZE;
+	size_t sz = small_sz;
 
 	if (cmd == SMB_COM_TRANSACTION2) {
 		TRANSACTION2_QPI_REQ *req =
@@ -242,11 +244,11 @@ int smb_allocate_rsp_buf(struct smb_work *smb_work)
 				 (infolevel == SMB_QUERY_FILE_UNIX_LINK ||
 				  infolevel == SMB_QUERY_POSIX_ACL ||
 				  infolevel == SMB_INFO_QUERY_ALL_EAS)))
-			need_large_buf = true;
+			sz = large_sz;
 	}
 
 	if (cmd == SMB_COM_TRANSACTION)
-		need_large_buf = true;
+		sz = large_sz;
 
 	if (cmd == SMB_COM_ECHO) {
 		int resp_size;
@@ -255,22 +257,14 @@ int smb_allocate_rsp_buf(struct smb_work *smb_work)
 		/* size of ECHO_RSP + Bytecount - Size of Data in ECHO_RSP */
 		resp_size = sizeof(ECHO_RSP) + req->ByteCount - 1;
 		if (resp_size > MAX_CIFS_SMALL_BUFFER_SIZE)
-			need_large_buf = true;
+			sz = large_sz;
 	}
 
-	if (need_large_buf) {
-		smb_work->rsp_large_buf = true;
-		smb_work->response_buf = mempool_alloc(cifsd_rsp_poolp,
-						       GFP_NOFS);
-	} else {
-		smb_work->rsp_large_buf = false;
-		smb_work->response_buf = mempool_alloc(cifsd_sm_rsp_poolp,
-						       GFP_NOFS);
-	}
+	smb_work->response_buf = cifsd_alloc_response(sz);
+	smb_work->response_sz = sz;
 
 	if (RESPONSE_BUF(smb_work) == NULL) {
-		cifsd_err("failed to alloc response buffer, large_buf %d\n",
-				smb_work->rsp_large_buf);
+		cifsd_err("Failed to allocate %zu bytes buffer\n", sz);
 		return -ENOMEM;
 	}
 
@@ -3733,13 +3727,20 @@ int smb_readlink(struct smb_work *smb_work, struct path *path)
 	 */
 	err++;
 	err *= 2;
-	if (err + MAX_HEADER_SIZE(smb_work->conn) >
-			MAX_CIFS_SMALL_BUFFER_SIZE) {
-		if (switch_rsp_buf(smb_work) < 0) {
+	if (err + MAX_HEADER_SIZE(smb_work->conn) > RESPONSE_SZ(smb_work)) {
+		void *nptr;
+		size_t nsz = err + MAX_HEADER_SIZE(smb_work->conn);
+
+		nptr = cifsd_realloc_response(RESPONSE_BUF(smb_work),
+					      RESPONSE_SZ(smb_work),
+					      nsz);
+		if (nptr == RESPONSE_BUF(smb_work)) {
 			rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 			err = -ENOMEM;
 			goto out;
 		}
+
+		smb_work->response_buf = nptr;
 		rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	}
 	err = 0;

@@ -58,12 +58,6 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
-extern struct kmem_cache *cifsd_sm_rsp_cachep;
-extern mempool_t *cifsd_sm_rsp_poolp;
-extern struct kmem_cache *cifsd_rsp_cachep;
-extern mempool_t *cifsd_rsp_poolp;
-extern struct list_head oplock_info_list;
-
 #define CIFS_MIN_RCV_POOL 4
 extern unsigned int smb_min_rcv;
 extern unsigned int smb_min_small;
@@ -452,6 +446,7 @@ struct smb_work {
 	char				*request_buf;
 	/* Response buffer */
 	char				*response_buf;
+	unsigned int			response_sz;
 
 	struct cifsd_sess		*sess;
 	struct cifsd_tcon		*tcon;
@@ -479,7 +474,6 @@ struct smb_work {
 	__u64				cur_local_fid;
 	__u64				cur_local_pfid;
 
-	bool				rsp_large_buf:1;
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool multiRsp:1;
 	/* Both received */
@@ -497,6 +491,8 @@ struct smb_work {
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
+#define RESPONSE_SZ(w)		((w)->response_sz)
+
 #define REQUEST_BUF(w)		(void *)((w)->request_buf)
 
 #define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_buf != NULL)

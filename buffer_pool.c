@@ -85,6 +85,19 @@ void *cifsd_alloc_response(size_t size)
 	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
 }
 
+void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
+{
+	size_t sz = min(old_sz, new_sz);
+	void *nptr;
+
+	nptr = cifsd_alloc_response(new_sz);
+	if (!nptr)
+		return ptr;
+	memcpy(nptr, ptr, sz);
+	cifsd_free_response(ptr);
+	return nptr;
+}
+
 struct smb_work *cifsd_alloc_work_struct(void)
 {
 	return kmem_cache_zalloc(work_cache, GFP_KERNEL);

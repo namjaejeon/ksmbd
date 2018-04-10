@@ -522,48 +522,33 @@ int smb2_allocate_rsp_buf(struct smb_work *smb_work)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(smb_work);
 	struct smb2_query_info_req *req;
-	bool need_large_buf = false;
+	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
+	size_t large_sz = SMBMaxBufSize + MAX_SMB2_HDR_SIZE;
+	size_t sz = small_sz;
+	int cmd = le16_to_cpu(hdr->Command);
+
+	req = (struct smb2_query_info_req *)REQUEST_BUF(smb_work);
+
+	if (cmd == SMB2_READ || cmd == SMB2_IOCTL_HE ||
+			cmd == SMB2_QUERY_DIRECTORY_HE)
+		sz = large_sz;
+
+	if (cmd == SMB2_QUERY_INFO_HE) {
+		if (req->InfoType == SMB2_O_INFO_FILE &&
+			(req->FileInfoClass == FILE_FULL_EA_INFORMATION ||
+				req->FileInfoClass == FILE_ALL_INFORMATION))
+			sz = large_sz;
+	}
 
 	/* allocate large response buf for chained commands */
 	if (le32_to_cpu(hdr->NextCommand) > 0)
-		need_large_buf = true;
-	else {
-		switch (le16_to_cpu(hdr->Command)) {
-		case SMB2_READ:
-			/* fall through */
-		case SMB2_IOCTL_HE:
-			/* fall through */
-		case SMB2_QUERY_DIRECTORY_HE:
-			need_large_buf = true;
-			break;
-		case SMB2_QUERY_INFO_HE:
-			req = (struct smb2_query_info_req *)REQUEST_BUF(smb_work);
-			if (req->InfoType == SMB2_O_INFO_FILE &&
-					(req->FileInfoClass ==
-					FILE_FULL_EA_INFORMATION ||
-					req->FileInfoClass ==
-					FILE_ALL_INFORMATION)) {
-				need_large_buf = true;
-			}
-			break;
-		default:
-			break;
-		}
-	}
+		sz = large_sz;
 
-	if (need_large_buf) {
-		smb_work->rsp_large_buf = true;
-		smb_work->response_buf = mempool_alloc(cifsd_rsp_poolp,
-						       GFP_NOFS);
-	} else {
-		smb_work->rsp_large_buf = false;
-		smb_work->response_buf = mempool_alloc(cifsd_sm_rsp_poolp,
-						       GFP_NOFS);
-	}
+	smb_work->response_buf = cifsd_alloc_response(sz);
+	smb_work->response_sz = sz;
 
 	if (!RESPONSE_BUF(smb_work)) {
-		cifsd_err("failed to alloc response buffer, large_buf %d\n",
-				smb_work->rsp_large_buf);
+		cifsd_err("Failed to allocate %zu bytes buffer\n", sz);
 		return -ENOMEM;
 	}
 

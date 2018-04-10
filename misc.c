@@ -217,36 +217,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 }
 
 /**
- * switch_rsp_buf() - switch to large response buffer
- * @smb_work:	smb request work
- *
- * Return:      0 on success, otherwise -ENOMEM
- */
-int switch_rsp_buf(struct smb_work *smb_work)
-{
-	char *buf;
-	if (smb_work->rsp_large_buf) {
-		cifsd_debug("already using rsp_large_buf\n");
-		return 0;
-	}
-
-	buf = mempool_alloc(cifsd_rsp_poolp, GFP_NOFS);
-	if (!buf) {
-		cifsd_debug("failed to alloc mem\n");
-		return -ENOMEM;
-	}
-
-	/* free small buf and switch to large rsp buffer */
-	cifsd_debug("switching to large rsp buf\n");
-	memcpy(buf, RESPONSE_BUF(smb_work), MAX_CIFS_SMALL_BUFFER_SIZE);
-	mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
-
-	smb_work->response_buf = buf;
-	smb_work->rsp_large_buf = true;
-	return 0;
-}
-
-/**
  * is_smb_request() - check for valid smb request type
  * @conn:     TCP server instance of connection
  * @type:	smb request type

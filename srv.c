@@ -217,11 +217,7 @@ static inline int check_conn_state(struct smb_work *smb_work)
  */
 static void free_workitem_buffers(struct smb_work *smb_work)
 {
-	if (smb_work->rsp_large_buf)
-		mempool_free(RESPONSE_BUF(smb_work), cifsd_rsp_poolp);
-	else
-		mempool_free(RESPONSE_BUF(smb_work), cifsd_sm_rsp_poolp);
-
+	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_response(AUX_PAYLOAD(smb_work));
 	cifsd_free_request(REQUEST_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
@@ -751,64 +747,6 @@ int cifsd_stop_tcp_sess(void)
 }
 
 /**
- * smb_free_mempools() - free smb request/response mempools
- */
-static void smb_free_mempools(void)
-{
-	mempool_destroy(cifsd_rsp_poolp);
-	kmem_cache_destroy(cifsd_rsp_cachep);
-
-	mempool_destroy(cifsd_sm_rsp_poolp);
-	kmem_cache_destroy(cifsd_sm_rsp_cachep);
-}
-
-/**
- * smb_initialize_mempool() - initialize mempool for smb request/response
- *
- * Return:	0 on success, otherwise -ENOMEM
- */
-static int smb_initialize_mempool(void)
-{
-	size_t max_hdr_size = MAX_CIFS_HDR_SIZE;
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	max_hdr_size = MAX_SMB2_HDR_SIZE;
-#endif
-	cifsd_sm_rsp_cachep = kmem_cache_create("cifsd_small_rsp",
-			MAX_CIFS_SMALL_BUFFER_SIZE, 0, SLAB_HWCACHE_ALIGN,
-			NULL);
-
-	if (cifsd_sm_rsp_cachep == NULL)
-		goto error_out;
-
-	cifsd_sm_rsp_poolp = mempool_create_slab_pool(smb_min_small,
-			cifsd_sm_rsp_cachep);
-
-	if (cifsd_sm_rsp_poolp == NULL)
-		goto error_out;
-
-	cifsd_rsp_cachep = kmem_cache_create("cifsd_rsp",
-			SMBMaxBufSize + max_hdr_size, 0,
-			SLAB_HWCACHE_ALIGN,
-			NULL);
-
-	if (cifsd_rsp_cachep == NULL)
-		goto error_out;
-
-	cifsd_rsp_poolp = mempool_create_slab_pool(cifs_min_send,
-			cifsd_rsp_cachep);
-
-	if (cifsd_rsp_poolp == NULL)
-		goto error_out;
-	return 0;
-
-error_out:
-	cifsd_err("failed to allocate memory\n");
-	smb_free_mempools();
-	cifsd_destroy_buffer_pools();
-	return -ENOMEM;
-}
-
-/**
  * init_smb_server() - initialize smb server at module init
  *
  * create smb request/response mempools, initialize export points,
@@ -823,13 +761,9 @@ static int __init init_smb_server(void)
 
 	server_start_time = jiffies;
 
-	rc = smb_initialize_mempool();
-	if (rc)
-		return rc;
-
 	rc = cifsd_init_buffer_pools();
 	if (rc)
-		goto err1;
+		return rc;
 
 	rc = cifsd_export_init();
 	if (rc)
@@ -862,7 +796,6 @@ err2:
 #endif
 	cifsd_export_exit();
 err1:
-	smb_free_mempools();
 	cifsd_destroy_buffer_pools();
 	return rc;
 }
@@ -880,7 +813,6 @@ static void __exit exit_smb_server(void)
 #endif
 	cifsd_export_exit();
 	destroy_lease_table(NULL);
-	smb_free_mempools();
 	cifsd_destroy_buffer_pools();
 #ifdef CONFIG_CIFSD_ACL
 	exit_cifsd_idmap();

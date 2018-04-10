@@ -26,6 +26,8 @@ void *cifsd_alloc_request(size_t size);
 void cifsd_free_response(void *buffer);
 void *cifsd_alloc_response(size_t size);
 
+void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz);
+
 struct smb_work *cifsd_alloc_work_struct(void);
 void cifsd_free_work_struct(struct smb_work *work);
 
