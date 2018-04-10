@@ -37,8 +37,6 @@
 bool global_signing;
 unsigned long server_start_time;
 
-struct kmem_cache *cifsd_filp_cache;
-
 struct kmem_cache *cifsd_req_cachep;
 mempool_t *cifsd_req_poolp;
 struct kmem_cache *cifsd_sm_req_cachep;
@@ -866,8 +864,6 @@ static void smb_free_mempools(void)
 
 	mempool_destroy(cifsd_sm_rsp_poolp);
 	kmem_cache_destroy(cifsd_sm_rsp_cachep);
-
-	kmem_cache_destroy(cifsd_filp_cache);
 }
 
 /**
@@ -934,13 +930,6 @@ static int smb_initialize_mempool(void)
 
 	if (cifsd_rsp_poolp == NULL)
 		goto error_out;
-
-	cifsd_filp_cache = kmem_cache_create("cifsd_file_cache",
-					sizeof(struct cifsd_file), 0,
-					SLAB_HWCACHE_ALIGN, NULL);
-	if (cifsd_filp_cache == NULL)
-		goto error_out;
-
 	return 0;
 
 error_out:
