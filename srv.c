@@ -561,7 +561,7 @@ static int tcp_sess_kthread(void *p)
 	while (!kthread_should_stop()) {
 		if (conn->tcp_status == CifsExiting)
 			break;
-		if (conn_unresponsive(conn))
+		if (!cifsd_tcp_conn_alive(conn))
 			break;
 
 		if (try_to_freeze())
@@ -570,7 +570,7 @@ static int tcp_sess_kthread(void *p)
 		cifsd_free_request(conn->request_buf);
 		conn->request_buf = NULL;
 
-		size = cifsd_read_from_socket(conn, hdr_buf, sizeof(hdr_buf));
+		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
 		if (size != sizeof(hdr_buf)) {
 			/* 7 seconds passed. It should be break */
 			break;
@@ -600,9 +600,7 @@ static int tcp_sess_kthread(void *p)
 		 * We already read 4 bytes to find out PDU size, now
 		 * read in PDU
 		 */
-		size = cifsd_read_from_socket(conn,
-					      conn->request_buf + 4,
-					      pdu_size);
+		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
 		if (size < 0) {
 			cifsd_err("sock_read failed: %d\n", size);
 			continue;
@@ -785,7 +783,7 @@ static void __exit exit_smb_server(void)
 {
 	cifsd_net_exit();
 
-	cifsd_stop_forker_thread();
+	cifsd_tcp_destroy();
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	destroy_global_fidtable();
 #endif

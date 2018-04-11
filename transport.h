@@ -129,21 +129,18 @@ struct cifsd_tcp_conn {
 	char				*mechToken;
 };
 
-bool conn_unresponsive(struct cifsd_tcp_conn *conn);
+bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn);
 
-int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
-			    struct kvec *iov_orig, unsigned int nr_segs,
-			    unsigned int to_read);
+int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
+		    struct kvec *iov_orig, unsigned int nr_segs,
+		    unsigned int to_read);
 
-int cifsd_read_from_socket(struct cifsd_tcp_conn *conn,
-			   char *buf,
-			   unsigned int to_read);
+int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
+		   char *buf,
+		   unsigned int to_read);
 
-int cifsd_create_socket(__u32 cifsd_pid);
+void cifsd_tcp_stop_kthread(void);
 
-void terminate_old_forker_thread(void);
-
-void cifsd_stop_forker_thread(void);
-void cifsd_close_socket(void);
-
+void cifsd_tcp_destroy(void);
+int cifsd_tcp_init(__u32 cifsd_pid);
 #endif /* __CIFSD_TRANSPORT_H__ */

@@ -374,7 +374,7 @@ static int cifsd_init_connection(struct nlmsghdr *nlh)
 			err = -EPERM;
 		}
 	} else {
-		terminate_old_forker_thread();
+		cifsd_tcp_stop_kthread();
 		pid = nlh->nlmsg_pid; /*pid of sending process */
 	}
 
@@ -722,13 +722,13 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		err = cifsd_init_connection(nlh);
 		if (!err) {
 			/* No old cifsd task exists */
-			err = cifsd_create_socket(nlh->nlmsg_pid);
+			err = cifsd_tcp_init(nlh->nlmsg_pid);
 			if (err)
 				cifsd_err("unable to open SMB PORT\n");
 		}
 		break;
 	case CIFSD_UEVENT_EXIT_CONNECTION:
-		cifsd_close_socket();
+		cifsd_tcp_destroy();
 		err = cifsd_exit_connection(nlh);
 		break;
 	case CIFSD_UEVENT_READ_PIPE_RSP:

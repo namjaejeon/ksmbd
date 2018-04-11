@@ -167,30 +167,30 @@ static int cifsd_start_forker_thread(struct cifsd_pid_info *cifsd_pid_info)
 }
 
 /**
- * conn_unresponsive() - check server is unresponsive or not
+ * cifsd_tcp_conn_alive() - check server is unresponsive or not
  * @conn:     TCP server instance of connection
  *
  * Return:	true if server unresponsive, otherwise  false
  */
-bool conn_unresponsive(struct cifsd_tcp_conn *conn)
+bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 {
 	if (conn->stats.open_files_count > 0)
-		return false;
+		return true;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
 	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
 		cifsd_debug("No response from client in 120 secs\n");
-		return true;
+		return false;
 	}
-	return false;
+	return true;
 #else
-	return false;
+	return true;
 #endif
 }
 
 /**
- * cifsd_readv_from_socket() - read data from socket in given iovec
+ * cifsd_tcp_readv() - read data from socket in given iovec
  * @conn:     TCP server instance of connection
  * @iov_orig:	base IO vector
  * @nr_segs:	number of segments in base iov
@@ -199,9 +199,9 @@ bool conn_unresponsive(struct cifsd_tcp_conn *conn)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
-			      struct kvec *iov_orig, unsigned int nr_segs,
-			      unsigned int to_read)
+int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
+		    struct kvec *iov_orig, unsigned int nr_segs,
+		    unsigned int to_read)
 {
 	int length = 0;
 	int total_read;
@@ -219,7 +219,7 @@ int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
 	for (total_read = 0; to_read; total_read += length, to_read -= length) {
 		try_to_freeze();
 
-		if (conn_unresponsive(conn)) {
+		if (!cifsd_tcp_conn_alive(conn)) {
 			total_read = -EAGAIN;
 			break;
 		}
@@ -250,7 +250,7 @@ int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
 }
 
 /**
- * cifsd_readv_from_socket() - read data from socket in given buffer
+ * cifsd_tcp_read() - read data from socket in given buffer
  * @conn:     TCP server instance of connection
  * @buf:	buffer to store read data from socket
  * @to_read:	number of bytes to read from socket
@@ -258,23 +258,24 @@ int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_read_from_socket(struct cifsd_tcp_conn *conn, char *buf,
-			     unsigned int to_read)
+int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
+		   char *buf,
+		   unsigned int to_read)
 {
 	struct kvec iov;
 
 	iov.iov_base = buf;
 	iov.iov_len = to_read;
 
-	return cifsd_readv_from_socket(conn, &iov, 1, to_read);
+	return cifsd_tcp_readv(conn, &iov, 1, to_read);
 }
 
 /**
- * cifsd_create_socket - create socket for kcifsd/0
+ * cifsd_tcp_init - create socket for kcifsd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-int cifsd_create_socket(__u32 cifsd_pid)
+int cifsd_tcp_init(__u32 cifsd_pid)
 {
 	int ret;
 	struct socket *socket = NULL;
@@ -346,18 +347,12 @@ release:
 	return ret;
 }
 
-void terminate_old_forker_thread(void)
-{
-	if (cifsd_forkerd)
-		cifsd_stop_forker_thread();
-}
-
 /**
- * cifsd_stop_forker_thread() - stop forker thread
+ * cifsd_tcp_stop_kthread() - stop forker thread
  *
  * stop forker thread(cifsd_forkerd) at module exit time
  */
-void cifsd_stop_forker_thread(void)
+void cifsd_tcp_stop_kthread(void)
 {
 	int ret;
 
@@ -370,7 +365,7 @@ void cifsd_stop_forker_thread(void)
 	cifsd_forkerd = NULL;
 }
 
-static int cifsd_stop_tcp_sess(void)
+static int cifsd_tcp_stop_session(void)
 {
 	int ret;
 	int err = 0;
@@ -388,15 +383,15 @@ static int cifsd_stop_tcp_sess(void)
 	return err;
 }
 
-void cifsd_close_socket(void)
+void cifsd_tcp_destroy(void)
 {
 	int ret;
 
 	cifsd_debug("closing SMB PORT and releasing socket\n");
 	deny_new_conn = 1;
-	ret = cifsd_stop_tcp_sess();
+	ret = cifsd_tcp_stop_session();
 	if (!ret) {
-		cifsd_stop_forker_thread();
+		cifsd_tcp_stop_kthread();
 		cifsd_debug("SMB PORT closed\n");
 	}
 }
