@@ -16,9 +16,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#include "export.h"
 #include "glob.h"
-#include "smb1pdu.h"
+#include "export.h"
 
 #include "buffer_pool.h"
 #include "transport.h"
@@ -379,7 +378,7 @@ int cifsd_tcp_init(__u32 cifsd_pid)
 	cifsd_debug("socket created\n");
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = PF_INET;
-	sin.sin_port = htons(SMB_PORT);
+	sin.sin_port = htons(CIFSD_SERVER_PORT);
 
 	ret = kernel_setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
 			(char *)&opt, sizeof(opt));

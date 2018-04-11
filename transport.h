@@ -28,6 +28,8 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
+#define CIFSD_SERVER_PORT		445
+
 #define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 
 /*
