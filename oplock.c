@@ -393,7 +393,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp->ShareMaskHint = 0;
 
 	inc_rfc1001_len(rsp, 44);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
@@ -1301,7 +1301,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	req->ByteCount = 0;
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
@@ -1389,7 +1389,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);

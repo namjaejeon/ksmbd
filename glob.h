@@ -630,7 +630,6 @@ extern int E_P24(unsigned char *p21, const unsigned char *c8,
 		unsigned char *p24);
 extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
-extern int smb_send_rsp(struct smb_work *smb_work);
 
 /* trans2 functions */
 int query_fs_info(struct smb_work *smb_work);

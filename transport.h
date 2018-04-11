@@ -138,6 +138,8 @@ int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   char *buf,
 		   unsigned int to_read);
+struct smb_work;
+int cifsd_tcp_write(struct smb_work *work);
 
 void cifsd_tcp_stop_kthread(void);
 

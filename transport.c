@@ -271,6 +271,94 @@ int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 }
 
 /**
+ * cifsd_tcp_write() - send smb response over network socket
+ * @smb_work:     smb work containing response buffer
+ *
+ * TODO: change this function for smb2 currently is working for
+ * smb1/smb2 both as smb*_buf_length is at beginning of the  packet
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_tcp_write(struct smb_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct socket *sock = conn->sock;
+	struct kvec iov;
+	struct msghdr smb_msg = {};
+	int len, total_len = 0;
+	int val = 1;
+
+	spin_lock(&conn->request_lock);
+	if (work->added_in_request_list && !work->multiRsp) {
+		list_del_init(&work->request_entry);
+		work->added_in_request_list = 0;
+		if (work->async) {
+			remove_async_id(work->async->async_id);
+			kfree(work->async);
+		}
+	}
+	spin_unlock(&conn->request_lock);
+
+	if (rsp_hdr == NULL) {
+		cifsd_err("NULL response header\n");
+		return -ENOMEM;
+	}
+
+	if (!HAS_AUX_PAYLOAD(work)) {
+		iov.iov_len = get_rfc1002_length(rsp_hdr) + 4;
+		iov.iov_base = rsp_hdr;
+
+		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
+		if (len < 0) {
+			cifsd_err("err1 %d while sending data\n", len);
+			goto out;
+		}
+		total_len = len;
+	} else {
+		/* cork the socket */
+		kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+				(char *)&val, sizeof(val));
+
+		/* write read smb header on socket*/
+		iov.iov_base = rsp_hdr;
+		iov.iov_len = AUX_PAYLOAD_HDR_SIZE(work);
+
+		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
+		if (len < 0) {
+			cifsd_err("err2 %d while sending data\n", len);
+			goto uncork;
+		}
+		total_len = len;
+
+		/* write data read from file on socket*/
+		iov.iov_base = AUX_PAYLOAD(work);
+		iov.iov_len = AUX_PAYLOAD_SIZE(work);
+		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
+		if (len < 0) {
+			cifsd_err("err3 %d while sending data\n", len);
+			goto uncork;
+		}
+		total_len += len;
+
+uncork:
+		/* uncork it */
+		val = 0;
+		kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+				(char *)&val, sizeof(val));
+	}
+
+	if (total_len != get_rfc1002_length(rsp_hdr) + 4)
+		cifsd_err("transfered %d, expected %d bytes\n",
+				total_len, get_rfc1002_length(rsp_hdr) + 4);
+
+out:
+	cifsd_debug("data sent = %d\n", total_len);
+
+	return 0;
+}
+
+/**
  * cifsd_tcp_init - create socket for kcifsd/0
  *
  * Return:	Returns a task_struct or ERR_PTR

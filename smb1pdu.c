@@ -3059,7 +3059,7 @@ int smb_echo(struct smb_work *smb_work)
 	for (i = 1; i < le16_to_cpu(req->EchoCount) &&
 	     !smb_work->send_no_response; i++) {
 		rsp->SequenceNumber = cpu_to_le16(i);
-		smb_send_rsp(smb_work);
+		cifsd_tcp_write(smb_work);
 	}
 
 	/* Last echo response */

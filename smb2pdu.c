@@ -840,7 +840,7 @@ void smb2_send_interim_resp(struct smb_work *smb_work)
 	smb2_set_err_rsp(smb_work);
 	rsp_hdr->Status = NT_STATUS_PENDING;
 	smb_work->multiRsp = 1;
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	smb_work->multiRsp = 0;
 
 	init_smb2_rsp_hdr(smb_work);
@@ -7132,7 +7132,7 @@ int smb2_notify(struct smb_work *smb_work)
 			&(work->sess->inotify_res->file_notify_info[0]),
 			sizeof(struct FileNotifyInformation) + NAME_MAX);
 		inc_rfc1001_len(rsp_org, 8 + rsp->OutputBufferLength);
-		smb_send_rsp(work);
+		cifsd_tcp_write(work);
 		kfree(path_buf);
 		kfree(work->sess->inotify_res);
 	}
