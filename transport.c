@@ -405,7 +405,7 @@ int cifsd_tcp_init(__u32 cifsd_pid)
 	socket->sk->sk_rcvtimeo = 7 * HZ;
 	socket->sk->sk_sndtimeo = 5 * HZ;
 
-	ret = socket->ops->listen(socket, 64);
+	ret = socket->ops->listen(socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
 		cifsd_err("port listen failure(%d)\n", ret);
 		goto release;
