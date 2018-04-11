@@ -352,64 +352,6 @@ static int queue_smb_work(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-/**
- * init_tcp_conn() - intialize tcp server thread for a new connection
- * @conn:     TCP server instance of connection
- * @sock:	socket associated with new connection
- *
- * Return:	0 on success, otherwise -ENOMEM
- */
-static int init_tcp_conn(struct cifsd_tcp_conn *conn, struct socket *sock)
-{
-	int rc = 0;
-
-	init_smb1_server(conn);
-
-	conn->need_neg = true;
-	conn->srv_count = 1;
-	conn->sess_count = 0;
-	conn->tcp_status = CIFSD_SESS_NEW;
-	conn->sock = sock;
-	conn->local_nls = load_nls_default();
-	atomic_set(&conn->req_running, 0);
-	atomic_set(&conn->r_count, 0);
-	conn->max_credits = 0;
-	conn->credits_granted = 0;
-	init_waitqueue_head(&conn->req_running_q);
-	INIT_LIST_HEAD(&conn->tcp_sess);
-	INIT_LIST_HEAD(&conn->cifsd_sess);
-	INIT_LIST_HEAD(&conn->requests);
-	INIT_LIST_HEAD(&conn->async_requests);
-	spin_lock_init(&conn->request_lock);
-	conn->srv_cap = 0;
-	spin_lock(&tcp_sess_list_lock);
-	list_add(&conn->tcp_sess, &tcp_sess_list);
-	spin_unlock(&tcp_sess_list_lock);
-
-	return rc;
-}
-
-/**
- * conn_cleanup() - shutdown/release the socket and free server resources
- * @conn:	 - server instance for which socket is to be cleaned
- *
- * During the thread termination, the corresponding conn instance
- * resources(sock/memory) are released and finally the conn object is freed.
- */
-static void conn_cleanup(struct cifsd_tcp_conn *conn)
-{
-	ida_simple_remove(&cifsd_ida, conn->th_id);
-	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
-	sock_release(conn->sock);
-	conn->sock = NULL;
-
-	cifsd_free_request(conn->request_buf);
-
-	list_del(&conn->list);
-	destroy_lease_table(conn);
-	kfree(conn);
-}
-
 static void free_channel_list(struct cifsd_sess *sess)
 {
 	struct channel *chann;
@@ -552,7 +494,10 @@ static int tcp_sess_kthread(void *p)
 		}
 	}
 
-	conn_cleanup(conn);
+	ida_simple_remove(&cifsd_ida, conn->th_id);
+	destroy_lease_table(conn);
+
+	cifsd_tcp_conn_free(conn);
 	module_put(THIS_MODULE);
 
 	cifsd_debug("%s: exiting\n", current->comm);
@@ -589,11 +534,13 @@ int connect_tcp_sess(struct socket *sock)
 		return -EINVAL;
 	}
 #endif
-	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
+	conn = cifsd_tcp_conn_alloc(sock);
 	if (conn == NULL) {
 		rc = -ENOMEM;
 		goto out;
 	}
+
+	init_smb1_server(conn);
 
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pI4",
 			&(((const struct sockaddr_in *)csin)->sin_addr));
@@ -601,17 +548,14 @@ int connect_tcp_sess(struct socket *sock)
 
 	conn->family = ((const struct sockaddr_in *)csin)->sin_family;
 
-	rc = init_tcp_conn(conn, sock);
-	if (rc) {
-		cifsd_err("cannot init tcp conn\n");
-		kfree(conn);
-		goto out;
-	}
+	spin_lock(&tcp_sess_list_lock);
+	list_add(&conn->tcp_sess, &tcp_sess_list);
+	spin_unlock(&tcp_sess_list_lock);
 
 	conn->th_id = ida_simple_get(&cifsd_ida, 1, 0, GFP_KERNEL);
 	if (conn->th_id < 0) {
 		cifsd_err("ida_simple_get failed: %d\n", conn->th_id);
-		kfree(conn);
+		cifsd_tcp_conn_free(conn);
 		goto out;
 	}
 
@@ -625,7 +569,7 @@ int connect_tcp_sess(struct socket *sock)
 		list_del(&conn->tcp_sess);
 		spin_unlock(&tcp_sess_list_lock);
 		rc = PTR_ERR(conn->handler);
-		kfree(conn);
+		cifsd_tcp_conn_free(conn);
 	}
 
 out:

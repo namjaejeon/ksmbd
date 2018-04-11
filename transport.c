@@ -20,6 +20,7 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
+#include "buffer_pool.h"
 #include "transport.h"
 
 struct task_struct *cifsd_forkerd;
@@ -482,4 +483,61 @@ void cifsd_tcp_destroy(void)
 		cifsd_tcp_stop_kthread();
 		cifsd_debug("SMB PORT closed\n");
 	}
+}
+
+/**
+ * cifsd_tcp_conn_free() - shutdown/release the socket and free server
+ *                         resources
+ * @conn: - server instance for which socket is to be cleaned
+ *
+ * During the thread termination, the corresponding conn instance
+ * resources(sock/memory) are released and finally the conn object is freed.
+ */
+void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
+{
+	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
+	sock_release(conn->sock);
+	conn->sock = NULL;
+
+	cifsd_free_request(conn->request_buf);
+
+	list_del(&conn->list);
+	kfree(conn);
+}
+
+/**
+ * init_tcp_conn() - intialize tcp server thread for a new connection
+ * @conn:     TCP server instance of connection
+ * @sock:	socket associated with new connection
+ *
+ * Return:	0 on success, otherwise -ENOMEM
+ */
+struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
+{
+	struct cifsd_tcp_conn *conn;
+
+	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
+	if (!conn)
+		return NULL;
+
+
+	conn->need_neg = true;
+	conn->srv_count = 1;
+	conn->sess_count = 0;
+	conn->tcp_status = CIFSD_SESS_NEW;
+	conn->sock = sock;
+	conn->local_nls = load_nls_default();
+	atomic_set(&conn->req_running, 0);
+	atomic_set(&conn->r_count, 0);
+	conn->max_credits = 0;
+	conn->credits_granted = 0;
+	init_waitqueue_head(&conn->req_running_q);
+	INIT_LIST_HEAD(&conn->tcp_sess);
+	INIT_LIST_HEAD(&conn->cifsd_sess);
+	INIT_LIST_HEAD(&conn->requests);
+	INIT_LIST_HEAD(&conn->async_requests);
+	spin_lock_init(&conn->request_lock);
+	conn->srv_cap = 0;
+
+	return conn;
 }

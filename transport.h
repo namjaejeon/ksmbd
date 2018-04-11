@@ -144,6 +144,9 @@ struct cifsd_tcp_conn {
 	char				*mechToken;
 };
 
+struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock);
+void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn);
+
 bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn);
 
 int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
