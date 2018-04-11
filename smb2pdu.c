@@ -320,7 +320,7 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(smb_work);
 
-	WARN_ON(conn->tcp_status == CifsGood);
+	WARN_ON(cifsd_tcp_good(smb_work));
 
 	rsp->StructureSize = cpu_to_le16(65);
 	rsp->SecurityMode = 0;
@@ -343,7 +343,7 @@ void init_smb2_neg_rsp(struct smb_work *smb_work)
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = 0;
 	inc_rfc1001_len(rsp, 65);
-	conn->tcp_status = CifsNeedNegotiate;
+	cifsd_tcp_set_need_negotiate(smb_work);
 	rsp->hdr.CreditRequest = cpu_to_le16(2);
 }
 
@@ -638,7 +638,7 @@ int smb2_check_user_session(struct smb_work *smb_work)
 			cmd == SMB2_SESSION_SETUP)
 		return 0;
 
-	if (conn->tcp_status != CifsGood) {
+	if (!cifsd_tcp_good(smb_work)) {
 		if (conn->sess_count) {
 			struct cifsd_sess *sess;
 			struct list_head *tmp, *t;
@@ -1026,7 +1026,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(smb_work);
 
 	conn->need_neg = false;
-	if (conn->tcp_status == CifsGood) {
+	if (cifsd_tcp_good(smb_work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		smb_work->send_no_response = 1;
 		return rc;
@@ -1135,7 +1135,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 	}
 
 	conn->srv_sec_mode = rsp->SecurityMode;
-	conn->tcp_status = CifsNeedNegotiate;
+	cifsd_tcp_set_need_negotiate(smb_work);
 
 err_out:
 	if (rc < 0)
@@ -1485,7 +1485,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 			inc_rfc1001_len(rsp, rsp->SecurityBufferLength);
 		}
 
-		conn->tcp_status = CifsGood;
+		cifsd_tcp_set_good(smb_work);
 		sess->state = SMB2_SESSION_VALID;
 		smb_work->sess = sess;
 	} else {
@@ -1759,7 +1759,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	WARN_ON(sess->conn != conn || conn->sess_count != 1);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	conn->tcp_status = CifsNeedReconnect;
+	cifsd_tcp_set_need_reconnect(smb_work);
 
 	destroy_fidtable(sess);
 
@@ -1794,7 +1794,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	sess->user = NULL;
 
 	/* let start_tcp_sess free connection info now */
-	conn->tcp_status = CifsNeedNegotiate;
+	cifsd_tcp_set_need_negotiate(smb_work);
 	return 0;
 }
 

@@ -30,12 +30,19 @@
 
 #define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 
-enum cifsd_tcp_conn_status {
-	CifsNew = 0,
-	CifsGood,
-	CifsExiting,
-	CifsNeedReconnect,
-	CifsNeedNegotiate
+/*
+ * WARNING
+ *
+ * This is nothing but a HACK. Session status should move to channel
+ * or to session. As of now we have 1 tcp_conn : 1 cifsd_session, but
+ * we need to change it to 1 tcp_conn : N cifsd_sessions.
+ */
+enum {
+	CIFSD_SESS_NEW = 0,
+	CIFSD_SESS_GOOD,
+	CIFSD_SESS_EXITING,
+	CIFSD_SESS_NEED_RECONNECT,
+	CIFSD_SESS_NEED_NEGOTIATE
 };
 
 /* crypto hashing related structure/fields, not specific to a sec mech */
@@ -65,7 +72,7 @@ struct cifsd_tcp_conn {
 	unsigned int			max_cmds;
 	char				*hostname;
 	struct mutex			srv_mutex;
-	enum cifsd_tcp_conn_status	tcp_status;
+	int				tcp_status;
 	unsigned int			maxReq;
 	unsigned int			cli_cap;
 	unsigned int			srv_cap;
@@ -153,4 +160,50 @@ void cifsd_tcp_stop_kthread(void);
 
 void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(__u32 cifsd_pid);
+
+/*
+ * WARNING
+ *
+ * This is a hack. We will move status to a proper place once we land
+ * a multi-sessions support.
+ */
+static inline bool cifsd_tcp_good(struct smb_work *work)
+{
+	return work->conn->tcp_status == CIFSD_SESS_GOOD;
+}
+
+static inline bool cifsd_tcp_need_negotiate(struct smb_work *work)
+{
+	return work->conn->tcp_status == CIFSD_SESS_NEED_NEGOTIATE;
+}
+
+static inline bool cifsd_tcp_need_reconnect(struct smb_work *work)
+{
+	return work->conn->tcp_status == CIFSD_SESS_NEED_RECONNECT;
+}
+
+static inline bool cifsd_tcp_exiting(struct smb_work *work)
+{
+	return work->conn->tcp_status == CIFSD_SESS_EXITING;
+}
+
+static inline void cifsd_tcp_set_good(struct smb_work *work)
+{
+	work->conn->tcp_status = CIFSD_SESS_GOOD;
+}
+
+static inline void cifsd_tcp_set_need_negotiate(struct smb_work *work)
+{
+	work->conn->tcp_status = CIFSD_SESS_NEED_NEGOTIATE;
+}
+
+static inline void cifsd_tcp_set_need_reconnect(struct smb_work *work)
+{
+	work->conn->tcp_status = CIFSD_SESS_NEED_RECONNECT;
+}
+
+static inline void cifsd_tcp_set_exiting(struct smb_work *work)
+{
+	work->conn->tcp_status = CIFSD_SESS_EXITING;
+}
 #endif /* __CIFSD_TRANSPORT_H__ */

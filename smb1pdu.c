@@ -208,7 +208,7 @@ int init_smb_rsp_hdr(struct smb_work *smb_work)
 	rsp_hdr->WordCount = 0;
 
 	/* verfiy if TID and UID are correct */
-	if (conn->tcp_status == CifsGood && rcv_hdr->Uid != conn->vuid &&
+	if (cifsd_tcp_good(smb_work) && rcv_hdr->Uid != conn->vuid &&
 			rcv_hdr->Command != SMB_COM_ECHO) {
 		cifsd_err("wrong Uid sent by client\n");
 		return -EINVAL;
@@ -350,7 +350,7 @@ int smb_check_user_session(struct smb_work *smb_work)
 	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
 		return 0;
 
-	if (conn->tcp_status != CifsGood)
+	if (!cifsd_tcp_good(smb_work))
 		return -EINVAL;
 
 	if (conn->sess_count == 0) {
@@ -432,7 +432,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	conn->tcp_status = CifsNeedReconnect;
+	cifsd_tcp_set_need_reconnect(smb_work);
 
 	put_cifsd_user(sess->user);
 	sess->user = NULL;
@@ -464,7 +464,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	conn->sess_count--;
 	/* let start_tcp_sess free conn info now */
-	conn->tcp_status = CifsExiting;
+	cifsd_tcp_set_exiting(smb_work);
 	return 0;
 }
 
@@ -705,8 +705,8 @@ out_err1:
 	}
 
 	/* Clean session if there is no tree attached */
-	if (!sess ||  !sess->tcon_count)
-		conn->tcp_status = CifsExiting;
+	if (!sess || !sess->tcon_count)
+		cifsd_tcp_set_exiting(smb_work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
 	return rc;
 }
@@ -806,7 +806,7 @@ int smb_negotiate(struct smb_work *smb_work)
 #endif
 
 	WARN_ON(neg_req->hdr.WordCount);
-	WARN_ON(conn->tcp_status == CifsGood);
+	WARN_ON(cifsd_tcp_good(smb_work));
 
 	conn->dialect = negotiate_dialect(REQUEST_BUF(smb_work));
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
@@ -861,7 +861,7 @@ int smb_negotiate(struct smb_work *smb_work)
 
 	/* Adjust pdu length, 17 words and 8 bytes added */
 	inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
-	conn->tcp_status = CifsNeedNegotiate;
+	cifsd_tcp_set_need_negotiate(smb_work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later */
 	return 0;
@@ -887,7 +887,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 	/* This triggers with cifs client. cifs client needs fixing */
 	WARN_ON(req_hdr->WordCount != 13);
-	WARN_ON(conn->tcp_status != CifsNeedNegotiate);
+	WARN_ON(!cifsd_tcp_need_negotiate(smb_work));
 
 	/* check if valid user name is present in request or not */
 	offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
@@ -1013,7 +1013,7 @@ no_password_check:
 	rsp_hdr->Uid = user_smb1_vuid(sess->user);
 	conn->vuid = user_smb1_vuid(sess->user);
 
-	conn->tcp_status = CifsGood;
+	cifsd_tcp_set_good(smb_work);
 
 	/* this is an ANDx command ? */
 	if (pSMB->req_no_secext.AndXCommand == SMB_NO_MORE_ANDX_COMMAND) {

@@ -228,10 +228,10 @@ int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
 				iov, segs, to_read, 0);
-		if (conn->tcp_status == CifsExiting) {
+		if (conn->tcp_status == CIFSD_SESS_EXITING) {
 			total_read = -ESHUTDOWN;
 			break;
-		} else if (conn->tcp_status == CifsNeedReconnect) {
+		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS ||
@@ -460,7 +460,7 @@ static int cifsd_tcp_stop_session(void)
 	struct cifsd_tcp_conn *conn, *tmp;
 
 	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
-		conn->tcp_status = CifsExiting;
+		conn->tcp_status = CIFSD_SESS_EXITING;
 		ret = kthread_stop(conn->handler);
 		if (ret) {
 			cifsd_err("failed to stop server thread\n");

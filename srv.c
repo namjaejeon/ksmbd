@@ -105,11 +105,9 @@ out:
  */
 static inline int check_conn_state(struct smb_work *smb_work)
 {
-	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 
-	if (conn->tcp_status == CifsExiting ||
-			conn->tcp_status == CifsNeedReconnect) {
+	if (cifsd_tcp_exiting(smb_work) || cifsd_tcp_need_reconnect(smb_work)) {
 		rsp_hdr = RESPONSE_BUF(smb_work);
 		rsp_hdr->Status.CifsError = NT_STATUS_CONNECTION_DISCONNECTED;
 		return 1;
@@ -278,9 +276,6 @@ send:
 	cifsd_tcp_write(smb_work);
 
 nosend:
-	/* free buffers */
-	free_workitem_buffers(smb_work);
-
 	if (cifsd_debug_enable) {
 		end_time = jiffies;
 
@@ -295,8 +290,11 @@ nosend:
 			conn->stats.max_timed_request = time_elapsed;
 	}
 
-	if (conn->tcp_status == CifsExiting)
+	if (cifsd_tcp_exiting(smb_work))
 		force_sig(SIGKILL, conn->handler);
+
+	/* free buffers */
+	free_workitem_buffers(smb_work);
 
 	mutex_unlock(&conn->srv_mutex);
 	atomic_dec(&conn->req_running);
@@ -370,7 +368,7 @@ static int init_tcp_conn(struct cifsd_tcp_conn *conn, struct socket *sock)
 	conn->need_neg = true;
 	conn->srv_count = 1;
 	conn->sess_count = 0;
-	conn->tcp_status = CifsNew;
+	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls_default();
 	atomic_set(&conn->req_running, 0);
@@ -471,7 +469,7 @@ static int tcp_sess_kthread(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop()) {
-		if (conn->tcp_status == CifsExiting)
+		if (conn->tcp_status == CIFSD_SESS_EXITING)
 			break;
 		if (!cifsd_tcp_conn_alive(conn))
 			break;
