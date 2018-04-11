@@ -37,11 +37,6 @@
 bool global_signing;
 unsigned long server_start_time;
 
-struct kmem_cache *cifsd_sm_rsp_cachep;
-mempool_t *cifsd_sm_rsp_poolp;
-struct kmem_cache *cifsd_rsp_cachep;
-mempool_t *cifsd_rsp_poolp;
-
 unsigned int smb_min_rcv = CIFS_MIN_RCV_POOL;
 unsigned int cifs_min_send = CIFS_MIN_RCV_POOL;
 unsigned int smb_min_small = 30;
