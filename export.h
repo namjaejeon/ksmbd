@@ -31,9 +31,6 @@
 #include "smb2pdu.h"
 #endif
 
-#define SMB_PORT		445
-#define MAX_CONNECTIONS		64
-
 extern int cifsd_debug_enable;
 
 /* Global list containing exported points */

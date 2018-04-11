@@ -22,7 +22,7 @@
 #include "buffer_pool.h"
 #include "transport.h"
 
-struct task_struct *cifsd_forkerd;
+static struct task_struct *cifsd_kthread;
 
 static int deny_new_conn;
 
@@ -89,7 +89,7 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-static int cifsd_do_fork(void *p)
+static int cifsd_kthread_fn(void *p)
 {
 	struct cifsd_pid_info *cifsd_pid_info = (struct cifsd_pid_info *)p;
 	struct socket *socket = cifsd_pid_info->socket;
@@ -135,13 +135,13 @@ static int cifsd_do_fork(void *p)
 
 	sock_release(socket);
 	kfree(cifsd_pid_info);
-	cifsd_forkerd = NULL;
+	cifsd_kthread = NULL;
 
 	return 0;
 }
 
 /**
- * cifsd_start_forker_thread() - start forker thread
+ * cifsd_create_cifsd_kthread() - start forker thread
  *
  * start forker thread(kcifsd/0) at module init time to listen
  * on port 445 for new SMB connection requests. It creates per connection
@@ -151,15 +151,17 @@ static int cifsd_do_fork(void *p)
  *	socket pointer members
  * Return:	0 on success or error number
  */
-static int cifsd_start_forker_thread(struct cifsd_pid_info *cifsd_pid_info)
+static int cifsd_tcp_run_kthread(struct cifsd_pid_info *cifsd_pid_info)
 {
 	int rc;
 
 	deny_new_conn = 0;
-	cifsd_forkerd = kthread_run(cifsd_do_fork, cifsd_pid_info, "kcifsd/0");
-	if (IS_ERR(cifsd_forkerd)) {
-		rc = PTR_ERR(cifsd_forkerd);
-		cifsd_forkerd = NULL;
+	cifsd_kthread = kthread_run(cifsd_kthread_fn,
+				    cifsd_pid_info,
+				    "kcifsd_main");
+	if (IS_ERR(cifsd_kthread)) {
+		rc = PTR_ERR(cifsd_kthread);
+		cifsd_kthread = NULL;
 		return rc;
 	}
 
@@ -416,7 +418,7 @@ int cifsd_tcp_init(__u32 cifsd_pid)
 	cifsd_pid_info->socket = socket;
 	cifsd_pid_info->cifsd_pid = cifsd_pid;
 
-	ret = cifsd_start_forker_thread(cifsd_pid_info);
+	ret = cifsd_tcp_run_kthread(cifsd_pid_info);
 	if (ret) {
 		cifsd_err("failed to run forker thread(%d)\n", ret);
 		goto release;
@@ -438,22 +440,22 @@ release:
 /**
  * cifsd_tcp_stop_kthread() - stop forker thread
  *
- * stop forker thread(cifsd_forkerd) at module exit time
+ * stop forker thread(cifsd_kthread) at module exit time
  */
 void cifsd_tcp_stop_kthread(void)
 {
 	int ret;
 
-	if (cifsd_forkerd) {
-		ret = kthread_stop(cifsd_forkerd);
+	if (cifsd_kthread) {
+		ret = kthread_stop(cifsd_kthread);
 		if (ret)
 			cifsd_err("failed to stop forker thread\n");
 	}
 
-	cifsd_forkerd = NULL;
+	cifsd_kthread = NULL;
 }
 
-static int cifsd_tcp_stop_session(void)
+static int cifsd_tcp_stop_sessions(void)
 {
 	int ret;
 	int err = 0;
@@ -477,7 +479,7 @@ void cifsd_tcp_destroy(void)
 
 	cifsd_debug("closing SMB PORT and releasing socket\n");
 	deny_new_conn = 1;
-	ret = cifsd_tcp_stop_session();
+	ret = cifsd_tcp_stop_sessions();
 	if (!ret) {
 		cifsd_tcp_stop_kthread();
 		cifsd_debug("SMB PORT closed\n");
@@ -518,7 +520,6 @@ struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
 	if (!conn)
 		return NULL;
-
 
 	conn->need_neg = true;
 	conn->srv_count = 1;
