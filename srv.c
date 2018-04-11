@@ -33,6 +33,7 @@
 #endif
 
 #include "buffer_pool.h"
+#include "transport.h"
 
 bool global_signing;
 unsigned long server_start_time;
@@ -721,24 +722,6 @@ int connect_tcp_sess(struct socket *sock)
 
 out:
 	return rc;
-}
-
-int cifsd_stop_tcp_sess(void)
-{
-	int ret;
-	int err = 0;
-	struct cifsd_tcp_conn *conn, *tmp;
-
-	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
-		conn->tcp_status = CifsExiting;
-		ret = kthread_stop(conn->handler);
-		if (ret) {
-			cifsd_err("failed to stop server thread\n");
-			err = ret;
-		}
-	}
-
-	return err;
 }
 
 /**

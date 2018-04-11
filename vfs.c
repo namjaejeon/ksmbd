@@ -35,6 +35,7 @@
 #include "export.h"
 #include "glob.h"
 #include "oplock.h"
+#include "transport.h"
 
 /**
  * smb_vfs_create() - vfs helper for smb create file

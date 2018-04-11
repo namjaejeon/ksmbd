@@ -25,6 +25,8 @@
 #include "export.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 /* max string size for share and parameters */
 #define SHARE_MAX_NAME_LEN	100
 /* max string size data, ex- path, usernames, servernames etc */

@@ -1,8 +1,5 @@
 /*
- *   fs/cifsd/connect.c
- *
  *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -23,9 +20,12 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 struct task_struct *cifsd_forkerd;
 
 static int deny_new_conn;
+
 /**
  * kvec_array_init() - initialize a IO vector segment
  * @new:	IO vector to be intialized
@@ -81,6 +81,89 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 		conn->nr_iov = nr_segs;
 	}
 	return new_iov;
+}
+
+/**
+ * cifsd_do_fork() - forker thread to listen new SMB connection
+ * @p:		arguments to forker thread
+ *
+ * Return:	Returns a task_struct or ERR_PTR
+ */
+static int cifsd_do_fork(void *p)
+{
+	struct cifsd_pid_info *cifsd_pid_info = (struct cifsd_pid_info *)p;
+	struct socket *socket = cifsd_pid_info->socket;
+	__u32 cifsd_pid = cifsd_pid_info->cifsd_pid;
+	struct task_struct *cifsd_task;
+	int ret;
+	struct socket *newsock = NULL;
+
+	while (!kthread_should_stop()) {
+		if (deny_new_conn)
+			continue;
+
+		rcu_read_lock();
+		cifsd_task = pid_task(find_vpid(cifsd_pid), PIDTYPE_PID);
+		rcu_read_unlock();
+		if (cifsd_task) {
+			if (strncmp(cifsd_task->comm, "cifsd", 5)) {
+				cifsd_err("cifsd is not alive\n");
+				break;
+			}
+		} else {
+			cifsd_err("cifsd is not alive\n");
+			break;
+		}
+
+		ret = kernel_accept(socket, &newsock, O_NONBLOCK);
+		if (ret) {
+			if (ret == -EAGAIN)
+				/* check for new connections every 100 msecs */
+				schedule_timeout_interruptible(HZ/10);
+		} else {
+			cifsd_debug("connect success: accepted new connection\n");
+			newsock->sk->sk_rcvtimeo = 7 * HZ;
+			newsock->sk->sk_sndtimeo = 5 * HZ;
+			/* request for new connection */
+			connect_tcp_sess(newsock);
+		}
+	}
+	cifsd_debug("releasing socket\n");
+	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
+	if (ret)
+		cifsd_err("failed to shutdown socket cleanly\n");
+
+	sock_release(socket);
+	kfree(cifsd_pid_info);
+	cifsd_forkerd = NULL;
+
+	return 0;
+}
+
+/**
+ * cifsd_start_forker_thread() - start forker thread
+ *
+ * start forker thread(kcifsd/0) at module init time to listen
+ * on port 445 for new SMB connection requests. It creates per connection
+ * server threads(kcifsd/x)
+ *
+ * @cifsd_pid_info:	struct pointer which has cifsd's pid and
+ *	socket pointer members
+ * Return:	0 on success or error number
+ */
+static int cifsd_start_forker_thread(struct cifsd_pid_info *cifsd_pid_info)
+{
+	int rc;
+
+	deny_new_conn = 0;
+	cifsd_forkerd = kthread_run(cifsd_do_fork, cifsd_pid_info, "kcifsd/0");
+	if (IS_ERR(cifsd_forkerd)) {
+		rc = PTR_ERR(cifsd_forkerd);
+		cifsd_forkerd = NULL;
+		return rc;
+	}
+
+	return 0;
 }
 
 /**
@@ -263,93 +346,10 @@ release:
 	return ret;
 }
 
-/**
- * cifsd_do_fork() - forker thread to listen new SMB connection
- * @p:		arguments to forker thread
- *
- * Return:	Returns a task_struct or ERR_PTR
- */
-static int cifsd_do_fork(void *p)
-{
-	struct cifsd_pid_info *cifsd_pid_info = (struct cifsd_pid_info *)p;
-	struct socket *socket = cifsd_pid_info->socket;
-	__u32 cifsd_pid = cifsd_pid_info->cifsd_pid;
-	struct task_struct *cifsd_task;
-	int ret;
-	struct socket *newsock = NULL;
-
-	while (!kthread_should_stop()) {
-		if (deny_new_conn)
-			continue;
-
-		rcu_read_lock();
-		cifsd_task = pid_task(find_vpid(cifsd_pid), PIDTYPE_PID);
-		rcu_read_unlock();
-		if (cifsd_task) {
-			if (strncmp(cifsd_task->comm, "cifsd", 5)) {
-				cifsd_err("cifsd is not alive\n");
-				break;
-			}
-		} else {
-			cifsd_err("cifsd is not alive\n");
-			break;
-		}
-
-		ret = kernel_accept(socket, &newsock, O_NONBLOCK);
-		if (ret) {
-			if (ret == -EAGAIN)
-				/* check for new connections every 100 msecs */
-				schedule_timeout_interruptible(HZ/10);
-		} else {
-			cifsd_debug("connect success: accepted new connection\n");
-			newsock->sk->sk_rcvtimeo = 7 * HZ;
-			newsock->sk->sk_sndtimeo = 5 * HZ;
-			/* request for new connection */
-			connect_tcp_sess(newsock);
-		}
-	}
-	cifsd_debug("releasing socket\n");
-	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
-	if (ret)
-		cifsd_err("failed to shutdown socket cleanly\n");
-
-	sock_release(socket);
-	kfree(cifsd_pid_info);
-	cifsd_forkerd = NULL;
-
-	return 0;
-}
-
 void terminate_old_forker_thread(void)
 {
 	if (cifsd_forkerd)
 		cifsd_stop_forker_thread();
-}
-
-/**
- * cifsd_start_forker_thread() - start forker thread
- *
- * start forker thread(kcifsd/0) at module init time to listen
- * on port 445 for new SMB connection requests. It creates per connection
- * server threads(kcifsd/x)
- *
- * @cifsd_pid_info:	struct pointer which has cifsd's pid and
- *	socket pointer members
- * Return:	0 on success or error number
- */
-int cifsd_start_forker_thread(struct cifsd_pid_info *cifsd_pid_info)
-{
-	int rc;
-
-	deny_new_conn = 0;
-	cifsd_forkerd = kthread_run(cifsd_do_fork, cifsd_pid_info, "kcifsd/0");
-	if (IS_ERR(cifsd_forkerd)) {
-		rc = PTR_ERR(cifsd_forkerd);
-		cifsd_forkerd = NULL;
-		return rc;
-	}
-
-	return 0;
 }
 
 /**
@@ -368,6 +368,24 @@ void cifsd_stop_forker_thread(void)
 	}
 
 	cifsd_forkerd = NULL;
+}
+
+static int cifsd_stop_tcp_sess(void)
+{
+	int ret;
+	int err = 0;
+	struct cifsd_tcp_conn *conn, *tmp;
+
+	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
+		conn->tcp_status = CifsExiting;
+		ret = kthread_stop(conn->handler);
+		if (ret) {
+			cifsd_err("failed to stop server thread\n");
+			err = ret;
+		}
+	}
+
+	return err;
 }
 
 void cifsd_close_socket(void)

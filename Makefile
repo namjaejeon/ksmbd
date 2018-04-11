@@ -1,6 +1,6 @@
 obj-$(CONFIG_CIFS_SERVER) += cifsd.o
 
-cifsd-y := 	export.o connect.o srv.o unicode.o encrypt.o auth.o \
+cifsd-y := 	export.o transport.o srv.o unicode.o encrypt.o auth.o \
 		fh.o vfs.o misc.o smb1pdu.o smb1ops.o oplock.o netmisc.o \
 		netlink.o cifsacl.o management/user.o\
 		buffer_pool.o

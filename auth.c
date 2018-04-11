@@ -29,6 +29,8 @@
 #include "glob.h"
 #include "export.h"
 
+#include "transport.h"
+
 /* Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
  * So sec blob data in neg phase could be generated statically.

@@ -26,6 +26,8 @@
 #include "glob.h"
 #include "export.h"
 
+#include "transport.h"
+
 /*****************************************************************************
  *
  * Basic ASN.1 decoding routines (gxsnmp author Dirk Wisse)

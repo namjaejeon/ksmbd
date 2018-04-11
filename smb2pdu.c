@@ -32,6 +32,7 @@
 #include "cifsacl.h"
 
 #include "buffer_pool.h"
+#include "transport.h"
 
 bool multi_channel_enable;
 

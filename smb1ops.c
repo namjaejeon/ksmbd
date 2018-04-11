@@ -23,6 +23,8 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,
 	.protocol_id = SMB10_PROT_ID,

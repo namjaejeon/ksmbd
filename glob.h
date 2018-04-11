@@ -36,7 +36,6 @@
 #include <linux/string.h>
 #include <linux/kthread.h>
 #include <linux/module.h>
-#include <linux/mempool.h>
 #include <linux/freezer.h>
 #include <linux/workqueue.h>
 #include <linux/ctype.h>
@@ -306,20 +305,6 @@ struct ntlmssp_auth {
 	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
-/* crypto hashing related structure/fields, not specific to a sec mech */
-struct cifs_secmech {
-	struct crypto_shash *hmacmd5; /* hmac-md5 hash function */
-	struct crypto_shash *md5; /* md5 hash function */
-	struct crypto_shash *hmacsha256; /* hmac-sha256 hash function */
-	struct crypto_shash *cmacaes; /* block-cipher based MAC function */
-	struct crypto_shash *sha512; /* sha512 hash function */
-	struct sdesc *sdeschmacmd5;  /* ctxt to generate ntlmv2 hash, CR1 */
-	struct sdesc *sdescmd5; /* ctxt to generate cifs/smb signature */
-	struct sdesc *sdeschmacsha256;  /* ctxt to generate smb2 signature */
-	struct sdesc *sdesccmacaes;  /* ctxt to generate smb3 signature */
-	struct sdesc *sdescsha512;  /* ctxt to generate preauth integrity */
-};
-
 struct channel {
 	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
 	struct cifsd_tcp_conn *conn;
@@ -330,91 +315,6 @@ struct preauth_session {
 	int SessionId;
 	int HashId;
 	int HashValue;
-};
-
-struct cifsd_tcp_conn {
-	struct socket			*sock;
-	unsigned short			family;
-	/* Reference counter */
-	int				srv_count;
-	/* The number of sessions attached with this connection */
-	int				sess_count;
-	struct smb_version_values	*vals;
-	struct smb_version_ops		*ops;
-	struct smb_version_cmds		*cmds;
-	unsigned int			max_cmds;
-	char				*hostname;
-	struct mutex			srv_mutex;
-	enum statusEnum			tcp_status;
-	unsigned int			maxReq;
-	unsigned int			cli_cap;
-	unsigned int			srv_cap;
-	struct kvec			*iov;
-	unsigned int			nr_iov;
-	void 				*request_buf;
-	struct nls_table		*local_nls;
-	unsigned int			total_read;
-	/* This session will become part of global tcp session list */
-	struct list_head		tcp_sess;
-	/* smb session 1 per user */
-	struct list_head		cifsd_sess;
-	struct task_struct		*handler;
-	int				th_id;
-	int				num_files_open;
-	unsigned long			last_active;
-	struct timespec			create_time;
-	/* pending trans request table */
-	struct trans_state		*recent_trans;
-	struct list_head		trans_list;
-	/* How many request are running currently */
-	atomic_t			req_running;
-	/* References which are made for this Server object*/
-	atomic_t			r_count;
-	wait_queue_head_t		req_running_q;
-	/* Lock to protect requests list*/
-	spinlock_t			request_lock;
-	struct list_head		requests;
-	struct list_head		async_requests;
-	int				max_credits;
-	int				credits_granted;
-	char				peeraddr[MAX_ADDRBUFLEN];
-	int				connection_type;
-	struct cifsd_stats		stats;
-	struct list_head		list;
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-#endif
-	struct cifs_secmech		secmech;
-	/* Used by ntlmssp */
-	char				ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE];
-
-	/* PreAuth integrity Hash ID */
-	int				Preauth_HashId;
-	/* PreAuth integrity Hash Value */
-	__u8				Preauth_HashValue[64];
-	int				CipherId;
-
-	/* PreAuthSession Table */
-	struct list_head		p_sess_table;
-	/* Supports NTLMSSP */
-	bool				sec_ntlmssp;
-	/* Supports U2U Kerberos */
-	bool				sec_kerberosu2u;
-	/* Supports plain Kerberos */
-	bool				sec_kerberos;
-	/* Supports legacy MS Kerberos */
-	bool				sec_mskerberos;
-	bool				sign;
-	bool				need_neg;
-	bool				oplocks:1;
-	bool				use_spnego:1;
-	__le16				vuid;
-	__u16				cli_sec_mode;
-	__u16				srv_sec_mode;
-	/* dialect index that server chose */
-	__u16				dialect;
-
-	char				*mechToken;
 };
 
 enum asyncEnum {
@@ -434,6 +334,8 @@ struct async_info {
 
 #define SYNC 1
 #define ASYNC 2
+
+struct cifsd_tcp_conn;
 
 /* one of these for every pending CIFS request at the connection */
 struct smb_work {
@@ -591,7 +493,6 @@ inc_rfc1001_len(void *buf, int count)
 
 /* misc functions */
 #define NTFS_TIME_OFFSET ((u64)(369*365 + 89) * 24 * 3600 * 10000000)
-#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 #define UNICODE_LEN(x)	((x) * 2)
 
 /* Convert the Unix UTC into NT UTC. */
@@ -628,15 +529,6 @@ int get_nlink(struct kstat *st);
 /* cifsd export functions */
 extern int cifsd_export_init(void);
 extern void cifsd_export_exit(void);
-
-/* cifsd connect functions */
-extern void terminate_old_forker_thread(void);
-extern int cifsd_create_socket(__u32 cifsd_pid);
-extern int cifsd_start_forker_thread(struct cifsd_pid_info *cisfd_pid_info);
-extern void cifsd_stop_forker_thread(void);
-
-extern void cifsd_close_socket(void);
-extern int cifsd_stop_tcp_sess(void);
 
 /* cifsd misc functions */
 extern int check_smb_message(char *buf);
@@ -729,8 +621,6 @@ extern int is_smb2_rsp(struct smb_work *smb_work);
 /* functions */
 extern void smb_delete_session(struct cifsd_sess *sess);
 extern int connect_tcp_sess(struct socket *sock);
-extern int cifsd_read_from_socket(struct cifsd_tcp_conn *conn, char *buf,
-		unsigned int to_read);
 
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
@@ -741,7 +631,6 @@ extern int E_P24(unsigned char *p21, const unsigned char *c8,
 extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int smb_send_rsp(struct smb_work *smb_work);
-bool conn_unresponsive(struct cifsd_tcp_conn *conn);
 
 /* trans2 functions */
 int query_fs_info(struct smb_work *smb_work);
