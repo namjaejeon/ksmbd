@@ -251,14 +251,6 @@ extern struct list_head global_lock_list;
 #define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
 #define XATTR_NAME_SD_DACL_LEN	(sizeof(XATTR_NAME_SD_DACL) - 1)
 
-enum statusEnum {
-	CifsNew = 0,
-	CifsGood,
-	CifsExiting,
-	CifsNeedReconnect,
-	CifsNeedNegotiate
-};
-
 /* crypto security descriptor definition */
 struct sdesc {
 	struct shash_desc shash;

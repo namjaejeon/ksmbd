@@ -30,6 +30,14 @@
 
 #define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 
+enum cifsd_tcp_conn_status {
+	CifsNew = 0,
+	CifsGood,
+	CifsExiting,
+	CifsNeedReconnect,
+	CifsNeedNegotiate
+};
+
 /* crypto hashing related structure/fields, not specific to a sec mech */
 struct cifsd_secmech {
 	struct crypto_shash *hmacmd5; /* hmac-md5 hash function */
@@ -57,7 +65,7 @@ struct cifsd_tcp_conn {
 	unsigned int			max_cmds;
 	char				*hostname;
 	struct mutex			srv_mutex;
-	enum statusEnum			tcp_status;
+	enum cifsd_tcp_conn_status	tcp_status;
 	unsigned int			maxReq;
 	unsigned int			cli_cap;
 	unsigned int			srv_cap;
