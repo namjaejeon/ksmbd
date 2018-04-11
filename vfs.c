@@ -122,16 +122,17 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 /**
  * smb_vfs_read() - vfs helper for smb file read
- * @sess:	session
+ * @work:	smb work
  * @fid:	file id of open file
- * @buf:	buf containing read data
  * @count:	read byte count
  * @pos:	file pos
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
-	char **buf, size_t count, loff_t *pos)
+int smb_vfs_read(struct smb_work *work,
+		 struct cifsd_file *fp,
+		 size_t count,
+		 loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
@@ -143,51 +144,35 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 	mm_segment_t old_fs;
 #endif
 
+	rbuf = AUX_PAYLOAD(work);
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
-	if (S_ISDIR(inode->i_mode)) {
-		nbytes = -EISDIR;
-		goto out;
-	}
+	if (S_ISDIR(inode->i_mode))
+		return -EISDIR;
 
 	if (unlikely(count == 0))
-		goto out;
+		return 0;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (sess->conn->connection_type) {
+	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
-			nbytes = -EACCES;
-			goto out;
+			return -EACCES;
 		}
 	}
 #endif
 
-	rbuf = alloc_data_mem(count);
-	if (!rbuf) {
-		nbytes = -ENOMEM;
-		goto out;
-	}
-
-	if (fp->is_stream) {
-		nbytes = smb_vfs_stream_read(fp, rbuf, pos, count);
-		if (nbytes < 0)
-			kvfree(rbuf);
-		else
-			*buf = rbuf;
-		goto out;
-	}
+	if (fp->is_stream)
+		return smb_vfs_stream_read(fp, rbuf, pos, count);
 
 	ret = check_lock_range(filp, *pos, *pos + count - 1,
 			READ);
 	if (ret) {
 		cifsd_err("%s: unable to read due to lock\n",
 				__func__);
-		kvfree(rbuf);
-		nbytes = -EAGAIN;
-		goto out;
+		return -EAGAIN;
 	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
@@ -205,13 +190,10 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 			name = "(error)";
 		cifsd_err("smb read failed for (%s), err = %zd\n",
 				name, nbytes);
-		kvfree(rbuf);
-	} else {
-		*buf = rbuf;
-		filp->f_pos = *pos;
+		return nbytes;
 	}
 
-out:
+	filp->f_pos = *pos;
 	return nbytes;
 }
 
