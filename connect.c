@@ -65,7 +65,7 @@ static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
  *
  * Return:	return existing or newly allocate iovec
  */
-static struct kvec *get_conn_iovec(struct connection *conn,
+static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 				     unsigned int nr_segs)
 {
 	struct kvec *new_iov;
@@ -89,7 +89,7 @@ static struct kvec *get_conn_iovec(struct connection *conn,
  *
  * Return:	true if server unresponsive, otherwise  false
  */
-bool conn_unresponsive(struct connection *conn)
+bool conn_unresponsive(struct cifsd_tcp_conn *conn)
 {
 	if (conn->stats.open_files_count > 0)
 		return false;
@@ -116,7 +116,7 @@ bool conn_unresponsive(struct connection *conn)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_readv_from_socket(struct connection *conn,
+int cifsd_readv_from_socket(struct cifsd_tcp_conn *conn,
 			      struct kvec *iov_orig, unsigned int nr_segs,
 			      unsigned int to_read)
 {
@@ -175,7 +175,7 @@ int cifsd_readv_from_socket(struct connection *conn,
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_read_from_socket(struct connection *conn, char *buf,
+int cifsd_read_from_socket(struct cifsd_tcp_conn *conn, char *buf,
 			     unsigned int to_read)
 {
 	struct kvec iov;

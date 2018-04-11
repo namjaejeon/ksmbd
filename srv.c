@@ -107,7 +107,7 @@ out:
  */
 int smb_send_rsp(struct smb_work *work)
 {
-	struct connection *conn = work->conn;
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
 	struct socket *sock = conn->sock;
 	struct kvec iov;
@@ -192,7 +192,7 @@ out:
  */
 static inline int check_conn_state(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 
 	if (conn->tcp_status == CifsExiting ||
@@ -227,7 +227,7 @@ static void free_workitem_buffers(struct smb_work *smb_work)
 static void handle_smb_work(struct work_struct *work)
 {
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	unsigned int command = 0;
 	int rc;
 	bool conn_valid = false;
@@ -405,7 +405,7 @@ nosend:
  *
  * read remaining data from socket create and submit work.
  */
-static int queue_smb_work(struct connection *conn)
+static int queue_smb_work(struct cifsd_tcp_conn *conn)
 {
 	struct smb_work *work;
 
@@ -448,7 +448,7 @@ static int queue_smb_work(struct connection *conn)
  *
  * Return:	0 on success, otherwise -ENOMEM
  */
-static int init_tcp_conn(struct connection *conn, struct socket *sock)
+static int init_tcp_conn(struct cifsd_tcp_conn *conn, struct socket *sock)
 {
 	int rc = 0;
 
@@ -485,7 +485,7 @@ static int init_tcp_conn(struct connection *conn, struct socket *sock)
  * During the thread termination, the corresponding conn instance
  * resources(sock/memory) are released and finally the conn object is freed.
  */
-static void conn_cleanup(struct connection *conn)
+static void conn_cleanup(struct cifsd_tcp_conn *conn)
 {
 	ida_simple_remove(&cifsd_ida, conn->th_id);
 	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
@@ -547,7 +547,7 @@ static size_t get_header_size(void)
  */
 static int tcp_sess_kthread(void *p)
 {
-	struct connection *conn = (struct connection *)p;
+	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
 	unsigned int pdu_size;
 	char hdr_buf[4] = {0,};
 	int size;
@@ -666,7 +666,7 @@ int connect_tcp_sess(struct socket *sock)
 	struct sockaddr_storage caddr;
 	struct sockaddr *csin = (struct sockaddr *)&caddr;
 	int rc = 0;
-	struct connection *conn;
+	struct cifsd_tcp_conn *conn;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
 	if (kernel_getpeername(sock, csin) < 0) {
 		cifsd_err("client ip resolution failed\n");
@@ -680,7 +680,7 @@ int connect_tcp_sess(struct socket *sock)
 		return -EINVAL;
 	}
 #endif
-	conn = kzalloc(sizeof(struct connection), GFP_KERNEL);
+	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
 	if (conn == NULL) {
 		rc = -ENOMEM;
 		goto out;
@@ -727,7 +727,7 @@ int cifsd_stop_tcp_sess(void)
 {
 	int ret;
 	int err = 0;
-	struct connection *conn, *tmp;
+	struct cifsd_tcp_conn *conn, *tmp;
 
 	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
 		conn->tcp_status = CifsExiting;

@@ -46,7 +46,7 @@ char NEGOTIATE_GSS_HEADER[GSS_LENGTH] =  {
 	0x72, 0x65
 };
 
-static int crypto_md5_alloc(struct connection *conn)
+static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -77,7 +77,7 @@ static int crypto_md5_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_hmacmd5_alloc(struct connection *conn)
+static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -567,7 +567,7 @@ out:
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
-static int crypto_hmacsha256_alloc(struct connection *conn)
+static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -598,7 +598,7 @@ static int crypto_hmacsha256_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_cmac_alloc(struct connection *conn)
+static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -629,7 +629,7 @@ static int crypto_cmac_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_sha512_alloc(struct connection *conn)
+static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -862,7 +862,7 @@ smb3signkey_ret:
 	return rc;
 }
 
-int calc_preauth_integrity_hash(struct connection *conn, char *buf,
+int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
 	__u8 *pi_hash)
 {
 	int rc = -1;

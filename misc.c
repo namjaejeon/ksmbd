@@ -147,7 +147,7 @@ int check_smb_message(char *buf)
  */
 void add_request_to_queue(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct list_head *requests_queue = NULL;
 	struct smb2_hdr *hdr = REQUEST_BUF(smb_work);
 
@@ -223,7 +223,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct connection *conn)
+bool is_smb_request(struct cifsd_tcp_conn *conn)
 {
 	int type = *(char *)conn->request_buf;
 
@@ -359,7 +359,7 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_sess *lookup_session_on_server(struct connection *conn,
+struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
 		uint64_t sess_id)
 {
 	struct cifsd_sess *sess;
@@ -398,11 +398,11 @@ struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
 }
 
 #ifndef CONFIG_CIFS_SMB2_SERVER
-void init_smb2_0_server(struct connection *server) { }
-void init_smb2_1_server(struct connection *server) { }
-void init_smb3_0_server(struct connection *server) { }
-void init_smb3_02_server(struct connection *server) { }
-void init_smb3_11_server(struct connection *server) { }
+void init_smb2_0_server(struct cifsd_tcp_conn *server) { }
+void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_02_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_11_server(struct cifsd_tcp_conn *server) { }
 int is_smb2_neg_cmd(struct smb_work *smb_work)
 {
 	return 0;

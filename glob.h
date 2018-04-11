@@ -322,7 +322,7 @@ struct cifs_secmech {
 
 struct channel {
 	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	struct connection *conn;
+	struct cifsd_tcp_conn *conn;
 	struct list_head chann_list;
 };
 
@@ -332,7 +332,7 @@ struct preauth_session {
 	int HashValue;
 };
 
-struct connection {
+struct cifsd_tcp_conn {
 	struct socket			*sock;
 	unsigned short			family;
 	/* Reference counter */
@@ -438,7 +438,7 @@ struct async_info {
 /* one of these for every pending CIFS request at the connection */
 struct smb_work {
 	/* Server corresponding to this mid */
-	struct connection		*conn;
+	struct cifsd_tcp_conn		*conn;
 	/* List head at conn->requests */
 	struct list_head		request_entry;
 
@@ -619,9 +619,9 @@ char *
 smb_get_name(const char *src, const int maxlen, struct smb_work *smb_work,
 	bool converted);
 void smb_put_name(void *name);
-bool is_smb_request(struct connection *conn);
+bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
-struct cifsd_sess *lookup_session_on_server(struct connection *conn,
+struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
 		uint64_t sess_id);
 int get_nlink(struct kstat *st);
 
@@ -702,7 +702,7 @@ int check_lock_range(struct file *filp, loff_t start,
 		loff_t end, unsigned char type);
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *buf);
-int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
 	loff_t len);
 int smb_vfs_truncate_xattr(struct dentry *dentry);
 int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
@@ -713,14 +713,14 @@ void get_smb2_sector_size(struct inode *inode,
 	struct smb2_fs_sector_size *fs_ss);
 
 /* smb1ops functions */
-extern void init_smb1_server(struct connection *conn);
+extern void init_smb1_server(struct cifsd_tcp_conn *conn);
 
 /* smb2ops functions */
-extern void init_smb2_0_server(struct connection *conn);
-extern void init_smb2_1_server(struct connection *conn);
-extern void init_smb3_0_server(struct connection *conn);
-extern void init_smb3_02_server(struct connection *conn);
-extern void init_smb3_11_server(struct connection *conn);
+extern void init_smb2_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb2_1_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_02_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_11_server(struct cifsd_tcp_conn *conn);
 extern int is_smb2_neg_cmd(struct smb_work *smb_work);
 extern bool is_chained_smb2_message(struct smb_work *smb_work);
 extern void init_smb2_neg_rsp(struct smb_work *smb_work);
@@ -729,7 +729,7 @@ extern int is_smb2_rsp(struct smb_work *smb_work);
 /* functions */
 extern void smb_delete_session(struct cifsd_sess *sess);
 extern int connect_tcp_sess(struct socket *sock);
-extern int cifsd_read_from_socket(struct connection *conn, char *buf,
+extern int cifsd_read_from_socket(struct cifsd_tcp_conn *conn, char *buf,
 		unsigned int to_read);
 
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
@@ -741,7 +741,7 @@ extern int E_P24(unsigned char *p21, const unsigned char *c8,
 extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int smb_send_rsp(struct smb_work *smb_work);
-bool conn_unresponsive(struct connection *conn);
+bool conn_unresponsive(struct cifsd_tcp_conn *conn);
 
 /* trans2 functions */
 int query_fs_info(struct smb_work *smb_work);
@@ -757,7 +757,7 @@ int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 int smb_filldir(void *__buf, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
 #endif
-int smb_get_shortname(struct connection *conn, char *longname,
+int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname);
 char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,
 		struct smb_dirent *de, char *dpath);
@@ -771,10 +771,10 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment, bool no_namelen_field);
-int smb_populate_dot_dotdot_entries(struct connection *conn,
+int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct connection *,
+		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
 		int, struct cifsd_dir_info *, struct smb_kstat *));
 
 /* netlink functions */
@@ -791,9 +791,9 @@ int cifsd_kthread_stop_status(int etype);
 
 /* asn1 functions */
 extern int cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
-		struct connection *conn);
+		struct cifsd_tcp_conn *conn);
 extern int decode_negTokenTarg(unsigned char *security_blob, int length,
-		struct connection *conn);
+		struct cifsd_tcp_conn *conn);
 extern int build_spnego_ntlmssp_neg_blob(unsigned char **pbuffer, u16 *buflen,
 		char *ntlm_blob, int ntlm_blob_len);
 extern int build_spnego_ntlmssp_auth_blob(unsigned char **pbuffer, u16 *buflen,

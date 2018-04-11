@@ -348,7 +348,7 @@ compare_oid(unsigned long *oid1, unsigned int oid1len,
 
 int
 cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
-		    struct connection *conn)
+		    struct cifsd_tcp_conn *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
@@ -503,7 +503,7 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 
 int
 decode_negTokenTarg(unsigned char *security_blob, int length,
-		    struct connection *conn)
+		    struct cifsd_tcp_conn *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
