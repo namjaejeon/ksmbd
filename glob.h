@@ -57,10 +57,6 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
-#define CIFS_MIN_RCV_POOL 4
-extern unsigned int smb_min_rcv;
-extern unsigned int smb_min_small;
-
 extern int cifsd_debug_enable;
 extern int cifsd_caseless_search;
 extern bool oplocks_enable;

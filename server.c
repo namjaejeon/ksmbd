@@ -34,10 +34,6 @@
 bool global_signing;
 unsigned long server_start_time;
 
-unsigned int smb_min_rcv = CIFS_MIN_RCV_POOL;
-unsigned int cifs_min_send = CIFS_MIN_RCV_POOL;
-unsigned int smb_min_small = 30;
-
 /*
  * keep MaxBufSize Default: 65536
  * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
