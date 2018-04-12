@@ -162,8 +162,6 @@ int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 struct smb_work;
 int cifsd_tcp_write(struct smb_work *work);
 
-void cifsd_tcp_stop_kthread(void);
-
 void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(void);
 

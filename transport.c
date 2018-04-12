@@ -428,33 +428,6 @@ out_error:
 	return ret;
 }
 
-static void __cifsd_tcp_stop_kthread(void)
-{
-	int ret;
-
-	tcp_destroy_socket();
-
-	if (!cifsd_kthread)
-		return;
-
-	ret = kthread_stop(cifsd_kthread);
-	if (ret)
-		cifsd_err("failed to stop forker thread\n");
-	cifsd_kthread = NULL;
-}
-
-/**
- * cifsd_tcp_stop_kthread() - stop forker thread
- *
- * stop forker thread(cifsd_kthread) at module exit time
- */
-void cifsd_tcp_stop_kthread(void)
-{
-	mutex_lock(&init_lock);
-	__cifsd_tcp_stop_kthread();
-	mutex_unlock(&init_lock);
-}
-
 static int tcp_stop_sessions(void)
 {
 	int ret;
@@ -473,18 +446,27 @@ static int tcp_stop_sessions(void)
 	return err;
 }
 
-void cifsd_tcp_destroy(void)
+static void tcp_stop_kthread(void)
 {
 	int ret;
 
+	if (!cifsd_kthread)
+		return;
+
+	ret = kthread_stop(cifsd_kthread);
+	if (ret)
+		cifsd_err("failed to stop forker thread\n");
+	cifsd_kthread = NULL;
+}
+
+void cifsd_tcp_destroy(void)
+{
 	mutex_lock(&init_lock);
-	cifsd_debug("closing SMB PORT and releasing socket\n");
 	deny_new_conn = 1;
-	ret = tcp_stop_sessions();
-	if (!ret) {
-		__cifsd_tcp_stop_kthread();
-		cifsd_debug("SMB PORT closed\n");
-	}
+
+	tcp_stop_sessions();
+	tcp_destroy_socket();
+	tcp_stop_kthread();
 	mutex_unlock(&init_lock);
 }
 
