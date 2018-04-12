@@ -1,8 +1,5 @@
 /*
- *   fs/cifsd/srv.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  *
  *   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -19,7 +16,6 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#include <linux/idr.h>
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
@@ -571,7 +567,7 @@ static void __exit exit_smb_server(void)
 }
 
 MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
-MODULE_DESCRIPTION("In-Kernel CIFS/SMB SERVER");
+MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 module_init(init_smb_server)
 module_exit(exit_smb_server)
