@@ -26,6 +26,7 @@
 #include "glob.h"
 #include "export.h"
 #include "netlink.h"
+#include "transport.h"
 
 #define NETLINK_CIFSD			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
@@ -269,28 +270,6 @@ int cifsd_sendmsg_notify(struct cifsd_sess *sess,
 	return rc;
 }
 
-static int cifsd_terminate_user_process(int new_cifsd_pid)
-{
-	struct cifsd_uevent *ev;
-	struct nlmsghdr *nlh;
-	struct sk_buff *skb;
-	int rc;
-	int len = nlmsg_total_size(sizeof(*ev)+sizeof(rc));
-
-	skb = alloc_skb(len, GFP_KERNEL);
-	if (unlikely(!skb)) {
-		cifsd_err("Failed to allocate\n");
-		return -ENOMEM;
-	}
-	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
-	nlh = __nlmsg_put(skb, 0, 0, CFISD_KEVENT_USER_DAEMON_EXIST,
-		(len - sizeof(*nlh)), 0);
-	ev = nlmsg_data(nlh);
-	ev->buflen = sizeof(rc);
-	rc = nlmsg_unicast(cifsd_nlsk, skb, new_cifsd_pid);
-	return 0;
-}
-
 /** cifsd_early_init() - handler for cifsd early init
  *		initialize pid
  * @nlh:       netlink message header
@@ -360,23 +339,9 @@ out:
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
 	int err = 0;
-	struct task_struct *cifsd_task;
 
 	cifsd_debug("init connection\n");
-
-	rcu_read_lock();
-	cifsd_task = pid_task(find_vpid(pid), PIDTYPE_PID);
-	rcu_read_unlock();
-	if (cifsd_task) {
-		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {
-			cifsd_terminate_user_process(nlh->nlmsg_pid);
-			err = -EPERM;
-		}
-	} else {
-		terminate_old_forker_thread();
-		pid = nlh->nlmsg_pid; /*pid of sending process */
-	}
-
+	pid = nlh->nlmsg_pid; /*pid of sending process */
 	return err;
 }
 
@@ -721,13 +686,13 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		err = cifsd_init_connection(nlh);
 		if (!err) {
 			/* No old cifsd task exists */
-			err = cifsd_create_socket(nlh->nlmsg_pid);
+			err = cifsd_tcp_init();
 			if (err)
 				cifsd_err("unable to open SMB PORT\n");
 		}
 		break;
 	case CIFSD_UEVENT_EXIT_CONNECTION:
-		cifsd_close_socket();
+		cifsd_tcp_destroy();
 		err = cifsd_exit_connection(nlh);
 		break;
 	case CIFSD_UEVENT_READ_PIPE_RSP:

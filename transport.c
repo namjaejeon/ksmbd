@@ -1,0 +1,672 @@
+/*
+ *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
+ *
+ *   This program is free software; you can redistribute it and/or modify
+ *   it under the terms of the GNU General Public License as published by
+ *   the Free Software Foundation; either version 2 of the License, or
+ *   (at your option) any later version.
+ *
+ *   This program is distributed in the hope that it will be useful,
+ *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *   GNU General Public License for more details.
+ *
+ *   You should have received a copy of the GNU General Public License
+ *   along with this program; if not, write to the Free Software
+ *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ */
+
+#include <linux/mutex.h>
+
+#include "glob.h"
+#include "export.h"
+
+#include "buffer_pool.h"
+#include "transport.h"
+
+static struct task_struct *cifsd_kthread;
+static struct socket *cifsd_socket = NULL;
+static struct cifsd_tcp_conn_ops default_tcp_conn_ops;
+
+static DEFINE_MUTEX(init_lock);
+
+static LIST_HEAD(tcp_conn_list);
+static DEFINE_SPINLOCK(tcp_conn_list_lock);
+
+static int deny_new_conn;
+
+/**
+ * cifsd_tcp_conn_alive() - check server is unresponsive or not
+ * @conn:     TCP server instance of connection
+ *
+ * Return:	true if server unresponsive, otherwise  false
+ */
+static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
+{
+	if (conn->stats.open_files_count > 0)
+		return true;
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
+		cifsd_debug("No response from client in 120 secs\n");
+		return false;
+	}
+	return true;
+#else
+	return true;
+#endif
+}
+
+/**
+ * cifsd_tcp_conn_free() - shutdown/release the socket and free server
+ *                         resources
+ * @conn: - server instance for which socket is to be cleaned
+ *
+ * During the thread termination, the corresponding conn instance
+ * resources(sock/memory) are released and finally the conn object is freed.
+ */
+static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
+{
+	spin_lock(&tcp_conn_list_lock);
+	list_del(&conn->tcp_sess);
+	spin_unlock(&tcp_conn_list_lock);
+
+	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
+	sock_release(conn->sock);
+	conn->sock = NULL;
+
+	cifsd_free_request(conn->request_buf);
+
+	list_del(&conn->list);
+	kfree(conn);
+}
+
+/**
+ * cifsd_tcp_conn_alloc() - intialize tcp server thread for a new connection
+ * @conn:     TCP server instance of connection
+ * @sock:	socket associated with new connection
+ *
+ * Return:	0 on success, otherwise -ENOMEM
+ */
+static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
+{
+	struct cifsd_tcp_conn *conn;
+
+	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
+	if (!conn)
+		return NULL;
+
+	conn->need_neg = true;
+	conn->srv_count = 1;
+	conn->sess_count = 0;
+	conn->tcp_status = CIFSD_SESS_NEW;
+	conn->sock = sock;
+	conn->local_nls = load_nls_default();
+	atomic_set(&conn->req_running, 0);
+	atomic_set(&conn->r_count, 0);
+	conn->max_credits = 0;
+	conn->credits_granted = 0;
+	init_waitqueue_head(&conn->req_running_q);
+	INIT_LIST_HEAD(&conn->tcp_sess);
+	INIT_LIST_HEAD(&conn->cifsd_sess);
+	INIT_LIST_HEAD(&conn->requests);
+	INIT_LIST_HEAD(&conn->async_requests);
+	spin_lock_init(&conn->request_lock);
+	conn->srv_cap = 0;
+
+	spin_lock(&tcp_conn_list_lock);
+	list_add(&conn->tcp_sess, &tcp_conn_list);
+	spin_unlock(&tcp_conn_list_lock);
+	return conn;
+}
+
+/**
+ * kvec_array_init() - initialize a IO vector segment
+ * @new:	IO vector to be intialized
+ * @iov:	base IO vector
+ * @nr_segs:	number of segments in base iov
+ * @bytes:	total iovec length so far for read
+ *
+ * Return:	Number of IO segments
+ */
+static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
+				    unsigned int nr_segs, size_t bytes)
+{
+	size_t base = 0;
+
+	while (bytes || !iov->iov_len) {
+		int copy = min(bytes, iov->iov_len);
+
+		bytes -= copy;
+		base += copy;
+		if (iov->iov_len == base) {
+			iov++;
+			nr_segs--;
+			base = 0;
+		}
+	}
+
+	memcpy(new, iov, sizeof(*iov) * nr_segs);
+	new->iov_base += base;
+	new->iov_len -= base;
+	return nr_segs;
+}
+
+/**
+ * get_conn_iovec() - get connection iovec for reading from socket
+ * @conn:     TCP server instance of connection
+ * @nr_segs:	number of segments in iov
+ *
+ * Return:	return existing or newly allocate iovec
+ */
+static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
+				     unsigned int nr_segs)
+{
+	struct kvec *new_iov;
+
+	if (conn->iov && nr_segs <= conn->nr_iov)
+		return conn->iov;
+
+	/* not big enough -- allocate a new one and release the old */
+	new_iov = kmalloc(sizeof(*new_iov) * nr_segs, GFP_KERNEL);
+	if (new_iov) {
+		kfree(conn->iov);
+		conn->iov = new_iov;
+		conn->nr_iov = nr_segs;
+	}
+	return new_iov;
+}
+
+/**
+ * tcp_sess_kthread() - session thread to listen on new smb requests
+ * @p:     TCP conn instance of connection
+ *
+ * One thread each per connection
+ *
+ * Return:	0 on success
+ */
+static int cifsd_tcp_conn_handler_loop(void *p)
+{
+	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
+	unsigned int pdu_size;
+	char hdr_buf[4] = {0,};
+	int size;
+
+	mutex_init(&conn->srv_mutex);
+	__module_get(THIS_MODULE);
+	list_add(&conn->list, &cifsd_connection_list);
+	conn->last_active = jiffies;
+
+	while (!kthread_should_stop()) {
+		if (conn->tcp_status == CIFSD_SESS_EXITING)
+			break;
+		if (!cifsd_tcp_conn_alive(conn))
+			break;
+
+		if (try_to_freeze())
+			continue;
+
+		cifsd_free_request(conn->request_buf);
+		conn->request_buf = NULL;
+
+		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
+		if (size != sizeof(hdr_buf)) {
+			/* 7 seconds passed. It should be break */
+			break;
+		}
+
+		pdu_size = get_rfc1002_length(hdr_buf);
+		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
+
+		/* make sure we have enough to get to SMB header end */
+		if (pdu_size < HEADER_SIZE(conn) - 4) {
+			cifsd_debug("SMB request too short (%u bytes)\n",
+				    pdu_size);
+			continue;
+		}
+
+		size = pdu_size + conn->conn_ops->header_size_fn();
+		conn->request_buf = cifsd_alloc_request(size);
+		if (!conn->request_buf)
+			continue;
+
+		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
+		conn->total_read = size;
+		if (!is_smb_request(conn))
+			continue;
+
+		/*
+		 * We already read 4 bytes to find out PDU size, now
+		 * read in PDU
+		 */
+		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
+		if (size < 0) {
+			cifsd_err("sock_read failed: %d\n", size);
+			continue;
+		}
+
+		conn->total_read += size;
+		if (size != pdu_size) {
+			cifsd_err("PDU error. Read: %d, Expected: %d\n",
+				  size,
+				  pdu_size);
+			continue;
+		}
+
+		if (!conn->conn_ops->process_fn) {
+			cifsd_err("No connection request callback\n");
+			break;
+		}
+
+		if (conn->conn_ops->process_fn(conn)) {
+			cifsd_err("Cannot handle request\n");
+			break;
+		}
+	}
+
+	wait_event(conn->req_running_q,
+				atomic_read(&conn->req_running) == 0);
+
+	/* Wait till all reference dropped to the Server object*/
+	while (atomic_read(&conn->r_count) > 0)
+		schedule_timeout(HZ);
+
+	unload_nls(conn->local_nls);
+	if (conn->conn_ops->terminate_fn)
+		conn->conn_ops->terminate_fn(conn);
+	cifsd_tcp_conn_free(conn);
+	module_put(THIS_MODULE);
+	return 0;
+}
+
+/**
+ * connect_tcp_sess() - create a new tcp session on mount
+ * @sock:	socket associated with new connection
+ *
+ * whenever a new connection is requested, create a conn thread
+ * (session thread) to handle new incoming smb requests from the connection
+ *
+ * Return:	0 on success, otherwise error
+ */
+static int cifsd_tcp_new_connection(struct socket *client_sk)
+{
+	struct sockaddr_storage caddr;
+	struct sockaddr *csin = (struct sockaddr *)&caddr;
+	int rc = 0;
+	struct cifsd_tcp_conn *conn;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+	int cslen;
+
+	if (kernel_getpeername(client_sk, csin, &cslen) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		return -EINVAL;
+	}
+#else
+	if (kernel_getpeername(client_sk, csin) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		return -EINVAL;
+	}
+#endif
+
+	conn = cifsd_tcp_conn_alloc(client_sk);
+	if (conn == NULL)
+		return -ENOMEM;
+
+	conn->conn_ops = &default_tcp_conn_ops;
+	if (conn->conn_ops->init_fn)
+		conn->conn_ops->init_fn(conn);
+
+	conn->family = csin->sa_family;
+	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
+
+	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
+				    conn,
+				    "kcifsd_worker");
+	if (IS_ERR(conn->handler)) {
+		cifsd_err("cannot start conn thread\n");
+		rc = PTR_ERR(conn->handler);
+		cifsd_tcp_conn_free(conn);
+	}
+	return rc;
+}
+
+/**
+ * cifsd_kthread_fn() - listen to new SMB connections and callback server
+ * @p:		arguments to forker thread
+ *
+ * Return:	Returns a task_struct or ERR_PTR
+ */
+static int cifsd_kthread_fn(void *p)
+{
+	struct socket *client_sk = NULL;
+	int ret;
+
+	while (!kthread_should_stop()) {
+		if (deny_new_conn)
+			continue;
+
+		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
+		if (ret) {
+			if (ret == -EAGAIN)
+				/* check for new connections every 100 msecs */
+				schedule_timeout_interruptible(HZ / 10);
+			continue;
+		}
+
+		cifsd_debug("connect success: accepted new connection\n");
+		client_sk->sk->sk_rcvtimeo = 7 * HZ;
+		client_sk->sk->sk_sndtimeo = 5 * HZ;
+
+		cifsd_tcp_new_connection(client_sk);
+	}
+
+	cifsd_debug("releasing socket\n");
+	return 0;
+}
+
+/**
+ * cifsd_create_cifsd_kthread() - start forker thread
+ *
+ * start forker thread(kcifsd/0) at module init time to listen
+ * on port 445 for new SMB connection requests. It creates per connection
+ * server threads(kcifsd/x)
+ *
+ * @cifsd_pid_info:	struct pointer which has cifsd's pid and
+ *	socket pointer members
+ * Return:	0 on success or error number
+ */
+static int cifsd_tcp_run_kthread(void)
+{
+	int rc;
+
+	deny_new_conn = 0;
+	cifsd_kthread = kthread_run(cifsd_kthread_fn,
+				    NULL,
+				    "kcifsd_main");
+	if (IS_ERR(cifsd_kthread)) {
+		rc = PTR_ERR(cifsd_kthread);
+		cifsd_kthread = NULL;
+		return rc;
+	}
+
+	return 0;
+}
+
+/**
+ * cifsd_tcp_readv() - read data from socket in given iovec
+ * @conn:     TCP server instance of connection
+ * @iov_orig:	base IO vector
+ * @nr_segs:	number of segments in base iov
+ * @to_read:	number of bytes to read from socket
+ *
+ * Return:	on success return number of bytes read from socket,
+ *		otherwise return error number
+ */
+static int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
+			   struct kvec *iov_orig,
+			   unsigned int nr_segs,
+			   unsigned int to_read)
+{
+	int length = 0;
+	int total_read;
+	unsigned int segs;
+	struct msghdr cifsd_msg;
+	struct kvec *iov;
+
+	iov = get_conn_iovec(conn, nr_segs);
+	if (!iov)
+		return -ENOMEM;
+
+	cifsd_msg.msg_control = NULL;
+	cifsd_msg.msg_controllen = 0;
+
+	for (total_read = 0; to_read; total_read += length, to_read -= length) {
+		try_to_freeze();
+
+		if (!cifsd_tcp_conn_alive(conn)) {
+			total_read = -EAGAIN;
+			break;
+		}
+
+		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
+
+		length = kernel_recvmsg(conn->sock, &cifsd_msg,
+				iov, segs, to_read, 0);
+		if (conn->tcp_status == CIFSD_SESS_EXITING) {
+			total_read = -ESHUTDOWN;
+			break;
+		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
+			total_read = -EAGAIN;
+			break;
+		} else if (length == -ERESTARTSYS ||
+				length == -EAGAIN ||
+				length == -EINTR) {
+			usleep_range(1000, 2000);
+			length = 0;
+			continue;
+		} else if (length <= 0) {
+			usleep_range(1000, 2000);
+			total_read = -EAGAIN;
+			break;
+		}
+	}
+	return total_read;
+}
+
+/**
+ * cifsd_tcp_read() - read data from socket in given buffer
+ * @conn:     TCP server instance of connection
+ * @buf:	buffer to store read data from socket
+ * @to_read:	number of bytes to read from socket
+ *
+ * Return:	on success return number of bytes read from socket,
+ *		otherwise return error number
+ */
+int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
+		   char *buf,
+		   unsigned int to_read)
+{
+	struct kvec iov;
+
+	iov.iov_base = buf;
+	iov.iov_len = to_read;
+
+	return cifsd_tcp_readv(conn, &iov, 1, to_read);
+}
+
+/**
+ * cifsd_tcp_write() - send smb response over network socket
+ * @smb_work:     smb work containing response buffer
+ *
+ * TODO: change this function for smb2 currently is working for
+ * smb1/smb2 both as smb*_buf_length is at beginning of the  packet
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_tcp_write(struct smb_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct msghdr smb_msg = {};
+	size_t len;
+	int sent;
+	struct kvec iov[2];
+
+	spin_lock(&conn->request_lock);
+	if (work->added_in_request_list && !work->multiRsp) {
+		list_del_init(&work->request_entry);
+		work->added_in_request_list = 0;
+		if (work->async) {
+			remove_async_id(work->async->async_id);
+			kfree(work->async);
+		}
+	}
+	spin_unlock(&conn->request_lock);
+
+	if (rsp_hdr == NULL) {
+		cifsd_err("NULL response header\n");
+		return -EINVAL;
+	}
+
+	if (!HAS_AUX_PAYLOAD(work)) {
+		iov[0].iov_len = get_rfc1002_length(rsp_hdr) + 4;
+		iov[0].iov_base = rsp_hdr;
+		iov[1].iov_len = 0;
+		iov[1].iov_base = NULL;
+		len = iov[0].iov_len;
+	} else {
+		iov[0].iov_len = AUX_PAYLOAD_HDR_SIZE(work);
+		iov[0].iov_base = rsp_hdr;
+		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
+		iov[1].iov_base = AUX_PAYLOAD(work);
+		len = iov[0].iov_len + iov[1].iov_len;
+	}
+
+	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, 2, len);
+	if (sent < 0) {
+		cifsd_err("Failed to send message: %d\n", sent);
+		return sent;
+	}
+
+	return 0;
+}
+
+static void tcp_destroy_socket(void)
+{
+	int ret;
+
+	if (!cifsd_socket)
+		return;
+
+	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
+	if (ret)
+		cifsd_err("Failed to shutdown socket: %d\n", ret);
+
+	if (cifsd_socket) {
+		sock_release(cifsd_socket);
+		cifsd_socket = NULL;
+	}
+}
+
+/**
+ * cifsd_tcp_init - create socket for kcifsd/0
+ *
+ * Return:	Returns a task_struct or ERR_PTR
+ */
+int cifsd_tcp_init(void)
+{
+	int ret;
+	struct sockaddr_in sin;
+	int opt = 1;
+
+	mutex_lock(&init_lock);
+	if (cifsd_socket) {
+		mutex_unlock(&init_lock);
+		return 0;
+	}
+
+	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
+	if (ret) {
+		cifsd_err("Can't create socket: %d\n", ret);
+		goto out_error;
+	}
+
+	sin.sin_addr.s_addr = htonl(INADDR_ANY);
+	sin.sin_family = PF_INET;
+	sin.sin_port = htons(CIFSD_SERVER_PORT);
+
+	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
+				(char *)&opt, sizeof(opt));
+	if (ret < 0) {
+		cifsd_err("Failed to set socket options: %d\n", ret);
+		goto out_error;
+	}
+
+	ret = kernel_setsockopt(cifsd_socket, SOL_TCP, TCP_NODELAY,
+				(char *)&opt, sizeof(opt));
+	if (ret < 0) {
+		cifsd_err("Failed to set TCP_NODELAY: %d\n", ret);
+		goto out_error;
+	}
+
+	ret = kernel_bind(cifsd_socket, (struct sockaddr *)&sin, sizeof(sin));
+	if (ret) {
+		cifsd_err("Failed to bind socket: %d\n", ret);
+		goto out_error;
+	}
+
+	cifsd_socket->sk->sk_rcvtimeo = 7 * HZ;
+	cifsd_socket->sk->sk_sndtimeo = 5 * HZ;
+
+	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
+	if (ret) {
+		cifsd_err("Port listen() error: %d\n", ret);
+		goto out_error;
+	}
+
+	ret = cifsd_tcp_run_kthread();
+	if (ret) {
+		cifsd_err("Can't start cifsd main kthread: %d\n", ret);
+		goto out_error;
+	}
+
+	mutex_unlock(&init_lock);
+	return 0;
+
+out_error:
+	tcp_destroy_socket();
+	mutex_unlock(&init_lock);
+	return ret;
+}
+
+static int tcp_stop_sessions(void)
+{
+	int ret;
+	int err = 0;
+	struct cifsd_tcp_conn *conn, *tmp;
+
+	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
+		conn->tcp_status = CIFSD_SESS_EXITING;
+		ret = kthread_stop(conn->handler);
+		if (ret) {
+			cifsd_err("failed to stop server thread\n");
+			err = ret;
+		}
+	}
+
+	return err;
+}
+
+static void tcp_stop_kthread(void)
+{
+	int ret;
+
+	if (!cifsd_kthread)
+		return;
+
+	ret = kthread_stop(cifsd_kthread);
+	if (ret)
+		cifsd_err("failed to stop forker thread\n");
+	cifsd_kthread = NULL;
+}
+
+void cifsd_tcp_destroy(void)
+{
+	mutex_lock(&init_lock);
+	deny_new_conn = 1;
+
+	tcp_destroy_socket();
+	tcp_stop_kthread();
+	tcp_stop_sessions();
+	mutex_unlock(&init_lock);
+}
+
+void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
+{
+	default_tcp_conn_ops.init_fn = ops->init_fn;
+	default_tcp_conn_ops.process_fn = ops->process_fn;
+	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
+
+	default_tcp_conn_ops.header_size_fn = ops->header_size_fn;
+}

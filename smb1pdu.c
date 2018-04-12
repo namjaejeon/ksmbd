@@ -27,6 +27,7 @@
 #include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
+#include "transport.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
@@ -45,7 +46,7 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
  * TODO: Though this function comforms the restriction of 8.3 Filename spec,
  * but the result is different with Windows 7's one. need to check.
  */
-int smb_get_shortname(struct connection *conn, char *longname,
+int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname)
 {
 	char *p, *sp;
@@ -180,7 +181,7 @@ void set_smb_rsp_status(struct smb_work *smb_work, unsigned int err)
  */
 int init_smb_rsp_hdr(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 
@@ -207,7 +208,7 @@ int init_smb_rsp_hdr(struct smb_work *smb_work)
 	rsp_hdr->WordCount = 0;
 
 	/* verfiy if TID and UID are correct */
-	if (conn->tcp_status == CifsGood && rcv_hdr->Uid != conn->vuid &&
+	if (cifsd_tcp_good(smb_work) && rcv_hdr->Uid != conn->vuid &&
 			rcv_hdr->Command != SMB_COM_ECHO) {
 		cifsd_err("wrong Uid sent by client\n");
 		return -EINVAL;
@@ -338,7 +339,7 @@ char *extract_sharename(char *treename)
 int smb_check_user_session(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess;
 	struct list_head *tmp;
 	int rc;
@@ -349,7 +350,7 @@ int smb_check_user_session(struct smb_work *smb_work)
 	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
 		return 0;
 
-	if (conn->tcp_status != CifsGood)
+	if (!cifsd_tcp_good(smb_work))
 		return -EINVAL;
 
 	if (conn->sess_count == 0) {
@@ -422,7 +423,7 @@ int smb_get_cifsd_tcon(struct smb_work *smb_work)
  */
 int smb_session_disconnect(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct list_head *tmp, *t;
 
@@ -431,7 +432,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	conn->tcp_status = CifsNeedReconnect;
+	cifsd_tcp_set_need_reconnect(smb_work);
 
 	put_cifsd_user(sess->user);
 	sess->user = NULL;
@@ -463,7 +464,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 
 	conn->sess_count--;
 	/* let start_tcp_sess free conn info now */
-	conn->tcp_status = CifsExiting;
+	cifsd_tcp_set_exiting(smb_work);
 	return 0;
 }
 
@@ -497,7 +498,7 @@ int smb_tree_disconnect(struct smb_work *smb_work)
 	return 0;
 }
 
-void set_service_type(struct connection *conn,
+void set_service_type(struct cifsd_tcp_conn *conn,
 			struct cifsd_share *share, TCONX_RSP_EXT *rsp)
 {
 	int length;
@@ -535,7 +536,7 @@ int smb_tree_connect_andx(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	TCONX_REQ *req;
 	TCONX_RSP_EXT *rsp;
 	int extra_byte = 0, rc;
@@ -704,8 +705,8 @@ out_err1:
 	}
 
 	/* Clean session if there is no tree attached */
-	if (!sess ||  !sess->tcon_count)
-		conn->tcp_status = CifsExiting;
+	if (!sess || !sess->tcon_count)
+		cifsd_tcp_set_exiting(smb_work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
 	return rc;
 }
@@ -720,7 +721,7 @@ int smb_rename(struct smb_work *smb_work)
 {
 	RENAME_REQ *req = (RENAME_REQ *)REQUEST_BUF(smb_work);
 	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	char *abs_oldname, *abs_newname, *tmp_name = NULL;
 	int oldname_len;
@@ -796,7 +797,7 @@ out:
  */
 int smb_negotiate(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(smb_work);
 	NEGOTIATE_REQ *neg_req = (NEGOTIATE_REQ *)REQUEST_BUF(smb_work);
 	__le64 time;
@@ -805,7 +806,7 @@ int smb_negotiate(struct smb_work *smb_work)
 #endif
 
 	WARN_ON(neg_req->hdr.WordCount);
-	WARN_ON(conn->tcp_status == CifsGood);
+	WARN_ON(cifsd_tcp_good(smb_work));
 
 	conn->dialect = negotiate_dialect(REQUEST_BUF(smb_work));
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
@@ -860,7 +861,7 @@ int smb_negotiate(struct smb_work *smb_work)
 
 	/* Adjust pdu length, 17 words and 8 bytes added */
 	inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
-	conn->tcp_status = CifsNeedNegotiate;
+	cifsd_tcp_set_need_negotiate(smb_work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later */
 	return 0;
@@ -876,7 +877,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = NULL;
 	char *name;
 	int offset, rc;
@@ -886,7 +887,7 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 
 	/* This triggers with cifs client. cifs client needs fixing */
 	WARN_ON(req_hdr->WordCount != 13);
-	WARN_ON(conn->tcp_status != CifsNeedNegotiate);
+	WARN_ON(!cifsd_tcp_need_negotiate(smb_work));
 
 	/* check if valid user name is present in request or not */
 	offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
@@ -1012,7 +1013,7 @@ no_password_check:
 	rsp_hdr->Uid = user_smb1_vuid(sess->user);
 	conn->vuid = user_smb1_vuid(sess->user);
 
-	conn->tcp_status = CifsGood;
+	cifsd_tcp_set_good(smb_work);
 
 	/* this is an ANDx command ? */
 	if (pSMB->req_no_secext.AndXCommand == SMB_NO_MORE_ANDX_COMMAND) {
@@ -1697,7 +1698,7 @@ void free_lanman_pipe_desc(struct cifsd_sess *sess)
  */
 int smb_trans(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	TRANS_REQ *req = (TRANS_REQ *)REQUEST_BUF(smb_work);
 	TRANS_RSP *rsp = (TRANS_RSP *)RESPONSE_BUF(smb_work);
 	TRANS_PIPE_REQ *pipe_req = (TRANS_PIPE_REQ *)REQUEST_BUF(smb_work);
@@ -1989,7 +1990,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	OPEN_REQ *req = (OPEN_REQ *)REQUEST_BUF(smb_work);
 	OPEN_RSP *rsp = (OPEN_RSP *)RESPONSE_BUF(smb_work);
 	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct path path;
@@ -2554,7 +2555,7 @@ int smb_close(struct smb_work *smb_work)
 {
 	CLOSE_REQ *req = (CLOSE_REQ *)REQUEST_BUF(smb_work);
 	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	int err = 0;
 
 	cifsd_debug("SMB_COM_CLOSE called for fid %u\n", req->FileID);
@@ -2680,7 +2681,7 @@ int smb_read_andx_pipe(struct smb_work *smb_work)
  */
 int smb_read_andx(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	READ_REQ *req = (READ_REQ *)REQUEST_BUF(smb_work);
 	READ_RSP *rsp = (READ_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp;
@@ -2921,7 +2922,7 @@ int smb_write_andx_pipe(struct smb_work *smb_work)
  */
 int smb_write_andx(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	WRITE_REQ *req = (WRITE_REQ *)REQUEST_BUF(smb_work);
 	WRITE_RSP *rsp = (WRITE_RSP *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp;
@@ -3058,7 +3059,7 @@ int smb_echo(struct smb_work *smb_work)
 	for (i = 1; i < le16_to_cpu(req->EchoCount) &&
 	     !smb_work->send_no_response; i++) {
 		rsp->SequenceNumber = cpu_to_le16(i);
-		smb_send_rsp(smb_work);
+		cifsd_tcp_write(smb_work);
 	}
 
 	/* Last echo response */
@@ -3789,7 +3790,7 @@ out:
  */
 int smb_get_ea(struct smb_work *smb_work, struct path *path)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
@@ -3895,7 +3896,7 @@ int query_path_info(struct smb_work *smb_work)
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_QPI_REQ_PARAMS *req_params;
 	char *name = NULL;
@@ -4474,7 +4475,7 @@ int query_fs_info(struct smb_work *smb_work)
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(smb_work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
 	TRANSACTION2_QFSI_REQ_PARAMS *req_params;
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct kstatfs stfs;
 	struct cifsd_share *share;
 	int rc;
@@ -4865,7 +4866,7 @@ int smb_posix_open(struct smb_work *smb_work)
 	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)REQUEST_BUF(smb_work);
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 		(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	OPEN_PSX_REQ *psx_req;
 	OPEN_PSX_RSP *psx_rsp;
@@ -5749,7 +5750,7 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
  *
  * Return:	0 on success, otherwise error
  */
-static int smb_populate_readdir_entry(struct connection *conn,
+static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_dir_info *d_info,
 		struct smb_kstat *smb_kstat)
 {
@@ -5901,10 +5902,10 @@ static int smb_populate_readdir_entry(struct connection *conn,
 	return 0;
 }
 
-int smb_populate_dot_dotdot_entries(struct connection *conn,
+int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct connection *,
+		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
 		int, struct cifsd_dir_info *, struct smb_kstat *))
 {
 	int i, rc = 0;
@@ -5949,7 +5950,7 @@ int smb_populate_dot_dotdot_entries(struct connection *conn,
 int find_first(struct smb_work *smb_work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(smb_work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
@@ -6186,7 +6187,7 @@ err_out:
 int find_next(struct smb_work *smb_work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(smb_work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(smb_work);
@@ -6823,7 +6824,7 @@ int query_file_info_pipe(struct smb_work *smb_work)
  */
 int query_file_info(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(smb_work);
@@ -7573,7 +7574,7 @@ int smb_unlink(struct smb_work *smb_work)
  */
 int smb_nt_cancel(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
 	struct smb_hdr *work_hdr;
 	struct smb_work *work;
@@ -7920,7 +7921,7 @@ int smb_open_andx(struct smb_work *smb_work)
 {
 	OPENX_REQ *req = (OPENX_REQ *)REQUEST_BUF(smb_work);
 	OPENX_RSP *rsp = (OPENX_RSP *)RESPONSE_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct cifsd_sess *sess = smb_work->sess;
 	struct path path;
 	struct kstat stat;

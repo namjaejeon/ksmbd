@@ -24,6 +24,8 @@
 #include "export.h"
 #include "smb2pdu.h"
 
+#include "transport.h"
+
 struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
 	.protocol_id = SMB20_PROT_ID,
@@ -189,7 +191,7 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb2_0_server(struct connection *conn)
+void init_smb2_0_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb20_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -204,7 +206,7 @@ void init_smb2_0_server(struct connection *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb2_1_server(struct connection *conn)
+void init_smb2_1_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb21_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -223,7 +225,7 @@ void init_smb2_1_server(struct connection *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_0_server(struct connection *conn)
+void init_smb3_0_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb30_server_values;
 	conn->ops = &smb3_0_server_ops;
@@ -245,7 +247,7 @@ void init_smb3_0_server(struct connection *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_02_server(struct connection *conn)
+void init_smb3_02_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb302_server_values;
 	conn->ops = &smb3_0_server_ops;
@@ -267,7 +269,7 @@ void init_smb3_02_server(struct connection *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_11_server(struct connection *conn)
+void init_smb3_11_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb311_server_values;
 	conn->ops = &smb3_0_server_ops;

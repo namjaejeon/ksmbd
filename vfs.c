@@ -35,6 +35,7 @@
 #include "export.h"
 #include "glob.h"
 #include "oplock.h"
+#include "transport.h"
 
 /**
  * smb_vfs_create() - vfs helper for smb create file
@@ -1236,7 +1237,7 @@ int smb_vfs_readdir(struct file *file, filldir_t filler,
 	return err;
 }
 
-int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
 	loff_t len)
 {
 	if (oplocks_enable)

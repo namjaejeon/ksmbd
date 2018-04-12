@@ -23,6 +23,8 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,
 	.protocol_id = SMB10_PROT_ID,
@@ -89,7 +91,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb1_server(struct connection *conn)
+void init_smb1_server(struct cifsd_tcp_conn *conn)
 {
 	if (!conn)
 		return;

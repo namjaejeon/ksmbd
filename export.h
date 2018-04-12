@@ -31,9 +31,6 @@
 #include "smb2pdu.h"
 #endif
 
-#define SMB_PORT		445
-#define MAX_CONNECTIONS		64
-
 extern int cifsd_debug_enable;
 
 /* Global list containing exported points */
@@ -91,7 +88,7 @@ enum {
 /* cifsd_sess coupled with cifsd_user */
 struct cifsd_sess {
 	struct cifsd_user *user;
-	struct connection *conn;
+	struct cifsd_tcp_conn *conn;
 	struct list_head cifsd_ses_list;
 	struct list_head cifsd_ses_global_list;
 	struct list_head tcon_list;
@@ -225,7 +222,7 @@ int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
 int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
 	unsigned int key_size);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
-struct cifsd_share *get_cifsd_share(struct connection *conn,
+struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);
 extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 		struct cifsd_sess *sess);

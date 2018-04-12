@@ -105,6 +105,9 @@ struct smb_work *cifsd_alloc_work_struct(void)
 
 void cifsd_free_work_struct(struct smb_work *work)
 {
+	cifsd_free_response(RESPONSE_BUF(work));
+	cifsd_free_response(AUX_PAYLOAD(work));
+	cifsd_free_request(REQUEST_BUF(work));
 	kmem_cache_free(work_cache, work);
 }
 

@@ -28,6 +28,7 @@
 #include "oplock.h"
 
 #include "buffer_pool.h"
+#include "transport.h"
 
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -343,7 +344,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
 	struct lease_break_info *br_info =
 		(struct lease_break_info *)REQUEST_BUF(smb_work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb2_hdr *rsp_hdr;
 
 	atomic_inc(&conn->req_running);
@@ -392,7 +393,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp->ShareMaskHint = 0;
 
 	inc_rfc1001_len(rsp, 44);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
@@ -415,7 +416,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 	int ack_required)
 {
-	struct connection *conn = opinfo->conn;
+	struct cifsd_tcp_conn *conn = opinfo->conn;
 	int ret = 0;
 	struct smb_work *work = cifsd_alloc_work_struct();
 	if (!work)
@@ -466,7 +467,7 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	int ack_required)
 {
-	struct connection *conn = opinfo->conn;
+	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct oplock_break_info *br_info;
 	int ret = 0;
 	struct smb_work *work = cifsd_alloc_work_struct();
@@ -715,7 +716,7 @@ void wait_for_lease_break_ack(struct oplock_info *opinfo)
  */
 int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 {
-	struct connection *conn = opinfo->conn;
+	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
 	struct smb_work *work;
 	struct lease_break_info *br_info;
@@ -871,7 +872,7 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 	return err;
 }
 
-void destroy_lease_table(struct connection *conn)
+void destroy_lease_table(struct cifsd_tcp_conn *conn)
 {
 	struct lease_table *lb, *lbtmp;
 
@@ -1158,7 +1159,7 @@ int smb_break_all_write_oplock(struct smb_work *work,
  * @fp:		cifsd file pointer
  * @openfile:	open file information
  */
-void smb_break_all_levII_oplock(struct connection *conn,
+void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
@@ -1245,7 +1246,7 @@ void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp)
 void smb1_send_oplock_break_notification(struct work_struct *work)
 {
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
 	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(smb_work);
@@ -1300,7 +1301,7 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	req->ByteCount = 0;
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
@@ -1325,7 +1326,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 {
 	struct smb2_oplock_break *rsp = NULL;
 	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct oplock_break_info *br_info =
 		(struct oplock_break_info *)REQUEST_BUF(smb_work);
 	struct smb2_hdr *rsp_hdr;
@@ -1388,7 +1389,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
-	smb_send_rsp(smb_work);
+	cifsd_tcp_write(smb_work);
 	cifsd_free_response(RESPONSE_BUF(smb_work));
 	cifsd_free_work_struct(smb_work);
 	mutex_unlock(&conn->srv_mutex);
@@ -1645,7 +1646,7 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL
  */
-struct oplock_info *lookup_lease_in_table(struct connection *conn,
+struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	char *lease_key)
 {
 	struct oplock_info *opinfo = NULL, *ret_op = NULL;

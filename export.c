@@ -25,6 +25,8 @@
 #include "export.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 /* max string size for share and parameters */
 #define SHARE_MAX_NAME_LEN	100
 /* max string size data, ex- path, usernames, servernames etc */
@@ -428,7 +430,7 @@ static int validate_user(struct cifsd_sess *sess,
 	return conflist_search(vlist, user_name(sess->user));
 }
 
-struct cifsd_share *get_cifsd_share(struct connection *conn,
+struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 				    struct cifsd_sess *sess,
 				    char *sharename,
 				    bool *can_write)
@@ -1213,7 +1215,7 @@ static ssize_t show_server_stat(char *buf)
  *
  * Return:      output buffer length
  */
-static ssize_t show_client_stat(char *buf, struct connection *conn)
+static ssize_t show_client_stat(char *buf, struct cifsd_tcp_conn *conn)
 {
 	int cum = 0, ret = 0, limit = PAGE_SIZE;
 
@@ -1275,7 +1277,7 @@ static ssize_t show_client_stat(char *buf, struct connection *conn)
 int cifsstat_show(char *buf, char *ip, int flag)
 {
 	struct list_head *tmp;
-	struct connection *conn;
+	struct cifsd_tcp_conn *conn;
 	int ret = 0;
 
 	if (flag & O_SERVER) {
@@ -1287,7 +1289,7 @@ int cifsstat_show(char *buf, char *ip, int flag)
 
 		len1 = strlen(ip);
 		list_for_each(tmp, &cifsd_connection_list) {
-			conn = list_entry(tmp, struct connection, list);
+			conn = list_entry(tmp, struct cifsd_tcp_conn, list);
 			len2 = strlen(conn->peeraddr);
 			if (len1 == len2 && !strncmp(ip,
 				conn->peeraddr, len1)) {

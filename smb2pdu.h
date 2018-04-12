@@ -1355,7 +1355,7 @@ extern struct file_lock *smb_flock_init(struct file *f);
 extern void smb2_send_interim_resp(struct smb_work *smb_work);
 
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct connection *conn,
+extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
 	char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);

@@ -64,7 +64,7 @@
 #define FP_NEW		0
 #define FP_FREEING	1
 
-struct connection;
+struct cifsd_tcp_conn;
 struct cifsd_sess;
 
 struct smb_readdir_data {
@@ -126,7 +126,7 @@ struct cifsd_mfile {
 };
 
 struct cifsd_file {
-	struct connection *conn;
+	struct cifsd_tcp_conn *conn;
 	struct cifsd_sess *sess;
 	struct cifsd_tcon *tcon;
 	struct cifsd_mfile *f_mfp;
