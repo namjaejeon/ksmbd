@@ -322,11 +322,10 @@ int cifsd_tcp_write(struct smb_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
-	struct socket *sock = conn->sock;
-	struct kvec iov;
 	struct msghdr smb_msg = {};
-	int len, total_len = 0;
-	int val = 1;
+	size_t len;
+	int sent;
+	struct kvec iov[2];
 
 	spin_lock(&conn->request_lock);
 	if (work->added_in_request_list && !work->multiRsp) {
@@ -341,56 +340,28 @@ int cifsd_tcp_write(struct smb_work *work)
 
 	if (rsp_hdr == NULL) {
 		cifsd_err("NULL response header\n");
-		return -ENOMEM;
+		return -EINVAL;
 	}
 
 	if (!HAS_AUX_PAYLOAD(work)) {
-		iov.iov_len = get_rfc1002_length(rsp_hdr) + 4;
-		iov.iov_base = rsp_hdr;
-
-		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
-		if (len < 0) {
-			cifsd_err("err1 %d while sending data\n", len);
-			goto out;
-		}
-		total_len = len;
+		iov[0].iov_len = get_rfc1002_length(rsp_hdr) + 4;
+		iov[0].iov_base = rsp_hdr;
+		iov[1].iov_len = 0;
+		iov[1].iov_base = NULL;
+		len = iov[0].iov_len;
 	} else {
-		/* cork the socket */
-		kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
-				(char *)&val, sizeof(val));
-
-		iov.iov_base = rsp_hdr;
-		iov.iov_len = AUX_PAYLOAD_HDR_SIZE(work);
-
-		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
-		if (len < 0) {
-			cifsd_err("err2 %d while sending data\n", len);
-			goto uncork;
-		}
-		total_len = len;
-
-		iov.iov_base = AUX_PAYLOAD(work);
-		iov.iov_len = AUX_PAYLOAD_SIZE(work);
-		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
-		if (len < 0) {
-			cifsd_err("err3 %d while sending data\n", len);
-			goto uncork;
-		}
-		total_len += len;
-
-uncork:
-		/* uncork it */
-		val = 0;
-		kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
-				(char *)&val, sizeof(val));
+		iov[0].iov_len = AUX_PAYLOAD_HDR_SIZE(work);
+		iov[0].iov_base = rsp_hdr;
+		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
+		iov[1].iov_base = AUX_PAYLOAD(work);
+		len = iov[0].iov_len + iov[1].iov_len;
 	}
 
-	if (total_len != get_rfc1002_length(rsp_hdr) + 4)
-		cifsd_err("transfered %d, expected %d bytes\n",
-				total_len, get_rfc1002_length(rsp_hdr) + 4);
-
-out:
-	cifsd_debug("data sent = %d\n", total_len);
+	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, 2, len);
+	if (sent < 0) {
+		cifsd_err("Failed to send message: %d\n", sent);
+		return sent;
+	}
 
 	return 0;
 }
