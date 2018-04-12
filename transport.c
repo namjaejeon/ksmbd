@@ -563,7 +563,7 @@ int cifsd_tcp_init(void)
 	mutex_lock(&init_lock);
 	if (cifsd_socket) {
 		mutex_unlock(&init_lock);
-		return -EINVAL;
+		return 0;
 	}
 
 	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
