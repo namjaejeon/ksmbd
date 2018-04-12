@@ -157,9 +157,6 @@ struct cifsd_tcp_conn {
 	struct cifsd_tcp_conn_ops	*conn_ops;
 };
 
-struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock);
-void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn);
-
 int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 		    struct kvec *iov_orig, unsigned int nr_segs,
 		    unsigned int to_read);
