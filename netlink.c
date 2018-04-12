@@ -270,28 +270,6 @@ int cifsd_sendmsg_notify(struct cifsd_sess *sess,
 	return rc;
 }
 
-static int cifsd_terminate_user_process(int new_cifsd_pid)
-{
-	struct cifsd_uevent *ev;
-	struct nlmsghdr *nlh;
-	struct sk_buff *skb;
-	int rc;
-	int len = nlmsg_total_size(sizeof(*ev)+sizeof(rc));
-
-	skb = alloc_skb(len, GFP_KERNEL);
-	if (unlikely(!skb)) {
-		cifsd_err("Failed to allocate\n");
-		return -ENOMEM;
-	}
-	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
-	nlh = __nlmsg_put(skb, 0, 0, CFISD_KEVENT_USER_DAEMON_EXIST,
-		(len - sizeof(*nlh)), 0);
-	ev = nlmsg_data(nlh);
-	ev->buflen = sizeof(rc);
-	rc = nlmsg_unicast(cifsd_nlsk, skb, new_cifsd_pid);
-	return 0;
-}
-
 /** cifsd_early_init() - handler for cifsd early init
  *		initialize pid
  * @nlh:       netlink message header
@@ -361,23 +339,9 @@ out:
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
 	int err = 0;
-	struct task_struct *cifsd_task;
 
 	cifsd_debug("init connection\n");
-
-	rcu_read_lock();
-	cifsd_task = pid_task(find_vpid(pid), PIDTYPE_PID);
-	rcu_read_unlock();
-	if (cifsd_task) {
-		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {
-			cifsd_terminate_user_process(nlh->nlmsg_pid);
-			err = -EPERM;
-		}
-	} else {
-		cifsd_tcp_stop_kthread();
-		pid = nlh->nlmsg_pid; /*pid of sending process */
-	}
-
+	pid = nlh->nlmsg_pid; /*pid of sending process */
 	return err;
 }
 
