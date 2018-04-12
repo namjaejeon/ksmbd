@@ -49,9 +49,6 @@ unsigned int smb_min_small = 30;
 unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
 static DEFINE_IDA(cifsd_ida);
-static LIST_HEAD(tcp_sess_list);
-static DEFINE_SPINLOCK(tcp_sess_list_lock);
-
 struct fidtable_desc global_fidtable;
 
 LIST_HEAD(global_lock_list);
@@ -480,10 +477,6 @@ static int tcp_sess_kthread(void *p)
 		schedule_timeout(HZ);
 
 	unload_nls(conn->local_nls);
-	spin_lock(&tcp_sess_list_lock);
-	list_del(&conn->tcp_sess);
-	spin_unlock(&tcp_sess_list_lock);
-
 	if (conn->sess_count) {
 		struct cifsd_sess *sess;
 		struct list_head *tmp, *t;
@@ -548,10 +541,6 @@ int connect_tcp_sess(struct socket *sock)
 
 	conn->family = ((const struct sockaddr_in *)csin)->sin_family;
 
-	spin_lock(&tcp_sess_list_lock);
-	list_add(&conn->tcp_sess, &tcp_sess_list);
-	spin_unlock(&tcp_sess_list_lock);
-
 	conn->th_id = ida_simple_get(&cifsd_ida, 1, 0, GFP_KERNEL);
 	if (conn->th_id < 0) {
 		cifsd_err("ida_simple_get failed: %d\n", conn->th_id);
@@ -565,9 +554,6 @@ int connect_tcp_sess(struct socket *sock)
 		/* TODO : remove from list and free sock */
 		cifsd_err("cannot start conn thread\n");
 		ida_simple_remove(&cifsd_ida, conn->th_id);
-		spin_lock(&tcp_sess_list_lock);
-		list_del(&conn->tcp_sess);
-		spin_unlock(&tcp_sess_list_lock);
 		rc = PTR_ERR(conn->handler);
 		cifsd_tcp_conn_free(conn);
 	}

@@ -28,6 +28,9 @@ static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
 static DEFINE_MUTEX(init_lock);
 
+static LIST_HEAD(tcp_conn_list);
+static DEFINE_SPINLOCK(tcp_conn_list_lock);
+
 static int deny_new_conn;
 
 /**
@@ -464,9 +467,9 @@ void cifsd_tcp_destroy(void)
 	mutex_lock(&init_lock);
 	deny_new_conn = 1;
 
-	tcp_stop_sessions();
 	tcp_destroy_socket();
 	tcp_stop_kthread();
+	tcp_stop_sessions();
 	mutex_unlock(&init_lock);
 }
 
@@ -480,6 +483,10 @@ void cifsd_tcp_destroy(void)
  */
 void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 {
+	spin_lock(&tcp_conn_list_lock);
+	list_del(&conn->tcp_sess);
+	spin_unlock(&tcp_conn_list_lock);
+
 	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 	sock_release(conn->sock);
 	conn->sock = NULL;
@@ -523,5 +530,8 @@ struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = 0;
 
+	spin_lock(&tcp_conn_list_lock);
+	list_add(&conn->tcp_sess, &tcp_conn_list);
+	spin_unlock(&tcp_conn_list_lock);
 	return conn;
 }
