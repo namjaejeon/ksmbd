@@ -344,7 +344,8 @@ static void free_channel_list(struct cifsd_sess *sess)
 
 void smb_delete_session(struct cifsd_sess *sess)
 {
-	cifsd_debug("delete session ID: %llu, session count: %d\n", sess->sess_id, sess->conn->sess_count);
+	cifsd_debug("delete session ID: %llu, session count: %d\n",
+			sess->sess_id, sess->conn->sess_count);
 
 	sess->valid = 0;
 	list_del(&sess->cifsd_ses_list);
@@ -355,7 +356,7 @@ void smb_delete_session(struct cifsd_sess *sess)
 	kfree(sess);
 }
 
-static size_t get_header_size(void)
+static size_t cifsd_server_get_header_size(void)
 {
 	size_t sz = sizeof(struct smb_hdr);
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -364,96 +365,19 @@ static size_t get_header_size(void)
 	return sz;
 }
 
-/**
- * tcp_sess_kthread() - session thread to listen on new smb requests
- * @p:     TCP conn instance of connection
- *
- * One thread each per connection
- *
- * Return:	0 on success
- */
-int tcp_sess_kthread(void *p)
+static int cifsd_server_init_conn(struct cifsd_tcp_conn *conn)
 {
-	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
-	unsigned int pdu_size;
-	char hdr_buf[4] = {0,};
-	int size;
+	init_smb1_server(conn);
+	return 0;
+}
 
-	mutex_init(&conn->srv_mutex);
-	__module_get(THIS_MODULE);
-	list_add(&conn->list, &cifsd_connection_list);
-	conn->last_active = jiffies;
+static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
+{
+	return queue_smb_work(conn);
+}
 
-	while (!kthread_should_stop()) {
-		if (conn->tcp_status == CIFSD_SESS_EXITING)
-			break;
-		if (!cifsd_tcp_conn_alive(conn))
-			break;
-
-		if (try_to_freeze())
-			continue;
-
-		cifsd_free_request(conn->request_buf);
-		conn->request_buf = NULL;
-
-		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
-		if (size != sizeof(hdr_buf)) {
-			/* 7 seconds passed. It should be break */
-			break;
-		}
-
-		pdu_size = get_rfc1002_length(hdr_buf);
-		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
-
-		/* make sure we have enough to get to SMB header end */
-		if (pdu_size < HEADER_SIZE(conn) - 4) {
-			cifsd_debug("SMB request too short (%u bytes)\n",
-				    pdu_size);
-			continue;
-		}
-
-		conn->request_buf = cifsd_alloc_request(pdu_size +
-							get_header_size());
-		if (!conn->request_buf)
-			continue;
-
-		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		conn->total_read = size;
-		if (!is_smb_request(conn))
-			continue;
-
-		/*
-		 * We already read 4 bytes to find out PDU size, now
-		 * read in PDU
-		 */
-		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
-		if (size < 0) {
-			cifsd_err("sock_read failed: %d\n", size);
-			continue;
-		}
-
-		conn->total_read += size;
-		if (size != pdu_size) {
-			cifsd_err("PDU error. Read: %d, Expected: %d\n",
-				  size,
-				  pdu_size);
-			continue;
-		}
-
-		if (queue_smb_work(conn)) {
-			cifsd_err("Unable to queue smb work\n");
-			break;
-		}
-	}
-
-	wait_event(conn->req_running_q,
-				atomic_read(&conn->req_running) == 0);
-
-	/* Wait till all reference dropped to the Server object*/
-	while (atomic_read(&conn->r_count) > 0)
-		schedule_timeout(HZ);
-
-	unload_nls(conn->local_nls);
+static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
+{
 	if (conn->sess_count) {
 		struct cifsd_sess *sess;
 		struct list_head *tmp, *t;
@@ -465,15 +389,20 @@ int tcp_sess_kthread(void *p)
 	}
 
 	destroy_lease_table(conn);
-
-	cifsd_tcp_conn_free(conn);
-	module_put(THIS_MODULE);
-
-	cifsd_debug("%s: exiting\n", current->comm);
-
 	return 0;
 }
 
+static void cifsd_server_tcp_callbacks_init(void)
+{
+	struct cifsd_tcp_conn_ops ops;
+
+	ops.init_fn = cifsd_server_init_conn;
+	ops.process_fn = cifsd_server_process_request;
+	ops.terminate_fn = cifsd_server_terminate_conn;
+	ops.header_size_fn = cifsd_server_get_header_size;
+
+	cifsd_tcp_init_server_callbacks(&ops);
+}
 
 /**
  * init_smb_server() - initialize smb server at module init
@@ -484,11 +413,13 @@ int tcp_sess_kthread(void *p)
  *
  * Return:	0 on success, otherwise error
  */
-static int __init init_smb_server(void)
+static int __init cifsd_server_init(void)
 {
 	int rc;
 
 	server_start_time = jiffies;
+
+	cifsd_server_tcp_callbacks_init();
 
 	rc = cifsd_init_buffer_pools();
 	if (rc)
@@ -532,7 +463,7 @@ err1:
 /**
  * exit_smb_server() - shutdown forker thread and free memory at module exit
  */
-static void __exit exit_smb_server(void)
+static void __exit cifsd_server_exit(void)
 {
 	cifsd_net_exit();
 
@@ -551,5 +482,5 @@ static void __exit exit_smb_server(void)
 MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
-module_init(init_smb_server)
-module_exit(exit_smb_server)
+module_init(cifsd_server_init)
+module_exit(cifsd_server_exit)

@@ -62,6 +62,14 @@ struct cifsd_secmech {
 	struct sdesc *sdescsha512;  /* ctxt to generate preauth integrity */
 };
 
+struct cifsd_tcp_conn_ops {
+	int	(*init_fn)(struct cifsd_tcp_conn *conn);
+	int	(*process_fn)(struct cifsd_tcp_conn *conn);
+	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
+
+	size_t	(*header_size_fn)(void);
+};
+
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	unsigned short			family;
@@ -145,12 +153,12 @@ struct cifsd_tcp_conn {
 	__u16				dialect;
 
 	char				*mechToken;
+
+	struct cifsd_tcp_conn_ops	*conn_ops;
 };
 
 struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock);
 void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn);
-
-bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn);
 
 int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 		    struct kvec *iov_orig, unsigned int nr_segs,
@@ -161,6 +169,8 @@ int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   unsigned int to_read);
 struct smb_work;
 int cifsd_tcp_write(struct smb_work *work);
+
+void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
 void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(void);

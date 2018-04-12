@@ -26,12 +26,36 @@
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
+static struct cifsd_tcp_conn_ops default_tcp_conn_ops;
+
 static DEFINE_MUTEX(init_lock);
 
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_SPINLOCK(tcp_conn_list_lock);
 
 static int deny_new_conn;
+
+/**
+ * cifsd_tcp_conn_alive() - check server is unresponsive or not
+ * @conn:     TCP server instance of connection
+ *
+ * Return:	true if server unresponsive, otherwise  false
+ */
+static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
+{
+	if (conn->stats.open_files_count > 0)
+		return true;
+
+#ifdef CONFIG_CIFS_SMB2_SERVER
+	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
+		cifsd_debug("No response from client in 120 secs\n");
+		return false;
+	}
+	return true;
+#else
+	return true;
+#endif
+}
 
 /**
  * kvec_array_init() - initialize a IO vector segment
@@ -90,7 +114,107 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 	return new_iov;
 }
 
-extern int tcp_sess_kthread(void *p);
+/**
+ * tcp_sess_kthread() - session thread to listen on new smb requests
+ * @p:     TCP conn instance of connection
+ *
+ * One thread each per connection
+ *
+ * Return:	0 on success
+ */
+static int cifsd_tcp_conn_handler_loop(void *p)
+{
+	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
+	unsigned int pdu_size;
+	char hdr_buf[4] = {0,};
+	int size;
+
+	mutex_init(&conn->srv_mutex);
+	__module_get(THIS_MODULE);
+	list_add(&conn->list, &cifsd_connection_list);
+	conn->last_active = jiffies;
+
+	while (!kthread_should_stop()) {
+		if (conn->tcp_status == CIFSD_SESS_EXITING)
+			break;
+		if (!cifsd_tcp_conn_alive(conn))
+			break;
+
+		if (try_to_freeze())
+			continue;
+
+		cifsd_free_request(conn->request_buf);
+		conn->request_buf = NULL;
+
+		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
+		if (size != sizeof(hdr_buf)) {
+			/* 7 seconds passed. It should be break */
+			break;
+		}
+
+		pdu_size = get_rfc1002_length(hdr_buf);
+		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
+
+		/* make sure we have enough to get to SMB header end */
+		if (pdu_size < HEADER_SIZE(conn) - 4) {
+			cifsd_debug("SMB request too short (%u bytes)\n",
+				    pdu_size);
+			continue;
+		}
+
+		size = pdu_size + conn->conn_ops->header_size_fn();
+		conn->request_buf = cifsd_alloc_request(size);
+		if (!conn->request_buf)
+			continue;
+
+		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
+		conn->total_read = size;
+		if (!is_smb_request(conn))
+			continue;
+
+		/*
+		 * We already read 4 bytes to find out PDU size, now
+		 * read in PDU
+		 */
+		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
+		if (size < 0) {
+			cifsd_err("sock_read failed: %d\n", size);
+			continue;
+		}
+
+		conn->total_read += size;
+		if (size != pdu_size) {
+			cifsd_err("PDU error. Read: %d, Expected: %d\n",
+				  size,
+				  pdu_size);
+			continue;
+		}
+
+		if (!conn->conn_ops->process_fn) {
+			cifsd_err("No connection request callback\n");
+			break;
+		}
+
+		if (conn->conn_ops->process_fn(conn)) {
+			cifsd_err("Cannot handle request\n");
+			break;
+		}
+	}
+
+	wait_event(conn->req_running_q,
+				atomic_read(&conn->req_running) == 0);
+
+	/* Wait till all reference dropped to the Server object*/
+	while (atomic_read(&conn->r_count) > 0)
+		schedule_timeout(HZ);
+
+	unload_nls(conn->local_nls);
+	if (conn->conn_ops->terminate_fn)
+		conn->conn_ops->terminate_fn(conn);
+	cifsd_tcp_conn_free(conn);
+	module_put(THIS_MODULE);
+	return 0;
+}
 
 /**
  * connect_tcp_sess() - create a new tcp session on mount
@@ -126,12 +250,16 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 	if (conn == NULL)
 		return -ENOMEM;
 
-	init_smb1_server(conn);
+	conn->conn_ops = &default_tcp_conn_ops;
+	if (conn->conn_ops->init_fn)
+		conn->conn_ops->init_fn(conn);
 
 	conn->family = csin->sa_family;
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
-	conn->handler = kthread_run(tcp_sess_kthread, conn, "kcifsd_worker");
+	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
+				    conn,
+				    "kcifsd_worker");
 	if (IS_ERR(conn->handler)) {
 		cifsd_err("cannot start conn thread\n");
 		rc = PTR_ERR(conn->handler);
@@ -200,29 +328,6 @@ static int cifsd_tcp_run_kthread(void)
 	}
 
 	return 0;
-}
-
-/**
- * cifsd_tcp_conn_alive() - check server is unresponsive or not
- * @conn:     TCP server instance of connection
- *
- * Return:	true if server unresponsive, otherwise  false
- */
-bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
-{
-	if (conn->stats.open_files_count > 0)
-		return true;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-
-	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
-		cifsd_debug("No response from client in 120 secs\n");
-		return false;
-	}
-	return true;
-#else
-	return true;
-#endif
 }
 
 /**
@@ -554,4 +659,13 @@ struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	list_add(&conn->tcp_sess, &tcp_conn_list);
 	spin_unlock(&tcp_conn_list_lock);
 	return conn;
+}
+
+void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
+{
+	default_tcp_conn_ops.init_fn = ops->init_fn;
+	default_tcp_conn_ops.process_fn = ops->process_fn;
+	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
+
+	default_tcp_conn_ops.header_size_fn = ops->header_size_fn;
 }
