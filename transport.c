@@ -16,6 +16,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/mutex.h>
+
 #include "glob.h"
 #include "export.h"
 
@@ -24,6 +26,7 @@
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
+static DEFINE_MUTEX(init_lock);
 
 static int deny_new_conn;
 
@@ -301,7 +304,6 @@ int cifsd_tcp_write(struct smb_work *work)
 		kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
 				(char *)&val, sizeof(val));
 
-		/* write read smb header on socket*/
 		iov.iov_base = rsp_hdr;
 		iov.iov_len = AUX_PAYLOAD_HDR_SIZE(work);
 
@@ -312,7 +314,6 @@ int cifsd_tcp_write(struct smb_work *work)
 		}
 		total_len = len;
 
-		/* write data read from file on socket*/
 		iov.iov_base = AUX_PAYLOAD(work);
 		iov.iov_len = AUX_PAYLOAD_SIZE(work);
 		len = kernel_sendmsg(sock, &smb_msg, &iov, 1, iov.iov_len);
@@ -339,14 +340,16 @@ out:
 	return 0;
 }
 
-static void cifsd_close_socket(void)
+static void tcp_destroy_socket(void)
 {
 	int ret;
 
-	cifsd_debug("releasing socket\n");
+	if (!cifsd_socket)
+		return;
+
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
 	if (ret)
-		cifsd_err("failed to shutdown socket cleanly\n");
+		cifsd_err("Failed to shutdown socket: %d\n", ret);
 
 	if (cifsd_socket) {
 		sock_release(cifsd_socket);
@@ -365,11 +368,18 @@ int cifsd_tcp_init(void)
 	struct sockaddr_in sin;
 	int opt = 1;
 
-	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
-	if (ret)
-		return ret;
+	mutex_lock(&init_lock);
+	if (cifsd_socket) {
+		mutex_unlock(&init_lock);
+		return -EINVAL;
+	}
 
-	cifsd_debug("socket created\n");
+	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
+	if (ret) {
+		cifsd_err("Can't create socket: %d\n", ret);
+		goto out_error;
+	}
+
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = PF_INET;
 	sin.sin_port = htons(CIFSD_SERVER_PORT);
@@ -377,21 +387,21 @@ int cifsd_tcp_init(void)
 	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
 				(char *)&opt, sizeof(opt));
 	if (ret < 0) {
-		cifsd_err("failed to set socket options(%d)\n", ret);
-		goto release;
+		cifsd_err("Failed to set socket options: %d\n", ret);
+		goto out_error;
 	}
 
 	ret = kernel_setsockopt(cifsd_socket, SOL_TCP, TCP_NODELAY,
 				(char *)&opt, sizeof(opt));
 	if (ret < 0) {
-		cifsd_err("set TCP_NODELAY socket option error %d\n", ret);
-		goto release;
+		cifsd_err("Failed to set TCP_NODELAY: %d\n", ret);
+		goto out_error;
 	}
 
 	ret = kernel_bind(cifsd_socket, (struct sockaddr *)&sin, sizeof(sin));
 	if (ret) {
-		cifsd_err("failed to bind socket err = %d\n", ret);
-		goto release;
+		cifsd_err("Failed to bind socket: %d\n", ret);
+		goto out_error;
 	}
 
 	cifsd_socket->sk->sk_rcvtimeo = 7 * HZ;
@@ -399,21 +409,38 @@ int cifsd_tcp_init(void)
 
 	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
-		cifsd_err("port listen failure(%d)\n", ret);
-		goto release;
+		cifsd_err("Port listen() error: %d\n", ret);
+		goto out_error;
 	}
 
 	ret = cifsd_tcp_run_kthread();
 	if (ret) {
-		cifsd_err("failed to run forker thread(%d)\n", ret);
-		goto release;
+		cifsd_err("Can't start cifsd main kthread: %d\n", ret);
+		goto out_error;
 	}
 
+	mutex_unlock(&init_lock);
 	return 0;
 
-release:
-	cifsd_close_socket();
+out_error:
+	tcp_destroy_socket();
+	mutex_unlock(&init_lock);
 	return ret;
+}
+
+static void __cifsd_tcp_stop_kthread(void)
+{
+	int ret;
+
+	tcp_destroy_socket();
+
+	if (!cifsd_kthread)
+		return;
+
+	ret = kthread_stop(cifsd_kthread);
+	if (ret)
+		cifsd_err("failed to stop forker thread\n");
+	cifsd_kthread = NULL;
 }
 
 /**
@@ -423,19 +450,12 @@ release:
  */
 void cifsd_tcp_stop_kthread(void)
 {
-	int ret;
-
-	cifsd_close_socket();
-	if (cifsd_kthread) {
-		ret = kthread_stop(cifsd_kthread);
-		if (ret)
-			cifsd_err("failed to stop forker thread\n");
-	}
-
-	cifsd_kthread = NULL;
+	mutex_lock(&init_lock);
+	__cifsd_tcp_stop_kthread();
+	mutex_unlock(&init_lock);
 }
 
-static int cifsd_tcp_stop_sessions(void)
+static int tcp_stop_sessions(void)
 {
 	int ret;
 	int err = 0;
@@ -457,13 +477,15 @@ void cifsd_tcp_destroy(void)
 {
 	int ret;
 
+	mutex_lock(&init_lock);
 	cifsd_debug("closing SMB PORT and releasing socket\n");
 	deny_new_conn = 1;
-	ret = cifsd_tcp_stop_sessions();
+	ret = tcp_stop_sessions();
 	if (!ret) {
-		cifsd_tcp_stop_kthread();
+		__cifsd_tcp_stop_kthread();
 		cifsd_debug("SMB PORT closed\n");
 	}
+	mutex_unlock(&init_lock);
 }
 
 /**
