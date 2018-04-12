@@ -157,10 +157,6 @@ struct cifsd_tcp_conn {
 	struct cifsd_tcp_conn_ops	*conn_ops;
 };
 
-int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
-		    struct kvec *iov_orig, unsigned int nr_segs,
-		    unsigned int to_read);
-
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   char *buf,
 		   unsigned int to_read);

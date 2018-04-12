@@ -403,9 +403,10 @@ static int cifsd_tcp_run_kthread(void)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
-		    struct kvec *iov_orig, unsigned int nr_segs,
-		    unsigned int to_read)
+static int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
+			   struct kvec *iov_orig,
+			   unsigned int nr_segs,
+			   unsigned int to_read)
 {
 	int length = 0;
 	int total_read;
