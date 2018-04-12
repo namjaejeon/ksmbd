@@ -128,11 +128,8 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 
 	init_smb1_server(conn);
 
-	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pI4",
-			&(((const struct sockaddr_in *)csin)->sin_addr));
-	cifsd_debug("connect request from [%s]\n", conn->peeraddr);
-
-	conn->family = ((const struct sockaddr_in *)csin)->sin_family;
+	conn->family = csin->sa_family;
+	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
 	conn->handler = kthread_run(tcp_sess_kthread, conn, "kcifsd_worker");
 	if (IS_ERR(conn->handler)) {
