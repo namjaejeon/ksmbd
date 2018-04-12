@@ -23,6 +23,7 @@
 #include "transport.h"
 
 static struct task_struct *cifsd_kthread;
+static struct socket *cifsd_socket = NULL;
 
 static int deny_new_conn;
 
@@ -91,52 +92,30 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
  */
 static int cifsd_kthread_fn(void *p)
 {
-	struct cifsd_pid_info *cifsd_pid_info = (struct cifsd_pid_info *)p;
-	struct socket *socket = cifsd_pid_info->socket;
-	__u32 cifsd_pid = cifsd_pid_info->cifsd_pid;
-	struct task_struct *cifsd_task;
+	struct socket *client_sk = NULL;
 	int ret;
-	struct socket *newsock = NULL;
 
 	while (!kthread_should_stop()) {
 		if (deny_new_conn)
 			continue;
 
-		rcu_read_lock();
-		cifsd_task = pid_task(find_vpid(cifsd_pid), PIDTYPE_PID);
-		rcu_read_unlock();
-		if (cifsd_task) {
-			if (strncmp(cifsd_task->comm, "cifsd", 5)) {
-				cifsd_err("cifsd is not alive\n");
-				break;
-			}
-		} else {
-			cifsd_err("cifsd is not alive\n");
-			break;
-		}
-
-		ret = kernel_accept(socket, &newsock, O_NONBLOCK);
+		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
 		if (ret) {
 			if (ret == -EAGAIN)
 				/* check for new connections every 100 msecs */
-				schedule_timeout_interruptible(HZ/10);
-		} else {
-			cifsd_debug("connect success: accepted new connection\n");
-			newsock->sk->sk_rcvtimeo = 7 * HZ;
-			newsock->sk->sk_sndtimeo = 5 * HZ;
-			/* request for new connection */
-			connect_tcp_sess(newsock);
+				schedule_timeout_interruptible(HZ / 10);
+			continue;
 		}
+
+		cifsd_debug("connect success: accepted new connection\n");
+		client_sk->sk->sk_rcvtimeo = 7 * HZ;
+		client_sk->sk->sk_sndtimeo = 5 * HZ;
+
+		/* request for new connection */
+		connect_tcp_sess(client_sk);
 	}
+
 	cifsd_debug("releasing socket\n");
-	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
-	if (ret)
-		cifsd_err("failed to shutdown socket cleanly\n");
-
-	sock_release(socket);
-	kfree(cifsd_pid_info);
-	cifsd_kthread = NULL;
-
 	return 0;
 }
 
@@ -151,13 +130,13 @@ static int cifsd_kthread_fn(void *p)
  *	socket pointer members
  * Return:	0 on success or error number
  */
-static int cifsd_tcp_run_kthread(struct cifsd_pid_info *cifsd_pid_info)
+static int cifsd_tcp_run_kthread(void)
 {
 	int rc;
 
 	deny_new_conn = 0;
 	cifsd_kthread = kthread_run(cifsd_kthread_fn,
-				    cifsd_pid_info,
+				    NULL,
 				    "kcifsd_main");
 	if (IS_ERR(cifsd_kthread)) {
 		rc = PTR_ERR(cifsd_kthread);
@@ -360,20 +339,33 @@ out:
 	return 0;
 }
 
+static void cifsd_close_socket(void)
+{
+	int ret;
+
+	cifsd_debug("releasing socket\n");
+	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
+	if (ret)
+		cifsd_err("failed to shutdown socket cleanly\n");
+
+	if (cifsd_socket) {
+		sock_release(cifsd_socket);
+		cifsd_socket = NULL;
+	}
+}
+
 /**
  * cifsd_tcp_init - create socket for kcifsd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-int cifsd_tcp_init(__u32 cifsd_pid)
+int cifsd_tcp_init(void)
 {
 	int ret;
-	struct socket *socket = NULL;
 	struct sockaddr_in sin;
 	int opt = 1;
-	struct cifsd_pid_info *cifsd_pid_info = NULL;
 
-	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &socket);
+	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
 	if (ret)
 		return ret;
 
@@ -382,43 +374,36 @@ int cifsd_tcp_init(__u32 cifsd_pid)
 	sin.sin_family = PF_INET;
 	sin.sin_port = htons(CIFSD_SERVER_PORT);
 
-	ret = kernel_setsockopt(socket, SOL_SOCKET, SO_REUSEADDR,
-			(char *)&opt, sizeof(opt));
+	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
+				(char *)&opt, sizeof(opt));
 	if (ret < 0) {
 		cifsd_err("failed to set socket options(%d)\n", ret);
 		goto release;
 	}
 
-	ret = kernel_setsockopt(socket, SOL_TCP, TCP_NODELAY,
-			(char *)&opt, sizeof(opt));
+	ret = kernel_setsockopt(cifsd_socket, SOL_TCP, TCP_NODELAY,
+				(char *)&opt, sizeof(opt));
 	if (ret < 0) {
 		cifsd_err("set TCP_NODELAY socket option error %d\n", ret);
 		goto release;
 	}
 
-	ret = kernel_bind(socket, (struct sockaddr *)&sin, sizeof(sin));
+	ret = kernel_bind(cifsd_socket, (struct sockaddr *)&sin, sizeof(sin));
 	if (ret) {
 		cifsd_err("failed to bind socket err = %d\n", ret);
 		goto release;
 	}
 
-	socket->sk->sk_rcvtimeo = 7 * HZ;
-	socket->sk->sk_sndtimeo = 5 * HZ;
+	cifsd_socket->sk->sk_rcvtimeo = 7 * HZ;
+	cifsd_socket->sk->sk_sndtimeo = 5 * HZ;
 
-	ret = socket->ops->listen(socket, CIFSD_SOCKET_BACKLOG);
+	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
 		cifsd_err("port listen failure(%d)\n", ret);
 		goto release;
 	}
 
-	cifsd_pid_info = kmalloc(sizeof(struct cifsd_pid_info), GFP_KERNEL);
-	if (!cifsd_pid_info)
-		goto release;
-
-	cifsd_pid_info->socket = socket;
-	cifsd_pid_info->cifsd_pid = cifsd_pid;
-
-	ret = cifsd_tcp_run_kthread(cifsd_pid_info);
+	ret = cifsd_tcp_run_kthread();
 	if (ret) {
 		cifsd_err("failed to run forker thread(%d)\n", ret);
 		goto release;
@@ -427,13 +412,7 @@ int cifsd_tcp_init(__u32 cifsd_pid)
 	return 0;
 
 release:
-	cifsd_debug("releasing socket\n");
-	ret = kernel_sock_shutdown(socket, SHUT_RDWR);
-	if (ret)
-		cifsd_err("failed to shutdown socket cleanly\n");
-
-	sock_release(socket);
-
+	cifsd_close_socket();
 	return ret;
 }
 
@@ -446,6 +425,7 @@ void cifsd_tcp_stop_kthread(void)
 {
 	int ret;
 
+	cifsd_close_socket();
 	if (cifsd_kthread) {
 		ret = kthread_stop(cifsd_kthread);
 		if (ret)

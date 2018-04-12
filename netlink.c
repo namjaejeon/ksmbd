@@ -722,7 +722,7 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		err = cifsd_init_connection(nlh);
 		if (!err) {
 			/* No old cifsd task exists */
-			err = cifsd_tcp_init(nlh->nlmsg_pid);
+			err = cifsd_tcp_init();
 			if (err)
 				cifsd_err("unable to open SMB PORT\n");
 		}
