@@ -90,8 +90,61 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 	return new_iov;
 }
 
+extern int tcp_sess_kthread(void *p);
+
 /**
- * cifsd_do_fork() - forker thread to listen new SMB connection
+ * connect_tcp_sess() - create a new tcp session on mount
+ * @sock:	socket associated with new connection
+ *
+ * whenever a new connection is requested, create a conn thread
+ * (session thread) to handle new incoming smb requests from the connection
+ *
+ * Return:	0 on success, otherwise error
+ */
+static int cifsd_tcp_new_connection(struct socket *client_sk)
+{
+	struct sockaddr_storage caddr;
+	struct sockaddr *csin = (struct sockaddr *)&caddr;
+	int rc = 0;
+	struct cifsd_tcp_conn *conn;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+	int cslen;
+
+	if (kernel_getpeername(client_sk, csin, &cslen) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		return -EINVAL;
+	}
+#else
+	if (kernel_getpeername(client_sk, csin) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		return -EINVAL;
+	}
+#endif
+
+	conn = cifsd_tcp_conn_alloc(client_sk);
+	if (conn == NULL)
+		return -ENOMEM;
+
+	init_smb1_server(conn);
+
+	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pI4",
+			&(((const struct sockaddr_in *)csin)->sin_addr));
+	cifsd_debug("connect request from [%s]\n", conn->peeraddr);
+
+	conn->family = ((const struct sockaddr_in *)csin)->sin_family;
+
+	conn->handler = kthread_run(tcp_sess_kthread, conn, "kcifsd_worker");
+	if (IS_ERR(conn->handler)) {
+		cifsd_err("cannot start conn thread\n");
+		rc = PTR_ERR(conn->handler);
+		cifsd_tcp_conn_free(conn);
+	}
+	return rc;
+}
+
+/**
+ * cifsd_kthread_fn() - listen to new SMB connections and callback server
  * @p:		arguments to forker thread
  *
  * Return:	Returns a task_struct or ERR_PTR
@@ -117,8 +170,7 @@ static int cifsd_kthread_fn(void *p)
 		client_sk->sk->sk_rcvtimeo = 7 * HZ;
 		client_sk->sk->sk_sndtimeo = 5 * HZ;
 
-		/* request for new connection */
-		connect_tcp_sess(client_sk);
+		cifsd_tcp_new_connection(client_sk);
 	}
 
 	cifsd_debug("releasing socket\n");

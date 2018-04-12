@@ -48,7 +48,6 @@ unsigned int smb_min_small = 30;
  */
 unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
-static DEFINE_IDA(cifsd_ida);
 struct fidtable_desc global_fidtable;
 
 LIST_HEAD(global_lock_list);
@@ -395,7 +394,7 @@ static size_t get_header_size(void)
  *
  * Return:	0 on success
  */
-static int tcp_sess_kthread(void *p)
+int tcp_sess_kthread(void *p)
 {
 	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
 	unsigned int pdu_size;
@@ -487,7 +486,6 @@ static int tcp_sess_kthread(void *p)
 		}
 	}
 
-	ida_simple_remove(&cifsd_ida, conn->th_id);
 	destroy_lease_table(conn);
 
 	cifsd_tcp_conn_free(conn);
@@ -498,69 +496,6 @@ static int tcp_sess_kthread(void *p)
 	return 0;
 }
 
-
-/**
- * connect_tcp_sess() - create a new tcp session on mount
- * @sock:	socket associated with new connection
- *
- * whenever a new connection is requested, create a conn thread
- * (session thread) to handle new incoming smb requests from the connection
- *
- * Return:	0 on success, otherwise error
- */
-int connect_tcp_sess(struct socket *sock)
-{
-	struct sockaddr_storage caddr;
-	struct sockaddr *csin = (struct sockaddr *)&caddr;
-	int rc = 0;
-	struct cifsd_tcp_conn *conn;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
-	if (kernel_getpeername(sock, csin) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#else
-	int cslen;
-
-	if (kernel_getpeername(sock, csin, &cslen) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#endif
-	conn = cifsd_tcp_conn_alloc(sock);
-	if (conn == NULL) {
-		rc = -ENOMEM;
-		goto out;
-	}
-
-	init_smb1_server(conn);
-
-	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pI4",
-			&(((const struct sockaddr_in *)csin)->sin_addr));
-	cifsd_debug("connect request from [%s]\n", conn->peeraddr);
-
-	conn->family = ((const struct sockaddr_in *)csin)->sin_family;
-
-	conn->th_id = ida_simple_get(&cifsd_ida, 1, 0, GFP_KERNEL);
-	if (conn->th_id < 0) {
-		cifsd_err("ida_simple_get failed: %d\n", conn->th_id);
-		cifsd_tcp_conn_free(conn);
-		goto out;
-	}
-
-	conn->handler = kthread_run(tcp_sess_kthread, conn,
-					"kcifsd/%d", conn->th_id);
-	if (IS_ERR(conn->handler)) {
-		/* TODO : remove from list and free sock */
-		cifsd_err("cannot start conn thread\n");
-		ida_simple_remove(&cifsd_ida, conn->th_id);
-		rc = PTR_ERR(conn->handler);
-		cifsd_tcp_conn_free(conn);
-	}
-
-out:
-	return rc;
-}
 
 /**
  * init_smb_server() - initialize smb server at module init
