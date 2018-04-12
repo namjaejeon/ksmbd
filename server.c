@@ -104,20 +104,6 @@ static inline int check_conn_state(struct smb_work *smb_work)
 }
 
 /**
- * free_workitem_buffers() - free all allocated buffers from different pool
- *			 for smb_work and free workitem itself
- * @smb_work: smb work item
- * Return: void
- */
-static void free_workitem_buffers(struct smb_work *smb_work)
-{
-	cifsd_free_response(RESPONSE_BUF(smb_work));
-	cifsd_free_response(AUX_PAYLOAD(smb_work));
-	cifsd_free_request(REQUEST_BUF(smb_work));
-	cifsd_free_work_struct(smb_work);
-}
-
-/**
  * handle_smb_work() - process pending smb work requests
  * @smb_work:	smb work containing request command buffer
  *
@@ -281,8 +267,8 @@ nosend:
 	if (cifsd_tcp_exiting(smb_work))
 		force_sig(SIGKILL, conn->handler);
 
-	/* free buffers */
-	free_workitem_buffers(smb_work);
+	/* Now can free cifsd work */
+	cifsd_free_work_struct(smb_work);
 
 	mutex_unlock(&conn->srv_mutex);
 	atomic_dec(&conn->req_running);
