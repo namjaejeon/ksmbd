@@ -144,6 +144,9 @@ struct cifsd_tcp_conn {
 	char				*mechToken;
 
 	struct cifsd_tcp_conn_ops	*conn_ops;
+
+	/* for only SMB1 */
+	struct cifsd_sess *sess_cache;
 };
 
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,

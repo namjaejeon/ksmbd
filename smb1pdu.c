@@ -849,96 +849,64 @@ int smb_negotiate(struct smb_work *smb_work)
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
-	neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
-	neg_rsp->ByteCount = CIFS_CRYPTO_KEY_SIZE;
-	/* initialize random server challenge */
-	get_random_bytes(conn->ntlmssp_cryptkey, sizeof(__u64));
-	memcpy((neg_rsp->u.EncryptionKey), conn->ntlmssp_cryptkey,
-			CIFS_CRYPTO_KEY_SIZE);
+
+	/* TODO: need to set spnego enable through smb.conf parameter */
+	conn->use_spnego = true;
+	if (conn->use_spnego == false) {
+		neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
+		neg_rsp->ByteCount = CIFS_CRYPTO_KEY_SIZE;
+		/* initialize random server challenge */
+		get_random_bytes(conn->ntlmssp_cryptkey, sizeof(__u64));
+		memcpy((neg_rsp->u.EncryptionKey), conn->ntlmssp_cryptkey,
+				CIFS_CRYPTO_KEY_SIZE);
+		/* Adjust pdu length, 17 words and 8 bytes added */
+		inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
+	} else {
+		neg_rsp->EncryptionKeyLength = 0;
+		neg_rsp->ByteCount = SMB1_CLIENT_GUID_SIZE + 74;
+		get_random_bytes(neg_rsp->u.extended_response.GUID,
+			SMB1_CLIENT_GUID_SIZE);
+		memcpy(neg_rsp->u.extended_response.SecurityBlob,
+			NEGOTIATE_GSS_HEADER, 74);
+		inc_rfc1001_len(neg_rsp, (17 * 2 + 16 + 74));
+	}
 
 	/* Null terminated domain name in unicode */
 
-
-	/* Adjust pdu length, 17 words and 8 bytes added */
-	inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
 	cifsd_tcp_set_need_negotiate(smb_work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later */
 	return 0;
 }
 
-/**
- * smb_session_setup_andx() - session setup request handler
- * @smb_work:	smb work containing session setup request buffer
- *
- * Return:      0 on success, otherwise error
- */
-int smb_session_setup_andx(struct smb_work *smb_work)
+int build_sess_rsp_noextsec(struct cifsd_sess *sess,
+		struct smb_com_session_setup_req_no_secext *req,
+		struct smb_com_session_setup_old_resp *rsp)
 {
-	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(smb_work);
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
-	struct cifsd_tcp_conn *conn = smb_work->conn;
-	struct cifsd_sess *sess = NULL;
+	struct cifsd_tcp_conn *conn = sess->conn;
+	int offset, err = 0;
 	char *name;
-	int offset, rc;
-
-	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)REQUEST_BUF(smb_work);
-	SESSION_SETUP_ANDX *response = (SESSION_SETUP_ANDX *)RESPONSE_BUF(smb_work);
-
-	/* This triggers with cifs client. cifs client needs fixing */
-	WARN_ON(req_hdr->WordCount != 13);
-	WARN_ON(!cifsd_tcp_need_negotiate(smb_work));
 
 	/* check if valid user name is present in request or not */
-	offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
-			pSMB->req_no_secext.CaseSensitivePasswordLength;
+	offset = req->CaseInsensitivePasswordLength +
+		req->CaseSensitivePasswordLength;
 
 	/* 1 byte for padding */
-	name = smb_strndup_from_utf16(
-			(pSMB->req_no_secext.CaseInsensitivePassword +
-			 offset + 1), 256, true, conn->local_nls);
+	name = smb_strndup_from_utf16((req->CaseInsensitivePassword + offset +
+				1), 256, true, conn->local_nls);
 	if (IS_ERR(name)) {
 		cifsd_err("cannot allocate memory\n");
-		rc = PTR_ERR(name);
+		err = PTR_ERR(name);
 		goto out_err;
 	}
 
-	if (!smb_work->sess) {
-		/* build smb session */
-		WARN_ON(smb_work->sess);
-		sess = kzalloc(sizeof(struct cifsd_sess), GFP_KERNEL);
-		if (sess == NULL) {
-			rc = -ENOMEM;
-			goto out_err;
-		}
-
-		sess->conn = conn;
-		INIT_LIST_HEAD(&sess->cifsd_ses_list);
-		INIT_LIST_HEAD(&sess->cifsd_chann_list);
-		list_add(&sess->cifsd_ses_list, &conn->cifsd_sess);
-		list_add(&sess->cifsd_ses_global_list, &cifsd_session_list);
-		INIT_LIST_HEAD(&sess->tcon_list);
-		sess->tcon_count = 0;
-
-		cifsd_debug("session setup request for user %s\n", name);
-		sess->user = cifsd_is_user_present(name);
-		kfree(name);
-		if (!sess->user) {
-			cifsd_err("user not present in database\n");
-			rc = -EINVAL;
-			goto out_err;
-		}
-
-		rsp_hdr->Uid = user_smb1_vuid(sess->user);
-		sess->sess_id = user_smb1_vuid(sess->user);
-		init_waitqueue_head(&sess->pipe_q);
-		sess->ev_state = NETLINK_REQ_INIT;
-		cifsd_debug("generate session ID : %llu, Uid : %u\n",
-				sess->sess_id, req_hdr->Uid);
-	} else {
-		sess = smb_work->sess;
-		cifsd_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
-				sess, sess->sess_id, req_hdr->Uid);
+	cifsd_debug("session setup request for user %s\n", name);
+	sess->user = cifsd_is_user_present(name);
+	kfree(name);
+	if (!sess->user) {
+		cifsd_err("user not present in database\n");
+		err = -EINVAL;
+		goto out_err;
 	}
 
 	memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
@@ -947,89 +915,311 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 	if (user_guest(sess->user))
 		goto no_password_check;
 
-	if (pSMB->req_no_secext.CaseSensitivePasswordLength ==
-		CIFS_AUTH_RESP_SIZE) {
-		rc = process_ntlm(sess,
-			(char *)pSMB->req_no_secext.CaseInsensitivePassword +
-			pSMB->req_no_secext.CaseInsensitivePasswordLength);
-		if (rc) {
+	if (req->CaseSensitivePasswordLength == CIFS_AUTH_RESP_SIZE) {
+		err = process_ntlm(sess, req->CaseInsensitivePassword +
+				req->CaseInsensitivePasswordLength);
+		if (err) {
 			cifsd_err("ntlm authentication failed for user %s\n",
-				user_name(sess->user));
+					user_name(sess->user));
 			goto out_err;
 		}
 	} else {
 		char *ntdomain;
 
-		offset = pSMB->req_no_secext.CaseInsensitivePasswordLength +
-			pSMB->req_no_secext.CaseSensitivePasswordLength +
+		offset = req->CaseInsensitivePasswordLength +
+			req->CaseSensitivePasswordLength +
 			((strlen(user_name(sess->user)) + 1) * 2);
 
 		ntdomain = smb_strndup_from_utf16(
-			pSMB->req_no_secext.CaseInsensitivePassword +
-			offset + 1, 256, true, conn->local_nls);
+				req->CaseInsensitivePassword +
+				offset + 1, 256, true, conn->local_nls);
 		if (IS_ERR(ntdomain)) {
 			cifsd_err("cannot allocate memory\n");
-			rc = PTR_ERR(ntdomain);
+			err = PTR_ERR(ntdomain);
 			goto out_err;
 		}
 
-		rc = process_ntlmv2(sess, (struct ntlmv2_resp *) ((char *)
-			pSMB->req_no_secext.CaseInsensitivePassword +
-			pSMB->req_no_secext.CaseInsensitivePasswordLength),
-			pSMB->req_no_secext.CaseSensitivePasswordLength -
-			CIFS_ENCPWD_SIZE, ntdomain);
-		if (rc) {
+		err = process_ntlmv2(sess, (struct ntlmv2_resp *) ((char *)
+					req->CaseInsensitivePassword +
+					req->CaseInsensitivePasswordLength),
+				req->CaseSensitivePasswordLength -
+				CIFS_ENCPWD_SIZE, ntdomain);
+		if (err) {
 			cifsd_err("authentication failed for user %s\n",
-				user_name(sess->user));
+					user_name(sess->user));
 			goto out_err;
 		}
 	}
 
 no_password_check:
+	/* Build response. We don't use extended security (yet), so wct is 3 */
+	rsp->hdr.WordCount = 3;
+	rsp->Action = 0;
+	/* The names should be unicode */
+	rsp->ByteCount = 0;
+	/* adjust pdu length. data added 6 bytes */
+	inc_rfc1001_len(&rsp->hdr, 6);
+	/* this is an ANDx command ? */
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
 
-	/* verify that any session is not already added although
-	   we have set max vcn as 1 */
-	WARN_ON(conn->sess_count);
+	if (req->AndXCommand != 0xFF) {
+		/* adjust response */
+		rsp->AndXCommand = req->AndXCommand;
+		return rsp->AndXCommand; /* More processing required */
+	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
-	conn->sess_count++;
+out_err:
+	return err;
+}
+
+int build_sess_rsp_extsec(struct cifsd_sess *sess,
+	struct smb_com_session_setup_req *req,
+	struct smb_com_session_setup_resp *rsp)
+{
+	struct cifsd_tcp_conn *conn = sess->conn;
+	NEGOTIATE_MESSAGE *negblob;
+	char *neg_blob;
+	int err = 0, neg_blob_len;
+	unsigned char *spnego_blob;
+	u16 spnego_blob_len;
+
+	rsp->hdr.WordCount = 4;
+	rsp->Action = 0;
+
+	/* The names should be unicode */
+	rsp->ByteCount = 0;
+	/* adjust pdu length. data added 6 bytes */
+	inc_rfc1001_len(&rsp->hdr, 8);
+
+	negblob = (NEGOTIATE_MESSAGE *)req->SecurityBlob;
+	err = cifsd_decode_negTokenInit((char *)negblob,
+			le16_to_cpu(req->SecurityBlobLength), conn);
+	if (!err) {
+		cifsd_debug("negTokenInit parse err %d\n", err);
+		/* If failed, it might be negTokenTarg */
+		err = decode_negTokenTarg((char *)negblob,
+				le16_to_cpu(req->SecurityBlobLength),
+				conn);
+		if (!err) {
+			cifsd_debug("negTokenTarg parse err %d\n", err);
+			conn->use_spnego = false;
+		}
+		err = 0;
+	}
+
+	if (conn->mechToken)
+		negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
+
+	if (negblob->MessageType == NtLmNegotiate) {
+		CHALLENGE_MESSAGE *chgblob;
+
+		cifsd_debug("negotiate phase\n");
+		err = decode_ntlmssp_negotiate_blob(negblob,
+				le16_to_cpu(req->SecurityBlobLength), sess);
+		if (err)
+			goto out_err;
+
+		chgblob = (CHALLENGE_MESSAGE *)rsp->SecurityBlob;
+		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
+
+		if (conn->use_spnego) {
+			neg_blob = kmalloc(sizeof(struct _NEGOTIATE_MESSAGE) +
+					(strlen(netbios_name) * 2  + 4) * 6,
+					GFP_KERNEL);
+			if (!neg_blob) {
+				err = -ENOMEM;
+				goto out_err;
+			}
+			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+			neg_blob_len = build_ntlmssp_challenge_blob(
+					chgblob, sess);
+			if (neg_blob_len < 0) {
+				kfree(neg_blob);
+				err = -ENOMEM;
+				goto out_err;
+			}
+
+			if (build_spnego_ntlmssp_neg_blob(&spnego_blob,
+						&spnego_blob_len,
+						neg_blob, neg_blob_len)) {
+				kfree(neg_blob);
+				err = -ENOMEM;
+				goto out_err;
+			}
+
+			memcpy((char *)rsp->SecurityBlob, spnego_blob,
+					spnego_blob_len);
+			rsp->SecurityBlobLength =
+				cpu_to_le16(spnego_blob_len);
+			kfree(spnego_blob);
+			kfree(neg_blob);
+		} else {
+			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+					sess);
+			if (neg_blob_len < 0) {
+				err = -ENOMEM;
+				goto out_err;
+			}
+
+			rsp->SecurityBlobLength = neg_blob_len;
+		}
+
+		rsp->hdr.Status.CifsError = NT_STATUS_MORE_PROCESSING_REQUIRED;
+		/*
+		 * Note: here total size -1 is done as an adjustment
+		 * for 0 size blob.
+		 */
+		inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
+		rsp->ByteCount = rsp->SecurityBlobLength;
+	} else if (negblob->MessageType == NtLmAuthenticate) {
+		AUTHENTICATE_MESSAGE *authblob;
+		char *username;
+
+		cifsd_debug("authenticate phase\n");
+		if (conn->use_spnego && conn->mechToken)
+			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
+		else
+			authblob = (AUTHENTICATE_MESSAGE *)req->SecurityBlob;
+
+		username = smb_strndup_from_utf16((const char *)authblob +
+				authblob->UserName.BufferOffset,
+				authblob->UserName.Length, true,
+				conn->local_nls);
+
+		if (IS_ERR(username)) {
+			cifsd_err("cannot allocate memory\n");
+			err = PTR_ERR(username);
+			goto out_err;
+		}
+
+		cifsd_debug("session setup request for user %s\n", username);
+		sess->user = cifsd_is_user_present(username);
+		if (!sess->user) {
+			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
+					username);
+			kfree(username);
+			err = -EINVAL;
+			goto out_err;
+		}
+
+		rsp->hdr.Uid = user_smb1_vuid(sess->user);
+		conn->vuid = sess->sess_id = user_smb1_vuid(sess->user);
+		cifsd_debug("generate session ID : %llu, Uid : %u\n",
+				sess->sess_id, rsp->hdr.Uid);
+
+		err = decode_ntlmssp_authenticate_blob(authblob,
+				le16_to_cpu(req->SecurityBlobLength), sess);
+		if (err) {
+			cifsd_debug("authentication failed\n");
+			err = -EINVAL;
+			goto out_err;
+		}
+
+		if (conn->use_spnego) {
+			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
+						&spnego_blob_len, 0)) {
+				err = -ENOMEM;
+				goto out_err;
+			}
+
+			memcpy((char *)rsp->SecurityBlob, spnego_blob,
+					spnego_blob_len);
+			rsp->SecurityBlobLength =
+				cpu_to_le16(spnego_blob_len);
+			kfree(spnego_blob);
+			inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
+			rsp->ByteCount = rsp->SecurityBlobLength;
+		}
+		conn->sess_count++;
+	} else {
+		cifsd_err("%s Invalid phase\n", __func__);
+		err = -EINVAL;
+	}
+
+	/* this is an ANDx command ? */
+	rsp->AndXReserved = 0;
+	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+
+	if (req->AndXCommand != 0xFF) {
+		/* adjust response */
+		rsp->AndXCommand = req->AndXCommand;
+		return rsp->AndXCommand; /* More processing required */
+	}
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
+
+out_err:
+	return err;
+}
+
+/**
+ * smb_session_setup_andx() - session setup request handler
+ * @smb_work:   smb work containing session setup request buffer
+ *
+ * Return:      0 on success, otherwise error
+ */
+int smb_session_setup_andx(struct smb_work *smb_work)
+{
+	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_sess *sess = NULL;
+	int rc, cap;
+
+	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)REQUEST_BUF(smb_work);
+	SESSION_SETUP_ANDX *rsp = (SESSION_SETUP_ANDX *)RESPONSE_BUF(smb_work);
+
+	if (pSMB->req.hdr.WordCount == 12)
+		cap = pSMB->req.Capabilities;
+	else if (pSMB->req.hdr.WordCount == 13)
+		cap = pSMB->req_no_secext.Capabilities;
+	else {
+		cifsd_err("malformed packet\n");
+		smb_work->send_no_response = 1;
+		return 0;
+	}
+
+	if (!conn->sess_cache) {
+		sess = kzalloc(sizeof(struct cifsd_sess), GFP_KERNEL);
+		if (sess == NULL) {
+			rc = -ENOMEM;
+			goto out_err;
+		}
+		sess->conn = conn;
+		INIT_LIST_HEAD(&sess->cifsd_ses_list);
+		INIT_LIST_HEAD(&sess->cifsd_chann_list);
+		list_add(&sess->cifsd_ses_list, &conn->cifsd_sess);
+		list_add(&sess->cifsd_ses_global_list, &cifsd_session_list);
+		INIT_LIST_HEAD(&sess->tcon_list);
+		sess->tcon_count = 0;
+		init_waitqueue_head(&sess->pipe_q);
+		sess->ev_state = NETLINK_REQ_INIT;
+		conn->sess_cache = sess;
+	} else {
+		sess = conn->sess_cache;
+		cifsd_debug("reuse session(%p) session ID : %llu\n",
+				sess, sess->sess_id);
+	}
+
+	if (cap & CAP_EXTENDED_SECURITY) {
+		cifsd_debug("build response with extend_security\n");
+		rc = build_sess_rsp_extsec(sess, &pSMB->req, &rsp->resp);
+
+	} else {
+		cifsd_debug("build response without extend_security\n");
+		rc = build_sess_rsp_noextsec(sess, &pSMB->req_no_secext,
+				&rsp->old_resp);
+	}
+	if (rc < 0)
+		goto out_err;
+
 	rc = init_fidtable(&sess->fidtable);
 	if (rc < 0)
 		goto out_err;
 
 	sess->valid = 1;
 	smb_work->sess = sess;
-
-	/* Build response. We don't use extended security (yet), so wct is 3 */
-	rsp_hdr->WordCount = 3;
-	response->old_resp.Action = 0;
-
-	/* The names should be unicode */
-	response->old_resp.ByteCount = 0;
-
-	/* adjust pdu length. data added 6 bytes */
-	inc_rfc1001_len(rsp_hdr, 6);
-
-	/* setup unique client id. TODO: create a list */
-	rsp_hdr->Uid = user_smb1_vuid(sess->user);
-	conn->vuid = user_smb1_vuid(sess->user);
-
 	cifsd_tcp_set_good(smb_work);
-
-	/* this is an ANDx command ? */
-	if (pSMB->req_no_secext.AndXCommand == SMB_NO_MORE_ANDX_COMMAND) {
-		response->old_resp.AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-		response->old_resp.AndXReserved = 0;
-		response->old_resp.AndXOffset = 0;
-		return 0;
-	} else {
-		/* adjust response */
-		response->old_resp.AndXOffset = get_rfc1002_length(rsp_hdr);
-		response->old_resp.AndXCommand =
-					pSMB->req_no_secext.AndXCommand;
-		response->old_resp.AndXReserved = 0;
-		/* More processing required */
-		return pSMB->req_no_secext.AndXCommand;
-	}
+	return 0;
 
 out_err:
 	if (rc < 0 && sess) {
@@ -1039,7 +1229,7 @@ out_err:
 		kfree(sess);
 		smb_work->sess = NULL;
 	}
-	rsp_hdr->Status.CifsError = NT_STATUS_LOGON_FAILURE;
+	rsp->resp.hdr.Status.CifsError = NT_STATUS_LOGON_FAILURE;
 	return rc;
 }
 
