@@ -549,37 +549,6 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 }
 
 /**
- * cifsd_share_show() - show a list of exported shares
- * @buf:       buffer containing share list output
- *
- * Return:      output buffer length
- **/
-int cifsd_share_show(char *buf)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path) {
-			len = snprintf(tbuf, limit, "%s:%s\n",
-				 share->sharename, share->path);
-			if (len < 0) {
-				total = len;
-				break;
-			}
-			tbuf += len;
-			total += len;
-			limit -= len;
-		}
-	}
-
-	return total;
-}
-
-/**
  * cifsd_user_show() - show a list of added user
  * @buf:       buffer containing user list output
 

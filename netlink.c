@@ -552,41 +552,6 @@ out:
 	return ret;
 }
 
-/**
- * cifsd_sharelist() - handler to list exported cifsd shares
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_sharelist(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	char *buf;
-	int ret;
-
-	ev = nlmsg_data(nlh);
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsd_share_show(buf);
-	if (!ret)
-		cifsd_err("get share list failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_LIST_SHARE_RSP;
-	rsp_ev.error = ret;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" share list respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
 	struct cifsd_sess *sess;
@@ -727,9 +692,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSSTAT_UEVENT_LIST_USER:
 		err = cifsd_userlist(nlh);
-		break;
-	case CIFSSTAT_UEVENT_LIST_SHARE:
-		err = cifsd_sharelist(nlh);
 		break;
 	default:
 		err = -EINVAL;

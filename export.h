@@ -239,7 +239,6 @@ int cifsadmin_user_del(char *username);
 int cifsd_user_store(const char *buf, size_t len);
 int cifsd_config_store(const char *buf, size_t len);
 int cifsd_user_show(char *buf);
-int cifsd_share_show(char *buf);
 int cifsd_debug_store(const char *buf);
 int cifsd_caseless_search_store(const char *buf);
 #endif /* __CIFSD_EXPORT_H */
