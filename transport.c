@@ -95,7 +95,6 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->srv_count = 1;
 	conn->sess_count = 0;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
