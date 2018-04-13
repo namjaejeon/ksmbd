@@ -478,46 +478,6 @@ static int cifsstat_init_connection(struct nlmsghdr *nlh)
 }
 
 /**
- * cifsd_stat_read() - handler for cifsd stat read
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_stat_read(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	int flag;
-	char *buf;
-	char *client_ip;
-	int ret = 0;
-
-	ev = nlmsg_data(nlh);
-	flag = ev->k.r_stat.flag;
-	client_ip = ev->k.r_stat.statip;
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsstat_show(buf, client_ip, flag);
-	if (!ret)
-		cifsd_err("get stat failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_READ_STAT_RSP;
-	rsp_ev.error = ret;
-	rsp_ev.k.r_stat.flag = flag;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" stat respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
-/**
  * cifsd_userlist() - handler to list exported cifsd users
  * @nlh:       netlink message header
  *
@@ -686,9 +646,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSSTAT_UEVENT_INIT_CONNECTION:
 		err = cifsstat_init_connection(nlh);
-		break;
-	case CIFSSTAT_UEVENT_READ_STAT:
-		err = cifsd_stat_read(nlh);
 		break;
 	case CIFSSTAT_UEVENT_LIST_USER:
 		err = cifsd_userlist(nlh);
