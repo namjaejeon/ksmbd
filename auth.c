@@ -360,6 +360,43 @@ out:
 }
 
 /**
+ * process_ntlm2() - NTLM2(extended security) authentication handler
+ * @sess:	session of connection
+ * @client_nonce:	client nonce from LM response.
+ * @ntlm_resp:		ntlm response data from client.
+ *
+ * Return:	0 on success, error number on error
+ */
+static int process_ntlm2(struct cifsd_sess *sess, char *client_nonce,
+	 char *ntlm_resp)
+{
+	char sess_key[CIFS_SMB1_SESSKEY_SIZE] = {0};
+	int rc;
+	unsigned char p21[21];
+	char key[CIFS_AUTH_RESP_SIZE];
+
+	rc = update_sess_key(sess_key, client_nonce,
+		(char *)sess->ntlmssp.cryptkey, 8);
+	if (rc) {
+		cifsd_err("password processing failed\n");
+		goto out;
+	}
+
+	memset(p21, '\0', 21);
+	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
+	rc = E_P24(p21, sess_key, key);
+	if (rc) {
+		cifsd_err("password processing failed\n");
+		goto out;
+	}
+
+	rc = memcmp(ntlm_resp, key, CIFS_AUTH_RESP_SIZE);
+out:
+
+	return rc;
+}
+
+/**
  * decode_ntlmssp_authenticate_blob() - helper function to construct
  * authenticate blob
  * @authblob:	authenticate blob source pointer
@@ -386,8 +423,14 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 
 	/* process NTLM authentication */
 	if (authblob->NtChallengeResponse.Length == CIFS_AUTH_RESP_SIZE) {
-		return process_ntlm(sess, (char *)authblob +
-			authblob->NtChallengeResponse.BufferOffset);
+		if (authblob->NegotiateFlags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+			return process_ntlm2(sess, (char *)authblob +
+				authblob->LmChallengeResponse.BufferOffset,
+				(char *)authblob +
+				authblob->NtChallengeResponse.BufferOffset);
+		else
+			return process_ntlm(sess, (char *)authblob +
+				authblob->NtChallengeResponse.BufferOffset);
 	}
 
 	/* TODO : use domain name that imported from configuration file */
@@ -445,6 +488,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	wchar_t *name;
 	__u8 *target_name;
 	unsigned int len, flags, blob_len, type;
+	int cflags = sess->ntlmssp.client_flags;
 
 	memcpy(chgblob->Signature, NTLMSSP_SIGNATURE, 8);
 	chgblob->MessageType = NtLmChallenge;
@@ -452,16 +496,22 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	flags = NTLMSSP_NEGOTIATE_UNICODE |
 		NTLMSSP_NEGOTIATE_NTLM | NTLMSSP_TARGET_TYPE_SERVER |
 		NTLMSSP_NEGOTIATE_TARGET_INFO |
-		NTLMSSP_NEGOTIATE_128 | NTLMSSP_NEGOTIATE_56 |
 		NTLMSSP_NEGOTIATE_VERSION;
 
-	if (sess->ntlmssp.client_flags & NTLMSSP_REQUEST_TARGET)
+	if (cflags & NTLMSSP_NEGOTIATE_SIGN) {
+		flags |= NTLMSSP_NEGOTIATE_SIGN;
+		flags |= cflags & (NTLMSSP_NEGOTIATE_128 |
+			NTLMSSP_NEGOTIATE_56);
+	}
+
+	if (cflags & NTLMSSP_NEGOTIATE_ALWAYS_SIGN)
+		flags |= NTLMSSP_NEGOTIATE_ALWAYS_SIGN;
+
+	if (cflags & NTLMSSP_REQUEST_TARGET)
 		flags |= NTLMSSP_REQUEST_TARGET;
 
 	if (sess->conn->use_spnego &&
-		sess->conn->dialect >= SMB30_PROT_ID &&
-			(sess->ntlmssp.client_flags &
-			 NTLMSSP_NEGOTIATE_EXTENDED_SEC))
+		(cflags & NTLMSSP_NEGOTIATE_EXTENDED_SEC))
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
