@@ -351,76 +351,80 @@ typedef struct negotiate_req {
 #define SECMODE_SIGN_ENABLED  0x04      /* SMB security signatures enabled */
 #define SECMODE_SIGN_REQUIRED 0x08      /* SMB security signatures required */
 
+struct smb_com_session_setup_req {	/* request format */
+	struct smb_hdr hdr;	/* wct = 12 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 MaxBufferSize;
+	__le16 MaxMpxCount;
+	__le16 VcNumber;
+	__u32 SessionKey;
+	__le16 SecurityBlobLength;
+	__u32 Reserved;
+	__le32 Capabilities;	/* see below */
+	__le16 ByteCount;
+	unsigned char SecurityBlob[1];	/* followed by */
+	/* STRING NativeOS */
+	/* STRING NativeLanMan */
+} __attribute__((packed));	/* NTLM request format (with
+				   extended security */
+
+struct smb_com_session_setup_req_no_secext {	/* request format */
+	struct smb_hdr hdr;	/* we will handle this :: wct = 13 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 MaxBufferSize;
+	__le16 MaxMpxCount;
+	__le16 VcNumber;
+	__u32 SessionKey;
+	__le16 CaseInsensitivePasswordLength;	/* ASCII password len */
+	__le16 CaseSensitivePasswordLength;	/* Unicode password length*/
+	__u32 Reserved;	/* see below */
+	__le32 Capabilities;
+	__le16 ByteCount;
+	unsigned char CaseInsensitivePassword[0];	/* followed by: */
+	/* unsigned char * CaseSensitivePassword; */
+	/* STRING AccountName */
+	/* STRING PrimaryDomain */
+	/* STRING NativeOS */
+	/* STRING NativeLanMan */
+} __attribute__((packed));	/* NTLM request format (without
+					extended security */
+
+struct smb_com_session_setup_resp {	/* default (NTLM) response format */
+	struct smb_hdr hdr;	/* wct = 4 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 Action;	/* see below */
+	__le16 SecurityBlobLength;
+	__u16 ByteCount;
+	unsigned char SecurityBlob[1];	/* followed by */
+	/*      unsigned char  * NativeOS;      */
+	/*      unsigned char  * NativeLanMan;  */
+	/*      unsigned char  * PrimaryDomain; */
+} __attribute__((packed));	/* NTLM response
+				(with or without extended sec) */
+
+struct smb_com_session_setup_old_resp { /* default (NTLM) response format */
+	struct smb_hdr hdr;	/* wct = 3 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 Action;	/* see below */
+	__u16 ByteCount;
+	unsigned char NativeOS[1];	/* followed by */
+	/*      unsigned char * NativeLanMan; */
+	/*      unsigned char * PrimaryDomain; */
+} __attribute__((packed));	/* pre-NTLM (LANMAN2.1) response */
+
 typedef union smb_com_session_setup_andx {
-	struct {                /* request format */
-		struct smb_hdr hdr;     /* wct = 12 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 MaxBufferSize;
-		__le16 MaxMpxCount;
-		__le16 VcNumber;
-		__u32 SessionKey;
-		__le16 SecurityBlobLength;
-		__u32 Reserved;
-		__le32 Capabilities;    /* see below */
-		__le16 ByteCount;
-		unsigned char SecurityBlob[1];  /* followed by */
-		/* STRING NativeOS */
-		/* STRING NativeLanMan */
-	} __attribute__((packed)) req;  /* NTLM request format (with
-					   extended security */
-
-	struct {                /* request format */
-		struct smb_hdr hdr;     /* we will handle this :: wct = 13 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 MaxBufferSize;
-		__le16 MaxMpxCount;
-		__le16 VcNumber;
-		__u32 SessionKey;
-		__le16 CaseInsensitivePasswordLength; /* ASCII password len */
-		__le16 CaseSensitivePasswordLength; /* Unicode password length*/
-		__u32 Reserved; /* see below */
-		__le32 Capabilities;
-		__le16 ByteCount;
-		unsigned char CaseInsensitivePassword[0];     /* followed by: */
-		/* unsigned char * CaseSensitivePassword; */
-		/* STRING AccountName */
-		/* STRING PrimaryDomain */
-		/* STRING NativeOS */
-		/* STRING NativeLanMan */
-	} __attribute__((packed)) req_no_secext; /* NTLM request format (without
-						    extended security */
-
-	struct {                /* default (NTLM) response format */
-		struct smb_hdr hdr;     /* wct = 4 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 Action;  /* see below */
-		__le16 SecurityBlobLength;
-		__u16 ByteCount;
-		unsigned char SecurityBlob[1];  /* followed by */
-		/*      unsigned char  * NativeOS;      */
-		/*      unsigned char  * NativeLanMan;  */
-		/*      unsigned char  * PrimaryDomain; */
-	} __attribute__((packed)) resp; /* NTLM response
-					   (with or without extended sec) */
-
-	struct {                /* default (NTLM) response format */
-		struct smb_hdr hdr;     /* wct = 3 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 Action;  /* see below */
-		__u16 ByteCount;
-		unsigned char NativeOS[1];      /* followed by */
-		/*      unsigned char * NativeLanMan; */
-		/*      unsigned char * PrimaryDomain; */
-	} __attribute__((packed)) old_resp; /* pre-NTLM (LANMAN2.1) response */
-
+	struct smb_com_session_setup_req req;
+	struct smb_com_session_setup_req_no_secext req_no_secext;
+	struct smb_com_session_setup_resp resp;
+	struct smb_com_session_setup_old_resp old_resp;
 } __attribute__((packed)) SESSION_SETUP_ANDX;
 
 typedef struct smb_com_tconx_req {
