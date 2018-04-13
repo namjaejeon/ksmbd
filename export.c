@@ -34,7 +34,6 @@
 #define MAX_NT_PWD_LEN		128
 
 LIST_HEAD(cifsd_share_list);
-LIST_HEAD(cifsd_connection_list);
 LIST_HEAD(cifsd_session_list);
 
 __u16 tid = 1;
@@ -546,48 +545,6 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 	init_share(share);
 	*alloc_share = 1;
 	return share;
-}
-
-/**
- * cifsd_share_show() - show a list of exported shares
- * @buf:       buffer containing share list output
- *
- * Return:      output buffer length
- **/
-int cifsd_share_show(char *buf)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path) {
-			len = snprintf(tbuf, limit, "%s:%s\n",
-				 share->sharename, share->path);
-			if (len < 0) {
-				total = len;
-				break;
-			}
-			tbuf += len;
-			total += len;
-			limit -= len;
-		}
-	}
-
-	return total;
-}
-
-/**
- * cifsd_user_show() - show a list of added user
- * @buf:       buffer containing user list output
-
- * Return:      output buffer length
- */
-int cifsd_user_show(char *buf)
-{
-	return um_users_show(buf, PAGE_SIZE);
 }
 
 /**
@@ -1173,134 +1130,6 @@ int cifsd_config_store(const char *buf, size_t len)
 		return -EINVAL;
 
 	return len;
-}
-/**
- * show_server_stat() - show cifsd server stat
- * @buf:	destination buffer for stat info
- *
- * Return:      output buffer length
- */
-static ssize_t show_server_stat(char *buf)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	int count = 0, cum = 0, ret = 0, limit = PAGE_SIZE;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Server uptime secs = %ld\n",
-			(jiffies - server_start_time)/HZ);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path)
-			count++;
-	}
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Number of shares = %d\n", count);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	return cum;
-}
-
-/**
- * show_client_stat() - show cifsd client stat
- * @buf:	destination buffer for stat info
- * @sess:	session
- *
- * Return:      output buffer length
- */
-static ssize_t show_client_stat(char *buf, struct cifsd_tcp_conn *conn)
-{
-	int cum = 0, ret = 0, limit = PAGE_SIZE;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Connection type = SMB%s\n",
-			conn->vals->version_string);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Current open files count = %d\n",
-			conn->stats.open_files_count);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Outstanding Request = %d\n",
-			atomic_read(&conn->req_running));
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Total Requests Served = %d\n",
-			conn->stats.request_served);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	if (cifsd_debug_enable) {
-		ret = snprintf(buf+cum, limit - cum,
-				"Avg. duration per request = %ld\n",
-				conn->stats.avg_req_duration);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-
-		ret = snprintf(buf+cum, limit - cum,
-				"Max. duration request = %ld\n",
-				conn->stats.max_timed_request);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	return cum;
-}
-
-/**
- * cifsstat_show() - show cifsd stat
- * @buf:	buffer containing stat info
- * @ip:		containing ip for client stat
- * @flag:	flag for extracting cifsstat info
- *
- * Return:      output buffer length
- */
-int cifsstat_show(char *buf, char *ip, int flag)
-{
-	struct list_head *tmp;
-	struct cifsd_tcp_conn *conn;
-	int ret = 0;
-
-	if (flag & O_SERVER) {
-		ret = show_server_stat(buf);
-		flag &= ~O_SERVER;
-		goto out;
-	} else if (flag & O_CLIENT) {
-		int len1, len2;
-
-		len1 = strlen(ip);
-		list_for_each(tmp, &cifsd_connection_list) {
-			conn = list_entry(tmp, struct cifsd_tcp_conn, list);
-			len2 = strlen(conn->peeraddr);
-			if (len1 == len2 && !strncmp(ip,
-				conn->peeraddr, len1)) {
-				ret = show_client_stat(buf, conn);
-				break;
-			}
-		}
-		flag &= ~O_CLIENT;
-	}
-out:
-	return ret;
 }
 
 /**

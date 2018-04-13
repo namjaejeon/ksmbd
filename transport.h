@@ -73,8 +73,6 @@ struct cifsd_tcp_conn_ops {
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	unsigned short			family;
-	/* Reference counter */
-	int				srv_count;
 	/* The number of sessions attached with this connection */
 	int				sess_count;
 	struct smb_version_values	*vals;
@@ -84,7 +82,6 @@ struct cifsd_tcp_conn {
 	char				*hostname;
 	struct mutex			srv_mutex;
 	int				tcp_status;
-	unsigned int			maxReq;
 	unsigned int			cli_cap;
 	unsigned int			srv_cap;
 	struct kvec			*iov;
@@ -92,18 +89,13 @@ struct cifsd_tcp_conn {
 	void 				*request_buf;
 	struct nls_table		*local_nls;
 	unsigned int			total_read;
-	/* This session will become part of global tcp session list */
-	struct list_head		tcp_sess;
+	struct list_head		tcp_conns;
 	/* smb session 1 per user */
 	struct list_head		cifsd_sess;
 	struct task_struct		*handler;
-	int				th_id;
-	int				num_files_open;
 	unsigned long			last_active;
-	struct timespec			create_time;
 	/* pending trans request table */
 	struct trans_state		*recent_trans;
-	struct list_head		trans_list;
 	/* How many request are running currently */
 	atomic_t			req_running;
 	/* References which are made for this Server object*/
@@ -118,7 +110,6 @@ struct cifsd_tcp_conn {
 	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
-	struct list_head		list;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
 #endif
@@ -132,8 +123,6 @@ struct cifsd_tcp_conn {
 	__u8				Preauth_HashValue[64];
 	int				CipherId;
 
-	/* PreAuthSession Table */
-	struct list_head		p_sess_table;
 	/* Supports NTLMSSP */
 	bool				sec_ntlmssp;
 	/* Supports U2U Kerberos */

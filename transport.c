@@ -68,7 +68,7 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 {
 	spin_lock(&tcp_conn_list_lock);
-	list_del(&conn->tcp_sess);
+	list_del(&conn->tcp_conns);
 	spin_unlock(&tcp_conn_list_lock);
 
 	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
@@ -76,8 +76,6 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	conn->sock = NULL;
 
 	cifsd_free_request(conn->request_buf);
-
-	list_del(&conn->list);
 	kfree(conn);
 }
 
@@ -97,7 +95,6 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->srv_count = 1;
 	conn->sess_count = 0;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
@@ -107,7 +104,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->max_credits = 0;
 	conn->credits_granted = 0;
 	init_waitqueue_head(&conn->req_running_q);
-	INIT_LIST_HEAD(&conn->tcp_sess);
+	INIT_LIST_HEAD(&conn->tcp_conns);
 	INIT_LIST_HEAD(&conn->cifsd_sess);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
@@ -115,7 +112,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->srv_cap = 0;
 
 	spin_lock(&tcp_conn_list_lock);
-	list_add(&conn->tcp_sess, &tcp_conn_list);
+	list_add(&conn->tcp_conns, &tcp_conn_list);
 	spin_unlock(&tcp_conn_list_lock);
 	return conn;
 }
@@ -178,7 +175,7 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 }
 
 /**
- * tcp_sess_kthread() - session thread to listen on new smb requests
+ * cifsd_tcp_conn_handler_loop() - session thread to listen on new smb requests
  * @p:     TCP conn instance of connection
  *
  * One thread each per connection
@@ -194,7 +191,6 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 
 	mutex_init(&conn->srv_mutex);
 	__module_get(THIS_MODULE);
-	list_add(&conn->list, &cifsd_connection_list);
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop()) {
@@ -280,7 +276,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 }
 
 /**
- * connect_tcp_sess() - create a new tcp session on mount
+ * cifsd_tcp_new_connection() - create a new tcp session on mount
  * @sock:	socket associated with new connection
  *
  * whenever a new connection is requested, create a conn thread
@@ -620,22 +616,19 @@ out_error:
 	return ret;
 }
 
-static int tcp_stop_sessions(void)
+static void tcp_stop_sessions(void)
 {
 	int ret;
-	int err = 0;
-	struct cifsd_tcp_conn *conn, *tmp;
+	struct cifsd_tcp_conn *conn;
 
-	list_for_each_entry_safe(conn, tmp, &cifsd_connection_list, list) {
+	spin_lock(&tcp_conn_list_lock);
+	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
 		ret = kthread_stop(conn->handler);
-		if (ret) {
-			cifsd_err("failed to stop server thread\n");
-			err = ret;
-		}
+		if (ret)
+			cifsd_err("Can't stop connection kthread: %d\n", ret);
 	}
-
-	return err;
+	spin_unlock(&tcp_conn_list_lock);
 }
 
 static void tcp_stop_kthread(void)
