@@ -6160,10 +6160,13 @@ int find_first(struct smb_work *smb_work)
 				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
-	rc = smb_populate_dot_dotdot_entries(conn, req_params->InformationLevel,
-		dir_fp, &d_info, srch_ptr, smb_populate_readdir_entry);
-	if (rc)
-		goto err_out;
+	if (!*srch_ptr) {
+		rc = smb_populate_dot_dotdot_entries(conn,
+			req_params->InformationLevel, dir_fp, &d_info,
+			srch_ptr, smb_populate_readdir_entry);
+		if (rc)
+			goto err_out;
+	}
 
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
