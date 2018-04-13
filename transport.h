@@ -92,8 +92,7 @@ struct cifsd_tcp_conn {
 	void 				*request_buf;
 	struct nls_table		*local_nls;
 	unsigned int			total_read;
-	/* This session will become part of global tcp session list */
-	struct list_head		tcp_sess;
+	struct list_head		tcp_conns;
 	/* smb session 1 per user */
 	struct list_head		cifsd_sess;
 	struct task_struct		*handler;
@@ -118,7 +117,6 @@ struct cifsd_tcp_conn {
 	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
-	struct list_head		list;
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
 #endif

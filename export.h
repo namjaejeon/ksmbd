@@ -35,7 +35,6 @@ extern int cifsd_debug_enable;
 
 /* Global list containing exported points */
 extern struct list_head cifsd_share_list;
-extern struct list_head cifsd_connection_list;
 extern struct list_head cifsd_session_list;
 
 /* Spinlock to protect global list */

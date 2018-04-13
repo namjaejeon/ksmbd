@@ -34,7 +34,6 @@
 #define MAX_NT_PWD_LEN		128
 
 LIST_HEAD(cifsd_share_list);
-LIST_HEAD(cifsd_connection_list);
 LIST_HEAD(cifsd_session_list);
 
 __u16 tid = 1;
