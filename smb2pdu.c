@@ -1326,7 +1326,7 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
 		if (conn->use_spnego) {
-			neg_blob = kmalloc(sizeof(struct _NEGOTIATE_MESSAGE) +
+			neg_blob = kzalloc(sizeof(struct _NEGOTIATE_MESSAGE) +
 					(strlen(netbios_name) * 2  + 4) * 6,
 					GFP_KERNEL);
 			if (!neg_blob) {
