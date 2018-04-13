@@ -549,17 +549,6 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 }
 
 /**
- * cifsd_user_show() - show a list of added user
- * @buf:       buffer containing user list output
-
- * Return:      output buffer length
- */
-int cifsd_user_show(char *buf)
-{
-	return um_users_show(buf, PAGE_SIZE);
-}
-
-/**
  * cifsadmin_user_query() - search a user from user list
  * @username:	buffer containing user name to search
  *

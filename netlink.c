@@ -477,41 +477,6 @@ static int cifsstat_init_connection(struct nlmsghdr *nlh)
 	return 0;
 }
 
-/**
- * cifsd_userlist() - handler to list exported cifsd users
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_userlist(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	char *buf;
-	int ret;
-
-	ev = nlmsg_data(nlh);
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsd_user_show(buf);
-	if (!ret)
-		cifsd_err("get user list failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_LIST_USER_RSP;
-	rsp_ev.error = ret;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" user list respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
 	struct cifsd_sess *sess;
@@ -646,9 +611,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSSTAT_UEVENT_INIT_CONNECTION:
 		err = cifsstat_init_connection(nlh);
-		break;
-	case CIFSSTAT_UEVENT_LIST_USER:
-		err = cifsd_userlist(nlh);
 		break;
 	default:
 		err = -EINVAL;
