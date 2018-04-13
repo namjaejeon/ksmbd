@@ -546,8 +546,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	/* Add target info list for NetBIOS/DNS settings */
 	for (type = NTLMSSP_AV_NB_COMPUTER_NAME;
 		type <= NTLMSSP_AV_DNS_DOMAIN_NAME; type++) {
-		tinfo->Type = type;
-		tinfo->Length = len;
+		tinfo->Type = cpu_to_le16(type);
+		tinfo->Length = cpu_to_le16(len);
 		memcpy(tinfo->Content, name, len);
 		tinfo = (TargetInfo *)((char *)tinfo + 4 + len);
 		chgblob->TargetInfoArray.Length += cpu_to_le16(4 + len);
