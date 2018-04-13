@@ -38,7 +38,6 @@ static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
 static int cifsd_early_pid;
-static int cifsstat_pid;
 static int cifsadmin_pid;
 
 static int cifsd_nlsk_poll(struct cifsd_sess *sess)
@@ -464,19 +463,6 @@ static int cifsd_kernel_caseless_search(struct nlmsghdr *nlh)
 	return ret;
 }
 
-/**
- * cifsstat_init_connection() - handler for cifsstat init
- * @nlh:       netlink message header
- *
- * Return:	0: on success
- */
-static int cifsstat_init_connection(struct nlmsghdr *nlh)
-{
-	cifsd_debug("init connection\n");
-	cifsstat_pid = nlh->nlmsg_pid;
-	return 0;
-}
-
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
 	struct cifsd_sess *sess;
@@ -608,9 +594,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSADMIN_KEVENT_CASELESS_SEARCH:
 		err = cifsd_kernel_caseless_search(nlh);
-		break;
-	case CIFSSTAT_UEVENT_INIT_CONNECTION:
-		err = cifsstat_init_connection(nlh);
 		break;
 	default:
 		err = -EINVAL;
