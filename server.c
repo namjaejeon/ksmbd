@@ -1,4 +1,5 @@
 /*
+ *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  *
  *   This program is free software; you can redistribute it and/or modify
