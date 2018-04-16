@@ -47,10 +47,8 @@
 #include <linux/namei.h>
 #include <linux/version.h>
 #include <linux/fdtable.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/vmalloc.h>
 #include <uapi/linux/xattr.h>
-#endif
 #include <linux/hashtable.h>
 #include "unicode.h"
 #include "fh.h"
@@ -628,13 +626,8 @@ char *convert_to_unix_name(char *name, int tid);
 void convert_delimiter(char *path, int flags);
 int find_first(struct smb_work *smb_work);
 int find_next(struct smb_work *smb_work);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
-#else
-int smb_filldir(void *__buf, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type);
-#endif
 int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname);
 char *read_next_entry(struct smb_work *smb_work, struct smb_kstat *smb_kstat,

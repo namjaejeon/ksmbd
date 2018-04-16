@@ -3465,22 +3465,14 @@ int unix_info_to_attr(FILE_UNIX_BASIC_INFO *unix_info,
 	}
 
 	if (le64_to_cpu(unix_info->Uid) != NO_CHANGE_64) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		attrs->ia_uid = make_kuid(&init_user_ns,
 				le64_to_cpu(unix_info->Uid));
-#else
-		attrs->ia_uid = le64_to_cpu(unix_info->Uid);
-#endif
 		attrs->ia_valid |= ATTR_UID;
 	}
 
 	if (le64_to_cpu(unix_info->Gid) != NO_CHANGE_64) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		attrs->ia_gid =  make_kgid(&init_user_ns,
 				le64_to_cpu(unix_info->Gid));
-#else
-		attrs->ia_gid = le64_to_cpu(unix_info->Gid);
-#endif
 		attrs->ia_valid |= ATTR_GID;
 	}
 
@@ -5705,20 +5697,11 @@ int set_path_info(struct smb_work *smb_work)
  *
  * Return:	0 on success, otherwise -EINVAL
  */
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type)
-#else
-int smb_filldir(void *__buf, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type)
-#endif
 {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	struct smb_readdir_data *buf =
 		container_of(ctx, struct smb_readdir_data, ctx);
-#else
-	struct smb_readdir_data *buf = __buf;
-#endif
 	struct smb_dirent *de = (void *)(buf->dirent + buf->used);
 	unsigned int reclen;
 
@@ -6283,9 +6266,7 @@ int find_first(struct smb_work *smb_work)
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
 	struct smb_readdir_data r_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 	int header_size;
@@ -6523,9 +6504,7 @@ int find_next(struct smb_work *smb_work)
 	char *name = NULL;
 	char *pathname = NULL;
 	struct smb_readdir_data r_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 	};
 	int header_size;
 

@@ -3177,9 +3177,7 @@ int smb2_query_dir(struct smb_work *smb_work)
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct smb_readdir_data r_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 	};
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(smb_work);

@@ -68,9 +68,7 @@ struct cifsd_tcp_conn;
 struct cifsd_sess;
 
 struct smb_readdir_data {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	struct dir_context ctx;
-#endif
 	char           *dirent;
 	unsigned int   used;
 	unsigned int   full;

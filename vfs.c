@@ -25,9 +25,7 @@
 #include <linux/backing-dev.h>
 #include <linux/writeback.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/xattr.h>
-#endif
 #include <linux/falloc.h>
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
@@ -439,11 +437,7 @@ int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 	inode_unlock(inode);
 #else
 	mutex_lock(&inode->i_mutex);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 13, 0)
 	err = notify_change(dentry, attrs, NULL);
-#else
-	err = notify_change(dentry, attrs);
-#endif
 	mutex_unlock(&inode->i_mutex);
 #endif
 
@@ -581,11 +575,7 @@ int smb_vfs_remove_file(char *name)
 		if (err && err != -ENOTEMPTY)
 			cifsd_debug("%s: rmdir failed, err %d\n", name, err);
 	} else {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		err = vfs_unlink(dir->d_inode, dentry, NULL);
-#else
-		err = vfs_unlink(dir->d_inode, dentry);
-#endif
 		if (err)
 			cifsd_debug("%s: unlink failed, err %d\n", name, err);
 	}
@@ -636,11 +626,7 @@ int smb_vfs_link(const char *oldname, const char *newname)
 		goto out3;
 	}
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry, NULL);
-#else
-	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry);
-#endif
 	if (err)
 		cifsd_debug("vfs_link failed err %d\n", err);
 
@@ -857,11 +843,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 	if (dnew == trap)
 		goto out4;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	err = vfs_rename(dold_p->d_inode, dold, dnew_p->d_inode, dnew, NULL, 0);
-#else
-	err = vfs_rename(dold_p->d_inode, dold, dnew_p->d_inode, dnew);
-#endif
 	if (err)
 		cifsd_err("vfs_rename failed err %d\n", err);
 out4:
@@ -1151,11 +1133,7 @@ void smb_vfs_set_fadvise(struct file *filp, int option)
 		filp->f_flags |= O_DIRECT;
 */
 	else if (option & FILE_SEQUENTIAL_ONLY_LE) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		filp->f_ra.ra_pages = inode_to_bdi(mapping->host)->ra_pages * 2;
-#else
-		filp->f_ra.ra_pages = mapping->backing_dev_info->ra_pages * 2;
-#endif
 		spin_lock(&filp->f_lock);
 		filp->f_mode &= ~FMODE_RANDOM;
 		spin_unlock(&filp->f_lock);
@@ -1226,15 +1204,7 @@ out:
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *rdata)
 {
-	int err;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	err = iterate_dir(file, &rdata->ctx);
-#else
-	err = vfs_readdir(file, smb_filldir, rdata);
-#endif
-
-	return err;
+	return iterate_dir(file, &rdata->ctx);
 }
 
 int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
@@ -1268,11 +1238,7 @@ int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 	if (S_ISDIR(dentry->d_inode->i_mode))
 		err = vfs_rmdir(dir->d_inode, dentry);
 	else
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		err = vfs_unlink(dir->d_inode, dentry, NULL);
-#else
-	err = vfs_unlink(dir->d_inode, dentry);
-#endif
 
 out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)

@@ -1014,9 +1014,7 @@ bool is_dir_empty(struct cifsd_file *fp)
 	struct path dir_path;
 	struct file *filp;
 	struct smb_readdir_data r_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
 		.dirent_count = 0
 	};
@@ -1110,9 +1108,7 @@ int smb_search_dir(char *dirname, char *filename)
 	int dirnamelen = strlen(dirname);
 	bool match_found = false;
 	struct smb_readdir_data readdir_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
@@ -1148,13 +1144,8 @@ int smb_search_dir(char *dirname, char *filename)
 			reclen = ALIGN(sizeof(struct smb_dirent) +
 				       buf_p->namelen, sizeof(__le64));
 			length = buf_p->namelen;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 			if (length != namelen ||
 				strncasecmp(filename, buf_p->name, namelen))
-#else
-			if (length != namelen ||
-				strnicmp(filename, buf_p->name, namelen))
-#endif
 				continue;
 			/* got match, make absolute name */
 			memcpy(dirname + dirnamelen + 1, buf_p->name, namelen);
