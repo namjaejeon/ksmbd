@@ -239,7 +239,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 }
 
 /**
- * process_ntlmv() - NTLM authentication handler
+ * process_ntlm() - NTLM authentication handler
  * @sess:	session of connection
  * @pw_buf:	NTLM challenge response
  * @passkey:	user password

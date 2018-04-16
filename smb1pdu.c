@@ -1106,8 +1106,8 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 
 		rsp->hdr.Uid = user_smb1_vuid(sess->user);
 		conn->vuid = sess->sess_id = user_smb1_vuid(sess->user);
-		cifsd_debug("generate session ID : %llu, Uid : %u\n",
-				sess->sess_id, rsp->hdr.Uid);
+		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
+				sess, sess->sess_id, rsp->hdr.Uid);
 
 		err = decode_ntlmssp_authenticate_blob(authblob,
 				le16_to_cpu(req->SecurityBlobLength), sess);
@@ -1178,7 +1178,12 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 		return 0;
 	}
 
-	if (!conn->sess_cache) {
+	if (!list_empty(&conn->cifsd_sess)) {
+		sess = list_first_entry(&conn->cifsd_sess, struct cifsd_sess,
+				cifsd_ses_list);
+		cifsd_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
+			sess, sess->sess_id, pSMB->req.hdr.Uid);
+	} else {
 		sess = kzalloc(sizeof(struct cifsd_sess), GFP_KERNEL);
 		if (sess == NULL) {
 			rc = -ENOMEM;
@@ -1193,11 +1198,6 @@ int smb_session_setup_andx(struct smb_work *smb_work)
 		sess->tcon_count = 0;
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
-		conn->sess_cache = sess;
-	} else {
-		sess = conn->sess_cache;
-		cifsd_debug("reuse session(%p) session ID : %llu\n",
-				sess, sess->sess_id);
 	}
 
 	if (cap & CAP_EXTENDED_SECURITY) {
