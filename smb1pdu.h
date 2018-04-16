@@ -1188,6 +1188,7 @@ typedef struct {
 #define SMB_SET_FILE_UNIX_INFO2         0x20b
 #define SMB_SET_FILE_BASIC_INFO2        0x3ec
 #define SMB_SET_FILE_RENAME_INFORMATION 0x3f2 /* BB check if qpathinfo too */
+#define SMB_SET_FILE_DISPOSITION_INFORMATION   0x3f5   /* alias for 0x102 */
 #define SMB_FILE_ALL_INFO2              0x3fa
 #define SMB_SET_FILE_ALLOCATION_INFO2   0x3fb
 #define SMB_SET_FILE_END_OF_FILE_INFO2  0x3fc
@@ -1496,6 +1497,35 @@ extern int create_dir(struct smb_work *smb_work);
 extern int get_dfs_referral(struct smb_work *smb_work);
 
 /* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
+
+typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le16 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_STANDARD;
+
+typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le32 EASize;
+	__u8 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_QUERY_EA_SIZE;
 
 typedef struct {
 	__le32 NextEntryOffset;
