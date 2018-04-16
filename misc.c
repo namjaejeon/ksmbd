@@ -21,9 +21,7 @@
 
 #include <linux/kernel.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/xattr.h>
-#endif
 
 #include "glob.h"
 #include "export.h"
