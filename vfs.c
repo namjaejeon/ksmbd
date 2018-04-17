@@ -613,7 +613,7 @@ int smb_vfs_link(const char *oldname, const char *newname)
 	}
 
 	dentry = kern_path_create(AT_FDCWD, newname, &newpath,
-			LOOKUP_FOLLOW & LOOKUP_REVAL);
+			LOOKUP_FOLLOW | LOOKUP_REVAL);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		cifsd_err("path create err for %s, err %d\n", newname, err);
