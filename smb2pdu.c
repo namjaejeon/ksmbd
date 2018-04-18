@@ -5647,6 +5647,7 @@ int smb2_read(struct smb_work *smb_work)
 
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
 		cifsd_free_response(AUX_PAYLOAD(smb_work));
+		INIT_AUX_PAYLOAD(smb_work);
 		rsp->hdr.Status = NT_STATUS_END_OF_FILE;
 		smb2_set_err_rsp(smb_work);
 		return 0;
