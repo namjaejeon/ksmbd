@@ -94,8 +94,6 @@ struct cifsd_tcp_conn {
 	struct list_head		cifsd_sess;
 	struct task_struct		*handler;
 	unsigned long			last_active;
-	/* pending trans request table */
-	struct trans_state		*recent_trans;
 	/* How many request are running currently */
 	atomic_t			req_running;
 	/* References which are made for this Server object*/
@@ -114,9 +112,12 @@ struct cifsd_tcp_conn {
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
 #endif
 	struct cifsd_secmech		secmech;
-	/* Used by ntlmssp */
-	char				ntlmssp_cryptkey[CIFS_CRYPTO_KEY_SIZE];
-
+	union {
+		/* pending trans request table */
+		struct trans_state	*recent_trans;
+		/* Used by ntlmssp */
+		char			*ntlmssp_cryptkey;
+	};
 	/* PreAuth integrity Hash ID */
 	int				Preauth_HashId;
 	/* PreAuth integrity Hash Value */

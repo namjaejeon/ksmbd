@@ -804,6 +804,7 @@ int smb_negotiate(struct smb_work *smb_work)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	struct timespec ts;
 #endif
+	int rc = 0;
 
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(cifsd_tcp_good(smb_work));
@@ -812,7 +813,8 @@ int smb_negotiate(struct smb_work *smb_work)
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 	if (conn->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
-		return 0;
+		rc = -EINVAL;
+		goto err_out;
 	} else if (conn->dialect == SMB20_PROT_ID ||
 			conn->dialect == SMB21_PROT_ID ||
 			conn->dialect == SMB2X_PROT_ID ||
@@ -855,6 +857,13 @@ int smb_negotiate(struct smb_work *smb_work)
 	if (conn->use_spnego == false) {
 		neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
 		neg_rsp->ByteCount = CIFS_CRYPTO_KEY_SIZE;
+		conn->ntlmssp_cryptkey = kmalloc(CIFS_CRYPTO_KEY_SIZE,
+			GFP_KERNEL);
+		if (!conn->ntlmssp_cryptkey) {
+			rc = -ENOMEM;
+			neg_rsp->hdr.Status.CifsError = NT_STATUS_LOGON_FAILURE;
+			goto err_out;
+		}
 		/* initialize random server challenge */
 		get_random_bytes(conn->ntlmssp_cryptkey, sizeof(__u64));
 		memcpy((neg_rsp->u.EncryptionKey), conn->ntlmssp_cryptkey,
@@ -876,7 +885,8 @@ int smb_negotiate(struct smb_work *smb_work)
 	cifsd_tcp_set_need_negotiate(smb_work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later */
-	return 0;
+err_out:
+	return rc;
 }
 
 int build_sess_rsp_noextsec(struct cifsd_sess *sess,
@@ -909,8 +919,16 @@ int build_sess_rsp_noextsec(struct cifsd_sess *sess,
 		goto out_err;
 	}
 
-	memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
+	if (conn->ntlmssp_cryptkey) {
+		memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
 			CIFS_CRYPTO_KEY_SIZE);
+		kfree(conn->ntlmssp_cryptkey);
+		conn->ntlmssp_cryptkey = NULL;
+	} else {
+		cifsd_err("server challenge is not assigned in negotiate\n");
+		err = -EINVAL;
+		goto out_err;
+	}
 
 	if (user_guest(sess->user))
 		goto no_password_check;
