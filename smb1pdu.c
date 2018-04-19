@@ -952,6 +952,12 @@ int build_sess_rsp_noextsec(struct cifsd_sess *sess,
 	}
 
 no_password_check:
+	rsp->hdr.Uid = user_smb1_vuid(sess->user);
+	conn->vuid = sess->sess_id = user_smb1_vuid(sess->user);
+	cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
+			sess, sess->sess_id, rsp->hdr.Uid);
+	conn->sess_count++;
+
 	/* Build response. We don't use extended security (yet), so wct is 3 */
 	rsp->hdr.WordCount = 3;
 	rsp->Action = 0;
