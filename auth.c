@@ -924,7 +924,8 @@ int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
 	char *all_bytes_msg = rcv_hdr2->ProtocolId;
 	int msg_size = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	if (conn->Preauth_HashId == SMB2_PREAUTH_INTEGRITY_SHA512) {
+	if (conn->preauth_info->Preauth_HashId ==
+		SMB2_PREAUTH_INTEGRITY_SHA512) {
 		rc = crypto_sha512_alloc(conn);
 		if (rc) {
 			cifsd_debug("could not alloc sha512 rc %d\n", rc);

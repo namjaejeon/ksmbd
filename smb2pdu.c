@@ -907,17 +907,17 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 
 	cifsd_debug("assemble SMB2_PREAUTH_INTEGRITY_CAPABILITIES context\n");
 	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
-		conn->Preauth_HashId);
+		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_preauth_neg_context));
 
-	if (conn->CipherId) {
+	if (conn->preauth_info->CipherId) {
 		/* Add 2 to size to round to 8 byte boundary */
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
 		pneg_ctxt += 2 + sizeof(struct smb2_preauth_neg_context);
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
-			conn->CipherId);
+			conn->preauth_info->CipherId);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
 		inc_rfc1001_len(rsp, 4 +
 				sizeof(struct smb2_encryption_neg_context) - 2);
@@ -932,7 +932,8 @@ decode_preauth_ctxt(struct cifsd_tcp_conn *conn,
 
 	if (pneg_ctxt->HashAlgorithms ==
 			SMB2_PREAUTH_INTEGRITY_SHA512) {
-		conn->Preauth_HashId = SMB2_PREAUTH_INTEGRITY_SHA512;
+		conn->preauth_info->Preauth_HashId =
+			SMB2_PREAUTH_INTEGRITY_SHA512;
 		err = NT_STATUS_OK;
 	}
 
@@ -946,16 +947,18 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	int i;
 	int cph_cnt = pneg_ctxt->CipherCount;
 
-	conn->CipherId = 0;
+	conn->preauth_info->CipherId = 0;
 	for (i = 0; i < cph_cnt; i++) {
 		if (pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_GCM) {
 			cifsd_debug("Cipher ID = SMB2_ENCRYPTION_AES128_GCM\n");
-			conn->CipherId = SMB2_ENCRYPTION_AES128_GCM;
+			conn->preauth_info->CipherId =
+				SMB2_ENCRYPTION_AES128_GCM;
 			break;
 		} else if (pneg_ctxt->Ciphers[i] ==
 			SMB2_ENCRYPTION_AES128_CCM) {
 			cifsd_debug("Cipher ID = SMB2_ENCRYPTION_AES128_CCM\n");
-			conn->CipherId = SMB2_ENCRYPTION_AES128_CCM;
+			conn->preauth_info->CipherId =
+				SMB2_ENCRYPTION_AES128_CCM;
 			break;
 		}
 	}
@@ -977,7 +980,7 @@ deassemble_neg_contexts(struct cifsd_tcp_conn *conn,
 	while (i++ < neg_ctxt_cnt) {
 		if (*ContextType == SMB2_PREAUTH_INTEGRITY_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_PREAUTH_INTEGRITY_CAPABILITIES context\n");
-			if (conn->Preauth_HashId)
+			if (conn->preauth_info->Preauth_HashId)
 				break;
 
 			status = decode_preauth_ctxt(conn,
@@ -987,7 +990,7 @@ deassemble_neg_contexts(struct cifsd_tcp_conn *conn,
 			ContextType = (__le16 *)pneg_ctxt;
 		} else if (*ContextType == SMB2_ENCRYPTION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_ENCRYPTION_CAPABILITIES context\n");
-			if (conn->CipherId)
+			if (conn->preauth_info->CipherId)
 				break;
 
 			decode_encrypt_ctxt(conn,
@@ -1044,7 +1047,9 @@ int smb2_negotiate(struct smb_work *smb_work)
 
 	switch (conn->dialect) {
 	case SMB311_PROT_ID:
-		init_smb3_11_server(conn);
+		rc = init_smb3_11_server(conn);
+		if (rc < 0)
+			goto err_out;
 		err = deassemble_neg_contexts(conn, req);
 		if (err != NT_STATUS_OK) {
 			cifsd_err("deassemble_neg_contexts error(0x%x)\n", err);
@@ -1054,7 +1059,7 @@ int smb2_negotiate(struct smb_work *smb_work)
 		}
 
 		calc_preauth_integrity_hash(conn, REQUEST_BUF(smb_work),
-			conn->Preauth_HashValue);
+			conn->preauth_info->Preauth_HashValue);
 		rsp->NegotiateContextOffset =
 			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 		assemble_neg_contexts(conn, rsp);
@@ -1138,8 +1143,11 @@ int smb2_negotiate(struct smb_work *smb_work)
 	cifsd_tcp_set_need_negotiate(smb_work);
 
 err_out:
-	if (rc < 0)
+	if (rc < 0) {
 		smb2_set_err_rsp(smb_work);
+		kfree(conn->preauth_info);
+		conn->preauth_info = NULL;
+	}
 
 	return rc;
 }
@@ -1305,9 +1313,19 @@ int smb2_sess_setup(struct smb_work *smb_work)
 	}
 
 	if (conn->dialect == SMB311_PROT_ID &&
-			negblob->MessageType == NtLmNegotiate)
-		memcpy(sess->Preauth_HashValue, conn->Preauth_HashValue, 64);
-
+			negblob->MessageType == NtLmNegotiate) {
+		if (!sess->Preauth_HashValue) {
+			sess->Preauth_HashValue =
+				kmalloc(PREAUTH_HASHVALUE_SIZE,	GFP_KERNEL);
+			if (!sess->Preauth_HashValue) {
+				rc = -ENOMEM;
+				goto out_err;
+			}
+		}
+		memcpy(sess->Preauth_HashValue,
+			conn->preauth_info->Preauth_HashValue,
+			PREAUTH_HASHVALUE_SIZE);
+	}
 	if (conn->dialect == SMB311_PROT_ID)
 		calc_preauth_integrity_hash(conn, REQUEST_BUF(smb_work),
 			sess->Preauth_HashValue);
@@ -1488,6 +1506,10 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		cifsd_tcp_set_good(smb_work);
 		sess->state = SMB2_SESSION_VALID;
 		smb_work->sess = sess;
+		kfree(conn->preauth_info);
+		conn->preauth_info = NULL;
+		kfree(sess->Preauth_HashValue);
+		sess->Preauth_HashValue = NULL;
 	} else {
 		cifsd_err("%s Invalid phase\n", __func__);
 		rc = -EINVAL;
@@ -1792,6 +1814,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	put_cifsd_user(sess->user);
 	sess->user = NULL;
+	kfree(sess->Preauth_HashValue);
 
 	/* let start_tcp_sess free connection info now */
 	cifsd_tcp_set_need_negotiate(smb_work);
@@ -7406,11 +7429,10 @@ void smb3_preauth_hash_rsp(struct smb_work *smb_work)
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
 		calc_preauth_integrity_hash(conn, (char *)rsp,
-			conn->Preauth_HashValue);
+			conn->preauth_info->Preauth_HashValue);
 
-	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE) {
+	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE)
 		if (rsp->Status == NT_STATUS_MORE_PROCESSING_REQUIRED)
 			calc_preauth_integrity_hash(conn, (char *)rsp,
 					sess->Preauth_HashValue);
-	}
 }

@@ -354,6 +354,7 @@ void smb_delete_session(struct cifsd_sess *sess)
 	free_channel_list(sess);
 	destroy_fidtable(sess);
 	sess->conn->sess_count--;
+	kfree(sess->Preauth_HashValue);
 	kfree(sess);
 }
 

@@ -118,11 +118,8 @@ struct cifsd_tcp_conn {
 		/* Used by ntlmssp */
 		char			*ntlmssp_cryptkey;
 	};
-	/* PreAuth integrity Hash ID */
-	int				Preauth_HashId;
-	/* PreAuth integrity Hash Value */
-	__u8				Preauth_HashValue[64];
-	int				CipherId;
+
+	struct preauth_integrity_info	*preauth_info;
 
 	/* Supports NTLMSSP */
 	bool				sec_ntlmssp;

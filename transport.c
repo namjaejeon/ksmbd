@@ -77,11 +77,12 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	conn->sock = NULL;
 
 	cifsd_free_request(conn->request_buf);
+	kfree(conn->preauth_info);
 	kfree(conn);
 }
 
 /**
- * cifsd_tcp_conn_alloc() - intialize tcp server thread for a new connection
+ * cifsd_tcp_conn_alloc() - initialize tcp server thread for a new connection
  * @conn:     TCP server instance of connection
  * @sock:	socket associated with new connection
  *

@@ -269,8 +269,13 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_11_server(struct cifsd_tcp_conn *conn)
+int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 {
+	conn->preauth_info = kzalloc(sizeof(struct preauth_integrity_info),
+		GFP_KERNEL);
+	if (!conn->preauth_info)
+		return -ENOMEM;
+
 	conn->vals = &smb311_server_values;
 	conn->ops = &smb3_0_server_ops;
 	conn->cmds = smb2_0_server_cmds;
@@ -284,4 +289,6 @@ void init_smb3_11_server(struct cifsd_tcp_conn *conn)
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+
+	return 0;
 }

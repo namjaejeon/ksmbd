@@ -105,7 +105,7 @@ struct cifsd_sess {
 	bool is_guest;
 	struct fidtable_desc fidtable;
 	int state;
-	__u8 Preauth_HashValue[64];
+	__u8 *Preauth_HashValue;
 	struct cifsd_pipe *pipe_desc[MAX_PIPE];
 	struct smb2_inotify_res_info *inotify_res;
 	wait_queue_head_t pipe_q;
