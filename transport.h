@@ -131,7 +131,6 @@ struct cifsd_tcp_conn {
 	bool				sec_mskerberos;
 	bool				sign;
 	bool				need_neg;
-	bool				oplocks:1;
 	bool				use_spnego:1;
 	__le16				vuid;
 	__u16				cli_sec_mode;
