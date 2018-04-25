@@ -3407,7 +3407,9 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset -= reclen;
 
 	if (!d_info.data_count) {
-		if (smb_work->next_smb2_rcv_hdr_off)
+		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
+			rsp->hdr.Status = NT_STATUS_NO_SUCH_FILE;
+		else if (smb_work->next_smb2_rcv_hdr_off)
 			rsp->hdr.Status = 0;
 		else if (rsp->hdr.Status == 0) {
 			dir_fp->dot_dotdot[0] = dir_fp->dot_dotdot[1] = 0;
