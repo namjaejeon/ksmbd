@@ -1843,14 +1843,16 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 				smb_work->conn->local_nls);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-		return PTR_ERR(name);
+		err = PTR_ERR(name);
+		goto out;
 	}
 
 	pipe_type = get_pipe_type(name);
 	if (pipe_type == INVALID_PIPE) {
 		cifsd_debug("pipe %s not supported\n", name);
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		return -EOPNOTSUPP;
+		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		err = -ENOENT;
+		goto out;
 	}
 
 	/* Assigning temporary fid for pipe */
@@ -1860,7 +1862,8 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_TOO_MANY_OPENED_FILES;
 		else
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-		return id;
+		err = id;
+		goto out;
 	}
 
 	err = cifsd_sendmsg(smb_work->sess,
@@ -1888,6 +1891,11 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 88); /* StructureSize - 1*/
 	kfree(name);
 	return 0;
+
+out:
+	smb2_set_err_rsp(smb_work);
+	return err;
+
 }
 
 int close_disconnected_handle(struct inode *inode)
