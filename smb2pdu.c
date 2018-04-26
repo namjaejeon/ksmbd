@@ -909,18 +909,20 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
 		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
-	inc_rfc1001_len(rsp, sizeof(struct smb2_preauth_neg_context));
+	inc_rfc1001_len(rsp,
+		GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
 	if (conn->preauth_info->CipherId) {
-		/* Add 2 to size to round to 8 byte boundary */
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
-		pneg_ctxt += 2 + sizeof(struct smb2_preauth_neg_context);
+		/* Add 2 to size to round to 8 byte boundary */
+		pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
 			conn->preauth_info->CipherId);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
-		inc_rfc1001_len(rsp, 4 +
-				sizeof(struct smb2_encryption_neg_context) - 2);
+		/* Subtract 2 to remove unused Ciphers[1] */
+		inc_rfc1001_len(rsp,
+			2 + sizeof(struct smb2_encryption_neg_context) - 2);
 	}
 }
 
@@ -1120,13 +1122,12 @@ int smb2_negotiate(struct smb_work *smb_work)
 		le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = GSS_LENGTH;
+	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
 	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) +
-		rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
+		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
-		GSS_LENGTH + GSS_PADDING);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
