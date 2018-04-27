@@ -1926,6 +1926,7 @@ int smb_trans(struct smb_work *smb_work)
 	int ret = 0, nbytes = 0;
 	int param_len = 0;
 	int id, buf_len;
+	int padding;
 	struct cifsd_uevent *ev;
 
 	buf_len = le16_to_cpu(req->MaxDataCount);
@@ -1973,8 +1974,10 @@ int smb_trans(struct smb_work *smb_work)
 
 	cifsd_debug("Pipe name unicode len = %d\n", str_len_uni);
 
-	/* 2 is for padding after pipe name */
-	pipedata = req->Data + str_len_uni + 2 + setup_bytes_count;
+	/* Some clients like Windows may have additional padding. */
+	padding = req->ParameterOffset - offsetof(TRANS_REQ, Data)
+		- str_len_uni;
+	pipedata = req->Data + str_len_uni + setup_bytes_count + padding;
 
 	if (!strncmp(pipe, "LANMAN", sizeof("LANMAN"))) {
 		if (alloc_lanman_pipe_desc(smb_work->sess)) {
