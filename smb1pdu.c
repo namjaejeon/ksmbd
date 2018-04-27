@@ -6250,6 +6250,8 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 			}
 
 			generic_fillattr(PARENT_INODE(dir), &kstat);
+			smb_kstat.file_attributes = ATTR_DIRECTORY;
+			kstat.blocks = kstat.size = 0;
 			smb_kstat.kstat = &kstat;
 			rc = populate_readdir_entry_fn(conn, info_level,
 				d_info, &smb_kstat);

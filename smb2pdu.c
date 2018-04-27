@@ -909,18 +909,20 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
 		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
-	inc_rfc1001_len(rsp, sizeof(struct smb2_preauth_neg_context));
+	inc_rfc1001_len(rsp,
+		GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
 	if (conn->preauth_info->CipherId) {
-		/* Add 2 to size to round to 8 byte boundary */
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
-		pneg_ctxt += 2 + sizeof(struct smb2_preauth_neg_context);
+		/* Add 2 to size to round to 8 byte boundary */
+		pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
 			conn->preauth_info->CipherId);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
-		inc_rfc1001_len(rsp, 4 +
-				sizeof(struct smb2_encryption_neg_context) - 2);
+		/* Subtract 2 to remove unused Ciphers[1] */
+		inc_rfc1001_len(rsp,
+			2 + sizeof(struct smb2_encryption_neg_context) - 2);
 	}
 }
 
@@ -1120,13 +1122,12 @@ int smb2_negotiate(struct smb_work *smb_work)
 		le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = GSS_LENGTH;
+	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
 	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) +
-		rsp->SecurityBufferOffset, NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
+		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
-		GSS_LENGTH + GSS_PADDING);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
@@ -1843,14 +1844,16 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 				smb_work->conn->local_nls);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-		return PTR_ERR(name);
+		err = PTR_ERR(name);
+		goto out;
 	}
 
 	pipe_type = get_pipe_type(name);
 	if (pipe_type == INVALID_PIPE) {
 		cifsd_debug("pipe %s not supported\n", name);
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		return -EOPNOTSUPP;
+		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+		err = -ENOENT;
+		goto out;
 	}
 
 	/* Assigning temporary fid for pipe */
@@ -1860,7 +1863,8 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 			rsp->hdr.Status = NT_STATUS_TOO_MANY_OPENED_FILES;
 		else
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-		return id;
+		err = id;
+		goto out;
 	}
 
 	err = cifsd_sendmsg(smb_work->sess,
@@ -1888,6 +1892,11 @@ static int create_smb2_pipe(struct smb_work *smb_work)
 	inc_rfc1001_len(rsp, 88); /* StructureSize - 1*/
 	kfree(name);
 	return 0;
+
+out:
+	smb2_set_err_rsp(smb_work);
+	return err;
+
 }
 
 int close_disconnected_handle(struct inode *inode)
@@ -3407,7 +3416,9 @@ int smb2_query_dir(struct smb_work *smb_work)
 		dir_fp->dirent_offset -= reclen;
 
 	if (!d_info.data_count) {
-		if (smb_work->next_smb2_rcv_hdr_off)
+		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
+			rsp->hdr.Status = NT_STATUS_NO_SUCH_FILE;
+		else if (smb_work->next_smb2_rcv_hdr_off)
 			rsp->hdr.Status = 0;
 		else if (rsp->hdr.Status == 0) {
 			dir_fp->dot_dotdot[0] = dir_fp->dot_dotdot[1] = 0;
