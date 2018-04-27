@@ -37,11 +37,7 @@
  */
 static void *alloc_fid_mem(size_t size)
 {
-	if (size <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER)) {
-		return kzalloc(size, GFP_KERNEL|
-				__GFP_NOWARN|__GFP_NORETRY);
-	}
-	return vzalloc(size);
+	return cifsd_alloc(size);
 }
 
 /**
@@ -50,7 +46,7 @@ static void *alloc_fid_mem(size_t size)
  */
 static void free_fid_mem(void *ptr)
 {
-	is_vmalloc_addr(ptr) ? vfree(ptr) : kfree(ptr);
+	cifsd_free(ptr);
 }
 
 /**
