@@ -65,6 +65,16 @@ static inline void __free(void *addr)
 
 }
 
+void *cifsd_alloc(size_t size)
+{
+	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
+}
+
+void cifsd_free(void *ptr)
+{
+	__free(ptr);
+}
+
 void cifsd_free_request(void *addr)
 {
 	__free(addr);
