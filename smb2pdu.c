@@ -2807,7 +2807,7 @@ int smb2_open(struct smb_work *smb_work)
 			if (rc > 0)
 				fp->create_time = *((__u64 *)create_time);
 
-			kvfree(create_time);
+			cifsd_free(create_time);
 			rc = 0;
 		}
 	} else {
@@ -2838,7 +2838,7 @@ int smb2_open(struct smb_work *smb_work)
 			if (rc > 0)
 				fp->fattr = *((__le32 *)file_attribute);
 
-			kvfree(file_attribute);
+			cifsd_free(file_attribute);
 			rc = 0;
 		}
 	} else {
@@ -3916,12 +3916,12 @@ int smb2_get_ea(struct smb_work *smb_work, struct path *path,
 
 		buf_free_len -= value_len;
 		if (buf_free_len < 0) {
-			kvfree(buf);
+			cifsd_free(buf);
 			break;
 		}
 
 		memcpy(ptr, buf, value_len);
-		kvfree(buf);
+		cifsd_free(buf);
 
 		ptr += value_len;
 		eainfo->Flags = 0;
