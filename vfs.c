@@ -34,6 +34,7 @@
 #include "glob.h"
 #include "oplock.h"
 #include "transport.h"
+#include "buffer_pool.h"
 
 /**
  * smb_vfs_create() - vfs helper for smb create file
@@ -221,7 +222,7 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	}
 
 	if (v_len < size) {
-		wbuf = alloc_data_mem(size);
+		wbuf = cifsd_alloc(size);
 		if (!wbuf) {
 			err = -ENOMEM;
 			goto out;
@@ -242,7 +243,7 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	fp->filp->f_pos = *pos;
 	err = 0;
 out:
-	kvfree(stream_buf);
+	cifsd_free(stream_buf);
 	return err;
 }
 
@@ -980,7 +981,7 @@ ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 	if (!flags)
 		return xattr_len;
 
-	buf = alloc_data_mem(xattr_len);
+	buf = cifsd_alloc(xattr_len);
 	if (!buf)
 		return -ENOMEM;
 

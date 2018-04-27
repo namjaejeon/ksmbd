@@ -2611,7 +2611,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
-			kvfree(create_time);
+			cifsd_free(create_time);
 			err = 0;
 		}
 	} else {
@@ -3781,7 +3781,7 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
-		kvfree(buf);
+		cifsd_free(buf);
 	}
 
 	/* check if POSIX_ACL_XATTR_DEFAULT exists */
@@ -3790,7 +3790,7 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_DEFAULT);
-		kvfree(buf);
+		cifsd_free(buf);
 	}
 
 	if (rsp_data_cnt)
@@ -3813,7 +3813,7 @@ int smb_get_acl(struct smb_work *smb_work, struct path *path)
 	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
 
 	if (buf)
-		kvfree(buf);
+		cifsd_free(buf);
 	return rc;
 }
 
@@ -4053,7 +4053,7 @@ int smb_get_ea(struct smb_work *smb_work, struct path *path)
 		}
 
 		memcpy(ptr, buf, value_len);
-		kvfree(buf);
+		cifsd_free(buf);
 
 		temp_fea->EA_flags = 0;
 		temp_fea->name_len = name_len;
@@ -4160,7 +4160,7 @@ int query_path_info(struct smb_work *smb_work)
 			XATTR_NAME_CREATION_TIME_LEN, &ctime, 1);
 		if (rc > 0)
 			create_time = *((__u64 *)ctime);
-		kvfree(ctime);
+		cifsd_free(ctime);
 		rc = 0;
 	}
 
@@ -5784,7 +5784,7 @@ void fill_file_attributes(struct smb_work *smb_work,
 		else
 			cifsd_debug("fail to fill file attributes.\n");
 
-		kvfree(file_attribute);
+		cifsd_free(file_attribute);
 	}
 }
 
@@ -5817,7 +5817,7 @@ void fill_create_time(struct smb_work *smb_work,
 		if (xattr_len > 0)
 			smb_kstat->create_time = *((u64 *)create_time);
 
-		kvfree(create_time);
+		cifsd_free(create_time);
 	}
 }
 
@@ -8400,7 +8400,7 @@ int smb_open_andx(struct smb_work *smb_work)
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
-			kvfree(create_time);
+			cifsd_free(create_time);
 			err = 0;
 		}
 	} else {

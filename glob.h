@@ -62,7 +62,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
-extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 #define GSS_LENGTH		74
@@ -535,7 +534,6 @@ extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern struct cifsd_file *find_fp_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
-extern char *alloc_data_mem(size_t size);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);
 extern int check_invalid_stream_char(char *stream_name);
