@@ -33,7 +33,6 @@
 #include "transport.h"
 
 bool global_signing;
-unsigned long server_start_time;
 
 /*
  * keep MaxBufSize Default: 65536
@@ -418,8 +417,6 @@ static void cifsd_server_tcp_callbacks_init(void)
 static int __init cifsd_server_init(void)
 {
 	int rc;
-
-	server_start_time = jiffies;
 
 	cifsd_server_tcp_callbacks_init();
 

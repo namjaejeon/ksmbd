@@ -630,18 +630,6 @@ out:
 	return NULL;
 }
 
-char *alloc_data_mem(size_t size)
-{
-	/*
-	 * Use vzalloc area for allocation > 16KB,
-	 * otherwise use kzalloc
-	 */
-	if (size <= (PAGE_SIZE << PAGE_ALLOC_KMEM_ORDER))
-		return kzalloc(size, GFP_KERNEL);
-
-	return vzalloc(size);
-}
-
 /**
  * pattern_cmp() - compare a string with a pattern which might include
  * wildcard '*' and '?'
