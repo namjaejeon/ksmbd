@@ -62,7 +62,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
-extern unsigned long server_start_time;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 #define GSS_LENGTH		74
