@@ -775,7 +775,7 @@ int smb_rename(struct smb_work *smb_work)
 	}
 
 	cifsd_debug("rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = smb_vfs_rename(smb_work->sess, abs_oldname, abs_newname, 0);
+	rc = smb_vfs_rename(abs_oldname, abs_newname, NULL);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 		goto out;
@@ -2580,7 +2580,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
 			err = smb_vfs_truncate(sess, NULL,
-				(uint64_t)fp->volatile_id, alloc_size);
+				fp, alloc_size);
 			if (err) {
 				cifsd_err("failed to expand file, err = %d\n",
 						err);
@@ -3002,8 +3002,6 @@ int smb_write(struct smb_work *smb_work)
 	WRITE_REQ_32BIT *req = (WRITE_REQ_32BIT *)REQUEST_BUF(smb_work);
 	WRITE_RSP_32BIT *rsp = (WRITE_RSP_32BIT *)RESPONSE_BUF(smb_work);
 	struct cifsd_file *fp = NULL;
-	struct cifsd_sess *sess = smb_work->sess;
-	struct cifsd_tcon *tcon = smb_work->tcon;
 	loff_t pos;
 	size_t count;
 	char *data_buf;
@@ -3021,11 +3019,6 @@ int smb_write(struct smb_work *smb_work)
 		return -ENOENT;
 	}
 
-	if (fp->sess != sess || fp->tcon != tcon) {
-		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
-		return -ENOENT;
-	}
-
 	pos = le32_to_cpu(req->Offset);
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
@@ -3033,7 +3026,7 @@ int smb_write(struct smb_work *smb_work)
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
 	if (!count) {
-		err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+		err = smb_vfs_truncate(smb_work->sess, NULL, fp,
 			pos);
 		nbytes = 0;
 	} else
@@ -5608,7 +5601,7 @@ int smb_set_file_size_pinfo(struct smb_work *smb_work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	rc = smb_vfs_truncate(smb_work->sess, name, 0, newsize);
+	rc = smb_vfs_truncate(smb_work->sess, name, NULL, newsize);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return rc;
@@ -6811,6 +6804,7 @@ int smb_set_file_size_finfo(struct smb_work *smb_work)
 	struct smb_com_transaction2_sfi_req *req;
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	struct file_end_of_file_info *eofinfo;
+	struct cifsd_file *fp;
 	loff_t newsize;
 	int err = 0;
 
@@ -6820,8 +6814,16 @@ int smb_set_file_size_finfo(struct smb_work *smb_work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+	err = smb_vfs_truncate(smb_work->sess, NULL, fp,
 		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -6866,6 +6868,7 @@ int smb_set_alloc_size(struct smb_work *smb_work)
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	struct file_allocation_info *allocinfo;
 	struct kstat stat;
+	struct cifsd_file *fp;
 	loff_t newsize;
 	int err = 0;
 
@@ -6891,7 +6894,15 @@ int smb_set_alloc_size(struct smb_work *smb_work)
 		newsize *= alloc_roundup_size;
 	}
 
-	err = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	err = smb_vfs_truncate(smb_work->sess, NULL, fp,
 		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -7439,6 +7450,7 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	struct smb_com_transaction2_sfi_req *req;
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	struct set_file_rename *info;
+	struct cifsd_file *fp;
 	char *newname;
 	int rc = 0;
 
@@ -7447,9 +7459,16 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	info =  (struct set_file_rename *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %u\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
 	if (le32_to_cpu(info->overwrite)) {
-		rc = smb_vfs_truncate(smb_work->sess, NULL, (uint64_t)req->Fid,
-			0);
+		rc = smb_vfs_truncate(smb_work->sess, NULL, fp,	0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 			return rc;
@@ -7461,8 +7480,17 @@ int smb_fileinfo_rename(struct smb_work *smb_work)
 	if (IS_ERR(newname))
 		return PTR_ERR(newname);
 
-	cifsd_debug("rename fid %u -> %s\n", req->Fid, newname);
-	rc = smb_vfs_rename(smb_work->sess, NULL, newname, (uint64_t)req->Fid);
+	fp = get_fp(smb_work, le16_to_cpu(req->Fid), 0);
+	if (!fp) {
+		cifsd_err("failed to get filp for fid %d\n",
+			le16_to_cpu(req->Fid));
+		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
+		return -ENOENT;
+	}
+
+	cifsd_debug("rename oldname(%s) -> newname(%s)\n", fp->filename,
+		newname);
+	rc = smb_vfs_rename(NULL, newname, fp);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		goto out;

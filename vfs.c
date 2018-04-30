@@ -709,14 +709,11 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
-		char *abs_newname, uint64_t oldfid)
+int smb_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp)
 {
 	struct path oldpath_p, newpath_p;
 	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap, *child_de;
 	char *oldname = NULL, *newname = NULL;
-	struct file *filp = NULL;
-	struct cifsd_file *fp = NULL;
 	int err;
 
 	if (abs_oldname) {
@@ -762,15 +759,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 		}
 		dnew_p = newpath_p.dentry;
 	} else {
-		/* rename by fid of source file instead of source filename */
-		fp = get_id_from_fidtable(sess, oldfid);
-		if (!fp) {
-			cifsd_err("can't find filp for fid %llu\n", oldfid);
-			return -ENOENT;
-		}
-
-		filp = fp->filp;
-		dold_p = filp->f_path.dentry->d_parent;
+		dold_p = fp->filp->f_path.dentry->d_parent;
 
 		newname = strrchr(abs_newname, '/');
 		if (newname && newname[1] != '\0') {
@@ -804,7 +793,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 			goto out2;
 		}
 	} else {
-		dold = filp->f_path.dentry;
+		dold = fp->filp->f_path.dentry;
 		dget(dold);
 	}
 
@@ -871,12 +860,10 @@ out1:
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
-		uint64_t fid, loff_t size)
+	struct cifsd_file *fp, loff_t size)
 {
 	struct path path;
-	struct file *filp;
 	int err = 0;
-	struct cifsd_file *fp;
 	struct inode *inode;
 
 	if (name) {
@@ -892,11 +879,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 					name, err);
 		path_put(&path);
 	} else {
-		fp = get_id_from_fidtable(sess, fid);
-		if (!fp) {
-			cifsd_err("failed to get filp for fid %llu\n", fid);
-			return -ENOENT;
-		}
+		struct file *filp;
 
 		filp = fp->filp;
 		if (oplocks_enable) {
@@ -919,8 +902,8 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		}
 		err = vfs_truncate(&filp->f_path, size);
 		if (err)
-			cifsd_err("truncate failed for fid %llu err %d\n",
-					fid, err);
+			cifsd_err("truncate failed for filename : %s err %d\n",
+					fp->filename, err);
 	}
 
 	return err;

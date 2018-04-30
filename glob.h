@@ -561,10 +561,9 @@ int smb_vfs_remove_file(char *name);
 int smb_vfs_link(const char *oldname, const char *newname);
 int smb_vfs_symlink(const char *name, const char *symname);
 int smb_vfs_readlink(struct path *path, char *buf, int len);
-int smb_vfs_rename(struct cifsd_sess *sess, char *oldname,
-		char *newname, uint64_t oldfid);
+int smb_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp);
 int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
-		uint64_t fid, loff_t size);
+	struct cifsd_file *fp, loff_t size);
 ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
 ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 		char **xattr_buf, int flags);

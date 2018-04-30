@@ -1388,12 +1388,4 @@ extern int smb2_ioctl(struct smb_work *smb_work);
 extern int smb2_oplock_break(struct smb_work *smb_work);
 extern int smb2_notify(struct smb_work *smb_work);
 
-/* smb2 sub command handlers */
-extern int smb2_get_info_filesystem(struct smb_work *smb_work);
-extern int smb2_get_info_file(struct smb_work *smb_work);
-extern int smb2_set_info_file(struct smb_work *smb_work);
-extern int smb2_get_ea(struct smb_work *smb_work, struct path *path,
-		void *rq, void *resp, void *resp_org);
-extern int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path);
-
 #endif				/* _SMB2PDU_SERVER_H */

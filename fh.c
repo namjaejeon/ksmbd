@@ -358,20 +358,17 @@ struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct cifsd_file *fp;
-	int64_t vid = -1, pid = -1;
+	int64_t vid, pid;
 
-	if (le64_to_cpu(req_vid == -1)) {
+	if (req_vid == -1) {
 		cifsd_debug("Compound request assigning stored FID = %llu\n",
 				smb_work->cur_local_fid);
 		vid = smb_work->cur_local_fid;
 		pid = smb_work->cur_local_pfid;
-	}
-
-	if (vid == -1)
+	} else {
 		vid = req_vid;
-
-	if (pid == -1)
 		pid = req_pid;
+	}
 
 	fp = get_id_from_fidtable(smb_work->sess, vid);
 	if (!fp) {
