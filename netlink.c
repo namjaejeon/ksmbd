@@ -487,6 +487,7 @@ static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 		return -EINVAL;
 	}
 
+	memcpy((char *)&pipe_desc->ev, (char *)ev, sizeof(*ev));
 	if (unlikely(ev->error)) {
 		cifsd_debug("pipe io failed, err %d\n", ev->error);
 		goto out;
@@ -497,7 +498,6 @@ static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 		goto out;
 	}
 
-	memcpy((char *)&pipe_desc->ev, (char *)ev, sizeof(*ev));
 	if (ev->buflen)
 		memcpy(pipe_desc->rsp_buf, ev->buffer, ev->buflen);
 
