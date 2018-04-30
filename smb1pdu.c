@@ -5885,8 +5885,14 @@ void *fill_common_info(char **p, struct smb_kstat *smb_kstat)
 			cifs_UnixTimeToNT(smb_kstat->kstat->mtime));
 	info->ChangeTime = cpu_to_le64(
 			cifs_UnixTimeToNT(smb_kstat->kstat->ctime));
-	info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
-	info->AllocationSize = cpu_to_le64(smb_kstat->kstat->blocks << 9);
+	if (smb_kstat->file_attributes & ATTR_DIRECTORY) {
+		info->EndOfFile = 0;
+		info->AllocationSize = 0;
+	} else {
+		info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
+		info->AllocationSize =
+			cpu_to_le64(smb_kstat->kstat->blocks << 9);
+	}
 	info->ExtFileAttributes = cpu_to_le32(smb_kstat->file_attributes);
 
 	return info;
@@ -6251,7 +6257,6 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 
 			generic_fillattr(PARENT_INODE(dir), &kstat);
 			smb_kstat.file_attributes = ATTR_DIRECTORY;
-			kstat.blocks = kstat.size = 0;
 			smb_kstat.kstat = &kstat;
 			rc = populate_readdir_entry_fn(conn, info_level,
 				d_info, &smb_kstat);
