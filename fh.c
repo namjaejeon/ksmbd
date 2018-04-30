@@ -19,13 +19,15 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
+#include <linux/bootmem.h>
+#include <linux/xattr.h>
+
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 #include "oplock.h"
-
-#include <linux/bootmem.h>
-#include <linux/xattr.h>
+#include "buffer_pool.h"
+#include "transport.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -35,11 +37,7 @@
  */
 static void *alloc_fid_mem(size_t size)
 {
-	if (size <= (PAGE_SIZE << PAGE_ALLOC_COSTLY_ORDER)) {
-		return kzalloc(size, GFP_KERNEL|
-				__GFP_NOWARN|__GFP_NORETRY);
-	}
-	return vzalloc(size);
+	return cifsd_alloc(size);
 }
 
 /**
@@ -48,7 +46,7 @@ static void *alloc_fid_mem(size_t size)
  */
 static void free_fid_mem(void *ptr)
 {
-	is_vmalloc_addr(ptr) ? vfree(ptr) : kfree(ptr);
+	cifsd_free(ptr);
 }
 
 /**
@@ -283,7 +281,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess,
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
 
-	fp = kmem_cache_zalloc(cifsd_filp_cache, GFP_NOFS);
+	fp = cifsd_alloc_file_struct();
 	if (!fp) {
 		cifsd_err("Failed to allocate memory for id (%u)\n", id);
 		return NULL;
@@ -360,20 +358,17 @@ struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
 	struct cifsd_sess *sess = smb_work->sess;
 	struct cifsd_tcon *tcon = smb_work->tcon;
 	struct cifsd_file *fp;
-	int64_t vid = -1, pid = -1;
+	int64_t vid, pid;
 
-	if (le64_to_cpu(req_vid == -1)) {
+	if (req_vid == -1) {
 		cifsd_debug("Compound request assigning stored FID = %llu\n",
 				smb_work->cur_local_fid);
 		vid = smb_work->cur_local_fid;
 		pid = smb_work->cur_local_pfid;
-	}
-
-	if (vid == -1)
+	} else {
 		vid = req_vid;
-
-	if (pid == -1)
 		pid = req_pid;
+	}
 
 	fp = get_id_from_fidtable(smb_work->sess, vid);
 	if (!fp) {
@@ -444,7 +439,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 		kfree(fp->stream.name);
 	fp->f_mfp = NULL;
 	spin_unlock(&fp->f_lock);
-	kmem_cache_free(cifsd_filp_cache, fp);
+	cifsd_free_file_struct(fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
 }
 
@@ -1012,9 +1007,7 @@ bool is_dir_empty(struct cifsd_file *fp)
 	struct path dir_path;
 	struct file *filp;
 	struct smb_readdir_data r_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
 		.dirent_count = 0
 	};
@@ -1108,9 +1101,7 @@ int smb_search_dir(char *dirname, char *filename)
 	int dirnamelen = strlen(dirname);
 	bool match_found = false;
 	struct smb_readdir_data readdir_data = {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		.ctx.actor = smb_filldir,
-#endif
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
@@ -1146,13 +1137,8 @@ int smb_search_dir(char *dirname, char *filename)
 			reclen = ALIGN(sizeof(struct smb_dirent) +
 				       buf_p->namelen, sizeof(__le64));
 			length = buf_p->namelen;
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 			if (length != namelen ||
 				strncasecmp(filename, buf_p->name, namelen))
-#else
-			if (length != namelen ||
-				strnicmp(filename, buf_p->name, namelen))
-#endif
 				continue;
 			/* got match, make absolute name */
 			memcpy(dirname + dirnamelen + 1, buf_p->name, namelen);

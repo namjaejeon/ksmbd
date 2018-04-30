@@ -351,76 +351,80 @@ typedef struct negotiate_req {
 #define SECMODE_SIGN_ENABLED  0x04      /* SMB security signatures enabled */
 #define SECMODE_SIGN_REQUIRED 0x08      /* SMB security signatures required */
 
+struct smb_com_session_setup_req {	/* request format */
+	struct smb_hdr hdr;	/* wct = 12 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 MaxBufferSize;
+	__le16 MaxMpxCount;
+	__le16 VcNumber;
+	__u32 SessionKey;
+	__le16 SecurityBlobLength;
+	__u32 Reserved;
+	__le32 Capabilities;	/* see below */
+	__le16 ByteCount;
+	unsigned char SecurityBlob[1];	/* followed by */
+	/* STRING NativeOS */
+	/* STRING NativeLanMan */
+} __attribute__((packed));	/* NTLM request format (with
+				   extended security */
+
+struct smb_com_session_setup_req_no_secext {	/* request format */
+	struct smb_hdr hdr;	/* we will handle this :: wct = 13 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 MaxBufferSize;
+	__le16 MaxMpxCount;
+	__le16 VcNumber;
+	__u32 SessionKey;
+	__le16 CaseInsensitivePasswordLength;	/* ASCII password len */
+	__le16 CaseSensitivePasswordLength;	/* Unicode password length*/
+	__u32 Reserved;	/* see below */
+	__le32 Capabilities;
+	__le16 ByteCount;
+	unsigned char CaseInsensitivePassword[0];	/* followed by: */
+	/* unsigned char * CaseSensitivePassword; */
+	/* STRING AccountName */
+	/* STRING PrimaryDomain */
+	/* STRING NativeOS */
+	/* STRING NativeLanMan */
+} __attribute__((packed));	/* NTLM request format (without
+					extended security */
+
+struct smb_com_session_setup_resp {	/* default (NTLM) response format */
+	struct smb_hdr hdr;	/* wct = 4 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 Action;	/* see below */
+	__le16 SecurityBlobLength;
+	__u16 ByteCount;
+	unsigned char SecurityBlob[1];	/* followed by */
+	/*      unsigned char  * NativeOS;      */
+	/*      unsigned char  * NativeLanMan;  */
+	/*      unsigned char  * PrimaryDomain; */
+} __attribute__((packed));	/* NTLM response
+				(with or without extended sec) */
+
+struct smb_com_session_setup_old_resp { /* default (NTLM) response format */
+	struct smb_hdr hdr;	/* wct = 3 */
+	__u8 AndXCommand;
+	__u8 AndXReserved;
+	__le16 AndXOffset;
+	__le16 Action;	/* see below */
+	__u16 ByteCount;
+	unsigned char NativeOS[1];	/* followed by */
+	/*      unsigned char * NativeLanMan; */
+	/*      unsigned char * PrimaryDomain; */
+} __attribute__((packed));	/* pre-NTLM (LANMAN2.1) response */
+
 typedef union smb_com_session_setup_andx {
-	struct {                /* request format */
-		struct smb_hdr hdr;     /* wct = 12 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 MaxBufferSize;
-		__le16 MaxMpxCount;
-		__le16 VcNumber;
-		__u32 SessionKey;
-		__le16 SecurityBlobLength;
-		__u32 Reserved;
-		__le32 Capabilities;    /* see below */
-		__le16 ByteCount;
-		unsigned char SecurityBlob[1];  /* followed by */
-		/* STRING NativeOS */
-		/* STRING NativeLanMan */
-	} __attribute__((packed)) req;  /* NTLM request format (with
-					   extended security */
-
-	struct {                /* request format */
-		struct smb_hdr hdr;     /* we will handle this :: wct = 13 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 MaxBufferSize;
-		__le16 MaxMpxCount;
-		__le16 VcNumber;
-		__u32 SessionKey;
-		__le16 CaseInsensitivePasswordLength; /* ASCII password len */
-		__le16 CaseSensitivePasswordLength; /* Unicode password length*/
-		__u32 Reserved; /* see below */
-		__le32 Capabilities;
-		__le16 ByteCount;
-		unsigned char CaseInsensitivePassword[0];     /* followed by: */
-		/* unsigned char * CaseSensitivePassword; */
-		/* STRING AccountName */
-		/* STRING PrimaryDomain */
-		/* STRING NativeOS */
-		/* STRING NativeLanMan */
-	} __attribute__((packed)) req_no_secext; /* NTLM request format (without
-						    extended security */
-
-	struct {                /* default (NTLM) response format */
-		struct smb_hdr hdr;     /* wct = 4 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 Action;  /* see below */
-		__le16 SecurityBlobLength;
-		__u16 ByteCount;
-		unsigned char SecurityBlob[1];  /* followed by */
-		/*      unsigned char  * NativeOS;      */
-		/*      unsigned char  * NativeLanMan;  */
-		/*      unsigned char  * PrimaryDomain; */
-	} __attribute__((packed)) resp; /* NTLM response
-					   (with or without extended sec) */
-
-	struct {                /* default (NTLM) response format */
-		struct smb_hdr hdr;     /* wct = 3 */
-		__u8 AndXCommand;
-		__u8 AndXReserved;
-		__le16 AndXOffset;
-		__le16 Action;  /* see below */
-		__u16 ByteCount;
-		unsigned char NativeOS[1];      /* followed by */
-		/*      unsigned char * NativeLanMan; */
-		/*      unsigned char * PrimaryDomain; */
-	} __attribute__((packed)) old_resp; /* pre-NTLM (LANMAN2.1) response */
-
+	struct smb_com_session_setup_req req;
+	struct smb_com_session_setup_req_no_secext req_no_secext;
+	struct smb_com_session_setup_resp resp;
+	struct smb_com_session_setup_old_resp old_resp;
 } __attribute__((packed)) SESSION_SETUP_ANDX;
 
 typedef struct smb_com_tconx_req {
@@ -467,14 +471,20 @@ struct andx_block {
 	__le16 AndXOffset;
 } __attribute__((packed));
 
-typedef struct locking_andx_range {
+typedef struct locking_andx_range64 {
 	__le16 Pid;
 	__le16 Pad;
 	__le32 OffsetHigh;
 	__le32 OffsetLow;
 	__le32 LengthHigh;
 	__le32 LengthLow;
-} __attribute__((packed)) LOCKING_ANDX_RANGE;
+} __attribute__((packed)) LOCKING_ANDX_RANGE64;
+
+typedef struct locking_andx_range32 {
+	__le16 Pid;
+	__le32 Offset;
+	__le32 Length;
+} __attribute__((packed)) LOCKING_ANDX_RANGE32;
 
 #define LOCKING_ANDX_SHARED_LOCK     0x01
 #define LOCKING_ANDX_OPLOCK_RELEASE  0x02
@@ -494,7 +504,7 @@ typedef struct smb_com_lock_req {
 	__le16 NumberOfUnlocks;
 	__le16 NumberOfLocks;
 	__le16 ByteCount;
-	LOCKING_ANDX_RANGE Locks[1];
+	char *Locks[1];
 } __attribute__((packed)) LOCK_REQ;
 
 typedef struct smb_com_lock_rsp {
@@ -1178,6 +1188,7 @@ typedef struct {
 #define SMB_SET_FILE_UNIX_INFO2         0x20b
 #define SMB_SET_FILE_BASIC_INFO2        0x3ec
 #define SMB_SET_FILE_RENAME_INFORMATION 0x3f2 /* BB check if qpathinfo too */
+#define SMB_SET_FILE_DISPOSITION_INFORMATION   0x3f5   /* alias for 0x102 */
 #define SMB_FILE_ALL_INFO2              0x3fa
 #define SMB_SET_FILE_ALLOCATION_INFO2   0x3fb
 #define SMB_SET_FILE_END_OF_FILE_INFO2  0x3fc
@@ -1486,6 +1497,35 @@ extern int create_dir(struct smb_work *smb_work);
 extern int get_dfs_referral(struct smb_work *smb_work);
 
 /* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
+
+typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le16 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_STANDARD;
+
+typedef struct {
+	__le16 CreationDate; /* SMB Date see above */
+	__le16 CreationTime; /* SMB Time */
+	__le16 LastAccessDate;
+	__le16 LastAccessTime;
+	__le16 LastWriteDate;
+	__le16 LastWriteTime;
+	__le32 DataSize; /* File Size (EOF) */
+	__le32 AllocationSize;
+	__le16 Attributes; /* verify not u32 */
+	__le32 EASize;
+	__u8 FileNameLength;
+	char FileName[1];
+} __attribute__((packed)) FIND_INFO_QUERY_EA_SIZE;
 
 typedef struct {
 	__le32 NextEntryOffset;

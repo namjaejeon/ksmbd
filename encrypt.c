@@ -172,6 +172,60 @@ smb_mdfour_err:
 	return rc;
 }
 
+/* produce sess key using md5 with client nonce and server chanllenge */
+int update_sess_key(unsigned char *md5_hash, char *nonce,
+	char *server_challenge, int len)
+{
+	int rc;
+	unsigned int size;
+	struct crypto_shash *md5;
+	struct sdesc *sdescmd5;
+
+	md5 = crypto_alloc_shash("md5", 0, 0);
+	if (IS_ERR(md5)) {
+		rc = PTR_ERR(md5);
+		cifsd_debug("%s: Crypto md5 allocation error %d\n",
+				__func__, rc);
+		return rc;
+	}
+	size = sizeof(struct shash_desc) + crypto_shash_descsize(md5);
+	sdescmd5 = kmalloc(size, GFP_KERNEL);
+	if (!sdescmd5) {
+		rc = -ENOMEM;
+		goto err_out;
+	}
+	sdescmd5->shash.tfm = md5;
+	sdescmd5->shash.flags = 0x0;
+
+	rc = crypto_shash_init(&sdescmd5->shash);
+	if (rc) {
+		cifsd_debug("%s: Could not init md5 shash\n", __func__);
+		goto err_out;
+	}
+
+	rc = crypto_shash_update(&sdescmd5->shash, server_challenge, len);
+	if (rc) {
+		cifsd_debug("%s: Could not update with challenge\n", __func__);
+		goto err_out;
+	}
+
+	rc = crypto_shash_update(&sdescmd5->shash, nonce, len);
+	if (rc) {
+		cifsd_debug("%s: Could not update with nonce\n", __func__);
+		goto err_out;
+	}
+
+	rc = crypto_shash_final(&sdescmd5->shash, md5_hash);
+	if (rc)
+		cifsd_debug("%s: Could not generate md5 hash\n", __func__);
+
+err_out:
+	crypto_free_shash(md5);
+	kfree(sdescmd5);
+
+	return rc;
+}
+
 /*
    This implements the X/Open SMB password encryption
    It takes a password, a 8 byte "crypt key" and puts 24 bytes of

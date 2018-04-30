@@ -25,19 +25,16 @@
 #include "smb1pdu.h"
 #include "ntlmssp.h"
 
+#include "management/user.h"
+
 #ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
 #endif
 
-#define SMB_PORT		445
-#define MAX_CONNECTIONS		64
-
 extern int cifsd_debug_enable;
 
 /* Global list containing exported points */
-extern struct list_head cifsd_usr_list;
 extern struct list_head cifsd_share_list;
-extern struct list_head cifsd_connection_list;
 extern struct list_head cifsd_session_list;
 
 /* Spinlock to protect global list */
@@ -59,7 +56,8 @@ extern spinlock_t connect_list_lock;
 #define SERVER_CAPS  (CAP_RAW_MODE | CAP_UNICODE | CAP_LARGE_FILES | \
 			CAP_NT_SMBS | CAP_STATUS32 | CAP_LOCK_AND_READ | \
 			CAP_NT_FIND | CAP_UNIX | CAP_LARGE_READ_X | \
-			CAP_LARGE_WRITE_X | CAP_LEVEL_II_OPLOCKS)
+			CAP_LARGE_WRITE_X | CAP_LEVEL_II_OPLOCKS | \
+			CAP_EXTENDED_SECURITY)
 #define SERVER_SECU  (SECMODE_USER | SECMODE_PW_ENCRYPT)
 
 #define CIFSD_MAJOR_VERSION 1
@@ -87,25 +85,10 @@ enum {
 	MANDATORY
 };
 
-struct cifsd_usr {
-	char	*name;
-	char	passkey[CIFS_NTHASH_SIZE];
-	kuid_t	uid;
-	kgid_t	gid;
-	__le32	sess_uid;
-	bool	guest;
-	/* global list of cifsd users */
-	struct	list_head list;
-	__u16	vuid;
-	/* how many connection have this user */
-	int	ucount;
-	/* unsigned int capabilities; what for */
-};
-
-/* cifsd_sess coupled with cifsd_usr */
+/* cifsd_sess coupled with cifsd_user */
 struct cifsd_sess {
-	struct cifsd_usr *usr;
-	struct connection *conn;
+	struct cifsd_user *user;
+	struct cifsd_tcp_conn *conn;
 	struct list_head cifsd_ses_list;
 	struct list_head cifsd_ses_global_list;
 	struct list_head tcon_list;
@@ -122,7 +105,7 @@ struct cifsd_sess {
 	bool is_guest;
 	struct fidtable_desc fidtable;
 	int state;
-	__u8 Preauth_HashValue[64];
+	__u8 *Preauth_HashValue;
 	struct cifsd_pipe *pipe_desc[MAX_PIPE];
 	struct smb2_inotify_res_info *inotify_res;
 	wait_queue_head_t pipe_q;
@@ -220,9 +203,6 @@ extern int get_protocol_idx(char *str);
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
 extern struct cifsd_share *find_matching_share(__u16 tid);
-int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
-	bool *can_write);
-int validate_host(char *cip, struct cifsd_share *share);
 int process_ntlm(struct cifsd_sess *sess, char *pw_buf);
 int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name);
@@ -241,14 +221,14 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
 int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
 	unsigned int key_size);
-extern struct cifsd_usr *cifsd_is_user_present(char *name);
-struct cifsd_share *get_cifsd_share(struct connection *conn,
+extern struct cifsd_user *cifsd_is_user_present(char *name);
+struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);
 extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
 		struct cifsd_sess *sess);
 extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
 			unsigned int tid);
-struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess);
+struct cifsd_user *get_smb_session_user(struct cifsd_sess *sess);
 struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
 		unsigned int id);
 int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
@@ -258,8 +238,6 @@ int cifsadmin_user_query(char *username);
 int cifsadmin_user_del(char *username);
 int cifsd_user_store(const char *buf, size_t len);
 int cifsd_config_store(const char *buf, size_t len);
-int cifsd_user_show(char *buf);
-int cifsd_share_show(char *buf);
 int cifsd_debug_store(const char *buf);
 int cifsd_caseless_search_store(const char *buf);
 #endif /* __CIFSD_EXPORT_H */

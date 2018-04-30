@@ -84,7 +84,7 @@ cifs_idmap_key_instantiate(struct key *key, struct key_preparsed_payload *prep)
 	 * dereference payload.data!
 	 */
 	if (prep->datalen <= sizeof(key->payload)) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		key->payload.data[0] = NULL;
 		memcpy(&key->payload, prep->data, prep->datalen);
 #else
@@ -96,7 +96,7 @@ cifs_idmap_key_instantiate(struct key *key, struct key_preparsed_payload *prep)
 		payload = kmemdup(prep->data, prep->datalen, GFP_KERNEL);
 		if (!payload)
 			return -ENOMEM;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		key->payload.data[0] = payload;
 #else
 		key->payload.data = payload;
@@ -111,7 +111,7 @@ static inline void
 cifs_idmap_key_destroy(struct key *key)
 {
 	if (key->datalen > sizeof(key->payload))
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		kfree(key->payload.data[0]);
 #else
 		kfree(key->payload.data);
@@ -627,7 +627,7 @@ int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 	 * there are no subauthorities and the host has 8-byte pointers, then
 	 * it could be.
 	 */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 	ksid = sidkey->datalen <= sizeof(sidkey->payload) ?
 		(struct cifs_sid *)&sidkey->payload :
 		(struct cifs_sid *)sidkey->payload.data[0];
@@ -707,7 +707,7 @@ int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype)
 		kuid_t uid;
 		uid_t id;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		memcpy(&id, &sidkey->payload.data[0], sizeof(uid_t));
 #else
 		memcpy(&id, &sidkey->payload.value, sizeof(uid_t));
@@ -718,7 +718,7 @@ int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype)
 	} else {
 		kgid_t gid;
 		gid_t id;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
 		memcpy(&id, &sidkey->payload.data[0], sizeof(gid_t));
 #else
 		memcpy(&id, &sidkey->payload.value, sizeof(gid_t));
@@ -1075,7 +1075,7 @@ int init_cifsd_idmap(void)
 	if (!cred)
 		return -ENOMEM;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	keyring = keyring_alloc(".cifs_idmap",
 			GLOBAL_ROOT_UID, GLOBAL_ROOT_GID, cred,
 			(KEY_POS_ALL & ~KEY_POS_SETATTR) |

@@ -29,11 +29,13 @@
 #include "glob.h"
 #include "export.h"
 
+#include "transport.h"
+
 /* Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
  * So sec blob data in neg phase could be generated statically.
  */
-char NEGOTIATE_GSS_HEADER[74] =  {
+char NEGOTIATE_GSS_HEADER[GSS_LENGTH] =  {
 	0x60, 0x48, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05,
 	0x05, 0x02, 0xa0, 0x3e, 0x30, 0x3c, 0xa0, 0x0e,
 	0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04,
@@ -46,7 +48,7 @@ char NEGOTIATE_GSS_HEADER[74] =  {
 	0x72, 0x65
 };
 
-static int crypto_md5_alloc(struct connection *conn)
+static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -77,7 +79,7 @@ static int crypto_md5_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_hmacmd5_alloc(struct connection *conn)
+static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -169,7 +171,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	ret = crypto_shash_setkey(sess->conn->secmech.hmacmd5,
-		sess->usr->passkey, CIFS_ENCPWD_SIZE);
+		user_passkey(sess->user), CIFS_ENCPWD_SIZE);
 	if (ret) {
 		cifsd_debug("Could not set NT Hash as a key\n");
 		return ret;
@@ -182,7 +184,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	/* convert user_name to unicode */
-	len = strlen(sess->usr->name);
+	len = strlen(user_name(sess->user));
 	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!uniname) {
 		ret = -ENOMEM;
@@ -190,7 +192,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 	}
 
 	if (len) {
-		len = smb_strtoUTF16(uniname, sess->usr->name, len,
+		len = smb_strtoUTF16(uniname, user_name(sess->user), len,
 			sess->conn->local_nls);
 		UniStrupr(uniname);
 	}
@@ -237,7 +239,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
 }
 
 /**
- * process_ntlmv() - NTLM authentication handler
+ * process_ntlm() - NTLM authentication handler
  * @sess:	session of connection
  * @pw_buf:	NTLM challenge response
  * @passkey:	user password
@@ -251,14 +253,16 @@ int process_ntlm(struct cifsd_sess *sess, char *pw_buf)
 	char key[CIFS_AUTH_RESP_SIZE];
 
 	memset(p21, '\0', 21);
-	memcpy(p21, sess->usr->passkey, CIFS_NTHASH_SIZE);
+	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
 	rc = E_P24(p21, sess->ntlmssp.cryptkey, key);
 	if (rc) {
 		cifsd_err("password processing failed\n");
 		return rc;
 	}
 
-	smb_mdfour(sess->sess_key, sess->usr->passkey, CIFS_SMB1_SESSKEY_SIZE);
+	smb_mdfour(sess->sess_key,
+			user_passkey(sess->user),
+			CIFS_SMB1_SESSKEY_SIZE);
 	memcpy(sess->sess_key + CIFS_SMB1_SESSKEY_SIZE, key,
 		CIFS_AUTH_RESP_SIZE);
 	sess->sequence_number = 1;
@@ -356,6 +360,43 @@ out:
 }
 
 /**
+ * process_ntlm2() - NTLM2(extended security) authentication handler
+ * @sess:	session of connection
+ * @client_nonce:	client nonce from LM response.
+ * @ntlm_resp:		ntlm response data from client.
+ *
+ * Return:	0 on success, error number on error
+ */
+static int process_ntlm2(struct cifsd_sess *sess, char *client_nonce,
+	 char *ntlm_resp)
+{
+	char sess_key[CIFS_SMB1_SESSKEY_SIZE] = {0};
+	int rc;
+	unsigned char p21[21];
+	char key[CIFS_AUTH_RESP_SIZE];
+
+	rc = update_sess_key(sess_key, client_nonce,
+		(char *)sess->ntlmssp.cryptkey, 8);
+	if (rc) {
+		cifsd_err("password processing failed\n");
+		goto out;
+	}
+
+	memset(p21, '\0', 21);
+	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
+	rc = E_P24(p21, sess_key, key);
+	if (rc) {
+		cifsd_err("password processing failed\n");
+		goto out;
+	}
+
+	rc = memcmp(ntlm_resp, key, CIFS_AUTH_RESP_SIZE);
+out:
+
+	return rc;
+}
+
+/**
  * decode_ntlmssp_authenticate_blob() - helper function to construct
  * authenticate blob
  * @authblob:	authenticate blob source pointer
@@ -382,8 +423,14 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 
 	/* process NTLM authentication */
 	if (authblob->NtChallengeResponse.Length == CIFS_AUTH_RESP_SIZE) {
-		return process_ntlm(sess, (char *)authblob +
-			authblob->NtChallengeResponse.BufferOffset);
+		if (authblob->NegotiateFlags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+			return process_ntlm2(sess, (char *)authblob +
+				authblob->LmChallengeResponse.BufferOffset,
+				(char *)authblob +
+				authblob->NtChallengeResponse.BufferOffset);
+		else
+			return process_ntlm(sess, (char *)authblob +
+				authblob->NtChallengeResponse.BufferOffset);
 	}
 
 	/* TODO : use domain name that imported from configuration file */
@@ -441,6 +488,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	wchar_t *name;
 	__u8 *target_name;
 	unsigned int len, flags, blob_len, type;
+	int cflags = sess->ntlmssp.client_flags;
 
 	memcpy(chgblob->Signature, NTLMSSP_SIGNATURE, 8);
 	chgblob->MessageType = NtLmChallenge;
@@ -448,16 +496,22 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	flags = NTLMSSP_NEGOTIATE_UNICODE |
 		NTLMSSP_NEGOTIATE_NTLM | NTLMSSP_TARGET_TYPE_SERVER |
 		NTLMSSP_NEGOTIATE_TARGET_INFO |
-		NTLMSSP_NEGOTIATE_128 | NTLMSSP_NEGOTIATE_56 |
 		NTLMSSP_NEGOTIATE_VERSION;
 
-	if (sess->ntlmssp.client_flags & NTLMSSP_REQUEST_TARGET)
+	if (cflags & NTLMSSP_NEGOTIATE_SIGN) {
+		flags |= NTLMSSP_NEGOTIATE_SIGN;
+		flags |= cflags & (NTLMSSP_NEGOTIATE_128 |
+			NTLMSSP_NEGOTIATE_56);
+	}
+
+	if (cflags & NTLMSSP_NEGOTIATE_ALWAYS_SIGN)
+		flags |= NTLMSSP_NEGOTIATE_ALWAYS_SIGN;
+
+	if (cflags & NTLMSSP_REQUEST_TARGET)
 		flags |= NTLMSSP_REQUEST_TARGET;
 
 	if (sess->conn->use_spnego &&
-		sess->conn->dialect >= SMB30_PROT_ID &&
-			(sess->ntlmssp.client_flags &
-			 NTLMSSP_NEGOTIATE_EXTENDED_SEC))
+		(cflags & NTLMSSP_NEGOTIATE_EXTENDED_SEC))
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
@@ -492,8 +546,8 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	/* Add target info list for NetBIOS/DNS settings */
 	for (type = NTLMSSP_AV_NB_COMPUTER_NAME;
 		type <= NTLMSSP_AV_DNS_DOMAIN_NAME; type++) {
-		tinfo->Type = type;
-		tinfo->Length = len;
+		tinfo->Type = cpu_to_le16(type);
+		tinfo->Length = cpu_to_le16(len);
 		memcpy(tinfo->Content, name, len);
 		tinfo = (TargetInfo *)((char *)tinfo + 4 + len);
 		chgblob->TargetInfoArray.Length += cpu_to_le16(4 + len);
@@ -565,7 +619,7 @@ out:
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 
-static int crypto_hmacsha256_alloc(struct connection *conn)
+static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -596,7 +650,7 @@ static int crypto_hmacsha256_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_cmac_alloc(struct connection *conn)
+static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -627,7 +681,7 @@ static int crypto_cmac_alloc(struct connection *conn)
 	return 0;
 }
 
-static int crypto_sha512_alloc(struct connection *conn)
+static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -860,7 +914,7 @@ smb3signkey_ret:
 	return rc;
 }
 
-int calc_preauth_integrity_hash(struct connection *conn, char *buf,
+int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
 	__u8 *pi_hash)
 {
 	int rc = -1;
@@ -870,7 +924,8 @@ int calc_preauth_integrity_hash(struct connection *conn, char *buf,
 	char *all_bytes_msg = rcv_hdr2->ProtocolId;
 	int msg_size = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	if (conn->Preauth_HashId == SMB2_PREAUTH_INTEGRITY_SHA512) {
+	if (conn->preauth_info->Preauth_HashId ==
+		SMB2_PREAUTH_INTEGRITY_SHA512) {
 		rc = crypto_sha512_alloc(conn);
 		if (rc) {
 			cifsd_debug("could not alloc sha512 rc %d\n", rc);

@@ -26,6 +26,7 @@
 #include "glob.h"
 #include "export.h"
 #include "netlink.h"
+#include "transport.h"
 
 #define NETLINK_CIFSD			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
@@ -37,7 +38,6 @@ static DEFINE_MUTEX(nlsk_mutex);
 static int pid;
 
 static int cifsd_early_pid;
-static int cifsstat_pid;
 static int cifsadmin_pid;
 
 static int cifsd_nlsk_poll(struct cifsd_sess *sess)
@@ -76,7 +76,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	struct cifsd_uevent *ev;
 	int len = nlmsg_total_size(sizeof(*ev) + data_size);
 	int rc;
-	struct cifsd_usr *user;
+	struct cifsd_user *user;
 	struct cifsd_pipe *pipe_desc = sess->pipe_desc[pipe_type];
 
 	if (unlikely(!pipe_desc))
@@ -126,7 +126,7 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 				CIFSD_CODEPAGE_LEN - 1);
 		user = get_smb_session_user(sess);
 		if (user)
-			strncpy(ev->k.l_pipe.username, user->name,
+			strncpy(ev->k.l_pipe.username, user_name(user),
 					CIFSD_USERNAME_LEN - 1);
 		break;
 	default:
@@ -269,28 +269,6 @@ int cifsd_sendmsg_notify(struct cifsd_sess *sess,
 	return rc;
 }
 
-static int cifsd_terminate_user_process(int new_cifsd_pid)
-{
-	struct cifsd_uevent *ev;
-	struct nlmsghdr *nlh;
-	struct sk_buff *skb;
-	int rc;
-	int len = nlmsg_total_size(sizeof(*ev)+sizeof(rc));
-
-	skb = alloc_skb(len, GFP_KERNEL);
-	if (unlikely(!skb)) {
-		cifsd_err("Failed to allocate\n");
-		return -ENOMEM;
-	}
-	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
-	nlh = __nlmsg_put(skb, 0, 0, CFISD_KEVENT_USER_DAEMON_EXIST,
-		(len - sizeof(*nlh)), 0);
-	ev = nlmsg_data(nlh);
-	ev->buflen = sizeof(rc);
-	rc = nlmsg_unicast(cifsd_nlsk, skb, new_cifsd_pid);
-	return 0;
-}
-
 /** cifsd_early_init() - handler for cifsd early init
  *		initialize pid
  * @nlh:       netlink message header
@@ -360,23 +338,9 @@ out:
 static int cifsd_init_connection(struct nlmsghdr *nlh)
 {
 	int err = 0;
-	struct task_struct *cifsd_task;
 
 	cifsd_debug("init connection\n");
-
-	rcu_read_lock();
-	cifsd_task = pid_task(find_vpid(pid), PIDTYPE_PID);
-	rcu_read_unlock();
-	if (cifsd_task) {
-		if (!strncmp(cifsd_task->comm, "cifsd", 5)) {
-			cifsd_terminate_user_process(nlh->nlmsg_pid);
-			err = -EPERM;
-		}
-	} else {
-		terminate_old_forker_thread();
-		pid = nlh->nlmsg_pid; /*pid of sending process */
-	}
-
+	pid = nlh->nlmsg_pid; /*pid of sending process */
 	return err;
 }
 
@@ -499,129 +463,6 @@ static int cifsd_kernel_caseless_search(struct nlmsghdr *nlh)
 	return ret;
 }
 
-/**
- * cifsstat_init_connection() - handler for cifsstat init
- * @nlh:       netlink message header
- *
- * Return:	0: on success
- */
-static int cifsstat_init_connection(struct nlmsghdr *nlh)
-{
-	cifsd_debug("init connection\n");
-	cifsstat_pid = nlh->nlmsg_pid;
-	return 0;
-}
-
-/**
- * cifsd_stat_read() - handler for cifsd stat read
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_stat_read(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	int flag;
-	char *buf;
-	char *client_ip;
-	int ret = 0;
-
-	ev = nlmsg_data(nlh);
-	flag = ev->k.r_stat.flag;
-	client_ip = ev->k.r_stat.statip;
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsstat_show(buf, client_ip, flag);
-	if (!ret)
-		cifsd_err("get stat failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_READ_STAT_RSP;
-	rsp_ev.error = ret;
-	rsp_ev.k.r_stat.flag = flag;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" stat respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
-/**
- * cifsd_userlist() - handler to list exported cifsd users
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_userlist(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	char *buf;
-	int ret;
-
-	ev = nlmsg_data(nlh);
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsd_user_show(buf);
-	if (!ret)
-		cifsd_err("get user list failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_LIST_USER_RSP;
-	rsp_ev.error = ret;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" user list respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
-/**
- * cifsd_sharelist() - handler to list exported cifsd shares
- * @nlh:       netlink message header
- *
- * Return:      0: on success
- */
-static int cifsd_sharelist(struct nlmsghdr *nlh)
-{
-	struct cifsd_uevent *ev;
-	struct cifsd_uevent rsp_ev;
-	char *buf;
-	int ret;
-
-	ev = nlmsg_data(nlh);
-	buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if (!buf) {
-		ret = -ENOMEM;
-		goto out;
-	}
-	ret = cifsd_share_show(buf);
-	if (!ret)
-		cifsd_err("get share list failed\n");
-
-out:
-	memset(&rsp_ev, 0, sizeof(rsp_ev));
-	rsp_ev.type = CIFSSTAT_UEVENT_LIST_SHARE_RSP;
-	rsp_ev.error = ret;
-	ret = cifsd_usendmsg(&rsp_ev, cifsstat_pid, strlen(buf), buf);
-	if (ret)
-		cifsd_err(" share list respond failed, err %d\n", ret);
-
-	kfree(buf);
-	return ret;
-}
-
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
 	struct cifsd_sess *sess;
@@ -646,6 +487,7 @@ static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 		return -EINVAL;
 	}
 
+	memcpy((char *)&pipe_desc->ev, (char *)ev, sizeof(*ev));
 	if (unlikely(ev->error)) {
 		cifsd_debug("pipe io failed, err %d\n", ev->error);
 		goto out;
@@ -656,7 +498,6 @@ static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 		goto out;
 	}
 
-	memcpy((char *)&pipe_desc->ev, (char *)ev, sizeof(*ev));
 	if (ev->buflen)
 		memcpy(pipe_desc->rsp_buf, ev->buffer, ev->buflen);
 
@@ -721,13 +562,13 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		err = cifsd_init_connection(nlh);
 		if (!err) {
 			/* No old cifsd task exists */
-			err = cifsd_create_socket(nlh->nlmsg_pid);
+			err = cifsd_tcp_init();
 			if (err)
 				cifsd_err("unable to open SMB PORT\n");
 		}
 		break;
 	case CIFSD_UEVENT_EXIT_CONNECTION:
-		cifsd_close_socket();
+		cifsd_tcp_destroy();
 		err = cifsd_exit_connection(nlh);
 		break;
 	case CIFSD_UEVENT_READ_PIPE_RSP:
@@ -753,18 +594,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 		break;
 	case CIFSADMIN_KEVENT_CASELESS_SEARCH:
 		err = cifsd_kernel_caseless_search(nlh);
-		break;
-	case CIFSSTAT_UEVENT_INIT_CONNECTION:
-		err = cifsstat_init_connection(nlh);
-		break;
-	case CIFSSTAT_UEVENT_READ_STAT:
-		err = cifsd_stat_read(nlh);
-		break;
-	case CIFSSTAT_UEVENT_LIST_USER:
-		err = cifsd_userlist(nlh);
-		break;
-	case CIFSSTAT_UEVENT_LIST_SHARE:
-		err = cifsd_sharelist(nlh);
 		break;
 	default:
 		err = -EINVAL;

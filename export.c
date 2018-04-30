@@ -25,18 +25,17 @@
 #include "export.h"
 #include "smb1pdu.h"
 
+#include "transport.h"
+
 /* max string size for share and parameters */
 #define SHARE_MAX_NAME_LEN	100
 /* max string size data, ex- path, usernames, servernames etc */
 #define SHARE_MAX_DATA_LEN	PATH_MAX
 #define MAX_NT_PWD_LEN		128
 
-LIST_HEAD(cifsd_usr_list);
 LIST_HEAD(cifsd_share_list);
-LIST_HEAD(cifsd_connection_list);
 LIST_HEAD(cifsd_session_list);
 
-__u16 vid = 1;
 __u16 tid = 1;
 int cifsd_debug_enable;
 int cifsd_caseless_search;
@@ -167,10 +166,10 @@ static bool __add_share(struct cifsd_share *share, char *sharename,
 }
 
 /**
- * init_params() - initialize config parameters of a share
+ * init_share() - initialize config parameters of a share
  * @share:	share instance to be initialized
  */
-static void init_params(struct cifsd_share *share)
+static void init_share(struct cifsd_share *share)
 {
 	set_attr_available(&share->config.attr);
 	set_attr_browsable(&share->config.attr);
@@ -198,7 +197,7 @@ static int add_share(char *sharename, char *pathname)
 	if (!share)
 		return -ENOMEM;
 
-	init_params(share);
+	init_share(share);
 
 	ret = __add_share(share, sharename, pathname);
 	if (!ret) {
@@ -266,62 +265,6 @@ static void cleanup_bad_share(struct cifsd_share *badshare)
 	kfree(badshare);
 }
 
-/**
- * add_user() - allocate and add an user in global user list
- * @name:	user name to be added
- * @pass:	password of user
- *
- * Return:      0 on success, error number on error
- */
-static int add_user(char *name, char *pass, kuid_t uid, kgid_t gid)
-{
-	struct cifsd_usr *usr;
-
-	usr = kzalloc(sizeof(struct cifsd_usr), GFP_KERNEL);
-	if (!usr)
-		return -ENOMEM;
-
-	if (guestAccountName) {
-		if (strcmp(guestAccountName, name) == 0) {
-			usr->vuid = 0;
-			usr->guest = true;
-			usr->name = guestAccountName;
-		} else{
-			usr->vuid = vid++;
-			usr->guest = false;
-			usr->name = name;
-			memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
-		}
-	} else{
-		usr->vuid = vid++;
-		usr->guest = false;
-		usr->name = name;
-		memcpy(usr->passkey, pass, CIFS_NTHASH_SIZE);
-	}
-
-	usr->uid.val = uid.val;
-	usr->gid.val = gid.val;
-	usr->sess_uid = 0;
-	INIT_LIST_HEAD(&usr->list);
-	list_add(&usr->list, &cifsd_usr_list);
-	usr->ucount = 0;
-	return 0;
-}
-
-/**
- * cifsd_user_free() - delete all users from global exported user list
- */
-static void cifsd_user_free(void)
-{
-	struct cifsd_usr *usr, *tmp;
-
-	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
-		list_del(&usr->list);
-		kfree(usr->name);
-		kfree(usr);
-	}
-}
-
 static int parse_user_strings(const char *src, char **str, int exp_num,
 	ssize_t src_len)
 {
@@ -347,33 +290,56 @@ static int parse_user_strings(const char *src, char **str, int exp_num,
 	return s_num;
 }
 
-/**
- * chktkn() - utility function to validate user or host
- * @userslist:	list of allowed or denied user or host
- * @str2:	check if this user or host is present in userslist
- *
- * Return:      1 if str2 is present in userslist, otherwise 0
- */
-static int chktkn(char *userslist, char *str2)
+static char *strim_conflist_entry(char *p, char *limit)
 {
-	char *token;
-	char *dup, *dup_orig;
+	while ((p < limit) && (*p == ',' || *p == '\t' || *p == ' '))
+		p++;
+	return p < limit ? p : NULL;
+}
 
-	if (userslist) {
-		dup_orig = dup = kstrdup(userslist, GFP_KERNEL);
-		if (!dup)
-			return -ENOMEM;
+/*
+ * conflist_search() - looks up for a key in smb.conf config list
+ * @list:	config string (must not be NULL)
+ * @key:	key to lookup for
+ *
+ * Return:	0 when entry found, -ENOENT when not found
+ */
+static int conflist_search(char *list, char *key)
+{
+	char *begin = list, *end;
 
-		while ((token = strsep(&dup, "	, ")) != NULL) {
-			if (!strcmp(token, str2)) {
-				kfree(dup_orig);
-				return 1;
-			}
+	/*
+	 * From smb.conf
+	 *    This parameter is a comma, space, or tab delimited set of
+	 *    hosts which are permitted to access a service
+	 */
+	while ((end = strpbrk(begin, "\t, "))) {
+		char e;
+
+		if (end - begin < 2) {
+			begin++;
+			continue;
 		}
-		kfree(dup_orig);
-		return -ENOENT;
+
+		begin = strim_conflist_entry(begin, end);
+		if (!begin)
+			return -ENOENT;
+
+		e = *end;
+		*end = '\0';
+
+		if (!strcmp(begin, key))
+			return 0;
+		*end = e;
+		begin = end + 1;
 	}
-	return 0;
+
+	begin = strim_conflist_entry(begin, list + strlen(list) - 1);
+	if (!begin)
+		return -ENOENT;
+	if (!strcmp(begin, key))
+		return 0;
+	return -ENOENT;
 }
 
 /**
@@ -381,111 +347,92 @@ static int chktkn(char *userslist, char *str2)
  * @cip:	host ip to be checked
  * @share:	share config containing allowed and denied list of client ip
  *
- * Return:      1 if cip is allowed access to share, otherwise 0
+ * Return:      0 if cip is allowed access to share, otherwise
  */
-int validate_host(char *cip, struct cifsd_share *share)
+static int validate_host(char *cip, struct cifsd_share *share)
 {
-	char *alist = share->config.allow_hosts;
-	char *dlist = share->config.deny_hosts;
-	int allow, deny;
-	int asz = 0;
-	int dsz = 0;
+	char *allow_list = share->config.allow_hosts;
+	char *deny_list = share->config.deny_hosts;
 
-	if (alist)
-		asz = strlen(alist);
-	if (dlist)
-		dsz = strlen(dlist);
+	if (!allow_list && !deny_list)
+		return 0;
 
-	if (!asz && !dsz)
-		return 1;
+	if (allow_list) {
+		if (conflist_search(allow_list, cip) == -ENOENT)
+			return -EACCES;
+		/*
+		 * "allow hosts" list takes precedence over "deny hosts" list,
+		 *  No further checking needed
+		 */
+		return 0;
+	}
 
-	allow = chktkn(alist, cip);
-	if (allow == -ENOENT)
-		return -EACCES;
-	else if (allow < 0)
-		return allow;
-
-	/*
-	 * "allow hosts" list takes precedence over "deny hosts" list,
-	 *  No further checking needed
-	 */
-	if (allow > 0)
-		return 1;
-
-	deny = chktkn(dlist, cip);
-	if (deny < 0)
-		return -ENOMEM;
-
-	if (!asz && deny)
+	if (deny_list && conflist_search(deny_list, cip) == 0)
 		return -EACCES;
 
 	/*
 	 * Default is always allowed - So, when there is no allowed list
 	 * and no entry in Deny, then switch to default behaviour
 	 */
-	return 1;
+	return 0;
 }
 
 /**
- * validate_usr() - check if an user is allowed or denied access of a share
+ * validate_user() - check if a user is allowed or denied access to a share
  * @usr:	user to be checked
  * @share:	share config containing allowed and denied list of users
  *
- * Return:      1 if usr is allowed access to share, otherwise error
+ * Return:      0 if usr is allowed access to share, otherwise error
  */
-int validate_usr(struct cifsd_sess *sess, struct cifsd_share *share,
-	bool *can_write)
+static int validate_user(struct cifsd_sess *sess,
+			  struct cifsd_share *share,
+			  bool *can_write)
 {
 	char *vlist = share->config.valid_users;
 	char *ilist = share->config.invalid_users;
 	char *wlist = share->config.write_list;
 	char *rlist = share->config.read_list;
-	int ret;
 
 	/* for share IPC$, does not support smb.conf share parameters*/
 	if (!share->path)
-		return 1;
+		return 0;
 
 	/* if "guest = ok, no checking of users required "*/
 	/*
-	* if guest ok not set, but guestAccountname
-	* mapped with valid share path
-	*/
+	 * if guest ok not set, but guestAccountname
+	 * mapped with valid share path
+	 */
 	if (get_attr_guestok(&share->config.attr)) {
 		cifsd_debug("guest login on to share %s\n",
 				share->sharename);
-		return 1;
+		return 0;
 	}
 
 	/* name should not be present in "invalid users" */
-	ret = chktkn(ilist, sess->usr->name);
-	if (ret == -ENOMEM)
-		return -ENOMEM;
-	if (ret > 0)
+	if (ilist && conflist_search(ilist, user_name(sess->user)) == 0)
 		return -EACCES;
 
 	*can_write = (share->writeable == 1) ? true : false;
 	/* if user present in read list, sess will be readable */
-	ret = chktkn(rlist, sess->usr->name);
-	if (ret > 0)
+	if (rlist && conflist_search(rlist, user_name(sess->user)) == 0)
 		*can_write = false;
 
 	/* if user present in write list, make user session writeable */
-	ret = chktkn(wlist, sess->usr->name);
-	if (ret > 0)
+	if (wlist && conflist_search(wlist, user_name(sess->user)) == 0)
 		*can_write = true;
 
 	/* if "valid users" list is empty then any user can login */
 	if (!vlist)
-		return 1;
+		return 0;
 
 	/* user exists in "valid users" list? */
-	return chktkn(vlist, sess->usr->name);
+	return conflist_search(vlist, user_name(sess->user));
 }
 
-struct cifsd_share *get_cifsd_share(struct connection *conn,
-		struct cifsd_sess *sess,
-		char *sharename, bool *can_write)
+struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
+				    struct cifsd_sess *sess,
+				    char *sharename,
+				    bool *can_write)
 {
 	struct list_head *tmp;
 	struct cifsd_share *share;
@@ -493,25 +440,27 @@ struct cifsd_share *get_cifsd_share(struct connection *conn,
 
 	list_for_each(tmp, &cifsd_share_list) {
 		share = list_entry(tmp, struct cifsd_share, list);
+
 		cifsd_debug("comparing(%s) with treename %s\n",
 				sharename, share->sharename);
-		if (!strcasecmp(share->sharename, sharename)) {
-			rc = validate_host(conn->peeraddr, share);
-			if (rc < 0) {
-				cifsd_err(
-				"[host:%s] not allowed for [share:%s]\n"
-				, conn->peeraddr, share->sharename);
-				return ERR_PTR(rc);
-			}
-			rc = validate_usr(sess, share, can_write);
-			if (rc < 0) {
-				cifsd_err(
-				"[user:%s] not authorised for [share:%s]\n",
-				sess->usr->name, share->sharename);
-				return ERR_PTR(rc);
-			}
-			return share;
+
+		if (strcasecmp(share->sharename, sharename))
+			continue;
+
+		rc = validate_host(conn->peeraddr, share);
+		if (rc != 0) {
+			cifsd_err("[host:%s] not allowed for [share:%s]\n",
+				  conn->peeraddr, share->sharename);
+			return ERR_PTR(rc);
 		}
+
+		rc = validate_user(sess, share, can_write);
+		if (rc != 0) {
+			cifsd_err("[user:%s] not authorised for [share:%s]\n",
+				  user_name(sess->user), share->sharename);
+			return ERR_PTR(rc);
+		}
+		return share;
 	}
 	cifsd_debug("Tree(%s) not exported on connection\n", sharename);
 	return ERR_PTR(-ENOENT);
@@ -537,21 +486,15 @@ struct cifsd_share *find_matching_share(__u16 tid)
 	return NULL;
 }
 
-struct cifsd_usr *cifsd_is_user_present(char *name)
+struct cifsd_user *cifsd_is_user_present(char *name)
 {
-	struct cifsd_usr *usr, *tmp, *guest_user = NULL;
+	struct cifsd_user *user = um_user_search(name);
 
-	if (!name)
-		return NULL;
-
-	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
-		cifsd_debug("comparing with user %s\n", usr->name);
-		if (!strcmp(name, usr->name))
-			return usr;
-		else if (usr->guest && maptoguest)
-			guest_user = usr;
-	}
-	return guest_user;
+	if (user)
+		return user;
+	if (maptoguest)
+		return um_user_search_guest();
+	return NULL;
 }
 
 /**
@@ -560,43 +503,14 @@ struct cifsd_usr *cifsd_is_user_present(char *name)
  *
  * Return:      matching user for a session on success, otherwise NULL
  */
-struct cifsd_usr *get_smb_session_user(struct cifsd_sess *sess)
+struct cifsd_user *get_smb_session_user(struct cifsd_sess *sess)
 {
-	struct cifsd_usr *usr;
-
-	list_for_each_entry(usr, &cifsd_usr_list, list) {
-		if (sess->conn->vuid  == usr->vuid)
-			return usr;
-	}
-
-	return NULL;
-}
-
-/**
- * getUser() - check if a user name is already added
- * @name:	user name to be checked
- * @pass:	user password
- *
- * Return:      false if user entry exists, otherwise true
- */
-static bool getUser(char *name, char *pass)
-{
-	struct cifsd_usr *usr;
-
-	usr = cifsd_is_user_present(name);
-	if (usr) {
-		if (!strlen(pass)) {
-			list_del(&usr->list);
-			kfree(usr->name);
-			kfree(usr);
-			return false;
-		}
-		memcpy(usr->passkey, pass,
-				CIFS_NTHASH_SIZE);
-		return false;
-	}
-
-	return true;
+	/*
+	 * FIXME I don't understand why did we perform user list lookup
+	 * here. The session-user mapping seems to be 1:1. Anyway, this
+	 * probably will be reworked anyway.
+	 */
+	return sess->user;
 }
 
 /**
@@ -628,66 +542,9 @@ static struct cifsd_share *check_share(char *share_name, int *alloc_share)
 	if (!share)
 		return ERR_PTR(-ENOMEM);
 
-	init_params(share);
+	init_share(share);
 	*alloc_share = 1;
 	return share;
-}
-
-/**
- * cifsd_share_show() - show a list of exported shares
- * @buf:       buffer containing share list output
- *
- * Return:      output buffer length
- **/
-int cifsd_share_show(char *buf)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path) {
-			len = snprintf(tbuf, limit, "%s:%s\n",
-				 share->sharename, share->path);
-			if (len < 0) {
-				total = len;
-				break;
-			}
-			tbuf += len;
-			total += len;
-			limit -= len;
-		}
-	}
-
-	return total;
-}
-
-/**
- * cifsd_user_show() - show a list of added user
- * @buf:       buffer containing user list output
-
- * Return:      output buffer length
- */
-int cifsd_user_show(char *buf)
-{
-	struct cifsd_usr *usr, *tmp;
-	ssize_t len = 0, total = 0, limit = PAGE_SIZE;
-	char *tbuf = buf;
-
-	list_for_each_entry_safe(usr, tmp, &cifsd_usr_list, list) {
-		len = snprintf(tbuf, limit, "%s\n", usr->name);
-		if (len < 0) {
-			total = len;
-			break;
-		}
-		tbuf += len;
-		total += len;
-		limit -= len;
-	}
-
-	return total;
 }
 
 /**
@@ -697,15 +554,17 @@ int cifsd_user_show(char *buf)
  * Return:	0: for username found
  *	  -EINVAL: if not found from cifsd user list
  */
-int cifsadmin_user_query(char *username)
+int cifsadmin_user_query(char *name)
 {
-	struct cifsd_usr *usr;
+	int ret = -EINVAL;
+	struct cifsd_user *user = um_user_search(name);
 
-	usr = cifsd_is_user_present(username);
-	if (usr && !strcmp(username, usr->name))
-		return 0;
+	if (user) {
+		put_cifsd_user(user);
+		ret = 0;
+	}
 
-	return -EINVAL;
+	return ret;
 }
 
 /**
@@ -715,19 +574,9 @@ int cifsadmin_user_query(char *username)
  * Return:      0: for username found and deleted
  *	  -EINVAL: if not found from cifsd user list
  */
-int cifsadmin_user_del(char *username)
+int cifsadmin_user_del(char *name)
 {
-	struct cifsd_usr *usr;
-
-	usr = cifsd_is_user_present(username);
-	if (usr && !strcmp(username, usr->name)) {
-		list_del(&usr->list);
-		kfree(usr->name);
-		kfree(usr);
-		return 0;
-	}
-
-	return -EINVAL;
+	return um_delete_user(name);
 }
 
 /**
@@ -739,53 +588,58 @@ int cifsadmin_user_del(char *username)
  */
 int cifsd_user_store(const char *buf, size_t len)
 {
-	char *usrname, *passwd;
-	int rc, i;
-	char *parse_ptr[4] = {0};
+	enum {
+		CONF_USER,
+		CONF_PASSWD,
+		CONF_UID,
+		CONF_GID,
+	};
+	char *conf[CONF_GID + 1] = {0};
 	kuid_t uid;
 	kgid_t gid;
+	int ret;
 
-	rc = parse_user_strings(buf, parse_ptr, 4, len);
-	if (rc < 2) {
+	uid.val = 0;
+	gid.val = 0;
+
+	ret = parse_user_strings(buf, conf, ARRAY_SIZE(conf), len);
+	if (ret < 2) {
 		cifsd_err("[%s] <usr:pass> format err\n", __func__);
+		ret = -EINVAL;
 		goto out;
 	}
 
-	usrname = parse_ptr[0];
-	passwd = parse_ptr[1];
-
-	if (rc > 2) {
-		if (kstrtouint(parse_ptr[2], 10, &uid.val) ||
-				kstrtouint(parse_ptr[3], 10, &gid.val)) {
+	if (ret > 2) {
+		ret = -EINVAL;
+		if (kstrtouint(conf[CONF_UID], 10, &uid.val))
 			goto out;
-		}
+		if (kstrtouint(conf[CONF_GID], 10, &gid.val))
+			goto out;
 		cifsd_debug("uid : %u, gid %u\n", uid.val, gid.val);
-	} else {
-		uid.val = 0;
-		gid.val = 0;
 	}
 
-	/* check if user is already present*/
-	rc = getUser(usrname, passwd);
-	if (!rc) {
-		kfree(usrname);
-		kfree(passwd);
-	} else {
-		rc = add_user(usrname, passwd, uid, gid);
-		kfree(passwd);
-		if (rc) {
-			kfree(usrname);
-			if (rc == -ENOMEM)
-				goto out;
-		}
+	ret = um_add_new_user(conf[CONF_USER], conf[CONF_PASSWD], uid, gid);
+	if (ret == -EEXIST) {
+		ret = len;
+		goto out;
 	}
+	if (ret != 0)
+		goto out;
 
-	return len;
+	/*
+	 * Success. cifsd_usr keeps pointers to conf[CONF_USER] and
+	 * conf[CONF_PASSWD]. So we free all of conf[] entries on error,
+	 * but we need to keep CONF_USER and CONF_PASSWD alive on success.
+	 */
+	ret = len;
 out:
-	for (i = 0; i < 4; i++)
-		kfree(parse_ptr[i]);
-
-	return -EINVAL;
+	kfree(conf[CONF_GID]);
+	kfree(conf[CONF_UID]);
+	if (ret != len) {
+		kfree(conf[CONF_PASSWD]);
+		kfree(conf[CONF_USER]);
+	}
+	return ret;
 }
 
 /**
@@ -993,15 +847,23 @@ static int cifsd_parse_global_options(char *configdata)
 		switch (token) {
 		case Opt_guest:
 		{
+			char *user_name;
 			kuid_t uid;
 			kgid_t gid;
 
 			if (cifsd_get_config_str(args, &guestAccountName))
 				goto out_nomem;
 
+			user_name = kstrdup(guestAccountName, GFP_KERNEL);
+			if (!user_name)
+				goto out_nomem;
+
 			uid.val = 9999;
 			gid.val = 9999;
-			add_user(guestAccountName, NULL, uid, gid);
+			if (um_add_new_user(user_name, NULL, uid, gid)) {
+				kfree(user_name);
+				goto config_err;
+			}
 			break;
 		}
 		case Opt_servern:
@@ -1269,134 +1131,6 @@ int cifsd_config_store(const char *buf, size_t len)
 
 	return len;
 }
-/**
- * show_server_stat() - show cifsd server stat
- * @buf:	destination buffer for stat info
- *
- * Return:      output buffer length
- */
-static ssize_t show_server_stat(char *buf)
-{
-	struct cifsd_share *share;
-	struct list_head *tmp;
-	int count = 0, cum = 0, ret = 0, limit = PAGE_SIZE;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Server uptime secs = %ld\n",
-			(jiffies - server_start_time)/HZ);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	list_for_each(tmp, &cifsd_share_list) {
-		share = list_entry(tmp, struct cifsd_share, list);
-		if (share->path)
-			count++;
-	}
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Number of shares = %d\n", count);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	return cum;
-}
-
-/**
- * show_client_stat() - show cifsd client stat
- * @buf:	destination buffer for stat info
- * @sess:	session
- *
- * Return:      output buffer length
- */
-static ssize_t show_client_stat(char *buf, struct connection *conn)
-{
-	int cum = 0, ret = 0, limit = PAGE_SIZE;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Connection type = SMB%s\n",
-			conn->vals->version_string);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Current open files count = %d\n",
-			conn->stats.open_files_count);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Outstanding Request = %d\n",
-			atomic_read(&conn->req_running));
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	ret = snprintf(buf+cum, limit - cum,
-			"Total Requests Served = %d\n",
-			conn->stats.request_served);
-	if (ret < 0)
-		return cum;
-	cum += ret;
-
-	if (cifsd_debug_enable) {
-		ret = snprintf(buf+cum, limit - cum,
-				"Avg. duration per request = %ld\n",
-				conn->stats.avg_req_duration);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-
-		ret = snprintf(buf+cum, limit - cum,
-				"Max. duration request = %ld\n",
-				conn->stats.max_timed_request);
-		if (ret < 0)
-			return cum;
-		cum += ret;
-	}
-
-	return cum;
-}
-
-/**
- * cifsstat_show() - show cifsd stat
- * @buf:	buffer containing stat info
- * @ip:		containing ip for client stat
- * @flag:	flag for extracting cifsstat info
- *
- * Return:      output buffer length
- */
-int cifsstat_show(char *buf, char *ip, int flag)
-{
-	struct list_head *tmp;
-	struct connection *conn;
-	int ret = 0;
-
-	if (flag & O_SERVER) {
-		ret = show_server_stat(buf);
-		flag &= ~O_SERVER;
-		goto out;
-	} else if (flag & O_CLIENT) {
-		int len1, len2;
-
-		len1 = strlen(ip);
-		list_for_each(tmp, &cifsd_connection_list) {
-			conn = list_entry(tmp, struct connection, list);
-			len2 = strlen(conn->peeraddr);
-			if (len1 == len2 && !strncmp(ip,
-				conn->peeraddr, len1)) {
-				ret = show_client_stat(buf, conn);
-				break;
-			}
-		}
-		flag &= ~O_CLIENT;
-	}
-out:
-	return ret;
-}
 
 /**
  * cifsd_add_IPC_share() - add share entry for IPC$ pipe with tid = 1
@@ -1506,6 +1240,6 @@ int cifsd_export_init(void)
 void cifsd_export_exit(void)
 {
 	cifsd_free_global_params();
-	cifsd_user_free();
+	um_cleanup_users();
 	cifsd_share_free();
 }

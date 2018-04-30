@@ -25,9 +25,7 @@
 #include <linux/backing-dev.h>
 #include <linux/writeback.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/xattr.h>
-#endif
 #include <linux/falloc.h>
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
@@ -35,6 +33,8 @@
 #include "export.h"
 #include "glob.h"
 #include "oplock.h"
+#include "transport.h"
+#include "buffer_pool.h"
 
 /**
  * smb_vfs_create() - vfs helper for smb create file
@@ -122,16 +122,17 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 /**
  * smb_vfs_read() - vfs helper for smb file read
- * @sess:	session
+ * @work:	smb work
  * @fid:	file id of open file
- * @buf:	buf containing read data
  * @count:	read byte count
  * @pos:	file pos
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
-	char **buf, size_t count, loff_t *pos)
+int smb_vfs_read(struct smb_work *work,
+		 struct cifsd_file *fp,
+		 size_t count,
+		 loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
@@ -143,51 +144,35 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 	mm_segment_t old_fs;
 #endif
 
+	rbuf = AUX_PAYLOAD(work);
 	filp = fp->filp;
 	inode = filp->f_path.dentry->d_inode;
-	if (S_ISDIR(inode->i_mode)) {
-		nbytes = -EISDIR;
-		goto out;
-	}
+	if (S_ISDIR(inode->i_mode))
+		return -EISDIR;
 
 	if (unlikely(count == 0))
-		goto out;
+		return 0;
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
-	if (sess->conn->connection_type) {
+	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
 		    FILE_GENERIC_ALL_LE))) {
 			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
-			nbytes = -EACCES;
-			goto out;
+			return -EACCES;
 		}
 	}
 #endif
 
-	rbuf = alloc_data_mem(count);
-	if (!rbuf) {
-		nbytes = -ENOMEM;
-		goto out;
-	}
-
-	if (fp->is_stream) {
-		nbytes = smb_vfs_stream_read(fp, rbuf, pos, count);
-		if (nbytes < 0)
-			kvfree(rbuf);
-		else
-			*buf = rbuf;
-		goto out;
-	}
+	if (fp->is_stream)
+		return smb_vfs_stream_read(fp, rbuf, pos, count);
 
 	ret = check_lock_range(filp, *pos, *pos + count - 1,
 			READ);
 	if (ret) {
 		cifsd_err("%s: unable to read due to lock\n",
 				__func__);
-		kvfree(rbuf);
-		nbytes = -EAGAIN;
-		goto out;
+		return -EAGAIN;
 	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
@@ -205,13 +190,10 @@ int smb_vfs_read(struct cifsd_sess *sess, struct cifsd_file *fp,
 			name = "(error)";
 		cifsd_err("smb read failed for (%s), err = %zd\n",
 				name, nbytes);
-		kvfree(rbuf);
-	} else {
-		*buf = rbuf;
-		filp->f_pos = *pos;
+		return nbytes;
 	}
 
-out:
+	filp->f_pos = *pos;
 	return nbytes;
 }
 
@@ -240,7 +222,7 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	}
 
 	if (v_len < size) {
-		wbuf = alloc_data_mem(size);
+		wbuf = cifsd_alloc(size);
 		if (!wbuf) {
 			err = -ENOMEM;
 			goto out;
@@ -261,7 +243,7 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	fp->filp->f_pos = *pos;
 	err = 0;
 out:
-	kvfree(stream_buf);
+	cifsd_free(stream_buf);
 	return err;
 }
 
@@ -456,11 +438,7 @@ int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
 	inode_unlock(inode);
 #else
 	mutex_lock(&inode->i_mutex);
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 13, 0)
 	err = notify_change(dentry, attrs, NULL);
-#else
-	err = notify_change(dentry, attrs);
-#endif
 	mutex_unlock(&inode->i_mutex);
 #endif
 
@@ -598,11 +576,7 @@ int smb_vfs_remove_file(char *name)
 		if (err && err != -ENOTEMPTY)
 			cifsd_debug("%s: rmdir failed, err %d\n", name, err);
 	} else {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		err = vfs_unlink(dir->d_inode, dentry, NULL);
-#else
-		err = vfs_unlink(dir->d_inode, dentry);
-#endif
 		if (err)
 			cifsd_debug("%s: unlink failed, err %d\n", name, err);
 	}
@@ -640,7 +614,7 @@ int smb_vfs_link(const char *oldname, const char *newname)
 	}
 
 	dentry = kern_path_create(AT_FDCWD, newname, &newpath,
-			LOOKUP_FOLLOW & LOOKUP_REVAL);
+			LOOKUP_FOLLOW | LOOKUP_REVAL);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		cifsd_err("path create err for %s, err %d\n", newname, err);
@@ -653,11 +627,7 @@ int smb_vfs_link(const char *oldname, const char *newname)
 		goto out3;
 	}
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry, NULL);
-#else
-	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry);
-#endif
 	if (err)
 		cifsd_debug("vfs_link failed err %d\n", err);
 
@@ -739,14 +709,11 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
-		char *abs_newname, uint64_t oldfid)
+int smb_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp)
 {
 	struct path oldpath_p, newpath_p;
 	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap, *child_de;
 	char *oldname = NULL, *newname = NULL;
-	struct file *filp = NULL;
-	struct cifsd_file *fp = NULL;
 	int err;
 
 	if (abs_oldname) {
@@ -792,15 +759,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 		}
 		dnew_p = newpath_p.dentry;
 	} else {
-		/* rename by fid of source file instead of source filename */
-		fp = get_id_from_fidtable(sess, oldfid);
-		if (!fp) {
-			cifsd_err("can't find filp for fid %llu\n", oldfid);
-			return -ENOENT;
-		}
-
-		filp = fp->filp;
-		dold_p = filp->f_path.dentry->d_parent;
+		dold_p = fp->filp->f_path.dentry->d_parent;
 
 		newname = strrchr(abs_newname, '/');
 		if (newname && newname[1] != '\0') {
@@ -834,7 +793,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 			goto out2;
 		}
 	} else {
-		dold = filp->f_path.dentry;
+		dold = fp->filp->f_path.dentry;
 		dget(dold);
 	}
 
@@ -874,11 +833,7 @@ int smb_vfs_rename(struct cifsd_sess *sess, char *abs_oldname,
 	if (dnew == trap)
 		goto out4;
 
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 	err = vfs_rename(dold_p->d_inode, dold, dnew_p->d_inode, dnew, NULL, 0);
-#else
-	err = vfs_rename(dold_p->d_inode, dold, dnew_p->d_inode, dnew);
-#endif
 	if (err)
 		cifsd_err("vfs_rename failed err %d\n", err);
 out4:
@@ -905,12 +860,10 @@ out1:
  * Return:	0 on success, otherwise error
  */
 int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
-		uint64_t fid, loff_t size)
+	struct cifsd_file *fp, loff_t size)
 {
 	struct path path;
-	struct file *filp;
 	int err = 0;
-	struct cifsd_file *fp;
 	struct inode *inode;
 
 	if (name) {
@@ -926,11 +879,7 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 					name, err);
 		path_put(&path);
 	} else {
-		fp = get_id_from_fidtable(sess, fid);
-		if (!fp) {
-			cifsd_err("failed to get filp for fid %llu\n", fid);
-			return -ENOENT;
-		}
+		struct file *filp;
 
 		filp = fp->filp;
 		if (oplocks_enable) {
@@ -953,8 +902,8 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 		}
 		err = vfs_truncate(&filp->f_path, size);
 		if (err)
-			cifsd_err("truncate failed for fid %llu err %d\n",
-					fid, err);
+			cifsd_err("truncate failed for filename : %s err %d\n",
+					fp->filename, err);
 	}
 
 	return err;
@@ -1015,7 +964,7 @@ ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 	if (!flags)
 		return xattr_len;
 
-	buf = alloc_data_mem(xattr_len);
+	buf = cifsd_alloc(xattr_len);
 	if (!buf)
 		return -ENOMEM;
 
@@ -1168,11 +1117,7 @@ void smb_vfs_set_fadvise(struct file *filp, int option)
 		filp->f_flags |= O_DIRECT;
 */
 	else if (option & FILE_SEQUENTIAL_ONLY_LE) {
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		filp->f_ra.ra_pages = inode_to_bdi(mapping->host)->ra_pages * 2;
-#else
-		filp->f_ra.ra_pages = mapping->backing_dev_info->ra_pages * 2;
-#endif
 		spin_lock(&filp->f_lock);
 		filp->f_mode &= ~FMODE_RANDOM;
 		spin_unlock(&filp->f_lock);
@@ -1243,18 +1188,10 @@ out:
 int smb_vfs_readdir(struct file *file, filldir_t filler,
 			struct smb_readdir_data *rdata)
 {
-	int err;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
-	err = iterate_dir(file, &rdata->ctx);
-#else
-	err = vfs_readdir(file, smb_filldir, rdata);
-#endif
-
-	return err;
+	return iterate_dir(file, &rdata->ctx);
 }
 
-int smb_vfs_alloc_size(struct connection *conn, struct cifsd_file *fp,
+int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
 	loff_t len)
 {
 	if (oplocks_enable)
@@ -1285,11 +1222,7 @@ int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 	if (S_ISDIR(dentry->d_inode->i_mode))
 		err = vfs_rmdir(dir->d_inode, dentry);
 	else
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 		err = vfs_unlink(dir->d_inode, dentry, NULL);
-#else
-	err = vfs_unlink(dir->d_inode, dentry);
-#endif
 
 out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)

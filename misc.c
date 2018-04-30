@@ -21,14 +21,13 @@
 
 #include <linux/kernel.h>
 #include <linux/version.h>
-#if LINUX_VERSION_CODE > KERNEL_VERSION(3, 10, 30)
 #include <linux/xattr.h>
-#endif
 
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 #include "smb2pdu.h"
+#include "transport.h"
 
 static struct {
 	int index;
@@ -147,11 +146,11 @@ int check_smb_message(char *buf)
  */
 void add_request_to_queue(struct smb_work *smb_work)
 {
-	struct connection *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct list_head *requests_queue = NULL;
+	struct smb2_hdr *hdr = REQUEST_BUF(smb_work);
 
-	if (*(__le32 *)((struct smb2_hdr *)smb_work->buf)->ProtocolId ==
-			SMB2_PROTO_NUMBER) {
+	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		unsigned int command = conn->ops->get_cmd_val(smb_work);
 
 		if (command != SMB2_CANCEL) {
@@ -217,90 +216,16 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 }
 
 /**
- * switch_req_buf() - switch to big request buffer
- * @conn:     TCP server instance of connection
- *
- * Return:      0 on success, otherwise -ENOMEM
- */
-int switch_req_buf(struct connection *conn)
-{
-	char *buf = conn->smallbuf;
-	unsigned int pdu_length = get_rfc1002_length(buf);
-	unsigned int hdr_len;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	hdr_len = MAX_SMB2_HDR_SIZE;
-#else
-	hdr_len = MAX_CIFS_HDR_SIZE;
-#endif
-
-	/* request can fit in large request buffer i.e. < 64K */
-	if (pdu_length <= SMBMaxBufSize + hdr_len - 4) {
-		cifsd_debug("switching to large buffer\n");
-		conn->large_buf = true;
-		memcpy(conn->bigbuf, buf, conn->total_read);
-	} else if (pdu_length <= CIFS_DEFAULT_IOSIZE + hdr_len - 4) {
-		/* allocate big buffer for large write request i.e. > 64K */
-		conn->wbuf = vmalloc(CIFS_DEFAULT_IOSIZE + hdr_len);
-		if (!conn->wbuf) {
-			cifsd_debug("failed to alloc mem\n");
-			return -ENOMEM;
-		}
-		memcpy(conn->wbuf, buf, conn->total_read);
-
-		/* as wbuf is used for request, free both small and big buf */
-		mempool_free(conn->smallbuf, cifsd_sm_req_poolp);
-		mempool_free(conn->bigbuf, cifsd_req_poolp);
-		conn->large_buf = false;
-		conn->smallbuf = NULL;
-		conn->bigbuf = NULL;
-	} else {
-		cifsd_debug("SMB request too long (%u bytes)\n", pdu_length);
-		return -ECONNABORTED;
-	}
-
-	return 0;
-}
-
-/**
- * switch_rsp_buf() - switch to large response buffer
- * @smb_work:	smb request work
- *
- * Return:      0 on success, otherwise -ENOMEM
- */
-int switch_rsp_buf(struct smb_work *smb_work)
-{
-	char *buf;
-	if (smb_work->rsp_large_buf) {
-		cifsd_debug("already using rsp_large_buf\n");
-		return 0;
-	}
-
-	buf = mempool_alloc(cifsd_rsp_poolp, GFP_NOFS);
-	if (!buf) {
-		cifsd_debug("failed to alloc mem\n");
-		return -ENOMEM;
-	}
-
-	/* free small buf and switch to large rsp buffer */
-	cifsd_debug("switching to large rsp buf\n");
-	memcpy(buf, smb_work->rsp_buf, MAX_CIFS_SMALL_BUFFER_SIZE);
-	mempool_free(smb_work->rsp_buf, cifsd_sm_rsp_poolp);
-
-	smb_work->rsp_buf = buf;
-	smb_work->rsp_large_buf = true;
-	return 0;
-}
-
-/**
  * is_smb_request() - check for valid smb request type
  * @conn:     TCP server instance of connection
  * @type:	smb request type
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct connection *conn, unsigned char type)
+bool is_smb_request(struct cifsd_tcp_conn *conn)
 {
+	int type = *(char *)conn->request_buf;
+
 	switch (type) {
 	case RFC1002_SESSION_MESSAGE:
 		/* Regular SMB request */
@@ -433,7 +358,7 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_sess *lookup_session_on_server(struct connection *conn,
+struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
 		uint64_t sess_id)
 {
 	struct cifsd_sess *sess;
@@ -472,11 +397,11 @@ struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
 }
 
 #ifndef CONFIG_CIFS_SMB2_SERVER
-void init_smb2_0_server(struct connection *server) { }
-void init_smb2_1_server(struct connection *server) { }
-void init_smb3_0_server(struct connection *server) { }
-void init_smb3_02_server(struct connection *server) { }
-void init_smb3_11_server(struct connection *server) { }
+void init_smb2_0_server(struct cifsd_tcp_conn *server) { }
+void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_02_server(struct cifsd_tcp_conn *server) { }
+void init_smb3_11_server(struct cifsd_tcp_conn *server) { }
 int is_smb2_neg_cmd(struct smb_work *smb_work)
 {
 	return 0;
@@ -703,18 +628,6 @@ struct cifsd_file *find_fp_using_inode(struct inode *inode)
 
 out:
 	return NULL;
-}
-
-char *alloc_data_mem(size_t size)
-{
-	/*
-	 * Use vzalloc area for allocation > 16KB,
-	 * otherwise use kzalloc
-	 */
-	if (size <= (PAGE_SIZE << PAGE_ALLOC_KMEM_ORDER))
-		return kzalloc(size, GFP_KERNEL);
-
-	return vzalloc(size);
 }
 
 /**

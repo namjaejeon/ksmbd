@@ -1,0 +1,38 @@
+
+language: c
+
+notifications:
+ - email: true
+
+before_script:
+ # Download the kernel
+ - git clone --depth 1 --branch v4.1.36 https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux-stable.git
+ - git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+ - sudo apt-get install libelf-dev
+
+script:
+ # Copy cifsd source to kernel
+ - mv linux-stable ../
+ - mv linux ../
+ - mkdir ../linux-stable/fs/cifsd
+ - cp -ar * ../linux-stable/fs/cifsd/
+ - mkdir ../linux/fs/cifsd
+ - cp -ar * ../linux/fs/cifsd/
+
+ # Compilation with 4.1 kernel
+ - cd ../linux-stable
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo 'CONFIG_CIFS_SMB2_SERVER=y' >> .config
+ - make fs/cifsd/cifsd.ko
+
+ # Compilation with latest tovalds kernel
+ - cd ../linux
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo 'CONFIG_CIFS_SMB2_SERVER=y' >> .config
+ - make fs/cifsd/cifsd.ko

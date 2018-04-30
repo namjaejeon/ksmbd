@@ -161,7 +161,8 @@ struct smb2_pdu {
 struct smb2_err_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize;
-	__le16 Reserved; /* MBZ */
+	__u8   ErrorContextCount;
+	__u8   Reserved;
 	__le32 ByteCount;  /* even if zero, at least one byte follows */
 	__u8   ErrorData[1];  /* variable length */
 } __packed;
@@ -199,6 +200,16 @@ struct smb2_negotiate_req {
 #define SMB311_SALT_SIZE			32
 /* Hash Algorithm Types */
 #define SMB2_PREAUTH_INTEGRITY_SHA512	cpu_to_le16(0x0001)
+
+#define PREAUTH_HASHVALUE_SIZE		64
+
+struct preauth_integrity_info {
+	/* PreAuth integrity Hash ID */
+	int			Preauth_HashId;
+	/* PreAuth integrity Hash Value */
+	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
+	int			CipherId;
+};
 
 struct smb2_preauth_neg_context {
 	__le16	ContextType; /* 1 */
@@ -1354,7 +1365,7 @@ extern struct file_lock *smb_flock_init(struct file *f);
 extern void smb2_send_interim_resp(struct smb_work *smb_work);
 
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct connection *conn,
+extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
 	char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct smb_work *smb_work);
 extern int smb2_sess_setup(struct smb_work *smb_work);
@@ -1376,13 +1387,5 @@ extern int smb2_lock(struct smb_work *smb_work);
 extern int smb2_ioctl(struct smb_work *smb_work);
 extern int smb2_oplock_break(struct smb_work *smb_work);
 extern int smb2_notify(struct smb_work *smb_work);
-
-/* smb2 sub command handlers */
-extern int smb2_get_info_filesystem(struct smb_work *smb_work);
-extern int smb2_get_info_file(struct smb_work *smb_work);
-extern int smb2_set_info_file(struct smb_work *smb_work);
-extern int smb2_get_ea(struct smb_work *smb_work, struct path *path,
-		void *rq, void *resp, void *resp_org);
-extern int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path);
 
 #endif				/* _SMB2PDU_SERVER_H */

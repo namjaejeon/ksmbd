@@ -29,12 +29,19 @@ The development git tree is available at
  - https://github.com/namjaejeon/cifsd-tools
 
 ================================================================================
+* Maintainers
+================================================================================
+Namjae Jeon <namjae.jeon@protocolfreedom.org>
+Sergey Senozhatsky <sergey.senozhatsky@gmail.com>
+
+================================================================================
 * Bug Report or contribution for cifsd development
 ================================================================================
 For reporting bugs and sending patches, please send the patches to the following
 mail address:
+ - linux-cifsd-devel@lists.sourceforge.net
  - namjae.jeon@protocolfreedom.org
- - namjae.jeon@samsung.com
+ - sergey.senozhatsky@gmail.com
 
 ================================================================================
 * Features

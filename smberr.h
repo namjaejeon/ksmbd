@@ -99,6 +99,7 @@
 #define ERRdirnotempty		145
 #define ERRnotlocked		158
 #define ERRcancelviolation	173
+#define ERRnoatomiclocks	174
 #define ERRalreadyexists	183
 #define ERRbadpipe		230
 #define ERRpipebusy		231
