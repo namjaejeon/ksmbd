@@ -4775,6 +4775,14 @@ static int smb2_set_info_sec(struct smb_work *smb_work)
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(smb_work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(smb_work);
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_set_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	id = le64_to_cpu(req->VolatileFileId);
 	pid = le64_to_cpu(req->PersistentFileId);
@@ -4821,11 +4829,19 @@ out:
 int smb2_set_info(struct smb_work *smb_work)
 {
 	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
+	struct smb2_set_info_rsp *rsp, *rsp_org;
 	int rc = 0;
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(smb_work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(smb_work);
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_set_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	if (le16_to_cpu(req->StructureSize) != 33) {
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -4867,7 +4883,7 @@ int smb2_set_info(struct smb_work *smb_work)
 	}
 
 	rsp->StructureSize = cpu_to_le16(2);
-	inc_rfc1001_len(rsp, 2);
+	inc_rfc1001_len(rsp_org, 2);
 	return rc;
 }
 
@@ -5184,7 +5200,7 @@ out:
 int smb2_set_info_file(struct smb_work *smb_work)
 {
 	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
+	struct smb2_set_info_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
 	struct cifsd_sess *sess = smb_work->sess;
 	uint64_t id, pid;
@@ -5194,6 +5210,14 @@ int smb2_set_info_file(struct smb_work *smb_work)
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(smb_work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(smb_work);
+	rsp_org = rsp;
+
+	if (smb_work->next_smb2_rcv_hdr_off) {
+		req = (struct smb2_set_info_req *)((char *)req +
+				smb_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
+				smb_work->next_smb2_rsp_hdr_off);
+	}
 
 	id = le64_to_cpu(req->VolatileFileId);
 	pid = le64_to_cpu(req->PersistentFileId);
