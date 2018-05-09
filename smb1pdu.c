@@ -437,12 +437,7 @@ int smb_session_disconnect(struct smb_work *smb_work)
 	put_cifsd_user(sess->user);
 	sess->user = NULL;
 
-	/*
-	 * We cannot discard session in case some request are already running.
-	 * Need to wait for them to finish and update req_running.
-	 */
-	wait_event(conn->req_running_q,
-			atomic_read(&conn->req_running) == 1);
+	cifsd_tcp_conn_wait_idle(conn);
 
 	/* free all tcons */
 	list_for_each_safe(tmp, t, &sess->tcon_list) {
