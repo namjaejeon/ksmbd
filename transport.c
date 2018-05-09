@@ -530,6 +530,20 @@ int cifsd_tcp_write(struct smb_work *work)
 	return 0;
 }
 
+void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
+{
+	mutex_lock(&conn->srv_mutex);
+	atomic_inc(&conn->req_running);
+}
+
+void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
+{
+	atomic_dec(&conn->req_running);
+	mutex_unlock(&conn->srv_mutex);
+	if (waitqueue_active(&conn->req_running_q))
+		wake_up_all(&conn->req_running_q);
+}
+
 static void tcp_destroy_socket(void)
 {
 	int ret;

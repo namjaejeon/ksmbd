@@ -143,6 +143,9 @@ struct cifsd_tcp_conn {
 	struct cifsd_tcp_conn_ops	*conn_ops;
 };
 
+void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
+void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn);
+
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   char *buf,
 		   unsigned int to_read);
