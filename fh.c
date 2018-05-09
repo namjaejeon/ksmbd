@@ -478,39 +478,14 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 	spin_unlock(&mfp->m_lock);
 }
 
-/**
- * close_id() - close filp for a fid and delete it from fid table
- * @conn:	TCP server instance of connection
- * @id:		fid to be deleted from fid table
- *
- * lookup fid from fid table, release oplock info and close associated filp.
- * delete fid, free associated cifsd file pointer and clear fid bitmap entry
- * in fid table.
- *
- * Return:      0 on success, otherwise error number
- */
-int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
+static int close_fp(struct cifsd_file *fp)
 {
-	struct cifsd_file *fp;
+	struct cifsd_sess *sess = fp->sess;
 	struct cifsd_mfile *mfp;
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
 	int err;
-
-	if (p_id > 0) {
-		fp = cifsd_get_global_fp(p_id);
-		if (!fp || fp->sess != sess) {
-			cifsd_err("Invalid id for close: %llu\n", p_id);
-			return -EINVAL;
-		}
-	} else {
-		fp = get_id_from_fidtable(sess, id);
-		if (!fp) {
-			cifsd_err("Invalid id for close: %llu\n", id);
-			return -EINVAL;
-		}
-	}
 
 	mfp = fp->f_mfp;
 	if (atomic_read(&mfp->m_count) >= 2) {
@@ -519,13 +494,6 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		else
 			invalidate_delete_on_close(fp);
 	}
-
-	spin_lock(&fp->f_lock);
-	fp->f_state = FP_FREEING;
-	spin_lock(&mfp->m_lock);
-	list_del(&fp->node);
-	spin_unlock(&mfp->m_lock);
-	spin_unlock(&fp->f_lock);
 
 	close_id_del_oplock(fp);
 
@@ -584,18 +552,55 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 		mfp_free(mfp);
 	}
 
-	if (p_id > 0) {
+	if (fp->persistent_id > 0) {
 		err = close_persistent_id(fp->persistent_id);
 		if (err)
 			return -ENOENT;
 	}
 
 	if (sess) {
-		delete_id_from_fidtable(sess, id);
-		cifsd_close_id(&sess->fidtable, id);
+		delete_id_from_fidtable(sess, fp->volatile_id);
+		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 	}
 	filp_close(filp, (struct files_struct *)filp);
 	return 0;
+}
+
+/**
+ * close_id() - close filp for a fid and delete it from fid table
+ * @conn:	TCP server instance of connection
+ * @id:		fid to be deleted from fid table
+ *
+ * lookup fid from fid table, release oplock info and close associated filp.
+ * delete fid, free associated cifsd file pointer and clear fid bitmap entry
+ * in fid table.
+ *
+ * Return:      0 on success, otherwise error number
+ */
+int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
+{
+	struct cifsd_file *fp;
+
+	if (p_id > 0) {
+		fp = cifsd_get_global_fp(p_id);
+		if (!fp || fp->sess != sess) {
+			cifsd_err("Invalid id for close: %llu\n", p_id);
+			return -EINVAL;
+		}
+	} else {
+		fp = get_id_from_fidtable(sess, id);
+		if (!fp) {
+			cifsd_err("Invalid id for close: %llu\n", id);
+			return -EINVAL;
+		}
+	}
+
+	spin_lock(&fp->f_lock);
+	fp->f_state = FP_FREEING;
+	list_del(&fp->node);
+	spin_unlock(&fp->f_lock);
+
+	return close_fp(fp);
 }
 
 /**
@@ -948,24 +953,10 @@ struct cifsd_file *smb_dentry_open(struct smb_work *work,
 		goto err_out2;
 	}
 
-	mfp = mfp_lookup_inode(FP_INODE(fp));
-	if (!mfp) {
-		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-		if (!mfp) {
-			err = -ENOMEM;
-			goto err_out1;
-		}
+	fp->f_mfp = mfp = get_mfp(fp);
+	if (!mfp)
+		goto err_out1;
 
-		err = mfp_init(mfp, fp);
-		if (err) {
-			cifsd_err("mfp initialized failed\n");
-			err = -ENOMEM;
-			kfree(mfp);
-			goto err_out1;
-		}
-	}
-
-	fp->f_mfp = mfp;
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
 			smb_break_all_oplock(work, fp);
@@ -1230,10 +1221,58 @@ int close_pipe_id(struct cifsd_sess *sess, int pipe_type)
 	return rc;
 }
 
+static void dispose_fp_list(struct list_head *head)
+{
+	while (!list_empty(head)) {
+		struct cifsd_file *fp;
+
+		fp = list_first_entry(head, struct cifsd_file, node);
+		list_del_init(&fp->node);
+
+		close_fp(fp);
+		cond_resched();
+	}
+}
+
 static unsigned int mfp_hash_mask __read_mostly;
 static unsigned int mfp_hash_shift __read_mostly;
 static struct hlist_head *mfp_hashtable __read_mostly;
 static __cacheline_aligned_in_smp DEFINE_SPINLOCK(mfp_hash_lock);
+
+int close_disconnected_handle(struct inode *inode)
+{
+	struct cifsd_mfile *mfp;
+	bool unlinked = true;
+	LIST_HEAD(dispose);
+
+	mfp = mfp_lookup_inode(inode);
+	if (mfp) {
+		struct cifsd_file *fp, *fptmp;
+
+		if (mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
+			unlinked = false;
+		spin_lock(&mfp->m_lock);
+		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
+			if (!fp->conn) {
+				spin_lock(&fp->f_lock);
+				if (fp->f_state == FP_FREEING) {
+					spin_unlock(&fp->f_lock);
+					continue;
+				}
+				list_del(&fp->node);
+				fp->f_state = FP_FREEING;
+				spin_unlock(&fp->f_lock);
+				list_add(&fp->node, &dispose);
+			}
+		}
+		spin_unlock(&mfp->m_lock);
+		atomic_dec(&mfp->m_count);
+	}
+
+	dispose_fp_list(&dispose);
+
+	return unlinked;
+}
 
 static unsigned long mfp_hash(struct super_block *sb, unsigned long hashval)
 {
@@ -1267,7 +1306,6 @@ struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp)
 	struct cifsd_mfile *mfp = NULL, *ret_mfp = NULL;
 	int ret;
 
-	spin_lock(&mfp_hash_lock);
 	hlist_for_each_entry(mfp, head, m_hash) {
 		if (mfp->m_inode == inode) {
 			ret = check_stream_mfp(mfp, fp);
@@ -1278,7 +1316,6 @@ struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp)
 			break;
 		}
 	}
-	spin_unlock(&mfp_hash_lock);
 
 	return ret_mfp;
 }
@@ -1307,16 +1344,12 @@ void insert_mfp_hash(struct cifsd_mfile *mfp)
 	struct hlist_head *b = mfp_hashtable +
 		mfp_hash(mfp->m_inode->i_sb, mfp->m_inode->i_ino);
 
-	spin_lock(&mfp_hash_lock);
 	hlist_add_head(&mfp->m_hash, b);
-	spin_unlock(&mfp_hash_lock);
 }
 
 void remove_mfp_hash(struct cifsd_mfile *mfp)
 {
-	spin_lock(&mfp_hash_lock);
 	hlist_del_init(&mfp->m_hash);
-	spin_unlock(&mfp_hash_lock);
 }
 
 int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
@@ -1340,6 +1373,30 @@ int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 	}
 
 	return 0;
+}
+
+struct cifsd_mfile *get_mfp(struct cifsd_file *fp)
+{
+	struct cifsd_mfile *mfp;
+	int rc;
+
+	spin_lock(&mfp_hash_lock);
+	mfp = mfp_lookup(fp);
+	if (!mfp) {
+		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+		if (!mfp)
+			goto err_out;
+
+		rc = mfp_init(mfp, fp);
+		if (rc) {
+			cifsd_err("mfp initialized failed\n");
+			goto err_out;
+		}
+	}
+
+err_out:
+	spin_unlock(&mfp_hash_lock);
+	return mfp;
 }
 
 void mfp_free(struct cifsd_mfile *mfp)

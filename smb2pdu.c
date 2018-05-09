@@ -1497,8 +1497,6 @@ int smb2_sess_setup(struct smb_work *smb_work)
 		cifsd_tcp_set_good(smb_work);
 		sess->state = SMB2_SESSION_VALID;
 		smb_work->sess = sess;
-		kfree(conn->preauth_info);
-		conn->preauth_info = NULL;
 		kfree(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
 	} else {
@@ -1882,30 +1880,6 @@ out:
 	smb2_set_err_rsp(smb_work);
 	return err;
 
-}
-
-int close_disconnected_handle(struct inode *inode)
-{
-	struct cifsd_mfile *mfp;
-	bool unlinked = true;
-
-	mfp = mfp_lookup_inode(inode);
-	if (mfp) {
-		struct cifsd_file *fp, *fptmp;
-
-		atomic_dec(&mfp->m_count);
-		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
-			if (!fp->conn) {
-				if (mfp->m_flags &
-					(S_DEL_ON_CLS | S_DEL_PENDING))
-					unlinked = false;
-				close_id(fp->sess, fp->volatile_id,
-					fp->persistent_id);
-			}
-		}
-	}
-
-	return unlinked;
 }
 
 #define DURABLE_RECONN_V2	1
@@ -2682,22 +2656,11 @@ int smb2_open(struct smb_work *smb_work)
 		rc = 0;
 	}
 
-	mfp = mfp_lookup(fp);
+	fp->f_mfp = mfp = get_mfp(fp);
 	if (!mfp) {
-		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-		if (!mfp) {
-			rc = -ENOMEM;
-			goto err_out;
-		}
-
-		rc = mfp_init(mfp, fp);
-		if (rc) {
-			cifsd_err("mfp initialized failed\n");
-			rc = -ENOMEM;
-			goto err_out;
-		}
+		rc = -ENOMEM;
+		goto err_out;
 	}
-	fp->f_mfp = mfp;
 
 	if (req->CreateContextsOffset) {
 		struct create_alloc_size_req *az_req;
@@ -2843,8 +2806,10 @@ int smb2_open(struct smb_work *smb_work)
 		}
 	}
 
+	spin_lock(&mfp->m_lock);
 	/* Add fp to master fp list. */
 	list_add(&fp->node, &mfp->m_fp_list);
+	spin_unlock(&mfp->m_lock);
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */

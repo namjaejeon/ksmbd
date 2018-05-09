@@ -2503,6 +2503,7 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
 	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
 		err = -EBUSY;
+		atomic_dec(&parent_mfp->m_count);
 		goto free_path;
 	}
 
@@ -4161,11 +4162,12 @@ int query_path_info(struct smb_work *smb_work)
 		cifsd_debug("SMB_INFO_STANDARD\n");
 		mfp = mfp_lookup_inode(path.dentry->d_inode);
 		if (mfp) {
-			atomic_dec(&mfp->m_count);
 			if (mfp->m_flags & S_DEL_PENDING) {
 				rc = -EBUSY;
+				atomic_dec(&mfp->m_count);
 				goto err_out;
 			}
+			atomic_dec(&mfp->m_count);
 		}
 
 		ptr = (char *)&rsp->Pad + 1;
@@ -8371,6 +8373,7 @@ int smb_open_andx(struct smb_work *smb_work)
 	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
 	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
 		err = -EBUSY;
+		atomic_dec(&parent_mfp->m_count);
 		goto free_path;
 	}
 

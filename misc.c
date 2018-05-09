@@ -618,13 +618,17 @@ struct cifsd_file *find_fp_using_inode(struct inode *inode)
 	if (!mfp)
 		goto out;
 
+	spin_lock(&mfp->m_lock);
 	list_for_each(cur, &mfp->m_fp_list) {
 		lfp = list_entry(cur, struct cifsd_file, node);
 		if (inode == FP_INODE(lfp)) {
 			atomic_dec(&mfp->m_count);
+			spin_unlock(&mfp->m_lock);
 			return lfp;
 		}
 	}
+	atomic_dec(&mfp->m_count);
+	spin_unlock(&mfp->m_lock);
 
 out:
 	return NULL;
