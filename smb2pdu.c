@@ -3041,7 +3041,7 @@ err_out1:
 
 		if (mfp && atomic_dec_and_test(&mfp->m_count))
 			mfp_free(mfp);
-		if (volatile_id) {
+		if (volatile_id > 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
