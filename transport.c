@@ -262,9 +262,6 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		}
 	}
 
-	wait_event(conn->req_running_q,
-				atomic_read(&conn->req_running) == 0);
-
 	/* Wait till all reference dropped to the Server object*/
 	while (atomic_read(&conn->r_count) > 0)
 		schedule_timeout(HZ);
