@@ -544,6 +544,11 @@ void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
 		wake_up_all(&conn->req_running_q);
 }
 
+void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
+{
+	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
+}
+
 static void tcp_destroy_socket(void)
 {
 	int ret;
