@@ -119,8 +119,8 @@ static void handle_smb_work(struct work_struct *work)
 	struct smb_version_cmds *cmds;
 	long int start_time = 0, end_time = 0, time_elapsed = 0;
 
-	atomic_inc(&conn->req_running);
-	mutex_lock(&conn->srv_mutex);
+
+	cifsd_tcp_conn_lock(conn);
 
 	if (cifsd_debug_enable)
 		start_time = jiffies;
@@ -267,14 +267,9 @@ nosend:
 	if (cifsd_tcp_exiting(smb_work))
 		force_sig(SIGKILL, conn->handler);
 
+	cifsd_tcp_conn_unlock(conn);
 	/* Now can free cifsd work */
 	cifsd_free_work_struct(smb_work);
-
-	mutex_unlock(&conn->srv_mutex);
-	atomic_dec(&conn->req_running);
-	cifsd_debug("req running = %d\n", atomic_read(&conn->req_running));
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 
 	/*
 	 * Decrement Ref count when all processing finished

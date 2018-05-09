@@ -1776,12 +1776,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	destroy_fidtable(sess);
 
-	/*
-	 * We cannot discard session in case some request are already running.
-	 * Need to wait for them to finish and update req_running.
-	 */
-	wait_event(conn->req_running_q,
-			atomic_read(&conn->req_running) == 1);
+	cifsd_tcp_conn_wait_idle(conn);
 
 	/* Free the tree connection to session */
 	list_for_each_safe(tmp, t, &sess->tcon_list) {

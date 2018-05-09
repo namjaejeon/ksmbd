@@ -262,9 +262,6 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		}
 	}
 
-	wait_event(conn->req_running_q,
-				atomic_read(&conn->req_running) == 0);
-
 	/* Wait till all reference dropped to the Server object*/
 	while (atomic_read(&conn->r_count) > 0)
 		schedule_timeout(HZ);
@@ -528,6 +525,25 @@ int cifsd_tcp_write(struct smb_work *work)
 	}
 
 	return 0;
+}
+
+void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
+{
+	mutex_lock(&conn->srv_mutex);
+	atomic_inc(&conn->req_running);
+}
+
+void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
+{
+	atomic_dec(&conn->req_running);
+	mutex_unlock(&conn->srv_mutex);
+	if (waitqueue_active(&conn->req_running_q))
+		wake_up_all(&conn->req_running_q);
+}
+
+void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
+{
+	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
 }
 
 static void tcp_destroy_socket(void)

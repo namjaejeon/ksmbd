@@ -347,12 +347,10 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	struct cifsd_tcp_conn *conn = smb_work->conn;
 	struct smb2_hdr *rsp_hdr;
 
-	atomic_inc(&conn->req_running);
-	mutex_lock(&conn->srv_mutex);
-
+	cifsd_tcp_conn_lock(conn);
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_debug("smb2_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
+		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(smb_work);
 		return;
 	}
@@ -394,13 +392,8 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 
 	inc_rfc1001_len(rsp, 44);
 	cifsd_tcp_write(smb_work);
+	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
-
 }
 #endif
 
@@ -1250,13 +1243,10 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	LOCK_REQ *req;
 	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(smb_work);
 
-	atomic_inc(&conn->req_running);
-
-	mutex_lock(&conn->srv_mutex);
-
+	cifsd_tcp_conn_lock(conn);
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
+		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(smb_work);
 		return;
 	}
@@ -1301,12 +1291,8 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 	cifsd_tcp_write(smb_work);
+	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 }
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1331,12 +1317,10 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	struct cifsd_file *fp;
 	int persistent_id;
 
-	atomic_inc(&conn->req_running);
-
-	mutex_lock(&conn->srv_mutex);
+	cifsd_tcp_conn_lock(conn);
 	fp = cifsd_get_global_fp(br_info->fid);
 	if (!fp) {
-		mutex_unlock(&conn->srv_mutex);
+		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(smb_work);
 		return;
 	}
@@ -1344,7 +1328,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	persistent_id = fp->persistent_id;
 	if (conn->ops->allocate_rsp_buf(smb_work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
+		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(smb_work);
 		return;
 	}
@@ -1388,12 +1372,8 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 	cifsd_tcp_write(smb_work);
+	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 }
 
 /**
