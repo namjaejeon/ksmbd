@@ -559,8 +559,8 @@ static int close_fp(struct cifsd_file *fp)
 	}
 
 	if (sess) {
-		delete_id_from_fidtable(sess, fp->volatile_id);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
+		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
 	filp_close(filp, (struct files_struct *)filp);
 	return 0;
