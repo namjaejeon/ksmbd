@@ -117,6 +117,7 @@ struct cifsd_mfile {
 	unsigned int m_flags;
 	struct hlist_node m_hash;
 	struct list_head m_fp_list;
+	struct list_head m_op_list;
 	struct oplock_info *m_opinfo;
 	bool has_lease;
 	bool is_stream;

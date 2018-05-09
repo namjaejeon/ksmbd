@@ -2553,9 +2553,13 @@ int smb2_open(struct smb_work *smb_work)
 	}
 
 	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
-		rc = -EBUSY;
-		goto err_out;
+	if (parent_mfp) {
+		if (parent_mfp->m_flags & S_DEL_PENDING) {
+			atomic_dec(&parent_mfp->m_count);
+			rc = -EBUSY;
+			goto err_out;
+		}
+		atomic_dec(&parent_mfp->m_count);
 	}
 
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
@@ -2800,6 +2804,12 @@ int smb2_open(struct smb_work *smb_work)
 
 	generic_fillattr(path.dentry->d_inode, &stat);
 
+	/* Check delete pending among previous fp before oplock break */
+	if (mfp->m_flags & S_DEL_PENDING) {
+		rc = -EBUSY;
+		goto err_out;
+	}
+
 	share_ret = smb_check_shared_mode(fp->filp, fp);
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
 		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
@@ -2807,20 +2817,18 @@ int smb2_open(struct smb_work *smb_work)
 			rc = share_ret;
 			goto err_out;
 		}
-	} else if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
-		req_op_level = smb2_map_lease_to_oplock(lc->req_state);
-		cifsd_debug("lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
-				name, req_op_level, lc->req_state);
-		rc = find_same_lease_key(sess, mfp, lc);
-		if (rc)
-			goto err_out;
+	} else {
+		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
+			req_op_level = smb2_map_lease_to_oplock(lc->req_state);
+			cifsd_debug("lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
+					name, req_op_level, lc->req_state);
+			rc = find_same_lease_key(sess, mfp, lc);
+			if (rc)
+				goto err_out;
+		}
+
 		rc = smb_grant_oplock(smb_work, req_op_level,
 			persistent_id, fp, tree_id, lc, share_ret);
-		if (rc < 0)
-			goto err_out;
-	} else {
-		rc = smb_grant_oplock(smb_work, req_op_level,
-			persistent_id, fp, tree_id, NULL, share_ret);
 		if (rc < 0)
 			goto err_out;
 	}

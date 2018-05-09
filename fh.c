@@ -574,7 +574,7 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
 				fp->delete_on_close) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
-			mfp->m_flags &= ~S_DEL_ON_CLS;
+			mfp->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
 			spin_unlock(&mfp->m_lock);
 			smb_vfs_unlink(dir, dentry);
 			spin_lock(&mfp->m_lock);
@@ -1326,6 +1326,7 @@ int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 	atomic_set(&mfp->op_count, 0);
 	mfp->m_flags = 0;
 	INIT_LIST_HEAD(&mfp->m_fp_list);
+	INIT_LIST_HEAD(&mfp->m_op_list);
 	spin_lock_init(&mfp->m_lock);
 	insert_mfp_hash(mfp);
 	mfp->is_stream = false;
