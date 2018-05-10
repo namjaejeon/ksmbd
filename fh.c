@@ -1361,7 +1361,6 @@ int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 	INIT_LIST_HEAD(&mfp->m_fp_list);
 	INIT_LIST_HEAD(&mfp->m_op_list);
 	spin_lock_init(&mfp->m_lock);
-	insert_mfp_hash(mfp);
 	mfp->is_stream = false;
 
 	if (fp->is_stream) {
@@ -1377,24 +1376,34 @@ int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 
 struct cifsd_mfile *get_mfp(struct cifsd_file *fp)
 {
-	struct cifsd_mfile *mfp;
+	struct cifsd_mfile *mfp, *tmfp;
 	int rc;
 
 	spin_lock(&mfp_hash_lock);
 	mfp = mfp_lookup(fp);
-	if (!mfp) {
-		mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
-		if (!mfp)
-			goto err_out;
+	spin_unlock(&mfp_hash_lock);
+	if (mfp)
+		return mfp;
 
-		rc = mfp_init(mfp, fp);
-		if (rc) {
-			cifsd_err("mfp initialized failed\n");
-			goto err_out;
-		}
+	mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+	if (!mfp)
+		return NULL;
+
+	rc = mfp_init(mfp, fp);
+	if (rc) {
+		cifsd_err("mfp initialized failed\n");
+		kfree(mfp);
+		return NULL;
 	}
 
-err_out:
+	spin_lock(&mfp_hash_lock);
+	tmfp = mfp_lookup(fp);
+	if (!tmfp) {
+		insert_mfp_hash(mfp);
+	} else {
+		kfree(mfp);
+		mfp = tmfp;
+	}
 	spin_unlock(&mfp_hash_lock);
 	return mfp;
 }
