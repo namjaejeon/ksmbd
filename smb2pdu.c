@@ -5380,34 +5380,37 @@ int smb2_set_info(struct smb_work *smb_work)
 		rc = -EOPNOTSUPP;
 	}
 
-err_out:
-	if (rc < 0) {
-		if (rc == -EACCES || rc == -ENOTEMPTY || rc == -EPERM)
-			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-		else if (rc == -EINVAL)
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		else if (rc == -ESHARE)
-			rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
-		else if (rc == -ENOENT)
-			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
-		else if (rc == -EBUSY)
-			rsp->hdr.Status = NT_STATUS_DIRECTORY_NOT_EMPTY;
-		else if (rc == -EAGAIN)
-			rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
-		else if (rc == -EBADF)
-			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
-		else if (rc == -EEXIST)
-			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
-		else if (rsp->hdr.Status == 0 || rc == -EOPNOTSUPP)
-			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		smb2_set_err_rsp(smb_work);
-
-		cifsd_debug("error while processing smb2 query rc = %d\n",
-			      rc);
-	}
+	if (rc < 0)
+		goto err_out;
 
 	rsp->StructureSize = cpu_to_le16(2);
 	inc_rfc1001_len(rsp_org, 2);
+
+	return 0;
+
+err_out:
+	if (rc == -EACCES || rc == -ENOTEMPTY || rc == -EPERM)
+		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+	else if (rc == -EINVAL)
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+	else if (rc == -ESHARE)
+		rsp->hdr.Status = NT_STATUS_SHARING_VIOLATION;
+	else if (rc == -ENOENT)
+		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_INVALID;
+	else if (rc == -EBUSY)
+		rsp->hdr.Status = NT_STATUS_DIRECTORY_NOT_EMPTY;
+	else if (rc == -EAGAIN)
+		rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
+	else if (rc == -EBADF)
+		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+	else if (rc == -EEXIST)
+		rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
+	else if (rsp->hdr.Status == 0 || rc == -EOPNOTSUPP)
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+	smb2_set_err_rsp(smb_work);
+
+	cifsd_debug("error while processing smb2 query rc = %d\n",
+			rc);
 	return rc;
 }
 
