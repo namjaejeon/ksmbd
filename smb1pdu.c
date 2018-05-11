@@ -428,7 +428,6 @@ int smb_session_disconnect(struct smb_work *smb_work)
 	struct list_head *tmp, *t;
 
 	/* Got a valid session, set connection state */
-	WARN_ON(conn->sess_count != 1);
 	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */

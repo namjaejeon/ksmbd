@@ -102,8 +102,6 @@ static inline int check_session_id(struct cifsd_tcp_conn *conn, uint64_t id)
 {
 	struct cifsd_sess *sess;
 
-	WARN(conn->sess_count > 1, "sess_count %d", conn->sess_count);
-
 	if (id == 0 || id == -1)
 		return 0;
 
@@ -1767,7 +1765,7 @@ int smb2_session_logoff(struct smb_work *smb_work)
 	cifsd_debug("%s : request\n", __func__);
 
 	/* Got a valid session, set connection state */
-	WARN_ON(sess->conn != conn || conn->sess_count != 1);
+	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
 	cifsd_tcp_set_need_reconnect(smb_work);
