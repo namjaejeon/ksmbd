@@ -848,6 +848,7 @@ static int cifsd_parse_global_options(char *configdata)
 		case Opt_guest:
 		{
 			char *user_name;
+			struct cifsd_user *user;
 			kuid_t uid;
 			kgid_t gid;
 
@@ -864,6 +865,13 @@ static int cifsd_parse_global_options(char *configdata)
 				kfree(user_name);
 				goto config_err;
 			}
+			user = um_user_search(user_name);
+			if (!user) {
+				kfree(user_name);
+				goto config_err;
+			}
+			set_user_guest(user);
+
 			break;
 		}
 		case Opt_servern:
