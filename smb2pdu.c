@@ -1796,7 +1796,6 @@ int smb2_session_logoff(struct smb_work *smb_work)
 
 	put_cifsd_user(sess->user);
 	sess->user = NULL;
-	kfree(sess->Preauth_HashValue);
 
 	/* let start_tcp_sess free connection info now */
 	cifsd_tcp_set_need_negotiate(smb_work);
