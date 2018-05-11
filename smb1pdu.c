@@ -1128,6 +1128,9 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
 				sess, sess->sess_id, rsp->hdr.Uid);
 
+		if (user_guest(sess->user))
+			goto no_password_check;
+
 		err = decode_ntlmssp_authenticate_blob(authblob,
 				le16_to_cpu(req->SecurityBlobLength), sess);
 		if (err) {
@@ -1136,6 +1139,7 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 			goto out_err;
 		}
 
+no_password_check:
 		if (conn->use_spnego) {
 			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
 						&spnego_blob_len, 0)) {
