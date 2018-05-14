@@ -2504,10 +2504,13 @@ int smb_nt_create_andx(struct smb_work *smb_work)
 	}
 
 	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
-		err = -EBUSY;
+	if (parent_mfp) {
+		if (parent_mfp->m_flags & S_DEL_PENDING) {
+			err = -EBUSY;
+			atomic_dec(&parent_mfp->m_count);
+			goto free_path;
+		}
 		atomic_dec(&parent_mfp->m_count);
-		goto free_path;
 	}
 
 	/* open  file and get FID */
@@ -8377,10 +8380,13 @@ int smb_open_andx(struct smb_work *smb_work)
 	}
 
 	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp && parent_mfp->m_flags & S_DEL_PENDING) {
-		err = -EBUSY;
+	if (parent_mfp) {
+		if (parent_mfp->m_flags & S_DEL_PENDING) {
+			err = -EBUSY;
+			atomic_dec(&parent_mfp->m_count);
+			goto free_path;
+		}
 		atomic_dec(&parent_mfp->m_count);
-		goto free_path;
 	}
 
 	cifsd_err("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
