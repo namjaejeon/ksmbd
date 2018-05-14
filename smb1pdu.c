@@ -7869,7 +7869,10 @@ int smb_rmdir(struct smb_work *smb_work)
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
-					NT_STATUS_DIRECTORY_NOT_EMPTY;
+				NT_STATUS_DIRECTORY_NOT_EMPTY;
+		else if (err == -ENOENT)
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		else
 			rsp->hdr.Status.CifsError = NT_STATUS_DATA_ERROR;
 	} else {
