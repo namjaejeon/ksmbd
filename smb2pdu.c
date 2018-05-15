@@ -1132,11 +1132,8 @@ int smb2_negotiate(struct smb_work *smb_work)
 	cifsd_tcp_set_need_negotiate(smb_work);
 
 err_out:
-	if (rc < 0) {
+	if (rc < 0)
 		smb2_set_err_rsp(smb_work);
-		kfree(conn->preauth_info);
-		conn->preauth_info = NULL;
-	}
 
 	return rc;
 }
