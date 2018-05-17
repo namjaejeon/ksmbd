@@ -92,7 +92,6 @@ struct cifsd_sess {
 	struct list_head cifsd_ses_list;
 	struct list_head cifsd_ses_global_list;
 	struct list_head tcon_list;
-	struct hlist_head notify_table[64];
 	int tcon_count;
 	int valid;
 	unsigned int sequence_number;
@@ -107,9 +106,7 @@ struct cifsd_sess {
 	int state;
 	__u8 *Preauth_HashValue;
 	struct cifsd_pipe *pipe_desc[MAX_PIPE];
-	struct smb2_inotify_res_info *inotify_res;
 	wait_queue_head_t pipe_q;
-	wait_queue_head_t notify_q;
 	int ev_state;
 };
 

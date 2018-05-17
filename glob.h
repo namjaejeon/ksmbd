@@ -434,23 +434,11 @@ struct cifsd_pid_info {
 	__u32 cifsd_pid;
 };
 
-struct smb2_inotify_req_info {
-	__le16 watch_tree_flag;
-	__le32 CompletionFilter;
-	__u32 path_len;
-	char dir_path[];
-};
-
 struct FileNotifyInformation {
 	__le32 NextEntryOffset;
 	__le32 Action;
 	__le32 FileNameLength;
 	__le16 FileName[];
-};
-
-struct smb2_inotify_res_info {
-	__u32 output_buffer_length;
-	struct FileNotifyInformation file_notify_info[];
 };
 
 #define cifsd_debug(fmt, ...)					\
@@ -652,10 +640,6 @@ void cifsd_net_exit(void);
 int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
-int cifsd_sendmsg_notify(struct cifsd_sess *sess,
-		unsigned int data_size,
-		struct smb2_inotify_req_info *inotify_req_info,
-		char *path);
 int cifsd_kthread_stop_status(int etype);
 
 /* asn1 functions */
