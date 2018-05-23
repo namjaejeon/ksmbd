@@ -140,32 +140,32 @@ int check_smb_message(char *buf)
 /**
  * add_request_to_queue() - check a request for addition to pending smb work
  *				queue
- * @smb_work:	smb request work
+ * @cifsd_work:	smb request work
  *
  * Return:      true if not add to queue, otherwise false
  */
-void add_request_to_queue(struct smb_work *smb_work)
+void add_request_to_queue(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;
-	struct smb2_hdr *hdr = REQUEST_BUF(smb_work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		unsigned int command = conn->ops->get_cmd_val(smb_work);
+		unsigned int command = conn->ops->get_cmd_val(work);
 
 		if (command != SMB2_CANCEL) {
 			requests_queue = &conn->requests;
-			smb_work->type = SYNC;
+			work->type = SYNC;
 		}
 	} else {
-		if (conn->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
+		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
 			requests_queue = &conn->requests;
 	}
 
 	if (requests_queue) {
 		spin_lock(&conn->request_lock);
-		list_add_tail(&smb_work->request_entry, requests_queue);
-		smb_work->added_in_request_list = 1;
+		list_add_tail(&work->request_entry, requests_queue);
+		work->added_in_request_list = 1;
 		spin_unlock(&conn->request_lock);
 	}
 }
@@ -402,20 +402,20 @@ void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_02_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_11_server(struct cifsd_tcp_conn *server) { }
-int is_smb2_neg_cmd(struct smb_work *smb_work)
+int is_smb2_neg_cmd(struct cifsd_work *work)
 {
 	return 0;
 }
 
-bool is_chained_smb2_message(struct smb_work *smb_work)
+bool is_chained_smb2_message(struct cifsd_work *work)
 {
 	return 0;
 }
 
-void init_smb2_neg_rsp(struct smb_work *smb_work)
+void init_smb2_neg_rsp(struct cifsd_work *work)
 {
 }
-int is_smb2_rsp(struct smb_work *smb_work)
+int is_smb2_rsp(struct cifsd_work *work)
 {
 	return 0;
 };

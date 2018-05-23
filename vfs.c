@@ -129,7 +129,7 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct smb_work *work,
+int smb_vfs_read(struct cifsd_work *work,
 		 struct cifsd_file *fp,
 		 size_t count,
 		 loff_t *pos)
