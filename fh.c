@@ -352,25 +352,25 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 	return file;
 }
 
-struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid)
 {
-	struct cifsd_sess *sess = smb_work->sess;
-	struct cifsd_tcon *tcon = smb_work->tcon;
+	struct cifsd_sess *sess = work->sess;
+	struct cifsd_tcon *tcon = work->tcon;
 	struct cifsd_file *fp;
 	int64_t vid, pid;
 
 	if (req_vid == -1) {
 		cifsd_debug("Compound request assigning stored FID = %llu\n",
-				smb_work->cur_local_fid);
-		vid = smb_work->cur_local_fid;
-		pid = smb_work->cur_local_pfid;
+				work->cur_local_fid);
+		vid = work->cur_local_fid;
+		pid = work->cur_local_pfid;
 	} else {
 		vid = req_vid;
 		pid = req_pid;
 	}
 
-	fp = get_id_from_fidtable(smb_work->sess, vid);
+	fp = get_id_from_fidtable(work->sess, vid);
 	if (!fp) {
 		cifsd_debug("Invalid id: %llu\n", vid);
 		return NULL;
@@ -381,7 +381,7 @@ struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
 		return NULL;
 	}
 
-	if (IS_SMB2(smb_work->conn) && fp->persistent_id != pid) {
+	if (IS_SMB2(work->conn) && fp->persistent_id != pid) {
 		cifsd_err("persistent id mismatch : %lld, %lld\n",
 				fp->persistent_id, pid);
 		fp = NULL;
@@ -507,7 +507,7 @@ static int close_fp(struct cifsd_file *fp)
 
 		if (lock->work && lock->work->type == ASYNC &&
 			lock->work->async->async_status == ASYNC_PROG) {
-			struct smb_work *async_work = lock->work;
+			struct cifsd_work *async_work = lock->work;
 
 			async_work->async->async_status = ASYNC_CLOSE;
 		} else {
@@ -921,7 +921,7 @@ void destroy_global_fidtable(void)
  *
  * Return:	0 on success, otherwise error
  */
-struct cifsd_file *smb_dentry_open(struct smb_work *work,
+struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 	const struct path *path, int flags, int option, int fexist)
 {
 	struct cifsd_sess *sess = work->sess;

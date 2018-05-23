@@ -87,16 +87,16 @@ out:
 
 /**
  * check_conn_state() - check state of server thread connection
- * @smb_work:     smb work containing server thread information
+ * @cifsd_work:     smb work containing server thread information
  *
  * Return:	0 on valid connection, otherwise 1 to reconnect
  */
-static inline int check_conn_state(struct smb_work *smb_work)
+static inline int check_conn_state(struct cifsd_work *work)
 {
 	struct smb_hdr *rsp_hdr;
 
-	if (cifsd_tcp_exiting(smb_work) || cifsd_tcp_need_reconnect(smb_work)) {
-		rsp_hdr = RESPONSE_BUF(smb_work);
+	if (cifsd_tcp_exiting(work) || cifsd_tcp_need_reconnect(work)) {
+		rsp_hdr = RESPONSE_BUF(work);
 		rsp_hdr->Status.CifsError = NT_STATUS_CONNECTION_DISCONNECTED;
 		return 1;
 	}
@@ -104,15 +104,15 @@ static inline int check_conn_state(struct smb_work *smb_work)
 }
 
 /**
- * handle_smb_work() - process pending smb work requests
- * @smb_work:	smb work containing request command buffer
+ * handle_cifsd_work() - process pending smb work requests
+ * @cifsd_work:	smb work containing request command buffer
  *
  * called by kworker threads to processing remaining smb work requests
  */
-static void handle_smb_work(struct work_struct *work)
+static void handle_cifsd_work(struct work_struct *wk)
 {
-	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
 	unsigned int command = 0;
 	int rc;
 	bool conn_valid = false;
@@ -128,36 +128,36 @@ static void handle_smb_work(struct work_struct *work)
 	conn->stats.request_served++;
 
 	if (unlikely(conn->need_neg)) {
-		if (is_smb2_neg_cmd(smb_work))
+		if (is_smb2_neg_cmd(work))
 			init_smb2_0_server(conn);
-		else if (conn->ops->get_cmd_val(smb_work) !=
+		else if (conn->ops->get_cmd_val(work) !=
 						SMB_COM_NEGOTIATE)
 			conn->need_neg = false;
 	}
 
-	if (conn->ops->allocate_rsp_buf(smb_work)) {
+	if (conn->ops->allocate_rsp_buf(work)) {
 		rc = -ENOMEM;
 		goto nosend;
 	}
 
-	rc = conn->ops->init_rsp_hdr(smb_work);
+	rc = conn->ops->init_rsp_hdr(work);
 	if (rc) {
 		/* either uid or tid is not correct */
-		conn->ops->set_rsp_status(smb_work, NT_STATUS_INVALID_HANDLE);
+		conn->ops->set_rsp_status(work, NT_STATUS_INVALID_HANDLE);
 		goto send;
 	}
 
 	if (conn->ops->check_user_session) {
-		rc = conn->ops->check_user_session(smb_work);
+		rc = conn->ops->check_user_session(work);
 		if (rc < 0) {
-			command = conn->ops->get_cmd_val(smb_work);
-			conn->ops->set_rsp_status(smb_work,
+			command = conn->ops->get_cmd_val(work);
+			conn->ops->set_rsp_status(work,
 					NT_STATUS_USER_SESSION_DELETED);
 			goto send;
 		} else if (rc > 0) {
-			rc = conn->ops->get_cifsd_tcon(smb_work);
+			rc = conn->ops->get_cifsd_tcon(work);
 			if (rc < 0) {
-				conn->ops->set_rsp_status(smb_work,
+				conn->ops->set_rsp_status(work,
 					NT_STATUS_NETWORK_NAME_DELETED);
 				goto send;
 			}
@@ -165,15 +165,15 @@ static void handle_smb_work(struct work_struct *work)
 	}
 
 chained:
-	rc = check_conn_state(smb_work);
+	rc = check_conn_state(work);
 	if (rc)
 		goto send;
 
 	conn_valid = true;
-	command = conn->ops->get_cmd_val(smb_work);
+	command = conn->ops->get_cmd_val(work);
 again:
 	if (command >= conn->max_cmds) {
-		conn->ops->set_rsp_status(smb_work,
+		conn->ops->set_rsp_status(work,
 					NT_STATUS_INVALID_PARAMETER);
 		goto send;
 	}
@@ -181,25 +181,25 @@ again:
 	cmds = &conn->cmds[command];
 	if (cmds->proc == NULL) {
 		cifsd_err("*** not implemented yet cmd = %x\n", command);
-		conn->ops->set_rsp_status(smb_work,
+		conn->ops->set_rsp_status(work,
 						NT_STATUS_NOT_IMPLEMENTED);
 		goto send;
 	}
 
 	mutex_unlock(&conn->srv_mutex);
 
-	if (smb_work->sess && smb_work->sess->sign &&
+	if (work->sess && work->sess->sign &&
 		conn->ops->is_sign_req &&
-		conn->ops->is_sign_req(smb_work, command)) {
-		rc = conn->ops->check_sign_req(smb_work);
+		conn->ops->is_sign_req(work, command)) {
+		rc = conn->ops->check_sign_req(work);
 		if (!rc) {
-			conn->ops->set_rsp_status(smb_work,
+			conn->ops->set_rsp_status(work,
 							NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 	}
 
-	rc = cmds->proc(smb_work);
+	rc = cmds->proc(work);
 	mutex_lock(&conn->srv_mutex);
 	if (conn->need_neg && (conn->dialect == SMB20_PROT_ID ||
 				conn->dialect == SMB21_PROT_ID ||
@@ -208,7 +208,7 @@ again:
 				conn->dialect == SMB302_PROT_ID ||
 				conn->dialect == SMB311_PROT_ID)) {
 		cifsd_debug("Need to send the smb2 negotiate response\n");
-		init_smb2_neg_rsp(smb_work);
+		init_smb2_neg_rsp(work);
 		goto send;
 	}
 	/* AndX commands - chained request can return positive values */
@@ -219,35 +219,35 @@ again:
 		cifsd_debug("error(%d) while processing cmd %u\n",
 							rc, command);
 
-	if (smb_work->send_no_response) {
+	if (work->send_no_response) {
 		spin_lock(&conn->request_lock);
-		if (smb_work->added_in_request_list) {
-			list_del_init(&smb_work->request_entry);
-			smb_work->added_in_request_list = 0;
+		if (work->added_in_request_list) {
+			list_del_init(&work->request_entry);
+			work->added_in_request_list = 0;
 		}
 		spin_unlock(&conn->request_lock);
 		goto nosend;
 	}
 
 send:
-	if (is_chained_smb2_message(smb_work))
+	if (is_chained_smb2_message(work))
 		goto chained;
 
 	/* call set_rsp_credits() function to set number of credits granted in
 	 * hdr of smb2 response.
 	 */
-	if (is_smb2_rsp(smb_work))
-		conn->ops->set_rsp_credits(smb_work);
+	if (is_smb2_rsp(work))
+		conn->ops->set_rsp_credits(work);
 
 	if (conn->dialect == SMB311_PROT_ID)
-		smb3_preauth_hash_rsp(smb_work);
+		smb3_preauth_hash_rsp(work);
 
-	if (smb_work->sess && smb_work->sess->sign &&
+	if (work->sess && work->sess->sign &&
 		conn->ops->is_sign_req &&
-		conn->ops->is_sign_req(smb_work, command))
-		conn->ops->set_sign_rsp(smb_work);
+		conn->ops->is_sign_req(work, command))
+		conn->ops->set_sign_rsp(work);
 
-	cifsd_tcp_write(smb_work);
+	cifsd_tcp_write(work);
 
 nosend:
 	if (cifsd_debug_enable) {
@@ -264,12 +264,12 @@ nosend:
 			conn->stats.max_timed_request = time_elapsed;
 	}
 
-	if (cifsd_tcp_exiting(smb_work))
+	if (cifsd_tcp_exiting(work))
 		force_sig(SIGKILL, conn->handler);
 
 	cifsd_tcp_conn_unlock(conn);
 	/* Now can free cifsd work */
-	cifsd_free_work_struct(smb_work);
+	cifsd_free_work_struct(work);
 
 	/*
 	 * Decrement Ref count when all processing finished
@@ -279,15 +279,15 @@ nosend:
 }
 
 /**
- * queue_smb_work() - queue a smb request to worker thread queue
+ * queue_cifsd_work() - queue a smb request to worker thread queue
  *		for proccessing smb command and sending response
  * @conn:     TCP server instance of connection
  *
  * read remaining data from socket create and submit work.
  */
-static int queue_smb_work(struct cifsd_tcp_conn *conn)
+static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 {
-	struct smb_work *work;
+	struct cifsd_work *work;
 
 	dump_smb_msg(conn->request_buf, HEADER_SIZE(conn));
 
@@ -305,7 +305,7 @@ static int queue_smb_work(struct cifsd_tcp_conn *conn)
 
 	/*
 	 * Increment ref count for the Server object, as after this
-	 * only fallback point is from handle_smb_work
+	 * only fallback point is from handle_cifsd_work
 	 */
 	atomic_inc(&conn->r_count);
 	work->conn = conn;
@@ -316,7 +316,7 @@ static int queue_smb_work(struct cifsd_tcp_conn *conn)
 
 	/* update activity on connection */
 	conn->last_active = jiffies;
-	INIT_WORK(&work->work, handle_smb_work);
+	INIT_WORK(&work->work, handle_cifsd_work);
 	schedule_work(&work->work);
 	return 0;
 }
@@ -369,7 +369,7 @@ static int cifsd_server_init_conn(struct cifsd_tcp_conn *conn)
 
 static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
 {
-	return queue_smb_work(conn);
+	return queue_cifsd_work(conn);
 }
 
 static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)

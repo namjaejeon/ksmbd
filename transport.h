@@ -150,8 +150,8 @@ void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   char *buf,
 		   unsigned int to_read);
-struct smb_work;
-int cifsd_tcp_write(struct smb_work *work);
+struct cifsd_work;
+int cifsd_tcp_write(struct cifsd_work *work);
 
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
@@ -164,42 +164,42 @@ int cifsd_tcp_init(void);
  * This is a hack. We will move status to a proper place once we land
  * a multi-sessions support.
  */
-static inline bool cifsd_tcp_good(struct smb_work *work)
+static inline bool cifsd_tcp_good(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_GOOD;
 }
 
-static inline bool cifsd_tcp_need_negotiate(struct smb_work *work)
+static inline bool cifsd_tcp_need_negotiate(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline bool cifsd_tcp_need_reconnect(struct smb_work *work)
+static inline bool cifsd_tcp_need_reconnect(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline bool cifsd_tcp_exiting(struct smb_work *work)
+static inline bool cifsd_tcp_exiting(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_EXITING;
 }
 
-static inline void cifsd_tcp_set_good(struct smb_work *work)
+static inline void cifsd_tcp_set_good(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_GOOD;
 }
 
-static inline void cifsd_tcp_set_need_negotiate(struct smb_work *work)
+static inline void cifsd_tcp_set_need_negotiate(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline void cifsd_tcp_set_need_reconnect(struct smb_work *work)
+static inline void cifsd_tcp_set_need_reconnect(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline void cifsd_tcp_set_exiting(struct smb_work *work)
+static inline void cifsd_tcp_set_exiting(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_EXITING;
 }

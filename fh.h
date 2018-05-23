@@ -87,7 +87,7 @@ struct smb_dirent {
 struct notification {
 	unsigned int mode;
 	struct list_head queuelist;
-	struct smb_work *work;
+	struct cifsd_work *work;
 };
 
 struct cifsd_lock {
@@ -100,7 +100,7 @@ struct cifsd_lock {
 	int zero_len;
 	unsigned long long start;
 	unsigned long long end;
-	struct smb_work *work;
+	struct cifsd_work *work;
 };
 
 struct stream {
@@ -239,7 +239,7 @@ void insert_mfp_hash(struct cifsd_mfile *mfp);
 void remove_mfp_hash(struct cifsd_mfile *mfp);
 struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp);
 struct cifsd_mfile *mfp_lookup_inode(struct inode *inode);
-struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
+struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid);
 struct cifsd_mfile *get_mfp(struct cifsd_file *fp);
 

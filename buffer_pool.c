@@ -108,12 +108,12 @@ void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 	return nptr;
 }
 
-struct smb_work *cifsd_alloc_work_struct(void)
+struct cifsd_work *cifsd_alloc_work_struct(void)
 {
 	return kmem_cache_zalloc(work_cache, GFP_KERNEL);
 }
 
-void cifsd_free_work_struct(struct smb_work *work)
+void cifsd_free_work_struct(struct cifsd_work *work)
 {
 	cifsd_free_response(RESPONSE_BUF(work));
 	cifsd_free_response(AUX_PAYLOAD(work));
@@ -140,7 +140,7 @@ void cifsd_destroy_buffer_pools(void)
 int cifsd_init_buffer_pools(void)
 {
 	work_cache = kmem_cache_create("cifsd_work_cache",
-					sizeof(struct smb_work), 0,
+					sizeof(struct cifsd_work), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
 	if (work_cache == NULL)
 		goto out;
