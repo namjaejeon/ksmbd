@@ -435,7 +435,7 @@ static int __init cifsd_server_init(void)
 	if (rc)
 		goto err3;
 
-	mfp_hash_init();
+	cifsd_inode_hash_init();
 
 #ifdef CONFIG_CIFSD_ACL
 	rc = init_cifsd_idmap();

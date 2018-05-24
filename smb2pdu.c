@@ -2517,7 +2517,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	f_parent_ci = mfp_lookup_inode(path.dentry->d_parent->d_inode);
+	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
 	if (f_parent_ci) {
 		if (f_parent_ci->m_flags & S_DEL_PENDING) {
 			atomic_dec(&f_parent_ci->m_count);
@@ -2647,7 +2647,7 @@ int smb2_open(struct cifsd_work *work)
 		rc = 0;
 	}
 
-	fp->f_ci = ci = get_mfp(fp);
+	fp->f_ci = ci = cifsd_inode_get(fp);
 	if (!ci) {
 		rc = -ENOMEM;
 		goto err_out;
@@ -3031,7 +3031,7 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
 		if (ci && atomic_dec_and_test(&ci->m_count))
-			mfp_free(ci);
+			cifsd_inode_free(ci);
 		if (volatile_id > 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);

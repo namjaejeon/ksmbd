@@ -232,16 +232,17 @@ insert_id_in_fidtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon,
 	unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
-void __init mfp_hash_init(void);
-int mfp_init(struct cifsd_inode *mfp, struct cifsd_file *fp);
-void mfp_free(struct cifsd_inode *mfp);
-void insert_mfp_hash(struct cifsd_inode *mfp);
-void remove_mfp_hash(struct cifsd_inode *mfp);
-struct cifsd_inode *mfp_lookup(struct cifsd_file *fp);
-struct cifsd_inode *mfp_lookup_inode(struct inode *inode);
 struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid);
-struct cifsd_inode *get_mfp(struct cifsd_file *fp);
+
+void __init cifsd_inode_hash_init(void);
+int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp);
+void cifsd_inode_free(struct cifsd_inode *ci);
+void cifsd_inode_hash(struct cifsd_inode *ci);
+void cifsd_inode_unhash(struct cifsd_inode *ci);
+struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
+struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
+struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */

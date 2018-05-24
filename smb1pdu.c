@@ -2503,7 +2503,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		}
 	}
 
-	f_parent_ci = mfp_lookup_inode(path.dentry->d_parent->d_inode);
+	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
 	if (f_parent_ci) {
 		if (f_parent_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
@@ -2708,7 +2708,7 @@ out:
 	if (err && fp) {
 		list_del(&fp->node);
 		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			mfp_free(fp->f_ci);
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -4166,7 +4166,7 @@ int query_path_info(struct cifsd_work *work)
 		struct cifsd_inode *ci;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		ci = mfp_lookup_inode(path.dentry->d_inode);
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
 		if (ci) {
 			if (ci->m_flags & S_DEL_PENDING) {
 				rc = -EBUSY;
@@ -4215,7 +4215,7 @@ int query_path_info(struct cifsd_work *work)
 		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		ci = mfp_lookup_inode(path.dentry->d_inode);
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
 		if (ci) {
 			delete_pending = ci->m_flags & S_DEL_PENDING;
 			atomic_dec(&ci->m_count);
@@ -4365,7 +4365,7 @@ int query_path_info(struct cifsd_work *work)
 		int uni_filename_len, total_count = 72;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
-		ci = mfp_lookup_inode(path.dentry->d_inode);
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
 		if (ci) {
 			delete_pending = ci->m_flags & S_DEL_PENDING;
 			atomic_dec(&ci->m_count);
@@ -5297,7 +5297,7 @@ out:
 	if (err && fp) {
 		list_del(&fp->node);
 		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			mfp_free(fp->f_ci);
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -8371,7 +8371,7 @@ int smb_open_andx(struct cifsd_work *work)
 		generic_fillattr(path.dentry->d_inode, &stat);
 	}
 
-	f_parent_ci = mfp_lookup_inode(path.dentry->d_parent->d_inode);
+	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
 	if (f_parent_ci) {
 		if (f_parent_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
@@ -8506,7 +8506,7 @@ out:
 	if (err && fp) {
 		list_del(&fp->node);
 		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			mfp_free(fp->f_ci);
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}

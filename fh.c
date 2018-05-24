@@ -549,7 +549,7 @@ static int close_fp(struct cifsd_file *fp)
 		}
 		spin_unlock(&ci->m_lock);
 
-		mfp_free(ci);
+		cifsd_inode_free(ci);
 	}
 
 	if (fp->persistent_id > 0) {
@@ -953,7 +953,7 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 		goto err_out2;
 	}
 
-	fp->f_ci = ci = get_mfp(fp);
+	fp->f_ci = ci = cifsd_inode_get(fp);
 	if (!ci)
 		goto err_out1;
 
@@ -972,7 +972,7 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 err_out:
 	list_del(&fp->node);
 	if (ci && atomic_dec_and_test(&ci->m_count))
-		mfp_free(ci);
+		cifsd_inode_free(ci);
 err_out1:
 	delete_id_from_fidtable(sess, id);
 err_out2:
@@ -1245,7 +1245,7 @@ int close_disconnected_handle(struct inode *inode)
 	bool unlinked = true;
 	LIST_HEAD(dispose);
 
-	ci = mfp_lookup_inode(inode);
+	ci = cifsd_inode_lookup_by_vfsinode(inode);
 	if (ci) {
 		struct cifsd_file *fp, *fptmp;
 
@@ -1284,7 +1284,7 @@ static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & inode_hash_mask;
 }
 
-static inline int check_stream_mfp(struct cifsd_inode *ci,
+static inline int cifsd_inode_check_stream(struct cifsd_inode *ci,
 	struct cifsd_file *fp)
 {
 	int ret = 0;
@@ -1298,7 +1298,7 @@ static inline int check_stream_mfp(struct cifsd_inode *ci,
 	return ret;
 }
 
-struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
+struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 {
 	struct inode *inode = FP_INODE(fp);
 	struct hlist_head *head = inode_hashtable +
@@ -1308,7 +1308,7 @@ struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 
 	hlist_for_each_entry(ci, head, m_hash) {
 		if (ci->m_inode == inode) {
-			ret = check_stream_mfp(ci, fp);
+			ret = cifsd_inode_check_stream(ci, fp);
 			if (ret)
 				continue;
 			atomic_inc(&ci->m_count);
@@ -1319,8 +1319,7 @@ struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 
 	return ret_ci;
 }
-
-struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
+struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 {
 	struct hlist_head *head = inode_hashtable +
 		inode_hash(inode->i_sb, inode->i_ino);
@@ -1339,7 +1338,7 @@ struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
 	return ret_ci;
 }
 
-void insert_mfp_hash(struct cifsd_inode *ci)
+void cifsd_inode_hash(struct cifsd_inode *ci)
 {
 	struct hlist_head *b = inode_hashtable +
 		inode_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
@@ -1347,12 +1346,12 @@ void insert_mfp_hash(struct cifsd_inode *ci)
 	hlist_add_head(&ci->m_hash, b);
 }
 
-void remove_mfp_hash(struct cifsd_inode *ci)
+void cifsd_inode_unhash(struct cifsd_inode *ci)
 {
 	hlist_del_init(&ci->m_hash);
 }
 
-int mfp_init(struct cifsd_inode *ci, struct cifsd_file *fp)
+int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 {
 	ci->m_inode = FP_INODE(fp);
 	atomic_set(&ci->m_count, 1);
@@ -1374,13 +1373,13 @@ int mfp_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	return 0;
 }
 
-struct cifsd_inode *get_mfp(struct cifsd_file *fp)
+struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 {
 	struct cifsd_inode *ci, *tmpci;
 	int rc;
 
 	spin_lock(&inode_hash_lock);
-	ci = mfp_lookup(fp);
+	ci = cifsd_inode_lookup(fp);
 	spin_unlock(&inode_hash_lock);
 	if (ci)
 		return ci;
@@ -1389,7 +1388,7 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 	if (!ci)
 		return NULL;
 
-	rc = mfp_init(ci, fp);
+	rc = cifsd_inode_init(ci, fp);
 	if (rc) {
 		cifsd_err("inode initialized failed\n");
 		kfree(ci);
@@ -1397,9 +1396,9 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 	}
 
 	spin_lock(&inode_hash_lock);
-	tmpci = mfp_lookup(fp);
+	tmpci = cifsd_inode_lookup(fp);
 	if (!tmpci) {
-		insert_mfp_hash(ci);
+		cifsd_inode_hash(ci);
 	} else {
 		kfree(ci);
 		ci = tmpci;
@@ -1408,15 +1407,15 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 	return ci;
 }
 
-void mfp_free(struct cifsd_inode *ci)
+void cifsd_inode_free(struct cifsd_inode *ci)
 {
-	remove_mfp_hash(ci);
+	cifsd_inode_unhash(ci);
 	if (ci->is_stream)
 		kfree(ci->stream_name);
 	kfree(ci);
 }
 
-void __init mfp_hash_init(void)
+void __init cifsd_inode_hash_init(void)
 {
 	unsigned int loop;
 	unsigned long numentries = 16384;
