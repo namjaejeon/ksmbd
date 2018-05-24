@@ -23,21 +23,22 @@
 
 #include "user.h"
 
-static unsigned short global_smb1_vuids;
-static DEFINE_SPINLOCK(global_vuids_lock);
-
 #define USERS_HASH_BITS		3
 static DEFINE_HASHTABLE(users_table, USERS_HASH_BITS);
 static DECLARE_RWSEM(users_table_lock);
+static DEFINE_IDA(smb1_vuids_ida);
 
-static unsigned short get_next_vuid(void)
+unsigned short alloc_smb1_vuid(void)
 {
-	unsigned short v;
+	int vuid;
 
-	spin_lock(&global_vuids_lock);
-	v = global_smb1_vuids++;
-	spin_unlock(&global_vuids_lock);
-	return v;
+	vuid = ida_simple_get(&smb1_vuids_ida, 1, 0xFFFE, GFP_KERNEL);
+	return vuid < 0 ? 0 : vuid;
+}
+
+void free_smb1_vuid(unsigned short uid)
+{
+	ida_simple_remove(&smb1_vuids_ida, uid);
 }
 
 static unsigned int um_hash(char *name)
@@ -124,7 +125,6 @@ static void __um_add_new_user(struct cifsd_user *user,
 	user->uid.val = uid.val;
 	user->gid.val = gid.val;
 
-	user->smb1_vuid = get_next_vuid();
 	atomic_set(&user->refcount, 1);
 
 	INIT_WORK(&user->free_work, deferred_user_free);

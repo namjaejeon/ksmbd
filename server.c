@@ -349,6 +349,8 @@ void smb_delete_session(struct cifsd_sess *sess)
 	destroy_fidtable(sess);
 	sess->conn->sess_count--;
 	kfree(sess->Preauth_HashValue);
+	if (!IS_SMB2(sess->conn))
+		free_smb1_vuid(sess->sess_id);
 	kfree(sess);
 }
 

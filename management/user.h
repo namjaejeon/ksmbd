@@ -22,6 +22,7 @@
 #include <linux/workqueue.h>
 #include <linux/hashtable.h>
 #include <linux/uidgid.h>
+#include <linux/idr.h>
 
 #define UF_GUEST_ACCOUNT	(1 << 0)
 #define UF_PENDING_REMOVAL	(1 << 1)
@@ -38,7 +39,6 @@ struct cifsd_user {
 	struct hlist_node	hlist;
 	struct work_struct	free_work;
 
-	unsigned short		smb1_vuid;
 	unsigned short		flags;
 };
 
@@ -66,12 +66,6 @@ static inline bool user_guest(struct cifsd_user *user)
 static inline void set_user_guest(struct cifsd_user *user)
 {
 	user->flags |= UF_GUEST_ACCOUNT;
-	user->smb1_vuid = 0;
-}
-
-static inline unsigned short user_smb1_vuid(struct cifsd_user *user)
-{
-	return user->smb1_vuid;
 }
 
 static inline char *user_passkey(struct cifsd_user *user)
@@ -94,6 +88,8 @@ static inline kgid_t user_gid(struct cifsd_user *user)
 	return user->gid;
 }
 
+unsigned short alloc_smb1_vuid(void);
+void free_smb1_vuid(unsigned short uid);
 struct cifsd_user *um_user_search(char *name);
 struct cifsd_user *um_user_search_guest(void);
 int um_add_new_user(char *name, char *pass, kuid_t uid, kgid_t gid);

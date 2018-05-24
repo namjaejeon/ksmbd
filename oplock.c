@@ -1279,7 +1279,7 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 	/* we know unicode, long file name and use nt error codes */
 	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
 		SMBFLG2_ERR_STATUS;
-	rsp_hdr->Uid = conn->vuid;
+	rsp_hdr->Uid = work->sess->sess_id;
 	rsp_hdr->Pid = 0xFFFF;
 	rsp_hdr->Mid = 0xFFFF;
 	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);

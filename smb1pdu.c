@@ -207,12 +207,6 @@ int init_smb_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->Mid = rcv_hdr->Mid;
 	rsp_hdr->WordCount = 0;
 
-	/* verfiy if TID and UID are correct */
-	if (cifsd_tcp_good(work) && rcv_hdr->Uid != conn->vuid &&
-			rcv_hdr->Command != SMB_COM_ECHO) {
-		cifsd_err("wrong Uid sent by client\n");
-		return -EINVAL;
-	}
 	/* We can do the above test because we have set maxVCN as 1 */
 	rsp_hdr->Uid = rcv_hdr->Uid;
 	rsp_hdr->Tid = rcv_hdr->Tid;
@@ -361,7 +355,7 @@ int smb_check_user_session(struct cifsd_work *work)
 	rc = -EINVAL;
 	list_for_each(tmp, &conn->cifsd_sess) {
 		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
-		if (user_smb1_vuid(sess->user) == req_hdr->Uid &&
+		if (sess->sess_id == req_hdr->Uid &&
 				sess->valid) {
 			work->sess = sess;
 			rc = 1;
@@ -963,10 +957,6 @@ int build_sess_rsp_noextsec(struct cifsd_sess *sess,
 	}
 
 no_password_check:
-	rsp->hdr.Uid = user_smb1_vuid(sess->user);
-	conn->vuid = sess->sess_id = user_smb1_vuid(sess->user);
-	cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
-			sess, sess->sess_id, rsp->hdr.Uid);
 	conn->sess_count++;
 
 	/* Build response. We don't use extended security (yet), so wct is 3 */
@@ -1121,11 +1111,6 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 			goto out_err;
 		}
 
-		rsp->hdr.Uid = user_smb1_vuid(sess->user);
-		conn->vuid = sess->sess_id = user_smb1_vuid(sess->user);
-		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
-				sess, sess->sess_id, rsp->hdr.Uid);
-
 		if (user_guest(sess->user))
 			goto no_password_check;
 
@@ -1184,7 +1169,8 @@ int smb_session_setup_andx(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_sess *sess = NULL;
-	int rc, cap;
+	int rc = 0, cap;
+	unsigned short uid;
 
 	SESSION_SETUP_ANDX *pSMB = (SESSION_SETUP_ANDX *)REQUEST_BUF(work);
 	SESSION_SETUP_ANDX *rsp = (SESSION_SETUP_ANDX *)RESPONSE_BUF(work);
@@ -1199,11 +1185,15 @@ int smb_session_setup_andx(struct cifsd_work *work)
 		return 0;
 	}
 
-	if (!list_empty(&conn->cifsd_sess)) {
-		sess = list_first_entry(&conn->cifsd_sess, struct cifsd_sess,
-				cifsd_ses_list);
+	uid = le16_to_cpu(pSMB->req.hdr.Uid);
+	if (uid != 0) {
+		sess = lookup_session_on_server(conn, uid);
+		if (!sess) {
+			rc = -ENOENT;
+			goto out_err;
+		}
 		cifsd_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
-			sess, sess->sess_id, pSMB->req.hdr.Uid);
+			sess, sess->sess_id, uid);
 	} else {
 		sess = kzalloc(sizeof(struct cifsd_sess), GFP_KERNEL);
 		if (sess == NULL) {
@@ -1219,6 +1209,16 @@ int smb_session_setup_andx(struct cifsd_work *work)
 		sess->tcon_count = 0;
 		init_waitqueue_head(&sess->pipe_q);
 		sess->ev_state = NETLINK_REQ_INIT;
+
+		uid = alloc_smb1_vuid();
+		if (!uid) {
+			cifsd_err("get_vuid failed : %d\n", uid);
+			goto out_err;
+		}
+
+		rsp->resp.hdr.Uid = sess->sess_id = uid;
+		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
+				sess, sess->sess_id, uid);
 	}
 
 	if (cap & CAP_EXTENDED_SECURITY) {
@@ -1247,6 +1247,8 @@ out_err:
 		sess->valid = 0;
 		list_del(&sess->cifsd_ses_list);
 		list_del(&sess->cifsd_ses_global_list);
+		if (uid > 0)
+			free_smb1_vuid(uid);
 		kfree(sess);
 		work->sess = NULL;
 	}

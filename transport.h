@@ -132,7 +132,6 @@ struct cifsd_tcp_conn {
 	bool				sign;
 	bool				need_neg;
 	bool				use_spnego:1;
-	__le16				vuid;
 	__u16				cli_sec_mode;
 	__u16				srv_sec_mode;
 	/* dialect index that server chose */
