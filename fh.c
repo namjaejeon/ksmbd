@@ -1234,10 +1234,10 @@ static void dispose_fp_list(struct list_head *head)
 	}
 }
 
-static unsigned int mfp_hash_mask __read_mostly;
-static unsigned int mfp_hash_shift __read_mostly;
-static struct hlist_head *mfp_hashtable __read_mostly;
-static __cacheline_aligned_in_smp DEFINE_SPINLOCK(mfp_hash_lock);
+static unsigned int inode_hash_mask __read_mostly;
+static unsigned int inode_hash_shift __read_mostly;
+static struct hlist_head *inode_hashtable __read_mostly;
+static __cacheline_aligned_in_smp DEFINE_SPINLOCK(inode_hash_lock);
 
 int close_disconnected_handle(struct inode *inode)
 {
@@ -1274,14 +1274,14 @@ int close_disconnected_handle(struct inode *inode)
 	return unlinked;
 }
 
-static unsigned long mfp_hash(struct super_block *sb, unsigned long hashval)
+static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
 {
 	unsigned long tmp;
 
 	tmp = (hashval * (unsigned long)sb) ^ (GOLDEN_RATIO_PRIME + hashval) /
 		L1_CACHE_BYTES;
-	tmp = tmp ^ ((tmp ^ GOLDEN_RATIO_PRIME) >> mfp_hash_shift);
-	return tmp & mfp_hash_mask;
+	tmp = tmp ^ ((tmp ^ GOLDEN_RATIO_PRIME) >> inode_hash_shift);
+	return tmp & inode_hash_mask;
 }
 
 static inline int check_stream_mfp(struct cifsd_inode *ci,
@@ -1301,8 +1301,8 @@ static inline int check_stream_mfp(struct cifsd_inode *ci,
 struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 {
 	struct inode *inode = FP_INODE(fp);
-	struct hlist_head *head = mfp_hashtable +
-		mfp_hash(inode->i_sb, inode->i_ino);
+	struct hlist_head *head = inode_hashtable +
+		inode_hash(inode->i_sb, inode->i_ino);
 	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
 	int ret;
 
@@ -1322,11 +1322,11 @@ struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 
 struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
 {
-	struct hlist_head *head = mfp_hashtable +
-		mfp_hash(inode->i_sb, inode->i_ino);
+	struct hlist_head *head = inode_hashtable +
+		inode_hash(inode->i_sb, inode->i_ino);
 	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
 
-	spin_lock(&mfp_hash_lock);
+	spin_lock(&inode_hash_lock);
 	hlist_for_each_entry(ci, head, m_hash) {
 		if (ci->m_inode == inode) {
 			atomic_inc(&ci->m_count);
@@ -1334,15 +1334,15 @@ struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
 			break;
 		}
 	}
-	spin_unlock(&mfp_hash_lock);
+	spin_unlock(&inode_hash_lock);
 
 	return ret_ci;
 }
 
 void insert_mfp_hash(struct cifsd_inode *ci)
 {
-	struct hlist_head *b = mfp_hashtable +
-		mfp_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
+	struct hlist_head *b = inode_hashtable +
+		inode_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
 
 	hlist_add_head(&ci->m_hash, b);
 }
@@ -1379,9 +1379,9 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 	struct cifsd_inode *ci, *tmpci;
 	int rc;
 
-	spin_lock(&mfp_hash_lock);
+	spin_lock(&inode_hash_lock);
 	ci = mfp_lookup(fp);
-	spin_unlock(&mfp_hash_lock);
+	spin_unlock(&inode_hash_lock);
 	if (ci)
 		return ci;
 
@@ -1396,7 +1396,7 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 		return NULL;
 	}
 
-	spin_lock(&mfp_hash_lock);
+	spin_lock(&inode_hash_lock);
 	tmpci = mfp_lookup(fp);
 	if (!tmpci) {
 		insert_mfp_hash(ci);
@@ -1404,7 +1404,7 @@ struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 		kfree(ci);
 		ci = tmpci;
 	}
-	spin_unlock(&mfp_hash_lock);
+	spin_unlock(&inode_hash_lock);
 	return ci;
 }
 
@@ -1423,14 +1423,14 @@ void __init mfp_hash_init(void)
 	unsigned long bucketsize = sizeof(struct hlist_head);
 	unsigned long size;
 
-	mfp_hash_shift = ilog2(numentries);
-	mfp_hash_mask = (1 << mfp_hash_shift) - 1;
+	inode_hash_shift = ilog2(numentries);
+	inode_hash_mask = (1 << inode_hash_shift) - 1;
 
-	size = bucketsize << mfp_hash_shift;
+	size = bucketsize << inode_hash_shift;
 
 	/* init master fp hash table */
-	mfp_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
+	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
 
-	for (loop = 0; loop < (1U << mfp_hash_shift); loop++)
-		INIT_HLIST_HEAD(&mfp_hashtable[loop]);
+	for (loop = 0; loop < (1U << inode_hash_shift); loop++)
+		INIT_HLIST_HEAD(&inode_hashtable[loop]);
 }
