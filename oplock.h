@@ -78,6 +78,7 @@ struct oplock_info {
 	uint64_t                fid;
 	__u16                   Tid;
 	atomic_t		breaking_cnt;
+	atomic_t		refcount;
 	bool			is_lease;
 	struct lease		*o_lease;
 	struct list_head        interim_list;
@@ -85,8 +86,8 @@ struct oplock_info {
 	struct list_head        lease_entry;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	wait_queue_head_t oplock_brk; /* oplock breaking wait */
-	wait_queue_head_t	op_end_wq;
 	bool			open_trunc:1;	/* truncate on open */
+	struct rcu_head		rcu_head;
 };
 
 struct lease_table {
@@ -123,6 +124,8 @@ int opinfo_write_to_none(struct oplock_info *opinfo);
 int opinfo_read_to_none(struct oplock_info *opinfo);
 void close_id_del_oplock(struct cifsd_file *fp);
 void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp);
+struct oplock_info *opinfo_get(struct cifsd_file *fp);
+void opinfo_put(struct oplock_info *opinfo);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */

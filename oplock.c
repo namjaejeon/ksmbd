@@ -75,9 +75,10 @@ static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 	opinfo->is_smb2 = IS_SMB2(sess->conn);
 	INIT_LIST_HEAD(&opinfo->op_entry);
 	INIT_LIST_HEAD(&opinfo->interim_list);
-	init_waitqueue_head(&opinfo->op_end_wq);
 	init_waitqueue_head(&opinfo->oplock_q);
 	init_waitqueue_head(&opinfo->oplock_brk);
+	atomic_set(&opinfo->refcount, 1);
+	atomic_set(&opinfo->breaking_cnt, 0);
 
 	return opinfo;
 }
@@ -111,16 +112,75 @@ static void free_lease(struct oplock_info *opinfo)
 	kfree(lease);
 }
 
-static void free_opinfo(struct oplock_info *opinfo, spinlock_t *m_lock)
+static void free_opinfo(struct oplock_info *opinfo)
 {
-	mutex_lock(&lease_list_lock);
-	spin_lock(m_lock);
-	list_del(&opinfo->op_entry);
-	spin_unlock(m_lock);
 	if (opinfo->is_lease)
 		free_lease(opinfo);
 	kfree(opinfo);
-	mutex_unlock(&lease_list_lock);
+}
+
+static inline void opinfo_free_rcu(struct rcu_head *rcu_head)
+{
+	struct oplock_info *opinfo;
+
+	opinfo = container_of(rcu_head, struct oplock_info, rcu_head);
+	free_opinfo(opinfo);
+}
+
+struct oplock_info *opinfo_get(struct cifsd_file *fp)
+{
+	struct oplock_info *opinfo;
+
+	rcu_read_lock();
+	opinfo = rcu_dereference(fp->f_opinfo);
+	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
+		opinfo = NULL;
+	rcu_read_unlock();
+
+	return opinfo;
+}
+
+struct oplock_info *opinfo_get_list(struct cifsd_mfile *mfp)
+{
+	struct oplock_info *opinfo;
+
+	if (list_empty(&mfp->m_op_list))
+		return NULL;
+
+	rcu_read_lock();
+	opinfo = list_first_or_null_rcu(&mfp->m_op_list, struct oplock_info,
+		op_entry);
+	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
+		opinfo = NULL;
+	rcu_read_unlock();
+
+	return opinfo;
+}
+
+void opinfo_put(struct oplock_info *opinfo)
+{
+	if (!atomic_dec_and_test(&opinfo->refcount))
+		return;
+
+	call_rcu(&opinfo->rcu_head, opinfo_free_rcu);
+}
+
+void opinfo_add(struct oplock_info *opinfo)
+{
+	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+
+	spin_lock(&mfp->m_lock);
+	list_add_rcu(&opinfo->op_entry, &mfp->m_op_list);
+	spin_unlock(&mfp->m_lock);
+}
+
+void opinfo_del(struct oplock_info *opinfo)
+{
+	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+
+	spin_lock(&mfp->m_lock);
+	list_del_rcu(&opinfo->op_entry);
+	spin_unlock(&mfp->m_lock);
 }
 
 /**
@@ -322,6 +382,8 @@ void close_id_del_oplock(struct cifsd_file *fp)
 	if (!opinfo)
 		return;
 
+	opinfo_del(opinfo);
+
 	fp->f_opinfo = NULL;
 	if (opinfo->op_state == OPLOCK_ACK_WAIT) {
 		opinfo->op_state = OPLOCK_CLOSING;
@@ -330,14 +392,10 @@ void close_id_del_oplock(struct cifsd_file *fp)
 			atomic_set(&opinfo->breaking_cnt, 0);
 			wake_up_interruptible(&opinfo->oplock_brk);
 		}
-		wait_event_timeout(opinfo->op_end_wq,
-				opinfo->op_state == OPLOCK_STATE_NONE,
-				OPLOCK_WAIT_TIME);
-	} else {
-		atomic_dec(&fp->f_mfp->op_count);
 	}
 
-	free_opinfo(opinfo, &fp->f_mfp->m_lock);
+	atomic_dec(&fp->f_mfp->op_count);
+	opinfo_put(opinfo);
 }
 
 
@@ -872,8 +930,6 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
 	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
 		brk_opinfo->op_state = OPLOCK_STATE_NONE;
-		atomic_dec(&(brk_opinfo->o_fp->f_mfp->op_count));
-		wake_up_interruptible(&brk_opinfo->op_end_wq);
 		err = -ENOENT;
 	}
 
@@ -895,7 +951,7 @@ void destroy_lease_table(struct cifsd_tcp_conn *conn)
 					SMB2_CLIENT_GUID_SIZE))
 			continue;
 		if (list_empty(&lb->lease_list)) {
-			list_del(&lb->l_entry);
+			list_del_rcu(&lb->l_entry);
 			kfree(lb);
 		}
 	}
@@ -1018,6 +1074,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_mfile *mfp = fp->f_mfp;
+	int prev_op_has_lease = 0, prev_op_state = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
@@ -1063,25 +1120,29 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 		}
 	}
 #endif
-	spin_lock(&mfp->m_lock);
-	prev_opinfo = list_first_entry(&mfp->m_op_list, struct oplock_info,
-		op_entry);
-	spin_unlock(&mfp->m_lock);
+	prev_opinfo = opinfo_get_list(mfp);
 	if (!prev_opinfo)
 		goto set_lev;
+	prev_op_has_lease = prev_opinfo->is_lease;
+	if (prev_op_has_lease)
+		prev_op_state = prev_opinfo->o_lease->state;
 
 	if (share_ret < 0 &&
 		(prev_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		err = share_ret;
+		opinfo_put(prev_opinfo);
 		goto err_out;
 	}
 
 	if ((prev_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH) &&
-		(prev_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE))
+		(prev_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+		opinfo_put(prev_opinfo);
 		goto op_break_not_needed;
+	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
 	err = smb_send_oplock_break_notification(prev_opinfo);
+	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
 		goto set_lev;
 	/* Check all oplock was freed by close */
@@ -1098,11 +1159,11 @@ op_break_not_needed:
 		req_op_level = SMB2_OPLOCK_LEVEL_II;
 
 	/* grant fixed oplock on stacked locking between lease and oplock */
-	if (prev_opinfo->is_lease && !lctx)
-		if (prev_opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING)
+	if (prev_op_has_lease && !lctx)
+		if (prev_op_state & SMB2_LEASE_HANDLE_CACHING)
 			req_op_level = SMB2_OPLOCK_LEVEL_NONE;
 
-	if (!prev_opinfo->is_lease && lctx) {
+	if (!prev_op_has_lease && lctx) {
 		req_op_level = SMB2_OPLOCK_LEVEL_II;
 		lctx->req_state = SMB2_LEASE_READ_CACHING;
 	}
@@ -1114,15 +1175,13 @@ out:
 	fp->f_opinfo = opinfo;
 	opinfo->o_fp = fp;
 	atomic_inc(&mfp->op_count);
-	spin_lock(&mfp->m_lock);
-	list_add(&opinfo->op_entry, &mfp->m_op_list);
-	spin_unlock(&mfp->m_lock);
-	if (opinfo->is_lease == 1)
+	opinfo_add(opinfo);
+	if (opinfo->is_lease)
 		add_lease_global_list(opinfo);
 
 	return 0;
 err_out:
-	free_opinfo(opinfo, &mfp->m_lock);
+	free_opinfo(opinfo);
 	return err;
 }
 
@@ -1135,26 +1194,21 @@ err_out:
 int smb_break_all_write_oplock(struct cifsd_work *work,
 	struct cifsd_file *fp, int is_trunc)
 {
-	struct cifsd_mfile *mfp;
 	struct oplock_info *brk_opinfo;
 
-	mfp = fp->f_mfp;
-	spin_lock(&mfp->m_lock);
-	if (list_empty(&mfp->m_op_list)) {
-		spin_unlock(&mfp->m_lock);
+	brk_opinfo = opinfo_get_list(fp->f_mfp);
+	if (!brk_opinfo)
 		return 0;
-	}
-	brk_opinfo = list_first_entry(&mfp->m_op_list, struct oplock_info,
-		op_entry);
-	spin_unlock(&mfp->m_lock);
-	if (!brk_opinfo || (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
-			brk_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+	if (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
+		brk_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE) {
+		opinfo_put(brk_opinfo);
 		return 0;
 	}
 
 	brk_opinfo->open_trunc = is_trunc;
 	list_add(&work->interim_entry, &brk_opinfo->interim_list);
 	smb_send_oplock_break_notification(brk_opinfo);
+	opinfo_put(brk_opinfo);
 
 	return 1;
 }
@@ -1169,14 +1223,18 @@ int smb_break_all_write_oplock(struct cifsd_work *work,
 void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
-	struct oplock_info *op, *brk_op, *optmp;
+	struct oplock_info *op, *brk_op;
 	struct cifsd_mfile *mfp;
 
 	mfp = fp->f_mfp;
 	op = fp->f_opinfo;
 
-	spin_lock(&mfp->m_lock);
-	list_for_each_entry_safe(brk_op, optmp, &mfp->m_op_list, op_entry) {
+	rcu_read_lock();
+	list_for_each_entry_rcu(brk_op, &mfp->m_op_list, op_entry) {
+		if (!atomic_inc_not_zero(&brk_op->refcount)) {
+			continue;
+		}
+
 		if (brk_op->is_smb2) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 			if (brk_op->is_lease && (brk_op->o_lease->state &
@@ -1217,11 +1275,12 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 			continue;
 #endif
 		brk_op->open_trunc = is_trunc;
-		spin_unlock(&mfp->m_lock);
+		rcu_read_unlock();
 		smb_send_oplock_break_notification(brk_op);
-		spin_lock(&mfp->m_lock);
+		opinfo_put(brk_op);
+		rcu_read_lock();
 	}
-	spin_unlock(&mfp->m_lock);
+	rcu_read_unlock();
 }
 
 /**

@@ -1456,7 +1456,6 @@ int lock_oplock_release(struct cifsd_file *fp, int type, int oplock_level)
 
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&opinfo->oplock_q);
-	wake_up(&opinfo->op_end_wq);
 
 	return 0;
 }

@@ -6628,18 +6628,19 @@ int smb20_oplock_break(struct cifsd_work *work)
 	cifsd_debug("SMB2_OPLOCK_BREAK v_id %llu, p_id %llu request oplock level %d\n",
 			volatile_id, persistent_id, req_oplevel);
 
-	mutex_lock(&lease_list_lock);
 	fp = get_fp(work, volatile_id, persistent_id);
 	if (!fp) {
 		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
-		goto err_out;
+		smb2_set_err_rsp(work);
+		return 0;
 	}
 
-	opinfo = fp->f_opinfo;
+	opinfo = opinfo_get(fp);
 	if (opinfo == NULL) {
 		cifsd_err("unexpected null oplock_info\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
-		goto err_out;
+		smb2_set_err_rsp(work);
+		return 0;
 	}
 
 	if (opinfo->level == SMB2_OPLOCK_LEVEL_NONE) {
@@ -6707,8 +6708,8 @@ int smb20_oplock_break(struct cifsd_work *work)
 		rsp->hdr.Status = err;
 		goto err_out;
 	}
-	mutex_unlock(&lease_list_lock);
 
+	opinfo_put(opinfo);
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
 	rsp->Reserved = 0;
@@ -6719,7 +6720,7 @@ int smb20_oplock_break(struct cifsd_work *work)
 	return 0;
 
 err_out:
-	mutex_unlock(&lease_list_lock);
+	opinfo_put(opinfo);
 	smb2_set_err_rsp(work);
 	return 0;
 }
