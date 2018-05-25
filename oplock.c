@@ -140,7 +140,7 @@ struct oplock_info *opinfo_get(struct cifsd_file *fp)
 	return opinfo;
 }
 
-struct oplock_info *opinfo_get_list(struct cifsd_mfile *mfp)
+struct oplock_info *opinfo_get_list(struct cifsd_inode *mfp)
 {
 	struct oplock_info *opinfo;
 
@@ -167,7 +167,7 @@ void opinfo_put(struct oplock_info *opinfo)
 
 void opinfo_add(struct oplock_info *opinfo)
 {
-	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *mfp = opinfo->o_fp->f_mfp;
 
 	spin_lock(&mfp->m_lock);
 	list_add_rcu(&opinfo->op_entry, &mfp->m_op_list);
@@ -176,7 +176,7 @@ void opinfo_add(struct oplock_info *opinfo)
 
 void opinfo_del(struct oplock_info *opinfo)
 {
-	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *mfp = opinfo->o_fp->f_mfp;
 
 	spin_lock(&mfp->m_lock);
 	list_del_rcu(&opinfo->op_entry);
@@ -698,7 +698,7 @@ static inline int compare_guid_key(struct oplock_info *opinfo,
  *
  * Return:      oplock(lease) object on success, otherwise NULL
  */
-struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
+struct oplock_info *same_client_has_lease(struct cifsd_inode *mfp,
 	char *client_guid, struct lease_ctx_info *lctx)
 {
 	int ret;
@@ -958,7 +958,7 @@ void destroy_lease_table(struct cifsd_tcp_conn *conn)
 	mutex_unlock(&lease_list_lock);
 }
 
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
+int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *mfp,
 		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -1073,7 +1073,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
-	struct cifsd_mfile *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_mfp;
 	int prev_op_has_lease = 0, prev_op_state = 0;
 
 	/* not support directory lease */
@@ -1224,7 +1224,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *mfp;
 
 	mfp = fp->f_mfp;
 	op = fp->f_opinfo;

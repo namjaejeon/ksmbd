@@ -611,7 +611,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 struct cifsd_file *find_fp_using_inode(struct inode *inode)
 {
 	struct cifsd_file *lfp;
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *mfp;
 	struct list_head *cur;
 
 	mfp = mfp_lookup_inode(inode);

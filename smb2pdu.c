@@ -2138,7 +2138,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifsd_share *share;
-	struct cifsd_mfile *mfp = NULL, *parent_mfp;
+	struct cifsd_inode *mfp = NULL, *parent_mfp;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;

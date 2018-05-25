@@ -447,7 +447,7 @@ static void inherit_delete_pending(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_mfile *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_mfp;
 
 	fp->delete_on_close = 0;
 
@@ -465,7 +465,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_mfile *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_mfp;
 
 	spin_lock(&mfp->m_lock);
 	list_for_each_prev(cur, &mfp->m_fp_list) {
@@ -481,7 +481,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 static int close_fp(struct cifsd_file *fp)
 {
 	struct cifsd_sess *sess = fp->sess;
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *mfp;
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
@@ -929,7 +929,7 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 	int id, err = 0;
 	struct cifsd_file *fp = NULL;
 	uint64_t sess_id;
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *mfp;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -1241,7 +1241,7 @@ static __cacheline_aligned_in_smp DEFINE_SPINLOCK(mfp_hash_lock);
 
 int close_disconnected_handle(struct inode *inode)
 {
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *mfp;
 	bool unlinked = true;
 	LIST_HEAD(dispose);
 
@@ -1284,7 +1284,7 @@ static unsigned long mfp_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & mfp_hash_mask;
 }
 
-static inline int check_stream_mfp(struct cifsd_mfile *mfp,
+static inline int check_stream_mfp(struct cifsd_inode *mfp,
 	struct cifsd_file *fp)
 {
 	int ret = 0;
@@ -1298,12 +1298,12 @@ static inline int check_stream_mfp(struct cifsd_mfile *mfp,
 	return ret;
 }
 
-struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp)
+struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 {
 	struct inode *inode = FP_INODE(fp);
 	struct hlist_head *head = mfp_hashtable +
 		mfp_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_mfile *mfp = NULL, *ret_mfp = NULL;
+	struct cifsd_inode *mfp = NULL, *ret_mfp = NULL;
 	int ret;
 
 	hlist_for_each_entry(mfp, head, m_hash) {
@@ -1320,11 +1320,11 @@ struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp)
 	return ret_mfp;
 }
 
-struct cifsd_mfile *mfp_lookup_inode(struct inode *inode)
+struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
 {
 	struct hlist_head *head = mfp_hashtable +
 		mfp_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_mfile *mfp = NULL, *ret_mfp = NULL;
+	struct cifsd_inode *mfp = NULL, *ret_mfp = NULL;
 
 	spin_lock(&mfp_hash_lock);
 	hlist_for_each_entry(mfp, head, m_hash) {
@@ -1339,7 +1339,7 @@ struct cifsd_mfile *mfp_lookup_inode(struct inode *inode)
 	return ret_mfp;
 }
 
-void insert_mfp_hash(struct cifsd_mfile *mfp)
+void insert_mfp_hash(struct cifsd_inode *mfp)
 {
 	struct hlist_head *b = mfp_hashtable +
 		mfp_hash(mfp->m_inode->i_sb, mfp->m_inode->i_ino);
@@ -1347,12 +1347,12 @@ void insert_mfp_hash(struct cifsd_mfile *mfp)
 	hlist_add_head(&mfp->m_hash, b);
 }
 
-void remove_mfp_hash(struct cifsd_mfile *mfp)
+void remove_mfp_hash(struct cifsd_inode *mfp)
 {
 	hlist_del_init(&mfp->m_hash);
 }
 
-int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
+int mfp_init(struct cifsd_inode *mfp, struct cifsd_file *fp)
 {
 	mfp->m_inode = FP_INODE(fp);
 	atomic_set(&mfp->m_count, 1);
@@ -1374,9 +1374,9 @@ int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp)
 	return 0;
 }
 
-struct cifsd_mfile *get_mfp(struct cifsd_file *fp)
+struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 {
-	struct cifsd_mfile *mfp, *tmfp;
+	struct cifsd_inode *mfp, *tmfp;
 	int rc;
 
 	spin_lock(&mfp_hash_lock);
@@ -1385,7 +1385,7 @@ struct cifsd_mfile *get_mfp(struct cifsd_file *fp)
 	if (mfp)
 		return mfp;
 
-	mfp = kmalloc(sizeof(struct cifsd_mfile), GFP_KERNEL);
+	mfp = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
 	if (!mfp)
 		return NULL;
 
@@ -1408,7 +1408,7 @@ struct cifsd_mfile *get_mfp(struct cifsd_file *fp)
 	return mfp;
 }
 
-void mfp_free(struct cifsd_mfile *mfp)
+void mfp_free(struct cifsd_inode *mfp)
 {
 	remove_mfp_hash(mfp);
 	if (mfp->is_stream)
