@@ -447,48 +447,48 @@ static void inherit_delete_pending(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_inode *mfp = fp->f_ci;
+	struct cifsd_inode *ci = fp->f_ci;
 
 	fp->delete_on_close = 0;
 
-	spin_lock(&mfp->m_lock);
-	list_for_each_prev(cur, &mfp->m_fp_list) {
+	spin_lock(&ci->m_lock);
+	list_for_each_prev(cur, &ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (fp != prev_fp && (fp->sess == prev_fp->sess ||
-				mfp->m_flags & S_DEL_ON_CLS))
-			mfp->m_flags |= S_DEL_PENDING;
+				ci->m_flags & S_DEL_ON_CLS))
+			ci->m_flags |= S_DEL_PENDING;
 	}
-	spin_unlock(&mfp->m_lock);
+	spin_unlock(&ci->m_lock);
 }
 
 static void invalidate_delete_on_close(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_inode *mfp = fp->f_ci;
+	struct cifsd_inode *ci = fp->f_ci;
 
-	spin_lock(&mfp->m_lock);
-	list_for_each_prev(cur, &mfp->m_fp_list) {
+	spin_lock(&ci->m_lock);
+	list_for_each_prev(cur, &ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (fp == prev_fp)
 			break;
 		if (fp->sess == prev_fp->sess)
 			prev_fp->delete_on_close = 0;
 	}
-	spin_unlock(&mfp->m_lock);
+	spin_unlock(&ci->m_lock);
 }
 
 static int close_fp(struct cifsd_file *fp)
 {
 	struct cifsd_sess *sess = fp->sess;
-	struct cifsd_inode *mfp;
+	struct cifsd_inode *ci;
 	struct file *filp;
 	struct dentry *dir, *dentry;
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	mfp = fp->f_ci;
-	if (atomic_read(&mfp->m_count) >= 2) {
+	ci = fp->f_ci;
+	if (atomic_read(&ci->m_count) >= 2) {
 		if (fp->delete_on_close)
 			inherit_delete_pending(fp);
 		else
@@ -527,8 +527,8 @@ static int close_fp(struct cifsd_file *fp)
 		}
 	}
 
-	if (fp->is_stream && (mfp->m_flags & S_DEL_ON_CLS_STREAM)) {
-		mfp->m_flags &= ~S_DEL_ON_CLS_STREAM;
+	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
+		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
 		err = smb_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n",
@@ -536,20 +536,20 @@ static int close_fp(struct cifsd_file *fp)
 
 	}
 
-	if (atomic_dec_and_test(&mfp->m_count)) {
-		spin_lock(&mfp->m_lock);
-		if ((mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) ||
+	if (atomic_dec_and_test(&ci->m_count)) {
+		spin_lock(&ci->m_lock);
+		if ((ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) ||
 				fp->delete_on_close) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
-			mfp->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
-			spin_unlock(&mfp->m_lock);
+			ci->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
+			spin_unlock(&ci->m_lock);
 			smb_vfs_unlink(dir, dentry);
-			spin_lock(&mfp->m_lock);
+			spin_lock(&ci->m_lock);
 		}
-		spin_unlock(&mfp->m_lock);
+		spin_unlock(&ci->m_lock);
 
-		mfp_free(mfp);
+		mfp_free(ci);
 	}
 
 	if (fp->persistent_id > 0) {
@@ -929,7 +929,7 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 	int id, err = 0;
 	struct cifsd_file *fp = NULL;
 	uint64_t sess_id;
-	struct cifsd_inode *mfp;
+	struct cifsd_inode *ci;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -953,8 +953,8 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 		goto err_out2;
 	}
 
-	fp->f_ci = mfp = get_mfp(fp);
-	if (!mfp)
+	fp->f_ci = ci = get_mfp(fp);
+	if (!ci)
 		goto err_out1;
 
 	if (flags & O_TRUNC) {
@@ -971,8 +971,8 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 
 err_out:
 	list_del(&fp->node);
-	if (mfp && atomic_dec_and_test(&mfp->m_count))
-		mfp_free(mfp);
+	if (ci && atomic_dec_and_test(&ci->m_count))
+		mfp_free(ci);
 err_out1:
 	delete_id_from_fidtable(sess, id);
 err_out2:
@@ -1241,18 +1241,18 @@ static __cacheline_aligned_in_smp DEFINE_SPINLOCK(mfp_hash_lock);
 
 int close_disconnected_handle(struct inode *inode)
 {
-	struct cifsd_inode *mfp;
+	struct cifsd_inode *ci;
 	bool unlinked = true;
 	LIST_HEAD(dispose);
 
-	mfp = mfp_lookup_inode(inode);
-	if (mfp) {
+	ci = mfp_lookup_inode(inode);
+	if (ci) {
 		struct cifsd_file *fp, *fptmp;
 
-		if (mfp->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
+		if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
 			unlinked = false;
-		spin_lock(&mfp->m_lock);
-		list_for_each_entry_safe(fp, fptmp, &mfp->m_fp_list, node) {
+		spin_lock(&ci->m_lock);
+		list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
 			if (!fp->conn) {
 				spin_lock(&fp->f_lock);
 				if (fp->f_state == FP_FREEING) {
@@ -1265,8 +1265,8 @@ int close_disconnected_handle(struct inode *inode)
 				list_add(&fp->node, &dispose);
 			}
 		}
-		spin_unlock(&mfp->m_lock);
-		atomic_dec(&mfp->m_count);
+		spin_unlock(&ci->m_lock);
+		atomic_dec(&ci->m_count);
 	}
 
 	dispose_fp_list(&dispose);
@@ -1284,16 +1284,16 @@ static unsigned long mfp_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & mfp_hash_mask;
 }
 
-static inline int check_stream_mfp(struct cifsd_inode *mfp,
+static inline int check_stream_mfp(struct cifsd_inode *ci,
 	struct cifsd_file *fp)
 {
 	int ret = 0;
 
-	if (mfp->is_stream != fp->is_stream)
+	if (ci->is_stream != fp->is_stream)
 		return 1;
 
-	if (mfp->is_stream && fp->is_stream)
-		ret = strncasecmp(mfp->stream_name, fp->stream.name,
+	if (ci->is_stream && fp->is_stream)
+		ret = strncasecmp(ci->stream_name, fp->stream.name,
 			fp->stream.size);
 	return ret;
 }
@@ -1303,72 +1303,72 @@ struct cifsd_inode *mfp_lookup(struct cifsd_file *fp)
 	struct inode *inode = FP_INODE(fp);
 	struct hlist_head *head = mfp_hashtable +
 		mfp_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_inode *mfp = NULL, *ret_mfp = NULL;
+	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
 	int ret;
 
-	hlist_for_each_entry(mfp, head, m_hash) {
-		if (mfp->m_inode == inode) {
-			ret = check_stream_mfp(mfp, fp);
+	hlist_for_each_entry(ci, head, m_hash) {
+		if (ci->m_inode == inode) {
+			ret = check_stream_mfp(ci, fp);
 			if (ret)
 				continue;
-			atomic_inc(&mfp->m_count);
-			ret_mfp = mfp;
+			atomic_inc(&ci->m_count);
+			ret_ci = ci;
 			break;
 		}
 	}
 
-	return ret_mfp;
+	return ret_ci;
 }
 
 struct cifsd_inode *mfp_lookup_inode(struct inode *inode)
 {
 	struct hlist_head *head = mfp_hashtable +
 		mfp_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_inode *mfp = NULL, *ret_mfp = NULL;
+	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
 
 	spin_lock(&mfp_hash_lock);
-	hlist_for_each_entry(mfp, head, m_hash) {
-		if (mfp->m_inode == inode) {
-			atomic_inc(&mfp->m_count);
-			ret_mfp = mfp;
+	hlist_for_each_entry(ci, head, m_hash) {
+		if (ci->m_inode == inode) {
+			atomic_inc(&ci->m_count);
+			ret_ci = ci;
 			break;
 		}
 	}
 	spin_unlock(&mfp_hash_lock);
 
-	return ret_mfp;
+	return ret_ci;
 }
 
-void insert_mfp_hash(struct cifsd_inode *mfp)
+void insert_mfp_hash(struct cifsd_inode *ci)
 {
 	struct hlist_head *b = mfp_hashtable +
-		mfp_hash(mfp->m_inode->i_sb, mfp->m_inode->i_ino);
+		mfp_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
 
-	hlist_add_head(&mfp->m_hash, b);
+	hlist_add_head(&ci->m_hash, b);
 }
 
-void remove_mfp_hash(struct cifsd_inode *mfp)
+void remove_mfp_hash(struct cifsd_inode *ci)
 {
-	hlist_del_init(&mfp->m_hash);
+	hlist_del_init(&ci->m_hash);
 }
 
-int mfp_init(struct cifsd_inode *mfp, struct cifsd_file *fp)
+int mfp_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 {
-	mfp->m_inode = FP_INODE(fp);
-	atomic_set(&mfp->m_count, 1);
-	atomic_set(&mfp->op_count, 0);
-	mfp->m_flags = 0;
-	INIT_LIST_HEAD(&mfp->m_fp_list);
-	INIT_LIST_HEAD(&mfp->m_op_list);
-	spin_lock_init(&mfp->m_lock);
-	mfp->is_stream = false;
+	ci->m_inode = FP_INODE(fp);
+	atomic_set(&ci->m_count, 1);
+	atomic_set(&ci->op_count, 0);
+	ci->m_flags = 0;
+	INIT_LIST_HEAD(&ci->m_fp_list);
+	INIT_LIST_HEAD(&ci->m_op_list);
+	spin_lock_init(&ci->m_lock);
+	ci->is_stream = false;
 
 	if (fp->is_stream) {
-		mfp->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
-		if (!mfp->stream_name)
+		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
+		if (!ci->stream_name)
 			return -ENOMEM;
-		strncpy(mfp->stream_name, fp->stream.name, fp->stream.size);
-		mfp->is_stream = true;
+		strncpy(ci->stream_name, fp->stream.name, fp->stream.size);
+		ci->is_stream = true;
 	}
 
 	return 0;
@@ -1376,44 +1376,44 @@ int mfp_init(struct cifsd_inode *mfp, struct cifsd_file *fp)
 
 struct cifsd_inode *get_mfp(struct cifsd_file *fp)
 {
-	struct cifsd_inode *mfp, *tmfp;
+	struct cifsd_inode *ci, *tmpci;
 	int rc;
 
 	spin_lock(&mfp_hash_lock);
-	mfp = mfp_lookup(fp);
+	ci = mfp_lookup(fp);
 	spin_unlock(&mfp_hash_lock);
-	if (mfp)
-		return mfp;
+	if (ci)
+		return ci;
 
-	mfp = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
-	if (!mfp)
+	ci = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
+	if (!ci)
 		return NULL;
 
-	rc = mfp_init(mfp, fp);
+	rc = mfp_init(ci, fp);
 	if (rc) {
-		cifsd_err("mfp initialized failed\n");
-		kfree(mfp);
+		cifsd_err("inode initialized failed\n");
+		kfree(ci);
 		return NULL;
 	}
 
 	spin_lock(&mfp_hash_lock);
-	tmfp = mfp_lookup(fp);
-	if (!tmfp) {
-		insert_mfp_hash(mfp);
+	tmpci = mfp_lookup(fp);
+	if (!tmpci) {
+		insert_mfp_hash(ci);
 	} else {
-		kfree(mfp);
-		mfp = tmfp;
+		kfree(ci);
+		ci = tmpci;
 	}
 	spin_unlock(&mfp_hash_lock);
-	return mfp;
+	return ci;
 }
 
-void mfp_free(struct cifsd_inode *mfp)
+void mfp_free(struct cifsd_inode *ci)
 {
-	remove_mfp_hash(mfp);
-	if (mfp->is_stream)
-		kfree(mfp->stream_name);
-	kfree(mfp);
+	remove_mfp_hash(ci);
+	if (ci->is_stream)
+		kfree(ci->stream_name);
+	kfree(ci);
 }
 
 void __init mfp_hash_init(void)

@@ -146,7 +146,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 					  uint64_t sess_id);
 struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	char *lease_key);
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *mfp,
+int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
 	struct lease_ctx_info *lctx);
 void destroy_lease_table(struct cifsd_tcp_conn *conn);
 int smb2_check_durable_oplock(struct cifsd_file *fp,

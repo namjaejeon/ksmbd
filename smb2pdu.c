@@ -2138,7 +2138,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifsd_share *share;
-	struct cifsd_inode *mfp = NULL, *f_parent_ci;
+	struct cifsd_inode *ci = NULL, *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
@@ -2647,8 +2647,8 @@ int smb2_open(struct cifsd_work *work)
 		rc = 0;
 	}
 
-	fp->f_ci = mfp = get_mfp(fp);
-	if (!mfp) {
+	fp->f_ci = ci = get_mfp(fp);
+	if (!ci) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -2759,7 +2759,7 @@ int smb2_open(struct cifsd_work *work)
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	/* Check delete pending among previous fp before oplock break */
-	if (mfp->m_flags & S_DEL_PENDING) {
+	if (ci->m_flags & S_DEL_PENDING) {
 		rc = -EBUSY;
 		goto err_out;
 	}
@@ -2776,7 +2776,7 @@ int smb2_open(struct cifsd_work *work)
 			req_op_level = smb2_map_lease_to_oplock(lc->req_state);
 			cifsd_debug("lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
 					name, req_op_level, lc->req_state);
-			rc = find_same_lease_key(sess, mfp, lc);
+			rc = find_same_lease_key(sess, ci, lc);
 			if (rc)
 				goto err_out;
 		}
@@ -2789,7 +2789,7 @@ int smb2_open(struct cifsd_work *work)
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
 		if (fp->is_stream)
-			mfp->m_flags |= S_DEL_ON_CLS_STREAM;
+			ci->m_flags |= S_DEL_ON_CLS_STREAM;
 		else {
 			fp->delete_on_close = 1;
 			if (file_info == F_CREATED)
@@ -2797,10 +2797,10 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	spin_lock(&mfp->m_lock);
+	spin_lock(&ci->m_lock);
 	/* Add fp to master fp list. */
-	list_add(&fp->node, &mfp->m_fp_list);
-	spin_unlock(&mfp->m_lock);
+	list_add(&fp->node, &ci->m_fp_list);
+	spin_unlock(&ci->m_lock);
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
@@ -3030,8 +3030,8 @@ err_out1:
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
-		if (mfp && atomic_dec_and_test(&mfp->m_count))
-			mfp_free(mfp);
+		if (ci && atomic_dec_and_test(&ci->m_count))
+			mfp_free(ci);
 		if (volatile_id > 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);

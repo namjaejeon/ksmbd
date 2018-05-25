@@ -4163,17 +4163,17 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_INFO_STANDARD:
 	{
 		FILE_INFO_STANDARD *infos;
-		struct cifsd_inode *mfp;
+		struct cifsd_inode *ci;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			if (mfp->m_flags & S_DEL_PENDING) {
+		ci = mfp_lookup_inode(path.dentry->d_inode);
+		if (ci) {
+			if (ci->m_flags & S_DEL_PENDING) {
 				rc = -EBUSY;
-				atomic_dec(&mfp->m_count);
+				atomic_dec(&ci->m_count);
 				goto err_out;
 			}
-			atomic_dec(&mfp->m_count);
+			atomic_dec(&ci->m_count);
 		}
 
 		ptr = (char *)&rsp->Pad + 1;
@@ -4211,14 +4211,14 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
-		struct cifsd_inode *mfp;
+		struct cifsd_inode *ci;
 		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_PENDING;
-			atomic_dec(&mfp->m_count);
+		ci = mfp_lookup_inode(path.dentry->d_inode);
+		if (ci) {
+			delete_pending = ci->m_flags & S_DEL_PENDING;
+			atomic_dec(&ci->m_count);
 		}
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -4359,16 +4359,16 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
-		struct cifsd_inode *mfp;
+		struct cifsd_inode *ci;
 		unsigned int delete_pending = 0;
 		char *filename;
 		int uni_filename_len, total_count = 72;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_PENDING;
-			atomic_dec(&mfp->m_count);
+		ci = mfp_lookup_inode(path.dentry->d_inode);
+		if (ci) {
+			delete_pending = ci->m_flags & S_DEL_PENDING;
+			atomic_dec(&ci->m_count);
 		}
 
 		filename = convert_to_nt_pathname(name,
