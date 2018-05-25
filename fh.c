@@ -437,7 +437,7 @@ void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
 	kfree(fp->filename);
 	if (fp->is_stream)
 		kfree(fp->stream.name);
-	fp->f_mfp = NULL;
+	fp->f_ci = NULL;
 	spin_unlock(&fp->f_lock);
 	cifsd_free_file_struct(fp);
 	spin_unlock(&sess->fidtable.fidtable_lock);
@@ -447,7 +447,7 @@ static void inherit_delete_pending(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_inode *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_ci;
 
 	fp->delete_on_close = 0;
 
@@ -465,7 +465,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 {
 	struct list_head *cur;
 	struct cifsd_file *prev_fp;
-	struct cifsd_inode *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_ci;
 
 	spin_lock(&mfp->m_lock);
 	list_for_each_prev(cur, &mfp->m_fp_list) {
@@ -487,7 +487,7 @@ static int close_fp(struct cifsd_file *fp)
 	struct cifsd_lock *lock, *tmp;
 	int err;
 
-	mfp = fp->f_mfp;
+	mfp = fp->f_ci;
 	if (atomic_read(&mfp->m_count) >= 2) {
 		if (fp->delete_on_close)
 			inherit_delete_pending(fp);
@@ -953,7 +953,7 @@ struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
 		goto err_out2;
 	}
 
-	fp->f_mfp = mfp = get_mfp(fp);
+	fp->f_ci = mfp = get_mfp(fp);
 	if (!mfp)
 		goto err_out1;
 

@@ -2138,7 +2138,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path, lpath;
 	struct cifsd_share *share;
-	struct cifsd_inode *mfp = NULL, *parent_mfp;
+	struct cifsd_inode *mfp = NULL, *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL, *lfilp = NULL;
 	struct kstat stat;
@@ -2517,14 +2517,14 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp) {
-		if (parent_mfp->m_flags & S_DEL_PENDING) {
-			atomic_dec(&parent_mfp->m_count);
+	f_parent_ci = mfp_lookup_inode(path.dentry->d_parent->d_inode);
+	if (f_parent_ci) {
+		if (f_parent_ci->m_flags & S_DEL_PENDING) {
+			atomic_dec(&f_parent_ci->m_count);
 			rc = -EBUSY;
 			goto err_out;
 		}
-		atomic_dec(&parent_mfp->m_count);
+		atomic_dec(&f_parent_ci->m_count);
 	}
 
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
@@ -2647,7 +2647,7 @@ int smb2_open(struct cifsd_work *work)
 		rc = 0;
 	}
 
-	fp->f_mfp = mfp = get_mfp(fp);
+	fp->f_ci = mfp = get_mfp(fp);
 	if (!mfp) {
 		rc = -ENOMEM;
 		goto err_out;
@@ -2793,7 +2793,7 @@ int smb2_open(struct cifsd_work *work)
 		else {
 			fp->delete_on_close = 1;
 			if (file_info == F_CREATED)
-				fp->f_mfp->m_flags |= S_DEL_ON_CLS;
+				fp->f_ci->m_flags |= S_DEL_ON_CLS;
 		}
 	}
 
@@ -3806,7 +3806,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		unsigned int delete_pending;
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
-		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
+		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
 
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -3854,7 +3854,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		if (!filename)
 			return -ENOMEM;
 		cifsd_debug("filename = %s\n", filename);
-		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
+		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -5235,9 +5235,9 @@ next:
 			if (S_ISDIR(inode->i_mode) && !is_dir_empty(fp))
 				rc = -EBUSY;
 			else
-				fp->f_mfp->m_flags |= S_DEL_PENDING;
+				fp->f_ci->m_flags |= S_DEL_PENDING;
 		} else
-			fp->f_mfp->m_flags &= ~S_DEL_PENDING;
+			fp->f_ci->m_flags &= ~S_DEL_PENDING;
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
@@ -6251,7 +6251,7 @@ wait:
 		}
 	}
 
-	if (oplocks_enable && atomic_read(&fp->f_mfp->op_count) > 1)
+	if (oplocks_enable && atomic_read(&fp->f_ci->op_count) > 1)
 		smb_break_all_oplock(work, fp);
 
 	rsp->StructureSize = cpu_to_le16(4);

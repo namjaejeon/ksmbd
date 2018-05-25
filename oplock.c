@@ -167,7 +167,7 @@ void opinfo_put(struct oplock_info *opinfo)
 
 void opinfo_add(struct oplock_info *opinfo)
 {
-	struct cifsd_inode *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *mfp = opinfo->o_fp->f_ci;
 
 	spin_lock(&mfp->m_lock);
 	list_add_rcu(&opinfo->op_entry, &mfp->m_op_list);
@@ -176,7 +176,7 @@ void opinfo_add(struct oplock_info *opinfo)
 
 void opinfo_del(struct oplock_info *opinfo)
 {
-	struct cifsd_inode *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *mfp = opinfo->o_fp->f_ci;
 
 	spin_lock(&mfp->m_lock);
 	list_del_rcu(&opinfo->op_entry);
@@ -394,7 +394,7 @@ void close_id_del_oplock(struct cifsd_file *fp)
 		}
 	}
 
-	atomic_dec(&fp->f_mfp->op_count);
+	atomic_dec(&fp->f_ci->op_count);
 	opinfo_put(opinfo);
 }
 
@@ -977,7 +977,7 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *mfp,
 					SMB2_CLIENT_GUID_SIZE)) {
 			list_for_each_entry(opinfo, &lb->lease_list,
 					lease_entry) {
-				if (opinfo->o_fp->f_mfp == mfp)
+				if (opinfo->o_fp->f_ci == mfp)
 					continue;
 				err = compare_guid_key(opinfo,
 					sess->conn->ClientGUID,
@@ -1073,7 +1073,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
-	struct cifsd_inode *mfp = fp->f_mfp;
+	struct cifsd_inode *mfp = fp->f_ci;
 	int prev_op_has_lease = 0, prev_op_state = 0;
 
 	/* not support directory lease */
@@ -1196,7 +1196,7 @@ int smb_break_all_write_oplock(struct cifsd_work *work,
 {
 	struct oplock_info *brk_opinfo;
 
-	brk_opinfo = opinfo_get_list(fp->f_mfp);
+	brk_opinfo = opinfo_get_list(fp->f_ci);
 	if (!brk_opinfo)
 		return 0;
 	if (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
@@ -1226,7 +1226,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct oplock_info *op, *brk_op;
 	struct cifsd_inode *mfp;
 
-	mfp = fp->f_mfp;
+	mfp = fp->f_ci;
 	op = fp->f_opinfo;
 
 	rcu_read_lock();

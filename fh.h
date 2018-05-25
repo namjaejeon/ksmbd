@@ -128,8 +128,8 @@ struct cifsd_file {
 	struct cifsd_tcp_conn *conn;
 	struct cifsd_sess *sess;
 	struct cifsd_tcon *tcon;
-	struct cifsd_inode *f_mfp;
-	struct cifsd_inode *parent_mfp;
+	struct cifsd_inode *f_ci;
+	struct cifsd_inode *f_parent_ci;
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
