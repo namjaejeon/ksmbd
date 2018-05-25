@@ -140,15 +140,15 @@ struct oplock_info *opinfo_get(struct cifsd_file *fp)
 	return opinfo;
 }
 
-struct oplock_info *opinfo_get_list(struct cifsd_mfile *mfp)
+struct oplock_info *opinfo_get_list(struct cifsd_inode *ci)
 {
 	struct oplock_info *opinfo;
 
-	if (list_empty(&mfp->m_op_list))
+	if (list_empty(&ci->m_op_list))
 		return NULL;
 
 	rcu_read_lock();
-	opinfo = list_first_or_null_rcu(&mfp->m_op_list, struct oplock_info,
+	opinfo = list_first_or_null_rcu(&ci->m_op_list, struct oplock_info,
 		op_entry);
 	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
 		opinfo = NULL;
@@ -167,20 +167,20 @@ void opinfo_put(struct oplock_info *opinfo)
 
 void opinfo_add(struct oplock_info *opinfo)
 {
-	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
-	spin_lock(&mfp->m_lock);
-	list_add_rcu(&opinfo->op_entry, &mfp->m_op_list);
-	spin_unlock(&mfp->m_lock);
+	spin_lock(&ci->m_lock);
+	list_add_rcu(&opinfo->op_entry, &ci->m_op_list);
+	spin_unlock(&ci->m_lock);
 }
 
 void opinfo_del(struct oplock_info *opinfo)
 {
-	struct cifsd_mfile *mfp = opinfo->o_fp->f_mfp;
+	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
-	spin_lock(&mfp->m_lock);
+	spin_lock(&ci->m_lock);
 	list_del_rcu(&opinfo->op_entry);
-	spin_unlock(&mfp->m_lock);
+	spin_unlock(&ci->m_lock);
 }
 
 /**
@@ -394,7 +394,7 @@ void close_id_del_oplock(struct cifsd_file *fp)
 		}
 	}
 
-	atomic_dec(&fp->f_mfp->op_count);
+	atomic_dec(&fp->f_ci->op_count);
 	opinfo_put(opinfo);
 }
 
@@ -692,13 +692,13 @@ static inline int compare_guid_key(struct oplock_info *opinfo,
 /**
  * same_client_has_lease() - check whether current lease request is
  *		from lease owner of file
- * @mfp:		master file pointer
+ * @ci:		master file pointer
  * @client_guid:	Client GUID
  * @lctx:		lease context information
  *
  * Return:      oplock(lease) object on success, otherwise NULL
  */
-struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
+struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	char *client_guid, struct lease_ctx_info *lctx)
 {
 	int ret;
@@ -713,11 +713,11 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 	 * Compare lease key and client_guid to know request from same owner
 	 * of same client
 	 */
-	spin_lock(&mfp->m_lock);
-	list_for_each_entry(opinfo, &mfp->m_op_list, op_entry) {
+	spin_lock(&ci->m_lock);
+	list_for_each_entry(opinfo, &ci->m_op_list, op_entry) {
 		if (!opinfo->is_lease)
 			continue;
-		spin_unlock(&mfp->m_lock);
+		spin_unlock(&ci->m_lock);
 		lease = opinfo->o_lease;
 
 		ret = compare_guid_key(opinfo, client_guid, lctx->lease_key);
@@ -725,12 +725,12 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 			m_opinfo = opinfo;
 			/* skip upgrading lease about breaking lease */
 			if (atomic_read(&opinfo->breaking_cnt)) {
-				spin_lock(&mfp->m_lock);
+				spin_lock(&ci->m_lock);
 				continue;
 			}
 
 			/* upgrading lease */
-			if (atomic_read(&mfp->op_count) == 1) {
+			if (atomic_read(&ci->op_count) == 1) {
 				if (lease->state ==
 					(lctx->req_state & lease->state)) {
 					lease->state |= lctx->req_state;
@@ -738,7 +738,7 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 						SMB2_LEASE_WRITE_CACHING)
 						lease_read_to_write(opinfo);
 				}
-			} else if (atomic_read(&mfp->op_count) > 1) {
+			} else if (atomic_read(&ci->op_count) > 1) {
 				if (lctx->req_state == 0x3)
 					lease->state = lctx->req_state;
 			}
@@ -746,9 +746,9 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 			if (lctx->req_state && lease->state == SMB2_LEASE_NONE)
 				lease_none_upgrade(opinfo, lctx->req_state);
 		}
-		spin_lock(&mfp->m_lock);
+		spin_lock(&ci->m_lock);
 	}
-	spin_unlock(&mfp->m_lock);
+	spin_unlock(&ci->m_lock);
 
 	return m_opinfo;
 }
@@ -958,7 +958,7 @@ void destroy_lease_table(struct cifsd_tcp_conn *conn)
 	mutex_unlock(&lease_list_lock);
 }
 
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
+int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
 		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -977,7 +977,7 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
 					SMB2_CLIENT_GUID_SIZE)) {
 			list_for_each_entry(opinfo, &lb->lease_list,
 					lease_entry) {
-				if (opinfo->o_fp->f_mfp == mfp)
+				if (opinfo->o_fp->f_ci == ci)
 					continue;
 				err = compare_guid_key(opinfo,
 					sess->conn->ClientGUID,
@@ -1073,7 +1073,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
-	struct cifsd_mfile *mfp = fp->f_mfp;
+	struct cifsd_inode *ci = fp->f_ci;
 	int prev_op_has_lease = 0, prev_op_state = 0;
 
 	/* not support directory lease */
@@ -1094,8 +1094,8 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 		opinfo->is_lease = 1;
 	}
 
-	/* mfp does not have any oplock */
-	if (!atomic_read(&mfp->op_count))
+	/* ci does not have any oplock */
+	if (!atomic_read(&ci->op_count))
 		goto set_lev;
 
 	/* grant none-oplock if second open is trunc */
@@ -1109,7 +1109,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 		struct oplock_info *m_opinfo;
 
 		/* is lease already granted ? */
-		m_opinfo = same_client_has_lease(mfp, sess->conn->ClientGUID,
+		m_opinfo = same_client_has_lease(ci, sess->conn->ClientGUID,
 			lctx);
 		if (m_opinfo) {
 			copy_lease(m_opinfo, opinfo);
@@ -1120,7 +1120,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 		}
 	}
 #endif
-	prev_opinfo = opinfo_get_list(mfp);
+	prev_opinfo = opinfo_get_list(ci);
 	if (!prev_opinfo)
 		goto set_lev;
 	prev_op_has_lease = prev_opinfo->is_lease;
@@ -1174,7 +1174,7 @@ set_lev:
 out:
 	fp->f_opinfo = opinfo;
 	opinfo->o_fp = fp;
-	atomic_inc(&mfp->op_count);
+	atomic_inc(&ci->op_count);
 	opinfo_add(opinfo);
 	if (opinfo->is_lease)
 		add_lease_global_list(opinfo);
@@ -1196,7 +1196,7 @@ int smb_break_all_write_oplock(struct cifsd_work *work,
 {
 	struct oplock_info *brk_opinfo;
 
-	brk_opinfo = opinfo_get_list(fp->f_mfp);
+	brk_opinfo = opinfo_get_list(fp->f_ci);
 	if (!brk_opinfo)
 		return 0;
 	if (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
@@ -1224,13 +1224,13 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
-	struct cifsd_mfile *mfp;
+	struct cifsd_inode *ci;
 
-	mfp = fp->f_mfp;
+	ci = fp->f_ci;
 	op = fp->f_opinfo;
 
 	rcu_read_lock();
-	list_for_each_entry_rcu(brk_op, &mfp->m_op_list, op_entry) {
+	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
 		if (!atomic_inc_not_zero(&brk_op->refcount)) {
 			continue;
 		}

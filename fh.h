@@ -109,7 +109,7 @@ struct stream {
 	ssize_t size;
 };
 
-struct cifsd_mfile {
+struct cifsd_inode {
 	spinlock_t m_lock;
 	atomic_t m_count;
 	atomic_t op_count;
@@ -128,8 +128,8 @@ struct cifsd_file {
 	struct cifsd_tcp_conn *conn;
 	struct cifsd_sess *sess;
 	struct cifsd_tcon *tcon;
-	struct cifsd_mfile *f_mfp;
-	struct cifsd_mfile *parent_mfp;
+	struct cifsd_inode *f_ci;
+	struct cifsd_inode *f_parent_ci;
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
@@ -232,16 +232,17 @@ insert_id_in_fidtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon,
 	unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
-void __init mfp_hash_init(void);
-int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp);
-void mfp_free(struct cifsd_mfile *mfp);
-void insert_mfp_hash(struct cifsd_mfile *mfp);
-void remove_mfp_hash(struct cifsd_mfile *mfp);
-struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp);
-struct cifsd_mfile *mfp_lookup_inode(struct inode *inode);
 struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid);
-struct cifsd_mfile *get_mfp(struct cifsd_file *fp);
+
+void __init cifsd_inode_hash_init(void);
+int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp);
+void cifsd_inode_free(struct cifsd_inode *ci);
+void cifsd_inode_hash(struct cifsd_inode *ci);
+void cifsd_inode_unhash(struct cifsd_inode *ci);
+struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
+struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
+struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */

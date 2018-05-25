@@ -2223,7 +2223,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct cifsd_file *fp = NULL;
-	struct cifsd_mfile *parent_mfp;
+	struct cifsd_inode *f_parent_ci;
 	int oplock_rsp = OPLOCK_NONE;
 	int share_ret;
 
@@ -2503,14 +2503,14 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		}
 	}
 
-	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp) {
-		if (parent_mfp->m_flags & S_DEL_PENDING) {
+	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
+	if (f_parent_ci) {
+		if (f_parent_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
-			atomic_dec(&parent_mfp->m_count);
+			atomic_dec(&f_parent_ci->m_count);
 			goto free_path;
 		}
-		atomic_dec(&parent_mfp->m_count);
+		atomic_dec(&f_parent_ci->m_count);
 	}
 
 	/* open  file and get FID */
@@ -2535,7 +2535,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		if (err)
 			goto free_path;
 	} else {
-		if (fp->f_mfp->m_flags & S_DEL_PENDING) {
+		if (fp->f_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
 			goto out;
 		}
@@ -2562,7 +2562,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
 		fp->delete_on_close = 1;
 		if (file_info == F_CREATED)
-			fp->f_mfp->m_flags |= S_DEL_ON_CLS;
+			fp->f_ci->m_flags |= S_DEL_ON_CLS;
 	}
 
 	/* open success, send back response */
@@ -2629,7 +2629,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	}
 
 	/* Add fp to master fp list. */
-	list_add(&fp->node, &fp->f_mfp->m_fp_list);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
 
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
@@ -2707,8 +2707,8 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_mfp->m_count))
-			mfp_free(fp->f_mfp);
+		if (atomic_dec_and_test(&fp->f_ci->m_count))
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -4163,17 +4163,17 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_INFO_STANDARD:
 	{
 		FILE_INFO_STANDARD *infos;
-		struct cifsd_mfile *mfp;
+		struct cifsd_inode *ci;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			if (mfp->m_flags & S_DEL_PENDING) {
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
+		if (ci) {
+			if (ci->m_flags & S_DEL_PENDING) {
 				rc = -EBUSY;
-				atomic_dec(&mfp->m_count);
+				atomic_dec(&ci->m_count);
 				goto err_out;
 			}
-			atomic_dec(&mfp->m_count);
+			atomic_dec(&ci->m_count);
 		}
 
 		ptr = (char *)&rsp->Pad + 1;
@@ -4211,14 +4211,14 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
-		struct cifsd_mfile *mfp;
+		struct cifsd_inode *ci;
 		unsigned int delete_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_PENDING;
-			atomic_dec(&mfp->m_count);
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
+		if (ci) {
+			delete_pending = ci->m_flags & S_DEL_PENDING;
+			atomic_dec(&ci->m_count);
 		}
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
@@ -4359,16 +4359,16 @@ int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
-		struct cifsd_mfile *mfp;
+		struct cifsd_inode *ci;
 		unsigned int delete_pending = 0;
 		char *filename;
 		int uni_filename_len, total_count = 72;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
-		mfp = mfp_lookup_inode(path.dentry->d_inode);
-		if (mfp) {
-			delete_pending = mfp->m_flags & S_DEL_PENDING;
-			atomic_dec(&mfp->m_count);
+		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
+		if (ci) {
+			delete_pending = ci->m_flags & S_DEL_PENDING;
+			atomic_dec(&ci->m_count);
 		}
 
 		filename = convert_to_nt_pathname(name,
@@ -5296,8 +5296,8 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_mfp->m_count))
-			mfp_free(fp->f_mfp);
+		if (atomic_dec_and_test(&fp->f_ci->m_count))
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -6978,9 +6978,9 @@ int smb_set_dispostion(struct cifsd_work *work)
 			return -ENOTEMPTY;
 		}
 
-		fp->f_mfp->m_flags |= S_DEL_PENDING;
+		fp->f_ci->m_flags |= S_DEL_PENDING;
 	} else
-		fp->f_mfp->m_flags &= ~S_DEL_PENDING;
+		fp->f_ci->m_flags &= ~S_DEL_PENDING;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
@@ -7211,7 +7211,7 @@ int query_file_info(struct cifsd_work *work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
+		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -7383,7 +7383,7 @@ int query_file_info(struct cifsd_work *work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
-		delete_pending = fp->f_mfp->m_flags & S_DEL_PENDING;
+		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_ALL_INFO);
@@ -8289,7 +8289,7 @@ int smb_open_andx(struct cifsd_work *work)
 	int err;
 	struct cifsd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE, share_ret;
-	struct cifsd_mfile *parent_mfp;
+	struct cifsd_inode *f_parent_ci;
 
 	rsp->hdr.Status.CifsError = NT_STATUS_UNSUCCESSFUL;
 
@@ -8371,14 +8371,14 @@ int smb_open_andx(struct cifsd_work *work)
 		generic_fillattr(path.dentry->d_inode, &stat);
 	}
 
-	parent_mfp = mfp_lookup_inode(path.dentry->d_parent->d_inode);
-	if (parent_mfp) {
-		if (parent_mfp->m_flags & S_DEL_PENDING) {
+	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
+	if (f_parent_ci) {
+		if (f_parent_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
-			atomic_dec(&parent_mfp->m_count);
+			atomic_dec(&f_parent_ci->m_count);
 			goto free_path;
 		}
-		atomic_dec(&parent_mfp->m_count);
+		atomic_dec(&f_parent_ci->m_count);
 	}
 
 	cifsd_err("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
@@ -8400,7 +8400,7 @@ int smb_open_andx(struct cifsd_work *work)
 		if (err)
 			goto free_path;
 	} else {
-		if (fp->f_mfp->m_flags & S_DEL_PENDING) {
+		if (fp->f_ci->m_flags & S_DEL_PENDING) {
 			err = -EBUSY;
 			goto free_path;
 		}
@@ -8451,7 +8451,7 @@ int smb_open_andx(struct cifsd_work *work)
 	}
 
 	/* Add fp to master fp list. */
-	list_add(&fp->node, &fp->f_mfp->m_fp_list);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
 
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
@@ -8505,8 +8505,8 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_mfp->m_count))
-			mfp_free(fp->f_mfp);
+		if (atomic_dec_and_test(&fp->f_ci->m_count))
+			cifsd_inode_free(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
