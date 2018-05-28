@@ -1234,6 +1234,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 		if (!atomic_inc_not_zero(&brk_op->refcount)) {
 			continue;
 		}
+		rcu_read_unlock();
 
 		if (brk_op->is_smb2) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1242,25 +1243,25 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 					   SMB2_LEASE_HANDLE_CACHING)))) {
 				cifsd_debug("unexpected lease state(0x%x)\n",
 						brk_op->o_lease->state);
-				continue;
+				goto next;
 			} else if (brk_op->level !=
 					SMB2_OPLOCK_LEVEL_II) {
 				cifsd_debug("unexpected oplock(0x%x)\n",
 						brk_op->level);
-				continue;
+				goto next;
 			}
 
 			/* Skip oplock being break to none */
 			if (brk_op->is_lease && (brk_op->o_lease->new_state ==
 					SMB2_LEASE_NONE) &&
 				atomic_read(&brk_op->breaking_cnt))
-				continue;
+				goto next;
 #endif
 		} else {
 			if (brk_op->level != OPLOCK_READ) {
 				cifsd_debug("unexpected oplock(0x%x)\n",
 					brk_op->level);
-				continue;
+				goto next;
 			}
 		}
 
@@ -1272,11 +1273,11 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 			!memcmp(op->o_lease->lease_key,
 				brk_op->o_lease->lease_key,
 				SMB2_LEASE_KEY_SIZE))
-			continue;
+			goto next;
 #endif
 		brk_op->open_trunc = is_trunc;
-		rcu_read_unlock();
 		smb_send_oplock_break_notification(brk_op);
+next:
 		opinfo_put(brk_op);
 		rcu_read_lock();
 	}
