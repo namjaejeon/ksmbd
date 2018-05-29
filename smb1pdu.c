@@ -1156,6 +1156,11 @@ no_password_check:
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 out_err:
+	if (conn->use_spnego && conn->mechToken) {
+		kfree(conn->mechToken);
+		conn->mechToken = NULL;
+	}
+
 	return err;
 }
 

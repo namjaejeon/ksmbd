@@ -1498,8 +1498,10 @@ int smb2_sess_setup(struct cifsd_work *work)
 	}
 
 out_err:
-	if (conn->use_spnego && conn->mechToken)
+	if (conn->use_spnego && conn->mechToken) {
 		kfree(conn->mechToken);
+		conn->mechToken = NULL;
+	}
 
 	if (rc < 0 && sess) {
 		smb_delete_session(sess);
