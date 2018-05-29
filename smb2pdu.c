@@ -320,7 +320,6 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	WARN_ON(cifsd_tcp_good(work));
 
 	rsp->StructureSize = cpu_to_le16(65);
-	rsp->SecurityMode = 0;
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 	rsp->DialectRevision = cpu_to_le16(conn->dialect);
 	/* Not setting conn guid rsp->ServerGUID, as it
@@ -337,9 +336,17 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
 #endif
 	rsp->ServerStartTime = 0;
+
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = 0;
-	inc_rfc1001_len(rsp, 65);
+	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
+	memcpy(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
+		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	conn->use_spnego = true;
+
 	cifsd_tcp_set_need_negotiate(work);
 	rsp->hdr.CreditRequest = cpu_to_le16(2);
 }
