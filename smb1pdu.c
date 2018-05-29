@@ -1006,7 +1006,7 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 	if (!err) {
 		cifsd_debug("negTokenInit parse err %d\n", err);
 		/* If failed, it might be negTokenTarg */
-		err = decode_negTokenTarg((char *)negblob,
+		err = cifsd_decode_negTokenTarg((char *)negblob,
 				le16_to_cpu(req->SecurityBlobLength),
 				conn);
 		if (!err) {

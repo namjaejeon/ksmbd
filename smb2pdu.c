@@ -1280,7 +1280,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		if (!rc) {
 			cifsd_debug("negTokenInit parse err %d\n", rc);
 			/* If failed, it might be negTokenTarg */
-			rc = decode_negTokenTarg((char *)negblob,
+			rc = cifsd_decode_negTokenTarg((char *)negblob,
 					le16_to_cpu(req->SecurityBufferLength),
 					conn);
 			if (!rc) {
