@@ -1006,7 +1006,7 @@ int build_sess_rsp_extsec(struct cifsd_sess *sess,
 	if (!err) {
 		cifsd_debug("negTokenInit parse err %d\n", err);
 		/* If failed, it might be negTokenTarg */
-		err = decode_negTokenTarg((char *)negblob,
+		err = cifsd_decode_negTokenTarg((char *)negblob,
 				le16_to_cpu(req->SecurityBlobLength),
 				conn);
 		if (!err) {
@@ -1156,6 +1156,11 @@ no_password_check:
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 out_err:
+	if (conn->use_spnego && conn->mechToken) {
+		kfree(conn->mechToken);
+		conn->mechToken = NULL;
+	}
+
 	return err;
 }
 
