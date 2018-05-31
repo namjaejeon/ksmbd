@@ -297,13 +297,16 @@ static int cifsadmin_query_user(struct nlmsghdr *nlh)
 	struct cifsd_uevent *ev = nlmsg_data(nlh);
 	char *username = ev->k.u_query.username;
 	struct cifsd_uevent rsp_ev;
+	int buf_sz;
 	int ret;
 
 	ret = cifsadmin_user_query(username);
 	memset(&rsp_ev, 0, sizeof(rsp_ev));
 	rsp_ev.type = CIFSADMIN_UEVENT_QUERY_USER_RSP;
 	rsp_ev.error = ret;
-	strncpy(rsp_ev.k.u_query.username, username, strlen(username));
+	buf_sz = sizeof(rsp_ev.k.u_query.username);
+	strncpy(rsp_ev.k.u_query.username, username, buf_sz);
+	rsp_ev.k.u_query.username[buf_sz - 1] = 0x00;
 	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
 	if (ret)
 		cifsd_err("query user respond failed, err %d\n", ret);
@@ -324,13 +327,16 @@ static int cifsadmin_remove_user(struct nlmsghdr *nlh)
 	struct cifsd_uevent *ev = nlmsg_data(nlh);
 	char *username = ev->k.u_del.username;
 	struct cifsd_uevent rsp_ev;
+	int buf_sz;
 	int ret;
 
 	ret = cifsadmin_user_del(username);
 	memset(&rsp_ev, 0, sizeof(rsp_ev));
 	rsp_ev.type = CIFSADMIN_UEVENT_REMOVE_USER_RSP;
 	rsp_ev.error = ev->error;
-	strncpy(rsp_ev.k.u_del.username, username, strlen(username));
+	buf_sz = sizeof(rsp_ev.k.u_del.username);
+	strncpy(rsp_ev.k.u_del.username, username, buf_sz);
+	rsp_ev.k.u_del.username[buf_sz - 1] = 0x00;
 	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
 	if (ret)
 		cifsd_err("remove user respond failed, err %d\n", ret);
