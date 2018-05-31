@@ -16,8 +16,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSD_TRANSPORT_H__
-#define __CIFSD_TRANSPORT_H__
+#ifndef __CIFSD_TRANSPORT_TCP_H__
+#define __CIFSD_TRANSPORT_TCP_H__
 
 #include <linux/list.h>
 #include <linux/ip.h>
@@ -202,4 +202,4 @@ static inline void cifsd_tcp_set_exiting(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_EXITING;
 }
-#endif /* __CIFSD_TRANSPORT_H__ */
+#endif /* __CIFSD_TRANSPORT_TCP_H__ */

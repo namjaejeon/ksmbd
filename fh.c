@@ -27,7 +27,7 @@
 #include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
