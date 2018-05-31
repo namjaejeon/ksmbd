@@ -743,7 +743,8 @@ int smb_rename(struct cifsd_work *work)
 		rc = -ENOMEM;
 		goto out;
 	}
-	strncpy(tmp_name, abs_newname, strlen(abs_newname) + 1);
+	strncpy(tmp_name, abs_newname, PATH_MAX);
+	tmp_name[PATH_MAX - 1] = 0x00;
 
 	rc = smb_kern_path(tmp_name, 0, &path, 1);
 	if (rc)
