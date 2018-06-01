@@ -490,10 +490,6 @@ cifs_NTtimeToUnix(__le64 ntutc)
 	return ts;
 }
 
-char *
-smb_get_name(const char *src, const int maxlen, struct cifsd_work *work,
-	bool converted);
-void smb_put_name(void *name);
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
 struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
@@ -606,24 +602,16 @@ extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
 
 /* trans2 functions */
-int query_fs_info(struct cifsd_work *work);
-void create_trans2_reply(struct cifsd_work *work, __u16 count);
 char *convert_to_unix_name(char *name, int tid);
 void convert_delimiter(char *path, int flags);
-int find_first(struct cifsd_work *work);
-int find_next(struct cifsd_work *work);
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
 int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname);
-char *read_next_entry(struct cifsd_work *work, struct smb_kstat *smb_kstat,
-		struct smb_dirent *de, char *dpath);
 void *fill_common_info(char **p, struct smb_kstat *smb_kstat);
+char *read_next_entry(struct cifsd_work *work, struct smb_kstat *smb_kstat,
+		struct smb_dirent *de, char *dirpath);
 /* fill SMB specific fields when smb2 query dir is requested */
-void fill_create_time(struct cifsd_work *work,
-		struct path *path, struct smb_kstat *smb_kstat);
-void fill_file_attributes(struct cifsd_work *work,
-		struct path *path, struct smb_kstat *smb_kstat);
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,

@@ -751,46 +751,17 @@ smb2_get_name(const char *src, const int maxlen, unsigned int tid,
 }
 
 /**
- * smb2_get_name_from_filp() - get filename string from filp
- * @filp:	file pointer containing filename
- *
- * Reconstruct complete pathname from filp, required in cases e.g. durable
- * reconnect where incoming filename in SMB2 CREATE request need to be ignored
- *
- * Return:      filename on success, otherwise NULL
+ * smb2_put_name() - free memory allocated for filename
+ * @name:	filename pointer to be freed
  */
-char *
-smb2_get_name_from_filp(struct file *filp)
+static void smb2_put_name(void *name)
 {
-	char *pathname, *name, *full_pathname;
-	int namelen;
-
-	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathname)
-		return ERR_PTR(-ENOMEM);
-
-	name = d_path(&filp->f_path, pathname, PATH_MAX);
-	if (IS_ERR(name)) {
-		kfree(pathname);
-		return name;
-	}
-
-	namelen = strlen(name);
-	full_pathname = kmalloc(namelen + 1, GFP_KERNEL);
-	if (!full_pathname) {
-		kfree(pathname);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	memcpy(full_pathname, name, namelen);
-	full_pathname[namelen] = '\0';
-
-	kfree(pathname);
-	return full_pathname;
+	if (!IS_ERR(name))
+		kfree(name);
 }
 
 /* Async ida to generate async id */
-DEFINE_IDA(async_ida);
+static DEFINE_IDA(async_ida);
 
 inline void remove_async_id(__u64 async_id)
 {
@@ -846,7 +817,7 @@ void smb2_send_interim_resp(struct cifsd_work *work)
  *
  * Return:      converted dos mode
  */
-__le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
+static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 {
 	__le32 attr = 0;
 
@@ -1643,7 +1614,7 @@ out_err1:
  *
  * Return:      file open flags
  */
-int smb2_create_open_flags(bool file_present, __le32 access,
+static int smb2_create_open_flags(bool file_present, __le32 access,
 		__le32 disposition)
 {
 	int oflags = 0;
@@ -4905,7 +4876,7 @@ out:
 	kfree(pathname);
 	kfree(tmp_name);
 	if (!IS_ERR(new_name))
-		smb_put_name(new_name);
+		smb2_put_name(new_name);
 	return rc;
 }
 
@@ -4975,7 +4946,7 @@ static int smb2_create_link(struct smb2_file_link_info *file_info,
 		rc = -EINVAL;
 out:
 	if (!IS_ERR(link_name))
-		smb_put_name(link_name);
+		smb2_put_name(link_name);
 	kfree(pathname);
 	return rc;
 }
@@ -5421,7 +5392,7 @@ err_out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_read_pipe(struct cifsd_work *work)
+static int smb2_read_pipe(struct cifsd_work *work)
 {
 	int ret = 0, nbytes = 0;
 	char *data_buf;
@@ -6756,7 +6727,7 @@ static int check_lease_state(struct lease *lease, __le32 req_state)
  *
  * Return:	0
  */
-int smb21_lease_break(struct cifsd_work *work)
+static int smb21_lease_break(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_lease_ack *req, *rsp;

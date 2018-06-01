@@ -1489,13 +1489,6 @@ typedef struct {
 	__le16  InformationLevel;
 } __attribute__((packed)) TRANSACTION2_QFI_REQ_PARAMS;
 
-extern int set_path_info(struct cifsd_work *work);
-extern int set_fs_info(struct cifsd_work *work);
-extern int query_file_info(struct cifsd_work *work);
-extern int set_file_info(struct cifsd_work *work);
-extern int create_dir(struct cifsd_work *work);
-extern int get_dfs_referral(struct cifsd_work *work);
-
 /* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
 
 typedef struct {
@@ -1986,8 +1979,6 @@ extern int smb_rmdir(struct cifsd_work *work);
 extern int smb_unlink(struct cifsd_work *work);
 extern int smb_nt_cancel(struct cifsd_work *work);
 extern int smb_nt_rename(struct cifsd_work *work);
-extern int smb_creat_hardlink(struct cifsd_work *work);
-extern int smb_creat_symlink(struct cifsd_work *work);
 extern int smb_query_info(struct cifsd_work *work);
 extern int smb_closedir(struct cifsd_work *work);
 extern int smb_open_andx(struct cifsd_work *work);
