@@ -751,7 +751,7 @@ smb2_get_name(const char *src, const int maxlen, unsigned int tid,
 }
 
 /* Async ida to generate async id */
-DEFINE_IDA(async_ida);
+static DEFINE_IDA(async_ida);
 
 inline void remove_async_id(__u64 async_id)
 {
@@ -807,7 +807,7 @@ void smb2_send_interim_resp(struct cifsd_work *work)
  *
  * Return:      converted dos mode
  */
-__le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
+static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 {
 	__le32 attr = 0;
 
@@ -1604,7 +1604,7 @@ out_err1:
  *
  * Return:      file open flags
  */
-int smb2_create_open_flags(bool file_present, __le32 access,
+static int smb2_create_open_flags(bool file_present, __le32 access,
 		__le32 disposition)
 {
 	int oflags = 0;
@@ -5382,7 +5382,7 @@ err_out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_read_pipe(struct cifsd_work *work)
+static int smb2_read_pipe(struct cifsd_work *work)
 {
 	int ret = 0, nbytes = 0;
 	char *data_buf;
@@ -6717,7 +6717,7 @@ static int check_lease_state(struct lease *lease, __le32 req_state)
  *
  * Return:	0
  */
-int smb21_lease_break(struct cifsd_work *work)
+static int smb21_lease_break(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_lease_ack *req, *rsp;
