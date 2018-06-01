@@ -750,45 +750,6 @@ smb2_get_name(const char *src, const int maxlen, unsigned int tid,
 	return unixname;
 }
 
-/**
- * smb2_get_name_from_filp() - get filename string from filp
- * @filp:	file pointer containing filename
- *
- * Reconstruct complete pathname from filp, required in cases e.g. durable
- * reconnect where incoming filename in SMB2 CREATE request need to be ignored
- *
- * Return:      filename on success, otherwise NULL
- */
-char *
-smb2_get_name_from_filp(struct file *filp)
-{
-	char *pathname, *name, *full_pathname;
-	int namelen;
-
-	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathname)
-		return ERR_PTR(-ENOMEM);
-
-	name = d_path(&filp->f_path, pathname, PATH_MAX);
-	if (IS_ERR(name)) {
-		kfree(pathname);
-		return name;
-	}
-
-	namelen = strlen(name);
-	full_pathname = kmalloc(namelen + 1, GFP_KERNEL);
-	if (!full_pathname) {
-		kfree(pathname);
-		return ERR_PTR(-ENOMEM);
-	}
-
-	memcpy(full_pathname, name, namelen);
-	full_pathname[namelen] = '\0';
-
-	kfree(pathname);
-	return full_pathname;
-}
-
 /* Async ida to generate async id */
 DEFINE_IDA(async_ida);
 
