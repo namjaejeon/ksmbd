@@ -750,6 +750,16 @@ smb2_get_name(const char *src, const int maxlen, unsigned int tid,
 	return unixname;
 }
 
+/**
+ * smb2_put_name() - free memory allocated for filename
+ * @name:	filename pointer to be freed
+ */
+static void smb2_put_name(void *name)
+{
+	if (!IS_ERR(name))
+		kfree(name);
+}
+
 /* Async ida to generate async id */
 static DEFINE_IDA(async_ida);
 
@@ -4866,7 +4876,7 @@ out:
 	kfree(pathname);
 	kfree(tmp_name);
 	if (!IS_ERR(new_name))
-		smb_put_name(new_name);
+		smb2_put_name(new_name);
 	return rc;
 }
 
@@ -4936,7 +4946,7 @@ static int smb2_create_link(struct smb2_file_link_info *file_info,
 		rc = -EINVAL;
 out:
 	if (!IS_ERR(link_name))
-		smb_put_name(link_name);
+		smb2_put_name(link_name);
 	kfree(pathname);
 	return rc;
 }
