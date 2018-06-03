@@ -159,6 +159,7 @@ static bool __add_share(struct cifsd_share *share, char *sharename,
 	share->tcount = 0;
 	share->tid = tid++;
 	share->sharename = sharename;
+	atomic_set(&share->num_conn, 0);
 	INIT_LIST_HEAD(&share->list);
 	list_add(&share->list, &cifsd_share_list);
 	cifsd_num_shares++;

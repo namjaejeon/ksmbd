@@ -478,6 +478,7 @@ int smb_tree_disconnect(struct cifsd_work *work)
 	/* delete tcon from sess tcon list and decrease sess tcon count */
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
+	atomic_add_unless(&tcon->share->num_conn, -1, 0);
 	close_opens_from_fibtable(sess, tcon);
 	kfree(tcon);
 
@@ -533,6 +534,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	bool can_write;
 	char *dev_type;
 	int dev_flags = 0;
+	unsigned int max_conn;
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
@@ -587,6 +589,12 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 		goto out_err;
 	}
 
+	max_conn = share->config.max_connections;
+	if (max_conn > 0 && max_conn < atomic_read(&share->num_conn) + 1) {
+		rc = -EACCES;
+		goto out_err;
+	}
+
 	tcon = construct_cifsd_tcon(share, sess);
 	if (IS_ERR(tcon)) {
 		rc = PTR_ERR(tcon);
@@ -615,6 +623,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 		goto out_err;
 	}
 
+	atomic_inc(&share->num_conn);
 	tcon->writeable = can_write;
 	rsp->WordCount = 7;
 	rsp->OptionalSupport = 0;

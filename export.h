@@ -168,6 +168,7 @@ struct cifsd_share {
 	struct list_head list;
 	int writeable;
 	unsigned int type;
+	atomic_t num_conn;
 };
 
 /* cifsd_tcon is coupled with cifsd_share */

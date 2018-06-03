@@ -1506,6 +1506,7 @@ int smb2_tree_connect(struct cifsd_work *work)
 	char *treename = NULL, *name = NULL;
 	int rc = 0;
 	bool can_write;
+	unsigned int max_conn;
 
 	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
@@ -1537,6 +1538,12 @@ int smb2_tree_connect(struct cifsd_work *work)
 	share = get_cifsd_share(conn, sess, name, &can_write);
 	if (IS_ERR(share)) {
 		rc = PTR_ERR(share);
+		goto out_err;
+	}
+
+	max_conn = share->config.max_connections;
+	if (max_conn > 0 && max_conn < atomic_read(&share->num_conn) + 1) {
+		rc = -EACCES;
 		goto out_err;
 	}
 
@@ -1572,7 +1579,7 @@ int smb2_tree_connect(struct cifsd_work *work)
 	}
 
 	tcon->maximal_access = le32_to_cpu(rsp->MaximalAccess);
-
+	atomic_inc(&share->num_conn);
 out_err:
 	kfree(treename);
 	kfree(name);
@@ -1702,6 +1709,7 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 		path_put(&tcon->share_path);
 	list_del(&tcon->tcon_list);
 	sess->tcon_count--;
+	atomic_add_unless(&tcon->share->num_conn, -1, 0);
 	close_opens_from_fibtable(sess, tcon);
 	kfree(tcon);
 
