@@ -1116,6 +1116,20 @@ err_out:
 	return rc;
 }
 
+static int match_conn_by_dialect(struct cifsd_tcp_conn *conn, void *arg)
+{
+	struct cifsd_tcp_conn *curr = (struct cifsd_tcp_conn *)arg;
+
+	cifsd_debug("Connection.ClientGUID %*phN, Dialect %x\n",
+		SMB2_CLIENT_GUID_SIZE, conn->ClientGUID, conn->dialect);
+
+	if (!memcmp(conn->ClientGUID, curr->ClientGUID, SMB2_CLIENT_GUID_SIZE))
+		if (conn->dialect != curr->dialect)
+			return 1;
+
+	return 0;
+}
+
 /**
  * smb2_sess_setup() - handler for smb2 session setup command
  * @work:	smb work containing smb request buffer
@@ -1448,6 +1462,17 @@ int smb2_sess_setup(struct cifsd_work *work)
 				sess->sign = true;
 			}
 		}
+
+		if (conn->dialect > SMB20_PROT_ID)
+			if (cifsd_tcp_for_each_conn(match_conn_by_dialect,
+				conn)) {
+				cifsd_err("fail to verify the dialect\n");
+
+				rc = -EPERM;
+				rsp->hdr.Status =
+					NT_STATUS_USER_SESSION_DELETED;
+				goto out_err;
+			}
 
 		if (conn->use_spnego) {
 			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
