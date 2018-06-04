@@ -69,6 +69,11 @@ extern spinlock_t connect_list_lock;
 #define O_SERVER 1
 #define O_CLIENT 2
 
+/* macro for filter type */
+#define FILTER_NON_TYPE		0
+#define FILTER_WILDCARD		1
+#define FILTER_FILE_EXTENSION	2
+
 extern int cifsd_num_shares;
 extern int server_signing;
 extern char *guestAccountName;
@@ -145,6 +150,12 @@ SHARE_ATTR(SH_READONLY, readonly)	/* default: enabled */
 SHARE_ATTR(SH_WRITEOK, writeok)		/* default: enabled */
 SHARE_ATTR(SH_STORE_DOS, store_dos)	/* default: disable */
 
+struct cifsd_filter {
+	struct ts_config *config;
+	struct list_head entry;
+	int type;
+};
+
 struct share_config {
 	char *comment;
 	char *allow_hosts;
@@ -155,6 +166,7 @@ struct share_config {
 	char *valid_users;
 	unsigned long attr;
 	unsigned int max_connections;
+	struct list_head filter_list;
 };
 
 struct cifsd_share {
@@ -238,4 +250,5 @@ int cifsd_user_store(const char *buf, size_t len);
 int cifsd_config_store(const char *buf, size_t len);
 int cifsd_debug_store(const char *buf);
 int cifsd_caseless_search_store(const char *buf);
+bool cifsd_filter_filename_match(struct cifsd_share *share, char *filename);
 #endif /* __CIFSD_EXPORT_H */

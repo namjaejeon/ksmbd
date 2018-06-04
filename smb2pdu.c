@@ -2232,6 +2232,13 @@ int smb2_open(struct cifsd_work *work)
 	if (rc < 0)
 		goto err_out1;
 
+	if (cifsd_filter_filename_match(tcon->share, name)) {
+		rc = -ENOENT;
+		cifsd_debug("file(%s) open is not allowed by setting as veto file\n",
+			name);
+		goto err_out1;
+	}
+
 	req_op_level = req->RequestedOplockLevel;
 	memset(&d_info, 0, sizeof(struct durable_info));
 	if (durable_enable && req->CreateContextsOffset) {
@@ -3214,6 +3221,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_query_directory_req *req;
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
+	struct cifsd_share *share = work->tcon->share;
 	struct smb_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct cifsd_dir_info d_info;
@@ -3405,6 +3413,12 @@ int smb2_query_dir(struct cifsd_work *work)
 		/* dot and dotdot entries are already reserved */
 		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name)) {
 			kfree(d_info.name);
+			continue;
+		}
+
+		if (cifsd_filter_filename_match(share, d_info.name)) {
+			cifsd_debug("file(%s) is invisible by setting as veto file\n",
+				d_info.name);
 			continue;
 		}
 
@@ -4777,6 +4791,7 @@ static int smb2_rename(struct cifsd_file *fp,
 	struct smb2_file_rename_info *file_info, unsigned int tid,
 	struct nls_table *local_nls)
 {
+	struct cifsd_share *share = fp->tcon->share;
 	char *new_name = NULL, *abs_oldname = NULL, *old_name = NULL;
 	char *tmp_name = NULL, *pathname = NULL;
 	struct path path;
@@ -4857,6 +4872,13 @@ static int smb2_rename(struct cifsd_file *fp,
 		file_present = false;
 	else
 		path_put(&path);
+
+	if (cifsd_filter_filename_match(share, tmp_name)) {
+		rc = -ENOENT;
+		cifsd_debug("file(%s) rename is not allowed by setting as veto file\n",
+			tmp_name);
+		goto out;
+	}
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {

@@ -22,6 +22,7 @@
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
+#include <linux/textsearch.h>
 
 #include "glob.h"
 #include "export.h"
@@ -869,3 +870,41 @@ int get_nlink(struct kstat *st)
 
 	return nlink;
 }
+
+bool cifsd_filter_filename_match(struct cifsd_share *share, char *filename)
+{
+	struct cifsd_filter *cf;
+	char *source_string;
+	struct ts_state state;
+	int pos, len;
+
+	list_for_each_entry(cf, &share->config.filter_list, entry) {
+		if (cf->type == FILTER_FILE_EXTENSION) {
+			source_string = strchr(filename, '.');
+			if (!source_string)
+				continue;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (!pos && state.offset == len)
+				return true;
+		} else if (cf->type == FILTER_WILDCARD) {
+			source_string = filename;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (pos >= 0)
+				return true;
+		} else {
+			source_string = filename;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (!pos && state.offset == len)
+				return true;
+		}
+	}
+
+	return false;
+}
+
