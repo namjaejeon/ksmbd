@@ -32,7 +32,7 @@ static struct cifsd_tcp_conn_ops default_tcp_conn_ops;
 static DEFINE_MUTEX(init_lock);
 
 static LIST_HEAD(tcp_conn_list);
-static DEFINE_SPINLOCK(tcp_conn_list_lock);
+static DEFINE_RWLOCK(tcp_conn_list_lock);
 
 static int deny_new_conn;
 
@@ -68,9 +68,9 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
  */
 static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 {
-	spin_lock(&tcp_conn_list_lock);
+	write_lock(&tcp_conn_list_lock);
 	list_del(&conn->tcp_conns);
-	spin_unlock(&tcp_conn_list_lock);
+	write_unlock(&tcp_conn_list_lock);
 
 	kernel_sock_shutdown(conn->sock, SHUT_RDWR);
 	sock_release(conn->sock);
@@ -113,9 +113,9 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = 0;
 
-	spin_lock(&tcp_conn_list_lock);
+	write_lock(&tcp_conn_list_lock);
 	list_add(&conn->tcp_conns, &tcp_conn_list);
-	spin_unlock(&tcp_conn_list_lock);
+	write_unlock(&tcp_conn_list_lock);
 	return conn;
 }
 
@@ -639,14 +639,14 @@ static void tcp_stop_sessions(void)
 	int ret;
 	struct cifsd_tcp_conn *conn;
 
-	spin_lock(&tcp_conn_list_lock);
+	read_lock(&tcp_conn_list_lock);
 	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
 		ret = kthread_stop(conn->handler);
 		if (ret)
 			cifsd_err("Can't stop connection kthread: %d\n", ret);
 	}
-	spin_unlock(&tcp_conn_list_lock);
+	read_unlock(&tcp_conn_list_lock);
 }
 
 static void tcp_stop_kthread(void)
