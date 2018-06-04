@@ -1242,7 +1242,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			sess = lookup_session_on_server(conn,
 					le64_to_cpu(req->hdr.SessionId));
-			if (sess) {
+			if (!sess) {
 				rc = -EINVAL;
 				rsp->hdr.Status =
 					NT_STATUS_REQUEST_NOT_ACCEPTED;

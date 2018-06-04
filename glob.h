@@ -530,7 +530,6 @@ extern int is_smb2_rsp(struct cifsd_work *work);
 
 /* functions */
 extern void smb_delete_session(struct cifsd_sess *sess);
-extern int connect_tcp_sess(struct socket *sock);
 
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
