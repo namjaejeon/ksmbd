@@ -28,6 +28,7 @@
 
 #include "glob.h"
 #include "netlink.h"
+#include "vfs.h"
 
 /* Windows style file permissions for extended response */
 #define	FILE_GENERIC_ALL	0x1F01FF
@@ -66,23 +67,6 @@
 
 struct cifsd_tcp_conn;
 struct cifsd_sess;
-
-struct smb_readdir_data {
-	struct dir_context ctx;
-	char           *dirent;
-	unsigned int   used;
-	unsigned int   full;
-	unsigned int   dirent_count;
-	unsigned int   file_attr;
-};
-
-struct smb_dirent {
-	__le64         ino;
-	__le64          offset;
-	__le32         namelen;
-	__le32         d_type;
-	char            name[];
-};
 
 struct notification {
 	unsigned int mode;
@@ -138,7 +122,7 @@ struct cifsd_file {
 	struct timespec open_time;
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
-	struct smb_readdir_data	readdir_data;
+	struct cifsd_readdir_data	readdir_data;
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */
@@ -223,7 +207,6 @@ void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
 get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id);
 int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id);
-bool is_dir_empty(struct cifsd_file *fp);
 unsigned int get_pipe_type(char *pipename);
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);

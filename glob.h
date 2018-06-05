@@ -416,19 +416,6 @@ struct cifsd_dir_info {
 	int last_entry_offset;
 };
 
-/* cifsd kstat wrapper to get valid create time when reading dir entry */
-struct smb_kstat {
-	struct kstat *kstat;
-	__u64 create_time;
-	__le32 file_attributes;
-};
-
-struct smb2_fs_sector_size {
-	unsigned short logical_sector_size;
-	unsigned int physical_sector_size;
-	unsigned int optimal_io_size;
-};
-
 struct cifsd_pid_info {
 	struct socket *socket;
 	__u32 cifsd_pid;
@@ -527,51 +514,6 @@ extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
 extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
-/* smb vfs functions */
-int smb_vfs_create(const char *name, umode_t mode);
-int smb_vfs_mkdir(const char *name, umode_t mode);
-int smb_vfs_read(struct cifsd_work *work, struct cifsd_file *fp,
-		 size_t count, loff_t *pos);
-int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
-	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
-int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
-		struct kstat *stat);
-int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
-		uint64_t fid, struct iattr *attrs);
-int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id);
-struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
-	const struct path *path, int flags, int option, int fexist);
-int smb_vfs_remove_file(char *name);
-int smb_vfs_link(const char *oldname, const char *newname);
-int smb_vfs_symlink(const char *name, const char *symname);
-int smb_vfs_readlink(struct path *path, char *buf, int len);
-int smb_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp);
-int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
-	struct cifsd_file *fp, loff_t size);
-ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size);
-ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-		char **xattr_buf, int flags);
-int smb_vfs_setxattr(const char *filename, struct path *path, const char *name,
-		const void *value, size_t size, int flags);
-int smb_kern_path(char *name, unsigned int flags, struct path *path,
-		bool caseless);
-int smb_search_dir(char *dirname, char *filename);
-void smb_vfs_set_fadvise(struct file *filp, int option);
-int smb_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int check_lock_range(struct file *filp, loff_t start,
-		loff_t end, unsigned char type);
-int smb_vfs_readdir(struct file *file, filldir_t filler,
-			struct smb_readdir_data *buf);
-int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
-	loff_t len);
-int smb_vfs_truncate_xattr(struct dentry *dentry);
-int smb_vfs_truncate_stream_xattr(struct dentry *dentry);
-int smb_vfs_remove_xattr(struct path *path, char *field_name);
-int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry);
-unsigned short get_logical_sector_size(struct inode *inode);
-void get_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss);
-
 /* smb1ops functions */
 extern void init_smb1_server(struct cifsd_tcp_conn *conn);
 
@@ -608,19 +550,18 @@ int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
 int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname);
-void *fill_common_info(char **p, struct smb_kstat *smb_kstat);
-char *read_next_entry(struct cifsd_work *work, struct smb_kstat *smb_kstat,
-		struct smb_dirent *de, char *dirpath);
 /* fill SMB specific fields when smb2 query dir is requested */
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment, bool no_namelen_field);
+
+struct cifsd_kstat;
 int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,
 		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct smb_kstat *));
+		int, struct cifsd_dir_info *, struct cifsd_kstat *));
 
 /* netlink functions */
 int cifsd_net_init(void);

@@ -26,7 +26,7 @@
 #include "glob.h"
 #include "export.h"
 #include "netlink.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 #define NETLINK_CIFSD			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
