@@ -1533,15 +1533,15 @@ out:
 }
 
 /**
- * fill_create_time() - fill create time of directory entry in smb_kstat
+ * fill_create_time() - fill create time of directory entry in cifsd_kstat
  * if related config is not yes, create time is same with change time
  *
  * @work: smb work containing share config
  * @path: path info
- * @smb_kstat: cifsd kstat wrapper
+ * @cifsd_kstat: cifsd kstat wrapper
  */
 static void fill_create_time(struct cifsd_work *work,
-	struct path *path, struct smb_kstat *smb_kstat)
+	struct path *path, struct cifsd_kstat *cifsd_kstat)
 {
 	char *create_time = NULL;
 	int xattr_len;
@@ -1550,7 +1550,7 @@ static void fill_create_time(struct cifsd_work *work,
 	 * if "store dos attributes" conf is not yes,
 	 * create time = change time
 	 */
-	smb_kstat->create_time = cifs_UnixTimeToNT(smb_kstat->kstat->ctime);
+	cifsd_kstat->create_time = cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime);
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 		xattr_len = smb_find_cont_xattr(path,
@@ -1558,7 +1558,7 @@ static void fill_create_time(struct cifsd_work *work,
 			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
 		if (xattr_len > 0)
-			smb_kstat->create_time = *((u64 *)create_time);
+			cifsd_kstat->create_time = *((u64 *)create_time);
 
 		cifsd_free(create_time);
 	}
@@ -1567,52 +1567,52 @@ static void fill_create_time(struct cifsd_work *work,
 /**
  * cifsd_vfs_init_kstat() - convert unix stat information to smb stat format
  * @p:          destination buffer
- * @smb_kstat:      cifsd kstat wrapper
+ * @cifsd_kstat:      cifsd kstat wrapper
  */
-void *cifsd_vfs_init_kstat(char **p, struct smb_kstat *smb_kstat)
+void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 {
 	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
 	info->FileIndex = 0;
-	info->CreationTime = cpu_to_le64(smb_kstat->create_time);
+	info->CreationTime = cpu_to_le64(cifsd_kstat->create_time);
 	info->LastAccessTime = cpu_to_le64(
-			cifs_UnixTimeToNT(smb_kstat->kstat->atime));
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->atime));
 	info->LastWriteTime = cpu_to_le64(
-			cifs_UnixTimeToNT(smb_kstat->kstat->mtime));
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->mtime));
 	info->ChangeTime = cpu_to_le64(
-			cifs_UnixTimeToNT(smb_kstat->kstat->ctime));
-	if (smb_kstat->file_attributes & ATTR_DIRECTORY) {
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime));
+	if (cifsd_kstat->file_attributes & ATTR_DIRECTORY) {
 		info->EndOfFile = 0;
 		info->AllocationSize = 0;
 	} else {
-		info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
+		info->EndOfFile = cpu_to_le64(cifsd_kstat->kstat->size);
 		info->AllocationSize =
-			cpu_to_le64(smb_kstat->kstat->blocks << 9);
+			cpu_to_le64(cifsd_kstat->kstat->blocks << 9);
 	}
-	info->ExtFileAttributes = cpu_to_le32(smb_kstat->file_attributes);
+	info->ExtFileAttributes = cpu_to_le32(cifsd_kstat->file_attributes);
 
 	return info;
 }
 
 /*
- * fill_file_attributes() - fill FileAttributes of directory entry in smb_kstat.
+ * fill_file_attributes() - fill FileAttributes of directory entry in cifsd_kstat.
  * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
  *
  * @work: smb work containing share config
  * @path: path info
- * @smb_kstat: cifsd kstat wrapper
+ * @cifsd_kstat: cifsd kstat wrapper
  */
 
 static void fill_file_attributes(struct cifsd_work *work,
-	struct path *path, struct smb_kstat *smb_kstat)
+	struct path *path, struct cifsd_kstat *cifsd_kstat)
 {
 	/*
 	 * set default value for the case that store dos attributes is not yes
 	 * or that acl is disable in server's filesystem and the config is yes.
 	 */
-	if (S_ISDIR(smb_kstat->kstat->mode))
-		smb_kstat->file_attributes = ATTR_DIRECTORY;
+	if (S_ISDIR(cifsd_kstat->kstat->mode))
+		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
 	else
-		smb_kstat->file_attributes = ATTR_ARCHIVE;
+		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 		char *file_attribute = NULL;
@@ -1623,7 +1623,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
 
 		if (rc > 0)
-			smb_kstat->file_attributes =
+			cifsd_kstat->file_attributes =
 				*((__le32 *)file_attribute);
 		else
 			cifsd_debug("fail to fill file attributes.\n");
@@ -1635,7 +1635,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 /**
  * read_next_entry() - read next directory entry and return absolute name
  * @work:	smb work containing share config
- * @smb_kstat:	cifsd wrapper of next dirent's stat
+ * @cifsd_kstat:	cifsd wrapper of next dirent's stat
  * @de:		directory entry
  * @dirpath:	directory path name
  *
@@ -1643,7 +1643,7 @@ static void fill_file_attributes(struct cifsd_work *work,
  *              otherwise NULL
  */
 char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct smb_kstat *smb_kstat,
+			     struct cifsd_kstat *cifsd_kstat,
 			     struct cifsd_dirent *de,
 			     char *dirpath)
 {
@@ -1673,9 +1673,9 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 		return ERR_PTR(rc);
 	}
 
-	generic_fillattr(path.dentry->d_inode, smb_kstat->kstat);
-	fill_create_time(work, &path, smb_kstat);
-	fill_file_attributes(work, &path, smb_kstat);
+	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
 	memcpy(name, de->name, de->namelen);
 	name[de->namelen] = '\0';
 	path_put(&path);

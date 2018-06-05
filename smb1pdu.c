@@ -5859,7 +5859,7 @@ static int set_path_info(struct cifsd_work *work)
  * @conn:	TCP server instance of connection
  * @info_level:	smb information level
  * @d_info: structure included variables for query dir
- * @smb_kstat: cifsd wrapper of dirent stat information
+ * @cifsd_kstat: cifsd wrapper of dirent stat information
  *
  * if directory has many entries, find first can't read it fully.
  * find next might be called multiple times to read remaining dir entries
@@ -5868,7 +5868,7 @@ static int set_path_info(struct cifsd_work *work)
  */
 static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_dir_info *d_info,
-		struct smb_kstat *smb_kstat)
+		struct cifsd_kstat *cifsd_kstat)
 {
 	int name_len;
 	int next_entry_offset;
@@ -5889,19 +5889,19 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 
 		fsinfo = (FIND_INFO_STANDARD *)(d_info->bufptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(cpu_to_le64(smb_kstat->create_time)),
+			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fsinfo->CreationTime,
 			&fsinfo->CreationDate);
-		unix_to_dos_time(smb_kstat->kstat->atime,
+		unix_to_dos_time(cifsd_kstat->kstat->atime,
 			&fsinfo->LastAccessTime,
 			&fsinfo->LastAccessDate);
-		unix_to_dos_time(smb_kstat->kstat->mtime,
+		unix_to_dos_time(cifsd_kstat->kstat->mtime,
 			&fsinfo->LastWriteTime,
 			&fsinfo->LastWriteDate);
-		fsinfo->DataSize = cpu_to_le32(smb_kstat->kstat->size);
+		fsinfo->DataSize = cpu_to_le32(cifsd_kstat->kstat->size);
 		fsinfo->AllocationSize =
-			cpu_to_le32(smb_kstat->kstat->blocks << 9);
-		fsinfo->Attributes = S_ISDIR(smb_kstat->kstat->mode) ?
+			cpu_to_le32(cifsd_kstat->kstat->blocks << 9);
+		fsinfo->Attributes = S_ISDIR(cifsd_kstat->kstat->mode) ?
 			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		fsinfo->FileNameLength = cpu_to_le16(name_len);
 		memcpy(fsinfo->FileName, utfname, name_len);
@@ -5922,21 +5922,21 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 
 		fesize = (FIND_INFO_QUERY_EA_SIZE *)(d_info->bufptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(cpu_to_le64(smb_kstat->create_time)),
+			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fesize->CreationTime,
 			&fesize->CreationDate);
-		unix_to_dos_time(smb_kstat->kstat->atime,
+		unix_to_dos_time(cifsd_kstat->kstat->atime,
 			&fesize->LastAccessTime,
 			&fesize->LastAccessDate);
-		unix_to_dos_time(smb_kstat->kstat->mtime,
+		unix_to_dos_time(cifsd_kstat->kstat->mtime,
 			&fesize->LastWriteTime,
 			&fesize->LastWriteDate);
 
 		fesize->DataSize =
-			cpu_to_le32(smb_kstat->kstat->size);
+			cpu_to_le32(cifsd_kstat->kstat->size);
 		fesize->AllocationSize =
-			cpu_to_le32(smb_kstat->kstat->blocks << 9);
-		fesize->Attributes = S_ISDIR(smb_kstat->kstat->mode) ?
+			cpu_to_le32(cifsd_kstat->kstat->blocks << 9);
+		fesize->Attributes = S_ISDIR(cifsd_kstat->kstat->mode) ?
 			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		fesize->EASize = 0;
 		fesize->FileNameLength = (__u8)(name_len);
@@ -5957,7 +5957,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 		memcpy(fdinfo->FileName, utfname, name_len);
 		fdinfo->NextEntryOffset = next_entry_offset;
@@ -5979,7 +5979,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 		memcpy(ffdinfo->FileName, utfname, name_len);
@@ -6025,7 +6025,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = smb_get_shortname(conn,
@@ -6052,11 +6052,11 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->NextEntryOffset = next_entry_offset;
 		memset((char *)dinfo + sizeof(SEARCH_ID_FULL_DIR_INFO) - 1 +
@@ -6077,14 +6077,14 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->ShortNameLength = smb_get_shortname(conn,
 			d_info->name, fibdinfo->ShortName);
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = 0;
-		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		memcpy(fibdinfo->FileName, utfname, name_len);
 		fibdinfo->NextEntryOffset = next_entry_offset;
 		memset((char *)fibdinfo +
@@ -6111,7 +6111,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		finfo = (FILE_UNIX_INFO *)(d_info->bufptr);
 		finfo->ResumeKey = 0;
 		unix_info = (FILE_UNIX_BASIC_INFO *)((char *)finfo + 8);
-		init_unix_info(unix_info, smb_kstat->kstat);
+		init_unix_info(unix_info, cifsd_kstat->kstat);
 		memcpy(finfo->FileName, utfname, name_len);
 		finfo->NextEntryOffset = next_entry_offset;
 		memset((char *)finfo + sizeof(FILE_UNIX_INFO) - 1 + name_len,
@@ -6160,7 +6160,7 @@ static int find_first(struct cifsd_work *work)
 	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp = NULL;
 	struct kstat kstat;
-	struct smb_kstat smb_kstat;
+	struct cifsd_kstat cifsd_kstat;
 	struct cifsd_dir_info d_info;
 	int params_count = sizeof(T2_FFIRST_RSP_PARMS);
 	int data_alignment_offset = 0;
@@ -6279,8 +6279,8 @@ static int find_first(struct cifsd_work *work)
 			SMB_SEARCH_ATTRIBUTE_DIRECTORY && de->d_type != DT_DIR)
 			continue;
 
-		smb_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &smb_kstat, de,
+		cifsd_kstat.kstat = &kstat;
+		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
 			dirpath);
 		if (IS_ERR(d_info.name)) {
 			rc = PTR_ERR(d_info.name);
@@ -6303,7 +6303,7 @@ static int find_first(struct cifsd_work *work)
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
 				req_params->InformationLevel, &d_info,
-				&smb_kstat);
+				&cifsd_kstat);
 			if (rc) {
 				kfree(d_info.name);
 				goto err_out;
@@ -6404,7 +6404,7 @@ static int find_next(struct cifsd_work *work)
 	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct kstat kstat;
-	struct smb_kstat smb_kstat;
+	struct cifsd_kstat cifsd_kstat;
 	struct cifsd_dir_info d_info;
 	int params_count = sizeof(T2_FNEXT_RSP_PARMS);
 	int data_alignment_offset = 0;
@@ -6510,8 +6510,8 @@ static int find_next(struct cifsd_work *work)
 			(!strcmp(de->name, ".") || !strcmp(de->name, ".."))))
 			continue;
 
-		smb_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &smb_kstat, de,
+		cifsd_kstat.kstat = &kstat;
+		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
 			dirpath);
 		if (IS_ERR(d_info.name)) {
 			rc = PTR_ERR(d_info.name);
@@ -6528,7 +6528,7 @@ static int find_next(struct cifsd_work *work)
 
 		cifsd_debug("filename string = %s\n", d_info.name);
 		rc = smb_populate_readdir_entry(conn,
-			req_params->InformationLevel, &d_info, &smb_kstat);
+			req_params->InformationLevel, &d_info, &cifsd_kstat);
 		kfree(d_info.name);
 		if (rc)
 			goto err_out;
@@ -7693,13 +7693,13 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 		int info_level, struct cifsd_file *dir,
 		struct cifsd_dir_info *d_info, char *search_pattern,
 		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct smb_kstat *))
+		int, struct cifsd_dir_info *, struct cifsd_kstat *))
 {
 	int i, rc = 0;
 
 	for (i = 0; i < 2; i++) {
 		struct kstat kstat;
-		struct smb_kstat smb_kstat;
+		struct cifsd_kstat cifsd_kstat;
 
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
 			if (i == 0)
@@ -7713,10 +7713,10 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 			}
 
 			generic_fillattr(PARENT_INODE(dir), &kstat);
-			smb_kstat.file_attributes = ATTR_DIRECTORY;
-			smb_kstat.kstat = &kstat;
+			cifsd_kstat.file_attributes = ATTR_DIRECTORY;
+			cifsd_kstat.kstat = &kstat;
 			rc = populate_readdir_entry_fn(conn, info_level,
-				d_info, &smb_kstat);
+				d_info, &cifsd_kstat);
 			if (rc)
 				break;
 			if (d_info->out_buf_len <= 0)
