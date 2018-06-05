@@ -3047,7 +3047,7 @@ err_out1:
  * @conn:	TCP server instance of connection
  * @info_level:	smb information level
  * @d_info:	structure included variables for query dir
- * @smb_kstat:	cifsd wrapper of dirent stat information
+ * @cifsd_kstat:	cifsd wrapper of dirent stat information
  *
  * if directory has many entries, find first can't read it fully.
  * find next might be called multiple times to read remaining dir entries
@@ -3056,7 +3056,7 @@ err_out1:
  */
 static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 	int info_level, struct cifsd_dir_info *d_info,
-	struct smb_kstat *smb_kstat)
+	struct cifsd_kstat *cifsd_kstat)
 {
 	int name_len;
 	int next_entry_offset;
@@ -3075,7 +3075,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
@@ -3094,7 +3094,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
@@ -3117,7 +3117,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
@@ -3136,7 +3136,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fninfo = (FILE_NAMES_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -3155,11 +3155,11 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->NextEntryOffset = next_entry_offset;
@@ -3177,10 +3177,10 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		fibdinfo->ShortNameLength =
 			smb_get_shortname(conn, d_info->name,
 					&(fibdinfo->ShortName[0]));
@@ -3229,7 +3229,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	int reclen = 0;
 	int rc = 0;
 	struct kstat kstat;
-	struct smb_kstat smb_kstat;
+	struct cifsd_kstat cifsd_kstat;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct cifsd_readdir_data r_data = {
@@ -3401,8 +3401,8 @@ int smb2_query_dir(struct cifsd_work *work)
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
-		smb_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &smb_kstat, de,
+		cifsd_kstat.kstat = &kstat;
+		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
 			dirpath);
 		if (IS_ERR(d_info.name)) {
 			rc = PTR_ERR(d_info.name);
@@ -3425,7 +3425,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &d_info, &smb_kstat);
+				req->FileInformationClass, &d_info, &cifsd_kstat);
 			if (rc)	{
 				kfree(d_info.name);
 				goto err_out;
