@@ -6157,7 +6157,7 @@ static int find_first(struct cifsd_work *work)
 	TRANSACTION2_FFIRST_REQ_PARAMS *req_params;
 	T2_FFIRST_RSP_PARMS *params = NULL;
 	struct path path;
-	struct smb_dirent *de;
+	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp = NULL;
 	struct kstat kstat;
 	struct smb_kstat smb_kstat;
@@ -6263,15 +6263,15 @@ static int find_first(struct cifsd_work *work)
 				break;
 			}
 
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent);
 		} else {
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent +
 				 dir_fp->dirent_offset);
 		}
 
-		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
+		reclen = ALIGN(sizeof(struct cifsd_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
@@ -6401,7 +6401,7 @@ static int find_next(struct cifsd_work *work)
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
 	TRANSACTION2_FNEXT_REQ_PARAMS *req_params;
 	T2_FNEXT_RSP_PARMS *params = NULL;
-	struct smb_dirent *de;
+	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct kstat kstat;
 	struct smb_kstat smb_kstat;
@@ -6489,15 +6489,15 @@ static int find_next(struct cifsd_work *work)
 				break;
 			}
 
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent);
 		} else {
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent +
 				 dir_fp->dirent_offset);
 		}
 
-		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
+		reclen = ALIGN(sizeof(struct cifsd_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
@@ -7621,10 +7621,10 @@ int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 {
 	struct cifsd_readdir_data *buf =
 		container_of(ctx, struct cifsd_readdir_data, ctx);
-	struct smb_dirent *de = (void *)(buf->dirent + buf->used);
+	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
 	unsigned int reclen;
 
-	reclen = ALIGN(sizeof(struct smb_dirent) + namlen, sizeof(u64));
+	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
 	if (buf->used + reclen > PAGE_SIZE) {
 		buf->full = 1;
 		return -EINVAL;

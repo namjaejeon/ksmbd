@@ -1472,7 +1472,7 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 	int flags = O_RDONLY|O_LARGEFILE;
 	int used_count, reclen;
 	int iter;
-	struct smb_dirent *buf_p;
+	struct cifsd_dirent *buf_p;
 	int namelen = strlen(filename);
 	int dirnamelen = strlen(dirname);
 	bool match_found = false;
@@ -1505,12 +1505,12 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		if (ret || !used_count)
 			break;
 
-		buf_p = (struct smb_dirent *)readdir_data.dirent;
+		buf_p = (struct cifsd_dirent *)readdir_data.dirent;
 		for (iter = 0; iter < used_count; iter += reclen,
-		     buf_p = (struct smb_dirent *)((char *)buf_p + reclen)) {
+		     buf_p = (struct cifsd_dirent *)((char *)buf_p + reclen)) {
 			int length;
 
-			reclen = ALIGN(sizeof(struct smb_dirent) +
+			reclen = ALIGN(sizeof(struct cifsd_dirent) +
 				       buf_p->namelen, sizeof(__le64));
 			length = buf_p->namelen;
 			if (length != namelen ||
@@ -1644,7 +1644,7 @@ static void fill_file_attributes(struct cifsd_work *work,
  */
 char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     struct smb_kstat *smb_kstat,
-			     struct smb_dirent *de,
+			     struct cifsd_dirent *de,
 			     char *dirpath)
 {
 	struct path path;

@@ -3223,7 +3223,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct smb2_query_directory_req *req;
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	struct cifsd_share *share = work->tcon->share;
-	struct smb_dirent *de;
+	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct cifsd_dir_info d_info;
 	int reclen = 0;
@@ -3389,15 +3389,15 @@ int smb2_query_dir(struct cifsd_work *work)
 				break;
 			}
 
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent);
 		} else {
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent +
 				 dir_fp->dirent_offset);
 		}
 
-		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
+		reclen = ALIGN(sizeof(struct cifsd_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
