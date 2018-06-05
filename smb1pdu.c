@@ -28,6 +28,7 @@
 #include "oplock.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "vfs.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
@@ -922,7 +923,7 @@ int smb_rename(struct cifsd_work *work)
 	strncpy(tmp_name, abs_newname, PATH_MAX);
 	tmp_name[PATH_MAX - 1] = 0x00;
 
-	rc = smb_kern_path(tmp_name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(tmp_name, 0, &path, 1);
 	if (rc)
 		file_present = false;
 	else
@@ -939,7 +940,7 @@ int smb_rename(struct cifsd_work *work)
 	}
 
 	cifsd_debug("rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = smb_vfs_rename(abs_oldname, abs_newname, NULL);
+	rc = cifsd_vfs_rename(abs_oldname, abs_newname, NULL);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_MEMORY;
 		goto out;
@@ -1886,7 +1887,7 @@ int smb_locking_andx(struct cifsd_work *work)
 
 		flock = smb_lock->fl;
 retry:
-		err = smb_vfs_lock(filp, smb_lock->cmd, flock);
+		err = cifsd_vfs_lock(filp, smb_lock->cmd, flock);
 		if (err == FILE_LOCK_DEFERRED) {
 			cifsd_err("would have to wait for getting lock\n");
 			list_add_tail(&smb_lock->glist,
@@ -1979,7 +1980,7 @@ skip:
 			goto out;
 		}
 
-		err = smb_vfs_lock(filp, cmd, flock);
+		err = cifsd_vfs_lock(filp, cmd, flock);
 		if (!err) {
 			cifsd_debug("File unlocked\n");
 			list_del(&cmp_lock->glist);
@@ -2025,7 +2026,7 @@ out:
 		rlock->fl_start = smb_lock->start;
 		rlock->fl_end = smb_lock->end;
 
-		err = smb_vfs_lock(filp, 0, rlock);
+		err = cifsd_vfs_lock(filp, 0, rlock);
 		if (err)
 			cifsd_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);
@@ -2544,7 +2545,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		goto out;
 	}
 
-	err = smb_kern_path(conv_name, 0, &path,
+	err = cifsd_vfs_kern_path(conv_name, 0, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
@@ -2666,11 +2667,11 @@ int smb_nt_create_andx(struct cifsd_work *work)
 
 		if (!create_directory) {
 			mode |= S_IFREG;
-			err = smb_vfs_create(conv_name, mode);
+			err = cifsd_vfs_create(conv_name, mode);
 			if (err)
 				goto out;
 		} else {
-			err = smb_vfs_mkdir(conv_name, mode);
+			err = cifsd_vfs_mkdir(conv_name, mode);
 			if (err) {
 				cifsd_err("Can't create directory %s",
 					conv_name);
@@ -2678,7 +2679,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 			}
 		}
 
-		err = smb_kern_path(conv_name, 0, &path, 0);
+		err = cifsd_vfs_kern_path(conv_name, 0, &path, 0);
 		if (err) {
 			cifsd_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -2696,7 +2697,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	}
 
 	/* open  file and get FID */
-	fp = smb_dentry_open(work, &path, open_flags,
+	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
 		le32_to_cpu(req->CreateOptions),
 		file_present);
 	if (IS_ERR(fp)) {
@@ -2763,7 +2764,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	if (alloc_size && (file_info == F_CREATED ||
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
-			err = smb_vfs_truncate(sess, NULL,
+			err = cifsd_vfs_truncate(sess, NULL,
 				fp, alloc_size);
 			if (err) {
 				cifsd_err("failed to expand file, err = %d\n",
@@ -3134,7 +3135,7 @@ int smb_read_andx(struct cifsd_work *work)
 		goto out;
 	}
 
-	nbytes = smb_vfs_read(work, fp, count, &pos);
+	nbytes = cifsd_vfs_read(work, fp, count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
@@ -3210,11 +3211,11 @@ int smb_write(struct cifsd_work *work)
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
 	if (!count) {
-		err = smb_vfs_truncate(work->sess, NULL, fp,
+		err = cifsd_vfs_truncate(work->sess, NULL, fp,
 			pos);
 		nbytes = 0;
 	} else
-		err = smb_vfs_write(work->sess, fp, data_buf,
+		err = cifsd_vfs_write(work->sess, fp, data_buf,
 			count, &pos, 0, &nbytes);
 
 out:
@@ -3385,7 +3386,7 @@ int smb_write_andx(struct cifsd_work *work)
 
 	cifsd_debug("filname %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
-	err = smb_vfs_write(work->sess, fp, data_buf, count, &pos,
+	err = cifsd_vfs_write(work->sess, fp, data_buf, count, &pos,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
@@ -3488,13 +3489,13 @@ int smb_flush(struct cifsd_work *work)
 		for (id = 0; id < ftab->max_fids; id++) {
 			file = ftab->fileid[id];
 			if (file) {
-				err = smb_vfs_fsync(sess, file->volatile_id, 0);
+				err = cifsd_vfs_fsync(sess, file->volatile_id, 0);
 				if (err)
 					goto out;
 			}
 		}
 	} else {
-		err = smb_vfs_fsync(work->sess, req->FileID, 0);
+		err = cifsd_vfs_fsync(work->sess, req->FileID, 0);
 		if (err)
 			goto out;
 	}
@@ -3953,7 +3954,7 @@ static int smb_get_acl(struct cifsd_work *work, struct path *path)
 	aclbuf->access_entry_count = 0;
 
 	/* check if POSIX_ACL_XATTR_ACCESS exists */
-	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_ACCESS,
+	value_len = cifsd_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_ACCESS,
 			&buf, 1);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
@@ -3962,7 +3963,7 @@ static int smb_get_acl(struct cifsd_work *work, struct path *path)
 	}
 
 	/* check if POSIX_ACL_XATTR_DEFAULT exists */
-	value_len = smb_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_DEFAULT,
+	value_len = cifsd_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_DEFAULT,
 			&buf, 1);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
@@ -4047,10 +4048,10 @@ static int smb_set_acl(struct cifsd_work *work)
 
 	value_len = rc;
 	if (acl_type == ACL_TYPE_ACCESS) {
-		rc = smb_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_ACCESS,
+		rc = cifsd_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_ACCESS,
 				buf, value_len, 0);
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
-		rc = smb_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_DEFAULT,
+		rc = cifsd_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_DEFAULT,
 				buf, value_len, 0);
 	}
 
@@ -4106,7 +4107,7 @@ static int smb_readlink(struct cifsd_work *work, struct path *path)
 		return -ENOMEM;
 	}
 
-	err = smb_vfs_readlink(path, buf, CIFS_MF_SYMLINK_LINK_MAXLEN);
+	err = cifsd_vfs_readlink(path, buf, CIFS_MF_SYMLINK_LINK_MAXLEN);
 	if (err < 0) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 		goto out;
@@ -4194,7 +4195,7 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	buf_free_len = SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp) + 4) -
 		sizeof(TRANSACTION2_RSP);
-	rc = smb_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
 		goto out;
@@ -4226,7 +4227,7 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 		ptr = (char *)(&temp_fea->name + name_len + 1);
 		buf_free_len -= (offsetof(struct fea, name) + name_len + 1);
 
-		value_len = smb_vfs_getxattr(path->dentry, name, &buf, 1);
+		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf, 1);
 		if (value_len <= 0) {
 			rc = -ENOENT;
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
@@ -4319,7 +4320,7 @@ static int query_path_info(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = smb_kern_path(name, 0, &path, 0);
+	rc = cifsd_vfs_kern_path(name, 0, &path, 0);
 	if (rc) {
 		rsp_hdr->Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
 		cifsd_debug("cannot get linux path for %s, err %d\n",
@@ -4866,7 +4867,7 @@ static int query_fs_info(struct cifsd_work *work)
 	if (!share)
 		return -ENOENT;
 
-	rc = smb_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
+	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
 		cifsd_err("cannot create vfs path\n");
 		return rc;
@@ -5103,7 +5104,7 @@ static int smb_posix_open(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_kern_path(name, 0, &path, 0);
+	err = cifsd_vfs_kern_path(name, 0, &path, 0);
 	if (err) {
 		file_present = false;
 		cifsd_debug("cannot get linux path for %s, err = %d\n",
@@ -5165,11 +5166,11 @@ static int smb_posix_open(struct cifsd_work *work)
 			goto free_path;
 		}
 
-		err = smb_vfs_mkdir(name, mode);
+		err = cifsd_vfs_mkdir(name, mode);
 		if (err)
 			goto out;
 
-		err = smb_kern_path(name, 0, &path, 0);
+		err = cifsd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
 			cifsd_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -5180,18 +5181,18 @@ static int smb_posix_open(struct cifsd_work *work)
 	}
 
 	if (!file_present && (posix_open_flags & O_CREAT)) {
-		err = smb_vfs_create(name, mode);
+		err = cifsd_vfs_create(name, mode);
 		if (err)
 			goto out;
 
-		err = smb_kern_path(name, 0, &path, 0);
+		err = cifsd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
 			cifsd_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
 	}
 
-	fp = smb_dentry_open(work, &path, posix_open_flags,
+	fp = cifsd_vfs_dentry_open(work, &path, posix_open_flags,
 			0, file_present);
 	if (IS_ERR(fp)) {
 		err = PTR_ERR(fp);
@@ -5336,7 +5337,7 @@ static int smb_posix_unlink(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = smb_vfs_remove_file(name);
+	rc = cifsd_vfs_remove_file(name);
 	if (rc < 0)
 		goto out;
 
@@ -5421,7 +5422,7 @@ static int smb_set_time_pathinfo(struct cifsd_work *work)
 	if (!attrs.ia_valid)
 		goto done;
 
-	err = smb_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -5483,7 +5484,7 @@ static int smb_set_unix_pathinfo(struct cifsd_work *work)
 	if (err)
 		goto out;
 
-	err = smb_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
 	if (err)
 		goto out;
 	/* setattr success, prepare response */
@@ -5562,7 +5563,7 @@ static int smb_set_ea(struct cifsd_work *work)
 		cifsd_debug("name: <%s>, name_len %u, value_len %u\n",
 			ea->name, ea->name_len, le16_to_cpu(ea->value_len));
 
-		rc = smb_vfs_setxattr(fname, NULL, attr_name, value,
+		rc = cifsd_vfs_setxattr(fname, NULL, attr_name, value,
 				le16_to_cpu(ea->value_len), 0);
 		if (rc < 0) {
 			kfree(attr_name);
@@ -5627,7 +5628,7 @@ static int smb_set_file_size_pinfo(struct cifsd_work *work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	rc = smb_vfs_truncate(work->sess, name, NULL, newsize);
+	rc = cifsd_vfs_truncate(work->sess, name, NULL, newsize);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return rc;
@@ -5687,7 +5688,7 @@ static int smb_creat_hardlink(struct cifsd_work *work)
 	}
 	cifsd_debug("oldname %s, newname %s\n", oldname, newname);
 
-	err = smb_vfs_link(oldname, newname);
+	err = cifsd_vfs_link(oldname, newname);
 	if (err < 0)
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SAME_DEVICE;
 
@@ -5746,7 +5747,7 @@ static int smb_creat_symlink(struct cifsd_work *work)
 	}
 	cifsd_debug("name %s, symname %s\n", name, symname);
 
-	err = smb_vfs_symlink(name, symname);
+	err = cifsd_vfs_symlink(name, symname);
 	if (err < 0) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = NT_STATUS_DISK_FULL;
@@ -6189,7 +6190,7 @@ static int find_first(struct cifsd_work *work)
 	}
 
 	cifsd_debug("complete dir path = %s\n",  dirpath);
-	rc = smb_kern_path(dirpath, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+	rc = cifsd_vfs_kern_path(dirpath, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
 			&path, 0);
 	if (rc < 0) {
 		cifsd_debug("cannot create vfs root path <%s> %d\n",
@@ -6197,7 +6198,7 @@ static int find_first(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	dir_fp = smb_dentry_open(work, &path, O_RDONLY, 0, 1);
+	dir_fp = cifsd_vfs_dentry_open(work, &path, O_RDONLY, 0, 1);
 	if (!dir_fp) {
 		cifsd_debug("dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
@@ -6246,7 +6247,7 @@ static int find_first(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = smb_vfs_readdir(dir_fp->filp, smb_filldir,
+			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
 					&r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
@@ -6472,7 +6473,7 @@ static int find_next(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = smb_vfs_readdir(dir_fp->filp, smb_filldir,
+			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
 					&r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
@@ -6617,7 +6618,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 	allocinfo =  (struct file_allocation_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(allocinfo->AllocationSize);
-	err = smb_vfs_getattr(work->sess, (uint64_t)req->Fid, &stat);
+	err = cifsd_vfs_getattr(work->sess, (uint64_t)req->Fid, &stat);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -6641,7 +6642,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	err = smb_vfs_truncate(work->sess, NULL, fp,
+	err = cifsd_vfs_truncate(work->sess, NULL, fp,
 		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -6706,7 +6707,7 @@ static int smb_set_file_size_finfo(struct cifsd_work *work)
 	}
 
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	err = smb_vfs_truncate(work->sess, NULL, fp,
+	err = cifsd_vfs_truncate(work->sess, NULL, fp,
 		newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
@@ -7119,7 +7120,7 @@ static int smb_set_unix_fileinfo(struct cifsd_work *work)
 	if (err)
 		goto out;
 
-	err = smb_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
+	err = cifsd_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
 	if (err)
 		goto out;
 
@@ -7191,7 +7192,7 @@ static int smb_set_dispostion(struct cifsd_work *work)
 		}
 
 		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
-				!is_dir_empty(fp)) {
+				!cifsd_vfs_empty_dir(fp)) {
 			rsp->hdr.Status.CifsError =
 				NT_STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
@@ -7268,7 +7269,7 @@ static int smb_set_time_fileinfo(struct cifsd_work *work)
 	if (!attrs.ia_valid)
 		goto done;
 
-	err = smb_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
+	err = cifsd_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -7329,7 +7330,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 	}
 
 	if (le32_to_cpu(info->overwrite)) {
-		rc = smb_vfs_truncate(work->sess, NULL, fp,	0);
+		rc = cifsd_vfs_truncate(work->sess, NULL, fp,	0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 			return rc;
@@ -7345,7 +7346,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 
 	cifsd_debug("rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = smb_vfs_rename(NULL, newname, fp);
+	rc = cifsd_vfs_rename(NULL, newname, fp);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
@@ -7479,7 +7480,7 @@ static int create_dir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_vfs_mkdir(name, mode);
+	err = cifsd_vfs_mkdir(name, mode);
 	if (err) {
 		if (err == -EEXIST) {
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
@@ -7500,7 +7501,7 @@ static int create_dir(struct cifsd_work *work)
 		struct kstat stat;
 		struct path path;
 
-		err = smb_kern_path(name, 0, &path, 1);
+		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
@@ -7743,7 +7744,7 @@ char *read_next_entry(struct cifsd_work *work, struct smb_kstat *smb_kstat,
 	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
 	name[file_pathlen] = '\0';
 
-	rc = smb_kern_path(name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(name, 0, &path, 1);
 	if (rc) {
 		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
 		kfree(name);
@@ -7898,7 +7899,7 @@ int smb_mkdir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_vfs_mkdir(name, mode);
+	err = cifsd_vfs_mkdir(name, mode);
 	if (err) {
 		if (err == -EEXIST) {
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
@@ -7922,7 +7923,7 @@ int smb_mkdir(struct cifsd_work *work)
 		struct kstat stat;
 		struct path path;
 
-		err = smb_kern_path(name, 0, &path, 1);
+		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
@@ -7967,7 +7968,7 @@ int smb_checkdir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_kern_path(name, 0, &path, caseless_lookup);
+	err = cifsd_vfs_kern_path(name, 0, &path, caseless_lookup);
 	if (err) {
 		if (err == -ENOENT) {
 			/*
@@ -7982,7 +7983,7 @@ int smb_checkdir(struct cifsd_work *work)
 				*last = '\0';
 				last++;
 
-				err = smb_kern_path(name, LOOKUP_FOLLOW |
+				err = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW |
 						LOOKUP_DIRECTORY, &path,
 						caseless_lookup);
 			} else {
@@ -8078,7 +8079,7 @@ int smb_rmdir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_vfs_remove_file(name);
+	err = cifsd_vfs_remove_file(name);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
@@ -8125,7 +8126,7 @@ int smb_unlink(struct cifsd_work *work)
 	if (fp)
 		err = -ESHARE;
 	else
-		err = smb_vfs_remove_file(name);
+		err = cifsd_vfs_remove_file(name);
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =
@@ -8230,7 +8231,7 @@ int smb_nt_rename(struct cifsd_work *work)
 			oldname, newname, oldname_len,
 			is_smbreq_unicode(&req->hdr));
 
-	err = smb_vfs_link(oldname, newname);
+	err = cifsd_vfs_link(oldname, newname);
 	if (err < 0)
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_SAME_DEVICE;
 
@@ -8263,7 +8264,7 @@ int smb_query_info(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_kern_path(name, LOOKUP_FOLLOW, &path, 0);
+	err = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 0);
 	if (err) {
 		cifsd_err("look up failed err %d\n", err);
 		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -8436,7 +8437,7 @@ int smb_open_andx(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	err = cifsd_vfs_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
 	if (err)
 		file_present = false;
 	else
@@ -8473,11 +8474,11 @@ int smb_open_andx(struct cifsd_work *work)
 			mode &= ~S_IWUGO;
 
 		mode |= S_IFREG;
-		err = smb_vfs_create(name, mode);
+		err = cifsd_vfs_create(name, mode);
 		if (err)
 			goto out;
 
-		err = smb_kern_path(name, 0, &path, 0);
+		err = cifsd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
 			cifsd_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -8498,7 +8499,7 @@ int smb_open_andx(struct cifsd_work *work)
 	cifsd_err("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
-	fp = smb_dentry_open(work, &path, open_flags,
+	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
 			0, file_present);
 	if (!fp)
 		goto free_path;
@@ -8668,7 +8669,7 @@ int smb_setattr(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = smb_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	err = cifsd_vfs_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
 		cifsd_debug("look up failed err %d\n", err);
 		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
@@ -8693,7 +8694,7 @@ int smb_setattr(struct cifsd_work *work)
 	attrs.ia_mtime.tv_sec = le32_to_cpu(req->LastWriteTime);
 	attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 
-	err = smb_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
 	if (err)
 		goto out;
 

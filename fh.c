@@ -28,6 +28,7 @@
 #include "oplock.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "vfs.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -515,7 +516,7 @@ static int close_fp(struct cifsd_file *fp)
 			flock->fl_type = F_UNLCK;
 			flock->fl_start = lock->start;
 			flock->fl_end = lock->end;
-			err = smb_vfs_lock(filp, 0, flock);
+			err = cifsd_vfs_lock(filp, 0, flock);
 			if (err)
 				cifsd_err("unlock fail : %d\n", err);
 			list_del(&lock->llist);
@@ -529,7 +530,7 @@ static int close_fp(struct cifsd_file *fp)
 
 	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
-		err = smb_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
+		err = cifsd_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n",
 				fp->stream.name);
@@ -544,7 +545,7 @@ static int close_fp(struct cifsd_file *fp)
 			dir = dentry->d_parent;
 			ci->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
 			spin_unlock(&ci->m_lock);
-			smb_vfs_unlink(dir, dentry);
+			cifsd_vfs_unlink(dir, dentry);
 			spin_lock(&ci->m_lock);
 		}
 		spin_unlock(&ci->m_lock);
@@ -909,243 +910,6 @@ void destroy_global_fidtable(void)
 #endif
 
 /* End of persistent-ID functions */
-
-/**
- * smb_dentry_open() - open a dentry and provide fid for it
- * @work:	smb work ptr
- * @path:	path of dentry to be opened
- * @flags:	open flags
- * @ret_id:	fid returned on this
- * @option:	file access pattern options for fadvise
- * @fexist:	file already present or not
- *
- * Return:	0 on success, otherwise error
- */
-struct cifsd_file *smb_dentry_open(struct cifsd_work *work,
-	const struct path *path, int flags, int option, int fexist)
-{
-	struct cifsd_sess *sess = work->sess;
-	struct file *filp;
-	int id, err = 0;
-	struct cifsd_file *fp = NULL;
-	uint64_t sess_id;
-	struct cifsd_inode *ci;
-
-	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
-		cifsd_err("dentry open failed, err %d\n", err);
-		return ERR_PTR(err);
-	}
-
-	smb_vfs_set_fadvise(filp, option);
-
-	sess_id = sess == NULL ? 0 : sess->sess_id;
-	id = cifsd_get_unused_id(&sess->fidtable);
-	if (id < 0)
-		goto err_out3;
-
-	cifsd_debug("allocate volatile id : %d\n", id);
-	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
-	if (fp == NULL) {
-		err = -ENOMEM;
-		cifsd_err("id insert failed\n");
-		goto err_out2;
-	}
-
-	fp->f_ci = ci = cifsd_inode_get(fp);
-	if (!ci)
-		goto err_out1;
-
-	if (flags & O_TRUNC) {
-		if (oplocks_enable && fexist)
-			smb_break_all_oplock(work, fp);
-		err = vfs_truncate((struct path *)path, 0);
-		if (err)
-			goto err_out;
-	}
-
-	INIT_LIST_HEAD(&fp->lock_list);
-
-	return fp;
-
-err_out:
-	list_del(&fp->node);
-	if (ci && atomic_dec_and_test(&ci->m_count))
-		cifsd_inode_free(ci);
-err_out1:
-	delete_id_from_fidtable(sess, id);
-err_out2:
-	cifsd_close_id(&sess->fidtable, id);
-err_out3:
-	fput(filp);
-
-	if (err) {
-		fp = ERR_PTR(err);
-		cifsd_err("err : %d\n", err);
-	}
-	return fp;
-}
-
-/**
- * is_dir_empty() - check for empty directory
- * @fp:	cifsd file pointer
- *
- * Return:	true if directory empty, otherwise false
- */
-bool is_dir_empty(struct cifsd_file *fp)
-{
-	struct path dir_path;
-	struct file *filp;
-	struct smb_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
-		.dirent = (void *)__get_free_page(GFP_KERNEL),
-		.dirent_count = 0
-	};
-	int err;
-
-	if (!r_data.dirent)
-		return false;
-
-	err = smb_kern_path(fp->filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-			&dir_path, 0);
-	if (err < 0)
-		return false;
-
-	filp = dentry_open(&dir_path, O_RDONLY | O_LARGEFILE, current_cred());
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
-		fput(filp);
-		cifsd_err("dentry open failed, err %d\n", err);
-		return false;
-	}
-
-	r_data.used = 0;
-	r_data.full = 0;
-
-	err = smb_vfs_readdir(filp, smb_filldir, &r_data);
-	if (r_data.dirent_count > 2) {
-		fput(filp);
-		path_put(&dir_path);
-		free_page((unsigned long)(r_data.dirent));
-		return false;
-	}
-
-	free_page((unsigned long)(r_data.dirent));
-	fput(filp);
-	path_put(&dir_path);
-	return true;
-}
-
-/**
- * smb_kern_path() - lookup a file and get path info
- * @name:	name of file for lookup
- * @flags:	lookup flags
- * @path:	if lookup succeed, return path info
- * @caseless:	caseless filename lookup
- *
- * Return:	0 on success, otherwise error
- */
-int smb_kern_path(char *name, unsigned int flags, struct path *path,
-		bool caseless)
-{
-	int err;
-
-	err = kern_path(name, flags, path);
-	if (err && caseless) {
-		char *filename = strrchr((const char *)name, '/');
-		if (filename == NULL)
-			return err;
-		*(filename++) = '\0';
-		if (strlen(name) == 0) {
-			/* root reached */
-			filename--;
-			*filename = '/';
-			return err;
-		}
-		err = smb_search_dir(name, filename);
-		if (err)
-			return err;
-		err = kern_path(name, flags, path);
-		return err;
-	} else
-		return err;
-}
-
-/**
- * smb_search_dir() - lookup a file in a directory
- * @dirname:	directory name
- * @filename:	filename to lookup
- *
- * Return:	0 on success, otherwise error
- */
-int smb_search_dir(char *dirname, char *filename)
-{
-	struct path dir_path;
-	int ret;
-	struct file *dfilp;
-	int flags = O_RDONLY|O_LARGEFILE;
-	int used_count, reclen;
-	int iter;
-	struct smb_dirent *buf_p;
-	int namelen = strlen(filename);
-	int dirnamelen = strlen(dirname);
-	bool match_found = false;
-	struct smb_readdir_data readdir_data = {
-		.ctx.actor = smb_filldir,
-		.dirent = (void *)__get_free_page(GFP_KERNEL)
-	};
-
-	if (!readdir_data.dirent) {
-		ret = -ENOMEM;
-		goto out;
-	}
-
-	ret = smb_kern_path(dirname, 0, &dir_path, true);
-	if (ret)
-		goto out;
-
-	dfilp = dentry_open(&dir_path, flags, current_cred());
-	if (IS_ERR(dfilp)) {
-		cifsd_err("cannot open directory %s\n", dirname);
-		ret = -EINVAL;
-		goto out2;
-	}
-
-	while (!ret && !match_found) {
-		readdir_data.used = 0;
-		readdir_data.full = 0;
-		ret = smb_vfs_readdir(dfilp, smb_filldir, &readdir_data);
-		used_count = readdir_data.used;
-		if (ret || !used_count)
-			break;
-
-		buf_p = (struct smb_dirent *)readdir_data.dirent;
-		for (iter = 0; iter < used_count; iter += reclen,
-		     buf_p = (struct smb_dirent *)((char *)buf_p + reclen)) {
-			int length;
-
-			reclen = ALIGN(sizeof(struct smb_dirent) +
-				       buf_p->namelen, sizeof(__le64));
-			length = buf_p->namelen;
-			if (length != namelen ||
-				strncasecmp(filename, buf_p->name, namelen))
-				continue;
-			/* got match, make absolute name */
-			memcpy(dirname + dirnamelen + 1, buf_p->name, namelen);
-			match_found = true;
-			break;
-		}
-	}
-
-	free_page((unsigned long)(readdir_data.dirent));
-	fput(dfilp);
-out2:
-	path_put(&dir_path);
-out:
-	dirname[dirnamelen] = '/';
-	return ret;
-}
 
 /**
  * get_pipe_id() - get a free id for a pipe

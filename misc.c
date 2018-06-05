@@ -29,6 +29,7 @@
 #include "smb1pdu.h"
 #include "smb2pdu.h"
 #include "transport_tcp.h"
+#include "vfs.h"
 
 static struct {
 	int index;
@@ -427,7 +428,7 @@ int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
 {
 	int err;
 
-	err = smb_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
+	err = cifsd_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
 	if (err)
 		cifsd_debug("setxattr failed, err %d\n", err);
 
@@ -440,7 +441,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
+	xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
 		XATTR_LIST_MAX);
 	if (xattr_list_len < 0) {
 		goto out;
@@ -455,7 +456,7 @@ ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
 		if (strncasecmp(prefix, name, p_len))
 			continue;
 
-		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
+		value_len = cifsd_vfs_getxattr(path->dentry, name, value, flags);
 		if (value_len < 0)
 			cifsd_err("failed to get xattr in file\n");
 		break;
@@ -601,7 +602,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 	if (!same_stream && !curr_fp->is_stream) {
 		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-			smb_vfs_truncate_stream_xattr(
+			cifsd_vfs_truncate_stream_xattr(
 				curr_fp->filp->f_path.dentry);
 		}
 	}
