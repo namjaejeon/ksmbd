@@ -37,7 +37,7 @@ bool durable_enable = true;
 #endif
 
 LIST_HEAD(lease_table_list);
-DEFINE_MUTEX(lease_list_lock);
+static DEFINE_RWLOCK(lease_list_lock);
 
 module_param(oplocks_enable, bool, 0644);
 MODULE_PARM_DESC(oplocks_enable, "Enable or disable oplocks. Default: y/Y/1");
@@ -83,6 +83,31 @@ static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 	return opinfo;
 }
 
+void lease_add_list(struct oplock_info *opinfo)
+{
+	struct lease_table *lb = opinfo->o_lease->l_lb;
+
+	spin_lock(&lb->lb_lock);
+	list_add_rcu(&opinfo->lease_entry, &lb->lease_list);
+	spin_unlock(&lb->lb_lock);
+}
+
+void lease_del_list(struct oplock_info *opinfo)
+{
+	struct lease_table *lb = opinfo->o_lease->l_lb;
+
+	spin_lock(&lb->lb_lock);
+	list_del_rcu(&opinfo->lease_entry);
+	spin_unlock(&lb->lb_lock);
+}
+
+void lb_add(struct lease_table *lb)
+{
+	write_lock(&lease_list_lock);
+	list_add(&lb->l_entry, &lease_table_list);
+	write_unlock(&lease_list_lock);
+}
+
 static int alloc_lease(struct oplock_info *opinfo,
 	struct lease_ctx_info *lctx)
 {
@@ -107,7 +132,6 @@ static void free_lease(struct oplock_info *opinfo)
 {
 	struct lease *lease;
 
-	list_del(&opinfo->lease_entry);
 	lease = opinfo->o_lease;
 	kfree(lease);
 }
@@ -178,6 +202,8 @@ void opinfo_del(struct oplock_info *opinfo)
 {
 	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
+	if (opinfo->is_lease)
+		lease_del_list(opinfo);
 	spin_lock(&ci->m_lock);
 	list_del_rcu(&opinfo->op_entry);
 	spin_unlock(&ci->m_lock);
@@ -939,23 +965,31 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 void destroy_lease_table(struct cifsd_tcp_conn *conn)
 {
 	struct lease_table *lb, *lbtmp;
+	struct oplock_info *opinfo;
 
-	mutex_lock(&lease_list_lock);
+	write_lock(&lease_list_lock);
 	if (list_empty(&lease_table_list)) {
-		mutex_unlock(&lease_list_lock);
+		write_unlock(&lease_list_lock);
 		return;
 	}
 
 	list_for_each_entry_safe(lb, lbtmp, &lease_table_list, l_entry) {
 		if (conn && memcmp(lb->client_guid, conn->ClientGUID,
-					SMB2_CLIENT_GUID_SIZE))
+			SMB2_CLIENT_GUID_SIZE))
 			continue;
-		if (list_empty(&lb->lease_list)) {
-			list_del_rcu(&lb->l_entry);
-			kfree(lb);
+again:
+		rcu_read_lock();
+		list_for_each_entry_rcu(opinfo, &lb->lease_list,
+				lease_entry) {
+			rcu_read_unlock();
+			lease_del_list(opinfo);
+			goto again;
 		}
+		rcu_read_unlock();
+		list_del(&lb->l_entry);
+		kfree(lb);
 	}
-	mutex_unlock(&lease_list_lock);
+	write_unlock(&lease_list_lock);
 }
 
 int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
@@ -968,31 +1002,47 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
 	if (!lctx)
 		return err;
 
-	mutex_lock(&lease_list_lock);
-	if (list_empty(&lease_table_list))
-		goto out;
+	read_lock(&lease_list_lock);
+	if (list_empty(&lease_table_list)) {
+		read_unlock(&lease_list_lock);
+		return 0;
+	}
 
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, sess->conn->ClientGUID,
-					SMB2_CLIENT_GUID_SIZE)) {
-			list_for_each_entry(opinfo, &lb->lease_list,
-					lease_entry) {
-				if (opinfo->o_fp->f_ci == ci)
-					continue;
-				err = compare_guid_key(opinfo,
-					sess->conn->ClientGUID,
-					lctx->lease_key);
-				if (err) {
-					err = -EINVAL;
-					cifsd_debug("found same lease key is already used in other files\n");
-					goto out;
-				}
-			}
-		}
+					SMB2_CLIENT_GUID_SIZE))
+			goto found;
 	}
+	read_unlock(&lease_list_lock);
+
+	return 0;
+
+found:
+	rcu_read_lock();
+	list_for_each_entry_rcu(opinfo, &lb->lease_list,
+			lease_entry) {
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		rcu_read_unlock();
+		if (opinfo->o_fp->f_ci == ci)
+			goto op_next;
+		err = compare_guid_key(opinfo,
+				sess->conn->ClientGUID,
+				lctx->lease_key);
+		if (err) {
+			err = -EINVAL;
+			cifsd_debug("found same lease key is already used in other files\n");
+			opinfo_put(opinfo);
+			goto out;
+		}
+op_next:
+		opinfo_put(opinfo);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
 
 out:
-	mutex_unlock(&lease_list_lock);
+	read_unlock(&lease_list_lock);
 	return err;
 }
 
@@ -1012,27 +1062,27 @@ static void copy_lease(struct oplock_info *op1, struct oplock_info *op2)
 void add_lease_global_list(struct oplock_info *opinfo)
 {
 	struct lease_table *lb;
-	int added = 0;
 
-	mutex_lock(&lease_list_lock);
+	read_lock(&lease_list_lock);
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, opinfo->conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE)) {
-			list_add(&opinfo->lease_entry, &lb->lease_list);
-			added = 1;
-			break;
+			opinfo->o_lease->l_lb = lb;
+			lease_add_list(opinfo);
+			read_unlock(&lease_list_lock);
+			return;
 		}
 	}
+	read_unlock(&lease_list_lock);
 
-	if (!added) {
-		lb = kmalloc(sizeof(struct lease_table), GFP_KERNEL);
-		memcpy(lb->client_guid, opinfo->conn->ClientGUID,
+	lb = kmalloc(sizeof(struct lease_table), GFP_KERNEL);
+	memcpy(lb->client_guid, opinfo->conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE);
-		INIT_LIST_HEAD(&lb->lease_list);
-		list_add(&opinfo->lease_entry, &lb->lease_list);
-		list_add(&lb->l_entry, &lease_table_list);
-	}
-	mutex_unlock(&lease_list_lock);
+	INIT_LIST_HEAD(&lb->lease_list);
+	spin_lock_init(&lb->lb_lock);
+	opinfo->o_lease->l_lb = lb;
+	lease_add_list(opinfo);
+	lb_add(lb);
 }
 
 static void set_oplock_level(struct oplock_info *opinfo, int level,
@@ -1702,29 +1752,44 @@ struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	struct lease_table *lt;
 	int ret;
 
+	read_lock(&lease_list_lock);
 	list_for_each_entry(lt, &lease_table_list, l_entry) {
-		if (memcmp(lt->client_guid, conn->ClientGUID,
+		if (!memcmp(lt->client_guid, conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE))
-			continue;
-		list_for_each_entry(opinfo, &lt->lease_list, lease_entry) {
-			if (!opinfo->op_state ||
-				opinfo->op_state == OPLOCK_CLOSING)
-				continue;
-			if (!(opinfo->o_lease->state &
-				(SMB2_LEASE_HANDLE_CACHING |
-				SMB2_LEASE_WRITE_CACHING)))
-				continue;
-			ret = compare_guid_key(opinfo, conn->ClientGUID,
-				lease_key);
-			if (ret) {
-				cifsd_debug("found opinfo\n");
-				ret_op = opinfo;
-				goto out;
-			}
-		}
+			goto found;
 	}
 
+	read_unlock(&lease_list_lock);
+	return NULL;
+
+found:
+	rcu_read_lock();
+	list_for_each_entry_rcu(opinfo, &lt->lease_list, lease_entry) {
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		rcu_read_unlock();
+		if (!opinfo->op_state ||
+			opinfo->op_state == OPLOCK_CLOSING)
+			goto op_next;
+		if (!(opinfo->o_lease->state &
+			(SMB2_LEASE_HANDLE_CACHING |
+			 SMB2_LEASE_WRITE_CACHING)))
+			goto op_next;
+		ret = compare_guid_key(opinfo, conn->ClientGUID,
+			lease_key);
+		if (ret) {
+			cifsd_debug("found opinfo\n");
+			ret_op = opinfo;
+			goto out;
+		}
+op_next:
+		opinfo_put(opinfo);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+
 out:
+	read_unlock(&lease_list_lock);
 	return ret_op;
 }
 

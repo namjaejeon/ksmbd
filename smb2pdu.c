@@ -6772,7 +6772,6 @@ static int smb21_lease_break(struct cifsd_work *work)
 
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
 			req->LeaseState);
-	mutex_lock(&lease_list_lock);
 	opinfo = lookup_lease_in_table(conn, req->LeaseKey);
 	if (opinfo == NULL) {
 		cifsd_debug("file not opened\n");
@@ -6855,13 +6854,13 @@ static int smb21_lease_break(struct cifsd_work *work)
 	atomic_dec(&opinfo->breaking_cnt);
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&opinfo->oplock_q);
+	opinfo_put(opinfo);
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
 		goto err_out;
 	}
 
-	mutex_unlock(&lease_list_lock);
 	rsp->StructureSize = cpu_to_le16(36);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
@@ -6872,7 +6871,6 @@ static int smb21_lease_break(struct cifsd_work *work)
 	return 0;
 
 err_out:
-	mutex_unlock(&lease_list_lock);
 	smb2_set_err_rsp(work);
 	return 0;
 }
