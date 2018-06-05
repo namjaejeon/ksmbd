@@ -26,7 +26,7 @@
 #include "glob.h"
 #include "export.h"
 
-#include "transport.h"
+#include "transport_tcp.h"
 
 /*****************************************************************************
  *
