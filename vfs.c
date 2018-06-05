@@ -1531,3 +1531,153 @@ out:
 	dirname[dirnamelen] = '/';
 	return ret;
 }
+
+/**
+ * fill_create_time() - fill create time of directory entry in smb_kstat
+ * if related config is not yes, create time is same with change time
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @smb_kstat: cifsd kstat wrapper
+ */
+static void fill_create_time(struct cifsd_work *work,
+	struct path *path, struct smb_kstat *smb_kstat)
+{
+	char *create_time = NULL;
+	int xattr_len;
+
+	/*
+	 * if "store dos attributes" conf is not yes,
+	 * create time = change time
+	 */
+	smb_kstat->create_time = cifs_UnixTimeToNT(smb_kstat->kstat->ctime);
+
+	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+		xattr_len = smb_find_cont_xattr(path,
+			XATTR_NAME_CREATION_TIME,
+			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+
+		if (xattr_len > 0)
+			smb_kstat->create_time = *((u64 *)create_time);
+
+		cifsd_free(create_time);
+	}
+}
+
+/**
+ * cifsd_vfs_init_kstat() - convert unix stat information to smb stat format
+ * @p:          destination buffer
+ * @smb_kstat:      cifsd kstat wrapper
+ */
+void *cifsd_vfs_init_kstat(char **p, struct smb_kstat *smb_kstat)
+{
+	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
+	info->FileIndex = 0;
+	info->CreationTime = cpu_to_le64(smb_kstat->create_time);
+	info->LastAccessTime = cpu_to_le64(
+			cifs_UnixTimeToNT(smb_kstat->kstat->atime));
+	info->LastWriteTime = cpu_to_le64(
+			cifs_UnixTimeToNT(smb_kstat->kstat->mtime));
+	info->ChangeTime = cpu_to_le64(
+			cifs_UnixTimeToNT(smb_kstat->kstat->ctime));
+	if (smb_kstat->file_attributes & ATTR_DIRECTORY) {
+		info->EndOfFile = 0;
+		info->AllocationSize = 0;
+	} else {
+		info->EndOfFile = cpu_to_le64(smb_kstat->kstat->size);
+		info->AllocationSize =
+			cpu_to_le64(smb_kstat->kstat->blocks << 9);
+	}
+	info->ExtFileAttributes = cpu_to_le32(smb_kstat->file_attributes);
+
+	return info;
+}
+
+/*
+ * fill_file_attributes() - fill FileAttributes of directory entry in smb_kstat.
+ * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @smb_kstat: cifsd kstat wrapper
+ */
+
+static void fill_file_attributes(struct cifsd_work *work,
+	struct path *path, struct smb_kstat *smb_kstat)
+{
+	/*
+	 * set default value for the case that store dos attributes is not yes
+	 * or that acl is disable in server's filesystem and the config is yes.
+	 */
+	if (S_ISDIR(smb_kstat->kstat->mode))
+		smb_kstat->file_attributes = ATTR_DIRECTORY;
+	else
+		smb_kstat->file_attributes = ATTR_ARCHIVE;
+
+	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+		char *file_attribute = NULL;
+		int rc;
+
+		rc = smb_find_cont_xattr(path,
+			XATTR_NAME_FILE_ATTRIBUTE,
+			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
+
+		if (rc > 0)
+			smb_kstat->file_attributes =
+				*((__le32 *)file_attribute);
+		else
+			cifsd_debug("fail to fill file attributes.\n");
+
+		cifsd_free(file_attribute);
+	}
+}
+
+/**
+ * read_next_entry() - read next directory entry and return absolute name
+ * @work:	smb work containing share config
+ * @smb_kstat:	cifsd wrapper of next dirent's stat
+ * @de:		directory entry
+ * @dirpath:	directory path name
+ *
+ * Return:      on success return absolute path of directory entry,
+ *              otherwise NULL
+ */
+char *cifsd_vfs_readdir_name(struct cifsd_work *work,
+			     struct smb_kstat *smb_kstat,
+			     struct smb_dirent *de,
+			     char *dirpath)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dirpath);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de->namelen + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name) {
+		cifsd_err("Name memory failed for length %d,"
+				" buf_name_len %d\n", dir_pathlen, de->namelen);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	memcpy(name, dirpath, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, 0, &path, 1);
+	if (rc) {
+		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
+		kfree(name);
+		return ERR_PTR(rc);
+	}
+
+	generic_fillattr(path.dentry->d_inode, smb_kstat->kstat);
+	fill_create_time(work, &path, smb_kstat);
+	fill_file_attributes(work, &path, smb_kstat);
+	memcpy(name, de->name, de->namelen);
+	name[de->namelen] = '\0';
+	path_put(&path);
+	return name;
+}
