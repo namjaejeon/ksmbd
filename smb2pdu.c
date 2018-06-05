@@ -31,7 +31,8 @@
 #include "cifsacl.h"
 
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
+#include "vfs.h"
 
 bool multi_channel_enable;
 
@@ -2080,7 +2081,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 
 			/* delete the EA only when it exits */
 			if (rc > 0) {
-				rc = smb_vfs_remove_xattr(path, attr_name);
+				rc = cifsd_vfs_remove_xattr(path, attr_name);
 
 				if (rc < 0) {
 					cifsd_err("remove xattr failed(%d)\n",
@@ -2092,11 +2093,11 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			/* if the EA doesn't exist, just do nothing. */
 			rc = 0;
 		} else {
-			rc = smb_vfs_setxattr(NULL, path, attr_name, value,
+			rc = cifsd_vfs_setxattr(NULL, path, attr_name, value,
 				le16_to_cpu(eabuf->EaValueLength), 0);
 
 			if (rc < 0) {
-				cifsd_err("smb_vfs_setxattr is failed(%d)\n",
+				cifsd_err("cifsd_vfs_setxattr is failed(%d)\n",
 					rc);
 				break;
 			}
@@ -2377,15 +2378,15 @@ int smb2_open(struct cifsd_work *work)
 		 * On delete request, instead of following up, need to
 		 * look the current entity
 		 */
-		rc = smb_kern_path(name, 0, &path, 1);
+		rc = cifsd_vfs_kern_path(name, 0, &path, 1);
 	} else {
 		/*
 		* Use LOOKUP_FOLLOW to follow the path of
 		* symlink in path buildup
 		*/
-		rc = smb_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+		rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
 		if (rc) { /* Case for broken link ?*/
-			rc = smb_kern_path(name, 0, &path, 1);
+			rc = cifsd_vfs_kern_path(name, 0, &path, 1);
 		}
 	}
 
@@ -2461,7 +2462,7 @@ int smb2_open(struct cifsd_work *work)
 			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 				cifsd_debug("creating directory\n");
 				mode = 00777 & ~current_umask();
-				rc = smb_vfs_mkdir(name, mode);
+				rc = cifsd_vfs_mkdir(name, mode);
 				if (rc) {
 					rsp->hdr.Status = cpu_to_le32(
 							NT_STATUS_DATA_ERROR);
@@ -2473,7 +2474,7 @@ int smb2_open(struct cifsd_work *work)
 			} else {
 				cifsd_debug("creating regular file\n");
 				mode = 00666 & ~current_umask();
-				rc = smb_vfs_create(name, mode);
+				rc = cifsd_vfs_create(name, mode);
 				if (rc) {
 					rsp->hdr.Status =
 						NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -2482,7 +2483,7 @@ int smb2_open(struct cifsd_work *work)
 				}
 			}
 
-			rc = smb_kern_path(name, 0, &path, 0);
+			rc = cifsd_vfs_kern_path(name, 0, &path, 0);
 			if (rc) {
 				cifsd_err("cannot get linux path (%s), err = %d\n",
 						name, rc);
@@ -2547,7 +2548,7 @@ int smb2_open(struct cifsd_work *work)
 		islink = true;
 		cifsd_debug("Case for symlink follow, name(%s)->path(%s)\n",
 				name, lname);
-		rc = smb_kern_path(name, 0, &lpath, 0);
+		rc = cifsd_vfs_kern_path(name, 0, &lpath, 0);
 		if (rc) {
 			cifsd_err("cannot get linux path (%s), err = %d\n",
 				name, rc);
@@ -2579,7 +2580,7 @@ int smb2_open(struct cifsd_work *work)
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
 
-	smb_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
+	cifsd_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
 
 	/* Obtain Volatile-ID */
 	volatile_id = cifsd_get_unused_id(&sess->fidtable);
@@ -2665,9 +2666,9 @@ int smb2_open(struct cifsd_work *work)
 
 			cifsd_debug("request smb2 create allocate size : %llu\n",
 				alloc_size);
-			rc = smb_vfs_alloc_size(conn, fp, alloc_size);
+			rc = cifsd_vfs_alloc_size(conn, fp, alloc_size);
 			if (rc < 0)
-				cifsd_debug("smb_vfs_alloc_size is failed : %d\n",
+				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
 					rc);
 		}
 
@@ -2742,9 +2743,9 @@ int smb2_open(struct cifsd_work *work)
 		 * FILE_SUPERSEDE
 		 */
 		if (req->CreateDisposition & FILE_SUPERSEDE_LE) {
-			rc = smb_vfs_truncate_xattr(path.dentry);
+			rc = cifsd_vfs_truncate_xattr(path.dentry);
 			if (rc) {
-				cifsd_err("smb_vfs_truncate_xattr is failed, rc %d\n",
+				cifsd_err("cifsd_vfs_truncate_xattr is failed, rc %d\n",
 					rc);
 				goto err_out;
 			}
@@ -3046,7 +3047,7 @@ err_out1:
  * @conn:	TCP server instance of connection
  * @info_level:	smb information level
  * @d_info:	structure included variables for query dir
- * @smb_kstat:	cifsd wrapper of dirent stat information
+ * @cifsd_kstat:	cifsd wrapper of dirent stat information
  *
  * if directory has many entries, find first can't read it fully.
  * find next might be called multiple times to read remaining dir entries
@@ -3055,7 +3056,7 @@ err_out1:
  */
 static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 	int info_level, struct cifsd_dir_info *d_info,
-	struct smb_kstat *smb_kstat)
+	struct cifsd_kstat *cifsd_kstat)
 {
 	int name_len;
 	int next_entry_offset;
@@ -3074,7 +3075,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
@@ -3093,7 +3094,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
@@ -3116,7 +3117,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
@@ -3135,7 +3136,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fninfo = (FILE_NAMES_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -3154,11 +3155,11 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
-		dinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->NextEntryOffset = next_entry_offset;
@@ -3176,10 +3177,10 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
+		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		fibdinfo->ShortNameLength =
 			smb_get_shortname(conn, d_info->name,
 					&(fibdinfo->ShortName[0]));
@@ -3222,16 +3223,16 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct smb2_query_directory_req *req;
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	struct cifsd_share *share = work->tcon->share;
-	struct smb_dirent *de;
+	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct cifsd_dir_info d_info;
 	int reclen = 0;
 	int rc = 0;
 	struct kstat kstat;
-	struct smb_kstat smb_kstat;
+	struct cifsd_kstat cifsd_kstat;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
-	struct smb_readdir_data r_data = {
+	struct cifsd_readdir_data r_data = {
 		.ctx.actor = smb_filldir,
 	};
 
@@ -3372,7 +3373,7 @@ int smb2_query_dir(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = smb_vfs_readdir(dir_fp->filp, smb_filldir,
+			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
 					&r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
@@ -3388,20 +3389,20 @@ int smb2_query_dir(struct cifsd_work *work)
 				break;
 			}
 
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent);
 		} else {
-			de = (struct smb_dirent *)
+			de = (struct cifsd_dirent *)
 				((char *)dir_fp->readdir_data.dirent +
 				 dir_fp->dirent_offset);
 		}
 
-		reclen = ALIGN(sizeof(struct smb_dirent) + de->namelen,
+		reclen = ALIGN(sizeof(struct cifsd_dirent) + de->namelen,
 				sizeof(__le64));
 		dir_fp->dirent_offset += reclen;
 
-		smb_kstat.kstat = &kstat;
-		d_info.name = read_next_entry(work, &smb_kstat, de,
+		cifsd_kstat.kstat = &kstat;
+		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
 			dirpath);
 		if (IS_ERR(d_info.name)) {
 			rc = PTR_ERR(d_info.name);
@@ -3424,7 +3425,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &d_info, &smb_kstat);
+				req->FileInformationClass, &d_info, &cifsd_kstat);
 			if (rc)	{
 				kfree(d_info.name);
 				goto err_out;
@@ -3611,7 +3612,7 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
 		buf_free_len = le32_to_cpu(req->OutputBufferLength);
 
-	rc = smb_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
 	if (rc < 0) {
 		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
 		goto out;
@@ -3661,7 +3662,7 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 		buf_free_len -= (offsetof(struct smb2_ea_info, name) +
 				name_len + 1);
 		/* bailout if xattr can't fit in buf_free_len */
-		value_len = smb_vfs_getxattr(path->dentry, name, &buf, 1);
+		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf, 1);
 		if (value_len <= 0) {
 			rc = -ENOENT;
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
@@ -3930,7 +3931,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
-		xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
+		xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
 				XATTR_LIST_MAX);
 		if (xattr_list_len < 0) {
 			goto out;
@@ -4187,7 +4188,7 @@ static int smb2_get_info_filesystem(struct cifsd_sess *sess,
 	if (!share)
 		return -ENOENT;
 
-	rc = smb_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
+	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
 		cifsd_err("cannot create vfs path\n");
 		return -EIO;
@@ -4267,7 +4268,7 @@ static int smb2_get_info_filesystem(struct cifsd_sess *sess,
 
 			fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
 			logical_sector_size =
-				get_logical_sector_size(path.dentry->d_inode);
+				cifsd_vfs_logical_sector_size(path.dentry->d_inode);
 
 			fs_size_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4290,7 +4291,7 @@ static int smb2_get_info_filesystem(struct cifsd_sess *sess,
 			fs_fullsize_info =
 				(struct smb2_fs_full_size_info *)(rsp->Buffer);
 			logical_sector_size =
-				get_logical_sector_size(path.dentry->d_inode);
+				cifsd_vfs_logical_sector_size(path.dentry->d_inode);
 
 			fs_fullsize_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4338,7 +4339,7 @@ static int smb2_get_info_filesystem(struct cifsd_sess *sess,
 			struct smb2_fs_sector_size fs_ss;
 
 			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
-			get_smb2_sector_size(path.dentry->d_inode, &fs_ss);
+			cifsd_vfs_smb2_sector_size(path.dentry->d_inode, &fs_ss);
 
 			ss_info->LogicalBytesPerSector =
 				cpu_to_le32(fs_ss.logical_sector_size);
@@ -4867,7 +4868,7 @@ static int smb2_rename(struct cifsd_file *fp,
 	strncpy(tmp_name, new_name, PATH_MAX);
 	tmp_name[PATH_MAX - 1] = 0x00;
 	cifsd_debug("new name %s\n", new_name);
-	rc = smb_kern_path(tmp_name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(tmp_name, 0, &path, 1);
 	if (rc)
 		file_present = false;
 	else
@@ -4882,7 +4883,7 @@ static int smb2_rename(struct cifsd_file *fp,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = smb_vfs_remove_file(tmp_name);
+			rc = cifsd_vfs_remove_file(tmp_name);
 			if (rc) {
 				if (rc != -ENOTEMPTY)
 					rc = -EINVAL;
@@ -4901,7 +4902,7 @@ static int smb2_rename(struct cifsd_file *fp,
 		}
 	}
 
-	rc = smb_vfs_rename(NULL, new_name, fp);
+	rc = cifsd_vfs_rename(NULL, new_name, fp);
 out:
 	kfree(pathname);
 	kfree(tmp_name);
@@ -4947,7 +4948,7 @@ static int smb2_create_link(struct smb2_file_link_info *file_info,
 	}
 
 	cifsd_debug("target name is %s\n", target_name);
-	rc = smb_kern_path(link_name, 0, &path, 0);
+	rc = cifsd_vfs_kern_path(link_name, 0, &path, 0);
 	if (rc)
 		file_present = false;
 	else
@@ -4955,7 +4956,7 @@ static int smb2_create_link(struct smb2_file_link_info *file_info,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = smb_vfs_remove_file(link_name);
+			rc = cifsd_vfs_remove_file(link_name);
 			if (rc) {
 				rc = -EINVAL;
 				cifsd_debug("cannot delete %s\n",
@@ -4971,7 +4972,7 @@ static int smb2_create_link(struct smb2_file_link_info *file_info,
 		}
 	}
 
-	rc = smb_vfs_link(target_name, link_name);
+	rc = cifsd_vfs_link(target_name, link_name);
 	if (rc)
 		rc = -EINVAL;
 out:
@@ -5136,19 +5137,19 @@ static int smb2_set_info_file(struct cifsd_sess *sess, struct cifsd_file *fp,
 
 		file_alloc_info = (struct smb2_file_alloc_info *)buffer;
 		alloc_blks = le64_to_cpu(file_alloc_info->AllocationSize) >> 9;
-		logical_sector_size = get_logical_sector_size(inode);
+		logical_sector_size = cifsd_vfs_logical_sector_size(inode);
 
 		if (alloc_blks > inode->i_blocks) {
-			rc = smb_vfs_alloc_size(sess->conn, fp,
+			rc = cifsd_vfs_alloc_size(sess->conn, fp,
 				alloc_blks * logical_sector_size);
 
 			if (rc) {
-				cifsd_err("smb_vfs_alloc_size is failed : %d\n",
+				cifsd_err("cifsd_vfs_alloc_size is failed : %d\n",
 					rc);
 				return rc;
 			}
 		} else {
-			rc = smb_vfs_truncate(sess, NULL, fp,
+			rc = cifsd_vfs_truncate(sess, NULL, fp,
 				alloc_blks * logical_sector_size);
 
 			if (rc) {
@@ -5179,7 +5180,7 @@ static int smb2_set_info_file(struct cifsd_sess *sess, struct cifsd_file *fp,
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
 		if (newsize != i_size_read(inode)) {
-			rc = smb_vfs_truncate(sess, NULL, fp, newsize);
+			rc = cifsd_vfs_truncate(sess, NULL, fp, newsize);
 			if (rc) {
 				cifsd_err("truncate failed! filename : %s err %d\n",
 						fp->filename, rc);
@@ -5243,7 +5244,7 @@ next:
 
 		file_info = (struct smb2_file_disposition_info *)buffer;
 		if (file_info->DeletePending) {
-			if (S_ISDIR(inode->i_mode) && !is_dir_empty(fp))
+			if (S_ISDIR(inode->i_mode) && !cifsd_vfs_empty_dir(fp))
 				rc = -EBUSY;
 			else
 				fp->f_ci->m_flags |= S_DEL_PENDING;
@@ -5273,7 +5274,7 @@ next:
 
 		file_info = (struct smb2_file_pos_info *)buffer;
 		current_byte_offset = le64_to_cpu(file_info->CurrentByteOffset);
-		sector_size = get_logical_sector_size(inode);
+		sector_size = cifsd_vfs_logical_sector_size(inode);
 
 		if (current_byte_offset < 0 ||
 			(fp->coption == FILE_NO_INTERMEDIATE_BUFFERING_LE &&
@@ -5308,7 +5309,7 @@ next:
 		 * TODO : need to implement consideration for
 		 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
 		 */
-		smb_vfs_set_fadvise(fp->filp, le32_to_cpu(mode));
+		cifsd_vfs_set_fadvise(fp->filp, le32_to_cpu(mode));
 		fp->coption = mode;
 
 		break;
@@ -5542,7 +5543,7 @@ int smb2_read(struct cifsd_work *work)
 		goto out;
 	}
 
-	nbytes = smb_vfs_read(work, fp, length, &offset);
+	nbytes = cifsd_vfs_read(work, fp, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
@@ -5752,7 +5753,7 @@ int smb2_write(struct cifsd_work *work)
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
-	err = smb_vfs_write(work->sess, fp, data_buf, length, &offset,
+	err = cifsd_vfs_write(work->sess, fp, data_buf, length, &offset,
 			writethrough, &nbytes);
 	if (err < 0)
 		goto out;
@@ -5808,7 +5809,7 @@ int smb2_flush(struct cifsd_work *work)
 	cifsd_debug("SMB2_FLUSH called for fid %llu\n",
 			le64_to_cpu(req->VolatileFileId));
 
-	err = smb_vfs_fsync(work->sess,
+	err = cifsd_vfs_fsync(work->sess,
 		le64_to_cpu(req->VolatileFileId),
 		le64_to_cpu(req->PersistentFileId));
 	if (err)
@@ -6187,7 +6188,7 @@ no_check_gl:
 		flock = smb_lock->fl;
 		list_del(&smb_lock->llist);
 retry:
-		err = smb_vfs_lock(filp, smb_lock->cmd, flock);
+		err = cifsd_vfs_lock(filp, smb_lock->cmd, flock);
 skip:
 		if (flags & SMB2_LOCKFLAG_UNLOCK) {
 			if (!err)
@@ -6288,7 +6289,7 @@ out:
 		rlock->fl_start = smb_lock->start;
 		rlock->fl_end = smb_lock->end;
 
-		err = smb_vfs_lock(filp, 0, rlock);
+		err = cifsd_vfs_lock(filp, 0, rlock);
 		if (err)
 			cifsd_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);

@@ -24,7 +24,7 @@
 #include "export.h"
 #include "smb2pdu.h"
 
-#include "transport.h"
+#include "transport_tcp.h"
 
 struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,

@@ -28,7 +28,7 @@
 #include "oplock.h"
 
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER

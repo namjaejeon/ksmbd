@@ -29,7 +29,7 @@
 #include "glob.h"
 #include "export.h"
 
-#include "transport.h"
+#include "transport_tcp.h"
 
 /* Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
