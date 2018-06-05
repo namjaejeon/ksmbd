@@ -122,7 +122,7 @@ struct cifsd_file {
 	struct timespec open_time;
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
-	struct smb_readdir_data	readdir_data;
+	struct cifsd_readdir_data	readdir_data;
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */

@@ -1187,7 +1187,7 @@ out:
 }
 
 int cifsd_vfs_readdir(struct file *file, filldir_t filler,
-			struct smb_readdir_data *rdata)
+			struct cifsd_readdir_data *rdata)
 {
 	return iterate_dir(file, &rdata->ctx);
 }
@@ -1381,7 +1381,7 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	struct path dir_path;
 	struct file *filp;
-	struct smb_readdir_data r_data = {
+	struct cifsd_readdir_data r_data = {
 		.ctx.actor = smb_filldir,
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
 		.dirent_count = 0
@@ -1476,7 +1476,7 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 	int namelen = strlen(filename);
 	int dirnamelen = strlen(dirname);
 	bool match_found = false;
-	struct smb_readdir_data readdir_data = {
+	struct cifsd_readdir_data readdir_data = {
 		.ctx.actor = smb_filldir,
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};

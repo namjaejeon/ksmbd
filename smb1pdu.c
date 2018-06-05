@@ -6168,7 +6168,7 @@ static int find_first(struct cifsd_work *work)
 	int srch_cnt = 0;
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
-	struct smb_readdir_data r_data = {
+	struct cifsd_readdir_data r_data = {
 		.ctx.actor = smb_filldir,
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
@@ -6413,7 +6413,7 @@ static int find_next(struct cifsd_work *work)
 	char *dirpath = NULL;
 	char *name = NULL;
 	char *pathname = NULL;
-	struct smb_readdir_data r_data = {
+	struct cifsd_readdir_data r_data = {
 		.ctx.actor = smb_filldir,
 	};
 	int header_size;
@@ -7619,8 +7619,8 @@ int smb_trans2(struct cifsd_work *work)
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type)
 {
-	struct smb_readdir_data *buf =
-		container_of(ctx, struct smb_readdir_data, ctx);
+	struct cifsd_readdir_data *buf =
+		container_of(ctx, struct cifsd_readdir_data, ctx);
 	struct smb_dirent *de = (void *)(buf->dirent + buf->used);
 	unsigned int reclen;
 
