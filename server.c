@@ -30,7 +30,7 @@
 #endif
 
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 bool global_signing;
 

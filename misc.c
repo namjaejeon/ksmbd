@@ -28,7 +28,7 @@
 #include "export.h"
 #include "smb1pdu.h"
 #include "smb2pdu.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 static struct {
 	int index;

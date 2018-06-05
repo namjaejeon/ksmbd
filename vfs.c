@@ -33,7 +33,7 @@
 #include "export.h"
 #include "glob.h"
 #include "oplock.h"
-#include "transport.h"
+#include "transport_tcp.h"
 #include "buffer_pool.h"
 
 /**

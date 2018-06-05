@@ -27,7 +27,7 @@
 #include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
