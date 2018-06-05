@@ -3075,7 +3075,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 
@@ -3094,7 +3094,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
@@ -3117,7 +3117,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fdinfo->FileName, utfname, name_len);
@@ -3136,7 +3136,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fninfo = (FILE_NAMES_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -3155,7 +3155,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -3177,7 +3177,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-				fill_common_info(&d_info->bufptr, smb_kstat);
+				cifsd_vfs_init_kstat(&d_info->bufptr, smb_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(smb_kstat->kstat->ino);
@@ -3402,7 +3402,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		dir_fp->dirent_offset += reclen;
 
 		smb_kstat.kstat = &kstat;
-		d_info.name = read_next_entry(work, &smb_kstat, de,
+		d_info.name = cifsd_vfs_readdir_name(work, &smb_kstat, de,
 			dirpath);
 		if (IS_ERR(d_info.name)) {
 			rc = PTR_ERR(d_info.name);

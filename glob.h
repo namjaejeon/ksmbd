@@ -550,9 +550,6 @@ int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
 int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 		char *shortname);
-void *fill_common_info(char **p, struct smb_kstat *smb_kstat);
-char *read_next_entry(struct cifsd_work *work, struct smb_kstat *smb_kstat,
-		struct smb_dirent *de, char *dirpath);
 /* fill SMB specific fields when smb2 query dir is requested */
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
