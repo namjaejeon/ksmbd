@@ -3232,7 +3232,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct smb_kstat smb_kstat;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
-	struct smb_readdir_data r_data = {
+	struct cifsd_readdir_data r_data = {
 		.ctx.actor = smb_filldir,
 	};
 
