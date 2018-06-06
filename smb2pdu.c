@@ -4336,7 +4336,7 @@ static int smb2_get_info_filesystem(struct cifsd_sess *sess,
 	case FS_SECTOR_SIZE_INFORMATION:
 		{
 			struct smb3_fs_ss_info *ss_info;
-			struct smb2_fs_sector_size fs_ss;
+			struct cifsd_fs_sector_size fs_ss;
 
 			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
 			cifsd_vfs_smb2_sector_size(path.dentry->d_inode, &fs_ss);

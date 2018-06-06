@@ -49,7 +49,7 @@ struct cifsd_kstat {
 	__le32 file_attributes;
 };
 
-struct smb2_fs_sector_size {
+struct cifsd_fs_sector_size {
 	unsigned short logical_sector_size;
 	unsigned int physical_sector_size;
 	unsigned int optimal_io_size;
@@ -105,7 +105,7 @@ int cifsd_vfs_remove_xattr(struct path *path, char *field_name);
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
-				struct smb2_fs_sector_size *fs_ss);
+				struct cifsd_fs_sector_size *fs_ss);
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     struct cifsd_kstat *cifsd_kstat,

@@ -1275,7 +1275,7 @@ unsigned short cifsd_vfs_logical_sector_size(struct inode *inode)
  * @fs_ss: fs sector size struct
  */
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss)
+	struct cifsd_fs_sector_size *fs_ss)
 {
 	struct request_queue *q;
 
@@ -1297,7 +1297,7 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 }
 #else
 void cifsd_vfs_get_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss)
+	struct cifsd_fs_sector_size *fs_ss)
 {
 }
 #endif
