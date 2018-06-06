@@ -24,7 +24,6 @@
 
 struct cifsd_work;
 struct cifsd_file;
-struct cifsd_tcp_conn;
 
 struct cifsd_readdir_data {
 	struct dir_context ctx;
@@ -97,8 +96,9 @@ int check_lock_range(struct file *filp, loff_t start,
 		loff_t end, unsigned char type);
 int cifsd_vfs_readdir(struct file *file, filldir_t filler,
 			struct cifsd_readdir_data *buf);
-int cifsd_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
-	loff_t len);
+int cifsd_vfs_alloc_size(struct cifsd_work *work,
+			 struct cifsd_file *fp,
+			 loff_t len);
 int cifsd_vfs_truncate_xattr(struct dentry *dentry);
 int cifsd_vfs_truncate_stream_xattr(struct dentry *dentry);
 int cifsd_vfs_remove_xattr(struct path *path, char *field_name);

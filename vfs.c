@@ -1197,9 +1197,12 @@ int cifsd_vfs_readdir(struct file *file, filldir_t filler,
 	return iterate_dir(file, &rdata->ctx);
 }
 
-int cifsd_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
-	loff_t len)
+int cifsd_vfs_alloc_size(struct cifsd_work *work,
+			 struct cifsd_file *fp,
+			 loff_t len)
 {
+	struct cifsd_tcp_conn *conn = work->sess->conn;
+
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);

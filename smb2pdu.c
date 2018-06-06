@@ -2666,7 +2666,7 @@ int smb2_open(struct cifsd_work *work)
 
 			cifsd_debug("request smb2 create allocate size : %llu\n",
 				alloc_size);
-			rc = cifsd_vfs_alloc_size(conn, fp, alloc_size);
+			rc = cifsd_vfs_alloc_size(work, fp, alloc_size);
 			if (rc < 0)
 				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
 					rc);
@@ -5141,8 +5141,8 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		logical_sector_size = cifsd_vfs_logical_sector_size(inode);
 
 		if (alloc_blks > inode->i_blocks) {
-			rc = cifsd_vfs_alloc_size(sess->conn, fp,
-				alloc_blks * logical_sector_size);
+			rc = cifsd_vfs_alloc_size(work, fp,
+					alloc_blks * logical_sector_size);
 
 			if (rc) {
 				cifsd_err("cifsd_vfs_alloc_size is failed : %d\n",
