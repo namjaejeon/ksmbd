@@ -250,7 +250,7 @@ out:
 
 /**
  * cifsd_vfs_write() - vfs helper for smb file write
- * @sess:	session
+ * @work:	work
  * @fid:	file id of open file
  * @buf:	buf containing data for writing
  * @count:	read byte count
@@ -260,9 +260,10 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
+int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	loff_t	offset = *pos;
 	int err = 0;
@@ -367,16 +368,17 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 
 /**
  * cifsd_vfs_setattr() - vfs helper for smb setattr
- * @sess:	session
+ * @work:	work
  * @name:	file name
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_setattr(struct cifsd_sess *sess, const char *name,
+int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		uint64_t fid, struct iattr *attrs)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	struct dentry *dentry;
 	struct inode *inode;
@@ -459,15 +461,16 @@ out:
 
 /**
  * cifsd_vfs_getattr() - vfs helper for smb getattr
- * @sess:	session
+ * @work:	work
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
+int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		struct kstat *stat)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	struct cifsd_file *fp;
 	int err;
@@ -492,13 +495,14 @@ int cifsd_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 
 /**
  * cifsd_vfs_fsync() - vfs helper for smb fsync
- * @sess:	session
+ * @work:	work
  * @fid:	file id of open file
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
+int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct cifsd_file *fp;
 	int err;
 
@@ -853,16 +857,17 @@ out1:
 
 /**
  * cifsd_vfs_truncate() - vfs helper for smb file truncate
- * @sess:	session
+ * @work:	work
  * @name:	old filename
  * @fid:	file id of old file
  * @size:	truncate to given size
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_truncate(struct cifsd_sess *sess, const char *name,
+int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct path path;
 	int err = 0;
 	struct inode *inode;
@@ -1192,9 +1197,12 @@ int cifsd_vfs_readdir(struct file *file, filldir_t filler,
 	return iterate_dir(file, &rdata->ctx);
 }
 
-int cifsd_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
-	loff_t len)
+int cifsd_vfs_alloc_size(struct cifsd_work *work,
+			 struct cifsd_file *fp,
+			 loff_t len)
 {
+	struct cifsd_tcp_conn *conn = work->sess->conn;
+
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
@@ -1267,7 +1275,7 @@ unsigned short cifsd_vfs_logical_sector_size(struct inode *inode)
  * @fs_ss: fs sector size struct
  */
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss)
+	struct cifsd_fs_sector_size *fs_ss)
 {
 	struct request_queue *q;
 
@@ -1289,7 +1297,7 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 }
 #else
 void cifsd_vfs_get_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss)
+	struct cifsd_fs_sector_size *fs_ss)
 {
 }
 #endif
