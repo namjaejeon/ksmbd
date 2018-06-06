@@ -4989,9 +4989,10 @@ out:
  * Return:	0 on success, otherwise error
  * TODO: need to implement an error handling for STATUS_INFO_LENGTH_MISMATCH
  */
-static int smb2_set_info_file(struct cifsd_sess *sess, struct cifsd_file *fp,
+static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 	int info_class, char *buffer, struct cifsd_share *share)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct nls_table *local_nls = sess->conn->local_nls;
 	int rc = 0;
 	struct file *filp;
@@ -5149,8 +5150,8 @@ static int smb2_set_info_file(struct cifsd_sess *sess, struct cifsd_file *fp,
 				return rc;
 			}
 		} else {
-			rc = cifsd_vfs_truncate(sess, NULL, fp,
-				alloc_blks * logical_sector_size);
+			rc = cifsd_vfs_truncate(work, NULL, fp,
+					alloc_blks * logical_sector_size);
 
 			if (rc) {
 				cifsd_err("truncate failed! filename : %s, err %d\n",
@@ -5180,7 +5181,7 @@ static int smb2_set_info_file(struct cifsd_sess *sess, struct cifsd_file *fp,
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
 		if (newsize != i_size_read(inode)) {
-			rc = cifsd_vfs_truncate(sess, NULL, fp, newsize);
+			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
 			if (rc) {
 				cifsd_err("truncate failed! filename : %s err %d\n",
 						fp->filename, rc);
@@ -5368,8 +5369,8 @@ int smb2_set_info(struct cifsd_work *work)
 	switch (req->InfoType) {
 	case SMB2_O_INFO_FILE:
 		cifsd_debug("GOT SMB2_O_INFO_FILE\n");
-		rc = smb2_set_info_file(work->sess, fp, req->FileInfoClass,
-			req->Buffer, work->tcon->share);
+		rc = smb2_set_info_file(work, fp, req->FileInfoClass,
+					req->Buffer, work->tcon->share);
 		break;
 #ifdef CONFIG_CIFSD_ACL
 	case SMB2_O_INFO_SECURITY:
@@ -5753,8 +5754,8 @@ int smb2_write(struct cifsd_work *work)
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
-	err = cifsd_vfs_write(work->sess, fp, data_buf, length, &offset,
-			writethrough, &nbytes);
+	err = cifsd_vfs_write(work, fp, data_buf, length, &offset,
+			      writethrough, &nbytes);
 	if (err < 0)
 		goto out;
 
@@ -5809,9 +5810,9 @@ int smb2_flush(struct cifsd_work *work)
 	cifsd_debug("SMB2_FLUSH called for fid %llu\n",
 			le64_to_cpu(req->VolatileFileId));
 
-	err = cifsd_vfs_fsync(work->sess,
-		le64_to_cpu(req->VolatileFileId),
-		le64_to_cpu(req->PersistentFileId));
+	err = cifsd_vfs_fsync(work,
+			      le64_to_cpu(req->VolatileFileId),
+			      le64_to_cpu(req->PersistentFileId));
 	if (err)
 		goto out;
 

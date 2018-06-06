@@ -2764,8 +2764,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	if (alloc_size && (file_info == F_CREATED ||
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
-			err = cifsd_vfs_truncate(sess, NULL,
-				fp, alloc_size);
+			err = cifsd_vfs_truncate(work, NULL, fp, alloc_size);
 			if (err) {
 				cifsd_err("failed to expand file, err = %d\n",
 						err);
@@ -3211,12 +3210,11 @@ int smb_write(struct cifsd_work *work)
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
 	if (!count) {
-		err = cifsd_vfs_truncate(work->sess, NULL, fp,
-			pos);
+		err = cifsd_vfs_truncate(work, NULL, fp, pos);
 		nbytes = 0;
 	} else
-		err = cifsd_vfs_write(work->sess, fp, data_buf,
-			count, &pos, 0, &nbytes);
+		err = cifsd_vfs_write(work, fp, data_buf,
+				      count, &pos, 0, &nbytes);
 
 out:
 	rsp->hdr.WordCount = 1;
@@ -3386,8 +3384,8 @@ int smb_write_andx(struct cifsd_work *work)
 
 	cifsd_debug("filname %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
-	err = cifsd_vfs_write(work->sess, fp, data_buf, count, &pos,
-			writethrough, &nbytes);
+	err = cifsd_vfs_write(work, fp, data_buf, count, &pos,
+			      writethrough, &nbytes);
 	if (err < 0)
 		goto out;
 
@@ -3489,13 +3487,15 @@ int smb_flush(struct cifsd_work *work)
 		for (id = 0; id < ftab->max_fids; id++) {
 			file = ftab->fileid[id];
 			if (file) {
-				err = cifsd_vfs_fsync(sess, file->volatile_id, 0);
+				err = cifsd_vfs_fsync(work,
+						      file->volatile_id,
+						      0);
 				if (err)
 					goto out;
 			}
 		}
 	} else {
-		err = cifsd_vfs_fsync(work->sess, req->FileID, 0);
+		err = cifsd_vfs_fsync(work, req->FileID, 0);
 		if (err)
 			goto out;
 	}
@@ -5422,7 +5422,7 @@ static int smb_set_time_pathinfo(struct cifsd_work *work)
 	if (!attrs.ia_valid)
 		goto done;
 
-	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work, name, 0, &attrs);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -5484,7 +5484,7 @@ static int smb_set_unix_pathinfo(struct cifsd_work *work)
 	if (err)
 		goto out;
 
-	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work, name, 0, &attrs);
 	if (err)
 		goto out;
 	/* setattr success, prepare response */
@@ -5628,7 +5628,7 @@ static int smb_set_file_size_pinfo(struct cifsd_work *work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	rc = cifsd_vfs_truncate(work->sess, name, NULL, newsize);
+	rc = cifsd_vfs_truncate(work, name, NULL, newsize);
 	if (rc) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return rc;
@@ -6618,7 +6618,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 	allocinfo =  (struct file_allocation_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(allocinfo->AllocationSize);
-	err = cifsd_vfs_getattr(work->sess, (uint64_t)req->Fid, &stat);
+	err = cifsd_vfs_getattr(work, (uint64_t)req->Fid, &stat);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -6642,8 +6642,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	err = cifsd_vfs_truncate(work->sess, NULL, fp,
-		newsize);
+	err = cifsd_vfs_truncate(work, NULL, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -6707,8 +6706,7 @@ static int smb_set_file_size_finfo(struct cifsd_work *work)
 	}
 
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	err = cifsd_vfs_truncate(work->sess, NULL, fp,
-		newsize);
+	err = cifsd_vfs_truncate(work, NULL, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -7120,7 +7118,7 @@ static int smb_set_unix_fileinfo(struct cifsd_work *work)
 	if (err)
 		goto out;
 
-	err = cifsd_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
+	err = cifsd_vfs_setattr(work, NULL, (uint64_t)req->Fid, &attrs);
 	if (err)
 		goto out;
 
@@ -7269,7 +7267,7 @@ static int smb_set_time_fileinfo(struct cifsd_work *work)
 	if (!attrs.ia_valid)
 		goto done;
 
-	err = cifsd_vfs_setattr(work->sess, NULL, (uint64_t)req->Fid, &attrs);
+	err = cifsd_vfs_setattr(work, NULL, (uint64_t)req->Fid, &attrs);
 	if (err) {
 		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		return err;
@@ -7330,7 +7328,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 	}
 
 	if (le32_to_cpu(info->overwrite)) {
-		rc = cifsd_vfs_truncate(work->sess, NULL, fp,	0);
+		rc = cifsd_vfs_truncate(work, NULL, fp, 0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 			return rc;
@@ -8546,7 +8544,7 @@ int smb_setattr(struct cifsd_work *work)
 	attrs.ia_mtime.tv_sec = le32_to_cpu(req->LastWriteTime);
 	attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 
-	err = cifsd_vfs_setattr(work->sess, name, 0, &attrs);
+	err = cifsd_vfs_setattr(work, name, 0, &attrs);
 	if (err)
 		goto out;
 
