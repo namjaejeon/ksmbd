@@ -494,10 +494,6 @@ extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 extern struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session);
-extern int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
-	ssize_t v_len);
-extern ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
-	char **value, int flags);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);

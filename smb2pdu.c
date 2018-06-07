@@ -2075,7 +2075,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
 
 		if (!eabuf->EaValueLength) {
-			rc = smb_find_cont_xattr(path, attr_name,
+			rc = cifsd_vfs_find_cont_xattr(path, attr_name,
 				XATTR_USER_PREFIX_LEN + eabuf->EaNameLength,
 				NULL, 0);
 
@@ -2628,7 +2628,7 @@ int smb2_open(struct cifsd_work *work)
 		fp->stream.size = xattr_stream_size;
 
 		/* Check if there is stream prefix in xattr space */
-		rc = smb_find_cont_xattr(&path, xattr_stream_name,
+		rc = cifsd_vfs_find_cont_xattr(&path, xattr_stream_name,
 				xattr_stream_size, NULL, 0);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
@@ -2800,11 +2800,11 @@ int smb2_open(struct cifsd_work *work)
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
-		smb_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
+		cifsd_vfs_store_cont_xattr(&path, XATTR_NAME_STREAM, NULL, 0);
 	}
 
 	if (store_stream) {
-		rc = smb_store_cont_xattr(&path, xattr_stream_name, NULL, 0);
+		rc = cifsd_vfs_store_cont_xattr(&path, xattr_stream_name, NULL, 0);
 		if (rc < 0) {
 			cifsd_err("failed to store stream name in xattr, rc :%d\n",
 					rc);
@@ -2823,7 +2823,7 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			rc = smb_find_cont_xattr(&path,
+			rc = cifsd_vfs_find_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
@@ -2836,7 +2836,7 @@ int smb2_open(struct cifsd_work *work)
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
-			rc = smb_store_cont_xattr(&path,
+			rc = cifsd_vfs_store_cont_xattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				(void *)&fp->create_time, CREATIOM_TIME_LEN);
 			if (rc)
@@ -2853,7 +2853,7 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *file_attribute = NULL;
 
-			rc = smb_find_cont_xattr(&path,
+			rc = cifsd_vfs_find_cont_xattr(&path,
 				 XATTR_NAME_FILE_ATTRIBUTE,
 				 XATTR_NAME_FILE_ATTRIBUTE_LEN,
 				 &file_attribute, 1);
@@ -2867,7 +2867,7 @@ int smb2_open(struct cifsd_work *work)
 	} else {
 		/* set XATTR_NAME_FILE_ATTRIBUTE with req->FileAttributes */
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
-			rc = smb_store_cont_xattr(&path,
+			rc = cifsd_vfs_store_cont_xattr(&path,
 				XATTR_NAME_FILE_ATTRIBUTE,
 				(void *)&fp->fattr, FILE_ATTRIBUTE_LEN);
 
@@ -4848,7 +4848,7 @@ static int smb2_rename(struct cifsd_file *fp,
 		xattr_stream_size = construct_xattr_stream_name(stream_name,
 			&xattr_stream_name);
 
-		rc = smb_store_cont_xattr(&fp->filp->f_path, xattr_stream_name,
+		rc = cifsd_vfs_store_cont_xattr(&fp->filp->f_path, xattr_stream_name,
 				NULL, 0);
 		if (rc < 0) {
 			cifsd_err("failed to store stream name in xattr, rc :%d\n",
@@ -5023,7 +5023,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		if (le64_to_cpu(file_info->CreationTime)) {
 			fp->create_time = le64_to_cpu(file_info->CreationTime);
 			if (get_attr_store_dos(&share->config.attr)) {
-				rc = smb_store_cont_xattr(&filp->f_path,
+				rc = cifsd_vfs_store_cont_xattr(&filp->f_path,
 					XATTR_NAME_CREATION_TIME,
 					(void *)&fp->create_time,
 					CREATIOM_TIME_LEN);
@@ -5070,7 +5070,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 					le32_to_cpu(file_info->Attributes)));
 			if (get_attr_store_dos(config_attr)) {
-				rc = smb_store_cont_xattr(&filp->f_path,
+				rc = cifsd_vfs_store_cont_xattr(&filp->f_path,
 						XATTR_NAME_FILE_ATTRIBUTE,
 						(void *)&fp->fattr,
 						FILE_ATTRIBUTE_LEN);

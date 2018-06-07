@@ -109,7 +109,7 @@ static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	cifsd_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
-	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+	v_len = cifsd_vfs_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
 			fp->stream.size, &stream_buf, 1);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
@@ -214,7 +214,7 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 		count = (*pos + count) - XATTR_SIZE_MAX;
 	}
 
-	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
+	v_len = cifsd_vfs_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
 			fp->stream.size, &stream_buf, 1);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
@@ -236,7 +236,7 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 	memcpy(&stream_buf[*pos], buf, count);
 
-	err = smb_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
+	err = cifsd_vfs_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
 			(void *)stream_buf, size);
 	if (err < 0)
 		goto out;
@@ -1561,7 +1561,7 @@ static void fill_create_time(struct cifsd_work *work,
 	cifsd_kstat->create_time = cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime);
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-		xattr_len = smb_find_cont_xattr(path,
+		xattr_len = cifsd_vfs_find_cont_xattr(path,
 			XATTR_NAME_CREATION_TIME,
 			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
@@ -1626,7 +1626,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 		char *file_attribute = NULL;
 		int rc;
 
-		rc = smb_find_cont_xattr(path,
+		rc = cifsd_vfs_find_cont_xattr(path,
 			XATTR_NAME_FILE_ATTRIBUTE,
 			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
 
@@ -1688,4 +1688,54 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	name[de->namelen] = '\0';
 	path_put(&path);
 	return name;
+}
+
+int cifsd_vfs_store_cont_xattr(struct path *path,
+			       char *prefix,
+			       void *value,
+			       ssize_t v_len)
+{
+	int err;
+
+	err = cifsd_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
+	if (err)
+		cifsd_debug("setxattr failed, err %d\n", err);
+
+	return err;
+}
+
+ssize_t cifsd_vfs_find_cont_xattr(struct path *path,
+				  char *prefix,
+				  int p_len,
+				  char **value,
+				  int flags)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t value_len = -ENOENT, xattr_list_len;
+
+	xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		cifsd_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strncasecmp(prefix, name, p_len))
+			continue;
+
+		value_len = cifsd_vfs_getxattr(path->dentry, name, value, flags);
+		if (value_len < 0)
+			cifsd_err("failed to get xattr in file\n");
+		break;
+	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+	return value_len;
 }
