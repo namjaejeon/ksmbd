@@ -546,6 +546,23 @@ void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
 	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
 }
 
+int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
+	void *arg)
+{
+	struct cifsd_tcp_conn *t;
+	int ret = 0;
+
+	read_lock(&tcp_conn_list_lock);
+	list_for_each_entry(t, &tcp_conn_list, tcp_conns)
+		if (match(t, arg)) {
+			ret = 1;
+			break;
+		}
+	read_unlock(&tcp_conn_list_lock);
+
+	return ret;
+}
+
 static void tcp_destroy_socket(void)
 {
 	int ret;
