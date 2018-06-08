@@ -423,51 +423,6 @@ int is_smb2_rsp(struct cifsd_work *work)
 };
 #endif
 
-int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
-	ssize_t v_len)
-{
-	int err;
-
-	err = cifsd_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
-	if (err)
-		cifsd_debug("setxattr failed, err %d\n", err);
-
-	return err;
-}
-
-ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
-	char **value, int flags)
-{
-	char *name, *xattr_list = NULL;
-	ssize_t value_len = -ENOENT, xattr_list_len;
-
-	xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
-		XATTR_LIST_MAX);
-	if (xattr_list_len < 0) {
-		goto out;
-	} else if (!xattr_list_len) {
-		cifsd_debug("empty xattr in the file\n");
-		goto out;
-	}
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
-		if (strncasecmp(prefix, name, p_len))
-			continue;
-
-		value_len = cifsd_vfs_getxattr(path->dentry, name, value, flags);
-		if (value_len < 0)
-			cifsd_err("failed to get xattr in file\n");
-		break;
-	}
-
-out:
-	if (xattr_list)
-		vfree(xattr_list);
-	return value_len;
-}
-
 int get_pos_strnstr(const char *s1, const char *s2, size_t len)
 {
 	size_t l2;

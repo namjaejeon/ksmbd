@@ -2790,9 +2790,9 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			err = smb_find_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			err = cifsd_vfs_getxattr(path.dentry,
+						XATTR_NAME_CREATION_TIME,
+						&create_time);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
 			cifsd_free(create_time);
@@ -2801,9 +2801,11 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
-			err = smb_store_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			err = cifsd_vfs_setxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 (void *)&fp->create_time,
+						 CREATIOM_TIME_LEN,
+						 0);
 			if (err)
 				cifsd_debug("failed to store creation time in EA\n");
 			err = 0;
@@ -3954,8 +3956,9 @@ static int smb_get_acl(struct cifsd_work *work, struct path *path)
 	aclbuf->access_entry_count = 0;
 
 	/* check if POSIX_ACL_XATTR_ACCESS exists */
-	value_len = cifsd_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_ACCESS,
-			&buf, 1);
+	value_len = cifsd_vfs_getxattr(path->dentry,
+				       XATTR_NAME_POSIX_ACL_ACCESS,
+				       &buf);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
@@ -3963,8 +3966,9 @@ static int smb_get_acl(struct cifsd_work *work, struct path *path)
 	}
 
 	/* check if POSIX_ACL_XATTR_DEFAULT exists */
-	value_len = cifsd_vfs_getxattr(path->dentry, XATTR_NAME_POSIX_ACL_DEFAULT,
-			&buf, 1);
+	value_len = cifsd_vfs_getxattr(path->dentry,
+				       XATTR_NAME_POSIX_ACL_DEFAULT,
+				       &buf);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_DEFAULT);
@@ -4048,11 +4052,13 @@ static int smb_set_acl(struct cifsd_work *work)
 
 	value_len = rc;
 	if (acl_type == ACL_TYPE_ACCESS) {
-		rc = cifsd_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_ACCESS,
-				buf, value_len, 0);
+		rc = cifsd_vfs_fsetxattr(fname,
+					 XATTR_NAME_POSIX_ACL_ACCESS,
+					 buf, value_len, 0);
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
-		rc = cifsd_vfs_setxattr(fname, NULL, XATTR_NAME_POSIX_ACL_DEFAULT,
-				buf, value_len, 0);
+		rc = cifsd_vfs_fsetxattr(fname,
+					 XATTR_NAME_POSIX_ACL_DEFAULT,
+					 buf, value_len, 0);
 	}
 
 	if (rc < 0) {
@@ -4227,7 +4233,7 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 		ptr = (char *)(&temp_fea->name + name_len + 1);
 		buf_free_len -= (offsetof(struct fea, name) + name_len + 1);
 
-		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf, 1);
+		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf);
 		if (value_len <= 0) {
 			rc = -ENOENT;
 			rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
@@ -4342,9 +4348,9 @@ static int query_path_info(struct cifsd_work *work)
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 		char *ctime = NULL;
 
-		rc = smb_find_cont_xattr(&path,
-			XATTR_NAME_CREATION_TIME,
-			XATTR_NAME_CREATION_TIME_LEN, &ctime, 1);
+		rc = cifsd_vfs_getxattr(path.dentry,
+					XATTR_NAME_CREATION_TIME,
+					&ctime);
 		if (rc > 0)
 			create_time = *((__u64 *)ctime);
 		cifsd_free(ctime);
@@ -5563,8 +5569,9 @@ static int smb_set_ea(struct cifsd_work *work)
 		cifsd_debug("name: <%s>, name_len %u, value_len %u\n",
 			ea->name, ea->name_len, le16_to_cpu(ea->value_len));
 
-		rc = cifsd_vfs_setxattr(fname, NULL, attr_name, value,
-				le16_to_cpu(ea->value_len), 0);
+		rc = cifsd_vfs_fsetxattr(fname, attr_name, value,
+					le16_to_cpu(ea->value_len),
+					0);
 		if (rc < 0) {
 			kfree(attr_name);
 			rsp->hdr.Status.CifsError =
@@ -7504,9 +7511,11 @@ static int create_dir(struct cifsd_work *work)
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
 
-			err = smb_store_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				(void *)&create_time, CREATIOM_TIME_LEN);
+			err = cifsd_vfs_setxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 (void *)&create_time,
+						 CREATIOM_TIME_LEN,
+						 0);
 			if (err)
 				cifsd_debug("failed to store creation time in EA\n");
 			err = 0;
@@ -7778,9 +7787,11 @@ int smb_mkdir(struct cifsd_work *work)
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
 
-			err = smb_store_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				(void *)&create_time, CREATIOM_TIME_LEN);
+			err = cifsd_vfs_setxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 (void *)&create_time,
+						 CREATIOM_TIME_LEN,
+						 0);
 			if (err)
 				cifsd_debug("failed to store creation time in EA\n");
 			err = 0;
@@ -8395,9 +8406,9 @@ int smb_open_andx(struct cifsd_work *work)
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			err = smb_find_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+			err = cifsd_vfs_getxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 &create_time);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
 			cifsd_free(create_time);
@@ -8406,9 +8417,11 @@ int smb_open_andx(struct cifsd_work *work)
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-			err = smb_store_cont_xattr(&path,
-				XATTR_NAME_CREATION_TIME,
-				(void *)&fp->create_time, CREATIOM_TIME_LEN);
+			err = cifsd_vfs_setxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 (void *)&fp->create_time,
+						 CREATIOM_TIME_LEN,
+						 0);
 			if (err)
 				cifsd_debug("failed to store creation time in EA\n");
 			err = 0;
