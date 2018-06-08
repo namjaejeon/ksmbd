@@ -113,11 +113,6 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     char *dirpath);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
-int cifsd_vfs_store_cont_xattr(struct path *path,
-			       char *prefix,
-			       void *value,
-			       ssize_t v_len);
-
 ssize_t cifsd_vfs_find_cont_xattr(struct path *path,
 				  char *prefix,
 				  int p_len,

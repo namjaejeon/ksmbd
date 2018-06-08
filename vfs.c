@@ -236,8 +236,8 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 	memcpy(&stream_buf[*pos], buf, count);
 
-	err = cifsd_vfs_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
-			(void *)stream_buf, size);
+	err = cifsd_vfs_setxattr(NULL, &fp->filp->f_path, fp->stream.name,
+			(void *)stream_buf, size, 0);
 	if (err < 0)
 		goto out;
 
@@ -1688,20 +1688,6 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	name[de->namelen] = '\0';
 	path_put(&path);
 	return name;
-}
-
-int cifsd_vfs_store_cont_xattr(struct path *path,
-			       char *prefix,
-			       void *value,
-			       ssize_t v_len)
-{
-	int err;
-
-	err = cifsd_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
-	if (err)
-		cifsd_debug("setxattr failed, err %d\n", err);
-
-	return err;
 }
 
 ssize_t cifsd_vfs_find_cont_xattr(struct path *path,
