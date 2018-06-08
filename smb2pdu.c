@@ -2075,7 +2075,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
 
 		if (!eabuf->EaValueLength) {
-			rc = cifsd_vfs_find_cont_xattr(path, attr_name,
+			rc = cifsd_vfs_getcasexattr(path, attr_name,
 				XATTR_USER_PREFIX_LEN + eabuf->EaNameLength,
 				NULL, 0);
 
@@ -2627,7 +2627,7 @@ int smb2_open(struct cifsd_work *work)
 		fp->stream.size = xattr_stream_size;
 
 		/* Check if there is stream prefix in xattr space */
-		rc = cifsd_vfs_find_cont_xattr(&path, xattr_stream_name,
+		rc = cifsd_vfs_getcasexattr(&path, xattr_stream_name,
 				xattr_stream_size, NULL, 0);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
@@ -2824,7 +2824,7 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			rc = cifsd_vfs_find_cont_xattr(&path,
+			rc = cifsd_vfs_getcasexattr(&path,
 				XATTR_NAME_CREATION_TIME,
 				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
@@ -2856,7 +2856,7 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *file_attribute = NULL;
 
-			rc = cifsd_vfs_find_cont_xattr(&path,
+			rc = cifsd_vfs_getcasexattr(&path,
 				 XATTR_NAME_FILE_ATTRIBUTE,
 				 XATTR_NAME_FILE_ATTRIBUTE_LEN,
 				 &file_attribute, 1);
