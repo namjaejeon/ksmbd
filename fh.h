@@ -242,6 +242,7 @@ struct cifsd_file *lookup_fp_clguid(char *createguid);
 struct cifsd_file *lookup_fp_app_id(char *app_id);
 struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
 	char *filename);
+struct cifsd_file *find_fp_using_inode(struct inode *inode);
 int close_disconnected_handle(struct inode *inode);
 #endif
 

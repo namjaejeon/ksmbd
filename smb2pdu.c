@@ -33,6 +33,7 @@
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "vfs.h"
+#include "fh.h"
 
 bool multi_channel_enable;
 

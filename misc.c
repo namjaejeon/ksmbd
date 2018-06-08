@@ -565,32 +565,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	return rc;
 }
 
-struct cifsd_file *find_fp_using_inode(struct inode *inode)
-{
-	struct cifsd_file *lfp;
-	struct cifsd_inode *ci;
-	struct list_head *cur;
-
-	ci = cifsd_inode_lookup_by_vfsinode(inode);
-	if (!ci)
-		goto out;
-
-	spin_lock(&ci->m_lock);
-	list_for_each(cur, &ci->m_fp_list) {
-		lfp = list_entry(cur, struct cifsd_file, node);
-		if (inode == FP_INODE(lfp)) {
-			atomic_dec(&ci->m_count);
-			spin_unlock(&ci->m_lock);
-			return lfp;
-		}
-	}
-	atomic_dec(&ci->m_count);
-	spin_unlock(&ci->m_lock);
-
-out:
-	return NULL;
-}
-
 /**
  * pattern_cmp() - compare a string with a pattern which might include
  * wildcard '*' and '?'
