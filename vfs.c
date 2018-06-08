@@ -112,8 +112,7 @@ static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
 				       fp->stream.name,
 				       fp->stream.size,
-				       &stream_buf,
-				       1);
+				       &stream_buf);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -220,8 +219,7 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
 				       fp->stream.name,
 				       fp->stream.size,
-				       &stream_buf,
-				       1);
+				       &stream_buf);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -957,39 +955,38 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
 	return err;
 }
 
+ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
+			   char *xattr_name)
+{
+	return vfs_getxattr(dentry, xattr_name, NULL, 0);
+}
+
 /**
  * cifsd_vfs_getxattr() - vfs helper for smb get extended attributes value
  * @dentry:	dentry of file for getting xattrs
  * @xattr_name:	name of xattr name to query
  * @xattr_buf:	destination buffer xattr value
- * @flags: if 0, return stored xattr's length only
  *
  * Return:	read xattr value length on success, otherwise error
  */
-ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-	char **xattr_buf, int flags)
+ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
+			   char *xattr_name,
+			   char **xattr_buf)
 {
 	ssize_t xattr_len;
 	char *buf;
 
-	xattr_len = vfs_getxattr(dentry, xattr_name, NULL, 0);
-	if (xattr_len <= 0)
+	xattr_len = cifsd_vfs_xattr_len(dentry, xattr_name);
+	if (xattr_len < 0)
 		return xattr_len;
 
-	if (!flags)
-		return xattr_len;
-
-	buf = cifsd_alloc(xattr_len);
+	buf = kmalloc(xattr_len + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf,
-		xattr_len);
-	if (xattr_len < 0)
-		cifsd_debug("getxattr failed, ret %zd\n", xattr_len);
-	else
+	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf, xattr_len);
+	if (xattr_len)
 		*xattr_buf = buf;
-
 	return xattr_len;
 }
 
@@ -1588,9 +1585,9 @@ static void fill_create_time(struct cifsd_work *work,
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 		xattr_len = cifsd_vfs_getcasexattr(path->dentry,
-			XATTR_NAME_CREATION_TIME,
-			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
-
+					XATTR_NAME_CREATION_TIME,
+					XATTR_NAME_CREATION_TIME_LEN,
+					&create_time);
 		if (xattr_len > 0)
 			cifsd_kstat->create_time = *((u64 *)create_time);
 
@@ -1653,9 +1650,9 @@ static void fill_file_attributes(struct cifsd_work *work,
 		int rc;
 
 		rc = cifsd_vfs_getcasexattr(path->dentry,
-			XATTR_NAME_FILE_ATTRIBUTE,
-			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
-
+					XATTR_NAME_FILE_ATTRIBUTE,
+					XATTR_NAME_FILE_ATTRIBUTE_LEN,
+					&file_attribute);
 		if (rc > 0)
 			cifsd_kstat->file_attributes =
 				*((__le32 *)file_attribute);
@@ -1719,8 +1716,7 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 			       char *attr_name,
 			       int attr_name_len,
-			       char **attr_value,
-			       int flags)
+			       char **attr_value)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
@@ -1739,10 +1735,38 @@ ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 
 		value_len = cifsd_vfs_getxattr(dentry,
 					       name,
-					       attr_value,
-					       flags);
+					       attr_value);
 		if (value_len < 0)
 			cifsd_err("failed to get xattr in file\n");
+		break;
+	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+	return value_len;
+}
+
+ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
+				char *attr_name,
+				int attr_name_len)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t value_len = -ENOENT, xattr_list_len;
+
+	xattr_list_len = cifsd_vfs_listxattr(dentry,
+					     &xattr_list,
+					     XATTR_LIST_MAX);
+	if (xattr_list_len <= 0)
+		goto out;
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strncasecmp(attr_name, name, attr_name_len))
+			continue;
+
+		value_len = cifsd_vfs_xattr_len(dentry, name);
 		break;
 	}
 

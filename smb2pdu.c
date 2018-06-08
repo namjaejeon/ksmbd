@@ -2075,9 +2075,10 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		value = (char *)&eabuf->name + eabuf->EaNameLength + 1;
 
 		if (!eabuf->EaValueLength) {
-			rc = cifsd_vfs_getcasexattr(path->dentry, attr_name,
-				XATTR_USER_PREFIX_LEN + eabuf->EaNameLength,
-				NULL, 0);
+			rc = cifsd_vfs_casexattr_len(path->dentry,
+						     attr_name,
+						     XATTR_USER_PREFIX_LEN +
+						     eabuf->EaNameLength);
 
 			/* delete the EA only when it exits */
 			if (rc > 0) {
@@ -2628,8 +2629,9 @@ int smb2_open(struct cifsd_work *work)
 		fp->stream.size = xattr_stream_size;
 
 		/* Check if there is stream prefix in xattr space */
-		rc = cifsd_vfs_getcasexattr(path.dentry, xattr_stream_name,
-				xattr_stream_size, NULL, 0);
+		rc = cifsd_vfs_casexattr_len(path.dentry,
+					     xattr_stream_name,
+					     xattr_stream_size);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
 				cifsd_err("failed to find stream name in xattr, rc : %d\n",
@@ -2826,8 +2828,9 @@ int smb2_open(struct cifsd_work *work)
 			char *create_time = NULL;
 
 			rc = cifsd_vfs_getcasexattr(path.dentry,
-				XATTR_NAME_CREATION_TIME,
-				XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
+						XATTR_NAME_CREATION_TIME,
+						XATTR_NAME_CREATION_TIME_LEN,
+						&create_time);
 
 			if (rc > 0)
 				fp->create_time = *((__u64 *)create_time);
@@ -2858,10 +2861,9 @@ int smb2_open(struct cifsd_work *work)
 			char *file_attribute = NULL;
 
 			rc = cifsd_vfs_getcasexattr(path.dentry,
-				 XATTR_NAME_FILE_ATTRIBUTE,
-				 XATTR_NAME_FILE_ATTRIBUTE_LEN,
-				 &file_attribute, 1);
-
+						 XATTR_NAME_FILE_ATTRIBUTE,
+						 XATTR_NAME_FILE_ATTRIBUTE_LEN,
+						 &file_attribute);
 			if (rc > 0)
 				fp->fattr = *((__le32 *)file_attribute);
 
@@ -3666,7 +3668,7 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 		buf_free_len -= (offsetof(struct smb2_ea_info, name) +
 				name_len + 1);
 		/* bailout if xattr can't fit in buf_free_len */
-		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf, 1);
+		value_len = cifsd_vfs_getxattr(path->dentry, name, &buf);
 		if (value_len <= 0) {
 			rc = -ENOENT;
 			rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;

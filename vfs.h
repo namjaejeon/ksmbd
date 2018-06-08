@@ -83,8 +83,14 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size);
 ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 			   char *xattr_name,
-			   char **xattr_buf,
-			   int flags);
+			   char **xattr_buf);
+
+ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
+			    char *xattr_name);
+
+ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
+				char *attr_name,
+				int attr_name_len);
 
 int cifsd_vfs_setxattr(struct dentry *dentry,
 		       const char *attr_name,
@@ -105,8 +111,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 			       char *attr_name,
 			       int attr_name_len,
-			       char **attr_value,
-			       int flags);
+			       char **attr_value);
 
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
