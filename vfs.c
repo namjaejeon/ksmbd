@@ -1234,9 +1234,9 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
-int cifsd_vfs_remove_xattr(struct path *path, char *field_name)
+int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 {
-	return vfs_removexattr(path->dentry, field_name);
+	return vfs_removexattr(dentry, attr_name);
 }
 
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)

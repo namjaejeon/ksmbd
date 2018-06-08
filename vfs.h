@@ -113,7 +113,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 loff_t len);
 int cifsd_vfs_truncate_xattr(struct dentry *dentry);
 int cifsd_vfs_truncate_stream_xattr(struct dentry *dentry);
-int cifsd_vfs_remove_xattr(struct path *path, char *field_name);
+int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,

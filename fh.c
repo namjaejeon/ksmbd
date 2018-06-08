@@ -530,7 +530,8 @@ static int close_fp(struct cifsd_file *fp)
 
 	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
-		err = cifsd_vfs_remove_xattr(&(filp->f_path), fp->stream.name);
+		err = cifsd_vfs_remove_xattr(filp->f_path.dentry,
+					     fp->stream.name);
 		if (err)
 			cifsd_err("remove xattr failed : %s\n",
 				fp->stream.name);

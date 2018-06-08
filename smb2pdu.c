@@ -2081,7 +2081,8 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 
 			/* delete the EA only when it exits */
 			if (rc > 0) {
-				rc = cifsd_vfs_remove_xattr(path, attr_name);
+				rc = cifsd_vfs_remove_xattr(path->dentry,
+							    attr_name);
 
 				if (rc < 0) {
 					cifsd_err("remove xattr failed(%d)\n",
