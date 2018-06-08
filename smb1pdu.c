@@ -2790,9 +2790,8 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			err = cifsd_vfs_getcasexattr(path.dentry,
+			err = cifsd_vfs_getxattr(path.dentry,
 						XATTR_NAME_CREATION_TIME,
-						XATTR_NAME_CREATION_TIME_LEN,
 						&create_time);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
@@ -4349,10 +4348,9 @@ static int query_path_info(struct cifsd_work *work)
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 		char *ctime = NULL;
 
-		rc = cifsd_vfs_getcasexattr(path.dentry,
-					    XATTR_NAME_CREATION_TIME,
-					    XATTR_NAME_CREATION_TIME_LEN,
-					    &ctime);
+		rc = cifsd_vfs_getxattr(path.dentry,
+					XATTR_NAME_CREATION_TIME,
+					&ctime);
 		if (rc > 0)
 			create_time = *((__u64 *)ctime);
 		cifsd_free(ctime);
@@ -8408,10 +8406,9 @@ int smb_open_andx(struct cifsd_work *work)
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			err = cifsd_vfs_getcasexattr(path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						XATTR_NAME_CREATION_TIME_LEN,
-						&create_time);
+			err = cifsd_vfs_getxattr(path.dentry,
+						 XATTR_NAME_CREATION_TIME,
+						 &create_time);
 			if (err > 0)
 				fp->create_time = *((__u64 *)create_time);
 			cifsd_free(create_time);

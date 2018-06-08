@@ -2827,9 +2827,8 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
-			rc = cifsd_vfs_getcasexattr(path.dentry,
+			rc = cifsd_vfs_getxattr(path.dentry,
 						XATTR_NAME_CREATION_TIME,
-						XATTR_NAME_CREATION_TIME_LEN,
 						&create_time);
 
 			if (rc > 0)
@@ -2860,10 +2859,9 @@ int smb2_open(struct cifsd_work *work)
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *file_attribute = NULL;
 
-			rc = cifsd_vfs_getcasexattr(path.dentry,
-						 XATTR_NAME_FILE_ATTRIBUTE,
-						 XATTR_NAME_FILE_ATTRIBUTE_LEN,
-						 &file_attribute);
+			rc = cifsd_vfs_getxattr(path.dentry,
+						XATTR_NAME_FILE_ATTRIBUTE,
+						&file_attribute);
 			if (rc > 0)
 				fp->fattr = *((__le32 *)file_attribute);
 

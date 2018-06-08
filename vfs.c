@@ -1584,10 +1584,9 @@ static void fill_create_time(struct cifsd_work *work,
 	cifsd_kstat->create_time = cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime);
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-		xattr_len = cifsd_vfs_getcasexattr(path->dentry,
-					XATTR_NAME_CREATION_TIME,
-					XATTR_NAME_CREATION_TIME_LEN,
-					&create_time);
+		xattr_len = cifsd_vfs_getxattr(path->dentry,
+					       XATTR_NAME_CREATION_TIME,
+					       &create_time);
 		if (xattr_len > 0)
 			cifsd_kstat->create_time = *((u64 *)create_time);
 
@@ -1649,9 +1648,8 @@ static void fill_file_attributes(struct cifsd_work *work,
 		char *file_attribute = NULL;
 		int rc;
 
-		rc = cifsd_vfs_getcasexattr(path->dentry,
+		rc = cifsd_vfs_getxattr(path->dentry,
 					XATTR_NAME_FILE_ATTRIBUTE,
-					XATTR_NAME_FILE_ATTRIBUTE_LEN,
 					&file_attribute);
 		if (rc > 0)
 			cifsd_kstat->file_attributes =
