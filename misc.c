@@ -557,7 +557,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have share write\n");
 				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
-				rc = EPERM;
+				rc = -EPERM;
 				break;
 			}
 
