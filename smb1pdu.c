@@ -2801,7 +2801,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
-			err = cifsd_vfs_setxattr(&path,
+			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
 						 (void *)&fp->create_time,
 						 CREATIOM_TIME_LEN,
@@ -7509,7 +7509,7 @@ static int create_dir(struct cifsd_work *work)
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
 
-			err = cifsd_vfs_setxattr(&path,
+			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
 						 (void *)&create_time,
 						 CREATIOM_TIME_LEN,
@@ -7785,7 +7785,7 @@ int smb_mkdir(struct cifsd_work *work)
 			generic_fillattr(path.dentry->d_inode, &stat);
 			create_time = cifs_UnixTimeToNT(stat.ctime);
 
-			err = cifsd_vfs_setxattr(&path,
+			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
 						 (void *)&create_time,
 						 CREATIOM_TIME_LEN,
@@ -8415,7 +8415,7 @@ int smb_open_andx(struct cifsd_work *work)
 	} else {
 		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-			err = cifsd_vfs_setxattr(&path,
+			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
 						 (void *)&fp->create_time,
 						 CREATIOM_TIME_LEN,

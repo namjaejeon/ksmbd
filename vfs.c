@@ -242,7 +242,7 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 	memcpy(&stream_buf[*pos], buf, count);
 
-	err = cifsd_vfs_setxattr(&fp->filp->f_path,
+	err = cifsd_vfs_setxattr(fp->filp->f_path.dentry,
 				 fp->stream.name,
 				 (void *)stream_buf,
 				 size,
@@ -995,7 +995,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 
 /**
  * cifsd_vfs_setxattr() - vfs helper for smb set extended attributes value
- * @fpath:	path of file for setxattr
+ * @dentry:	dentry to set XATTR at
  * @name:	xattr name for setxattr
  * @value:	xattr value to set
  * @size:	size of xattr value
@@ -1003,7 +1003,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_setxattr(struct path *fpath,
+int cifsd_vfs_setxattr(struct dentry *dentry,
 		       const char *attr_name,
 		       const void *attr_value,
 		       size_t attr_size,
@@ -1011,7 +1011,7 @@ int cifsd_vfs_setxattr(struct path *fpath,
 {
 	int err;
 
-	err = vfs_setxattr(fpath->dentry,
+	err = vfs_setxattr(dentry,
 			   attr_name,
 			   attr_value,
 			   attr_size,

@@ -86,7 +86,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 			   char **xattr_buf,
 			   int flags);
 
-int cifsd_vfs_setxattr(struct path *path,
+int cifsd_vfs_setxattr(struct dentry *dentry,
 		       const char *attr_name,
 		       const void *attr_value,
 		       size_t attr_size,
