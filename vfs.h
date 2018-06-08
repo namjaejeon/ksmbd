@@ -123,7 +123,7 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     char *dirpath);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
-ssize_t cifsd_vfs_getcasexattr(struct path *path,
+ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 			       char *attr_name,
 			       int attr_name_len,
 			       char **attr_value,

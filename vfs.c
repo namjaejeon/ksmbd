@@ -109,8 +109,11 @@ static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	cifsd_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
-	v_len = cifsd_vfs_getcasexattr(&fp->filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
+	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
+				       fp->stream.name,
+				       fp->stream.size,
+				       &stream_buf,
+				       1);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -214,8 +217,11 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 		count = (*pos + count) - XATTR_SIZE_MAX;
 	}
 
-	v_len = cifsd_vfs_getcasexattr(&fp->filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
+	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
+				       fp->stream.name,
+				       fp->stream.size,
+				       &stream_buf,
+				       1);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -1581,7 +1587,7 @@ static void fill_create_time(struct cifsd_work *work,
 	cifsd_kstat->create_time = cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime);
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-		xattr_len = cifsd_vfs_getcasexattr(path,
+		xattr_len = cifsd_vfs_getcasexattr(path->dentry,
 			XATTR_NAME_CREATION_TIME,
 			XATTR_NAME_CREATION_TIME_LEN, &create_time, 1);
 
@@ -1646,7 +1652,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 		char *file_attribute = NULL;
 		int rc;
 
-		rc = cifsd_vfs_getcasexattr(path,
+		rc = cifsd_vfs_getcasexattr(path->dentry,
 			XATTR_NAME_FILE_ATTRIBUTE,
 			XATTR_NAME_FILE_ATTRIBUTE_LEN, &file_attribute, 1);
 
@@ -1710,16 +1716,16 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	return name;
 }
 
-ssize_t cifsd_vfs_getcasexattr(struct path *path,
-				char *attr_name,
-				int attr_name_len,
-				char **attr_value,
-				int flags)
+ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
+			       char *attr_name,
+			       int attr_name_len,
+			       char **attr_value,
+			       int flags)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = cifsd_vfs_listxattr(path->dentry,
+	xattr_list_len = cifsd_vfs_listxattr(dentry,
 					     &xattr_list,
 					     XATTR_LIST_MAX);
 	if (xattr_list_len <= 0)
@@ -1731,7 +1737,7 @@ ssize_t cifsd_vfs_getcasexattr(struct path *path,
 		if (strncasecmp(attr_name, name, attr_name_len))
 			continue;
 
-		value_len = cifsd_vfs_getxattr(path->dentry,
+		value_len = cifsd_vfs_getxattr(dentry,
 					       name,
 					       attr_value,
 					       flags);
