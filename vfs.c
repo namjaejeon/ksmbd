@@ -236,8 +236,11 @@ static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 	memcpy(&stream_buf[*pos], buf, count);
 
-	err = cifsd_vfs_setxattr(NULL, &fp->filp->f_path, fp->stream.name,
-			(void *)stream_buf, size, 0);
+	err = cifsd_vfs_setxattr(&fp->filp->f_path,
+				 fp->stream.name,
+				 (void *)stream_buf,
+				 size,
+				 0);
 	if (err < 0)
 		goto out;
 
@@ -986,7 +989,6 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 
 /**
  * cifsd_vfs_setxattr() - vfs helper for smb set extended attributes value
- * @filename:	file name
  * @fpath:	path of file for setxattr
  * @name:	xattr name for setxattr
  * @value:	xattr value to set
@@ -995,29 +997,47 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_setxattr(const char *filename, struct path *fpath, const char *name,
-		const void *value, size_t size, int flags)
+int cifsd_vfs_setxattr(struct path *fpath,
+		       const char *attr_name,
+		       const void *attr_value,
+		       size_t attr_size,
+		       int flags)
+{
+	int err;
+
+	err = vfs_setxattr(fpath->dentry,
+			   attr_name,
+			   attr_value,
+			   attr_size,
+			   flags);
+	if (err)
+		cifsd_debug("setxattr failed, err %d\n", err);
+	return err;
+}
+
+int cifsd_vfs_fsetxattr(const char *filename,
+			const char *attr_name,
+			const void *attr_value,
+			size_t attr_size,
+			int flags)
 {
 	struct path path;
 	int err;
 
-	if (filename) {
-		err = kern_path(filename, 0, &path);
-		if (err) {
-			cifsd_debug("cannot get linux path %s, err %d\n",
-					filename, err);
-			return err;
-		}
-		err = vfs_setxattr(path.dentry, name, value, size, flags);
-		if (err)
-			cifsd_debug("setxattr failed, err %d\n", err);
-		path_put(&path);
-	} else {
-		err = vfs_setxattr(fpath->dentry, name, value, size, flags);
-		if (err)
-			cifsd_debug("setxattr failed, err %d\n", err);
+	err = kern_path(filename, 0, &path);
+	if (err) {
+		cifsd_debug("cannot get linux path %s, err %d\n",
+				filename, err);
+		return err;
 	}
-
+	err = vfs_setxattr(path.dentry,
+			   attr_name,
+			   attr_value,
+			   attr_size,
+			   flags);
+	if (err)
+		cifsd_debug("setxattr failed, err %d\n", err);
+	path_put(&path);
 	return err;
 }
 

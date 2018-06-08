@@ -83,9 +83,19 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
 		char **xattr_buf, int flags);
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	const struct path *path, int flags, int option, int fexist);
-int cifsd_vfs_setxattr(const char *filename, struct path *path,
-		       const char *name,
-		       const void *value, size_t size, int flags);
+
+int cifsd_vfs_setxattr(struct path *path,
+		       const char *attr_name,
+		       const void *attr_value,
+		       size_t attr_size,
+		       int flags);
+
+int cifsd_vfs_fsetxattr(const char *filename,
+			const char *attr_name,
+			const void *attr_value,
+			size_t attr_size,
+			int flags);
+
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
 int cifsd_vfs_lookup_in_dir(char *dirname, char *filename);
