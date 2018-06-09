@@ -499,7 +499,6 @@ extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
-extern struct cifsd_file *find_fp_using_inode(struct inode *inode);
 extern void remove_async_id(__u64 async_id);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);

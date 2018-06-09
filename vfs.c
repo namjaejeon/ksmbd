@@ -36,6 +36,7 @@
 #include "transport_tcp.h"
 #include "buffer_pool.h"
 #include "vfs.h"
+#include "fh.h"
 
 /**
  * cifsd_vfs_create() - vfs helper for smb create file
