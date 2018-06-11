@@ -446,7 +446,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
 	struct cifsd_file *prev_fp;
-	int same_stream = 0;
 	struct list_head *cur;
 
 	/*
@@ -459,13 +458,10 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		if (prev_fp->f_state == FP_FREEING)
 			continue;
 		if (file_inode(filp) == FP_INODE(prev_fp)) {
-			if (prev_fp->is_stream && curr_fp->is_stream) {
+			if (prev_fp->is_stream && curr_fp->is_stream)
 				if (strcmp(prev_fp->stream.name,
-					curr_fp->stream.name)) {
+					curr_fp->stream.name))
 					continue;
-				}
-				same_stream = 1;
-			}
 
 			if (prev_fp->is_durable) {
 				prev_fp->is_durable = 0;
@@ -554,13 +550,6 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		}
 	}
 	spin_unlock(&curr_fp->f_ci->m_lock);
-
-	if (!same_stream && !curr_fp->is_stream) {
-		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-			cifsd_vfs_truncate_stream_xattr(
-				curr_fp->filp->f_path.dentry);
-		}
-	}
 
 	return rc;
 }

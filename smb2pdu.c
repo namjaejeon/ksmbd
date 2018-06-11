@@ -2176,7 +2176,7 @@ int smb2_open(struct cifsd_work *work)
 	char *stream_name = NULL, *xattr_stream_name = NULL;
 	bool file_present = false, created = false, islink = false;
 	struct durable_info d_info;
-	int share_ret;
+	int share_ret, need_truncate = 0;
 	unsigned int tree_id;
 
 	req = (struct smb2_create_req *)REQUEST_BUF(work);
@@ -2759,25 +2759,7 @@ int smb2_open(struct cifsd_work *work)
 		&& !fp->attrib_only) {
 		if (oplocks_enable)
 			smb_break_all_oplock(work, fp);
-
-		rc = vfs_truncate(&path, 0);
-		if (rc) {
-			cifsd_err("vfs_truncate failed, rc %d\n", rc);
-			goto err_out;
-		}
-
-		/*
-		 * destroy xattr only when CreateDisposition is
-		 * FILE_SUPERSEDE
-		 */
-		if (req->CreateDisposition & FILE_SUPERSEDE_LE) {
-			rc = cifsd_vfs_truncate_xattr(path.dentry);
-			if (rc) {
-				cifsd_err("cifsd_vfs_truncate_xattr is failed, rc %d\n",
-					rc);
-				goto err_out;
-			}
-		}
+		need_truncate = 1;
 	}
 
 	generic_fillattr(path.dentry->d_inode, &stat);
@@ -2818,6 +2800,22 @@ int smb2_open(struct cifsd_work *work)
 			fp->delete_on_close = 1;
 			if (file_info == F_CREATED)
 				fp->f_ci->m_flags |= S_DEL_ON_CLS;
+		}
+	}
+
+	if (need_truncate) {
+		rc = vfs_truncate(&path, 0);
+		if (rc) {
+			cifsd_err("vfs_truncate failed, rc %d\n", rc);
+			goto err_out;
+		}
+
+		/* Don't truncate stream names on stream name */
+		rc = cifsd_vfs_truncate_xattr(path.dentry, stream_name != NULL);
+		if (rc) {
+			cifsd_err("cifsd_vfs_truncate_xattr is failed, rc %d\n",
+					rc);
+			goto err_out;
 		}
 	}
 

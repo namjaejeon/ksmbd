@@ -1040,11 +1040,12 @@ int close_disconnected_handle(struct inode *inode)
 	if (ci) {
 		struct cifsd_file *fp, *fptmp;
 
-		if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
-			unlinked = false;
 		spin_lock(&ci->m_lock);
 		list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
 			if (!fp->conn) {
+				if (ci->m_flags &
+					(S_DEL_ON_CLS | S_DEL_PENDING))
+					unlinked = false;
 				spin_lock(&fp->f_lock);
 				if (fp->f_state == FP_FREEING) {
 					spin_unlock(&fp->f_lock);
@@ -1075,20 +1076,6 @@ static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & inode_hash_mask;
 }
 
-static inline int cifsd_inode_check_stream(struct cifsd_inode *ci,
-	struct cifsd_file *fp)
-{
-	int ret = 0;
-
-	if (ci->is_stream != fp->is_stream)
-		return 1;
-
-	if (ci->is_stream && fp->is_stream)
-		ret = strncasecmp(ci->stream_name, fp->stream.name,
-			fp->stream.size);
-	return ret;
-}
-
 struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 {
 	struct inode *inode = FP_INODE(fp);
@@ -1099,9 +1086,6 @@ struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 
 	hlist_for_each_entry(ci, head, m_hash) {
 		if (ci->m_inode == inode) {
-			ret = cifsd_inode_check_stream(ci, fp);
-			if (ret)
-				continue;
 			atomic_inc(&ci->m_count);
 			ret_ci = ci;
 			break;

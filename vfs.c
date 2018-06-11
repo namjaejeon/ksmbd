@@ -1045,7 +1045,7 @@ int cifsd_vfs_fsetxattr(const char *filename,
 	return err;
 }
 
-int cifsd_vfs_truncate_xattr(struct dentry *dentry)
+int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t xattr_list_len;
@@ -1064,42 +1064,8 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry)
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
 
-		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
-					STREAM_PREFIX_LEN))
-			continue;
-
-		err = vfs_removexattr(dentry, name);
-		if (err)
-			cifsd_err("remove xattr failed : %s\n", name);
-	}
-out:
-	if (xattr_list)
-		vfree(xattr_list);
-
-	return err;
-}
-
-int cifsd_vfs_truncate_stream_xattr(struct dentry *dentry)
-{
-	char *name, *xattr_list = NULL;
-	ssize_t xattr_list_len;
-	int err = 0;
-
-	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list,
-		XATTR_LIST_MAX);
-	if (xattr_list_len < 0) {
-		goto out;
-	} else if (!xattr_list_len) {
-		cifsd_debug("empty xattr in the file\n");
-		goto out;
-	}
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
-
-		if (strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
-					STREAM_PREFIX_LEN))
+		if (wo_streams && !strncmp(&name[XATTR_USER_PREFIX_LEN],
+			STREAM_PREFIX, STREAM_PREFIX_LEN))
 			continue;
 
 		err = vfs_removexattr(dentry, name);
