@@ -1082,7 +1082,6 @@ struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 	struct hlist_head *head = inode_hashtable +
 		inode_hash(inode->i_sb, inode->i_ino);
 	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
-	int ret;
 
 	hlist_for_each_entry(ci, head, m_hash) {
 		if (ci->m_inode == inode) {
