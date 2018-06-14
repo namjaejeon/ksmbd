@@ -1076,9 +1076,8 @@ static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
 	return tmp & inode_hash_mask;
 }
 
-struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
+static struct cifsd_inode *__cifsd_inode_lookup(struct inode *inode)
 {
-	struct inode *inode = FP_INODE(fp);
 	struct hlist_head *head = inode_hashtable +
 		inode_hash(inode->i_sb, inode->i_ino);
 	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
@@ -1093,23 +1092,21 @@ struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 
 	return ret_ci;
 }
+
+struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
+{
+	return __cifsd_inode_lookup(FP_INODE(fp));
+}
+
 struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 {
-	struct hlist_head *head = inode_hashtable +
-		inode_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
+	struct cifsd_inode *ci;
 
 	spin_lock(&inode_hash_lock);
-	hlist_for_each_entry(ci, head, m_hash) {
-		if (ci->m_inode == inode) {
-			atomic_inc(&ci->m_count);
-			ret_ci = ci;
-			break;
-		}
-	}
+	ci = __cifsd_inode_lookup(inode);
 	spin_unlock(&inode_hash_lock);
 
-	return ret_ci;
+	return ci;
 }
 
 void cifsd_inode_hash(struct cifsd_inode *ci)
