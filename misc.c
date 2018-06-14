@@ -22,12 +22,14 @@
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
+#include <linux/textsearch.h>
 
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 #include "smb2pdu.h"
-#include "transport.h"
+#include "transport_tcp.h"
+#include "vfs.h"
 
 static struct {
 	int index;
@@ -140,32 +142,32 @@ int check_smb_message(char *buf)
 /**
  * add_request_to_queue() - check a request for addition to pending smb work
  *				queue
- * @smb_work:	smb request work
+ * @cifsd_work:	smb request work
  *
  * Return:      true if not add to queue, otherwise false
  */
-void add_request_to_queue(struct smb_work *smb_work)
+void add_request_to_queue(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;
-	struct smb2_hdr *hdr = REQUEST_BUF(smb_work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		unsigned int command = conn->ops->get_cmd_val(smb_work);
+		unsigned int command = conn->ops->get_cmd_val(work);
 
 		if (command != SMB2_CANCEL) {
 			requests_queue = &conn->requests;
-			smb_work->type = SYNC;
+			work->type = SYNC;
 		}
 	} else {
-		if (conn->ops->get_cmd_val(smb_work) != SMB_COM_NT_CANCEL)
+		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
 			requests_queue = &conn->requests;
 	}
 
 	if (requests_queue) {
 		spin_lock(&conn->request_lock);
-		list_add_tail(&smb_work->request_entry, requests_queue);
-		smb_work->added_in_request_list = 1;
+		list_add_tail(&work->request_entry, requests_queue);
+		work->added_in_request_list = 1;
 		spin_unlock(&conn->request_lock);
 	}
 }
@@ -402,69 +404,24 @@ void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_02_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_11_server(struct cifsd_tcp_conn *server) { }
-int is_smb2_neg_cmd(struct smb_work *smb_work)
+int is_smb2_neg_cmd(struct cifsd_work *work)
 {
 	return 0;
 }
 
-bool is_chained_smb2_message(struct smb_work *smb_work)
+bool is_chained_smb2_message(struct cifsd_work *work)
 {
 	return 0;
 }
 
-void init_smb2_neg_rsp(struct smb_work *smb_work)
+void init_smb2_neg_rsp(struct cifsd_work *work)
 {
 }
-int is_smb2_rsp(struct smb_work *smb_work)
+int is_smb2_rsp(struct cifsd_work *work)
 {
 	return 0;
 };
 #endif
-
-int smb_store_cont_xattr(struct path *path, char *prefix, void *value,
-	ssize_t v_len)
-{
-	int err;
-
-	err = smb_vfs_setxattr(NULL, path, prefix, value, v_len, 0);
-	if (err)
-		cifsd_debug("setxattr failed, err %d\n", err);
-
-	return err;
-}
-
-ssize_t smb_find_cont_xattr(struct path *path, char *prefix, int p_len,
-	char **value, int flags)
-{
-	char *name, *xattr_list = NULL;
-	ssize_t value_len = -ENOENT, xattr_list_len;
-
-	xattr_list_len = smb_vfs_listxattr(path->dentry, &xattr_list,
-		XATTR_LIST_MAX);
-	if (xattr_list_len < 0) {
-		goto out;
-	} else if (!xattr_list_len) {
-		cifsd_debug("empty xattr in the file\n");
-		goto out;
-	}
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
-		if (strncasecmp(prefix, name, p_len))
-			continue;
-
-		value_len = smb_vfs_getxattr(path->dentry, name, value, flags);
-		if (value_len < 0)
-			cifsd_err("failed to get xattr in file\n");
-		break;
-	}
-
-out:
-	if (xattr_list)
-		vfree(xattr_list);
-	return value_len;
-}
 
 int get_pos_strnstr(const char *s1, const char *s2, size_t len)
 {
@@ -489,26 +446,22 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
 	struct cifsd_file *prev_fp;
-	int same_stream = 0;
 	struct list_head *cur;
 
 	/*
 	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
-	spin_lock(&curr_fp->f_mfp->m_lock);
-	list_for_each(cur, &curr_fp->f_mfp->m_fp_list) {
+	spin_lock(&curr_fp->f_ci->m_lock);
+	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (prev_fp->f_state == FP_FREEING)
 			continue;
 		if (file_inode(filp) == FP_INODE(prev_fp)) {
-			if (prev_fp->is_stream && curr_fp->is_stream) {
+			if (prev_fp->is_stream && curr_fp->is_stream)
 				if (strcmp(prev_fp->stream.name,
-					curr_fp->stream.name)) {
+					curr_fp->stream.name))
 					continue;
-				}
-				same_stream = 1;
-			}
 
 			if (prev_fp->is_durable) {
 				prev_fp->is_durable = 0;
@@ -555,7 +508,7 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 				cifsd_err("previous filename don't have share write\n");
 				cifsd_err("previous file's share access : 0x%x, current file's desired access : 0x%x\n",
 					prev_fp->saccess, curr_fp->daccess);
-				rc = EPERM;
+				rc = -EPERM;
 				break;
 			}
 
@@ -596,38 +549,9 @@ int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 		}
 	}
-	spin_unlock(&curr_fp->f_mfp->m_lock);
-
-	if (!same_stream && !curr_fp->is_stream) {
-		if (curr_fp->cdoption == FILE_SUPERSEDE_LE) {
-			smb_vfs_truncate_stream_xattr(
-				curr_fp->filp->f_path.dentry);
-		}
-	}
+	spin_unlock(&curr_fp->f_ci->m_lock);
 
 	return rc;
-}
-
-struct cifsd_file *find_fp_using_inode(struct inode *inode)
-{
-	struct cifsd_file *lfp;
-	struct cifsd_mfile *mfp;
-	struct list_head *cur;
-
-	mfp = mfp_lookup_inode(inode);
-	if (!mfp)
-		goto out;
-
-	list_for_each(cur, &mfp->m_fp_list) {
-		lfp = list_entry(cur, struct cifsd_file, node);
-		if (inode == FP_INODE(lfp)) {
-			atomic_dec(&mfp->m_count);
-			return lfp;
-		}
-	}
-
-out:
-	return NULL;
 }
 
 /**
@@ -865,3 +789,41 @@ int get_nlink(struct kstat *st)
 
 	return nlink;
 }
+
+bool cifsd_filter_filename_match(struct cifsd_share *share, char *filename)
+{
+	struct cifsd_filter *cf;
+	char *source_string;
+	struct ts_state state;
+	int pos, len;
+
+	list_for_each_entry(cf, &share->config.filter_list, entry) {
+		if (cf->type == FILTER_FILE_EXTENSION) {
+			source_string = strchr(filename, '.');
+			if (!source_string)
+				continue;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (!pos && state.offset == len)
+				return true;
+		} else if (cf->type == FILTER_WILDCARD) {
+			source_string = filename;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (pos >= 0)
+				return true;
+		} else {
+			source_string = filename;
+			len = strlen(source_string);
+			pos = textsearch_find_continuous(cf->config, &state,
+				source_string, len);
+			if (!pos && state.offset == len)
+				return true;
+		}
+	}
+
+	return false;
+}
+

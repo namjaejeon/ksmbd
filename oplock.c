@@ -28,7 +28,7 @@
 #include "oplock.h"
 
 #include "buffer_pool.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 bool oplocks_enable = true;
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -37,7 +37,7 @@ bool durable_enable = true;
 #endif
 
 LIST_HEAD(lease_table_list);
-DEFINE_MUTEX(lease_list_lock);
+static DEFINE_RWLOCK(lease_list_lock);
 
 module_param(oplocks_enable, bool, 0644);
 MODULE_PARM_DESC(oplocks_enable, "Enable or disable oplocks. Default: y/Y/1");
@@ -56,7 +56,7 @@ MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
  *
  * Return:      allocated opinfo object on success, otherwise NULL
  */
-static struct oplock_info *alloc_opinfo(struct smb_work *work,
+static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 		uint64_t id, __u16 Tid)
 {
 	struct cifsd_sess *sess = work->sess;
@@ -73,12 +73,39 @@ static struct oplock_info *alloc_opinfo(struct smb_work *work,
 	opinfo->fid = id;
 	opinfo->Tid = Tid;
 	opinfo->is_smb2 = IS_SMB2(sess->conn);
+	INIT_LIST_HEAD(&opinfo->op_entry);
 	INIT_LIST_HEAD(&opinfo->interim_list);
-	init_waitqueue_head(&opinfo->op_end_wq);
 	init_waitqueue_head(&opinfo->oplock_q);
 	init_waitqueue_head(&opinfo->oplock_brk);
+	atomic_set(&opinfo->refcount, 1);
+	atomic_set(&opinfo->breaking_cnt, 0);
 
 	return opinfo;
+}
+
+void lease_add_list(struct oplock_info *opinfo)
+{
+	struct lease_table *lb = opinfo->o_lease->l_lb;
+
+	spin_lock(&lb->lb_lock);
+	list_add_rcu(&opinfo->lease_entry, &lb->lease_list);
+	spin_unlock(&lb->lb_lock);
+}
+
+void lease_del_list(struct oplock_info *opinfo)
+{
+	struct lease_table *lb = opinfo->o_lease->l_lb;
+
+	spin_lock(&lb->lb_lock);
+	list_del_rcu(&opinfo->lease_entry);
+	spin_unlock(&lb->lb_lock);
+}
+
+void lb_add(struct lease_table *lb)
+{
+	write_lock(&lease_list_lock);
+	list_add(&lb->l_entry, &lease_table_list);
+	write_unlock(&lease_list_lock);
 }
 
 static int alloc_lease(struct oplock_info *opinfo,
@@ -95,19 +122,91 @@ static int alloc_lease(struct oplock_info *opinfo,
 	lease->new_state = 0;
 	lease->flags = lctx->flags;
 	lease->duration = lctx->duration;
+	INIT_LIST_HEAD(&opinfo->lease_entry);
 	opinfo->o_lease = lease;
 
 	return 0;
 }
 
-void free_lease(struct oplock_info *opinfo)
+static void free_lease(struct oplock_info *opinfo)
 {
 	struct lease *lease;
 
-	list_del(&opinfo->lease_entry);
 	lease = opinfo->o_lease;
-	opinfo->o_lease = NULL;
 	kfree(lease);
+}
+
+static void free_opinfo(struct oplock_info *opinfo)
+{
+	if (opinfo->is_lease)
+		free_lease(opinfo);
+	kfree(opinfo);
+}
+
+static inline void opinfo_free_rcu(struct rcu_head *rcu_head)
+{
+	struct oplock_info *opinfo;
+
+	opinfo = container_of(rcu_head, struct oplock_info, rcu_head);
+	free_opinfo(opinfo);
+}
+
+struct oplock_info *opinfo_get(struct cifsd_file *fp)
+{
+	struct oplock_info *opinfo;
+
+	rcu_read_lock();
+	opinfo = rcu_dereference(fp->f_opinfo);
+	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
+		opinfo = NULL;
+	rcu_read_unlock();
+
+	return opinfo;
+}
+
+struct oplock_info *opinfo_get_list(struct cifsd_inode *ci)
+{
+	struct oplock_info *opinfo;
+
+	if (list_empty(&ci->m_op_list))
+		return NULL;
+
+	rcu_read_lock();
+	opinfo = list_first_or_null_rcu(&ci->m_op_list, struct oplock_info,
+		op_entry);
+	if (opinfo && !atomic_inc_not_zero(&opinfo->refcount))
+		opinfo = NULL;
+	rcu_read_unlock();
+
+	return opinfo;
+}
+
+void opinfo_put(struct oplock_info *opinfo)
+{
+	if (!atomic_dec_and_test(&opinfo->refcount))
+		return;
+
+	call_rcu(&opinfo->rcu_head, opinfo_free_rcu);
+}
+
+void opinfo_add(struct oplock_info *opinfo)
+{
+	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
+
+	spin_lock(&ci->m_lock);
+	list_add_rcu(&opinfo->op_entry, &ci->m_op_list);
+	spin_unlock(&ci->m_lock);
+}
+
+void opinfo_del(struct oplock_info *opinfo)
+{
+	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
+
+	if (opinfo->is_lease)
+		lease_del_list(opinfo);
+	spin_lock(&ci->m_lock);
+	list_del_rcu(&opinfo->op_entry);
+	spin_unlock(&ci->m_lock);
 }
 
 /**
@@ -309,6 +408,8 @@ void close_id_del_oplock(struct cifsd_file *fp)
 	if (!opinfo)
 		return;
 
+	opinfo_del(opinfo);
+
 	fp->f_opinfo = NULL;
 	if (opinfo->op_state == OPLOCK_ACK_WAIT) {
 		opinfo->op_state = OPLOCK_CLOSING;
@@ -317,18 +418,10 @@ void close_id_del_oplock(struct cifsd_file *fp)
 			atomic_set(&opinfo->breaking_cnt, 0);
 			wake_up_interruptible(&opinfo->oplock_brk);
 		}
-		wait_event_timeout(opinfo->op_end_wq,
-				opinfo->op_state == OPLOCK_STATE_NONE,
-				OPLOCK_WAIT_TIME);
-	} else {
-		atomic_dec(&fp->f_mfp->op_count);
 	}
 
-	mutex_lock(&lease_list_lock);
-	if (opinfo->is_lease)
-		free_lease(opinfo);
-	kfree(opinfo);
-	mutex_unlock(&lease_list_lock);
+	atomic_dec(&fp->f_ci->op_count);
+	opinfo_put(opinfo);
 }
 
 
@@ -338,26 +431,24 @@ void close_id_del_oplock(struct cifsd_file *fp)
  * to client
  * @work:     smb work object
  */
-static void smb2_send_lease_break_notification(struct work_struct *work)
+static void smb2_send_lease_break_notification(struct work_struct *wk)
 {
 	struct smb2_lease_break *rsp = NULL;
-	struct smb_work *smb_work = container_of(work, struct smb_work, work);
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct lease_break_info *br_info =
-		(struct lease_break_info *)REQUEST_BUF(smb_work);
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+		(struct lease_break_info *)REQUEST_BUF(work);
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_hdr *rsp_hdr;
 
-	atomic_inc(&conn->req_running);
-	mutex_lock(&conn->srv_mutex);
-
-	if (conn->ops->allocate_rsp_buf(smb_work)) {
+	cifsd_tcp_conn_lock(conn);
+	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_debug("smb2_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
-		cifsd_free_work_struct(smb_work);
+		cifsd_tcp_conn_unlock(conn);
+		cifsd_free_work_struct(work);
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -376,7 +467,7 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = (struct smb2_lease_break *)RESPONSE_BUF(smb_work);
+	rsp = (struct smb2_lease_break *)RESPONSE_BUF(work);
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
@@ -393,14 +484,9 @@ static void smb2_send_lease_break_notification(struct work_struct *work)
 	rsp->ShareMaskHint = 0;
 
 	inc_rfc1001_len(rsp, 44);
-	cifsd_tcp_write(smb_work);
-	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
-
+	cifsd_tcp_write(work);
+	cifsd_tcp_conn_unlock(conn);
+	cifsd_free_work_struct(work);
 }
 #endif
 
@@ -417,7 +503,7 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 {
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	int ret = 0;
-	struct smb_work *work = cifsd_alloc_work_struct();
+	struct cifsd_work *work = cifsd_alloc_work_struct();
 	if (!work)
 		return -ENOMEM;
 
@@ -469,7 +555,7 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct oplock_break_info *br_info;
 	int ret = 0;
-	struct smb_work *work = cifsd_alloc_work_struct();
+	struct cifsd_work *work = cifsd_alloc_work_struct();
 	if (!work)
 		return -ENOMEM;
 
@@ -632,18 +718,17 @@ static inline int compare_guid_key(struct oplock_info *opinfo,
 /**
  * same_client_has_lease() - check whether current lease request is
  *		from lease owner of file
- * @mfp:		master file pointer
+ * @ci:		master file pointer
  * @client_guid:	Client GUID
  * @lctx:		lease context information
  *
  * Return:      oplock(lease) object on success, otherwise NULL
  */
-struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
+struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	char *client_guid, struct lease_ctx_info *lctx)
 {
 	int ret;
 	struct lease *lease;
-	struct cifsd_file *prev_fp;
 	struct oplock_info *opinfo;
 	struct oplock_info *m_opinfo = NULL;
 
@@ -654,18 +739,24 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 	 * Compare lease key and client_guid to know request from same owner
 	 * of same client
 	 */
-	list_for_each_entry(prev_fp, &mfp->m_fp_list, node) {
-		opinfo = prev_fp->f_opinfo;
-		if (!opinfo || !opinfo->is_lease)
+	spin_lock(&ci->m_lock);
+	list_for_each_entry(opinfo, &ci->m_op_list, op_entry) {
+		if (!opinfo->is_lease)
 			continue;
+		spin_unlock(&ci->m_lock);
 		lease = opinfo->o_lease;
 
 		ret = compare_guid_key(opinfo, client_guid, lctx->lease_key);
 		if (ret) {
 			m_opinfo = opinfo;
+			/* skip upgrading lease about breaking lease */
+			if (atomic_read(&opinfo->breaking_cnt)) {
+				spin_lock(&ci->m_lock);
+				continue;
+			}
 
 			/* upgrading lease */
-			if (atomic_read(&mfp->op_count) == 2) {
+			if (atomic_read(&ci->op_count) == 1) {
 				if (lease->state ==
 					(lctx->req_state & lease->state)) {
 					lease->state |= lctx->req_state;
@@ -673,7 +764,7 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 						SMB2_LEASE_WRITE_CACHING)
 						lease_read_to_write(opinfo);
 				}
-			} else if (atomic_read(&mfp->op_count) > 2) {
+			} else if (atomic_read(&ci->op_count) > 1) {
 				if (lctx->req_state == 0x3)
 					lease->state = lctx->req_state;
 			}
@@ -681,7 +772,9 @@ struct oplock_info *same_client_has_lease(struct cifsd_mfile *mfp,
 			if (lctx->req_state && lease->state == SMB2_LEASE_NONE)
 				lease_none_upgrade(opinfo, lctx->req_state);
 		}
+		spin_lock(&ci->m_lock);
 	}
+	spin_unlock(&ci->m_lock);
 
 	return m_opinfo;
 }
@@ -717,7 +810,7 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 {
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
-	struct smb_work *work;
+	struct cifsd_work *work;
 	struct lease_break_info *br_info;
 	struct lease *lease = opinfo->o_lease;
 
@@ -741,9 +834,9 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 
 	if (ack_required) {
 		list_for_each_safe(tmp, t, &opinfo->interim_list) {
-			struct smb_work *in_work;
+			struct cifsd_work *in_work;
 
-			in_work = list_entry(tmp, struct smb_work,
+			in_work = list_entry(tmp, struct cifsd_work,
 				interim_entry);
 			smb2_send_interim_resp(in_work);
 			list_del(&in_work->interim_entry);
@@ -863,8 +956,6 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
 	if (brk_opinfo->op_state == OPLOCK_CLOSING) {
 		brk_opinfo->op_state = OPLOCK_STATE_NONE;
-		atomic_dec(&(brk_opinfo->o_fp->f_mfp->op_count));
-		wake_up_interruptible(&brk_opinfo->op_end_wq);
 		err = -ENOENT;
 	}
 
@@ -874,26 +965,34 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 void destroy_lease_table(struct cifsd_tcp_conn *conn)
 {
 	struct lease_table *lb, *lbtmp;
+	struct oplock_info *opinfo;
 
-	mutex_lock(&lease_list_lock);
+	write_lock(&lease_list_lock);
 	if (list_empty(&lease_table_list)) {
-		mutex_unlock(&lease_list_lock);
+		write_unlock(&lease_list_lock);
 		return;
 	}
 
 	list_for_each_entry_safe(lb, lbtmp, &lease_table_list, l_entry) {
 		if (conn && memcmp(lb->client_guid, conn->ClientGUID,
-					SMB2_CLIENT_GUID_SIZE))
+			SMB2_CLIENT_GUID_SIZE))
 			continue;
-		if (list_empty(&lb->lease_list)) {
-			list_del(&lb->l_entry);
-			kfree(lb);
+again:
+		rcu_read_lock();
+		list_for_each_entry_rcu(opinfo, &lb->lease_list,
+				lease_entry) {
+			rcu_read_unlock();
+			lease_del_list(opinfo);
+			goto again;
 		}
+		rcu_read_unlock();
+		list_del(&lb->l_entry);
+		kfree(lb);
 	}
-	mutex_unlock(&lease_list_lock);
+	write_unlock(&lease_list_lock);
 }
 
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
+int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
 		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -903,31 +1002,47 @@ int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
 	if (!lctx)
 		return err;
 
-	mutex_lock(&lease_list_lock);
-	if (list_empty(&lease_table_list))
-		goto out;
+	read_lock(&lease_list_lock);
+	if (list_empty(&lease_table_list)) {
+		read_unlock(&lease_list_lock);
+		return 0;
+	}
 
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, sess->conn->ClientGUID,
-					SMB2_CLIENT_GUID_SIZE)) {
-			list_for_each_entry(opinfo, &lb->lease_list,
-					lease_entry) {
-				if (opinfo->o_fp->f_mfp == mfp)
-					continue;
-				err = compare_guid_key(opinfo,
-					sess->conn->ClientGUID,
-					lctx->lease_key);
-				if (err) {
-					err = -EINVAL;
-					cifsd_debug("found same lease key is already used in other files\n");
-					goto out;
-				}
-			}
-		}
+					SMB2_CLIENT_GUID_SIZE))
+			goto found;
 	}
+	read_unlock(&lease_list_lock);
+
+	return 0;
+
+found:
+	rcu_read_lock();
+	list_for_each_entry_rcu(opinfo, &lb->lease_list,
+			lease_entry) {
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		rcu_read_unlock();
+		if (opinfo->o_fp->f_ci == ci)
+			goto op_next;
+		err = compare_guid_key(opinfo,
+				sess->conn->ClientGUID,
+				lctx->lease_key);
+		if (err) {
+			err = -EINVAL;
+			cifsd_debug("found same lease key is already used in other files\n");
+			opinfo_put(opinfo);
+			goto out;
+		}
+op_next:
+		opinfo_put(opinfo);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
 
 out:
-	mutex_unlock(&lease_list_lock);
+	read_unlock(&lease_list_lock);
 	return err;
 }
 
@@ -947,27 +1062,47 @@ static void copy_lease(struct oplock_info *op1, struct oplock_info *op2)
 void add_lease_global_list(struct oplock_info *opinfo)
 {
 	struct lease_table *lb;
-	int added = 0;
 
-	mutex_lock(&lease_list_lock);
+	read_lock(&lease_list_lock);
 	list_for_each_entry(lb, &lease_table_list, l_entry) {
 		if (!memcmp(lb->client_guid, opinfo->conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE)) {
-			list_add(&opinfo->lease_entry, &lb->lease_list);
-			added = 1;
-			break;
+			opinfo->o_lease->l_lb = lb;
+			lease_add_list(opinfo);
+			read_unlock(&lease_list_lock);
+			return;
 		}
 	}
+	read_unlock(&lease_list_lock);
 
-	if (!added) {
-		lb = kmalloc(sizeof(struct lease_table), GFP_KERNEL);
-		memcpy(lb->client_guid, opinfo->conn->ClientGUID,
+	lb = kmalloc(sizeof(struct lease_table), GFP_KERNEL);
+	memcpy(lb->client_guid, opinfo->conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE);
-		INIT_LIST_HEAD(&lb->lease_list);
-		list_add(&opinfo->lease_entry, &lb->lease_list);
-		list_add(&lb->l_entry, &lease_table_list);
+	INIT_LIST_HEAD(&lb->lease_list);
+	spin_lock_init(&lb->lb_lock);
+	opinfo->o_lease->l_lb = lb;
+	lease_add_list(opinfo);
+	lb_add(lb);
+}
+
+static void set_oplock_level(struct oplock_info *opinfo, int level,
+	struct lease_ctx_info *lctx)
+{
+	switch (level) {
+	case REQ_OPLOCK:
+	case REQ_BATCHOPLOCK:
+	case SMB2_OPLOCK_LEVEL_BATCH:
+	case SMB2_OPLOCK_LEVEL_EXCLUSIVE:
+		grant_write_oplock(opinfo,
+			level, lctx);
+		break;
+	case SMB2_OPLOCK_LEVEL_II:
+		grant_read_oplock(opinfo, lctx);
+		break;
+	default:
+		grant_none_oplock(opinfo, lctx);
+		break;
 	}
-	mutex_unlock(&lease_list_lock);
 }
 
 /**
@@ -981,15 +1116,15 @@ void add_lease_global_list(struct oplock_info *opinfo)
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct smb_work *work, int req_op_level, uint64_t pid,
+int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
 	int share_ret)
 {
 	struct cifsd_sess *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
-	struct cifsd_mfile *mfp = fp->f_mfp;
-	struct cifsd_file *prev_fp;
+	struct cifsd_inode *ci = fp->f_ci;
+	int prev_op_has_lease = 0, prev_op_state = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
@@ -1002,42 +1137,21 @@ int smb_grant_oplock(struct smb_work *work, int req_op_level, uint64_t pid,
 	if (!opinfo)
 		return -ENOMEM;
 
-	fp->f_opinfo = opinfo;
-	opinfo->o_fp = fp;
-	atomic_inc(&mfp->op_count);
 	if (lctx) {
 		err = alloc_lease(opinfo, lctx);
 		if (err)
-			goto out;
+			goto err_out;
 		opinfo->is_lease = 1;
-		add_lease_global_list(opinfo);
 	}
 
-	/* mfp does not have any oplock */
-	if (atomic_read(&mfp->op_count) == 1) {
-new_oplock:
-		switch (req_op_level) {
-		case REQ_OPLOCK:
-		case REQ_BATCHOPLOCK:
-		case SMB2_OPLOCK_LEVEL_BATCH:
-		case SMB2_OPLOCK_LEVEL_EXCLUSIVE:
-			grant_write_oplock(opinfo,
-				req_op_level, lctx);
-			break;
-		case SMB2_OPLOCK_LEVEL_II:
-			grant_read_oplock(opinfo, lctx);
-			break;
-		default:
-			grant_none_oplock(opinfo, lctx);
-			break;
-		}
-		return 0;
-	}
+	/* ci does not have any oplock */
+	if (!atomic_read(&ci->op_count))
+		goto set_lev;
 
 	/* grant none-oplock if second open is trunc */
 	if (ATTR_FP(fp)) {
-		req_op_level = 0;
-		goto grant_none;
+		req_op_level = SMB2_OPLOCK_LEVEL_NONE;
+		goto set_lev;
 	}
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1045,79 +1159,79 @@ new_oplock:
 		struct oplock_info *m_opinfo;
 
 		/* is lease already granted ? */
-		m_opinfo = same_client_has_lease(mfp, sess->conn->ClientGUID,
+		m_opinfo = same_client_has_lease(ci, sess->conn->ClientGUID,
 			lctx);
 		if (m_opinfo) {
 			copy_lease(m_opinfo, opinfo);
 			if (atomic_read(&m_opinfo->breaking_cnt))
 				opinfo->o_lease->flags =
 					SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
-			return 0;
+			goto out;
 		}
 	}
 #endif
-
-	prev_fp = list_first_entry(&mfp->m_fp_list, struct cifsd_file, node);
-	prev_opinfo = prev_fp->f_opinfo;
+	prev_opinfo = opinfo_get_list(ci);
+	if (!prev_opinfo)
+		goto set_lev;
+	prev_op_has_lease = prev_opinfo->is_lease;
+	if (prev_op_has_lease)
+		prev_op_state = prev_opinfo->o_lease->state;
 
 	if (share_ret < 0 &&
 		(prev_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
 		err = share_ret;
-		goto out;
+		opinfo_put(prev_opinfo);
+		goto err_out;
 	}
 
 	if ((prev_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH) &&
-		(prev_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE))
+		(prev_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+		opinfo_put(prev_opinfo);
 		goto op_break_not_needed;
+	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
 	err = smb_send_oplock_break_notification(prev_opinfo);
+	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
-		goto new_oplock;
+		goto set_lev;
 	/* Check all oplock was freed by close */
 	else if (err < 0)
-		goto out;
+		goto err_out;
 
 op_break_not_needed:
 	if (share_ret < 0) {
 		err = share_ret;
-		goto out;
+		goto err_out;
 	}
 
-	/* Check delete pending among previous fp before oplock break */
-	if (mfp->m_flags & S_DEL_PENDING) {
-		err = -EBUSY;
-		goto out;
-	}
+	if (req_op_level != SMB2_OPLOCK_LEVEL_NONE)
+		req_op_level = SMB2_OPLOCK_LEVEL_II;
 
 	/* grant fixed oplock on stacked locking between lease and oplock */
-	if (prev_opinfo->is_lease && !lctx) {
-		if (prev_opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING) {
+	if (prev_op_has_lease && !lctx)
+		if (prev_op_state & SMB2_LEASE_HANDLE_CACHING)
 			req_op_level = SMB2_OPLOCK_LEVEL_NONE;
-			goto grant_none;
-		}
-	}
-	if (!prev_opinfo->is_lease && lctx)
+
+	if (!prev_op_has_lease && lctx) {
+		req_op_level = SMB2_OPLOCK_LEVEL_II;
 		lctx->req_state = SMB2_LEASE_READ_CACHING;
-
-grant_none:
-	if (req_op_level == SMB2_OPLOCK_LEVEL_NONE)
-		grant_none_oplock(opinfo, lctx);
-	else {
-		/* add new oplock to read state */
-		grant_read_oplock(opinfo, lctx);
 	}
+
+set_lev:
+	set_oplock_level(opinfo, req_op_level, lctx);
+
 out:
-	if (err < 0) {
-		mutex_lock(&lease_list_lock);
-		if (opinfo->is_lease)
-			free_lease(opinfo);
-		kfree(opinfo);
-		fp->f_opinfo = NULL;
-		atomic_dec(&mfp->op_count);
-		mutex_unlock(&lease_list_lock);
-	}
+	fp->f_opinfo = opinfo;
+	opinfo->o_fp = fp;
+	atomic_inc(&ci->op_count);
+	opinfo_add(opinfo);
+	if (opinfo->is_lease)
+		add_lease_global_list(opinfo);
 
+	return 0;
+err_out:
+	free_opinfo(opinfo);
 	return err;
 }
 
@@ -1127,26 +1241,24 @@ out:
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
-int smb_break_all_write_oplock(struct smb_work *work,
+int smb_break_all_write_oplock(struct cifsd_work *work,
 	struct cifsd_file *fp, int is_trunc)
 {
-	struct cifsd_file *brk_fp;
-	struct cifsd_mfile *mfp;
 	struct oplock_info *brk_opinfo;
 
-	mfp = fp->f_mfp;
-	if (list_empty(&mfp->m_fp_list))
+	brk_opinfo = opinfo_get_list(fp->f_ci);
+	if (!brk_opinfo)
 		return 0;
-	brk_fp = list_first_entry(&mfp->m_fp_list, struct cifsd_file, node);
-	brk_opinfo = brk_fp->f_opinfo;
-	if (!brk_opinfo || (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
-			brk_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE)) {
+	if (brk_opinfo->level != SMB2_OPLOCK_LEVEL_BATCH &&
+		brk_opinfo->level != SMB2_OPLOCK_LEVEL_EXCLUSIVE) {
+		opinfo_put(brk_opinfo);
 		return 0;
 	}
 
 	brk_opinfo->open_trunc = is_trunc;
 	list_add(&work->interim_entry, &brk_opinfo->interim_list);
 	smb_send_oplock_break_notification(brk_opinfo);
+	opinfo_put(brk_opinfo);
 
 	return 1;
 }
@@ -1162,16 +1274,17 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
-	struct cifsd_mfile *mfp;
-	struct cifsd_file *brk_fp, *fptmp;
+	struct cifsd_inode *ci;
 
-	mfp = fp->f_mfp;
+	ci = fp->f_ci;
 	op = fp->f_opinfo;
 
-	list_for_each_entry_safe(brk_fp, fptmp, &mfp->m_fp_list, node) {
-		brk_op = brk_fp->f_opinfo;
-		if (!brk_op)
+	rcu_read_lock();
+	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
+		if (!atomic_inc_not_zero(&brk_op->refcount)) {
 			continue;
+		}
+		rcu_read_unlock();
 
 		if (brk_op->is_smb2) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1180,25 +1293,25 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 					   SMB2_LEASE_HANDLE_CACHING)))) {
 				cifsd_debug("unexpected lease state(0x%x)\n",
 						brk_op->o_lease->state);
-				continue;
+				goto next;
 			} else if (brk_op->level !=
 					SMB2_OPLOCK_LEVEL_II) {
 				cifsd_debug("unexpected oplock(0x%x)\n",
 						brk_op->level);
-				continue;
+				goto next;
 			}
 
 			/* Skip oplock being break to none */
 			if (brk_op->is_lease && (brk_op->o_lease->new_state ==
 					SMB2_LEASE_NONE) &&
 				atomic_read(&brk_op->breaking_cnt))
-				continue;
+				goto next;
 #endif
 		} else {
 			if (brk_op->level != OPLOCK_READ) {
 				cifsd_debug("unexpected oplock(0x%x)\n",
 					brk_op->level);
-				continue;
+				goto next;
 			}
 		}
 
@@ -1210,11 +1323,15 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 			!memcmp(op->o_lease->lease_key,
 				brk_op->o_lease->lease_key,
 				SMB2_LEASE_KEY_SIZE))
-			continue;
+			goto next;
 #endif
 		brk_op->open_trunc = is_trunc;
 		smb_send_oplock_break_notification(brk_op);
+next:
+		opinfo_put(brk_op);
+		rcu_read_lock();
 	}
+	rcu_read_unlock();
 }
 
 /**
@@ -1223,7 +1340,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
-void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp)
+void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
 {
 	int ret;
 
@@ -1240,29 +1357,26 @@ void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * REQUEST_BUF(smb_work) contains oplock_info.
+ * REQUEST_BUF(work) contains oplock_info.
  */
-void smb1_send_oplock_break_notification(struct work_struct *work)
+void smb1_send_oplock_break_notification(struct work_struct *wk)
 {
-	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(smb_work);
+	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
 
-	atomic_inc(&conn->req_running);
-
-	mutex_lock(&conn->srv_mutex);
-
-	if (conn->ops->allocate_rsp_buf(smb_work)) {
+	cifsd_tcp_conn_lock(conn);
+	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
-		cifsd_free_work_struct(smb_work);
+		cifsd_tcp_conn_unlock(conn);
+		cifsd_free_work_struct(work);
 		return;
 	}
 
 	/* Init response header */
-	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(smb_work);
+	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	/* wct is 8 for locking andx */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2 + 8*2);
 	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE(conn) - 1 + 8*2);
@@ -1275,14 +1389,14 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	/* we know unicode, long file name and use nt error codes */
 	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
 		SMBFLG2_ERR_STATUS;
-	rsp_hdr->Uid = conn->vuid;
+	rsp_hdr->Uid = work->sess->sess_id;
 	rsp_hdr->Pid = 0xFFFF;
 	rsp_hdr->Mid = 0xFFFF;
 	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);
 	rsp_hdr->WordCount = 8;
 
 	/* Init locking request */
-	req = (LOCK_REQ *)RESPONSE_BUF(smb_work);
+	req = (LOCK_REQ *)RESPONSE_BUF(work);
 
 	req->AndXCommand = 0xFF;
 	req->AndXReserved = 0;
@@ -1300,13 +1414,9 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
 	req->ByteCount = 0;
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
-	cifsd_tcp_write(smb_work);
-	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
+	cifsd_tcp_write(work);
+	cifsd_tcp_conn_unlock(conn);
+	cifsd_free_work_struct(work);
 }
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -1318,38 +1428,34 @@ void smb1_send_oplock_break_notification(struct work_struct *work)
  * There are two ways this function can be called. 1- while file open we break
  * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
  * we break from levelII oplock no oplock.
- * REQUEST_BUF(smb_work) contains oplock_info.
+ * REQUEST_BUF(work) contains oplock_info.
  */
-void smb2_send_oplock_break_notification(struct work_struct *work)
+void smb2_send_oplock_break_notification(struct work_struct *wk)
 {
 	struct smb2_oplock_break *rsp = NULL;
-	struct smb_work *smb_work = container_of(work, struct smb_work, work);
-	struct cifsd_tcp_conn *conn = smb_work->conn;
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)REQUEST_BUF(smb_work);
+		(struct oplock_break_info *)REQUEST_BUF(work);
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
-	int persistent_id;
 
-	atomic_inc(&conn->req_running);
-
-	mutex_lock(&conn->srv_mutex);
+	cifsd_tcp_conn_lock(conn);
 	fp = cifsd_get_global_fp(br_info->fid);
 	if (!fp) {
-		mutex_unlock(&conn->srv_mutex);
-		cifsd_free_work_struct(smb_work);
+		cifsd_tcp_conn_unlock(conn);
+		cifsd_free_work_struct(work);
 		return;
 	}
 
-	persistent_id = fp->persistent_id;
-	if (conn->ops->allocate_rsp_buf(smb_work)) {
+	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
-		mutex_unlock(&conn->srv_mutex);
-		cifsd_free_work_struct(smb_work);
+		cifsd_tcp_conn_unlock(conn);
+		cifsd_free_work_struct(work);
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(smb_work);
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
@@ -1369,7 +1475,7 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 	memset(rsp_hdr->Signature, 0, 16);
 
 
-	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(smb_work);
+	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -1380,20 +1486,16 @@ void smb2_send_oplock_break_notification(struct work_struct *work)
 		rsp->OplockLevel = 0;
 	rsp->Reserved = 0;
 	rsp->Reserved2 = 0;
-	rsp->PersistentFid = cpu_to_le64(persistent_id);
-	rsp->VolatileFid = cpu_to_le64(br_info->fid);
+	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
+	rsp->VolatileFid = cpu_to_le64(fp->volatile_id);
 
 	inc_rfc1001_len(rsp, 24);
 
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
-	cifsd_tcp_write(smb_work);
-	cifsd_free_work_struct(smb_work);
-	mutex_unlock(&conn->srv_mutex);
-
-	atomic_dec(&conn->req_running);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
+	cifsd_tcp_write(work);
+	cifsd_tcp_conn_unlock(conn);
+	cifsd_free_work_struct(work);
 }
 
 /**
@@ -1650,29 +1752,44 @@ struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	struct lease_table *lt;
 	int ret;
 
+	read_lock(&lease_list_lock);
 	list_for_each_entry(lt, &lease_table_list, l_entry) {
-		if (memcmp(lt->client_guid, conn->ClientGUID,
+		if (!memcmp(lt->client_guid, conn->ClientGUID,
 			SMB2_CLIENT_GUID_SIZE))
-			continue;
-		list_for_each_entry(opinfo, &lt->lease_list, lease_entry) {
-			if (!opinfo->op_state ||
-				opinfo->op_state == OPLOCK_CLOSING)
-				continue;
-			if (!(opinfo->o_lease->state &
-				(SMB2_LEASE_HANDLE_CACHING |
-				SMB2_LEASE_WRITE_CACHING)))
-				continue;
-			ret = compare_guid_key(opinfo, conn->ClientGUID,
-				lease_key);
-			if (ret) {
-				cifsd_debug("found opinfo\n");
-				ret_op = opinfo;
-				goto out;
-			}
-		}
+			goto found;
 	}
 
+	read_unlock(&lease_list_lock);
+	return NULL;
+
+found:
+	rcu_read_lock();
+	list_for_each_entry_rcu(opinfo, &lt->lease_list, lease_entry) {
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		rcu_read_unlock();
+		if (!opinfo->op_state ||
+			opinfo->op_state == OPLOCK_CLOSING)
+			goto op_next;
+		if (!(opinfo->o_lease->state &
+			(SMB2_LEASE_HANDLE_CACHING |
+			 SMB2_LEASE_WRITE_CACHING)))
+			goto op_next;
+		ret = compare_guid_key(opinfo, conn->ClientGUID,
+			lease_key);
+		if (ret) {
+			cifsd_debug("found opinfo\n");
+			ret_op = opinfo;
+			goto out;
+		}
+op_next:
+		opinfo_put(opinfo);
+		rcu_read_lock();
+	}
+	rcu_read_unlock();
+
 out:
+	read_unlock(&lease_list_lock);
 	return ret_op;
 }
 

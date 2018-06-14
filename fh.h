@@ -28,6 +28,7 @@
 
 #include "glob.h"
 #include "netlink.h"
+#include "vfs.h"
 
 /* Windows style file permissions for extended response */
 #define	FILE_GENERIC_ALL	0x1F01FF
@@ -67,27 +68,10 @@
 struct cifsd_tcp_conn;
 struct cifsd_sess;
 
-struct smb_readdir_data {
-	struct dir_context ctx;
-	char           *dirent;
-	unsigned int   used;
-	unsigned int   full;
-	unsigned int   dirent_count;
-	unsigned int   file_attr;
-};
-
-struct smb_dirent {
-	__le64         ino;
-	__le64          offset;
-	__le32         namelen;
-	__le32         d_type;
-	char            name[];
-};
-
 struct notification {
 	unsigned int mode;
 	struct list_head queuelist;
-	struct smb_work *work;
+	struct cifsd_work *work;
 };
 
 struct cifsd_lock {
@@ -100,7 +84,7 @@ struct cifsd_lock {
 	int zero_len;
 	unsigned long long start;
 	unsigned long long end;
-	struct smb_work *work;
+	struct cifsd_work *work;
 };
 
 struct stream {
@@ -109,7 +93,7 @@ struct stream {
 	ssize_t size;
 };
 
-struct cifsd_mfile {
+struct cifsd_inode {
 	spinlock_t m_lock;
 	atomic_t m_count;
 	atomic_t op_count;
@@ -117,6 +101,7 @@ struct cifsd_mfile {
 	unsigned int m_flags;
 	struct hlist_node m_hash;
 	struct list_head m_fp_list;
+	struct list_head m_op_list;
 	struct oplock_info *m_opinfo;
 	bool has_lease;
 	bool is_stream;
@@ -127,8 +112,8 @@ struct cifsd_file {
 	struct cifsd_tcp_conn *conn;
 	struct cifsd_sess *sess;
 	struct cifsd_tcon *tcon;
-	struct cifsd_mfile *f_mfp;
-	struct cifsd_mfile *parent_mfp;
+	struct cifsd_inode *f_ci;
+	struct cifsd_inode *f_parent_ci;
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
@@ -137,7 +122,7 @@ struct cifsd_file {
 	struct timespec open_time;
 	bool islink;
 	/* if ls is happening on directory, below is valid*/
-	struct smb_readdir_data	readdir_data;
+	struct cifsd_readdir_data	readdir_data;
 	int	dot_dotdot[2];
 	int	dirent_offset;
 	/* oplock info */
@@ -158,7 +143,6 @@ struct cifsd_file {
 	bool is_stream;
 	struct stream stream;
 	struct list_head node;
-	struct hlist_node notify_node;
 	struct list_head queue;
 	struct list_head lock_list;
 	spinlock_t f_lock;
@@ -223,7 +207,6 @@ void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
 get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id);
 int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id);
-bool is_dir_empty(struct cifsd_file *fp);
 unsigned int get_pipe_type(char *pipename);
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
@@ -232,13 +215,17 @@ insert_id_in_fidtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon,
 	unsigned int id, struct file *filp);
 void delete_id_from_fidtable(struct cifsd_sess *sess,
 		unsigned int id);
-void __init mfp_hash_init(void);
-int mfp_init(struct cifsd_mfile *mfp, struct cifsd_file *fp);
-void mfp_free(struct cifsd_mfile *mfp);
-void insert_mfp_hash(struct cifsd_mfile *mfp);
-void remove_mfp_hash(struct cifsd_mfile *mfp);
-struct cifsd_mfile *mfp_lookup(struct cifsd_file *fp);
-struct cifsd_mfile *mfp_lookup_inode(struct inode *inode);
+struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
+	int64_t req_pid);
+
+void __init cifsd_inode_hash_init(void);
+int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp);
+void cifsd_inode_free(struct cifsd_inode *ci);
+void cifsd_inode_hash(struct cifsd_inode *ci);
+void cifsd_inode_unhash(struct cifsd_inode *ci);
+struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
+struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
+struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
@@ -255,8 +242,8 @@ struct cifsd_file *lookup_fp_clguid(char *createguid);
 struct cifsd_file *lookup_fp_app_id(char *app_id);
 struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
 	char *filename);
-struct cifsd_file *get_fp(struct smb_work *smb_work, int64_t req_vid,
-	int64_t req_pid);
+struct cifsd_file *find_fp_using_inode(struct inode *inode);
+int close_disconnected_handle(struct inode *inode);
 #endif
 
 #endif /* __CIFSD_FH_H */

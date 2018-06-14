@@ -16,8 +16,8 @@
  *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
-#ifndef __CIFSD_TRANSPORT_H__
-#define __CIFSD_TRANSPORT_H__
+#ifndef __CIFSD_TRANSPORT_TCP_H__
+#define __CIFSD_TRANSPORT_TCP_H__
 
 #include <linux/list.h>
 #include <linux/ip.h>
@@ -132,7 +132,6 @@ struct cifsd_tcp_conn {
 	bool				sign;
 	bool				need_neg;
 	bool				use_spnego:1;
-	__le16				vuid;
 	__u16				cli_sec_mode;
 	__u16				srv_sec_mode;
 	/* dialect index that server chose */
@@ -143,11 +142,17 @@ struct cifsd_tcp_conn {
 	struct cifsd_tcp_conn_ops	*conn_ops;
 };
 
+void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
+void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn);
+void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
+
+int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
+	void *arg);
 int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 		   char *buf,
 		   unsigned int to_read);
-struct smb_work;
-int cifsd_tcp_write(struct smb_work *work);
+struct cifsd_work;
+int cifsd_tcp_write(struct cifsd_work *work);
 
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
@@ -160,43 +165,43 @@ int cifsd_tcp_init(void);
  * This is a hack. We will move status to a proper place once we land
  * a multi-sessions support.
  */
-static inline bool cifsd_tcp_good(struct smb_work *work)
+static inline bool cifsd_tcp_good(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_GOOD;
 }
 
-static inline bool cifsd_tcp_need_negotiate(struct smb_work *work)
+static inline bool cifsd_tcp_need_negotiate(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline bool cifsd_tcp_need_reconnect(struct smb_work *work)
+static inline bool cifsd_tcp_need_reconnect(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline bool cifsd_tcp_exiting(struct smb_work *work)
+static inline bool cifsd_tcp_exiting(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_EXITING;
 }
 
-static inline void cifsd_tcp_set_good(struct smb_work *work)
+static inline void cifsd_tcp_set_good(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_GOOD;
 }
 
-static inline void cifsd_tcp_set_need_negotiate(struct smb_work *work)
+static inline void cifsd_tcp_set_need_negotiate(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline void cifsd_tcp_set_need_reconnect(struct smb_work *work)
+static inline void cifsd_tcp_set_need_reconnect(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline void cifsd_tcp_set_exiting(struct smb_work *work)
+static inline void cifsd_tcp_set_exiting(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_EXITING;
 }
-#endif /* __CIFSD_TRANSPORT_H__ */
+#endif /* __CIFSD_TRANSPORT_TCP_H__ */

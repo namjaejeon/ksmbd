@@ -26,7 +26,7 @@
 #include "glob.h"
 #include "export.h"
 
-#include "transport.h"
+#include "transport_tcp.h"
 
 /*****************************************************************************
  *
@@ -470,22 +470,22 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 
 	/* sequence */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_err("Error decoding 2nd part of negTokenInit\n");
+		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_INT)) {
-		cifsd_err("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* sequence of */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_err("Error decoding 2nd part of negTokenInit\n");
+		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_PRI)
 		   || (tag != ASN1_OTS)) {
-		cifsd_err("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
@@ -504,7 +504,7 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 }
 
 int
-decode_negTokenTarg(unsigned char *security_blob, int length,
+cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
 		    struct cifsd_tcp_conn *conn)
 {
 	struct asn1_ctx ctx;

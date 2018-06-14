@@ -21,11 +21,12 @@
 
 #include <linux/types.h>
 #include <linux/parser.h>
+#include <linux/textsearch.h>
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
 
-#include "transport.h"
+#include "transport_tcp.h"
 
 /* max string size for share and parameters */
 #define SHARE_MAX_NAME_LEN	100
@@ -159,6 +160,7 @@ static bool __add_share(struct cifsd_share *share, char *sharename,
 	share->tcount = 0;
 	share->tid = tid++;
 	share->sharename = sharename;
+	atomic_set(&share->num_conn, 0);
 	INIT_LIST_HEAD(&share->list);
 	list_add(&share->list, &cifsd_share_list);
 	cifsd_num_shares++;
@@ -179,6 +181,7 @@ static void init_share(struct cifsd_share *share)
 	set_attr_readonly(&share->config.attr);
 	set_attr_writeok(&share->config.attr);
 	share->config.max_connections = 0;
+	INIT_LIST_HEAD(&share->config.filter_list);
 }
 
 /**
@@ -228,6 +231,19 @@ static inline void free_share(struct cifsd_share *share)
 	kfree(share->config.valid_users);
 }
 
+static void destroy_filters(struct cifsd_share *share)
+{
+	struct list_head *tmp, *t;
+	struct cifsd_filter *cf;
+
+	list_for_each_safe(tmp, t, &share->config.filter_list) {
+		cf = list_entry(tmp, struct cifsd_filter, entry);
+		list_del(&cf->entry);
+		textsearch_destroy(cf->config);
+		kfree(cf);
+	}
+}
+
 /**
  * cifsd_share_free() - delete all shares from global exported share list
  */
@@ -238,6 +254,7 @@ static void cifsd_share_free(void)
 
 	list_for_each_safe(tmp, t, &cifsd_share_list) {
 		share = list_entry(tmp, struct cifsd_share, list);
+		destroy_filters(share);
 		list_del(&share->list);
 		cifsd_num_shares--;
 		free_share(share);
@@ -733,6 +750,7 @@ enum {
 	Opt_hostallow,
 	Opt_hostdeny,
 	Opt_store_dos_attr,
+	Opt_veto_files,
 
 	Opt_share_err
 };
@@ -759,6 +777,7 @@ static const match_table_t cifsd_share_tokens = {
 	{ Opt_hostallow, "hosts allow = %s" },
 	{ Opt_hostdeny, "hosts deny = %s" },
 	{ Opt_store_dos_attr, "store dos attributes = %s" },
+	{ Opt_veto_files, "veto files = %s" },
 
 	{ Opt_share_err, NULL }
 };
@@ -848,6 +867,7 @@ static int cifsd_parse_global_options(char *configdata)
 		case Opt_guest:
 		{
 			char *user_name;
+			struct cifsd_user *user;
 			kuid_t uid;
 			kgid_t gid;
 
@@ -864,6 +884,13 @@ static int cifsd_parse_global_options(char *configdata)
 				kfree(user_name);
 				goto config_err;
 			}
+			user = um_user_search(user_name);
+			if (!user) {
+				kfree(user_name);
+				goto config_err;
+			}
+			set_user_guest(user);
+
 			break;
 		}
 		case Opt_servern:
@@ -917,6 +944,76 @@ out_nomem:
 
 config_err:
 	return 1;
+}
+
+static struct cifsd_filter *parse_veto_file(char *string)
+{
+	struct cifsd_filter *cf;
+	char *pattern;
+	int len;
+
+	cf = kzalloc(sizeof(struct cifsd_filter), GFP_KERNEL);
+	if (!cf)
+		return NULL;
+
+	INIT_LIST_HEAD(&cf->entry);
+
+	if (string[0] == '*') {
+		if (string[1] == '.') {
+			pattern = &string[1];
+			len = strlen(pattern);
+			cf->type = FILTER_FILE_EXTENSION;
+		} else {
+			pattern = &string[1];
+			len = strlen(pattern) - 1;
+			cf->type = FILTER_WILDCARD;
+		}
+	} else {
+		pattern = string;
+		len = strlen(pattern);
+		cf->type = FILTER_NON_TYPE;
+	}
+
+	cifsd_debug("add pattern(%s) entry to veto file list\n", pattern);
+	cf->config = textsearch_prepare("kmp", pattern,
+			len, GFP_KERNEL, TS_AUTOLOAD);
+	if (IS_ERR(cf->config)) {
+		kfree(cf);
+		cf = NULL;
+	}
+
+	return cf;
+}
+
+static void add_filter_share(struct cifsd_share *share, char *veto_strings)
+{
+	char *parse_str = veto_strings;
+	char *str;
+	struct cifsd_filter *cf;
+
+	strsep(&parse_str, "/");
+	do {
+		str = strsep(&parse_str, "/");
+		if (!str)
+			break;
+		cf = parse_veto_file(str);
+		if (!cf)
+			continue;
+		list_add(&cf->entry, &share->config.filter_list);
+
+	} while (str != NULL);
+}
+
+static int varify_veto_file(char *veto_strings)
+{
+	if (veto_strings[0] != '/')
+		return -EINVAL;
+
+	if (!strchr(&veto_strings[1], '/'))
+		return -EINVAL;
+
+
+	return 0;
 }
 
 static int cifsd_parse_share_options(const char *configdata)
@@ -1096,6 +1193,15 @@ static int cifsd_parse_share_options(const char *configdata)
 				set_attr_store_dos(&share->config.attr);
 			else
 				clear_attr_store_dos(&share->config.attr);
+			break;
+		case Opt_veto_files:
+			string = match_strdup(args);
+			if (string == NULL)
+				goto out_nomem;
+			if (varify_veto_file(string) < 0)
+				return -EINVAL;
+			add_filter_share(share, string);
+			kfree(string);
 			break;
 		default:
 			cifsd_err("[%s] not supported\n", data);

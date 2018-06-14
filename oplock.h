@@ -49,8 +49,6 @@
 
 #define SMB2_LEASE_KEY_SIZE		16
 
-extern struct mutex lease_list_lock;
-
 struct lease_ctx_info {
 	__u8	lease_key[SMB2_LEASE_KEY_SIZE];
 	__le32	req_state;
@@ -59,18 +57,26 @@ struct lease_ctx_info {
 	int dlease;
 };
 
+struct lease_table {
+	char			client_guid[SMB2_CLIENT_GUID_SIZE];
+	struct list_head	lease_list;
+	struct list_head	l_entry;
+	spinlock_t		lb_lock;
+};
+
 struct lease {
-	__u8	lease_key[SMB2_LEASE_KEY_SIZE];
-	__le32	state;
-	__le32	new_state;
-	__le32	flags;
-	__le64	duration;
+	__u8			lease_key[SMB2_LEASE_KEY_SIZE];
+	__le32			state;
+	__le32			new_state;
+	__le32			flags;
+	__le64			duration;
+	struct lease_table	*l_lb;
 };
 
 struct oplock_info {
 	struct cifsd_tcp_conn	*conn;
 	struct cifsd_sess	*sess;
-	struct smb_work		*work;
+	struct cifsd_work		*work;
 	bool			is_smb2;
 	struct cifsd_file	*o_fp;
 	int                     level;
@@ -78,6 +84,7 @@ struct oplock_info {
 	uint64_t                fid;
 	__u16                   Tid;
 	atomic_t		breaking_cnt;
+	atomic_t		refcount;
 	bool			is_lease;
 	struct lease		*o_lease;
 	struct list_head        interim_list;
@@ -85,14 +92,8 @@ struct oplock_info {
 	struct list_head        lease_entry;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	wait_queue_head_t oplock_brk; /* oplock breaking wait */
-	wait_queue_head_t	op_end_wq;
 	bool			open_trunc:1;	/* truncate on open */
-};
-
-struct lease_table {
-	char client_guid[SMB2_CLIENT_GUID_SIZE];
-	struct list_head lease_list;
-	struct list_head l_entry;
+	struct rcu_head		rcu_head;
 };
 
 struct lease_break_info {
@@ -107,12 +108,12 @@ struct oplock_break_info {
 	int fid;
 };
 
-extern int smb_grant_oplock(struct smb_work *work, int req_op_level,
+extern int smb_grant_oplock(struct cifsd_work *work, int req_op_level,
 		uint64_t id, struct cifsd_file *fp, __u16 Tid,
 		struct lease_ctx_info *lctx, int share_ret);
-extern void smb1_send_oplock_break_notification(struct work_struct *work);
+extern void smb1_send_oplock_break_notification(struct work_struct *wk);
 #ifdef CONFIG_CIFS_SMB2_SERVER
-extern void smb2_send_oplock_break_notification(struct work_struct *work);
+extern void smb2_send_oplock_break_notification(struct work_struct *wk);
 #endif
 extern void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc);
@@ -122,7 +123,9 @@ int opinfo_read_handle_to_read(struct oplock_info *opinfo);
 int opinfo_write_to_none(struct oplock_info *opinfo);
 int opinfo_read_to_none(struct oplock_info *opinfo);
 void close_id_del_oplock(struct cifsd_file *fp);
-void smb_break_all_oplock(struct smb_work *work, struct cifsd_file *fp);
+void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp);
+struct oplock_info *opinfo_get(struct cifsd_file *fp);
+void opinfo_put(struct oplock_info *opinfo);
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /* Lease related functions */
@@ -143,7 +146,7 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
 					  uint64_t sess_id);
 struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	char *lease_key);
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_mfile *mfp,
+int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
 	struct lease_ctx_info *lctx);
 void destroy_lease_table(struct cifsd_tcp_conn *conn);
 int smb2_check_durable_oplock(struct cifsd_file *fp,

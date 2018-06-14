@@ -13,6 +13,8 @@ config CIFS_SERVER
 	select CRYPTO_SHA256
 	select CRYPTO_CMAC
 	select CRYPTO_SHA512
+	select TEXTSEARCH
+	select TEXTSEARCH_KMP
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
 	

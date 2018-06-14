@@ -26,7 +26,7 @@
 #include "glob.h"
 #include "export.h"
 #include "netlink.h"
-#include "transport.h"
+#include "transport_tcp.h"
 
 #define NETLINK_CIFSD			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
@@ -55,16 +55,6 @@ static int cifsd_nlsk_poll(struct cifsd_sess *sess)
 	}
 
 	return 0;
-}
-
-static int cifsd_nlsk_poll_notify(struct cifsd_sess *sess)
-{
-	int rc;
-
-	rc = wait_event_interruptible(sess->notify_q,
-		sess->ev_state == NETLINK_REQ_RECV);
-
-	return rc;
 }
 
 int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
@@ -145,10 +135,6 @@ int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
 	sess->ev_state = NETLINK_REQ_SENT;
 	rc = nlmsg_unicast(cifsd_nlsk, skb, pid);
 	mutex_unlock(&nlsk_mutex);
-	if (unlikely(rc == -ESRCH))
-		cifsd_err("Cannot notify userspace of event %u "
-				". Check cifsd daemon\n", etype);
-
 	if (unlikely(rc)) {
 		cifsd_err("failed to send message, err %d\n", rc);
 		return rc;
@@ -198,74 +184,10 @@ int cifsd_usendmsg(struct cifsd_uevent *rsp_ev, int upid,
 	}
 
 	rc = nlmsg_unicast(cifsd_nlsk, skb, upid);
-	if (unlikely(rc == -ESRCH))
-		cifsd_err("Cannot notify userspace of event %u "
-				". Check cifsd daemon\n",
-				etype);
 	if (unlikely(rc)) {
 		cifsd_err("failed to send message, err %d\n", rc);
 		return rc;
 	}
-	return rc;
-}
-
-
-int cifsd_sendmsg_notify(struct cifsd_sess *sess,
-	unsigned int data_size,
-	struct smb2_inotify_req_info *inotify_req_info,
-	char *path)
-{
-	struct nlmsghdr *nlh;
-	struct sk_buff *skb;
-	struct cifsd_uevent *ev;
-	int len = nlmsg_total_size(sizeof(*ev) + data_size);
-	int offset_of_path = offsetof(struct smb2_inotify_req_info, dir_path);
-	int rc = 0;
-	unsigned int etype = CIFSD_KEVENT_INOTIFY_REQUEST;
-
-	if (unlikely(data_size > NETLINK_CIFSD_MAX_PAYLOAD)) {
-		cifsd_err("too big(%u) message\n", data_size);
-		return -EOVERFLOW;
-	}
-
-	skb = alloc_skb(len, GFP_KERNEL);
-	if (unlikely(!skb)) {
-		cifsd_err("ignored event (%u): len %d\n", etype, len);
-		return -ENOMEM;
-	}
-
-	NETLINK_CB(skb).dst_group = 0; /* not in mcast group */
-	nlh = __nlmsg_put(skb, 0, 0, etype, (len - sizeof(*nlh)), 0);
-	ev = nlmsg_data(nlh);
-	memset(ev, 0, sizeof(*ev));
-	ev->conn_handle = cifsd_sess_handle(sess);
-
-	strncpy(ev->codepage, sess->conn->local_nls->charset,
-				CIFSD_CODEPAGE_LEN - 1);
-
-	if (data_size) {
-		ev->buflen = data_size;
-		memcpy(ev->buffer, inotify_req_info, offset_of_path);
-		memcpy(ev->buffer + offset_of_path,
-			path, inotify_req_info->path_len+1);
-	}
-
-	cifsd_debug("sending event(%u) to sess %p\n", etype, sess);
-	mutex_lock(&nlsk_mutex);
-	sess->ev_state = NETLINK_REQ_SENT;
-	rc = nlmsg_unicast(cifsd_nlsk, skb, pid);
-	mutex_unlock(&nlsk_mutex);
-	if (unlikely(rc == -ESRCH))
-		cifsd_err("Cannot notify userspace of event %u. Check cifsd daemon\n",
-				etype);
-
-	if (unlikely(rc)) {
-		cifsd_err("failed to send message, err %d\n", rc);
-		return rc;
-	}
-
-	rc = cifsd_nlsk_poll_notify(sess);
-	sess->ev_state = NETLINK_REQ_COMPLETED;
 	return rc;
 }
 
@@ -375,13 +297,16 @@ static int cifsadmin_query_user(struct nlmsghdr *nlh)
 	struct cifsd_uevent *ev = nlmsg_data(nlh);
 	char *username = ev->k.u_query.username;
 	struct cifsd_uevent rsp_ev;
+	int buf_sz;
 	int ret;
 
 	ret = cifsadmin_user_query(username);
 	memset(&rsp_ev, 0, sizeof(rsp_ev));
 	rsp_ev.type = CIFSADMIN_UEVENT_QUERY_USER_RSP;
 	rsp_ev.error = ret;
-	strncpy(rsp_ev.k.u_query.username, username, strlen(username));
+	buf_sz = sizeof(rsp_ev.k.u_query.username);
+	strncpy(rsp_ev.k.u_query.username, username, buf_sz);
+	rsp_ev.k.u_query.username[buf_sz - 1] = 0x00;
 	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
 	if (ret)
 		cifsd_err("query user respond failed, err %d\n", ret);
@@ -402,13 +327,16 @@ static int cifsadmin_remove_user(struct nlmsghdr *nlh)
 	struct cifsd_uevent *ev = nlmsg_data(nlh);
 	char *username = ev->k.u_del.username;
 	struct cifsd_uevent rsp_ev;
+	int buf_sz;
 	int ret;
 
 	ret = cifsadmin_user_del(username);
 	memset(&rsp_ev, 0, sizeof(rsp_ev));
 	rsp_ev.type = CIFSADMIN_UEVENT_REMOVE_USER_RSP;
 	rsp_ev.error = ev->error;
-	strncpy(rsp_ev.k.u_del.username, username, strlen(username));
+	buf_sz = sizeof(rsp_ev.k.u_del.username);
+	strncpy(rsp_ev.k.u_del.username, username, buf_sz);
+	rsp_ev.k.u_del.username[buf_sz - 1] = 0x00;
 	ret = cifsd_usendmsg(&rsp_ev, cifsadmin_pid, 0, NULL);
 	if (ret)
 		cifsd_err("remove user respond failed, err %d\n", ret);
@@ -507,40 +435,6 @@ out:
 	return 0;
 }
 
-static int cifsd_notify_rsp(struct nlmsghdr *nlh)
-{
-	struct cifsd_sess *sess;
-	struct cifsd_uevent *ev;
-	struct smb2_inotify_res_info *noti_info_res_buf;
-	int inotify_res_size = sizeof(struct smb2_inotify_res_info);
-	int file_noti_size = sizeof(struct FileNotifyInformation);
-
-	ev = nlmsg_data(nlh);
-	sess = validate_sess_handle(cifsd_ptr(ev->conn_handle));
-	if (unlikely(!sess)) {
-		cifsd_err("invalid session handle\n");
-		return -EINVAL;
-	}
-	noti_info_res_buf = (struct smb2_inotify_res_info *)ev->buffer;
-
-	cifsd_debug("noti_info_res_buf->file_notify_info[0].Action : %d\n",
-		noti_info_res_buf->file_notify_info[0].Action);
-
-	sess->inotify_res = kmalloc(inotify_res_size
-		+ file_noti_size + NAME_MAX,
-		GFP_KERNEL);
-	memcpy(sess->inotify_res, noti_info_res_buf,
-		inotify_res_size + file_noti_size + NAME_MAX);
-
-	if (!sess->inotify_res)
-		return -ENOMEM;
-
-	sess->ev_state = NETLINK_REQ_RECV;
-	wake_up_interruptible(&sess->notify_q);
-
-	return 0;
-}
-
 static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 {
 	int err = 0;
@@ -576,9 +470,6 @@ static int cifsd_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh)
 	case CIFSD_UEVENT_IOCTL_PIPE_RSP:
 	case CIFSD_UEVENT_LANMAN_PIPE_RSP:
 		err = cifsd_common_pipe_rsp(nlh);
-		break;
-	case CIFSD_UEVENT_INOTIFY_RESPONSE:
-		err = cifsd_notify_rsp(nlh);
 		break;
 	case CIFSADMIN_UEVENT_INIT_CONNECTION:
 		err = cifsadmin_init_connection(nlh);

@@ -33,17 +33,19 @@
 #include "export.h"
 #include "glob.h"
 #include "oplock.h"
-#include "transport.h"
+#include "transport_tcp.h"
 #include "buffer_pool.h"
+#include "vfs.h"
+#include "fh.h"
 
 /**
- * smb_vfs_create() - vfs helper for smb create file
+ * cifsd_vfs_create() - vfs helper for smb create file
  * @name:	file name
  * @mode:	file create mode
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_create(const char *name, umode_t mode)
+int cifsd_vfs_create(const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -67,13 +69,13 @@ int smb_vfs_create(const char *name, umode_t mode)
 }
 
 /**
- * smb_vfs_mkdir() - vfs helper for smb create directory
+ * cifsd_vfs_mkdir() - vfs helper for smb create directory
  * @name:	directory name
  * @mode:	directory create mode
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_mkdir(const char *name, umode_t mode)
+int cifsd_vfs_mkdir(const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -98,7 +100,7 @@ int smb_vfs_mkdir(const char *name, umode_t mode)
 	return err;
 }
 
-static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
+static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	size_t count)
 {
 	ssize_t v_len;
@@ -108,8 +110,10 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	cifsd_debug("read stream data pos : %llu, count : %zd\n",
 			*pos, count);
 
-	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
+	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
+				       fp->stream.name,
+				       fp->stream.size,
+				       &stream_buf);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -121,7 +125,7 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 }
 
 /**
- * smb_vfs_read() - vfs helper for smb file read
+ * cifsd_vfs_read() - vfs helper for smb file read
  * @work:	smb work
  * @fid:	file id of open file
  * @count:	read byte count
@@ -129,7 +133,7 @@ static int smb_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int smb_vfs_read(struct smb_work *work,
+int cifsd_vfs_read(struct cifsd_work *work,
 		 struct cifsd_file *fp,
 		 size_t count,
 		 loff_t *pos)
@@ -165,7 +169,7 @@ int smb_vfs_read(struct smb_work *work,
 #endif
 
 	if (fp->is_stream)
-		return smb_vfs_stream_read(fp, rbuf, pos, count);
+		return cifsd_vfs_stream_read(fp, rbuf, pos, count);
 
 	ret = check_lock_range(filp, *pos, *pos + count - 1,
 			READ);
@@ -197,7 +201,7 @@ int smb_vfs_read(struct smb_work *work,
 	return nbytes;
 }
 
-static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
+static int cifsd_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 	size_t count)
 {
 	char *stream_buf = NULL, *wbuf;
@@ -213,8 +217,10 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 		count = (*pos + count) - XATTR_SIZE_MAX;
 	}
 
-	v_len = smb_find_cont_xattr(&fp->filp->f_path, fp->stream.name,
-			fp->stream.size, &stream_buf, 1);
+	v_len = cifsd_vfs_getcasexattr(fp->filp->f_path.dentry,
+				       fp->stream.name,
+				       fp->stream.size,
+				       &stream_buf);
 	if (v_len == -ENOENT) {
 		cifsd_err("not found stream in xattr : %zd\n", v_len);
 		err = -ENOENT;
@@ -235,8 +241,11 @@ static int smb_vfs_stream_write(struct cifsd_file *fp, char *buf, loff_t *pos,
 
 	memcpy(&stream_buf[*pos], buf, count);
 
-	err = smb_store_cont_xattr(&fp->filp->f_path, fp->stream.name,
-			(void *)stream_buf, size);
+	err = cifsd_vfs_setxattr(fp->filp->f_path.dentry,
+				 fp->stream.name,
+				 (void *)stream_buf,
+				 size,
+				 0);
 	if (err < 0)
 		goto out;
 
@@ -248,8 +257,8 @@ out:
 }
 
 /**
- * smb_vfs_write() - vfs helper for smb file write
- * @sess:	session
+ * cifsd_vfs_write() - vfs helper for smb file write
+ * @work:	work
  * @fid:	file id of open file
  * @buf:	buf containing data for writing
  * @count:	read byte count
@@ -259,9 +268,10 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
+int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	loff_t	offset = *pos;
 	int err = 0;
@@ -284,7 +294,7 @@ int smb_vfs_write(struct cifsd_sess *sess, struct cifsd_file *fp,
 	filp = fp->filp;
 
 	if (fp->is_stream) {
-		err = smb_vfs_stream_write(fp, buf, pos, count);
+		err = cifsd_vfs_stream_write(fp, buf, pos, count);
 		if (!err)
 			*written = count;
 		goto out;
@@ -365,17 +375,18 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 }
 
 /**
- * smb_vfs_setattr() - vfs helper for smb setattr
- * @sess:	session
+ * cifsd_vfs_setattr() - vfs helper for smb setattr
+ * @work:	work
  * @name:	file name
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_setattr(struct cifsd_sess *sess, const char *name,
+int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		uint64_t fid, struct iattr *attrs)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	struct dentry *dentry;
 	struct inode *inode;
@@ -457,16 +468,17 @@ out:
 }
 
 /**
- * smb_vfs_getattr() - vfs helper for smb getattr
- * @sess:	session
+ * cifsd_vfs_getattr() - vfs helper for smb getattr
+ * @work:	work
  * @fid:	file id of open file
  * @attrs:	inode attributes
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
+int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		struct kstat *stat)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct file *filp;
 	struct cifsd_file *fp;
 	int err;
@@ -490,14 +502,15 @@ int smb_vfs_getattr(struct cifsd_sess *sess, uint64_t fid,
 }
 
 /**
- * smb_vfs_fsync() - vfs helper for smb fsync
- * @sess:	session
+ * cifsd_vfs_fsync() - vfs helper for smb fsync
+ * @work:	work
  * @fid:	file id of open file
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
+int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct cifsd_file *fp;
 	int err;
 
@@ -521,12 +534,12 @@ int smb_vfs_fsync(struct cifsd_sess *sess, uint64_t fid, uint64_t p_id)
 }
 
 /**
- * smb_vfs_remove_file() - vfs helper for smb rmdir or unlink
+ * cifsd_vfs_remove_file() - vfs helper for smb rmdir or unlink
  * @name:	absolute directory or file name
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_remove_file(char *name)
+int cifsd_vfs_remove_file(char *name)
 {
 	struct path parent;
 	struct dentry *dir, *dentry;
@@ -594,13 +607,13 @@ out:
 }
 
 /**
- * smb_vfs_link() - vfs helper for creating smb hardlink
+ * cifsd_vfs_link() - vfs helper for creating smb hardlink
  * @oldname:	source file name
  * @newname:	hardlink name
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_link(const char *oldname, const char *newname)
+int cifsd_vfs_link(const char *oldname, const char *newname)
 {
 	struct path oldpath, newpath;
 	struct dentry *dentry;
@@ -641,13 +654,13 @@ out1:
 }
 
 /**
- * smb_vfs_symlink() - vfs helper for creating smb symlink
+ * cifsd_vfs_symlink() - vfs helper for creating smb symlink
  * @name:	source file name
  * @symname:	symlink name
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_symlink(const char *name, const char *symname)
+int cifsd_vfs_symlink(const char *name, const char *symname)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -670,14 +683,14 @@ int smb_vfs_symlink(const char *name, const char *symname)
 }
 
 /**
- * smb_vfs_readlink() - vfs helper for reading value of symlink
+ * cifsd_vfs_readlink() - vfs helper for reading value of symlink
  * @path:	path of symlink
  * @buf:	destination buffer for symlink value
  * @lenp:	destination buffer length
  *
  * Return:	symlink value length on success, otherwise error
  */
-int smb_vfs_readlink(struct path *path, char *buf, int lenp)
+int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	struct inode *inode;
 	mm_segment_t old_fs;
@@ -701,7 +714,7 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
 }
 
 /**
- * smb_vfs_rename() - vfs helper for smb rename
+ * cifsd_vfs_rename() - vfs helper for smb rename
  * @sess:		session
  * @abs_oldname:	old filename
  * @abs_newname:	new filename
@@ -709,7 +722,7 @@ int smb_vfs_readlink(struct path *path, char *buf, int lenp)
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp)
+int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp)
 {
 	struct path oldpath_p, newpath_p;
 	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap, *child_de;
@@ -851,17 +864,18 @@ out1:
 }
 
 /**
- * smb_vfs_truncate() - vfs helper for smb file truncate
- * @sess:	session
+ * cifsd_vfs_truncate() - vfs helper for smb file truncate
+ * @work:	work
  * @name:	old filename
  * @fid:	file id of old file
  * @size:	truncate to given size
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
+int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size)
 {
+	struct cifsd_sess *sess = work->sess;
 	struct path path;
 	int err = 0;
 	struct inode *inode;
@@ -910,14 +924,14 @@ int smb_vfs_truncate(struct cifsd_sess *sess, const char *name,
 }
 
 /**
- * smb_vfs_listxattr() - vfs helper for smb list extended attributes
+ * cifsd_vfs_listxattr() - vfs helper for smb list extended attributes
  * @dentry:	dentry of file for listing xattrs
  * @list:	destination buffer
  * @size:	destination buffer length
  *
  * Return:	xattr list length on success, otherwise error
  */
-ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
+ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
 {
 	ssize_t err;
 	char *vlist = NULL;
@@ -942,46 +956,44 @@ ssize_t smb_vfs_listxattr(struct dentry *dentry, char **list, int size)
 	return err;
 }
 
+ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
+			   char *xattr_name)
+{
+	return vfs_getxattr(dentry, xattr_name, NULL, 0);
+}
+
 /**
- * smb_vfs_getxattr() - vfs helper for smb get extended attributes value
+ * cifsd_vfs_getxattr() - vfs helper for smb get extended attributes value
  * @dentry:	dentry of file for getting xattrs
  * @xattr_name:	name of xattr name to query
  * @xattr_buf:	destination buffer xattr value
- * @flags: if 0, return stored xattr's length only
  *
  * Return:	read xattr value length on success, otherwise error
  */
-ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
-	char **xattr_buf, int flags)
+ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
+			   char *xattr_name,
+			   char **xattr_buf)
 {
 	ssize_t xattr_len;
 	char *buf;
 
-	xattr_len = vfs_getxattr(dentry, xattr_name, NULL, 0);
-	if (xattr_len <= 0)
+	xattr_len = cifsd_vfs_xattr_len(dentry, xattr_name);
+	if (xattr_len < 0)
 		return xattr_len;
 
-	if (!flags)
-		return xattr_len;
-
-	buf = cifsd_alloc(xattr_len);
+	buf = kmalloc(xattr_len + 1, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf,
-		xattr_len);
-	if (xattr_len < 0)
-		cifsd_debug("getxattr failed, ret %zd\n", xattr_len);
-	else
+	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf, xattr_len);
+	if (xattr_len)
 		*xattr_buf = buf;
-
 	return xattr_len;
 }
 
 /**
- * smb_vfs_setxattr() - vfs helper for smb set extended attributes value
- * @filename:	file name
- * @fpath:	path of file for setxattr
+ * cifsd_vfs_setxattr() - vfs helper for smb set extended attributes value
+ * @dentry:	dentry to set XATTR at
  * @name:	xattr name for setxattr
  * @value:	xattr value to set
  * @size:	size of xattr value
@@ -989,39 +1001,57 @@ ssize_t smb_vfs_getxattr(struct dentry *dentry, char *xattr_name,
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_setxattr(const char *filename, struct path *fpath, const char *name,
-		const void *value, size_t size, int flags)
+int cifsd_vfs_setxattr(struct dentry *dentry,
+		       const char *attr_name,
+		       const void *attr_value,
+		       size_t attr_size,
+		       int flags)
+{
+	int err;
+
+	err = vfs_setxattr(dentry,
+			   attr_name,
+			   attr_value,
+			   attr_size,
+			   flags);
+	if (err)
+		cifsd_debug("setxattr failed, err %d\n", err);
+	return err;
+}
+
+int cifsd_vfs_fsetxattr(const char *filename,
+			const char *attr_name,
+			const void *attr_value,
+			size_t attr_size,
+			int flags)
 {
 	struct path path;
 	int err;
 
-	if (filename) {
-		err = kern_path(filename, 0, &path);
-		if (err) {
-			cifsd_debug("cannot get linux path %s, err %d\n",
-					filename, err);
-			return err;
-		}
-		err = vfs_setxattr(path.dentry, name, value, size, flags);
-		if (err)
-			cifsd_debug("setxattr failed, err %d\n", err);
-		path_put(&path);
-	} else {
-		err = vfs_setxattr(fpath->dentry, name, value, size, flags);
-		if (err)
-			cifsd_debug("setxattr failed, err %d\n", err);
+	err = kern_path(filename, 0, &path);
+	if (err) {
+		cifsd_debug("cannot get linux path %s, err %d\n",
+				filename, err);
+		return err;
 	}
-
+	err = vfs_setxattr(path.dentry,
+			   attr_name,
+			   attr_value,
+			   attr_size,
+			   flags);
+	if (err)
+		cifsd_debug("setxattr failed, err %d\n", err);
+	path_put(&path);
 	return err;
 }
 
-int smb_vfs_truncate_xattr(struct dentry *dentry)
+int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t xattr_list_len;
 	int err = 0;
 
-	xattr_list_len = smb_vfs_listxattr(dentry, &xattr_list,
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list,
 		XATTR_LIST_MAX);
 	if (xattr_list_len < 0) {
 		goto out;
@@ -1034,42 +1064,8 @@ int smb_vfs_truncate_xattr(struct dentry *dentry)
 			name += strlen(name) + 1) {
 		cifsd_debug("%s, len %zd\n", name, strlen(name));
 
-		if (!strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
-					STREAM_PREFIX_LEN))
-			continue;
-
-		err = vfs_removexattr(dentry, name);
-		if (err)
-			cifsd_err("remove xattr failed : %s\n", name);
-	}
-out:
-	if (xattr_list)
-		vfree(xattr_list);
-
-	return err;
-}
-
-int smb_vfs_truncate_stream_xattr(struct dentry *dentry)
-{
-	char *name, *xattr_list = NULL;
-	ssize_t xattr_list_len;
-	int err = 0;
-
-	xattr_list_len = smb_vfs_listxattr(dentry, &xattr_list,
-		XATTR_LIST_MAX);
-	if (xattr_list_len < 0) {
-		goto out;
-	} else if (!xattr_list_len) {
-		cifsd_debug("empty xattr in the file\n");
-		goto out;
-	}
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
-
-		if (strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
-					STREAM_PREFIX_LEN))
+		if (wo_streams && !strncmp(&name[XATTR_USER_PREFIX_LEN],
+			STREAM_PREFIX, STREAM_PREFIX_LEN))
 			continue;
 
 		err = vfs_removexattr(dentry, name);
@@ -1084,11 +1080,11 @@ out:
 }
 
 /**
- * smb_vfs_set_fadvise() - convert smb IO caching options to linux options
+ * cifsd_vfs_set_fadvise() - convert smb IO caching options to linux options
  * @filp:	file pointer for IO
  * @options:	smb IO options
  */
-void smb_vfs_set_fadvise(struct file *filp, int option)
+void cifsd_vfs_set_fadvise(struct file *filp, int option)
 {
 	struct address_space *mapping;
 	mapping = filp->f_mapping;
@@ -1129,14 +1125,14 @@ void smb_vfs_set_fadvise(struct file *filp, int option)
 }
 
 /**
- * smb_vfs_lock() - vfs helper for smb file locking
+ * cifsd_vfs_lock() - vfs helper for smb file locking
  * @filp:	the file to apply the lock to
  * @cmd:	type of locking operation (F_SETLK, F_GETLK, etc.)
  * @flock:	The lock to be applied
  *
  * Return:	0 on success, otherwise error
  */
-int smb_vfs_lock(struct file *filp, int cmd,
+int cifsd_vfs_lock(struct file *filp, int cmd,
 			struct file_lock *flock)
 {
 	cifsd_debug("%s: calling vfs_lock_file\n", __func__);
@@ -1185,26 +1181,29 @@ out:
 	return error;
 }
 
-int smb_vfs_readdir(struct file *file, filldir_t filler,
-			struct smb_readdir_data *rdata)
+int cifsd_vfs_readdir(struct file *file, filldir_t filler,
+			struct cifsd_readdir_data *rdata)
 {
 	return iterate_dir(file, &rdata->ctx);
 }
 
-int smb_vfs_alloc_size(struct cifsd_tcp_conn *conn, struct cifsd_file *fp,
-	loff_t len)
+int cifsd_vfs_alloc_size(struct cifsd_work *work,
+			 struct cifsd_file *fp,
+			 loff_t len)
 {
+	struct cifsd_tcp_conn *conn = work->sess->conn;
+
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
-int smb_vfs_remove_xattr(struct path *path, char *field_name)
+int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 {
-	return vfs_removexattr(path->dentry, field_name);
+	return vfs_removexattr(dentry, attr_name);
 }
 
-int smb_vfs_unlink(struct dentry *dir, struct dentry *dentry)
+int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 {
 	int err = 0;
 
@@ -1238,12 +1237,12 @@ out:
 }
 
 /*
- * get_logical_sector_size() - get logical sector size from inode
+ * cifsd_vfs_get_logical_sector_size() - get logical sector size from inode
  * @inode: inode
  *
  * Return: logical sector size
  */
-unsigned short get_logical_sector_size(struct inode *inode)
+unsigned short cifsd_vfs_logical_sector_size(struct inode *inode)
 {
 	struct request_queue *q;
 	unsigned short ret_val = 512;
@@ -1259,13 +1258,14 @@ unsigned short get_logical_sector_size(struct inode *inode)
 	return ret_val;
 }
 
+#ifdef CONFIG_CIFS_SMB2_SERVER
 /*
- * get_smb2_sector_size() - get fs sector sizes
+ * cifsd_vfs_get_smb2_sector_size() - get fs sector sizes
  * @inode: inode
  * @fs_ss: fs sector size struct
  */
-void get_smb2_sector_size(struct inode *inode,
-	struct smb2_fs_sector_size *fs_ss)
+void cifsd_vfs_smb2_sector_size(struct inode *inode,
+	struct cifsd_fs_sector_size *fs_ss)
 {
 	struct request_queue *q;
 
@@ -1284,4 +1284,459 @@ void get_smb2_sector_size(struct inode *inode,
 		if (q->limits.io_opt)
 			fs_ss->optimal_io_size = q->limits.io_opt;
 	}
+}
+#else
+void cifsd_vfs_get_smb2_sector_size(struct inode *inode,
+	struct cifsd_fs_sector_size *fs_ss)
+{
+}
+#endif
+
+/**
+ * cifsd_vfs_dentry_open() - open a dentry and provide fid for it
+ * @work:	smb work ptr
+ * @path:	path of dentry to be opened
+ * @flags:	open flags
+ * @ret_id:	fid returned on this
+ * @option:	file access pattern options for fadvise
+ * @fexist:	file already present or not
+ *
+ * Return:	0 on success, otherwise error
+ */
+struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
+	const struct path *path, int flags, int option, int fexist)
+{
+	struct cifsd_sess *sess = work->sess;
+	struct file *filp;
+	int id, err = 0;
+	struct cifsd_file *fp = NULL;
+	uint64_t sess_id;
+	struct cifsd_inode *ci;
+
+	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		cifsd_err("dentry open failed, err %d\n", err);
+		return ERR_PTR(err);
+	}
+
+	cifsd_vfs_set_fadvise(filp, option);
+
+	sess_id = sess == NULL ? 0 : sess->sess_id;
+	id = cifsd_get_unused_id(&sess->fidtable);
+	if (id < 0)
+		goto err_out3;
+
+	cifsd_debug("allocate volatile id : %d\n", id);
+	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
+	if (fp == NULL) {
+		err = -ENOMEM;
+		cifsd_err("id insert failed\n");
+		goto err_out2;
+	}
+
+	fp->f_ci = ci = cifsd_inode_get(fp);
+	if (!ci)
+		goto err_out1;
+
+	if (flags & O_TRUNC) {
+		if (oplocks_enable && fexist)
+			smb_break_all_oplock(work, fp);
+		err = vfs_truncate((struct path *)path, 0);
+		if (err)
+			goto err_out;
+	}
+
+	INIT_LIST_HEAD(&fp->lock_list);
+
+	return fp;
+
+err_out:
+	list_del(&fp->node);
+	if (ci && atomic_dec_and_test(&ci->m_count))
+		cifsd_inode_free(ci);
+err_out1:
+	delete_id_from_fidtable(sess, id);
+err_out2:
+	cifsd_close_id(&sess->fidtable, id);
+err_out3:
+	fput(filp);
+
+	if (err) {
+		fp = ERR_PTR(err);
+		cifsd_err("err : %d\n", err);
+	}
+	return fp;
+}
+
+/**
+ * cifsd_vfs_empty_dir() - check for empty directory
+ * @fp:	cifsd file pointer
+ *
+ * Return:	true if directory empty, otherwise false
+ */
+bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
+{
+	struct path dir_path;
+	struct file *filp;
+	struct cifsd_readdir_data r_data = {
+		.ctx.actor = smb_filldir,
+		.dirent = (void *)__get_free_page(GFP_KERNEL),
+		.dirent_count = 0
+	};
+	int err;
+
+	if (!r_data.dirent)
+		return false;
+
+	err = cifsd_vfs_kern_path(fp->filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+			&dir_path, 0);
+	if (err < 0)
+		return false;
+
+	filp = dentry_open(&dir_path, O_RDONLY | O_LARGEFILE, current_cred());
+	if (IS_ERR(filp)) {
+		err = PTR_ERR(filp);
+		fput(filp);
+		cifsd_err("dentry open failed, err %d\n", err);
+		return false;
+	}
+
+	r_data.used = 0;
+	r_data.full = 0;
+
+	err = cifsd_vfs_readdir(filp, smb_filldir, &r_data);
+	if (r_data.dirent_count > 2) {
+		fput(filp);
+		path_put(&dir_path);
+		free_page((unsigned long)(r_data.dirent));
+		return false;
+	}
+
+	free_page((unsigned long)(r_data.dirent));
+	fput(filp);
+	path_put(&dir_path);
+	return true;
+}
+
+
+/**
+ * cifsd_vfs_kern_path() - lookup a file and get path info
+ * @name:	name of file for lookup
+ * @flags:	lookup flags
+ * @path:	if lookup succeed, return path info
+ * @caseless:	caseless filename lookup
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
+		bool caseless)
+{
+	int err;
+
+	err = kern_path(name, flags, path);
+	if (err && caseless) {
+		char *filename = strrchr((const char *)name, '/');
+		if (filename == NULL)
+			return err;
+		*(filename++) = '\0';
+		if (strlen(name) == 0) {
+			/* root reached */
+			filename--;
+			*filename = '/';
+			return err;
+		}
+		err = cifsd_vfs_lookup_in_dir(name, filename);
+		if (err)
+			return err;
+		err = kern_path(name, flags, path);
+		return err;
+	} else
+		return err;
+}
+
+/**
+ * cifsd_vfs_lookup_in_dir() - lookup a file in a directory
+ * @dirname:	directory name
+ * @filename:	filename to lookup
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
+{
+	struct path dir_path;
+	int ret;
+	struct file *dfilp;
+	int flags = O_RDONLY|O_LARGEFILE;
+	int used_count, reclen;
+	int iter;
+	struct cifsd_dirent *buf_p;
+	int namelen = strlen(filename);
+	int dirnamelen = strlen(dirname);
+	bool match_found = false;
+	struct cifsd_readdir_data readdir_data = {
+		.ctx.actor = smb_filldir,
+		.dirent = (void *)__get_free_page(GFP_KERNEL)
+	};
+
+	if (!readdir_data.dirent) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = cifsd_vfs_kern_path(dirname, 0, &dir_path, true);
+	if (ret)
+		goto out;
+
+	dfilp = dentry_open(&dir_path, flags, current_cred());
+	if (IS_ERR(dfilp)) {
+		cifsd_err("cannot open directory %s\n", dirname);
+		ret = -EINVAL;
+		goto out2;
+	}
+
+	while (!ret && !match_found) {
+		readdir_data.used = 0;
+		readdir_data.full = 0;
+		ret = cifsd_vfs_readdir(dfilp, smb_filldir, &readdir_data);
+		used_count = readdir_data.used;
+		if (ret || !used_count)
+			break;
+
+		buf_p = (struct cifsd_dirent *)readdir_data.dirent;
+		for (iter = 0; iter < used_count; iter += reclen,
+		     buf_p = (struct cifsd_dirent *)((char *)buf_p + reclen)) {
+			int length;
+
+			reclen = ALIGN(sizeof(struct cifsd_dirent) +
+				       buf_p->namelen, sizeof(__le64));
+			length = buf_p->namelen;
+			if (length != namelen ||
+				strncasecmp(filename, buf_p->name, namelen))
+				continue;
+			/* got match, make absolute name */
+			memcpy(dirname + dirnamelen + 1, buf_p->name, namelen);
+			match_found = true;
+			break;
+		}
+	}
+
+	free_page((unsigned long)(readdir_data.dirent));
+	fput(dfilp);
+out2:
+	path_put(&dir_path);
+out:
+	dirname[dirnamelen] = '/';
+	return ret;
+}
+
+/**
+ * fill_create_time() - fill create time of directory entry in cifsd_kstat
+ * if related config is not yes, create time is same with change time
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @cifsd_kstat: cifsd kstat wrapper
+ */
+static void fill_create_time(struct cifsd_work *work,
+	struct path *path, struct cifsd_kstat *cifsd_kstat)
+{
+	char *create_time = NULL;
+	int xattr_len;
+
+	/*
+	 * if "store dos attributes" conf is not yes,
+	 * create time = change time
+	 */
+	cifsd_kstat->create_time = cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime);
+
+	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+		xattr_len = cifsd_vfs_getxattr(path->dentry,
+					       XATTR_NAME_CREATION_TIME,
+					       &create_time);
+		if (xattr_len > 0)
+			cifsd_kstat->create_time = *((u64 *)create_time);
+
+		cifsd_free(create_time);
+	}
+}
+
+/**
+ * cifsd_vfs_init_kstat() - convert unix stat information to smb stat format
+ * @p:          destination buffer
+ * @cifsd_kstat:      cifsd kstat wrapper
+ */
+void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
+{
+	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
+	info->FileIndex = 0;
+	info->CreationTime = cpu_to_le64(cifsd_kstat->create_time);
+	info->LastAccessTime = cpu_to_le64(
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->atime));
+	info->LastWriteTime = cpu_to_le64(
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->mtime));
+	info->ChangeTime = cpu_to_le64(
+			cifs_UnixTimeToNT(cifsd_kstat->kstat->ctime));
+	if (cifsd_kstat->file_attributes & ATTR_DIRECTORY) {
+		info->EndOfFile = 0;
+		info->AllocationSize = 0;
+	} else {
+		info->EndOfFile = cpu_to_le64(cifsd_kstat->kstat->size);
+		info->AllocationSize =
+			cpu_to_le64(cifsd_kstat->kstat->blocks << 9);
+	}
+	info->ExtFileAttributes = cpu_to_le32(cifsd_kstat->file_attributes);
+
+	return info;
+}
+
+/*
+ * fill_file_attributes() - fill FileAttributes of directory entry in cifsd_kstat.
+ * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @cifsd_kstat: cifsd kstat wrapper
+ */
+
+static void fill_file_attributes(struct cifsd_work *work,
+	struct path *path, struct cifsd_kstat *cifsd_kstat)
+{
+	/*
+	 * set default value for the case that store dos attributes is not yes
+	 * or that acl is disable in server's filesystem and the config is yes.
+	 */
+	if (S_ISDIR(cifsd_kstat->kstat->mode))
+		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
+	else
+		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
+
+	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+		char *file_attribute = NULL;
+		int rc;
+
+		rc = cifsd_vfs_getxattr(path->dentry,
+					XATTR_NAME_FILE_ATTRIBUTE,
+					&file_attribute);
+		if (rc > 0)
+			cifsd_kstat->file_attributes =
+				*((__le32 *)file_attribute);
+		else
+			cifsd_debug("fail to fill file attributes.\n");
+
+		cifsd_free(file_attribute);
+	}
+}
+
+/**
+ * read_next_entry() - read next directory entry and return absolute name
+ * @work:	smb work containing share config
+ * @cifsd_kstat:	cifsd wrapper of next dirent's stat
+ * @de:		directory entry
+ * @dirpath:	directory path name
+ *
+ * Return:      on success return absolute path of directory entry,
+ *              otherwise NULL
+ */
+char *cifsd_vfs_readdir_name(struct cifsd_work *work,
+			     struct cifsd_kstat *cifsd_kstat,
+			     struct cifsd_dirent *de,
+			     char *dirpath)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dirpath);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de->namelen + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name) {
+		cifsd_err("Name memory failed for length %d,"
+				" buf_name_len %d\n", dir_pathlen, de->namelen);
+		return ERR_PTR(-ENOMEM);
+	}
+
+	memcpy(name, dirpath, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, 0, &path, 1);
+	if (rc) {
+		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
+		kfree(name);
+		return ERR_PTR(rc);
+	}
+
+	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
+	memcpy(name, de->name, de->namelen);
+	name[de->namelen] = '\0';
+	path_put(&path);
+	return name;
+}
+
+ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
+			       char *attr_name,
+			       int attr_name_len,
+			       char **attr_value)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t value_len = -ENOENT, xattr_list_len;
+
+	xattr_list_len = cifsd_vfs_listxattr(dentry,
+					     &xattr_list,
+					     XATTR_LIST_MAX);
+	if (xattr_list_len <= 0)
+		goto out;
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strncasecmp(attr_name, name, attr_name_len))
+			continue;
+
+		value_len = cifsd_vfs_getxattr(dentry,
+					       name,
+					       attr_value);
+		if (value_len < 0)
+			cifsd_err("failed to get xattr in file\n");
+		break;
+	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+	return value_len;
+}
+
+ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
+				char *attr_name,
+				int attr_name_len)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t value_len = -ENOENT, xattr_list_len;
+
+	xattr_list_len = cifsd_vfs_listxattr(dentry,
+					     &xattr_list,
+					     XATTR_LIST_MAX);
+	if (xattr_list_len <= 0)
+		goto out;
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strncasecmp(attr_name, name, attr_name_len))
+			continue;
+
+		value_len = cifsd_vfs_xattr_len(dentry, name);
+		break;
+	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+	return value_len;
 }
