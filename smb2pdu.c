@@ -4607,7 +4607,7 @@ static int smb2_close_pipe(struct cifsd_work *work)
 	pipe_desc = get_pipe_desc(work->sess, id);
 	if (!pipe_desc) {
 		cifsd_debug("Pipe not opened or invalid in Pipe id\n");
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		smb2_set_err_rsp(work);
 		return 0;
 	}
@@ -4633,7 +4633,7 @@ static int smb2_close_pipe(struct cifsd_work *work)
 
 	rc = close_pipe_id(work->sess, pipe_desc->pipe_type);
 	if (rc < 0) {
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		smb2_set_err_rsp(work);
 	}
 
@@ -5499,7 +5499,7 @@ static int smb2_read_pipe(struct cifsd_work *work)
 
 	if (!pipe_desc) {
 		cifsd_debug("Pipe not opened or invalid in Pipe id\n");
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		smb2_set_err_rsp(work);
 		return ret;
 	}
@@ -5674,7 +5674,7 @@ static int smb2_write_pipe(struct cifsd_work *work)
 
 	if (!pipe_desc) {
 		cifsd_debug("Pipe not opened or invalid in Pipe id\n");
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+		rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
 		smb2_set_err_rsp(work);
 		return ret;
 	}
