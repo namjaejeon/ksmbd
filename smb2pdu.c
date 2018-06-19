@@ -3550,39 +3550,9 @@ static int buffer_check_err(int reqOutputBufferLength,
 	return 0;
 }
 
-/**
- * smb2_info_file_pipe() - handler for smb2 query info on IPC pipe
- * @work:	smb work containing query info command buffer
- *
- * Return:	0 on success, otherwise error
- */
-static int smb2_get_info_file_pipe(struct cifsd_sess *sess,
-	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp)
+static void get_standard_info_pipe(struct smb2_query_info_rsp *rsp)
 {
 	struct smb2_file_standard_info *sinfo;
-	struct cifsd_pipe *pipe_desc;
-	uint64_t id;
-
-	if (req->FileInfoClass != FILE_STANDARD_INFORMATION) {
-		cifsd_debug("smb2_info_file_pipe for %u not supported\n",
-			    req->FileInfoClass);
-		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-		return -EOPNOTSUPP;
-	}
-
-	cifsd_debug("smb2 query info IPC pipe\n");
-	/*
-	 * Windows can sometime send query file info request on
-	 * pipe without opening it, checking error condition here
-	 */
-	id = le64_to_cpu(req->VolatileFileId);
-	pipe_desc = get_pipe_desc(sess, id);
-	if (!pipe_desc) {
-		cifsd_debug("Pipe not opened or invalid in Pipe id\n");
-		rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
-		return -EINVAL;
-	}
-
 
 	sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 
@@ -3593,10 +3563,68 @@ static int smb2_get_info_file_pipe(struct cifsd_sess *sess,
 	sinfo->Directory = 0;
 	rsp->OutputBufferLength =
 		cpu_to_le32(sizeof(struct smb2_file_standard_info));
-	inc_rfc1001_len(rsp,
-			sizeof(struct smb2_file_standard_info));
+	inc_rfc1001_len(rsp, sizeof(struct smb2_file_standard_info));
+}
 
-	return 0;
+static void get_internal_info_pipe(struct smb2_query_info_rsp *rsp,
+	uint64_t num)
+{
+	struct smb2_file_internal_info *file_info;
+
+	file_info = (struct smb2_file_internal_info *)rsp->Buffer;
+
+	/* any unique number */
+	file_info->IndexNumber = cpu_to_le64(num | (1ULL << 63));
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_internal_info));
+	inc_rfc1001_len(rsp, sizeof(struct smb2_file_internal_info));
+}
+
+/**
+ * smb2_info_file_pipe() - handler for smb2 query info on IPC pipe
+ * @work:	smb work containing query info command buffer
+ *
+ * Return:	0 on success, otherwise error
+ */
+static int smb2_get_info_file_pipe(struct cifsd_sess *sess,
+	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp)
+{
+	struct cifsd_pipe *pipe_desc;
+	uint64_t id;
+	int rc;
+
+	cifsd_debug("smb2 query info IPC pipe of FileInfoClass %u, FileId 0x%llx\n",
+		req->FileInfoClass, req->VolatileFileId);
+
+	/*
+	 * Windows can sometime send query file info request on
+	 * pipe without opening it, checking error condition here
+	 */
+	id = le64_to_cpu(req->VolatileFileId);
+	pipe_desc = get_pipe_desc(sess, id);
+	if (!pipe_desc) {
+		cifsd_err("Pipe not opened or invalid in Pipe id\n");
+		return -ENOENT;
+	}
+
+	switch (req->FileInfoClass) {
+	case FILE_STANDARD_INFORMATION:
+		get_standard_info_pipe(rsp);
+		rc = buffer_check_err(req->OutputBufferLength, rsp,
+			FILE_STANDARD_INFORMATION_SIZE);
+		break;
+	case FILE_INTERNAL_INFORMATION:
+		get_internal_info_pipe(rsp, req->VolatileFileId);
+		rc = buffer_check_err(req->OutputBufferLength, rsp,
+			FILE_INTERNAL_INFORMATION_SIZE);
+		break;
+	default:
+		cifsd_err("smb2_info_file_pipe for %u not supported\n",
+			req->FileInfoClass);
+		rc = -EOPNOTSUPP;
+	}
+
+	return rc;
 }
 
 /**
