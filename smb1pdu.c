@@ -1006,13 +1006,8 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = SERVER_CAPS;
 
-	/* System time is anyway ignored by clients */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	ktime_get_real_ts(&ts);
 	time = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	time = cpu_to_le64(cifs_UnixTimeToNT(from_kern_timespec(CURRENT_TIME)));
-#endif
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
