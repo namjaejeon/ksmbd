@@ -966,9 +966,7 @@ int smb_negotiate(struct cifsd_work *work)
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
 	NEGOTIATE_REQ *neg_req = (NEGOTIATE_REQ *)REQUEST_BUF(work);
 	__le64 time;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	struct timespec ts;
-#endif
+	struct timespec64 ts64;
 	int rc = 0;
 
 	WARN_ON(neg_req->hdr.WordCount);
@@ -1006,13 +1004,9 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = SERVER_CAPS;
 
-	/* System time is anyway ignored by clients */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	ktime_get_real_ts(&ts);
-	time = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	time = cpu_to_le64(cifs_UnixTimeToNT(from_kern_timespec(CURRENT_TIME)));
-#endif
+	getnstimeofday64(&ts64);
+	time = cpu_to_le64(cifs_UnixTimeToNT(timespec64_to_timespec(ts64)));
+
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;

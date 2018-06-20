@@ -290,9 +290,8 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	struct timespec ts;
-#endif
+	struct timespec64 ts64;
+
 	init_smb2_0_server(conn);
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 
@@ -331,12 +330,10 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = SMBMaxBufSize;
 	rsp->MaxWriteSize = SMBMaxBufSize;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	ktime_get_real_ts(&ts);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(from_kern_timespec(CURRENT_TIME)));
-#endif
+
+	getnstimeofday64(&ts64);
+	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
+						timespec64_to_timespec(ts64)));
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
@@ -988,9 +985,7 @@ int smb2_negotiate(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	unsigned int limit;
 	int rc = 0, err;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	struct timespec ts;
-#endif
+	struct timespec64 ts64;
 
 	cifsd_debug("Recieved negotiate request\n");
 
@@ -1077,12 +1072,11 @@ int smb2_negotiate(struct cifsd_work *work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
-	ktime_get_real_ts(&ts);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(from_kern_timespec(CURRENT_TIME)));
-#endif
+
+	getnstimeofday64(&ts64);
+	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
+						timespec64_to_timespec(ts64)));
+
 	rsp->ServerStartTime = 0;
 	cifsd_debug("negotiate context offset %d, count %d\n",
 		le32_to_cpu(rsp->NegotiateContextOffset),
