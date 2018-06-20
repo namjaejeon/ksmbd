@@ -477,6 +477,21 @@ cifs_NTtimeToUnix(__le64 ntutc)
 	return ts;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+static inline struct timespec64 to_kern_timespec(struct timespec ts)
+{
+	return timespec_to_timespec64(ts);
+}
+
+static inline struct timespec from_kern_timespec(struct timespec64 ts)
+{
+	return timespec64_to_timespec(ts);
+}
+#else
+#define to_kern_timespec(ts) (ts)
+#define from_kern_timespec(ts) (ts)
+#endif
+
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
 struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
