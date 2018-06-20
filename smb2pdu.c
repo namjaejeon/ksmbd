@@ -331,12 +331,8 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = SMBMaxBufSize;
 	rsp->MaxWriteSize = SMBMaxBufSize;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	ktime_get_real_ts(&ts);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
-#endif
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
@@ -1077,12 +1073,8 @@ int smb2_negotiate(struct cifsd_work *work)
 	rsp->MaxTransactSize = SMBMaxBufSize;
 	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
 	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	ktime_get_real_ts(&ts);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
-#endif
 	rsp->ServerStartTime = 0;
 	cifsd_debug("negotiate context offset %d, count %d\n",
 		le32_to_cpu(rsp->NegotiateContextOffset),
@@ -2178,6 +2170,7 @@ int smb2_open(struct cifsd_work *work)
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
 	unsigned int tree_id;
+	u64 time;
 
 	req = (struct smb2_create_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_create_rsp *)RESPONSE_BUF(work);
@@ -2846,8 +2839,8 @@ int smb2_open(struct cifsd_work *work)
 		i_gid_write(FP_INODE(fp), user_gid(sess->user).val);
 	}
 
+	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	if (!created) {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
@@ -2862,7 +2855,6 @@ int smb2_open(struct cifsd_work *work)
 			rc = 0;
 		}
 	} else {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			rc = cifsd_vfs_setxattr(path.dentry,
 						XATTR_NAME_CREATION_TIME,
@@ -2936,9 +2928,12 @@ reconnected:
 	rsp->Reserved = 0;
 	rsp->CreateAction = file_info;
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
-	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
-	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+	rsp->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+	rsp->LastWriteTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+	rsp->ChangeTime = cpu_to_le64(time);
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 		cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
@@ -3771,6 +3766,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 	int rc = 0;
 	int file_infoclass_size;
 	struct inode *inode;
+	u64 time;
 
 	if (work->tcon->share->is_pipe == true) {
 		/* smb2 info file called for pipe */
@@ -3815,12 +3811,12 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		basic_info->CreationTime = cpu_to_le64(fp->create_time);
-		basic_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
-		basic_info->LastWriteTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+		basic_info->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+		basic_info->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+		basic_info->ChangeTime = cpu_to_le64(time);
 		basic_info->Attributes = fp->fattr;
 		basic_info->Pad1 = 0;
 		rsp->OutputBufferLength =
@@ -3889,12 +3885,12 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
-		file_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
-		file_info->LastWriteTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-		file_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+		file_info->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+		file_info->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+		file_info->ChangeTime = cpu_to_le64(time);
 		file_info->Attributes = fp->fattr;
 		file_info->Pad1 = 0;
 		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
@@ -4059,12 +4055,12 @@ out:
 		file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
-		file_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
-		file_info->LastWriteTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-		file_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+		file_info->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+		file_info->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+		file_info->ChangeTime = cpu_to_le64(time);
 		file_info->Attributes = fp->fattr;
 		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -5065,21 +5061,23 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		}
 
 		if (le64_to_cpu(file_info->LastAccessTime)) {
-			attrs.ia_atime = cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastAccessTime));
+			attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
+					le64_to_cpu(file_info->LastAccessTime)));
 			attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 		}
 
 		if (le64_to_cpu(file_info->ChangeTime)) {
-			temp_attrs.ia_ctime = attrs.ia_ctime =
-			cifs_NTtimeToUnix(le64_to_cpu(file_info->ChangeTime));
+			temp_attrs.ia_ctime =
+				to_kern_timespec(cifs_NTtimeToUnix(
+					le64_to_cpu(file_info->ChangeTime)));
+			attrs.ia_ctime = temp_attrs.ia_ctime;
 			attrs.ia_valid |= ATTR_CTIME;
 		} else
 			temp_attrs.ia_ctime = inode->i_ctime;
 
 		if (le64_to_cpu(file_info->LastWriteTime)) {
-			attrs.ia_mtime = cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastWriteTime));
+			attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
+					le64_to_cpu(file_info->LastWriteTime)));
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 		}
 

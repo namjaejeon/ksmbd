@@ -1006,13 +1006,8 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = SERVER_CAPS;
 
-	/* System time is anyway ignored by clients */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	ktime_get_real_ts(&ts);
 	time = cpu_to_le64(cifs_UnixTimeToNT(ts));
-#else
-	time = cpu_to_le64(cifs_UnixTimeToNT(CURRENT_TIME));
-#endif
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
@@ -2400,7 +2395,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	char *name;
 	char *conv_name;
 	bool file_present = true, extended_reply;
-	__u64 alloc_size = 0;
+	__u64 alloc_size = 0, time;
 	umode_t mode = 0;
 	int err;
 	int create_directory = 0;
@@ -2785,8 +2780,8 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	else
 		rsp->CreateAction = cpu_to_le32(file_info);
 
+	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	if (file_present) {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *create_time = NULL;
 
@@ -2799,7 +2794,6 @@ int smb_nt_create_andx(struct cifsd_work *work)
 			err = 0;
 		}
 	} else {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
@@ -2816,9 +2810,12 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	list_add(&fp->node, &fp->f_ci->m_fp_list);
 
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
-	rsp->LastAccessTime = cpu_to_le64(cifs_UnixTimeToNT(stat.atime));
-	rsp->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(stat.mtime));
-	rsp->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(stat.ctime));
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+	rsp->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+	rsp->LastWriteTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+	rsp->ChangeTime = cpu_to_le64(time);
 
 	rsp->FileAttributes = cpu_to_le32(smb_get_dos_attr(&stat));
 	rsp->AllocationSize = cpu_to_le64(stat.blocks << 9);
@@ -3620,15 +3617,16 @@ static __u32 get_filetype(mode_t mode)
  */
 static void init_unix_info(FILE_UNIX_BASIC_INFO *unix_info, struct kstat *stat)
 {
+	u64 time;
 
 	unix_info->EndOfFile = cpu_to_le64(stat->size);
 	unix_info->NumOfBytes = cpu_to_le64(512 * stat->blocks);
-	unix_info->LastStatusChange =
-			cpu_to_le64(cifs_UnixTimeToNT(stat->ctime));
-	unix_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat->atime));
-	unix_info->LastModificationTime =
-			cpu_to_le64(cifs_UnixTimeToNT(stat->mtime));
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat->ctime));
+	unix_info->LastStatusChange = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat->atime));
+	unix_info->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat->mtime));
+	unix_info->LastModificationTime = cpu_to_le64(time);
 	unix_info->Uid = cpu_to_le64(from_kuid(&init_user_ns, stat->uid));
 	unix_info->Gid = cpu_to_le64(from_kgid(&init_user_ns, stat->gid));
 	unix_info->Type = cpu_to_le32(get_filetype(stat->mode));
@@ -3649,25 +3647,28 @@ static void init_unix_info(FILE_UNIX_BASIC_INFO *unix_info, struct kstat *stat)
 static int unix_info_to_attr(FILE_UNIX_BASIC_INFO *unix_info,
 		struct iattr *attrs)
 {
+	struct timespec ts;
+
 	if (le64_to_cpu(unix_info->EndOfFile) != NO_CHANGE_64) {
 		attrs->ia_size = le64_to_cpu(unix_info->EndOfFile);
 		attrs->ia_valid |= ATTR_SIZE;
 	}
 
 	if (le64_to_cpu(unix_info->LastStatusChange) != NO_CHANGE_64) {
-		attrs->ia_ctime =
-			smb_NTtimeToUnix(unix_info->LastStatusChange);
+		ts = smb_NTtimeToUnix(unix_info->LastStatusChange);
+		attrs->ia_ctime = to_kern_timespec(ts);
 		attrs->ia_valid |= ATTR_CTIME;
 	}
 
 	if (le64_to_cpu(unix_info->LastAccessTime) != NO_CHANGE_64) {
-		attrs->ia_atime = smb_NTtimeToUnix(unix_info->LastAccessTime);
+		ts = smb_NTtimeToUnix(unix_info->LastAccessTime);
+		attrs->ia_atime = to_kern_timespec(ts);
 		attrs->ia_valid |= ATTR_ATIME;
 	}
 
 	if (le64_to_cpu(unix_info->LastModificationTime) != NO_CHANGE_64) {
-		attrs->ia_mtime =
-			smb_NTtimeToUnix(unix_info->LastModificationTime);
+		ts = smb_NTtimeToUnix(unix_info->LastModificationTime);
+		attrs->ia_mtime = to_kern_timespec(ts);
 		attrs->ia_valid |= ATTR_MTIME;
 	}
 
@@ -3678,8 +3679,8 @@ static int unix_info_to_attr(FILE_UNIX_BASIC_INFO *unix_info,
 	}
 
 	if (le64_to_cpu(unix_info->Gid) != NO_CHANGE_64) {
-		attrs->ia_gid =  make_kgid(&init_user_ns,
-				le64_to_cpu(unix_info->Gid));
+		attrs->ia_gid = make_kgid(&init_user_ns,
+					  le64_to_cpu(unix_info->Gid));
 		attrs->ia_valid |= ATTR_GID;
 	}
 
@@ -4302,7 +4303,7 @@ static int query_path_info(struct cifsd_work *work)
 	struct kstat st;
 	int rc;
 	char *ptr;
-	__u64 create_time = 0;
+	__u64 create_time = 0, time;
 
 	if (work->tcon->share->is_pipe == true) {
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -4379,9 +4380,11 @@ static int query_path_info(struct cifsd_work *work)
 		infos = (FILE_INFO_STANDARD *)(ptr + 4);
 		unix_to_dos_time(cifs_NTtimeToUnix(create_time),
 			&infos->CreationDate, &infos->CreationTime);
-		unix_to_dos_time(st.atime, &infos->LastAccessDate,
+		unix_to_dos_time(from_kern_timespec(st.atime),
+				&infos->LastAccessDate,
 				&infos->LastAccessTime);
-		unix_to_dos_time(st.mtime, &infos->LastWriteDate,
+		unix_to_dos_time(from_kern_timespec(st.mtime),
+				&infos->LastWriteDate,
 				&infos->LastWriteTime);
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
@@ -4471,12 +4474,12 @@ static int query_path_info(struct cifsd_work *work)
 		memset(ptr, 0, 4);
 		basic_info = (FILE_BASIC_INFO *)(ptr + 4);
 		basic_info->CreationTime = cpu_to_le64(create_time);
-		basic_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
-		basic_info->LastWriteTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.atime));
+		basic_info->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.mtime));
+		basic_info->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.ctime));
+		basic_info->ChangeTime = cpu_to_le64(time);
 		basic_info->Attributes = S_ISDIR(st.mode) ?
 					 ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
@@ -4587,10 +4590,12 @@ static int query_path_info(struct cifsd_work *work)
 		ainfo = (FILE_ALL_INFO *) (ptr + 4);
 
 		ainfo->CreationTime = cpu_to_le64(create_time);
-		ainfo->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
-		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.atime));
+		ainfo->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.mtime));
+		ainfo->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.ctime));
+		ainfo->ChangeTime = cpu_to_le64(time);
 		ainfo->Attributes = S_ISDIR(st.mode) ?
 					ATTR_DIRECTORY : ATTR_ARCHIVE;
 		ainfo->Pad1 = 0;
@@ -5407,20 +5412,20 @@ static int smb_set_time_pathinfo(struct cifsd_work *work)
 
 	attrs.ia_valid = 0;
 	if (le64_to_cpu(info->LastAccessTime)) {
-		attrs.ia_atime = smb_NTtimeToUnix(
-					le64_to_cpu(info->LastAccessTime));
+		attrs.ia_atime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->LastAccessTime)));
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
 	if (le64_to_cpu(info->ChangeTime)) {
-		attrs.ia_ctime = smb_NTtimeToUnix(
-					le64_to_cpu(info->ChangeTime));
+		attrs.ia_ctime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->ChangeTime)));
 		attrs.ia_valid |= ATTR_CTIME;
 	}
 
 	if (le64_to_cpu(info->LastWriteTime)) {
-		attrs.ia_mtime = smb_NTtimeToUnix(
-					le64_to_cpu(info->LastWriteTime));
+		attrs.ia_mtime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->LastWriteTime)));
 		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 	}
 	/* TODO: check dos mode and acl bits if req->Attributes nonzero */
@@ -5899,10 +5904,10 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fsinfo->CreationTime,
 			&fsinfo->CreationDate);
-		unix_to_dos_time(cifsd_kstat->kstat->atime,
+		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->atime),
 			&fsinfo->LastAccessTime,
 			&fsinfo->LastAccessDate);
-		unix_to_dos_time(cifsd_kstat->kstat->mtime,
+		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->mtime),
 			&fsinfo->LastWriteTime,
 			&fsinfo->LastWriteDate);
 		fsinfo->DataSize = cpu_to_le32(cifsd_kstat->kstat->size);
@@ -5932,10 +5937,10 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fesize->CreationTime,
 			&fesize->CreationDate);
-		unix_to_dos_time(cifsd_kstat->kstat->atime,
+		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->atime),
 			&fesize->LastAccessTime,
 			&fesize->LastAccessDate);
-		unix_to_dos_time(cifsd_kstat->kstat->mtime,
+		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->mtime),
 			&fesize->LastWriteTime,
 			&fesize->LastWriteDate);
 
@@ -6838,6 +6843,7 @@ static int query_file_info(struct cifsd_work *work)
 	__u16 fid;
 	char *ptr;
 	int rc = 0;
+	u64 time;
 
 	req_params = (TRANSACTION2_QFI_REQ_PARAMS *)(REQUEST_BUF(work) +
 			req->ParameterOffset + 4);
@@ -6930,12 +6936,12 @@ static int query_file_info(struct cifsd_work *work)
 		basic_info = (FILE_BASIC_INFO *)(ptr + 4);
 		basic_info->CreationTime =
 			cpu_to_le64(fp->create_time);
-		basic_info->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
-		basic_info->LastWriteTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		basic_info->ChangeTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.atime));
+		basic_info->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.mtime));
+		basic_info->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.ctime));
+		basic_info->ChangeTime = cpu_to_le64(time);
 		basic_info->Attributes = S_ISDIR(st.mode) ?
 			ATTR_DIRECTORY : ATTR_ARCHIVE;
 		basic_info->Pad = 0;
@@ -7068,10 +7074,12 @@ static int query_file_info(struct cifsd_work *work)
 		memset(ptr, 0, 4);
 		ainfo = (FILE_ALL_INFO *)(ptr + 4);
 		ainfo->CreationTime = cpu_to_le64(fp->create_time);
-		ainfo->LastAccessTime =
-			cpu_to_le64(cifs_UnixTimeToNT(st.atime));
-		ainfo->LastWriteTime = cpu_to_le64(cifs_UnixTimeToNT(st.mtime));
-		ainfo->ChangeTime = cpu_to_le64(cifs_UnixTimeToNT(st.ctime));
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.atime));
+		ainfo->LastAccessTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.mtime));
+		ainfo->LastWriteTime = cpu_to_le64(time);
+		time = cifs_UnixTimeToNT(from_kern_timespec(st.ctime));
+		ainfo->ChangeTime = cpu_to_le64(time);
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
 				ATTR_DIRECTORY : ATTR_ARCHIVE);
 		ainfo->Pad1 = 0;
@@ -7253,20 +7261,20 @@ static int smb_set_time_fileinfo(struct cifsd_work *work)
 
 	attrs.ia_valid = 0;
 	if (le64_to_cpu(info->LastAccessTime)) {
-		attrs.ia_atime = smb_NTtimeToUnix(
-					le64_to_cpu(info->LastAccessTime));
+		attrs.ia_atime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->LastAccessTime)));
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
 	if (le64_to_cpu(info->ChangeTime)) {
-		attrs.ia_ctime = smb_NTtimeToUnix(
-					le64_to_cpu(info->ChangeTime));
+		attrs.ia_ctime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->ChangeTime)));
 		attrs.ia_valid |= ATTR_CTIME;
 	}
 
 	if (le64_to_cpu(info->LastWriteTime)) {
-		attrs.ia_mtime = smb_NTtimeToUnix(
-					le64_to_cpu(info->LastWriteTime));
+		attrs.ia_mtime = to_kern_timespec(smb_NTtimeToUnix(
+					le64_to_cpu(info->LastWriteTime)));
 		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 	}
 	/* TODO: check dos mode and acl bits if req->Attributes nonzero */
@@ -7502,18 +7510,19 @@ static int create_dir(struct cifsd_work *work)
 		rsp->hdr.Status.CifsError = NT_STATUS_OK;
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-		__u64 create_time;
+		__u64 ctime;
 		struct kstat stat;
 		struct path path;
 
 		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
 			generic_fillattr(path.dentry->d_inode, &stat);
-			create_time = cifs_UnixTimeToNT(stat.ctime);
+			ctime = cifs_UnixTimeToNT(from_kern_timespec(
+							stat.ctime));
 
 			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
-						 (void *)&create_time,
+						 (void *)&ctime,
 						 CREATIOM_TIME_LEN,
 						 0);
 			if (err)
@@ -7778,18 +7787,19 @@ int smb_mkdir(struct cifsd_work *work)
 	}
 
 	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
-		__u64 create_time;
+		__u64 ctime;
 		struct kstat stat;
 		struct path path;
 
 		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
 			generic_fillattr(path.dentry->d_inode, &stat);
-			create_time = cifs_UnixTimeToNT(stat.ctime);
+			ctime = cifs_UnixTimeToNT(from_kern_timespec(
+								stat.ctime));
 
 			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
-						 (void *)&create_time,
+						 (void *)&ctime,
 						 CREATIOM_TIME_LEN,
 						 0);
 			if (err)
@@ -8401,8 +8411,8 @@ int smb_open_andx(struct cifsd_work *work)
 	if (oplock_rsp)
 		file_info |= SMBOPEN_LOCK_GRANTED;
 
+	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	if (file_present) {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 			char *create_time = NULL;
 
@@ -8415,7 +8425,6 @@ int smb_open_andx(struct cifsd_work *work)
 			err = 0;
 		}
 	} else {
-		fp->create_time = cifs_UnixTimeToNT(stat.ctime);
 		if (get_attr_store_dos(&work->tcon->share->config.attr)) {
 			err = cifsd_vfs_setxattr(path.dentry,
 						 XATTR_NAME_CREATION_TIME,
