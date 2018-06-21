@@ -818,6 +818,8 @@ struct derivation {
 
 struct derivation_triplet {
 	struct derivation signing;
+	struct derivation encryption;
+	struct derivation decryption;
 };
 
 static int generate_key(struct cifsd_sess *sess, struct kvec label,
@@ -922,6 +924,18 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 	if (rc)
 		return rc;
 
+	rc = generate_key(sess, ptriplet->encryption.label,
+			ptriplet->encryption.context, sess->smb3encryptionkey,
+			SMB3_SIGN_KEY_SIZE);
+	if (rc)
+		return rc;
+
+	rc = generate_key(sess, ptriplet->decryption.label,
+			ptriplet->decryption.context,
+			sess->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
+	if (rc)
+		return rc;
+
 	cifsd_debug("%s: dumping generated AES session keys\n", __func__);
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
@@ -933,6 +947,10 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("Signing Key   %*ph\n",
 			SMB3_SIGN_KEY_SIZE, chann->smb3signingkey);
+	cifsd_debug("ServerIn Key  %*ph\n",
+			SMB3_SIGN_KEY_SIZE, sess->smb3encryptionkey);
+	cifsd_debug("ServerOut Key %*ph\n",
+			SMB3_SIGN_KEY_SIZE, sess->smb3decryptionkey);
 	return rc;
 }
 
@@ -947,6 +965,18 @@ int generate_smb30signingkey(struct cifsd_sess *sess)
 	d->context.iov_base = "SmbSign";
 	d->context.iov_len = 8;
 
+	d = &triplet.encryption;
+	d->label.iov_base = "SMB2AESCCM";
+	d->label.iov_len = 11;
+	d->context.iov_base = "ServerIn ";
+	d->context.iov_len = 10;
+
+	d = &triplet.decryption;
+	d->label.iov_base = "SMB2AESCCM";
+	d->label.iov_len = 11;
+	d->context.iov_base = "ServerOut";
+	d->context.iov_len = 10;
+
 	return generate_smb3signingkey(sess, &triplet);
 }
 
@@ -958,6 +988,18 @@ int generate_smb311signingkey(struct cifsd_sess *sess)
 	d = &triplet.signing;
 	d->label.iov_base = "SMBSigningKey";
 	d->label.iov_len = 14;
+	d->context.iov_base = sess->Preauth_HashValue;
+	d->context.iov_len = 64;
+
+	d = &triplet.encryption;
+	d->label.iov_base = "SMBC2SCipherKey";
+	d->label.iov_len = 16;
+	d->context.iov_base = sess->Preauth_HashValue;
+	d->context.iov_len = 64;
+
+	d = &triplet.decryption;
+	d->label.iov_base = "SMBS2CCipherKey";
+	d->label.iov_len = 16;
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 

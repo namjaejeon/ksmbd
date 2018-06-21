@@ -103,6 +103,8 @@ struct cifsd_sess {
 	uint64_t sess_id;
 	struct ntlmssp_auth ntlmssp;
 	char sess_key[CIFS_KEY_SIZE];
+	__u8 smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
+	__u8 smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 	bool sign;
 	struct list_head cifsd_chann_list;
 	bool is_anonymous;
