@@ -117,7 +117,7 @@ static inline int check_session_id(struct cifsd_tcp_conn *conn, uint64_t id)
 	return 0;
 }
 
-static inline struct channel *lookup_chann_list(struct cifsd_sess *sess)
+struct channel *lookup_chann_list(struct cifsd_sess *sess)
 {
 	struct channel *chann;
 	struct list_head *t;
@@ -1443,10 +1443,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || global_signing) ||
 				(conn->dialect >= SMB30_PROT_ID))) {
-				if (conn->ops->compute_signingkey) {
-					rc = conn->ops->compute_signingkey(
-						sess, chann->smb3signingkey,
-						SMB3_SIGN_KEY_SIZE);
+				if (conn->ops->generate_signingkey) {
+					rc = conn->ops->generate_signingkey(
+						sess);
 					if (rc) {
 						cifsd_debug("SMB3 session key generation failed\n");
 						rsp->hdr.Status =

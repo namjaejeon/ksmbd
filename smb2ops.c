@@ -144,7 +144,7 @@ struct smb_version_ops smb2_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb2_check_sign_req,
 	.set_sign_rsp		=	smb2_set_sign_rsp
@@ -157,11 +157,25 @@ struct smb_version_ops smb3_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.compute_signingkey	=	compute_smb3xsigningkey
+	.generate_signingkey	=	generate_smb30signingkey
+};
+
+struct smb_version_ops smb3_11_server_ops = {
+	.get_cmd_val		=	get_smb2_cmd_val,
+	.init_rsp_hdr		=	init_smb2_rsp_hdr,
+	.set_rsp_status		=	set_smb2_rsp_status,
+	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
+	.set_rsp_credits        =       smb2_set_rsp_credits,
+	.check_user_session	=	smb2_check_user_session,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
+	.is_sign_req		=	smb2_is_sign_req,
+	.check_sign_req		=	smb3_check_sign_req,
+	.set_sign_rsp		=	smb3_set_sign_rsp,
+	.generate_signingkey	=	generate_smb311signingkey
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
@@ -277,7 +291,7 @@ int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 
 	conn->vals = &smb311_server_values;
-	conn->ops = &smb3_0_server_ops;
+	conn->ops = &smb3_11_server_ops;
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;

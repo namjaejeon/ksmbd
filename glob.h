@@ -399,8 +399,7 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*compute_signingkey)(struct cifsd_sess *sess,  __u8 *key,
-		unsigned int key_size);
+	int (*generate_signingkey)(struct cifsd_sess *sess);
 };
 
 struct smb_version_cmds {

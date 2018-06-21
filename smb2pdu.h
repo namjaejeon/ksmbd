@@ -1363,6 +1363,7 @@ extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
 extern void smb2_send_interim_resp(struct cifsd_work *work);
+extern struct channel *lookup_chann_list(struct cifsd_sess *sess);
 
 /* smb2 command handlers */
 extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,

@@ -811,19 +811,22 @@ out:
 	return rc;
 }
 
+struct derivation {
+	struct kvec label;
+	struct kvec context;
+};
 
-/**
- * compute_smb3xsigningkey() - function to generate session key
- * @sess:	session of connection
- *
- */
-int compute_smb3xsigningkey(struct cifsd_sess *sess, __u8 *key,
-	unsigned int key_size)
+struct derivation_triplet {
+	struct derivation signing;
+};
+
+static int generate_key(struct cifsd_sess *sess, struct kvec label,
+	struct kvec context, __u8 *key, unsigned int key_size)
 {
 	unsigned char zero = 0x0;
-	int rc;
 	__u8 i[4] = {0, 0, 0, 1};
 	__u8 L[4] = {0, 0, 0, 128};
+	int rc = 0;
 	unsigned char prfhash[SMB2_HMACSHA256_SIZE];
 	unsigned char *hashptr = prfhash;
 
@@ -862,14 +865,8 @@ int compute_smb3xsigningkey(struct cifsd_sess *sess, __u8 *key,
 		goto smb3signkey_ret;
 	}
 
-	if (sess->conn->dialect == SMB311_PROT_ID)
-		rc = crypto_shash_update(&sess->conn->
-				secmech.sdeschmacsha256->shash,
-				"SMBSigningKey", 14);
-	else
-		rc = crypto_shash_update(&sess->conn->
-				secmech.sdeschmacsha256->shash,
-				"SMB2AESCMAC", 12);
+	rc = crypto_shash_update(&sess->conn->secmech.sdeschmacsha256->shash,
+			label.iov_base, label.iov_len);
 	if (rc) {
 		cifsd_debug("could not update with label\n");
 		goto smb3signkey_ret;
@@ -882,13 +879,8 @@ int compute_smb3xsigningkey(struct cifsd_sess *sess, __u8 *key,
 		goto smb3signkey_ret;
 	}
 
-	if (sess->conn->dialect == SMB311_PROT_ID)
-		rc = crypto_shash_update(&sess->conn->
-			secmech.sdeschmacsha256->shash, sess->Preauth_HashValue,
-			64);
-	else
-		rc = crypto_shash_update(&sess->conn->
-			secmech.sdeschmacsha256->shash, "SmbSign", 8);
+	rc = crypto_shash_update(&sess->conn->secmech.sdeschmacsha256->shash,
+			context.iov_base, context.iov_len);
 	if (rc) {
 		cifsd_debug("could not update with context\n");
 		goto smb3signkey_ret;
@@ -912,6 +904,64 @@ int compute_smb3xsigningkey(struct cifsd_sess *sess, __u8 *key,
 
 smb3signkey_ret:
 	return rc;
+}
+
+static int generate_smb3signingkey(struct cifsd_sess *sess,
+	const struct derivation_triplet *ptriplet)
+{
+	int rc;
+	struct channel *chann;
+
+	chann = lookup_chann_list(sess);
+	if (!chann)
+		return 0;
+
+	rc = generate_key(sess, ptriplet->signing.label,
+			ptriplet->signing.context, chann->smb3signingkey,
+			SMB3_SIGN_KEY_SIZE);
+	if (rc)
+		return rc;
+
+	cifsd_debug("%s: dumping generated AES session keys\n", __func__);
+	/*
+	 * The session id is opaque in terms of endianness, so we can't
+	 * print it as a long long. we dump it as we got it on the wire
+	 */
+	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->sess_id),
+			&sess->sess_id);
+	cifsd_debug("Session Key   %*ph\n",
+			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
+	cifsd_debug("Signing Key   %*ph\n",
+			SMB3_SIGN_KEY_SIZE, chann->smb3signingkey);
+	return rc;
+}
+
+int generate_smb30signingkey(struct cifsd_sess *sess)
+{
+	struct derivation_triplet triplet;
+	struct derivation *d;
+
+	d = &triplet.signing;
+	d->label.iov_base = "SMB2AESCMAC";
+	d->label.iov_len = 12;
+	d->context.iov_base = "SmbSign";
+	d->context.iov_len = 8;
+
+	return generate_smb3signingkey(sess, &triplet);
+}
+
+int generate_smb311signingkey(struct cifsd_sess *sess)
+{
+	struct derivation_triplet triplet;
+	struct derivation *d;
+
+	d = &triplet.signing;
+	d->label.iov_base = "SMBSigningKey";
+	d->label.iov_len = 14;
+	d->context.iov_base = sess->Preauth_HashValue;
+	d->context.iov_len = 64;
+
+	return generate_smb3signingkey(sess, &triplet);
 }
 
 int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
