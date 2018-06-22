@@ -257,7 +257,7 @@ void init_smb3_0_server(struct cifsd_tcp_conn *conn)
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
-	if (conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
@@ -282,7 +282,7 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
-	if (conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 

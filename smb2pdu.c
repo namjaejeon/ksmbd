@@ -36,6 +36,7 @@
 #include "fh.h"
 
 bool multi_channel_enable;
+bool encryption_enable;
 
 struct fs_type_info fs_type[] = {
 	{ "ADFS",	0xadf5},
@@ -914,6 +915,10 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	int cph_cnt = pneg_ctxt->CipherCount;
 
 	conn->preauth_info->CipherId = 0;
+
+	if (!encryption_enable)
+		return;
+
 	/* Support only AES CCM cipher now */
 	for (i = 0; i < cph_cnt; i++) {
 		if (pneg_ctxt->Ciphers[i] ==

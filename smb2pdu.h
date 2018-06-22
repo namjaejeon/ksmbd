@@ -137,6 +137,8 @@ struct smb2_pdu {
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
 } __packed;
 
+extern bool encryption_enable;
+
 /*
  *	SMB2 flag definitions
  */
