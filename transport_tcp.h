@@ -154,6 +154,7 @@ int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
 struct cifsd_work;
 int cifsd_tcp_write(struct cifsd_work *work);
 
+void cifsd_tcp_enqueue_request(struct cifsd_work *work);
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
 void cifsd_tcp_destroy(void);

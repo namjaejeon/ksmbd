@@ -690,6 +690,32 @@ void cifsd_tcp_destroy(void)
 	mutex_unlock(&init_lock);
 }
 
+void cifsd_tcp_enqueue_request(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct list_head *requests_queue = NULL;
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
+
+	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
+		unsigned int command = conn->ops->get_cmd_val(work);
+
+		if (command != SMB2_CANCEL) {
+			requests_queue = &conn->requests;
+			work->type = SYNC;
+		}
+	} else {
+		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
+			requests_queue = &conn->requests;
+	}
+
+	if (requests_queue) {
+		spin_lock(&conn->request_lock);
+		list_add_tail(&work->request_entry, requests_queue);
+		work->on_request_list = 1;
+		spin_unlock(&conn->request_lock);
+	}
+}
+
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 {
 	default_tcp_conn_ops.init_fn = ops->init_fn;

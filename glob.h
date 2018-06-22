@@ -504,7 +504,6 @@ extern void cifsd_export_exit(void);
 
 /* cifsd misc functions */
 extern int check_smb_message(char *buf);
-extern void cifsd_tcp_queue_request(struct cifsd_work *work);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
