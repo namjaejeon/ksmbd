@@ -489,9 +489,9 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	struct kvec iov[2];
 
 	spin_lock(&conn->request_lock);
-	if (work->added_in_request_list && !work->multiRsp) {
+	if (work->on_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
-		work->added_in_request_list = 0;
+		work->on_request_list = 0;
 		if (work->async) {
 			remove_async_id(work->async->async_id);
 			kfree(work->async);
@@ -688,6 +688,32 @@ void cifsd_tcp_destroy(void)
 	tcp_stop_kthread();
 	tcp_stop_sessions();
 	mutex_unlock(&init_lock);
+}
+
+void cifsd_tcp_enqueue_request(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct list_head *requests_queue = NULL;
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
+
+	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
+		unsigned int command = conn->ops->get_cmd_val(work);
+
+		if (command != SMB2_CANCEL) {
+			requests_queue = &conn->requests;
+			work->type = SYNC;
+		}
+	} else {
+		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
+			requests_queue = &conn->requests;
+	}
+
+	if (requests_queue) {
+		spin_lock(&conn->request_lock);
+		list_add_tail(&work->request_entry, requests_queue);
+		work->on_request_list = 1;
+		spin_unlock(&conn->request_lock);
+	}
 }
 
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)

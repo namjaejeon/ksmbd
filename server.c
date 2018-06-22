@@ -221,9 +221,9 @@ again:
 
 	if (work->send_no_response) {
 		spin_lock(&conn->request_lock);
-		if (work->added_in_request_list) {
+		if (work->on_request_list) {
 			list_del_init(&work->request_entry);
-			work->added_in_request_list = 0;
+			work->on_request_list = 0;
 		}
 		spin_unlock(&conn->request_lock);
 		goto nosend;
@@ -312,7 +312,7 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
-	add_request_to_queue(work);
+	cifsd_tcp_enqueue_request(work);
 
 	/* update activity on connection */
 	conn->last_active = jiffies;
