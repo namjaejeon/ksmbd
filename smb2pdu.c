@@ -1478,6 +1478,13 @@ int smb2_sess_setup(struct cifsd_work *work)
 					goto out_err;
 				}
 				sess->enc = true;
+				rsp->SessionFlags =
+					SMB2_SESSION_FLAG_ENCRYPT_DATA;
+				/*
+				 * signing is disable if encryption is enable
+				 * on this session
+				 */
+				sess->sign = false;
 			}
 
 		}
