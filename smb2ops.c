@@ -161,7 +161,8 @@ struct smb_version_ops smb3_0_server_ops = {
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.generate_signingkey	=	generate_smb30signingkey
+	.generate_signingkey	=	generate_smb30signingkey,
+	.generate_encryptionkey	=	generate_smb30encryptionkey
 };
 
 struct smb_version_ops smb3_11_server_ops = {
@@ -175,7 +176,8 @@ struct smb_version_ops smb3_11_server_ops = {
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.generate_signingkey	=	generate_smb311signingkey
+	.generate_signingkey	=	generate_smb311signingkey,
+	.generate_encryptionkey	=	generate_smb311encryptionkey
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {

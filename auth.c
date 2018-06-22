@@ -924,19 +924,7 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 	if (rc)
 		return rc;
 
-	rc = generate_key(sess, ptriplet->encryption.label,
-			ptriplet->encryption.context, sess->smb3encryptionkey,
-			SMB3_SIGN_KEY_SIZE);
-	if (rc)
-		return rc;
-
-	rc = generate_key(sess, ptriplet->decryption.label,
-			ptriplet->decryption.context,
-			sess->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
-	if (rc)
-		return rc;
-
-	cifsd_debug("%s: dumping generated AES session keys\n", __func__);
+	cifsd_debug("%s: dumping generated AES signing keys\n", __func__);
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
@@ -947,10 +935,6 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("Signing Key   %*ph\n",
 			SMB3_SIGN_KEY_SIZE, chann->smb3signingkey);
-	cifsd_debug("ServerIn Key  %*ph\n",
-			SMB3_SIGN_KEY_SIZE, sess->smb3encryptionkey);
-	cifsd_debug("ServerOut Key %*ph\n",
-			SMB3_SIGN_KEY_SIZE, sess->smb3decryptionkey);
 	return rc;
 }
 
@@ -964,18 +948,6 @@ int generate_smb30signingkey(struct cifsd_sess *sess)
 	d->label.iov_len = 12;
 	d->context.iov_base = "SmbSign";
 	d->context.iov_len = 8;
-
-	d = &triplet.encryption;
-	d->label.iov_base = "SMB2AESCCM";
-	d->label.iov_len = 11;
-	d->context.iov_base = "ServerIn ";
-	d->context.iov_len = 10;
-
-	d = &triplet.decryption;
-	d->label.iov_base = "SMB2AESCCM";
-	d->label.iov_len = 11;
-	d->context.iov_base = "ServerOut";
-	d->context.iov_len = 10;
 
 	return generate_smb3signingkey(sess, &triplet);
 }
@@ -991,6 +963,67 @@ int generate_smb311signingkey(struct cifsd_sess *sess)
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 
+	return generate_smb3signingkey(sess, &triplet);
+}
+
+static int generate_smb3encryptionkey(struct cifsd_sess *sess,
+	const struct derivation_triplet *ptriplet)
+{
+	int rc;
+
+	rc = generate_key(sess, ptriplet->encryption.label,
+			ptriplet->encryption.context, sess->smb3encryptionkey,
+			SMB3_SIGN_KEY_SIZE);
+	if (rc)
+		return rc;
+
+	rc = generate_key(sess, ptriplet->decryption.label,
+			ptriplet->decryption.context,
+			sess->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
+	if (rc)
+		return rc;
+
+	cifsd_debug("%s: dumping generated AES encryption keys\n", __func__);
+	/*
+	 * The session id is opaque in terms of endianness, so we can't
+	 * print it as a long long. we dump it as we got it on the wire
+	 */
+	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->sess_id),
+			&sess->sess_id);
+	cifsd_debug("Session Key   %*ph\n",
+			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
+	cifsd_debug("ServerIn Key  %*ph\n",
+			SMB3_SIGN_KEY_SIZE, sess->smb3encryptionkey);
+	cifsd_debug("ServerOut Key %*ph\n",
+			SMB3_SIGN_KEY_SIZE, sess->smb3decryptionkey);
+	return rc;
+}
+
+int generate_smb30encryptionkey(struct cifsd_sess *sess)
+{
+	struct derivation_triplet triplet;
+	struct derivation *d;
+
+	d = &triplet.encryption;
+	d->label.iov_base = "SMB2AESCCM";
+	d->label.iov_len = 11;
+	d->context.iov_base = "ServerIn ";
+	d->context.iov_len = 10;
+
+	d = &triplet.decryption;
+	d->label.iov_base = "SMB2AESCCM";
+	d->label.iov_len = 11;
+	d->context.iov_base = "ServerOut";
+	d->context.iov_len = 10;
+
+	return generate_smb3encryptionkey(sess, &triplet);
+}
+
+int generate_smb311encryptionkey(struct cifsd_sess *sess)
+{
+	struct derivation_triplet triplet;
+	struct derivation *d;
+
 	d = &triplet.encryption;
 	d->label.iov_base = "SMBC2SCipherKey";
 	d->label.iov_len = 16;
@@ -1003,7 +1036,7 @@ int generate_smb311signingkey(struct cifsd_sess *sess)
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 
-	return generate_smb3signingkey(sess, &triplet);
+	return generate_smb3encryptionkey(sess, &triplet);
 }
 
 int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,

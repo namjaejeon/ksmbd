@@ -233,6 +233,8 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
 int generate_smb30signingkey(struct cifsd_sess *sess);
 int generate_smb311signingkey(struct cifsd_sess *sess);
+int generate_smb30encryptionkey(struct cifsd_sess *sess);
+int generate_smb311encryptionkey(struct cifsd_sess *sess);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);

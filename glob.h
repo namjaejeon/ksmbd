@@ -400,6 +400,7 @@ struct smb_version_ops {
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
 	int (*generate_signingkey)(struct cifsd_sess *sess);
+	int (*generate_encryptionkey)(struct cifsd_sess *sess);
 };
 
 struct smb_version_cmds {
