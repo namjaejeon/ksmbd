@@ -1454,7 +1454,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 					rc = conn->ops->generate_signingkey(
 						sess);
 					if (rc) {
-						cifsd_debug("SMB3 session key generation failed\n");
+						cifsd_debug("SMB3 signing key generation failed\n");
 						rsp->hdr.Status =
 							NT_STATUS_LOGON_FAILURE;
 						goto out_err;
@@ -1462,6 +1462,19 @@ int smb2_sess_setup(struct cifsd_work *work)
 				}
 				sess->sign = true;
 			}
+
+			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
+					conn->ops->generate_encryptionkey) {
+				rc = conn->ops->generate_encryptionkey(sess);
+				if (rc) {
+					cifsd_debug("SMB3 encryption key generation failed\n");
+					rsp->hdr.Status =
+						NT_STATUS_LOGON_FAILURE;
+					goto out_err;
+				}
+				sess->enc = true;
+			}
+
 		}
 
 		if (conn->dialect > SMB20_PROT_ID)
