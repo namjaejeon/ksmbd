@@ -94,6 +94,7 @@
 #define MAX_SMB2_HDR_SIZE 0x78 /* 4 len + 64 hdr + (2*24 wct) + 2 bct + 2 pad */
 
 #define SMB2_PROTO_NUMBER __constant_cpu_to_le32(0x424d53fe) /* 'B''M''S' */
+#define SMB2_TRANSFORM_PROTO_NUM cpu_to_le32(0x424d53fd)
 
 #define STATUS_NO_MORE_FILES __constant_cpu_to_le32(0x80000006)
 #define STATUS_OBJECT_NAME_NOT_FOUND __constant_cpu_to_le32(0xC0000034)
@@ -138,6 +139,22 @@ struct smb2_pdu {
 } __packed;
 
 extern bool encryption_enable;
+
+#define SMB3_AES128CMM_NONCE 11
+#define SMB3_AES128GCM_NONCE 12
+
+struct smb2_transform_hdr {
+	__be32 smb2_buf_length; /* big endian on wire */
+	/* length is only two or three bytes - with
+	   one or two byte type preceding it that MBZ */
+	__le32 ProtocolId;      /* 0xFD 'S' 'M' 'B' */
+	__u8   Signature[16];
+	__u8   Nonce[16];
+	__le32 OriginalMessageSize;
+	__u16  Reserved1;
+	__le16 Flags; /* EncryptionAlgorithm */
+	__u64  SessionId;
+} __packed;
 
 /*
  *	SMB2 flag definitions
