@@ -1005,16 +1005,28 @@ int smb2_negotiate(struct cifsd_work *work)
 	conn->dialect = negotiate_dialect(REQUEST_BUF(work));
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 
+	conn->cli_cap = req->Capabilities;
 	switch (conn->dialect) {
 	case SMB311_PROT_ID:
-		rc = init_smb3_11_server(conn);
-		if (rc < 0)
-			goto err_out;
+		conn->preauth_info =
+			kzalloc(sizeof(struct preauth_integrity_info),
+			GFP_KERNEL);
+		if (!conn->preauth_info) {
+			rc = -ENOMEM;
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		}
+
 		err = deassemble_neg_contexts(conn, req);
 		if (err != NT_STATUS_OK) {
 			cifsd_err("deassemble_neg_contexts error(0x%x)\n", err);
 			rsp->hdr.Status = err;
 			rc = -EINVAL;
+			goto err_out;
+		}
+
+		rc = init_smb3_11_server(conn);
+		if (rc < 0) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 			goto err_out;
 		}
 
@@ -1051,7 +1063,6 @@ int smb2_negotiate(struct cifsd_work *work)
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
 	limit = SMBMaxBufSize;
 
-	conn->cli_cap = req->Capabilities;
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);

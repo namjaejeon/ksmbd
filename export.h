@@ -106,6 +106,7 @@ struct cifsd_sess {
 	__u8 smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8 smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 	bool sign;
+	bool enc;
 	struct list_head cifsd_chann_list;
 	bool is_anonymous;
 	bool is_guest;
