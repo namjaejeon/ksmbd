@@ -367,8 +367,8 @@ struct cifsd_work {
 	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
-	/* Added in conn->requests list */
-	bool				added_in_request_list:1;
+	/* On the conn->requests list */
+	bool				on_request_list:1;
 
 	/* smb command code */
 	__le16				command;

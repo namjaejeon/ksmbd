@@ -221,9 +221,9 @@ again:
 
 	if (work->send_no_response) {
 		spin_lock(&conn->request_lock);
-		if (work->added_in_request_list) {
+		if (work->on_request_list) {
 			list_del_init(&work->request_entry);
-			work->added_in_request_list = 0;
+			work->on_request_list = 0;
 		}
 		spin_unlock(&conn->request_lock);
 		goto nosend;

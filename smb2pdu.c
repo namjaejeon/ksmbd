@@ -799,7 +799,7 @@ void smb2_send_interim_resp(struct cifsd_work *work)
 	list_del_init(&work->request_entry);
 	list_add_tail(&work->request_entry,
 		&conn->async_requests);
-	work->added_in_request_list = 1;
+	work->on_request_list = 1;
 	spin_unlock(&conn->request_lock);
 
 	smb2_set_err_rsp(work);

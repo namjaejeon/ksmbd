@@ -489,9 +489,9 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	struct kvec iov[2];
 
 	spin_lock(&conn->request_lock);
-	if (work->added_in_request_list && !work->multiRsp) {
+	if (work->on_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
-		work->added_in_request_list = 0;
+		work->on_request_list = 0;
 		if (work->async) {
 			remove_async_id(work->async->async_id);
 			kfree(work->async);

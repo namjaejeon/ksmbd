@@ -167,7 +167,7 @@ void add_request_to_queue(struct cifsd_work *work)
 	if (requests_queue) {
 		spin_lock(&conn->request_lock);
 		list_add_tail(&work->request_entry, requests_queue);
-		work->added_in_request_list = 1;
+		work->on_request_list = 1;
 		spin_unlock(&conn->request_lock);
 	}
 }
