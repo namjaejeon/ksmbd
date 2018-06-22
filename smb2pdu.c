@@ -914,13 +914,9 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	int cph_cnt = pneg_ctxt->CipherCount;
 
 	conn->preauth_info->CipherId = 0;
+	/* Support only AES CCM cipher now */
 	for (i = 0; i < cph_cnt; i++) {
-		if (pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_GCM) {
-			cifsd_debug("Cipher ID = SMB2_ENCRYPTION_AES128_GCM\n");
-			conn->preauth_info->CipherId =
-				SMB2_ENCRYPTION_AES128_GCM;
-			break;
-		} else if (pneg_ctxt->Ciphers[i] ==
+		if (pneg_ctxt->Ciphers[i] ==
 			SMB2_ENCRYPTION_AES128_CCM) {
 			cifsd_debug("Cipher ID = SMB2_ENCRYPTION_AES128_CCM\n");
 			conn->preauth_info->CipherId =
