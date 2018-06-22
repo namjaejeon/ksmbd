@@ -140,13 +140,13 @@ int check_smb_message(char *buf)
 }
 
 /**
- * add_request_to_queue() - check a request for addition to pending smb work
+ * cifsd_tcp_queue_request() - check a request for addition to pending smb work
  *				queue
  * @cifsd_work:	smb request work
  *
  * Return:      true if not add to queue, otherwise false
  */
-void add_request_to_queue(struct cifsd_work *work)
+void cifsd_tcp_queue_request(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;

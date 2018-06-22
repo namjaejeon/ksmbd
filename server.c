@@ -312,7 +312,7 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
-	add_request_to_queue(work);
+	cifsd_tcp_queue_request(work);
 
 	/* update activity on connection */
 	conn->last_active = jiffies;
