@@ -4149,7 +4149,9 @@ static int smb_readlink(struct cifsd_work *work, struct path *path)
 
 	if (is_smbreq_unicode(&req->hdr)) {
 		name_len = smb_strtoUTF16((__le16 *)ptr,
-				buf, PATH_MAX, work->conn->local_nls);
+					  buf,
+					  CIFS_MF_SYMLINK_LINK_MAXLEN,
+					  work->conn->local_nls);
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
