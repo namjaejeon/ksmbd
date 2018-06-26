@@ -1056,6 +1056,7 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 	return offset;
 }
 
+#ifdef CONFIG_CIFSD_ACL
 int init_cifsd_idmap(void)
 {
 	struct cred *cred;
@@ -1121,4 +1122,13 @@ void exit_cifsd_idmap(void)
 	put_cred(root_cred);
 	cifsd_err("Unregistered %s key type\n", cifsd_idmap_key_type.name);
 }
+#else
+int init_cifsd_idmap(void)
+{
+	return 0;
+}
 
+void exit_cifsd_idmap(void)
+{
+}
+#endif

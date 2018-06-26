@@ -28,10 +28,14 @@
 #include "netlink.h"
 #include "transport_tcp.h"
 
+#include "mgmt/user_session.h"
+
 #define NETLINK_CIFSD			31
 #define NETLINK_RRQ_RECV_TIMEOUT	10000
 #define cifsd_ptr(_handle)		((void *)(unsigned long)_handle)
 #define cifsd_sess_handle(_ptr)	((__u64)(unsigned long)_ptr)
+
+/* @FIXME: remove this code */
 
 struct sock *cifsd_nlsk;
 static DEFINE_MUTEX(nlsk_mutex);
@@ -40,7 +44,7 @@ static int pid;
 static int cifsd_early_pid;
 static int cifsadmin_pid;
 
-static int cifsd_nlsk_poll(struct cifsd_sess *sess)
+static int cifsd_nlsk_poll(struct cifsd_session *sess)
 {
 	int rc;
 
@@ -57,7 +61,7 @@ static int cifsd_nlsk_poll(struct cifsd_sess *sess)
 	return 0;
 }
 
-int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
+int cifsd_sendmsg(struct cifsd_session *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen)
 {
@@ -393,7 +397,7 @@ static int cifsd_kernel_caseless_search(struct nlmsghdr *nlh)
 
 static int cifsd_common_pipe_rsp(struct nlmsghdr *nlh)
 {
-	struct cifsd_sess *sess;
+	struct cifsd_session *sess;
 	struct cifsd_uevent *ev;
 	struct cifsd_pipe *pipe_desc;
 

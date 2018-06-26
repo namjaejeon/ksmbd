@@ -29,6 +29,7 @@
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "vfs.h"
+#include "mgmt/user_session.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -251,6 +252,7 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
  */
 int init_fidtable(struct fidtable_desc *ftab_desc)
 {
+#ifdef CONFIG_CIFS_SMB2_SERVER
 	ftab_desc->ftab = alloc_fidtable(CIFSD_NR_OPEN_DEFAULT);
 	if (!ftab_desc->ftab) {
 		cifsd_err("Failed to allocate fid table\n");
@@ -259,6 +261,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
 	ftab_desc->ftab->start_pos = 1;
 	spin_lock_init(&ftab_desc->fidtable_lock);
+#endif
 	return 0;
 }
 
@@ -276,8 +279,8 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess,
-	struct cifsd_tcon *tcon, unsigned int id, struct file *filp)
+insert_id_in_fidtable(struct cifsd_session *sess,
+	struct cifsd_tree_connect *tcon, unsigned int id, struct file *filp)
 {
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
@@ -319,7 +322,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess,
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
+get_id_from_fidtable(struct cifsd_session *sess, uint64_t id)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -356,8 +359,8 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid)
 {
-	struct cifsd_sess *sess = work->sess;
-	struct cifsd_tcon *tcon = work->tcon;
+	struct cifsd_session *sess = work->sess;
+	struct cifsd_tree_connect *tcon = work->tcon;
 	struct cifsd_file *fp;
 	int64_t vid, pid;
 
@@ -391,7 +394,7 @@ struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	return fp;
 }
 
-struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
+struct cifsd_file *find_fp_using_filename(struct cifsd_session *sess,
 	char *filename)
 {
 	struct cifsd_file *file = NULL;
@@ -448,7 +451,7 @@ out:
  *
  * delete a fid from fid table and free associated cifsd file pointer
  */
-void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
+void delete_id_from_fidtable(struct cifsd_session *sess, unsigned int id)
 {
 	struct fidtable *ftab;
 	struct cifsd_file *fp;
@@ -507,7 +510,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 
 static int close_fp(struct cifsd_file *fp)
 {
-	struct cifsd_sess *sess = fp->sess;
+	struct cifsd_session *sess = fp->sess;
 	struct cifsd_inode *ci;
 	struct file *filp;
 	struct dentry *dir, *dentry;
@@ -605,7 +608,7 @@ static int close_fp(struct cifsd_file *fp)
  *
  * Return:      0 on success, otherwise error number
  */
-int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
+int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifsd_file *fp;
 
@@ -639,7 +642,8 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void close_opens_from_fibtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon)
+void close_opens_from_fibtable(struct cifsd_session *sess,
+			       struct cifsd_tree_connect *tcon)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -690,7 +694,7 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void destroy_fidtable(struct cifsd_sess *sess)
+void destroy_fidtable(struct cifsd_session *sess)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -737,7 +741,8 @@ void destroy_fidtable(struct cifsd_sess *sess)
  *
  * Return:      persistent_id on success, otherwise error number
  */
-int cifsd_insert_in_global_table(struct cifsd_sess *sess, struct cifsd_file *fp)
+int cifsd_insert_in_global_table(struct cifsd_session *sess,
+				 struct cifsd_file *fp)
 {
 	int persistent_id;
 	struct fidtable *ftab;
@@ -833,8 +838,9 @@ struct cifsd_file *lookup_fp_app_id(char *app_id)
  * @volatile_id:	volatile id
  * @filp:		file pointer
  */
-int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
-	struct cifsd_tcon *tcon)
+int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
+			       struct cifsd_file *fp,
+			       struct cifsd_tree_connect *tcon)
 {
 	struct fidtable *ftab;
 	unsigned int volatile_id;
@@ -934,6 +940,10 @@ void destroy_global_fidtable(void)
 	}
 	free_fidtable(ftab);
 }
+#else
+void destroy_global_fidtable(void)
+{
+}
 #endif
 
 /* End of persistent-ID functions */
@@ -944,7 +954,7 @@ void destroy_global_fidtable(void)
  *
  * Return:	id on success, otherwise error
  */
-int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
+int get_pipe_id(struct cifsd_session *sess, unsigned int pipe_type)
 {
 	int id;
 	struct cifsd_pipe *pipe_desc;
@@ -992,7 +1002,7 @@ int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
  *
  * Return:	0 on success, otherwise error
  */
-int close_pipe_id(struct cifsd_sess *sess, int pipe_type)
+int close_pipe_id(struct cifsd_session *sess, int pipe_type)
 {
 	struct cifsd_pipe *pipe_desc;
 	int rc = 0;
