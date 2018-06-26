@@ -25,7 +25,7 @@
 #include "smb1pdu.h"
 #include "ntlmssp.h"
 
-#include "management/user.h"
+#include "mgmt/user_config.h"
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
@@ -88,35 +88,6 @@ enum {
 	ENABLE,
 	AUTO,
 	MANDATORY
-};
-
-/* cifsd_sess coupled with cifsd_user */
-struct cifsd_sess {
-	struct cifsd_user *user;
-	struct cifsd_tcp_conn *conn;
-	struct list_head cifsd_ses_list;
-	struct list_head cifsd_ses_global_list;
-	struct list_head tcon_list;
-	int tcon_count;
-	int valid;
-	unsigned int sequence_number;
-	uint64_t sess_id;
-	struct ntlmssp_auth ntlmssp;
-	char sess_key[CIFS_KEY_SIZE];
-	__u8 smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
-	__u8 smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	bool sign;
-	bool enc;
-	struct list_head cifsd_chann_list;
-	bool is_anonymous;
-	bool is_guest;
-	struct fidtable_desc fidtable;
-	int state;
-	__u8 *Preauth_HashValue;
-	struct cifsd_pipe *pipe_desc[MAX_PIPE];
-	wait_queue_head_t pipe_q;
-	int ev_state;
 };
 
 enum share_attrs {
@@ -190,7 +161,7 @@ struct cifsd_share {
 /* cifsd_tcon is coupled with cifsd_share */
 struct cifsd_tcon {
 	struct cifsd_share *share;
-	struct cifsd_sess *sess;
+	struct cifsd_session *sess;
 	struct path share_path;
 	struct list_head tcon_list;
 	int writeable;
@@ -217,40 +188,38 @@ extern int get_protocol_idx(char *str);
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
 extern struct cifsd_share *find_matching_share(__u16 tid);
-int process_ntlm(struct cifsd_sess *sess, char *pw_buf);
-int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
+int process_ntlm(struct cifsd_session *sess, char *pw_buf);
+int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name);
 int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct cifsd_sess *sess);
+		int blob_len, struct cifsd_session *sess);
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct cifsd_sess *sess);
+		struct cifsd_session *sess);
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-		int blob_len, struct cifsd_sess *sess);
-int smb1_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
+		int blob_len, struct cifsd_session *sess);
+int smb1_sign_smbpdu(struct cifsd_session *sess, struct kvec *iov, int n_vec,
 		char *sig);
 int smb2_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
 	int n_vec, char *sig);
 int smb3_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
 	int n_vec, char *sig);
-int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
-int generate_smb30signingkey(struct cifsd_sess *sess, bool binding,
+int compute_sess_key(struct cifsd_session *sess, char *hash, char *hmac);
+int generate_smb30signingkey(struct cifsd_session *sess, bool binding,
 	char *hash_value);
-int generate_smb311signingkey(struct cifsd_sess *sess, bool binding,
+int generate_smb311signingkey(struct cifsd_session *sess, bool binding,
 	char *hash_value);
-int generate_smb30encryptionkey(struct cifsd_sess *sess);
-int generate_smb311encryptionkey(struct cifsd_sess *sess);
+int generate_smb30encryptionkey(struct cifsd_session *sess);
+int generate_smb311encryptionkey(struct cifsd_session *sess);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
-		struct cifsd_sess *sess, char *sharename, bool *can_write);
-extern struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
-		struct cifsd_sess *sess);
-extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_sess *sess,
+		struct cifsd_session *sess, char *sharename, bool *can_write);
+extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_session *sess,
 			unsigned int tid);
-struct cifsd_user *get_smb_session_user(struct cifsd_sess *sess);
-struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
+struct cifsd_user *get_smb_session_user(struct cifsd_session *sess);
+struct cifsd_pipe *get_pipe_desc(struct cifsd_session *sess,
 		unsigned int id);
-int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type);
-int close_pipe_id(struct cifsd_sess *sess, int pipe_type);
+int get_pipe_id(struct cifsd_session *sess, unsigned int pipe_type);
+int close_pipe_id(struct cifsd_session *sess, int pipe_type);
 int cifsstat_show(char *buf, char *ip, int flag);
 int cifsadmin_user_query(char *username);
 int cifsadmin_user_del(char *username);

@@ -27,6 +27,9 @@
 #include "smb1pdu.h"
 
 #include "transport_tcp.h"
+#include "mgmt/user_session.h"
+
+/* @FIXME: remove this code */
 
 /* max string size for share and parameters */
 #define SHARE_MAX_NAME_LEN	100
@@ -38,7 +41,7 @@ LIST_HEAD(cifsd_share_list);
 LIST_HEAD(cifsd_session_list);
 
 __u16 tid = 1;
-int cifsd_debug_enable;
+int cifsd_debug_enable = 0;
 int cifsd_caseless_search;
 static inline void free_share(struct cifsd_share *share);
 
@@ -93,7 +96,7 @@ unsigned int get_pipe_type(char *pipename)
  *
  * Return:	matching pipe descriptor from opened pipe id
  */
-struct cifsd_pipe *get_pipe_desc(struct cifsd_sess *sess,
+struct cifsd_pipe *get_pipe_desc(struct cifsd_session *sess,
 		unsigned int id)
 {
 	struct cifsd_pipe *pipe_desc;
@@ -401,7 +404,7 @@ static int validate_host(char *cip, struct cifsd_share *share)
  *
  * Return:      0 if usr is allowed access to share, otherwise error
  */
-static int validate_user(struct cifsd_sess *sess,
+static int validate_user(struct cifsd_session *sess,
 			  struct cifsd_share *share,
 			  bool *can_write)
 {
@@ -447,7 +450,7 @@ static int validate_user(struct cifsd_sess *sess,
 }
 
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
-				    struct cifsd_sess *sess,
+				    struct cifsd_session *sess,
 				    char *sharename,
 				    bool *can_write)
 {
@@ -520,7 +523,7 @@ struct cifsd_user *cifsd_is_user_present(char *name)
  *
  * Return:      matching user for a session on success, otherwise NULL
  */
-struct cifsd_user *get_smb_session_user(struct cifsd_sess *sess)
+struct cifsd_user *get_smb_session_user(struct cifsd_session *sess)
 {
 	/*
 	 * FIXME I don't understand why did we perform user list lookup

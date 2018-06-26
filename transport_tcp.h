@@ -74,14 +74,12 @@ struct cifsd_tcp_conn_ops {
 
 struct cifsd_tcp_conn {
 	struct socket			*sock;
-	unsigned short			family;
 	/* The number of sessions attached with this connection */
 	int				sess_count;
 	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
 	unsigned int			max_cmds;
-	char				*hostname;
 	struct mutex			srv_mutex;
 	int				tcp_status;
 	unsigned int			cli_cap;
@@ -93,6 +91,7 @@ struct cifsd_tcp_conn {
 	unsigned int			total_read;
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
+	/* @FIXME: remove this code */
 	struct list_head		cifsd_sess;
 	struct task_struct		*handler;
 	unsigned long			last_active;
@@ -145,7 +144,11 @@ struct cifsd_tcp_conn {
 
 	/* Preauth Session Table */
 	struct list_head		preauth_sess_table;
+
+	struct sockaddr_storage		peer_addr;
 };
+
+#define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
 void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
 void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn);

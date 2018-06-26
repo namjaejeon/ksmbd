@@ -28,6 +28,8 @@
 #define MAX_CIFS_HDR_SIZE 0x58
 #define MAX_CIFS_SMALL_BUFFER_SIZE 448
 
+/* @FIXME rework this code */
+
 #define CIFS_PROT	0
 #define SMB2_PROT	1
 #define SMB21_PROT	2
