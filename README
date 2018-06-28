@@ -59,6 +59,7 @@ mail address:
    j. Secure negotiate
    k. Signing Update
    l. Preautentication integrity(SMB 3.1.1)
+   m. SMB3 encryption
 
  - Planned
    a. SMB direct(RDMA)
@@ -67,7 +68,6 @@ mail address:
    d. Kerberos
    e. persistent handles
    f. directory lease
-   g. SMB encryption
 
 ================================================================================
 * CIFSD Architecture
