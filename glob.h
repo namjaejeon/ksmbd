@@ -343,8 +343,11 @@ struct cifsd_work {
 	char				*aux_payload_buf;
 	/* Read data count */
 	unsigned int			aux_payload_sz;
-	/* Read response smb header size */
-	unsigned int			aux_payload_hdr_sz;
+	/* response smb header size */
+	unsigned int			resp_hdr_sz;
+
+	/* Transform header buffer */
+	void				*tr_buf;
 
 	struct work_struct		work;
 
@@ -375,6 +378,9 @@ struct cifsd_work {
 
 	struct async_info *async;
 	struct list_head interim_entry;
+
+	/* request is encrypted or not */
+	bool encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
@@ -386,7 +392,10 @@ struct cifsd_work {
 #define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_buf != NULL)
 #define AUX_PAYLOAD(w)		(void *)((w)->aux_payload_buf)
 #define AUX_PAYLOAD_SIZE(w)	((w)->aux_payload_sz)
-#define AUX_PAYLOAD_HDR_SIZE(w)	((w)->aux_payload_hdr_sz)
+#define RESP_HDR_SIZE(w)	((w)->resp_hdr_sz)
+
+#define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
+#define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
 struct smb_version_ops {
 	int (*get_cmd_val)(struct cifsd_work *swork);
@@ -401,6 +410,9 @@ struct smb_version_ops {
 	void (*set_sign_rsp)(struct cifsd_work *work);
 	int (*generate_signingkey)(struct cifsd_sess *sess);
 	int (*generate_encryptionkey)(struct cifsd_sess *sess);
+	int (*is_transform_hdr)(void *buf);
+	int (*decrypt_req)(struct cifsd_work *work);
+	int (*encrypt_resp)(struct cifsd_work *work);
 };
 
 struct smb_version_cmds {

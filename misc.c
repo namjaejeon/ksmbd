@@ -131,6 +131,11 @@ int check_smb_message(char *buf)
 		cifsd_debug("got SMB2 command\n");
 		return check_smb2_hdr((struct smb2_hdr *)buf);
 	}
+
+	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
+		SMB2_TRANSFORM_PROTO_NUM)
+		return 0;
+
 	return check_smb_hdr((struct smb_hdr *)buf);
 }
 

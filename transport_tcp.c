@@ -484,9 +484,10 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
 	struct msghdr smb_msg = {};
-	size_t len;
+	size_t len = 0;
 	int sent;
-	struct kvec iov[2];
+	struct kvec iov[3];
+	int iov_idx = 0;
 
 	spin_lock(&conn->request_lock);
 	if (work->on_request_list && !work->multiRsp) {
@@ -504,21 +505,29 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	if (!HAS_AUX_PAYLOAD(work)) {
-		iov[0].iov_len = get_rfc1002_length(rsp_hdr) + 4;
-		iov[0].iov_base = rsp_hdr;
-		iov[1].iov_len = 0;
-		iov[1].iov_base = NULL;
-		len = iov[0].iov_len;
-	} else {
-		iov[0].iov_len = AUX_PAYLOAD_HDR_SIZE(work);
-		iov[0].iov_base = rsp_hdr;
-		iov[1].iov_len = AUX_PAYLOAD_SIZE(work);
-		iov[1].iov_base = AUX_PAYLOAD(work);
-		len = iov[0].iov_len + iov[1].iov_len;
+	if (HAS_TRANSFORM_BUF(work)) {
+		iov[iov_idx] = (struct kvec) { work->tr_buf,
+				sizeof(struct smb2_transform_hdr) };
+		len += iov[iov_idx++].iov_len;
 	}
 
-	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, 2, len);
+	if (HAS_AUX_PAYLOAD(work)) {
+		iov[iov_idx] = (struct kvec) { rsp_hdr, RESP_HDR_SIZE(work) };
+		len += iov[iov_idx++].iov_len;
+		iov[iov_idx] = (struct kvec) { AUX_PAYLOAD(work),
+			AUX_PAYLOAD_SIZE(work) };
+		len += iov[iov_idx++].iov_len;
+	} else {
+		if (HAS_TRANSFORM_BUF(work))
+			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
+		else
+			iov[iov_idx].iov_len =
+				get_rfc1002_length(rsp_hdr) + 4;
+		iov[iov_idx].iov_base = rsp_hdr;
+		len += iov[iov_idx++].iov_len;
+	}
+
+	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
 		return sent;

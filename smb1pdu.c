@@ -3153,7 +3153,7 @@ int smb_read_andx(struct cifsd_work *work)
 
 	rsp->ByteCount = cpu_to_le16(nbytes);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	work->aux_payload_hdr_sz = get_rfc1002_length(rsp) + 4;
+	work->resp_hdr_sz = get_rfc1002_length(rsp) + 4;
 	work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 

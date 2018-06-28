@@ -1007,13 +1007,13 @@ int generate_smb30encryptionkey(struct cifsd_sess *sess)
 	d = &triplet.encryption;
 	d->label.iov_base = "SMB2AESCCM";
 	d->label.iov_len = 11;
-	d->context.iov_base = "ServerIn ";
+	d->context.iov_base = "ServerOut";
 	d->context.iov_len = 10;
 
 	d = &triplet.decryption;
 	d->label.iov_base = "SMB2AESCCM";
 	d->label.iov_len = 11;
-	d->context.iov_base = "ServerOut";
+	d->context.iov_base = "ServerIn ";
 	d->context.iov_len = 10;
 
 	return generate_smb3encryptionkey(sess, &triplet);
@@ -1025,13 +1025,13 @@ int generate_smb311encryptionkey(struct cifsd_sess *sess)
 	struct derivation *d;
 
 	d = &triplet.encryption;
-	d->label.iov_base = "SMBC2SCipherKey";
+	d->label.iov_base = "SMBS2CCipherKey";
 	d->label.iov_len = 16;
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 
 	d = &triplet.decryption;
-	d->label.iov_base = "SMBS2CCipherKey";
+	d->label.iov_base = "SMBC2SCipherKey";
 	d->label.iov_len = 16;
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;

@@ -140,6 +140,18 @@ static void handle_cifsd_work(struct work_struct *wk)
 		goto nosend;
 	}
 
+	if (conn->ops->is_transform_hdr &&
+		conn->ops->is_transform_hdr(REQUEST_BUF(work))) {
+		rc = conn->ops->decrypt_req(work);
+		if (rc < 0) {
+			conn->ops->set_rsp_status(work,
+					NT_STATUS_DATA_ERROR);
+			goto send;
+		}
+
+		work->encrypted = true;
+	}
+
 	rc = conn->ops->init_rsp_hdr(work);
 	if (rc) {
 		/* either uid or tid is not correct */
@@ -242,7 +254,15 @@ send:
 	if (conn->dialect == SMB311_PROT_ID)
 		smb3_preauth_hash_rsp(work);
 
-	if (work->sess && work->sess->sign &&
+	if (work->sess && work->sess->enc && work->encrypted &&
+		conn->ops->encrypt_resp) {
+		rc = conn->ops->encrypt_resp(work);
+		if (rc < 0) {
+			conn->ops->set_rsp_status(work,
+					NT_STATUS_DATA_ERROR);
+			goto send;
+		}
+	} else if (work->sess && work->sess->sign &&
 		conn->ops->is_sign_req &&
 		conn->ops->is_sign_req(work, command))
 		conn->ops->set_sign_rsp(work);
