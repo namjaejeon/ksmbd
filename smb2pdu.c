@@ -2500,7 +2500,7 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	if (file_present)
+	if (durable_enable && file_present)
 		file_present = close_disconnected_handle(path.dentry->d_inode);
 
 	if (tcon->writeable)
