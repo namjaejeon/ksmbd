@@ -3100,13 +3100,6 @@ int smb_read_andx(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
-		cifsd_err("Not match with request Pid %d\n",
-			le16_to_cpu(req->hdr.Pid));
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
-		return -EINVAL;
-	}
-
 	pos = le32_to_cpu(req->OffsetLow);
 	if (req->hdr.WordCount == 12)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
@@ -3335,13 +3328,6 @@ int smb_write_andx(struct cifsd_work *work)
 			le16_to_cpu(req->Fid));
 		rsp->hdr.Status.CifsError = NT_STATUS_FILE_CLOSED;
 		return -ENOENT;
-	}
-
-	if (fp->pid != le16_to_cpu(req->hdr.Pid)) {
-		cifsd_err("Not match with request Pid %d\n",
-			le16_to_cpu(req->hdr.Pid));
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_HANDLE;
-		return -EINVAL;
 	}
 
 	pos = le32_to_cpu(req->OffsetLow);
