@@ -290,18 +290,6 @@ struct ntlmssp_auth {
 	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
-struct channel {
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	struct cifsd_tcp_conn *conn;
-	struct list_head chann_list;
-};
-
-struct preauth_session {
-	int SessionId;
-	int HashId;
-	int HashValue;
-};
-
 enum asyncEnum {
 	ASYNC_PROG = 1,
 	ASYNC_CANCEL,
@@ -408,7 +396,8 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*generate_signingkey)(struct cifsd_sess *sess);
+	int (*generate_signingkey)(struct cifsd_sess *sess, bool binding,
+		char *hash_value);
 	int (*generate_encryptionkey)(struct cifsd_sess *sess);
 	int (*is_transform_hdr)(void *buf);
 	int (*decrypt_req)(struct cifsd_work *work);

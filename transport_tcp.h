@@ -142,6 +142,9 @@ struct cifsd_tcp_conn {
 	char				*mechToken;
 
 	struct cifsd_tcp_conn_ops	*conn_ops;
+
+	/* Preauth Session Table */
+	struct list_head		preauth_sess_table;
 };
 
 void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);

@@ -715,32 +715,33 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 
 /**
  * smb2_sign_smbpdu() - function to generate packet signing
- * @sess:	session of connection
+ * @conn:	connection
+ * @key:	signing key
  * @iov:        buffer iov array
  * @n_vec:	number of iovecs
  * @sig:	signature value generated for client request packet
  *
  */
-int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
-		char *sig)
+int smb2_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
+	int n_vec, char *sig)
 {
 	int rc;
 	int i;
 
-	rc = crypto_hmacsha256_alloc(sess->conn);
+	rc = crypto_hmacsha256_alloc(conn);
 	if (rc) {
 		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_setkey(sess->conn->secmech.hmacsha256,
-		sess->sess_key, SMB2_NTLMV2_SESSKEY_SIZE);
+	rc = crypto_shash_setkey(conn->secmech.hmacsha256, key,
+		SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
 		cifsd_debug("hmacsha256 update error %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_init(&sess->conn->secmech.sdeschmacsha256->shash);
+	rc = crypto_shash_init(&conn->secmech.sdeschmacsha256->shash);
 	if (rc) {
 		cifsd_debug("hmacsha256 init error %d\n", rc);
 		goto out;
@@ -748,7 +749,7 @@ int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 
 	for (i = 0; i < n_vec; i++) {
 		rc = crypto_shash_update(
-				&sess->conn->secmech.sdeschmacsha256->shash,
+				&conn->secmech.sdeschmacsha256->shash,
 				iov[i].iov_base, iov[i].iov_len);
 		if (rc) {
 			cifsd_debug("hmacsha256 update error %d\n", rc);
@@ -756,7 +757,7 @@ int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		}
 	}
 
-	rc = crypto_shash_final(&sess->conn->secmech.sdeschmacsha256->shash,
+	rc = crypto_shash_final(&conn->secmech.sdeschmacsha256->shash,
 		sig);
 	if (rc)
 		cifsd_debug("hmacsha256 generation error %d\n", rc);
@@ -767,26 +768,27 @@ out:
 
 /**
  * smb3_sign_smbpdu() - function to generate packet signing
- * @sess:	session of connection
+ * @conn:	connection
+ * @key:	signing key
  * @iov:        buffer iov array
  * @n_vec:	number of iovecs
  * @sig:	signature value generated for client request packet
  *
  */
-int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
-		char *sig)
+int smb3_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
+	int n_vec, char *sig)
 {
 	int rc;
 	int i;
 
-	rc = crypto_shash_setkey(chann->conn->secmech.cmacaes,
-		chann->smb3signingkey,	SMB2_CMACAES_SIZE);
+	rc = crypto_shash_setkey(conn->secmech.cmacaes, key,
+		SMB2_CMACAES_SIZE);
 	if (rc) {
 		cifsd_debug("cmaces update error %d\n", rc);
 		goto out;
 	}
 
-	rc = crypto_shash_init(&chann->conn->secmech.sdesccmacaes->shash);
+	rc = crypto_shash_init(&conn->secmech.sdesccmacaes->shash);
 	if (rc) {
 		cifsd_debug("cmaces init error %d\n", rc);
 		goto out;
@@ -794,7 +796,7 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 
 	for (i = 0; i < n_vec; i++) {
 		rc = crypto_shash_update(
-				&chann->conn->secmech.sdesccmacaes->shash,
+				&conn->secmech.sdesccmacaes->shash,
 				iov[i].iov_base, iov[i].iov_len);
 		if (rc) {
 			cifsd_debug("cmaces update error %d\n", rc);
@@ -802,7 +804,7 @@ int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
 		}
 	}
 
-	rc = crypto_shash_final(&chann->conn->secmech.sdesccmacaes->shash,
+	rc = crypto_shash_final(&conn->secmech.sdesccmacaes->shash,
 		sig);
 	if (rc)
 		cifsd_debug("cmaces generation error %d\n", rc);
@@ -814,12 +816,7 @@ out:
 struct derivation {
 	struct kvec label;
 	struct kvec context;
-};
-
-struct derivation_triplet {
-	struct derivation signing;
-	struct derivation encryption;
-	struct derivation decryption;
+	bool binding;
 };
 
 static int generate_key(struct cifsd_sess *sess, struct kvec label,
@@ -909,20 +906,28 @@ smb3signkey_ret:
 }
 
 static int generate_smb3signingkey(struct cifsd_sess *sess,
-	const struct derivation_triplet *ptriplet)
+	const struct derivation *signing)
 {
 	int rc;
 	struct channel *chann;
+	char *key;
 
 	chann = lookup_chann_list(sess);
 	if (!chann)
 		return 0;
 
-	rc = generate_key(sess, ptriplet->signing.label,
-			ptriplet->signing.context, chann->smb3signingkey,
-			SMB3_SIGN_KEY_SIZE);
+	if (sess->conn->dialect >= SMB30_PROT_ID && signing->binding)
+		key = chann->smb3signingkey;
+	else
+		key = sess->smb3signingkey;
+
+	rc = generate_key(sess, signing->label, signing->context, key,
+		SMB3_SIGN_KEY_SIZE);
 	if (rc)
 		return rc;
+
+	if (!(sess->conn->dialect >= SMB30_PROT_ID && signing->binding))
+		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
 	cifsd_debug("%s: dumping generated AES signing keys\n", __func__);
 	/*
@@ -934,51 +939,59 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 	cifsd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("Signing Key   %*ph\n",
-			SMB3_SIGN_KEY_SIZE, chann->smb3signingkey);
+			SMB3_SIGN_KEY_SIZE, key);
 	return rc;
 }
 
-int generate_smb30signingkey(struct cifsd_sess *sess)
+int generate_smb30signingkey(struct cifsd_sess *sess, bool binding,
+	char *hash_value)
 {
-	struct derivation_triplet triplet;
-	struct derivation *d;
+	struct derivation d;
 
-	d = &triplet.signing;
-	d->label.iov_base = "SMB2AESCMAC";
-	d->label.iov_len = 12;
-	d->context.iov_base = "SmbSign";
-	d->context.iov_len = 8;
+	d.label.iov_base = "SMB2AESCMAC";
+	d.label.iov_len = 12;
+	d.context.iov_base = "SmbSign";
+	d.context.iov_len = 8;
+	d.binding = binding;
 
-	return generate_smb3signingkey(sess, &triplet);
+	return generate_smb3signingkey(sess, &d);
 }
 
-int generate_smb311signingkey(struct cifsd_sess *sess)
+int generate_smb311signingkey(struct cifsd_sess *sess, bool binding,
+	char *hash_value)
 {
-	struct derivation_triplet triplet;
-	struct derivation *d;
+	struct derivation d;
 
-	d = &triplet.signing;
-	d->label.iov_base = "SMBSigningKey";
-	d->label.iov_len = 14;
-	d->context.iov_base = sess->Preauth_HashValue;
-	d->context.iov_len = 64;
+	d.label.iov_base = "SMBSigningKey";
+	d.label.iov_len = 14;
+	if (binding)
+		d.context.iov_base = hash_value;
+	else
+		d.context.iov_base = sess->Preauth_HashValue;
+	d.context.iov_len = 64;
+	d.binding = binding;
 
-	return generate_smb3signingkey(sess, &triplet);
+	return generate_smb3signingkey(sess, &d);
 }
+
+struct derivation_twin {
+	struct derivation encryption;
+	struct derivation decryption;
+};
 
 static int generate_smb3encryptionkey(struct cifsd_sess *sess,
-	const struct derivation_triplet *ptriplet)
+	const struct derivation_twin *ptwin)
 {
 	int rc;
 
-	rc = generate_key(sess, ptriplet->encryption.label,
-			ptriplet->encryption.context, sess->smb3encryptionkey,
+	rc = generate_key(sess, ptwin->encryption.label,
+			ptwin->encryption.context, sess->smb3encryptionkey,
 			SMB3_SIGN_KEY_SIZE);
 	if (rc)
 		return rc;
 
-	rc = generate_key(sess, ptriplet->decryption.label,
-			ptriplet->decryption.context,
+	rc = generate_key(sess, ptwin->decryption.label,
+			ptwin->decryption.context,
 			sess->smb3decryptionkey, SMB3_SIGN_KEY_SIZE);
 	if (rc)
 		return rc;
@@ -1001,42 +1014,42 @@ static int generate_smb3encryptionkey(struct cifsd_sess *sess,
 
 int generate_smb30encryptionkey(struct cifsd_sess *sess)
 {
-	struct derivation_triplet triplet;
+	struct derivation_twin twin;
 	struct derivation *d;
 
-	d = &triplet.encryption;
+	d = &twin.encryption;
 	d->label.iov_base = "SMB2AESCCM";
 	d->label.iov_len = 11;
 	d->context.iov_base = "ServerOut";
 	d->context.iov_len = 10;
 
-	d = &triplet.decryption;
+	d = &twin.decryption;
 	d->label.iov_base = "SMB2AESCCM";
 	d->label.iov_len = 11;
 	d->context.iov_base = "ServerIn ";
 	d->context.iov_len = 10;
 
-	return generate_smb3encryptionkey(sess, &triplet);
+	return generate_smb3encryptionkey(sess, &twin);
 }
 
 int generate_smb311encryptionkey(struct cifsd_sess *sess)
 {
-	struct derivation_triplet triplet;
+	struct derivation_twin twin;
 	struct derivation *d;
 
-	d = &triplet.encryption;
+	d = &twin.encryption;
 	d->label.iov_base = "SMBS2CCipherKey";
 	d->label.iov_len = 16;
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 
-	d = &triplet.decryption;
+	d = &twin.decryption;
 	d->label.iov_base = "SMBC2SCipherKey";
 	d->label.iov_len = 16;
 	d->context.iov_base = sess->Preauth_HashValue;
 	d->context.iov_len = 64;
 
-	return generate_smb3encryptionkey(sess, &triplet);
+	return generate_smb3encryptionkey(sess, &twin);
 }
 
 int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,

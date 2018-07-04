@@ -230,6 +230,18 @@ struct preauth_integrity_info {
 	int			CipherId;
 };
 
+struct channel {
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+	struct cifsd_tcp_conn *conn;
+	struct list_head chann_list;
+};
+
+struct preauth_session {
+	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
+	uint64_t		sess_id;
+	struct list_head	list_entry;
+};
+
 struct smb2_preauth_neg_context {
 	__le16	ContextType; /* 1 */
 	__le16	DataLength;
