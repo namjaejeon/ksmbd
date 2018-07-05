@@ -5251,7 +5251,6 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		struct smb2_file_alloc_info *file_alloc_info;
 		loff_t alloc_blks;
-		unsigned short logical_sector_size;
 
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
@@ -5262,27 +5261,37 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		}
 
 		file_alloc_info = (struct smb2_file_alloc_info *)buffer;
-		alloc_blks = le64_to_cpu(file_alloc_info->AllocationSize) >> 9;
-		logical_sector_size = cifsd_vfs_logical_sector_size(inode);
+		alloc_blks = (le64_to_cpu(file_alloc_info->AllocationSize)
+				+ 511) >> 9;
 
 		if (alloc_blks > inode->i_blocks) {
 			rc = cifsd_vfs_alloc_size(work, fp,
-					alloc_blks * logical_sector_size);
-
+					alloc_blks * 512);
 			if (rc) {
 				cifsd_err("cifsd_vfs_alloc_size is failed : %d\n",
 					rc);
 				return rc;
 			}
-		} else {
-			rc = cifsd_vfs_truncate(work, NULL, fp,
-					alloc_blks * logical_sector_size);
+		} else if (alloc_blks < inode->i_blocks) {
+			loff_t size;
 
+			/*
+			 * Allocation size could be smaller than original one
+			 * which means allocated blocks in file should be
+			 * deallocated. use truncate to cut out it, but inode
+			 * size is also updated with truncate offset.
+			 * inode size is retained by backup inode size.
+			 */
+			size = i_size_read(inode);
+			rc = cifsd_vfs_truncate(work, NULL, fp,
+					alloc_blks * 512);
 			if (rc) {
 				cifsd_err("truncate failed! filename : %s, err %d\n",
 					fp->filename, rc);
 				return rc;
 			}
+			if (size < alloc_blks * 512)
+				i_size_write(inode, size);
 		}
 
 		break;
