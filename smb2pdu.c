@@ -3671,7 +3671,7 @@ static int smb2_get_info_file_pipe(struct cifsd_sess *sess,
 	id = le64_to_cpu(req->VolatileFileId);
 	pipe_desc = get_pipe_desc(sess, id);
 	if (!pipe_desc) {
-		cifsd_err("Pipe not opened or invalid in Pipe id\n");
+		cifsd_debug("Pipe not opened or invalid in Pipe id\n");
 		return -ENOENT;
 	}
 
