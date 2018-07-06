@@ -2203,6 +2203,21 @@ out:
 	return rc;
 }
 
+static inline int check_context_err(void *ctx, char *str)
+{
+	int err;
+
+	err = PTR_ERR(ctx);
+	cifsd_debug("find context %s err %d\n", str, err);
+
+	if (err == -EINVAL) {
+		cifsd_err("bad name length\n");
+		return err;
+	}
+
+	return 0;
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @work:	smb work containing request buffer
@@ -2419,11 +2434,9 @@ int smb2_open(struct cifsd_work *work)
 		/* Parse non-durable handle create contexts */
 		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER);
 		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(context, SMB2_CREATE_EA_BUFFER);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			ea_buf = (struct create_ea_buf_req *)context;
 			if (req->CreateOptions & FILE_NO_EA_KNOWLEDGE_LE) {
@@ -2436,11 +2449,10 @@ int smb2_open(struct cifsd_work *work)
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST);
 		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(context,
+				SMB2_CREATE_QUERY_MAXIMAL_ACCESS_REQUEST);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			struct create_mxac_req *mxac_req =
 				(struct create_mxac_req *)context;
@@ -2452,17 +2464,15 @@ int smb2_open(struct cifsd_work *work)
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_TIMEWARP_REQUEST);
 		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(context,
+				SMB2_CREATE_TIMEWARP_REQUEST);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			cifsd_debug("get timewarp context\n");
 			rc = -EBADF;
 			goto err_out1;
 		}
-
 	}
 
 	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
@@ -2749,30 +2759,29 @@ int smb2_open(struct cifsd_work *work)
 				smb2_find_context_vals(req,
 				SMB2_CREATE_ALLOCATION_SIZE);
 		if (IS_ERR(az_req)) {
-			rc = PTR_ERR(az_req);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(az_req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
+			int err;
 
 			cifsd_debug("request smb2 create allocate size : %llu\n",
 				alloc_size);
-			rc = cifsd_vfs_alloc_size(work, fp, alloc_size);
-			if (rc < 0)
+			err = cifsd_vfs_alloc_size(work, fp, alloc_size);
+			if (err < 0)
 				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
-					rc);
+					err);
 		}
 
 		context = smb2_find_context_vals(req,
 				SMB2_CREATE_QUERY_ON_DISK_ID);
 		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(context,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			cifsd_debug("get query on disk id context\n");
 			query_disk_id = 1;
@@ -2781,11 +2790,9 @@ int smb2_open(struct cifsd_work *work)
 #ifdef CONFIG_CIFSD_ACL
 		context = smb2_find_context_vals(req, SMB2_CREATE_SD_BUFFER);
 		if (IS_ERR(context)) {
-			rc = PTR_ERR(context);
-			if (rc == -EINVAL) {
-				cifsd_err("bad name length\n");
+			rc = check_context_err(context, SMB2_CREATE_SD_BUFFER);
+			if (rc < 0)
 				goto err_out1;
-			}
 		} else {
 			cifsd_err("Create SMB2_CREATE_SD_BUFFER\n");
 
