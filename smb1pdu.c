@@ -878,7 +878,6 @@ int smb_rename(struct cifsd_work *work)
 {
 	RENAME_REQ *req = (RENAME_REQ *)REQUEST_BUF(work);
 	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_share *share = work->tcon->share;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	char *abs_oldname, *abs_newname, *tmp_name = NULL;
@@ -895,12 +894,10 @@ int smb_rename(struct cifsd_work *work)
 		return PTR_ERR(abs_oldname);
 	}
 
-	if (is_unicode) {
-		oldname_len = smb_utf16_bytes((__le16 *)req->OldFileName,
-				PATH_MAX, conn->local_nls);
-		oldname_len += nls_nullsize(conn->local_nls);
-		oldname_len *= 2;
-	} else {
+	if (is_unicode)
+		oldname_len = smb1_utf16_name_length((__le16 *)req->OldFileName,
+				PATH_MAX);
+	else {
 		oldname_len = strlen(abs_oldname);
 		oldname_len++;
 	}
@@ -8070,12 +8067,10 @@ int smb_nt_rename(struct cifsd_work *work)
 		return PTR_ERR(oldname);
 	}
 
-	if (is_smbreq_unicode(&req->hdr)) {
-		oldname_len = smb_utf16_bytes((__le16 *)req->OldFileName,
-				PATH_MAX, work->conn->local_nls);
-		oldname_len += nls_nullsize(work->conn->local_nls);
-		oldname_len *= 2;
-	} else {
+	if (is_smbreq_unicode(&req->hdr))
+		oldname_len = smb1_utf16_name_length((__le16 *)req->OldFileName,
+				PATH_MAX);
+	else {
 		oldname_len = strlen(oldname);
 		oldname_len++;
 	}
