@@ -1269,10 +1269,14 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 {
 	struct request_queue *q;
 
-	q = inode->i_sb->s_bdev->bd_disk->queue;
 	fs_ss->logical_sector_size = 512;
 	fs_ss->physical_sector_size = 512;
 	fs_ss->optimal_io_size = 512;
+
+	if (!inode->i_sb->s_bdev)
+		return;
+
+	q = inode->i_sb->s_bdev->bd_disk->queue;
 
 	if (q) {
 		if (q->limits.logical_block_size)
