@@ -1330,25 +1330,29 @@ int smb2_sess_setup(struct cifsd_work *work)
 	}
 
 	if (conn->dialect == SMB311_PROT_ID) {
-		if (p_sess) {
-			calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
-				p_sess->Preauth_HashValue);
-		} else if (negblob->MessageType == NtLmNegotiate) {
-			if (!sess->Preauth_HashValue) {
-				sess->Preauth_HashValue =
-					kmalloc(PREAUTH_HASHVALUE_SIZE,
-					GFP_KERNEL);
+		__u8 *preauth_hashvalue;
+
+		if (p_sess)
+			preauth_hashvalue = p_sess->Preauth_HashValue;
+		else {
+			if (negblob->MessageType == NtLmNegotiate) {
 				if (!sess->Preauth_HashValue) {
-					rc = -ENOMEM;
-					goto out_err;
+					sess->Preauth_HashValue =
+						kmalloc(PREAUTH_HASHVALUE_SIZE,
+						GFP_KERNEL);
+					if (!sess->Preauth_HashValue) {
+						rc = -ENOMEM;
+						goto out_err;
+					}
 				}
+				memcpy(sess->Preauth_HashValue,
+					conn->preauth_info->Preauth_HashValue,
+					PREAUTH_HASHVALUE_SIZE);
 			}
-			memcpy(sess->Preauth_HashValue,
-				conn->preauth_info->Preauth_HashValue,
-				PREAUTH_HASHVALUE_SIZE);
-			calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
-				sess->Preauth_HashValue);
+			preauth_hashvalue = sess->Preauth_HashValue;
 		}
+		calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
+			preauth_hashvalue);
 	}
 
 	if (negblob->MessageType == NtLmNegotiate) {
