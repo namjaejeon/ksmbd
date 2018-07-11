@@ -2466,19 +2466,9 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	if (is_smbreq_unicode(&req->hdr)) {
 		memcpy(src, req->fileName + 1, req->NameLength);
 		is_unicode = true;
-
-		if (req->hdr.Flags & SMBFLG_CASELESS)
-			UniStrlwr((wchar_t *)src);
 	} else {
 		memcpy(src, req->fileName, req->NameLength);
 		is_unicode = false;
-
-		if (req->hdr.Flags & SMBFLG_CASELESS) {
-			char *ptr = (char *)src;
-
-			for (; *ptr; ptr++)
-				*ptr = tolower(*ptr);
-		}
 	}
 
 	name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
