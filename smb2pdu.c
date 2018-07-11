@@ -7096,8 +7096,19 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 		return 0;
 	}
 
-	smb2_set_err_rsp(cifsd_work);
-	rsp->hdr.Status = NT_STATUS_NOT_IMPLEMENTED;
+	/*
+	 * Win7 send peoridically query_dir command if cifsd just response
+	 * with NT_STATUS_NOT_IMPLEMENTED status. If SMB2_WATCH_TREE flags
+	 * is set in change notify command, cifsd send async response with
+	 * STATUS PENDING to avoid peoridical query_dir.
+	 */
+	if (le16_to_cpu(req->Flags) == SMB2_WATCH_TREE) {
+		smb2_send_interim_resp(cifsd_work);
+		cifsd_work->send_no_response = 1;
+	} else {
+		smb2_set_err_rsp(cifsd_work);
+		rsp->hdr.Status = NT_STATUS_NOT_IMPLEMENTED;
+	}
 
 	return 0;
 }

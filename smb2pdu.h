@@ -857,6 +857,9 @@ struct file_object_buf_type1_ioctl_rsp {
 #define FILE_NOTIFY_CHANGE_STREAM_SIZE	0x00000400
 #define FILE_NOTIFY_CHANGE_STREAM_WRITE	0x00000800
 
+/* Flags */
+#define SMB2_WATCH_TREE	0x0001
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
