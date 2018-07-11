@@ -30,10 +30,10 @@
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 
-bool oplocks_enable = true;
+bool oplocks_enable;
 #ifdef CONFIG_CIFS_SMB2_SERVER
-bool lease_enable = true;
-bool durable_enable = true;
+bool lease_enable;
+bool durable_enable;
 #endif
 
 LIST_HEAD(lease_table_list);
