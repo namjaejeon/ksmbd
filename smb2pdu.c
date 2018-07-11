@@ -2954,6 +2954,8 @@ int smb2_open(struct cifsd_work *work)
 		le32_to_cpu(req->FileAttributes)));
 
 	if (!created) {
+		fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+
 		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
 		if (get_attr_store_dos(&tcon->share->config.attr)) {
 			char *file_attribute = NULL;
