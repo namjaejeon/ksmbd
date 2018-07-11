@@ -7094,12 +7094,8 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 		return 0;
 	}
 
-	rsp->hdr.Status = NT_STATUS_OK;
-	rsp->StructureSize = cpu_to_le16(9);
-	rsp->OutputBufferLength = cpu_to_le32(0);
-	rsp->OutputBufferOffset = cpu_to_le16(0);
-	rsp->Buffer[0] = 0;
-	inc_rfc1001_len(rsp_org, 9);
+	smb2_set_err_rsp(cifsd_work);
+	rsp->hdr.Status = NT_STATUS_NOT_IMPLEMENTED;
 
 	return 0;
 }
