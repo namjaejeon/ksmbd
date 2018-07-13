@@ -377,7 +377,7 @@ struct cifsd_work {
 #define REQUEST_BUF(w)		(void *)((w)->request_buf)
 
 #define INIT_AUX_PAYLOAD(w)	((w)->aux_payload_buf = NULL)
-#define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_buf != NULL)
+#define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_sz != 0)
 #define AUX_PAYLOAD(w)		(void *)((w)->aux_payload_buf)
 #define AUX_PAYLOAD_SIZE(w)	((w)->aux_payload_sz)
 #define RESP_HDR_SIZE(w)	((w)->resp_hdr_sz)
