@@ -4855,6 +4855,10 @@ static int query_fs_info(struct cifsd_work *work)
 	if (!share)
 		return -ENOENT;
 
+	/* share path NULL represents IPC$ share */
+	if (!share->path)
+		return -ENOENT;
+
 	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
 		cifsd_err("cannot create vfs path\n");
