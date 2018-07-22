@@ -144,7 +144,7 @@ struct smb_version_ops smb2_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb2_check_sign_req,
 	.set_sign_rsp		=	smb2_set_sign_rsp
@@ -157,11 +157,33 @@ struct smb_version_ops smb3_0_server_ops = {
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
 	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
-	.get_cifsd_tcon	=	smb2_get_cifsd_tcon,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.compute_signingkey	=	compute_smb3xsigningkey
+	.generate_signingkey	=	generate_smb30signingkey,
+	.generate_encryptionkey	=	generate_smb30encryptionkey,
+	.is_transform_hdr	=	smb3_is_transform_hdr,
+	.decrypt_req		=	smb3_decrypt_req,
+	.encrypt_resp		=	smb3_encrypt_resp
+};
+
+struct smb_version_ops smb3_11_server_ops = {
+	.get_cmd_val		=	get_smb2_cmd_val,
+	.init_rsp_hdr		=	init_smb2_rsp_hdr,
+	.set_rsp_status		=	set_smb2_rsp_status,
+	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
+	.set_rsp_credits        =       smb2_set_rsp_credits,
+	.check_user_session	=	smb2_check_user_session,
+	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
+	.is_sign_req		=	smb2_is_sign_req,
+	.check_sign_req		=	smb3_check_sign_req,
+	.set_sign_rsp		=	smb3_set_sign_rsp,
+	.generate_signingkey	=	generate_smb311signingkey,
+	.generate_encryptionkey	=	generate_smb311encryptionkey,
+	.is_transform_hdr	=	smb3_is_transform_hdr,
+	.decrypt_req		=	smb3_decrypt_req,
+	.encrypt_resp		=	smb3_encrypt_resp
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
@@ -240,6 +262,9 @@ void init_smb3_0_server(struct cifsd_tcp_conn *conn)
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+
+	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
 /**
@@ -262,6 +287,9 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+
+	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
 /**
@@ -271,13 +299,8 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
  */
 int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 {
-	conn->preauth_info = kzalloc(sizeof(struct preauth_integrity_info),
-		GFP_KERNEL);
-	if (!conn->preauth_info)
-		return -ENOMEM;
-
 	conn->vals = &smb311_server_values;
-	conn->ops = &smb3_0_server_ops;
+	conn->ops = &smb3_11_server_ops;
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
@@ -290,5 +313,9 @@ int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
+	if (conn->preauth_info->CipherId)
+		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
+
+	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;
 }

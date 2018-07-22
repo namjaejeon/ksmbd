@@ -117,6 +117,7 @@ void cifsd_free_work_struct(struct cifsd_work *work)
 {
 	cifsd_free_response(RESPONSE_BUF(work));
 	cifsd_free_response(AUX_PAYLOAD(work));
+	cifsd_free_response(TRANSFORM_BUF(work));
 	cifsd_free_request(REQUEST_BUF(work));
 	kmem_cache_free(work_cache, work);
 }

@@ -94,6 +94,7 @@
 #define MAX_SMB2_HDR_SIZE 0x78 /* 4 len + 64 hdr + (2*24 wct) + 2 bct + 2 pad */
 
 #define SMB2_PROTO_NUMBER __constant_cpu_to_le32(0x424d53fe) /* 'B''M''S' */
+#define SMB2_TRANSFORM_PROTO_NUM cpu_to_le32(0x424d53fd)
 
 #define STATUS_NO_MORE_FILES __constant_cpu_to_le32(0x80000006)
 #define STATUS_OBJECT_NAME_NOT_FOUND __constant_cpu_to_le32(0xC0000034)
@@ -135,6 +136,24 @@ struct smb2_hdr {
 struct smb2_pdu {
 	struct smb2_hdr hdr;
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
+} __packed;
+
+extern bool encryption_enable;
+
+#define SMB3_AES128CMM_NONCE 11
+#define SMB3_AES128GCM_NONCE 12
+
+struct smb2_transform_hdr {
+	__be32 smb2_buf_length; /* big endian on wire */
+	/* length is only two or three bytes - with
+	   one or two byte type preceding it that MBZ */
+	__le32 ProtocolId;      /* 0xFD 'S' 'M' 'B' */
+	__u8   Signature[16];
+	__u8   Nonce[16];
+	__le32 OriginalMessageSize;
+	__u16  Reserved1;
+	__le16 Flags; /* EncryptionAlgorithm */
+	__u64  SessionId;
 } __packed;
 
 /*
@@ -209,6 +228,18 @@ struct preauth_integrity_info {
 	/* PreAuth integrity Hash Value */
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
 	int			CipherId;
+};
+
+struct channel {
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
+	struct cifsd_tcp_conn *conn;
+	struct list_head chann_list;
+};
+
+struct preauth_session {
+	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
+	uint64_t		sess_id;
+	struct list_head	list_entry;
 };
 
 struct smb2_preauth_neg_context {
@@ -826,6 +857,9 @@ struct file_object_buf_type1_ioctl_rsp {
 #define FILE_NOTIFY_CHANGE_STREAM_SIZE	0x00000400
 #define FILE_NOTIFY_CHANGE_STREAM_WRITE	0x00000800
 
+/* Flags */
+#define SMB2_WATCH_TREE	0x0001
+
 struct smb2_notify_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 32 */
@@ -1363,6 +1397,10 @@ extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
 extern void smb2_send_interim_resp(struct cifsd_work *work);
+extern struct channel *lookup_chann_list(struct cifsd_sess *sess);
+extern int smb3_is_transform_hdr(void *buf);
+extern int smb3_decrypt_req(struct cifsd_work *work);
+extern int smb3_encrypt_resp(struct cifsd_work *work);
 
 /* smb2 command handlers */
 extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,

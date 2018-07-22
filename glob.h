@@ -290,18 +290,6 @@ struct ntlmssp_auth {
 	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
-struct channel {
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	struct cifsd_tcp_conn *conn;
-	struct list_head chann_list;
-};
-
-struct preauth_session {
-	int SessionId;
-	int HashId;
-	int HashValue;
-};
-
 enum asyncEnum {
 	ASYNC_PROG = 1,
 	ASYNC_CANCEL,
@@ -343,8 +331,11 @@ struct cifsd_work {
 	char				*aux_payload_buf;
 	/* Read data count */
 	unsigned int			aux_payload_sz;
-	/* Read response smb header size */
-	unsigned int			aux_payload_hdr_sz;
+	/* response smb header size */
+	unsigned int			resp_hdr_sz;
+
+	/* Transform header buffer */
+	void				*tr_buf;
 
 	struct work_struct		work;
 
@@ -367,14 +358,17 @@ struct cifsd_work {
 	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
-	/* Added in conn->requests list */
-	bool				added_in_request_list:1;
+	/* On the conn->requests list */
+	bool				on_request_list:1;
 
 	/* smb command code */
 	__le16				command;
 
 	struct async_info *async;
 	struct list_head interim_entry;
+
+	/* request is encrypted or not */
+	bool encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
@@ -383,10 +377,13 @@ struct cifsd_work {
 #define REQUEST_BUF(w)		(void *)((w)->request_buf)
 
 #define INIT_AUX_PAYLOAD(w)	((w)->aux_payload_buf = NULL)
-#define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_buf != NULL)
+#define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_sz != 0)
 #define AUX_PAYLOAD(w)		(void *)((w)->aux_payload_buf)
 #define AUX_PAYLOAD_SIZE(w)	((w)->aux_payload_sz)
-#define AUX_PAYLOAD_HDR_SIZE(w)	((w)->aux_payload_hdr_sz)
+#define RESP_HDR_SIZE(w)	((w)->resp_hdr_sz)
+
+#define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
+#define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
 struct smb_version_ops {
 	int (*get_cmd_val)(struct cifsd_work *swork);
@@ -399,8 +396,12 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*compute_signingkey)(struct cifsd_sess *sess,  __u8 *key,
-		unsigned int key_size);
+	int (*generate_signingkey)(struct cifsd_sess *sess, bool binding,
+		char *hash_value);
+	int (*generate_encryptionkey)(struct cifsd_sess *sess);
+	int (*is_transform_hdr)(void *buf);
+	int (*decrypt_req)(struct cifsd_work *work);
+	int (*encrypt_resp)(struct cifsd_work *work);
 };
 
 struct smb_version_cmds {
@@ -477,6 +478,21 @@ cifs_NTtimeToUnix(__le64 ntutc)
 	return ts;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
+static inline struct timespec64 to_kern_timespec(struct timespec ts)
+{
+	return timespec_to_timespec64(ts);
+}
+
+static inline struct timespec from_kern_timespec(struct timespec64 ts)
+{
+	return timespec64_to_timespec(ts);
+}
+#else
+#define to_kern_timespec(ts) (ts)
+#define from_kern_timespec(ts) (ts)
+#endif
+
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
 struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
@@ -489,7 +505,6 @@ extern void cifsd_export_exit(void);
 
 /* cifsd misc functions */
 extern int check_smb_message(char *buf);
-extern void add_request_to_queue(struct cifsd_work *work);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);

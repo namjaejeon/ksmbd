@@ -103,7 +103,11 @@ struct cifsd_sess {
 	uint64_t sess_id;
 	struct ntlmssp_auth ntlmssp;
 	char sess_key[CIFS_KEY_SIZE];
+	__u8 smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
+	__u8 smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
+	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
 	bool sign;
+	bool enc;
 	struct list_head cifsd_chann_list;
 	bool is_anonymous;
 	bool is_guest;
@@ -224,13 +228,17 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 		int blob_len, struct cifsd_sess *sess);
 int smb1_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
 		char *sig);
-int smb2_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
-		char *sig);
-int smb3_sign_smbpdu(struct channel *chann, struct kvec *iov, int n_vec,
-		char *sig);
+int smb2_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
+	int n_vec, char *sig);
+int smb3_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
+	int n_vec, char *sig);
 int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac);
-int compute_smb3xsigningkey(struct cifsd_sess *sess,  __u8 *key,
-	unsigned int key_size);
+int generate_smb30signingkey(struct cifsd_sess *sess, bool binding,
+	char *hash_value);
+int generate_smb311signingkey(struct cifsd_sess *sess, bool binding,
+	char *hash_value);
+int generate_smb30encryptionkey(struct cifsd_sess *sess);
+int generate_smb311encryptionkey(struct cifsd_sess *sess);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 		struct cifsd_sess *sess, char *sharename, bool *can_write);

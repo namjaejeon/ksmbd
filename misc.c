@@ -126,50 +126,17 @@ static inline int check_smb2_hdr(struct smb2_hdr *smb)
  */
 int check_smb_message(char *buf)
 {
-
 	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
-
 		cifsd_debug("got SMB2 command\n");
 		return check_smb2_hdr((struct smb2_hdr *)buf);
-
 	}
+
+	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
+		SMB2_TRANSFORM_PROTO_NUM)
+		return 0;
 
 	return check_smb_hdr((struct smb_hdr *)buf);
-
-}
-
-/**
- * add_request_to_queue() - check a request for addition to pending smb work
- *				queue
- * @cifsd_work:	smb request work
- *
- * Return:      true if not add to queue, otherwise false
- */
-void add_request_to_queue(struct cifsd_work *work)
-{
-	struct cifsd_tcp_conn *conn = work->conn;
-	struct list_head *requests_queue = NULL;
-	struct smb2_hdr *hdr = REQUEST_BUF(work);
-
-	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		unsigned int command = conn->ops->get_cmd_val(work);
-
-		if (command != SMB2_CANCEL) {
-			requests_queue = &conn->requests;
-			work->type = SYNC;
-		}
-	} else {
-		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
-			requests_queue = &conn->requests;
-	}
-
-	if (requests_queue) {
-		spin_lock(&conn->request_lock);
-		list_add_tail(&work->request_entry, requests_queue);
-		work->added_in_request_list = 1;
-		spin_unlock(&conn->request_lock);
-	}
 }
 
 /**
