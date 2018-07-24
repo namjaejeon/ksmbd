@@ -6227,7 +6227,7 @@ static int find_first(struct cifsd_work *work)
 				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
-	if (!*srch_ptr) {
+	if (!*srch_ptr || !strcmp(srch_ptr, "*")) {
 		rc = smb_populate_dot_dotdot_entries(conn,
 			req_params->InformationLevel, dir_fp, &d_info,
 			srch_ptr, smb_populate_readdir_entry);
