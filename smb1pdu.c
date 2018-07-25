@@ -5876,7 +5876,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FIND_INFO_STANDARD),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -5909,7 +5909,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FIND_INFO_QUERY_EA_SIZE),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -5945,7 +5945,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -5967,7 +5967,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_FULL_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -5991,7 +5991,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_NAMES_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -6013,7 +6013,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -6040,7 +6040,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(SEARCH_ID_FULL_DIR_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -6065,7 +6065,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_ID_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, false);
+				&d_info->data_count, 7, false);
 		if (!utfname)
 			break;
 
@@ -6097,7 +6097,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				sizeof(FILE_UNIX_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
-				&d_info->data_count, 3, true);
+				&d_info->data_count, 7, true);
 		if (!utfname)
 			break;
 
@@ -6227,7 +6227,7 @@ static int find_first(struct cifsd_work *work)
 				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
-	if (!*srch_ptr) {
+	if (!*srch_ptr || !strcmp(srch_ptr, "*")) {
 		rc = smb_populate_dot_dotdot_entries(conn,
 			req_params->InformationLevel, dir_fp, &d_info,
 			srch_ptr, smb_populate_readdir_entry);
@@ -6320,15 +6320,14 @@ static int find_first(struct cifsd_work *work)
 			sizeof(TRANSACTION2_RSP));
 	params->SearchHandle = cpu_to_le16(dir_fp->volatile_id);
 	params->SearchCount = cpu_to_le16(d_info.num_entry);
+	params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 
 	if (d_info.out_buf_len < 0) {
 		cifsd_debug("%s continue search\n", __func__);
 		params->EndofSearch = cpu_to_le16(0);
-		params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 	} else {
 		cifsd_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
-		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
 		close_id(sess, dir_fp->volatile_id, 0);
 	}
