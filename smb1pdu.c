@@ -6320,15 +6320,14 @@ static int find_first(struct cifsd_work *work)
 			sizeof(TRANSACTION2_RSP));
 	params->SearchHandle = cpu_to_le16(dir_fp->volatile_id);
 	params->SearchCount = cpu_to_le16(d_info.num_entry);
+	params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 
 	if (d_info.out_buf_len < 0) {
 		cifsd_debug("%s continue search\n", __func__);
 		params->EndofSearch = cpu_to_le16(0);
-		params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 	} else {
 		cifsd_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
-		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
 		close_id(sess, dir_fp->volatile_id, 0);
 	}
