@@ -200,8 +200,7 @@ again:
 
 	mutex_unlock(&conn->srv_mutex);
 
-	if (work->sess && work->sess->sign &&
-		conn->ops->is_sign_req &&
+	if (work->sess && conn->ops->is_sign_req &&
 		conn->ops->is_sign_req(work, command)) {
 		rc = conn->ops->check_sign_req(work);
 		if (!rc) {
@@ -262,9 +261,9 @@ send:
 					NT_STATUS_DATA_ERROR);
 			goto send;
 		}
-	} else if (work->sess && work->sess->sign &&
-		conn->ops->is_sign_req &&
-		conn->ops->is_sign_req(work, command))
+	} else if (work->sess && (work->sess->sign ||
+		(conn->ops->is_sign_req &&
+		conn->ops->is_sign_req(work, command))))
 		conn->ops->set_sign_rsp(work);
 
 	cifsd_tcp_write(work);
