@@ -7130,8 +7130,8 @@ int smb2_is_sign_req(struct cifsd_work *work, unsigned int command)
 		return 1;
 
 	/* send session setup auth phase signed response */
-	if (command == SMB2_SESSION_SETUP_HE &&
-			work->sess && work->sess->valid)
+	if (work->sess->sign && command == SMB2_SESSION_SETUP_HE &&
+		work->sess && work->sess->valid)
 		return 1;
 
 	return 0;
