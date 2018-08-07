@@ -7241,6 +7241,11 @@ int smb3_check_sign_req(struct cifsd_work *work)
 		conn = chann->conn;
 	}
 
+	if (!signing_key) {
+		cifsd_err("SMB3 signing key is not generated\n");
+		return 0;
+	}
+
 	memcpy(signature_req, hdr->Signature, SMB2_SIGNATURE_SIZE);
 	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
 	iov[0].iov_base = hdr->ProtocolId;
@@ -7305,6 +7310,9 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 		signing_key = chann->smb3signingkey;
 		conn = chann->conn;
 	}
+
+	if (!signing_key)
+		return;
 
 	if (le32_to_cpu(req_hdr->NextCommand))
 		hdr->NextCommand = cpu_to_le32(len);
