@@ -157,22 +157,26 @@ static struct cifsd_share_config *share_config_request(char *name)
 	INIT_WORK(&share->free_work, deferred_share_free);
 	INIT_LIST_HEAD(&share->veto_list);
 	share->name = kstrdup(name, GFP_KERNEL);
-	share->path = kstrdup(CIFSD_SHARE_CONFIG_PATH(resp), GFP_KERNEL);
-	ret = parse_veto_list(share,
-			      CIFSD_SHARE_CONFIG_VETO_LIST(resp),
-			      resp->veto_list_sz);
-	if (!ret && share->path) {
-		ret = kern_path(share->path, 0, &share->vfs_path);
-		if (ret) {
-			/* Avoid put_path() */
-			kfree(share->path);
-			share->path = NULL;
+
+	if (!test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE)) {
+		share->path = kstrdup(CIFSD_SHARE_CONFIG_PATH(resp),
+				      GFP_KERNEL);
+		ret = parse_veto_list(share,
+				      CIFSD_SHARE_CONFIG_VETO_LIST(resp),
+				      resp->veto_list_sz);
+		if (!ret && share->path) {
+			ret = kern_path(share->path, 0, &share->vfs_path);
+			if (ret) {
+				/* Avoid put_path() */
+				kfree(share->path);
+				share->path = NULL;
+			}
 		}
-	}
-	if (ret || !share->name) {
-		kill_share(share);
-		share = NULL;
-		goto out;
+		if (ret || !share->name) {
+			kill_share(share);
+			share = NULL;
+			goto out;
+		}
 	}
 
 	down_write(&shares_table_lock);
