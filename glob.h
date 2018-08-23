@@ -74,6 +74,8 @@ extern bool global_signing;
 
 extern struct list_head global_lock_list;
 
+#define NETLINK_CIFSD_MAX_PAYLOAD	4096
+
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
 

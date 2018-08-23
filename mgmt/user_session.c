@@ -236,8 +236,6 @@ static struct cifsd_session *__session_create(int protocol)
 	INIT_LIST_HEAD(&sess->rpc_handle_list);
 	sess->sequence_number = 1;
 	sess->valid = 1;
-	init_waitqueue_head(&sess->pipe_q);
-	sess->ev_state = NETLINK_REQ_INIT;
 
 	switch (protocol) {
 	case CIFDS_SESSION_FLAG_SMB1:

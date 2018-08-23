@@ -58,69 +58,6 @@ char *netbios_name;
 int server_min_pr;
 int server_max_pr;
 
-struct cifsd_pipe_table cifsd_pipes[] = {
-	{"\\srvsvc", SRVSVC},
-	{"srvsvc", SRVSVC},
-	{"\\wkssvc", SRVSVC},
-	{"wkssvc", SRVSVC},
-	{"\\winreg", WINREG},
-	{"winreg", WINREG},
-};
-unsigned int npipes = ARRAY_SIZE(cifsd_pipes);
-
-/**
- * get_pipe_type() - get the type of the pipe from the string name
- * @name:      string name for representation of pipe, need to be searched
- *             in the supported table
- * Return:     the pipe type number if found in the table,
- *             else invalid pipe type
- */
-unsigned int get_pipe_type(char *pipename)
-{
-	int i;
-	unsigned int pipetype = INVALID_PIPE;
-
-	for (i = 0; i < npipes; i++) {
-		if (!strcmp(cifsd_pipes[i].pipename, pipename)) {
-			pipetype = cifsd_pipes[i].pipetype;
-			break;
-		}
-	}
-	return pipetype;
-}
-
-/**
- * get_pipe_desc() - get matching pipe descriptor from pipe id
- * @sess:	session info
- * @id:		lookup pipe id
- *
- * Return:	matching pipe descriptor from opened pipe id
- */
-struct cifsd_pipe *get_pipe_desc(struct cifsd_session *sess,
-		unsigned int id)
-{
-	struct cifsd_pipe *pipe_desc;
-	int i;
-
-	if (unlikely(!sess))
-		return NULL;
-
-	for (i = 0; i < MAX_PIPE; i++) {
-		/* fid is not created for LANMAN */
-		if (i == LANMAN)
-			continue;
-
-		pipe_desc = sess->pipe_desc[i];
-		if (!pipe_desc)
-			continue;
-
-		if (pipe_desc->id == id)
-			return pipe_desc;
-	}
-
-	return NULL;
-}
-
 /**
  * __add_share() - helper function to add a share in global exported share list
  * @share:	share instance to be added to global share list

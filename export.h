@@ -216,10 +216,6 @@ struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
 extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_session *sess,
 			unsigned int tid);
 struct cifsd_user *get_smb_session_user(struct cifsd_session *sess);
-struct cifsd_pipe *get_pipe_desc(struct cifsd_session *sess,
-		unsigned int id);
-int get_pipe_id(struct cifsd_session *sess, unsigned int pipe_type);
-int close_pipe_id(struct cifsd_session *sess, int pipe_type);
 int cifsstat_show(char *buf, char *ip, int flag);
 int cifsadmin_user_query(char *username);
 int cifsadmin_user_del(char *username);
