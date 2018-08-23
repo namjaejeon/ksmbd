@@ -1101,10 +1101,11 @@ int smb2_negotiate(struct cifsd_work *work)
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
-	if ((server_signing == AUTO || server_signing == DISABLE) &&
+	if ((server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
+			server_conf.signing == CIFSD_CONFIG_OPT_DISABLED) &&
 		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
 		conn->sign = true;
-	else if (server_signing == MANDATORY) {
+	else if (server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		server_conf.enforced_signing = true;
 		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED;
 		conn->sign = true;
