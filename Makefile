@@ -2,7 +2,7 @@ obj-$(CONFIG_CIFS_SERVER) += cifsd.o
 
 cifsd-y := 	export.o unicode.o encrypt.o auth.o \
 		fh.o vfs.o misc.o smb1pdu.o smb1ops.o oplock.o netmisc.o \
-		netlink.o cifsacl.o \
+		cifsacl.o \
 		mgmt/cifsd_ida.o \
 		mgmt/user_config.o \
 		mgmt/share_config.o \

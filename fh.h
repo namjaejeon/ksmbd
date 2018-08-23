@@ -27,7 +27,6 @@
 #include <linux/fs.h>
 
 #include "glob.h"
-#include "netlink.h"
 #include "vfs.h"
 
 /* Windows style file permissions for extended response */
@@ -157,33 +156,6 @@ struct cifsd_file {
 	unsigned long long llock_fstart; /* last lock failure start offset for SMB1 */
 };
 
-enum cifsd_pipe_type {
-	SRVSVC,
-	WINREG,
-	LANMAN,
-	MAX_PIPE
-};
-
-struct cifsd_pipe_table {
-	char pipename[32];
-	unsigned int pipetype;
-};
-
-#define INVALID_PIPE   0xFFFFFFFF
-
-struct cifsd_pipe {
-	unsigned int id;
-	char *data;
-	int pkt_type;
-	int pipe_type;
-	int opnum;
-	char *buf;
-	int datasize;
-	int sent;
-	struct cifsd_uevent ev;
-	char *rsp_buf;
-};
-
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 
 /* fidtable structure */
@@ -207,7 +179,6 @@ void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
 get_id_from_fidtable(struct cifsd_session *sess, uint64_t id);
 int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id);
-unsigned int get_pipe_type(char *pipename);
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
 int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
 struct cifsd_file *

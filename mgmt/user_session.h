@@ -58,10 +58,6 @@ struct cifsd_session {
 
 	int				state;
 	__u8				*Preauth_HashValue;
-	/* @FIXME: remove this code */
-	struct cifsd_pipe		*pipe_desc[MAX_PIPE];
-	wait_queue_head_t		pipe_q;
-	int				ev_state;
 
 	struct ntlmssp_auth		ntlmssp;
 	char				sess_key[CIFS_KEY_SIZE];

@@ -492,7 +492,6 @@ int cifsd_server_shutdown(void)
 	cifsd_free_session_table();
 	cifsd_tcp_destroy();
 	cifsd_ipc_release();
-	cifsd_net_exit();
 
 	destroy_global_fidtable();
 	cifsd_export_exit();
