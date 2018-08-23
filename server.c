@@ -35,9 +35,9 @@
 #include "transport_ipc.h"
 #include "mgmt/user_session.h"
 
-//-----------------------------------------------------
 /* @FIXME clean up this code */
-bool global_signing;
+int cifsd_debug_enable;
+struct list_head cifsd_session_list;
 
 /*
  * keep MaxBufSize Default: 65536
@@ -51,7 +51,7 @@ LIST_HEAD(global_lock_list);
 
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
 unsigned int alloc_roundup_size = 1048576;
-//----------------------------------------------------
+/* @FIXME end clean up */
 
 struct cifsd_server_config server_conf;
 
@@ -494,7 +494,6 @@ int cifsd_server_shutdown(void)
 	cifsd_ipc_release();
 
 	destroy_global_fidtable();
-	cifsd_export_exit();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
 	exit_cifsd_idmap();

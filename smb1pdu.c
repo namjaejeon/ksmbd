@@ -945,7 +945,8 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->DialectIndex = conn->dialect;
 
 	neg_rsp->SecurityMode = SERVER_SECU;
-	if (server_signing == AUTO || server_signing == MANDATORY) {
+	if (server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
+		server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		conn->sign = true;
 		neg_rsp->SecurityMode |= SECMODE_SIGN_ENABLED;
 	}

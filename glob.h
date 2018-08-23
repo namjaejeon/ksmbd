@@ -70,8 +70,6 @@ extern char *netbios_name;
 #define GSS_PADDING		6
 extern char NEGOTIATE_GSS_HEADER[GSS_LENGTH];
 
-extern bool global_signing;
-
 extern struct list_head global_lock_list;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
@@ -506,10 +504,6 @@ int negotiate_dialect(void *buf);
 struct cifsd_session *lookup_session_on_server(struct cifsd_tcp_conn *conn,
 		uint64_t sess_id);
 int get_nlink(struct kstat *st);
-
-/* cifsd export functions */
-extern int cifsd_export_init(void);
-extern void cifsd_export_exit(void);
 
 /* cifsd misc functions */
 extern int check_smb_message(char *buf);
