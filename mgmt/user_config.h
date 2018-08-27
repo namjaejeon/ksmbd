@@ -75,17 +75,4 @@ static inline unsigned int user_gid(struct cifsd_user *user)
 
 struct cifsd_user *cifsd_alloc_user(const char *account);
 void cifsd_free_user(struct cifsd_user *user);
-
-/* @FIXME Remove this code */
-
-void put_cifsd_user(struct cifsd_user *user);
-unsigned short alloc_smb1_vuid(void);
-void free_smb1_vuid(unsigned short uid);
-struct cifsd_user *um_user_search(char *name);
-struct cifsd_user *um_user_search_guest(void);
-int um_add_new_user(char *name, char *pass, kuid_t uid, kgid_t gid);
-int um_delete_user(char *name);
-void um_cleanup_users(void);
-size_t um_users_show(char *buf, size_t sz);
-
 #endif /* __USER_CONFIG_MANAGEMENT_H__ */
