@@ -29,10 +29,15 @@
 #include <linux/sched/signal.h>
 #endif
 
+#include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "transport_ipc.h"
+#include "mgmt/user_session.h"
 
-bool global_signing;
+/* @FIXME clean up this code */
+int cifsd_debug_enable;
+struct list_head cifsd_session_list;
 
 /*
  * keep MaxBufSize Default: 65536
@@ -46,43 +51,53 @@ LIST_HEAD(global_lock_list);
 
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
 unsigned int alloc_roundup_size = 1048576;
+/* @FIXME end clean up */
 
-/**
- * construct_cifsd_tcon() - alloc tcon object and initialize
- *		 from session and share info and increment tcon count
- * @sess:	session to link with tcon object
- * @share:	Related association of tcon object with share
- *
- * Return:	If Succes, Valid initialized tcon object, else errors
- */
-struct cifsd_tcon *construct_cifsd_tcon(struct cifsd_share *share,
-				struct cifsd_sess *sess)
+struct cifsd_server_config server_conf;
+
+static int ___server_conf_set(int idx, char *val)
 {
-	struct cifsd_tcon *tcon;
-	int err;
+	if (idx > sizeof(server_conf.conf))
+		return -EINVAL;
 
-	tcon = kzalloc(sizeof(struct cifsd_tcon), GFP_KERNEL);
-	if (!tcon)
-		return ERR_PTR(-ENOMEM);
+	if (!val || val[0] == 0x00)
+		return -EINVAL;
 
-	if (!share->path)
-		goto out;
+	kfree(server_conf.conf[idx]);
+	server_conf.conf[idx] = kstrdup(val, GFP_KERNEL);
+	if (!server_conf.conf[idx])
+		return -ENOMEM;
+	return 0;
+}
 
-	err = kern_path(share->path, 0, &tcon->share_path);
-	if (err) {
-		cifsd_err("kern_path() failed for shares(%s)\n", share->path);
-		kfree(tcon);
-		return ERR_PTR(-ENOENT);
-	}
+int cifsd_set_netbios_name(char *v)
+{
+	return ___server_conf_set(SERVER_CONF_NETBIOS_NAME, v);
+}
 
-out:
-	tcon->share = share;
-	tcon->sess = sess;
-	INIT_LIST_HEAD(&tcon->tcon_list);
-	list_add(&tcon->tcon_list, &sess->tcon_list);
-	sess->tcon_count++;
+int cifsd_set_server_string(char *v)
+{
+	return ___server_conf_set(SERVER_CONF_SERVER_STRING, v);
+}
 
-	return tcon;
+int cifsd_set_work_group(char *v)
+{
+	return ___server_conf_set(SERVER_CONF_WORK_GROUP, v);
+}
+
+char *cifsd_netbios_name(void)
+{
+	return server_conf.conf[SERVER_CONF_NETBIOS_NAME];
+}
+
+char *cifsd_server_string(void)
+{
+	return server_conf.conf[SERVER_CONF_SERVER_STRING];
+}
+
+char *cifsd_work_group(void)
+{
+	return server_conf.conf[SERVER_CONF_WORK_GROUP];
 }
 
 /**
@@ -102,6 +117,8 @@ static inline int check_conn_state(struct cifsd_work *work)
 	}
 	return 0;
 }
+
+/* @FIXME what a mess... god help. */
 
 /**
  * handle_cifsd_work() - process pending smb work requests
@@ -340,39 +357,6 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static void free_channel_list(struct cifsd_sess *sess)
-{
-	struct channel *chann;
-	struct list_head *tmp, *t;
-
-	if (sess->conn->dialect >= SMB30_PROT_ID) {
-		list_for_each_safe(tmp, t, &sess->cifsd_chann_list) {
-			chann = list_entry(tmp, struct channel, chann_list);
-			if (chann) {
-				list_del(&chann->chann_list);
-				kfree(chann);
-			}
-		}
-	}
-}
-
-void smb_delete_session(struct cifsd_sess *sess)
-{
-	cifsd_debug("delete session ID: %llu, session count: %d\n",
-			sess->sess_id, sess->conn->sess_count);
-
-	sess->valid = 0;
-	list_del(&sess->cifsd_ses_list);
-	list_del(&sess->cifsd_ses_global_list);
-	free_channel_list(sess);
-	destroy_fidtable(sess);
-	sess->conn->sess_count--;
-	kfree(sess->Preauth_HashValue);
-	if (!IS_SMB2(sess->conn))
-		free_smb1_vuid(sess->sess_id);
-	kfree(sess);
-}
-
 static size_t cifsd_server_get_header_size(void)
 {
 	size_t sz = sizeof(struct smb_hdr);
@@ -396,12 +380,13 @@ static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
 static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
 {
 	if (conn->sess_count) {
-		struct cifsd_sess *sess;
+		struct cifsd_session *sess;
 		struct list_head *tmp, *t;
 		list_for_each_safe(tmp, t, &conn->cifsd_sess) {
-			sess = list_entry(tmp, struct cifsd_sess,
-							cifsd_ses_list);
-			smb_delete_session(sess);
+			sess = list_entry(tmp,
+					  struct cifsd_session,
+					  cifsd_ses_list);
+			cifsd_session_destroy(sess);
 		}
 	}
 
@@ -421,6 +406,34 @@ static void cifsd_server_tcp_callbacks_init(void)
 	cifsd_tcp_init_server_callbacks(&ops);
 }
 
+static void server_conf_free(void)
+{
+	kfree(server_conf.netbios_name);
+	kfree(server_conf.server_string);
+	kfree(server_conf.work_group);
+	server_conf.netbios_name = NULL;
+	server_conf.server_string = NULL;
+	server_conf.work_group = NULL;
+}
+
+static int server_conf_init(void)
+{
+	int ret;
+
+	server_conf.state = SERVER_STATE_STARTING_UP;
+	server_conf.enforced_signing = 0;
+	server_conf.min_protocol = cifsd_min_protocol();
+	server_conf.max_protocol = cifsd_max_protocol();
+
+	ret = cifsd_set_netbios_name(SERVER_DEFAULT_NETBIOS_NAME);
+	ret |= cifsd_set_server_string(SERVER_DEFAULT_SERVER_STRING);
+	ret |= cifsd_set_work_group(SERVER_DEFAULT_WORK_GROUP);
+
+	if (ret)
+		server_conf_free();
+	return ret;
+}
+
 /**
  * init_smb_server() - initialize smb server at module init
  *
@@ -432,47 +445,60 @@ static void cifsd_server_tcp_callbacks_init(void)
  */
 static int __init cifsd_server_init(void)
 {
-	int rc;
+	int ret;
 
 	cifsd_server_tcp_callbacks_init();
 
-	rc = cifsd_init_buffer_pools();
-	if (rc)
-		return rc;
+	ret = server_conf_init();
+	if (ret)
+		return ret;
 
-	rc = cifsd_export_init();
-	if (rc)
-		goto err1;
+	ret = cifsd_init_buffer_pools();
+	if (ret)
+		return ret;
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	rc = init_fidtable(&global_fidtable);
-	if (rc)
-		goto err2;
-#endif
+	ret = cifsd_init_session_table();
+	if (ret)
+		goto error;
 
-	rc = cifsd_net_init();
-	if (rc)
-		goto err3;
+	ret = cifsd_ipc_init();
+	if (ret)
+		goto error;
+
+	ret = cifsd_tcp_init();
+	if (ret)
+		goto error;
+
+	ret = init_fidtable(&global_fidtable);
+	if (ret)
+		goto error;
 
 	cifsd_inode_hash_init();
 
-#ifdef CONFIG_CIFSD_ACL
-	rc = init_cifsd_idmap();
-	if (rc)
-		goto err3;
-#endif
-
+	ret = init_cifsd_idmap();
+	if (ret)
+		goto error;
 	return 0;
-err3:
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
+error:
+	cifsd_server_shutdown();
+	return ret;
+}
+
+int cifsd_server_shutdown(void)
+{
+	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
+
+	cifsd_free_session_table();
+	cifsd_tcp_destroy();
+	cifsd_ipc_release();
+
 	destroy_global_fidtable();
-err2:
-#endif
-	cifsd_export_exit();
-err1:
+	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
-	return rc;
+	exit_cifsd_idmap();
+	server_conf_free();
+	return 0;
 }
 
 /**
@@ -480,18 +506,7 @@ err1:
  */
 static void __exit cifsd_server_exit(void)
 {
-	cifsd_net_exit();
-
-	cifsd_tcp_destroy();
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	destroy_global_fidtable();
-#endif
-	cifsd_export_exit();
-	destroy_lease_table(NULL);
-	cifsd_destroy_buffer_pools();
-#ifdef CONFIG_CIFSD_ACL
-	exit_cifsd_idmap();
-#endif
+	cifsd_server_shutdown();
 }
 
 MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");

@@ -75,8 +75,8 @@ struct lease {
 
 struct oplock_info {
 	struct cifsd_tcp_conn	*conn;
-	struct cifsd_sess	*sess;
-	struct cifsd_work		*work;
+	struct cifsd_session	*sess;
+	struct cifsd_work	*work;
 	bool			is_smb2;
 	struct cifsd_file	*o_fp;
 	int                     level;
@@ -140,13 +140,13 @@ void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
 void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);
 struct create_context *smb2_find_context_vals(void *open_req, char *str);
-int cifsd_durable_verify_and_del_oplock(struct cifsd_sess *curr_sess,
-					  struct cifsd_sess *prev_sess,
+int cifsd_durable_verify_and_del_oplock(struct cifsd_session *curr_sess,
+					  struct cifsd_session *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id);
 struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
 	char *lease_key);
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
+int find_same_lease_key(struct cifsd_session *sess, struct cifsd_inode *ci,
 	struct lease_ctx_info *lctx);
 void destroy_lease_table(struct cifsd_tcp_conn *conn);
 int smb2_check_durable_oplock(struct cifsd_file *fp,
