@@ -244,6 +244,9 @@ static struct cifsd_session *__session_create(int protocol)
 	case CIFDS_SESSION_FLAG_SMB2:
 		ret = __init_smb2_session(sess);
 		break;
+	default:
+		ret = -EINVAL;
+		break;
 	}
 
 	sess->tree_conn_ida = cifsd_ida_alloc();
