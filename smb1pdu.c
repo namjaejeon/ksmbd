@@ -341,13 +341,9 @@ int smb_check_user_session(struct cifsd_work *work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	int rc;
 	unsigned int cmd = conn->ops->get_cmd_val(work);
 
-	pr_err("Fix me\n");
-
 	work->sess = NULL;
-
 	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
 		return 0;
 
@@ -359,13 +355,12 @@ int smb_check_user_session(struct cifsd_work *work)
 		return 0;
 	}
 
-	rc = -EINVAL;
-	work->sess = cifsd_session_lookup(req_hdr->Uid);
+	work->sess = cifsd_session_lookup_slowpath(req_hdr->Uid);
 	if (work->sess && work->sess->valid)
 		return 1;
 	if (!work->sess)
 		cifsd_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
-	return rc;
+	return -EINVAL;
 }
 
 /**

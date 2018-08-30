@@ -190,7 +190,7 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 	return NULL;
 }
 
-struct cifsd_session *cifsd_session_lookup(unsigned long long id)
+struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id)
 {
 	struct cifsd_session *sess;
 

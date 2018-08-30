@@ -348,7 +348,7 @@ struct cifsd_session *lookup_session_on_server(struct cifsd_tcp_conn *conn,
 
 	/* @FIXME: remove this code */
 
-	sess = cifsd_session_lookup(sess_id);
+	sess = cifsd_session_lookup_slowpath(sess_id);
 	if (!sess)
 		cifsd_err("User session(ID : %llu) not found\n", sess_id);
 	return sess;
