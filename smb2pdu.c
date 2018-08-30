@@ -631,23 +631,8 @@ int smb2_check_user_session(struct cifsd_work *work)
 			cmd == SMB2_SESSION_SETUP)
 		return 0;
 
-	if (!cifsd_tcp_good(work)) {
-		if (!list_empty(&conn->sessions)) {
-			struct cifsd_session *sess;
-			struct list_head *tmp, *t;
-
-			list_for_each_safe(tmp, t, &conn->sessions) {
-				sess = list_entry(tmp, struct cifsd_session,
-						sessions_entry);
-				if (sess->state == SMB2_SESSION_EXPIRED) {
-					cifsd_debug("invalid session\n");
-					work->sess = sess;
-					break;
-				}
-			}
-		}
+	if (!cifsd_tcp_good(work))
 		return -EINVAL;
-	}
 
 	sess_id = le64_to_cpu(req_hdr->SessionId);
 	/* Check for validity of user session */
