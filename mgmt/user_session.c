@@ -162,6 +162,9 @@ int cifsd_session_rpc_method(struct cifsd_session *sess, int id)
 
 void cifsd_session_destroy(struct cifsd_session *sess)
 {
+	if (!sess)
+		return;
+
 	cifsd_session_rpc_clear_list(sess);
 	free_channel_list(sess);
 	kfree(sess->Preauth_HashValue);

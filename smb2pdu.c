@@ -670,44 +670,9 @@ int smb2_check_user_session(struct cifsd_work *work)
 	return rc;
 }
 
-
-/**
- * smb2_invalidate_prev_session() - invalidate existing session of an user
- * @sess_id:	session id to be invalidated
- */
-void smb2_invalidate_prev_session(uint64_t sess_id)
+static void destroy_previous_session(uint64_t id)
 {
-	struct cifsd_session *sess;
-	struct list_head *tmp, *t;
-
-	list_for_each_safe(tmp, t, &cifsd_session_list) {
-		sess = list_entry(tmp, struct cifsd_session,
-				cifsd_ses_global_list);
-		if (sess->id == sess_id) {
-			cifsd_session_destroy(sess);
-			break;
-		}
-	}
-}
-
-/**
- * smb2_get_session_global_list() - get existing session from global session
- * list
- * @sess_id:	session id to be invalidated
- */
-struct cifsd_session *smb2_get_session_global_list(uint64_t sess_id)
-{
-	struct cifsd_session *sess;
-	struct list_head *tmp, *t;
-
-	list_for_each_safe(tmp, t, &cifsd_session_list) {
-		sess = list_entry(tmp, struct cifsd_session,
-				cifsd_ses_global_list);
-		if (sess->id == sess_id && sess->valid)
-			return sess;
-	}
-
-	return NULL;
+	cifsd_session_destroy(cifsd_session_lookup_slowpath(id));
 }
 
 /**
@@ -1198,8 +1163,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 	if (!req->hdr.SessionId) {
 		/* Check for previous session */
 		if (le64_to_cpu(req->PreviousSessionId))
-			smb2_invalidate_prev_session(
-				le64_to_cpu(req->PreviousSessionId));
+			destroy_previous_session(
+					le64_to_cpu(req->PreviousSessionId));
 
 		sess = cifsd_smb2_session_create();
 		if (sess == NULL) {
@@ -1211,10 +1176,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 	} else {
 		if (multi_channel_enable &&
 			req->hdr.Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
-			sess = smb2_get_session_global_list(
+			sess = cifsd_session_lookup_slowpath(
 					le64_to_cpu(req->hdr.SessionId));
-			if (!sess) {
-				cifsd_err("not found session from global list");
+			if (!(sess && sess->valid)) {
 				rc = -ENOENT;
 				rsp->hdr.Status =
 					NT_STATUS_USER_SESSION_DELETED;
