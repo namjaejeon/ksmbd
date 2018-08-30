@@ -24,6 +24,7 @@
 #include "user_session.h"
 #include "tree_connect.h"
 #include "../transport_ipc.h"
+#include "../transport_tcp.h"
 #include "../buffer_pool.h"
 #include "../cifsd_server.h" /* FIXME */
 
@@ -170,6 +171,7 @@ void cifsd_session_destroy(struct cifsd_session *sess)
 	kfree(sess->Preauth_HashValue);
 	cifds_release_id(session_ida, sess->id);
 
+	list_del(&sess->sessions_entry);
 	down_write(&sessions_table_lock);
 	hash_del(&sess->hlist);
 	up_write(&sessions_table_lock);
@@ -193,9 +195,28 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 	return NULL;
 }
 
+void cifsd_session_register(struct cifsd_tcp_conn *conn,
+			    struct cifsd_session *sess)
+{
+	sess->conn = conn;
+	list_add(&sess->sessions_entry, &conn->sessions);
+}
+
 bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id)
 {
 	return sess->id == id;
+}
+
+struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
+					   unsigned long long id)
+{
+	struct cifsd_session *sess = NULL;
+
+	list_for_each_entry(sess, &conn->sessions, sessions_entry) {
+		if (cifsd_session_id_match(sess, id))
+			return sess;
+	}
+	return NULL;
 }
 
 struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id)

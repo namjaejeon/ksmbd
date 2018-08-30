@@ -1172,7 +1172,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			goto out_err;
 		}
 		rsp->hdr.SessionId = cpu_to_le64(sess->id);
-		sess->conn = conn;
+		cifsd_session_register(conn, sess);
 	} else {
 		if (multi_channel_enable &&
 			req->hdr.Flags & SMB2_SESSION_REQ_FLAG_BINDING) {

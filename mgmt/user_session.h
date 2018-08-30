@@ -99,6 +99,10 @@ void cifsd_session_destroy(struct cifsd_session *sess);
 
 bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id);
 struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id);
+struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
+					   unsigned long long id);
+void cifsd_session_register(struct cifsd_tcp_conn *conn,
+			    struct cifsd_session *sess);
 
 int cifsd_acquire_tree_conn_id(struct cifsd_session *sess);
 void cifsd_release_tree_conn_id(struct cifsd_session *sess, int id);

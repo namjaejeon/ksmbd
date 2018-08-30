@@ -1327,7 +1327,7 @@ int smb_session_setup_andx(struct cifsd_work *work)
 			goto out_err;
 		}
 
-		sess->conn = conn;
+		cifsd_session_register(conn, sess);
 		rsp->resp.hdr.Uid = sess->id;
 		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
 				sess, sess->id, uid);
