@@ -74,8 +74,6 @@ struct cifsd_tcp_conn_ops {
 
 struct cifsd_tcp_conn {
 	struct socket			*sock;
-	/* The number of sessions attached with this connection */
-	int				sess_count;
 	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
@@ -91,8 +89,7 @@ struct cifsd_tcp_conn {
 	unsigned int			total_read;
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
-	/* @FIXME: remove this code */
-	struct list_head		cifsd_sess;
+	struct list_head		sessions;
 	struct task_struct		*handler;
 	unsigned long			last_active;
 	/* How many request are running currently */

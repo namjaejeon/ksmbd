@@ -350,7 +350,7 @@ int smb_check_user_session(struct cifsd_work *work)
 	if (!cifsd_tcp_good(work))
 		return -EINVAL;
 
-	if (conn->sess_count == 0) {
+	if (list_empty(&conn->sessions)) {
 		cifsd_debug("NO sessions registered\n");
 		return 0;
 	}
@@ -422,7 +422,6 @@ int smb_session_disconnect(struct cifsd_work *work)
 	cifsd_session_destroy(sess);
 	work->sess = NULL;
 
-	conn->sess_count--;
 	/* let start_tcp_sess free conn info now */
 	cifsd_tcp_set_exiting(work);
 	return 0;
@@ -1079,8 +1078,6 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 	}
 
 no_password_check:
-	conn->sess_count++;
-
 	/* Build response. We don't use extended security (yet), so wct is 3 */
 	rsp->hdr.WordCount = 3;
 	rsp->Action = 0;
@@ -1263,7 +1260,6 @@ no_password_check:
 			inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
 			rsp->ByteCount = rsp->SecurityBlobLength;
 		}
-		conn->sess_count++;
 	} else {
 		cifsd_err("%s Invalid phase\n", __func__);
 		err = -EINVAL;

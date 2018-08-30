@@ -638,11 +638,11 @@ int smb2_check_user_session(struct cifsd_work *work)
 		return 0;
 
 	if (!cifsd_tcp_good(work)) {
-		if (conn->sess_count) {
+		if (!list_empty(&conn->sessions)) {
 			struct cifsd_session *sess;
 			struct list_head *tmp, *t;
 
-			list_for_each_safe(tmp, t, &conn->cifsd_sess) {
+			list_for_each_safe(tmp, t, &conn->sessions) {
 				sess = list_entry(tmp, struct cifsd_session,
 						cifsd_ses_list);
 				if (sess->state == SMB2_SESSION_EXPIRED) {

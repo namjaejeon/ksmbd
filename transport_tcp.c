@@ -96,7 +96,6 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->sess_count = 0;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls_default();
@@ -106,7 +105,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->credits_granted = 0;
 	init_waitqueue_head(&conn->req_running_q);
 	INIT_LIST_HEAD(&conn->tcp_conns);
-	INIT_LIST_HEAD(&conn->cifsd_sess);
+	INIT_LIST_HEAD(&conn->sessions);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
