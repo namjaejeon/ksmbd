@@ -37,7 +37,6 @@
 
 /* @FIXME clean up this code */
 int cifsd_debug_enable;
-struct list_head cifsd_session_list;
 
 /*
  * keep MaxBufSize Default: 65536
