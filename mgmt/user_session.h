@@ -99,6 +99,7 @@ struct cifsd_session *cifsd_smb2_session_create(void);
 
 void cifsd_session_destroy(struct cifsd_session *sess);
 
+bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id);
 struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id);
 
 int cifsd_acquire_tree_conn_id(struct cifsd_session *sess);
