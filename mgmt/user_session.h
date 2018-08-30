@@ -74,9 +74,7 @@ struct cifsd_session {
 	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3signingkey[SMB3_SIGN_KEY_SIZE];
 
-	/* REMOVE */
 	struct list_head		cifsd_ses_list;
-	struct list_head		cifsd_ses_global_list;
 };
 
 static inline int test_session_flag(struct cifsd_session *sess, int bit)
