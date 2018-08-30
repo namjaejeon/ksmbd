@@ -214,7 +214,7 @@ struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
 
 	list_for_each_entry(sess, &conn->sessions, sessions_entry) {
 		if (cifsd_session_id_match(sess, id))
-			return sess->valid == 1 ? sess :  NULL;
+			return (sess->valid == 1) ? sess : NULL;
 	}
 	return NULL;
 }

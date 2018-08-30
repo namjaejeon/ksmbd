@@ -116,13 +116,9 @@ static inline int check_session_id(struct cifsd_tcp_conn *conn, uint64_t id)
 		return 0;
 
 	sess = cifsd_session_lookup(conn, id);
-	if (sess) {
-		if (sess->valid)
-			return 1;
-		else
-			cifsd_err("Invalid user session\n");
-	}
-
+	if (sess)
+		return 1;
+	cifsd_err("Invalid user session id: %llu\n", id);
 	return 0;
 }
 
