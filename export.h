@@ -33,13 +33,6 @@
 
 extern int cifsd_debug_enable;
 
-/* Global list containing exported points */
-extern struct list_head cifsd_share_list;
-
-/* Spinlock to protect global list */
-extern spinlock_t export_list_lock;
-extern spinlock_t connect_list_lock;
-
 /* Global defines for server */
 #define SERVER_MAX_MPX_COUNT 10
 #define SERVER_MAX_VCS 1
