@@ -115,7 +115,7 @@ static inline int check_session_id(struct cifsd_tcp_conn *conn, uint64_t id)
 	if (id == 0 || id == -1)
 		return 0;
 
-	sess = lookup_session_on_server(conn, id);
+	sess = cifsd_session_lookup(conn, id);
 	if (sess) {
 		if (sess->valid)
 			return 1;
@@ -657,7 +657,7 @@ int smb2_check_user_session(struct cifsd_work *work)
 
 	rc = -EINVAL;
 	/* Check for validity of user session */
-	sess = lookup_session_on_server(conn, le64_to_cpu(req_hdr->SessionId));
+	sess = cifsd_session_lookup(conn, le64_to_cpu(req_hdr->SessionId));
 	if (sess) {
 		if (sess->valid) {
 			work->sess = sess;
@@ -1211,7 +1211,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			sess = lookup_session_on_server(conn,
+			sess = cifsd_session_lookup(conn,
 					le64_to_cpu(req->hdr.SessionId));
 			if (!sess) {
 				rc = -EINVAL;
@@ -1233,7 +1233,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			binding_flags = true;
 		} else {
-			sess = lookup_session_on_server(conn,
+			sess = cifsd_session_lookup(conn,
 					le64_to_cpu(req->hdr.SessionId));
 			if (!sess) {
 				rc = -ENOENT;
@@ -7259,7 +7259,7 @@ static int smb2_get_enc_key(struct cifsd_tcp_conn *conn, __u64 ses_id,
 	struct cifsd_session *sess;
 	u8 *ses_enc_key;
 
-	sess = lookup_session_on_server(conn, ses_id);
+	sess = cifsd_session_lookup(conn, ses_id);
 	if (!sess)
 		return 1;
 
@@ -7538,8 +7538,7 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	unsigned int orig_len = le32_to_cpu(tr_hdr->OriginalMessageSize);
 	int rc = 0;
 
-	sess = lookup_session_on_server(conn,
-		le64_to_cpu(tr_hdr->SessionId));
+	sess = cifsd_session_lookup(conn, le64_to_cpu(tr_hdr->SessionId));
 	if (!sess) {
 		cifsd_err("invalid session id(%llx) in transform header\n",
 		le64_to_cpu(tr_hdr->SessionId));

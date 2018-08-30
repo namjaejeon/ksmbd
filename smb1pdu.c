@@ -355,7 +355,7 @@ int smb_check_user_session(struct cifsd_work *work)
 		return 0;
 	}
 
-	work->sess = cifsd_session_lookup_slowpath(req_hdr->Uid);
+	work->sess = cifsd_session_lookup(conn, req_hdr->Uid);
 	if (work->sess && work->sess->valid)
 		return 1;
 	if (!work->sess)
@@ -1313,7 +1313,7 @@ int smb_session_setup_andx(struct cifsd_work *work)
 
 	uid = le16_to_cpu(pSMB->req.hdr.Uid);
 	if (uid != 0) {
-		sess = lookup_session_on_server(conn, uid);
+		sess = cifsd_session_lookup(conn, uid);
 		if (!sess) {
 			rc = -ENOENT;
 			goto out_err;

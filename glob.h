@@ -501,8 +501,6 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
-struct cifsd_session *lookup_session_on_server(struct cifsd_tcp_conn *conn,
-		uint64_t sess_id);
 int get_nlink(struct kstat *st);
 
 /* cifsd misc functions */

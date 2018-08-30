@@ -341,19 +341,6 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_session *lookup_session_on_server(struct cifsd_tcp_conn *conn,
-		uint64_t sess_id)
-{
-	struct cifsd_session *sess;
-
-	/* @FIXME: remove this code */
-
-	sess = cifsd_session_lookup_slowpath(sess_id);
-	if (!sess)
-		cifsd_err("User session(ID : %llu) not found\n", sess_id);
-	return sess;
-}
-
 /**
  * validate_sess_handle() - check for valid session handle
  * @sess:	handle to be validated
