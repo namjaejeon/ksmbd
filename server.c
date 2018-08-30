@@ -384,7 +384,7 @@ static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
 		list_for_each_safe(tmp, t, &conn->sessions) {
 			sess = list_entry(tmp,
 					  struct cifsd_session,
-					  cifsd_ses_list);
+					  sessions_entry);
 			cifsd_session_destroy(sess);
 		}
 	}

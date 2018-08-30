@@ -644,7 +644,7 @@ int smb2_check_user_session(struct cifsd_work *work)
 
 			list_for_each_safe(tmp, t, &conn->sessions) {
 				sess = list_entry(tmp, struct cifsd_session,
-						cifsd_ses_list);
+						sessions_entry);
 				if (sess->state == SMB2_SESSION_EXPIRED) {
 					cifsd_debug("invalid session\n");
 					work->sess = sess;
