@@ -356,10 +356,9 @@ int smb_check_user_session(struct cifsd_work *work)
 	}
 
 	work->sess = cifsd_session_lookup(conn, req_hdr->Uid);
-	if (work->sess && work->sess->valid)
+	if (work->sess)
 		return 1;
-	if (!work->sess)
-		cifsd_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
+	cifsd_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
 	return -EINVAL;
 }
 

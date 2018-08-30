@@ -622,12 +622,10 @@ int smb2_check_user_session(struct cifsd_work *work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess;
-	int rc;
 	unsigned int cmd = conn->ops->get_cmd_val(work);
+	unsigned long long sess_id;
 
 	work->sess = NULL;
-
 	/*
 	 * ECHO, KEEP_ALIVE, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command does not
 	 * require a session id, so no need to validate user session's for these
@@ -655,19 +653,13 @@ int smb2_check_user_session(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	rc = -EINVAL;
+	sess_id = le64_to_cpu(req_hdr->SessionId);
 	/* Check for validity of user session */
-	sess = cifsd_session_lookup(conn, le64_to_cpu(req_hdr->SessionId));
-	if (sess) {
-		if (sess->valid) {
-			work->sess = sess;
-			rc = 1;
-		} else {
-			cifsd_err("Invalid user session\n");
-		}
-	}
-
-	return rc;
+	work->sess = cifsd_session_lookup(conn, sess_id);
+	if (work->sess)
+		return 1;
+	cifsd_debug("Invalid user session, Uid %llu\n", sess_id);
+	return -EINVAL;
 }
 
 static void destroy_previous_session(uint64_t id)
