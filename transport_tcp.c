@@ -22,6 +22,7 @@
 #include "glob.h"
 #include "export.h"
 
+#include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 
@@ -33,8 +34,6 @@ static DEFINE_MUTEX(init_lock);
 
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
-
-static int deny_new_conn;
 
 /**
  * cifsd_tcp_conn_alive() - check server is unresponsive or not
@@ -97,7 +96,6 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->sess_count = 0;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls_default();
@@ -107,7 +105,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->credits_granted = 0;
 	init_waitqueue_head(&conn->req_running_q);
 	INIT_LIST_HEAD(&conn->tcp_conns);
-	INIT_LIST_HEAD(&conn->cifsd_sess);
+	INIT_LIST_HEAD(&conn->sessions);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
@@ -196,6 +194,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop()) {
+		if (!cifsd_server_running())
+			break;
 		if (conn->tcp_status == CIFSD_SESS_EXITING)
 			break;
 		if (!cifsd_tcp_conn_alive(conn))
@@ -285,34 +285,35 @@ static int cifsd_tcp_conn_handler_loop(void *p)
  */
 static int cifsd_tcp_new_connection(struct socket *client_sk)
 {
-	struct sockaddr_storage caddr;
-	struct sockaddr *csin = (struct sockaddr *)&caddr;
+	struct sockaddr *csin;
 	int rc = 0;
 	struct cifsd_tcp_conn *conn;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
-	int cslen;
-
-	if (kernel_getpeername(client_sk, csin, &cslen) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#else
-	if (kernel_getpeername(client_sk, csin) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#endif
 
 	conn = cifsd_tcp_conn_alloc(client_sk);
 	if (conn == NULL)
 		return -ENOMEM;
 
+	csin = CIFSD_TCP_PEER_SOCKADDR(conn);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+	if (kernel_getpeername(client_sk, csin, &rc) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		rc = -EINVAL;
+		goto out_error;
+	}
+	rc = 0;
+#else
+	if (kernel_getpeername(client_sk, csin) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		rc = -EINVAL;
+		goto out_error;
+	}
+#endif
+
 	conn->conn_ops = &default_tcp_conn_ops;
 	if (conn->conn_ops->init_fn)
 		conn->conn_ops->init_fn(conn);
 
-	conn->family = csin->sa_family;
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
@@ -323,6 +324,10 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 		rc = PTR_ERR(conn->handler);
 		cifsd_tcp_conn_free(conn);
 	}
+	return rc;
+
+out_error:
+	cifsd_tcp_conn_free(conn);
 	return rc;
 }
 
@@ -338,9 +343,6 @@ static int cifsd_kthread_fn(void *p)
 	int ret;
 
 	while (!kthread_should_stop()) {
-		if (deny_new_conn)
-			continue;
-
 		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
 		if (ret) {
 			if (ret == -EAGAIN)
@@ -375,7 +377,6 @@ static int cifsd_tcp_run_kthread(void)
 {
 	int rc;
 
-	deny_new_conn = 0;
 	cifsd_kthread = kthread_run(cifsd_kthread_fn,
 				    NULL,
 				    "kcifsd_main");
@@ -691,8 +692,6 @@ static void tcp_stop_kthread(void)
 void cifsd_tcp_destroy(void)
 {
 	mutex_lock(&init_lock);
-	deny_new_conn = 1;
-
 	tcp_destroy_socket();
 	tcp_stop_kthread();
 	tcp_stop_sessions();

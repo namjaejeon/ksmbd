@@ -29,7 +29,9 @@
 #include "glob.h"
 #include "export.h"
 
+#include "server.h"
 #include "transport_tcp.h"
+#include "mgmt/user_session.h"
 
 /* Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
@@ -117,7 +119,7 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-int compute_sess_key(struct cifsd_sess *sess, char *hash, char *hmac)
+int compute_sess_key(struct cifsd_session *sess, char *hash, char *hmac)
 {
 	int rc;
 
@@ -158,7 +160,7 @@ out:
 	return rc;
 }
 
-static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
+static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret, len;
@@ -246,7 +248,7 @@ static int calc_ntlmv2_hash(struct cifsd_sess *sess, char *ntlmv2_hash,
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlm(struct cifsd_sess *sess, char *pw_buf)
+int process_ntlm(struct cifsd_session *sess, char *pw_buf)
 {
 	int rc;
 	unsigned char p21[21];
@@ -285,7 +287,7 @@ int process_ntlm(struct cifsd_sess *sess, char *pw_buf)
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
+int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
 		int blen, char *domain_name)
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
@@ -299,8 +301,8 @@ int process_ntlmv2(struct cifsd_sess *sess, struct ntlmv2_resp *ntlmv2,
 		goto out;
 	}
 
-	if (domain_name == netbios_name)
-		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, netbios_name);
+	if (!strcmp(domain_name, cifsd_netbios_name()))
+		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, cifsd_netbios_name());
 	else
 		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
 
@@ -367,7 +369,7 @@ out:
  *
  * Return:	0 on success, error number on error
  */
-static int process_ntlm2(struct cifsd_sess *sess, char *client_nonce,
+static int process_ntlm2(struct cifsd_session *sess, char *client_nonce,
 	 char *ntlm_resp)
 {
 	char sess_key[CIFS_SMB1_SESSKEY_SIZE] = {0};
@@ -406,7 +408,7 @@ out:
  * Return:	0 on success, error number on error
  */
 int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-	int blob_len, struct cifsd_sess *sess)
+	int blob_len, struct cifsd_session *sess)
 {
 	char *domain_name;
 
@@ -457,7 +459,7 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
  *
  */
 int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct cifsd_sess *sess)
+		int blob_len, struct cifsd_session *sess)
 {
 	if (blob_len < sizeof(NEGOTIATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -482,7 +484,7 @@ int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
  *
  */
 unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct cifsd_sess *sess)
+		struct cifsd_session *sess)
 {
 	TargetInfo *tinfo;
 	wchar_t *name;
@@ -515,12 +517,12 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
-	len = strlen(netbios_name);
+	len = strlen(cifsd_netbios_name());
 	name = kmalloc(2 + (len * 2), GFP_KERNEL);
 	if (!name)
 		return -ENOMEM;
 
-	len = smb_strtoUTF16((__le16 *)name, netbios_name, len,
+	len = smb_strtoUTF16((__le16 *)name, cifsd_netbios_name(), len,
 			sess->conn->local_nls);
 	len = UNICODE_LEN(len);
 	chgblob->TargetName.Length = cpu_to_le16(len);
@@ -574,7 +576,7 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
  * @sig:        signature value generated for client request packet
  *
  */
-int smb1_sign_smbpdu(struct cifsd_sess *sess, struct kvec *iov, int n_vec,
+int smb1_sign_smbpdu(struct cifsd_session *sess, struct kvec *iov, int n_vec,
 		char *sig)
 {
 	int rc;
@@ -819,7 +821,7 @@ struct derivation {
 	bool binding;
 };
 
-static int generate_key(struct cifsd_sess *sess, struct kvec label,
+static int generate_key(struct cifsd_session *sess, struct kvec label,
 	struct kvec context, __u8 *key, unsigned int key_size)
 {
 	unsigned char zero = 0x0;
@@ -905,7 +907,7 @@ smb3signkey_ret:
 	return rc;
 }
 
-static int generate_smb3signingkey(struct cifsd_sess *sess,
+static int generate_smb3signingkey(struct cifsd_session *sess,
 	const struct derivation *signing)
 {
 	int rc;
@@ -934,8 +936,8 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
 	 */
-	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->sess_id),
-			&sess->sess_id);
+	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->id),
+			&sess->id);
 	cifsd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("Signing Key   %*ph\n",
@@ -943,7 +945,7 @@ static int generate_smb3signingkey(struct cifsd_sess *sess,
 	return rc;
 }
 
-int generate_smb30signingkey(struct cifsd_sess *sess, bool binding,
+int generate_smb30signingkey(struct cifsd_session *sess, bool binding,
 	char *hash_value)
 {
 	struct derivation d;
@@ -957,7 +959,7 @@ int generate_smb30signingkey(struct cifsd_sess *sess, bool binding,
 	return generate_smb3signingkey(sess, &d);
 }
 
-int generate_smb311signingkey(struct cifsd_sess *sess, bool binding,
+int generate_smb311signingkey(struct cifsd_session *sess, bool binding,
 	char *hash_value)
 {
 	struct derivation d;
@@ -979,7 +981,7 @@ struct derivation_twin {
 	struct derivation decryption;
 };
 
-static int generate_smb3encryptionkey(struct cifsd_sess *sess,
+static int generate_smb3encryptionkey(struct cifsd_session *sess,
 	const struct derivation_twin *ptwin)
 {
 	int rc;
@@ -1001,8 +1003,8 @@ static int generate_smb3encryptionkey(struct cifsd_sess *sess,
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
 	 */
-	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->sess_id),
-			&sess->sess_id);
+	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->id),
+			&sess->id);
 	cifsd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("ServerIn Key  %*ph\n",
@@ -1012,7 +1014,7 @@ static int generate_smb3encryptionkey(struct cifsd_sess *sess,
 	return rc;
 }
 
-int generate_smb30encryptionkey(struct cifsd_sess *sess)
+int generate_smb30encryptionkey(struct cifsd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;
@@ -1032,7 +1034,7 @@ int generate_smb30encryptionkey(struct cifsd_sess *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int generate_smb311encryptionkey(struct cifsd_sess *sess)
+int generate_smb311encryptionkey(struct cifsd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;

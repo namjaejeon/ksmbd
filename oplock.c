@@ -29,6 +29,7 @@
 
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "mgmt/user_session.h"
 
 bool oplocks_enable;
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -59,7 +60,7 @@ MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
 static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 		uint64_t id, __u16 Tid)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct oplock_info *opinfo;
 
 	opinfo = kzalloc(sizeof(struct oplock_info), GFP_KERNEL);
@@ -992,7 +993,7 @@ again:
 	write_unlock(&lease_list_lock);
 }
 
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
+int find_same_lease_key(struct cifsd_session *sess, struct cifsd_inode *ci,
 		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -1120,7 +1121,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
 	int share_ret)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_inode *ci = fp->f_ci;
@@ -1389,7 +1390,7 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 	/* we know unicode, long file name and use nt error codes */
 	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
 		SMBFLG2_ERR_STATUS;
-	rsp_hdr->Uid = work->sess->sess_id;
+	rsp_hdr->Uid = work->sess->id;
 	rsp_hdr->Pid = 0xFFFF;
 	rsp_hdr->Mid = 0xFFFF;
 	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);

@@ -1,0 +1,14 @@
+- remove export server_string
+- TCP connection : session is 1:1
+	- remove tcp conn list, and so on
+	- get sessions from tcp_conn, drop most of sess lookups
+- drop export workgroup
+- drop export maptoguest
+- pass netbios_name from cifs-tools on init
+- pass server_signing from cifs-tools on init
+- remove export.c
+- remove netlink.c
+- handle RPC
+- update wildcard matching function implementation
+- remove old filter_filename_match
+- clean up protocol ID lookup
