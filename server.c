@@ -378,17 +378,7 @@ static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
 
 static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
 {
-	if (!list_empty(&conn->sessions)) {
-		struct cifsd_session *sess;
-		struct list_head *tmp, *t;
-		list_for_each_safe(tmp, t, &conn->sessions) {
-			sess = list_entry(tmp,
-					  struct cifsd_session,
-					  sessions_entry);
-			cifsd_session_destroy(sess);
-		}
-	}
-
+	cifsd_sessions_deregister(conn);
 	destroy_lease_table(conn);
 	return 0;
 }
