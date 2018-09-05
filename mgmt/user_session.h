@@ -103,6 +103,7 @@ struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
 					   unsigned long long id);
 void cifsd_session_register(struct cifsd_tcp_conn *conn,
 			    struct cifsd_session *sess);
+void cifsd_sessions_deregister(struct cifsd_tcp_conn *conn);
 
 int cifsd_acquire_tree_conn_id(struct cifsd_session *sess);
 void cifsd_release_tree_conn_id(struct cifsd_session *sess, int id);

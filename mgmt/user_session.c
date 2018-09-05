@@ -202,6 +202,20 @@ void cifsd_session_register(struct cifsd_tcp_conn *conn,
 	list_add(&sess->sessions_entry, &conn->sessions);
 }
 
+void cifsd_sessions_deregister(struct cifsd_tcp_conn *conn)
+{
+	struct cifsd_session *sess;
+
+	while (!list_empty(&conn->sessions)) {
+		sess = list_entry(conn->sessions.next,
+				  struct cifsd_session,
+				  sessions_entry);
+
+		list_del(&sess->sessions_entry);
+		cifsd_session_destroy(sess);
+	}
+}
+
 bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id)
 {
 	return sess->id == id;
