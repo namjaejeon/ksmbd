@@ -68,8 +68,6 @@ struct cifsd_tcp_conn_ops {
 	int	(*init_fn)(struct cifsd_tcp_conn *conn);
 	int	(*process_fn)(struct cifsd_tcp_conn *conn);
 	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
-
-	size_t	(*header_size_fn)(void);
 };
 
 struct cifsd_tcp_conn {
@@ -86,7 +84,6 @@ struct cifsd_tcp_conn {
 	unsigned int			nr_iov;
 	void 				*request_buf;
 	struct nls_table		*local_nls;
-	unsigned int			total_read;
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
 	struct list_head		sessions;

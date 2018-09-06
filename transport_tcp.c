@@ -223,13 +223,13 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 		}
 
-		size = pdu_size + conn->conn_ops->header_size_fn();
+		/* 4 for rfc1002 length field */
+		size = pdu_size + 4;
 		conn->request_buf = cifsd_alloc_request(size);
 		if (!conn->request_buf)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		conn->total_read = size;
 		if (!is_smb_request(conn))
 			continue;
 
@@ -243,7 +243,6 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 		}
 
-		conn->total_read += size;
 		if (size != pdu_size) {
 			cifsd_err("PDU error. Read: %d, Expected: %d\n",
 				  size,
@@ -729,6 +728,4 @@ void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 	default_tcp_conn_ops.init_fn = ops->init_fn;
 	default_tcp_conn_ops.process_fn = ops->process_fn;
 	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
-
-	default_tcp_conn_ops.header_size_fn = ops->header_size_fn;
 }

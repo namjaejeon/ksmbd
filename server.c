@@ -356,15 +356,6 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static size_t cifsd_server_get_header_size(void)
-{
-	size_t sz = sizeof(struct smb_hdr);
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	sz = sizeof(struct smb2_hdr);
-#endif
-	return sz;
-}
-
 static int cifsd_server_init_conn(struct cifsd_tcp_conn *conn)
 {
 	init_smb1_server(conn);
@@ -390,7 +381,6 @@ static void cifsd_server_tcp_callbacks_init(void)
 	ops.init_fn = cifsd_server_init_conn;
 	ops.process_fn = cifsd_server_process_request;
 	ops.terminate_fn = cifsd_server_terminate_conn;
-	ops.header_size_fn = cifsd_server_get_header_size;
 
 	cifsd_tcp_init_server_callbacks(&ops);
 }
