@@ -198,6 +198,7 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 void cifsd_session_register(struct cifsd_tcp_conn *conn,
 			    struct cifsd_session *sess)
 {
+	sess->valid = 1;
 	sess->conn = conn;
 	list_add(&sess->sessions_entry, &conn->sessions);
 }
