@@ -397,20 +397,11 @@ static void server_conf_free(void)
 
 static int server_conf_init(void)
 {
-	int ret;
-
 	server_conf.state = SERVER_STATE_STARTING_UP;
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
 	server_conf.max_protocol = cifsd_max_protocol();
-
-	ret = cifsd_set_netbios_name(SERVER_DEFAULT_NETBIOS_NAME);
-	ret |= cifsd_set_server_string(SERVER_DEFAULT_SERVER_STRING);
-	ret |= cifsd_set_work_group(SERVER_DEFAULT_WORK_GROUP);
-
-	if (ret)
-		server_conf_free();
-	return ret;
+	return 0;
 }
 
 /**
