@@ -937,7 +937,7 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->hdr.WordCount = 17;
 	neg_rsp->DialectIndex = conn->dialect;
 
-	neg_rsp->SecurityMode = SERVER_SECU;
+	neg_rsp->SecurityMode = SMB1_SERVER_SECU;
 	if (server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
 		server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		conn->sign = true;
@@ -948,7 +948,7 @@ int smb_negotiate(struct cifsd_work *work)
 	neg_rsp->MaxBufferSize = SMBMaxBufSize;
 	neg_rsp->MaxRawSize = SERVER_MAX_RAW_SIZE;
 	neg_rsp->SessionKey = 0;
-	neg_rsp->Capabilities = SERVER_CAPS;
+	neg_rsp->Capabilities = conn->srv_cap = SMB1_SERVER_CAPS;
 
 	getnstimeofday64(&ts64);
 	time = cpu_to_le64(cifs_UnixTimeToNT(timespec64_to_timespec(ts64)));
