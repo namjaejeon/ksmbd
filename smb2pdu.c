@@ -2408,7 +2408,7 @@ int smb2_open(struct cifsd_work *work)
 	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE
 		&& S_ISDIR(stat.mode) &&
 		!(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
-		cifsd_err("Can't open dir %s, request is to open file : %x\n",
+		cifsd_debug("open() argument is a directory: %s, %x\n",
 			      name, req->CreateOptions);
 		rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
 		rc = -EIO;
