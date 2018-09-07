@@ -196,9 +196,19 @@ out:
 	return share;
 }
 
+static void strtolower(char *share_name)
+{
+	while (*share_name) {
+		*share_name = tolower(*share_name);
+		share_name++;
+	}
+}
+
 struct cifsd_share_config *cifsd_share_config_get(char *name)
 {
 	struct cifsd_share_config *share;
+
+	strtolower(name);
 
 	down_read(&shares_table_lock);
 	share = __share_lookup(name);
