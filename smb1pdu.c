@@ -1348,7 +1348,6 @@ int smb_session_setup_andx(struct cifsd_work *work)
 	if (rc < 0)
 		goto out_err;
 
-	sess->valid = 1;
 	work->sess = sess;
 	cifsd_tcp_set_good(work);
 	return 0;

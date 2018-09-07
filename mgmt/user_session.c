@@ -198,6 +198,7 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 void cifsd_session_register(struct cifsd_tcp_conn *conn,
 			    struct cifsd_session *sess)
 {
+	sess->valid = 1;
 	sess->conn = conn;
 	list_add(&sess->sessions_entry, &conn->sessions);
 }
@@ -211,7 +212,6 @@ void cifsd_sessions_deregister(struct cifsd_tcp_conn *conn)
 				  struct cifsd_session,
 				  sessions_entry);
 
-		list_del(&sess->sessions_entry);
 		cifsd_session_destroy(sess);
 	}
 }
@@ -274,6 +274,7 @@ static struct cifsd_session *__session_create(int protocol)
 		return NULL;
 
 	set_session_flag(sess, protocol);
+	INIT_LIST_HEAD(&sess->sessions_entry);
 	INIT_LIST_HEAD(&sess->tree_conn_list);
 	INIT_LIST_HEAD(&sess->cifsd_chann_list);
 	INIT_LIST_HEAD(&sess->rpc_handle_list);
