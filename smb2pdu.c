@@ -1288,7 +1288,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			int sz;
 
 			sz = sizeof(struct _NEGOTIATE_MESSAGE) +
-				(strlen(cifsd_netbios_name()) * 2  + 4) * 6;
+				(strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
 			neg_blob = kzalloc(sz, GFP_KERNEL);
 			if (!neg_blob) {
 				rc = -ENOMEM;
