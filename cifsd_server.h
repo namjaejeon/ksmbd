@@ -78,12 +78,14 @@ struct cifsd_share_config_response {
 	__s8	____payload[0];
 } __align;
 
-#define CIFSD_SHARE_CONFIG_VETO_LIST(s)				\
-	(char *)((void *)(s) + offsetof(struct cifsd_share_config_response,\
-		____payload))
-
-#define CIFSD_SHARE_CONFIG_PATH(s)					\
-	CIFSD_SHARE_CONFIG_VETO_LIST(s) + (s)->veto_list_sz
+#define CIFSD_SHARE_CONFIG_VETO_LIST(s)	((s)->____payload)
+#define CIFSD_SHARE_CONFIG_PATH(s)				\
+	({							\
+		char *p = (s)->____payload;			\
+		if ((s)->veto_list_sz)				\
+			p += (s)->veto_list_sz + 1;		\
+		p;						\
+	 })
 
 struct cifsd_tree_connect_request {
 	__u32	handle;
