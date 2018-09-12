@@ -625,6 +625,7 @@ out_err1:
 		rsp_hdr->Status.CifsError = NT_STATUS_NO_MEMORY;
 		break;
 	case CIFSD_TREE_CONN_STATUS_TOO_MANY_CONNS:
+	case CIFSD_TREE_CONN_STATUS_TOO_MANY_SESSIONS:
 		rsp_hdr->Status.CifsError = NT_STATUS_ACCESS_DENIED;
 		break;
 	case -ENODEV:
