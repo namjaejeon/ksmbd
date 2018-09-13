@@ -6483,19 +6483,20 @@ int smb2_ioctl(struct cifsd_work *work)
 			nii_rsp->Next = cpu_to_le32(152);
 			nii_rsp->Reserved = 0;
 
-			if (netdev->ethtool_ops->get_settings) {
-				struct ethtool_cmd cmd;
-
-				netdev->ethtool_ops->get_settings(netdev, &cmd);
-				speed = cmd.speed;
-			}
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-			else if (netdev->ethtool_ops->get_link_ksettings) {
+			if (netdev->ethtool_ops->get_link_ksettings) {
 				struct ethtool_link_ksettings cmd;
 
 				netdev->ethtool_ops->get_link_ksettings(netdev,
 					&cmd);
 				speed = cmd.base.speed;
+			}
+#else
+			if (netdev->ethtool_ops->get_settings) {
+				struct ethtool_cmd cmd;
+
+				netdev->ethtool_ops->get_settings(netdev, &cmd);
+				speed = cmd.speed;
 			}
 #endif
 			else {
