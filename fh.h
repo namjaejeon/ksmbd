@@ -77,13 +77,11 @@ struct cifsd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
 	struct list_head llist;
-	struct list_head flist;
 	unsigned int flags;
 	unsigned int cmd;
 	int zero_len;
 	unsigned long long start;
 	unsigned long long end;
-	struct cifsd_work *work;
 };
 
 struct stream {
@@ -143,7 +141,7 @@ struct cifsd_file {
 	struct stream stream;
 	struct list_head node;
 	struct list_head queue;
-	struct list_head lock_list;
+	struct list_head blocked_works;
 	spinlock_t f_lock;
 	wait_queue_head_t wq;
 	int f_state;

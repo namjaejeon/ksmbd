@@ -1816,7 +1816,6 @@ retry:
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
-			list_add(&smb_lock->flist, &fp->lock_list);
 wait:
 			err = wait_event_interruptible_timeout(
 				flock->fl_wait, !flock->fl_next,
@@ -1824,7 +1823,6 @@ wait:
 			if (err) {
 				list_del(&smb_lock->llist);
 				list_del(&smb_lock->glist);
-				list_del(&smb_lock->flist);
 				goto retry;
 			} else
 				goto wait;
@@ -1833,7 +1831,6 @@ skip:
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
-			list_add(&smb_lock->flist, &fp->lock_list);
 			cifsd_err("successful in taking lock\n");
 		} else if (err < 0) {
 			rsp->hdr.Status.CifsError = NT_STATUS_LOCK_NOT_GRANTED;
@@ -1907,7 +1904,6 @@ skip:
 		if (!err) {
 			cifsd_debug("File unlocked\n");
 			list_del(&cmp_lock->glist);
-			list_del(&cmp_lock->flist);
 			locks_free_lock(cmp_lock->fl);
 			kfree(cmp_lock);
 			fp->cflock_cnt = 0;
@@ -1954,7 +1950,6 @@ out:
 			cifsd_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);
 		list_del(&smb_lock->glist);
-		list_del(&smb_lock->flist);
 		locks_free_lock(smb_lock->fl);
 		locks_free_lock(rlock);
 		kfree(smb_lock);

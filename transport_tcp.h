@@ -140,6 +140,9 @@ struct cifsd_tcp_conn {
 	struct list_head		preauth_sess_table;
 
 	struct sockaddr_storage		peer_addr;
+
+	/* Identifier for async message */
+	struct cifsd_ida		*async_ida;
 };
 
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))

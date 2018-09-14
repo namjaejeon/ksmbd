@@ -514,7 +514,7 @@ static int close_fp(struct cifsd_file *fp)
 	struct cifsd_inode *ci;
 	struct file *filp;
 	struct dentry *dir, *dentry;
-	struct cifsd_lock *lock, *tmp;
+	struct cifsd_work *cancel_work, *ctmp;
 	int err;
 
 	ci = fp->f_ci;
@@ -532,30 +532,14 @@ static int close_fp(struct cifsd_file *fp)
 	else
 		filp = fp->filp;
 
-	list_for_each_entry_safe(lock, tmp, &fp->lock_list, flist) {
-		struct file_lock *flock = NULL;
-
-		if (lock->work && lock->work->type == ASYNC &&
-			lock->work->async->async_status == ASYNC_PROG) {
-			struct cifsd_work *async_work = lock->work;
-
-			async_work->async->async_status = ASYNC_CLOSE;
-		} else {
-			flock = smb_flock_init(filp);
-			flock->fl_type = F_UNLCK;
-			flock->fl_start = lock->start;
-			flock->fl_end = lock->end;
-			err = cifsd_vfs_lock(filp, 0, flock);
-			if (err)
-				cifsd_err("unlock fail : %d\n", err);
-			list_del(&lock->llist);
-			list_del(&lock->glist);
-			list_del(&lock->flist);
-			locks_free_lock(lock->fl);
-			locks_free_lock(flock);
-			kfree(lock);
-		}
+	spin_lock(&fp->f_lock);
+	list_for_each_entry_safe(cancel_work, ctmp, &fp->blocked_works,
+		fp_entry) {
+		list_del(&cancel_work->fp_entry);
+		cancel_work->state = WORK_STATE_CLOSED;
+		cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
+	spin_unlock(&fp->f_lock);
 
 	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;

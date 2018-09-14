@@ -42,6 +42,7 @@
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
+#include "mgmt/cifsd_ida.h"
 
 bool multi_channel_enable;
 bool encryption_enable;
@@ -505,6 +506,12 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 			conn->credits_granted -= 1;
 	}
 
+	work->type = SYNC;
+	if (work->async_id) {
+		cifds_release_id(conn->async_ida, work->async_id);
+		work->async_id = 0;
+	}
+
 	return 0;
 }
 
@@ -695,55 +702,49 @@ static void smb2_put_name(void *name)
 		kfree(name);
 }
 
-/* Async ida to generate async id */
-static DEFINE_IDA(async_ida);
-
-inline void remove_async_id(__u64 async_id)
-{
-	ida_simple_remove(&async_ida, (int)async_id);
-}
-
-/**
- * smb2_send_interim_resp() - Send interim Response to inform
- *				asynchronous request
- * @work:	smb work containing smb request buffer
- *
- */
-void smb2_send_interim_resp(struct cifsd_work *work)
+int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 {
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct async_info *async;
+	int id;
 
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
-
-	async = kmalloc(sizeof(struct async_info), GFP_KERNEL);
-	async->async_status = ASYNC_PROG;
-	work->async = async;
 	rsp_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
 
-	work->async->async_id = (__u64) ida_simple_get(&async_ida, 1, 0,
-		GFP_KERNEL);
+	id = cifds_acquire_async_msg_id(conn->async_ida);
+	if (id < 0) {
+		cifsd_err("Failed to alloc async message id\n");
+		return id;
+	}
 	work->type = ASYNC;
-	rsp_hdr->Id.AsyncId = cpu_to_le64(work->async->async_id);
+	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
 
 	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
-			async->async_id);
+			work->async_id);
+
+	work->cancel_fn = fn;
+	work->cancel_argv = arg;
 
 	spin_lock(&conn->request_lock);
 	list_del_init(&work->request_entry);
 	list_add_tail(&work->request_entry,
 		&conn->async_requests);
-	work->on_request_list = 1;
 	spin_unlock(&conn->request_lock);
 
+	return 0;
+}
+
+void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
+{
+	struct smb2_hdr *rsp_hdr;
+
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	smb2_set_err_rsp(work);
-	rsp_hdr->Status = NT_STATUS_PENDING;
+	rsp_hdr->Status = status;
+
 	work->multiRsp = 1;
 	cifsd_tcp_write(work);
 	work->multiRsp = 0;
-
-	init_smb2_rsp_hdr(work);
 }
 
 /**
@@ -2592,7 +2593,7 @@ int smb2_open(struct cifsd_work *work)
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
-	INIT_LIST_HEAD(&fp->lock_list);
+	INIT_LIST_HEAD(&fp->blocked_works);
 
 	/* Get Persistent-ID */
 	persistent_id = cifsd_insert_in_global_table(sess, fp);
@@ -5830,47 +5831,44 @@ int smb2_cancel(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
-	struct smb2_hdr *work_hdr;
-	struct cifsd_work *new_work = NULL;
+	struct smb2_hdr *chdr;
+	struct cifsd_work *cancel_work = NULL;
 	struct list_head *tmp;
 	int canceled = 0;
+	struct list_head *command_list;
 
 	cifsd_debug("smb2 cancel called on mid %llu\n", hdr->MessageId);
 
-	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND) {
-		spin_lock(&conn->request_lock);
-		list_for_each(tmp, &conn->async_requests) {
-			new_work = list_entry(tmp, struct cifsd_work,
-						request_entry);
-			work_hdr = (struct smb2_hdr *)REQUEST_BUF(new_work);
-			if (new_work->async->async_id ==
-				le64_to_cpu(hdr->Id.AsyncId)) {
-				cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
-					hdr->Id.AsyncId, work_hdr->Command);
-				if (new_work->async->async_status == ASYNC_PROG)
-					new_work->async->async_status =
-						ASYNC_CANCEL;
-				break;
-			}
-		}
-		spin_unlock(&conn->request_lock);
-	} else {
-		spin_lock(&conn->request_lock);
-		list_for_each(tmp, &conn->requests) {
-			new_work = list_entry(tmp, struct cifsd_work,
-						request_entry);
-			work_hdr = (struct smb2_hdr *)REQUEST_BUF(new_work);
-			if (work_hdr->MessageId == hdr->MessageId) {
-				cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
-					hdr->MessageId, work_hdr->Command);
-				canceled = 1;
-				break;
-			}
-		}
-		spin_unlock(&conn->request_lock);
+	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND)
+		command_list = &conn->async_requests;
+	else
+		command_list = &conn->requests;
 
-		if (canceled)
-			cancel_work_sync(&new_work->work);
+	spin_lock(&conn->request_lock);
+	list_for_each(tmp, command_list) {
+		cancel_work = list_entry(tmp, struct cifsd_work,
+				request_entry);
+		chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+		if (cancel_work->type == ASYNC) {
+			if (cancel_work->async_id !=
+					le64_to_cpu(hdr->Id.AsyncId))
+				continue;
+			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
+					hdr->Id.AsyncId, chdr->Command);
+		} else {
+			if (chdr->MessageId != hdr->MessageId)
+				continue;
+			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
+				hdr->MessageId, chdr->Command);
+		}
+		canceled = 1;
+		break;
+	}
+	spin_unlock(&conn->request_lock);
+
+	if (canceled) {
+		cancel_work->state = WORK_STATE_CANCELLED;
+		cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
 
 	/* For SMB2_CANCEL command itself send no response*/
@@ -5917,10 +5915,22 @@ static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
 		lock->zero_len = 1;
 	INIT_LIST_HEAD(&lock->llist);
 	INIT_LIST_HEAD(&lock->glist);
-	INIT_LIST_HEAD(&lock->flist);
 	list_add_tail(&lock->llist, lock_list);
 
 	return lock;
+}
+
+void smb2_remove_blocked_lock(void **argv)
+{
+	struct file_lock *flock = (struct file_lock *)argv[0];
+
+	posix_unblock_lock(flock);
+	wake_up(&flock->fl_wait);
+}
+
+static inline bool lock_defer_pending(struct file_lock *fl)
+{
+	return waitqueue_active(&fl->fl_wait);
 }
 
 /**
@@ -5931,7 +5941,6 @@ static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
  */
 int smb2_lock(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_lock_req *req;
 	struct smb2_lock_rsp *rsp;
 	struct smb2_lock_element *lock_ele;
@@ -6116,11 +6125,10 @@ int smb2_lock(struct cifsd_work *work)
 					smb_lock->fl->fl_file &&
 					cmp_lock->start == smb_lock->start &&
 					cmp_lock->end == smb_lock->end &&
-					!cmp_lock->work) {
+					!lock_defer_pending(cmp_lock->fl)) {
 					nolock = 0;
 					locks_free_lock(cmp_lock->fl);
 					list_del(&cmp_lock->glist);
-					list_del(&cmp_lock->flist);
 					kfree(cmp_lock);
 					break;
 				}
@@ -6192,61 +6200,74 @@ skip:
 			kfree(smb_lock);
 		} else {
 			if (err == FILE_LOCK_DEFERRED) {
-				spinlock_t *rq_lock = &conn->request_lock;
-				struct async_info *async;
+				void **argv;
 
 				cifsd_debug("would have to wait for getting"
 						" lock\n");
-				smb_lock->work = work;
 				list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
-				list_add(&smb_lock->flist, &fp->lock_list);
 
-				smb2_send_interim_resp(work);
-wait:
-				err = wait_event_interruptible_timeout(
-						flock->fl_wait,
-						!flock->fl_next,
-						msecs_to_jiffies(10));
-				spin_lock(rq_lock);
-				async = work->async;
-				if (async->async_status == ASYNC_CANCEL ||
-					async->async_status == ASYNC_CLOSE) {
-					posix_unblock_lock(flock);
+				argv = kmalloc(sizeof(void *), GFP_KERNEL);
+				if (!argv) {
+					err = -ENOMEM;
+					goto out;
+				}
+				argv[0] = flock;
+
+				err = setup_async_work(work,
+					smb2_remove_blocked_lock, argv);
+				if (err) {
+					rsp->hdr.Status =
+					   NT_STATUS_INSUFFICIENT_RESOURCES;
+					goto out;
+				}
+				spin_lock(&fp->f_lock);
+				list_add(&work->fp_entry, &fp->blocked_works);
+				spin_unlock(&fp->f_lock);
+
+				smb2_send_interim_resp(work, NT_STATUS_PENDING);
+
+				err = wait_event_interruptible(flock->fl_wait,
+					!flock->fl_next);
+
+				if (work->state == WORK_STATE_CANCELLED ||
+					work->state == WORK_STATE_CLOSED) {
 					list_del(&smb_lock->llist);
 					list_del(&smb_lock->glist);
 					locks_free_lock(flock);
 
-					if (async->async_status ==
-							ASYNC_CANCEL) {
+					if (work->state ==
+						WORK_STATE_CANCELLED) {
+						spin_lock(&fp->f_lock);
+						list_del(&work->fp_entry);
+						spin_unlock(&fp->f_lock);
 						rsp->hdr.Status =
 							NT_STATUS_CANCELLED;
-						list_del(&smb_lock->flist);
 						kfree(smb_lock);
-						spin_unlock(rq_lock);
+						smb2_send_interim_resp(work,
+							NT_STATUS_CANCELLED);
+						work->send_no_response = 1;
 						goto out;
 					}
+					init_smb2_rsp_hdr(work);
+					smb2_set_err_rsp(work);
 					rsp->hdr.Status =
 						NT_STATUS_RANGE_NOT_LOCKED;
 					kfree(smb_lock);
-					spin_unlock(rq_lock);
 					goto out2;
 				}
-				spin_unlock(rq_lock);
 
-				if (err) {
-					list_del(&smb_lock->llist);
-					list_del(&smb_lock->glist);
-					list_del(&smb_lock->flist);
-					goto retry;
-				} else
-					goto wait;
+				list_del(&smb_lock->llist);
+				list_del(&smb_lock->glist);
+				spin_lock(&fp->f_lock);
+				list_del(&work->fp_entry);
+				spin_unlock(&fp->f_lock);
+				goto retry;
 			} else if (!err) {
 				list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
-				list_add(&smb_lock->flist, &fp->lock_list);
 				cifsd_debug("successful in taking lock\n");
 			} else {
 				rsp->hdr.Status = NT_STATUS_LOCK_NOT_GRANTED;
@@ -6286,7 +6307,6 @@ out:
 			cifsd_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);
 		list_del(&smb_lock->glist);
-		list_del(&smb_lock->flist);
 		locks_free_lock(smb_lock->fl);
 		locks_free_lock(rlock);
 		kfree(smb_lock);
@@ -6941,7 +6961,7 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 	 * STATUS PENDING to avoid peoridical query_dir.
 	 */
 	if (le16_to_cpu(req->Flags) == SMB2_WATCH_TREE) {
-		smb2_send_interim_resp(cifsd_work);
+		smb2_send_interim_resp(cifsd_work, NT_STATUS_PENDING);
 		cifsd_work->send_no_response = 1;
 	} else {
 		smb2_set_err_rsp(cifsd_work);

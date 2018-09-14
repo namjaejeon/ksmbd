@@ -1355,8 +1355,6 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 			goto err_out;
 	}
 
-	INIT_LIST_HEAD(&fp->lock_list);
-
 	return fp;
 
 err_out:

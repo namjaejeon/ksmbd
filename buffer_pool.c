@@ -22,6 +22,8 @@
 
 #include "glob.h"
 #include "buffer_pool.h"
+#include "transport_tcp.h"
+#include "mgmt/cifsd_ida.h"
 
 static struct kmem_cache *work_cache;
 static struct kmem_cache *filp_cache;
@@ -119,6 +121,8 @@ void cifsd_free_work_struct(struct cifsd_work *work)
 	cifsd_free_response(AUX_PAYLOAD(work));
 	cifsd_free_response(TRANSFORM_BUF(work));
 	cifsd_free_request(REQUEST_BUF(work));
+	if (work->async_id)
+		cifds_release_id(work->conn->async_ida, work->async_id);
 	kmem_cache_free(work_cache, work);
 }
 

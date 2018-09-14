@@ -299,16 +299,12 @@ enum asyncEnum {
 	ASYNC_EXITING,
 };
 
-struct async_info {
-	__u64 async_id;	/* Async ID */
-	struct	work_struct async_work;
-	enum asyncEnum async_status;
-	int fd;
-	int wd;
-};
-
 #define SYNC 1
 #define ASYNC 2
+
+#define WORK_STATE_ENCRYPTED	0x1
+#define	WORK_STATE_CANCELLED	0x2
+#define WORK_STATE_CLOSED	0x3
 
 struct cifsd_tcp_conn;
 
@@ -366,11 +362,17 @@ struct cifsd_work {
 	/* smb command code */
 	__le16				command;
 
-	struct async_info *async;
-	struct list_head interim_entry;
+	int				state;
+
+	/* cancel works */
+	uint64_t			async_id;
+	void				**cancel_argv;
+	void				(*cancel_fn)(void **argv);
+	struct list_head		fp_entry;
+	struct list_head		interim_entry;
 
 	/* request is encrypted or not */
-	bool encrypted;
+	bool				encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
@@ -514,7 +516,6 @@ extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
-extern void remove_async_id(__u64 async_id);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);
 extern int check_invalid_stream_char(char *stream_name);

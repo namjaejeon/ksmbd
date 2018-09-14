@@ -48,6 +48,7 @@ int cifds_acquire_smb2_tid(struct cifsd_ida *ida);
  */
 int cifds_acquire_smb1_uid(struct cifsd_ida *ida);
 int cifds_acquire_smb2_uid(struct cifsd_ida *ida);
+int cifds_acquire_async_msg_id(struct cifsd_ida *ida);
 
 int cifds_acquire_id(struct cifsd_ida *ida);
 

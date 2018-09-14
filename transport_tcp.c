@@ -25,6 +25,7 @@
 #include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "mgmt/cifsd_ida.h"
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
@@ -76,6 +77,7 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	conn->sock = NULL;
 
 	cifsd_free_request(conn->request_buf);
+	cifsd_ida_free(conn->async_ida);
 	kfree(conn->preauth_info);
 	kfree(conn);
 }
@@ -110,6 +112,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = 0;
+	conn->async_ida = cifsd_ida_alloc();
 
 	write_lock(&tcp_conn_list_lock);
 	list_add(&conn->tcp_conns, &tcp_conn_list);
@@ -493,10 +496,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	if (work->on_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
 		work->on_request_list = 0;
-		if (work->async) {
-			remove_async_id(work->async->async_id);
-			kfree(work->async);
-		}
 	}
 	spin_unlock(&conn->request_lock);
 
