@@ -387,12 +387,12 @@ static void cifsd_server_tcp_callbacks_init(void)
 
 static void server_conf_free(void)
 {
-	kfree(server_conf.netbios_name);
-	kfree(server_conf.server_string);
-	kfree(server_conf.work_group);
-	server_conf.netbios_name = NULL;
-	server_conf.server_string = NULL;
-	server_conf.work_group = NULL;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(server_conf.conf); i++) {
+		kfree(server_conf.conf[i]);
+		server_conf.conf[i] = NULL;
+	}
 }
 
 static int server_conf_init(void)

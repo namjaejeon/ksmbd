@@ -30,9 +30,6 @@
 struct cifsd_server_config {
 	int		state;
 	char		*conf[SERVER_CONF_WORK_GROUP + 1];
-	char		*netbios_name;
-	char		*server_string;
-	char		*work_group;
 
 	short		signing;
 	short		enforced_signing;
