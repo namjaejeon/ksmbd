@@ -49,12 +49,12 @@ char *cifsd_work_group(void);
 
 static inline int cifsd_server_running(void)
 {
-	return server_conf.state == SERVER_STATE_STARTING_UP;
+	return server_conf.state == SERVER_STATE_RUNNING;
 }
 
 static inline void cifsd_server_set_running(void)
 {
-	server_conf.state = SERVER_STATE_STARTING_UP;
+	server_conf.state = SERVER_STATE_RUNNING;
 }
 
 int cifsd_server_shutdown(void);
