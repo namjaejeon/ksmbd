@@ -148,17 +148,17 @@ int smb2_get_cifsd_tcon(struct cifsd_work *work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 
-	if (list_empty(&work->sess->tree_conn_list)) {
-		cifsd_debug("NO tree connected\n");
-		return 0;
-	}
-
 	work->tcon = NULL;
 	if ((work->conn->ops->get_cmd_val(work) == SMB2_TREE_CONNECT_HE) ||
 		(work->conn->ops->get_cmd_val(work) ==  SMB2_CANCEL_HE) ||
 		(work->conn->ops->get_cmd_val(work) ==  SMB2_LOGOFF_HE)) {
 		cifsd_debug("skip to check tree connect request\n");
 		return 0;
+	}
+
+	if (list_empty(&work->sess->tree_conn_list)) {
+		cifsd_debug("NO tree connected\n");
+		return -1;
 	}
 
 	work->tcon = cifsd_tree_conn_lookup(work->sess,
