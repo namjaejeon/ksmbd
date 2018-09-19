@@ -159,7 +159,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	char debug_line[33];
 	unsigned char *buffer = buf;
 
-	if (likely(cifsd_debug_enable != 2))
+	if (likely(cifsd_debugging != 2))
 		return;
 
 	for (i = 0, j = 0; i < smb_buf_length; i++, j++) {

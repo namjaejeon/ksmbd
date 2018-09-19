@@ -57,7 +57,7 @@
 
 /* @FIXME clean up this code */
 
-extern int cifsd_debug_enable;
+extern int cifsd_debugging;
 extern int cifsd_caseless_search;
 extern bool oplocks_enable;
 extern bool lease_enable;
@@ -435,7 +435,7 @@ struct FileNotifyInformation {
 
 #define cifsd_debug(fmt, ...)					\
 	do {							\
-		if (cifsd_debug_enable)				\
+		if (cifsd_debugging)				\
 			pr_err("kcifsd: %s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)

@@ -31,7 +31,7 @@
 #include "smb2pdu.h"
 #endif
 
-extern int cifsd_debug_enable;
+extern int cifsd_debugging;
 
 /* Global defines for server */
 #define SERVER_MAX_MPX_COUNT 10
