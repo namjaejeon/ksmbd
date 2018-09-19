@@ -35,9 +35,9 @@
 #include "transport_ipc.h"
 #include "mgmt/user_session.h"
 
-/* @FIXME clean up this code */
-int cifsd_debug_enable;
+int cifsd_debugging;
 
+/* @FIXME clean up this code */
 /*
  * keep MaxBufSize Default: 65536
  * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
@@ -138,7 +138,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 
 	cifsd_tcp_conn_lock(conn);
 
-	if (cifsd_debug_enable)
+	if (cifsd_debugging)
 		start_time = jiffies;
 
 	conn->stats.request_served++;
@@ -285,7 +285,7 @@ send:
 	cifsd_tcp_write(work);
 
 nosend:
-	if (cifsd_debug_enable) {
+	if (cifsd_debugging) {
 		end_time = jiffies;
 
 		time_elapsed = end_time - start_time;
@@ -478,6 +478,9 @@ static void __exit cifsd_server_exit(void)
 {
 	cifsd_server_shutdown();
 }
+
+module_param(cifsd_debugging, int, 0644);
+MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 
 MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
