@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/vfs.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include <linux/kernel.h>
@@ -37,6 +22,10 @@
 #include "buffer_pool.h"
 #include "vfs.h"
 #include "fh.h"
+
+#include "mgmt/share_config.h"
+#include "mgmt/tree_connect.h"
+#include "mgmt/user_session.h"
 
 /**
  * cifsd_vfs_create() - vfs helper for smb create file
@@ -271,7 +260,7 @@ out:
 int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	loff_t	offset = *pos;
 	int err = 0;
@@ -386,7 +375,7 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		uint64_t fid, struct iattr *attrs)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	struct dentry *dentry;
 	struct inode *inode;
@@ -478,7 +467,7 @@ out:
 int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		struct kstat *stat)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	struct cifsd_file *fp;
 	int err;
@@ -510,7 +499,7 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
  */
 int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct cifsd_file *fp;
 	int err;
 
@@ -875,7 +864,7 @@ out1:
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct path path;
 	int err = 0;
 	struct inode *inode;
@@ -1310,7 +1299,7 @@ void cifsd_vfs_get_smb2_sector_size(struct inode *inode,
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	const struct path *path, int flags, int option, int fexist)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	int id, err = 0;
 	struct cifsd_file *fp = NULL;
@@ -1326,7 +1315,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	cifsd_vfs_set_fadvise(filp, option);
 
-	sess_id = sess == NULL ? 0 : sess->sess_id;
+	sess_id = sess == NULL ? 0 : sess->id;
 	id = cifsd_get_unused_id(&sess->fidtable);
 	if (id < 0)
 		goto err_out3;
@@ -1350,8 +1339,6 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 		if (err)
 			goto err_out;
 	}
-
-	INIT_LIST_HEAD(&fp->lock_list);
 
 	return fp;
 
@@ -1556,7 +1543,8 @@ static void fill_create_time(struct cifsd_work *work,
 	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
 	cifsd_kstat->create_time = time;
 
-	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+	if (test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		xattr_len = cifsd_vfs_getxattr(path->dentry,
 					       XATTR_NAME_CREATION_TIME,
 					       &create_time);
@@ -1620,7 +1608,8 @@ static void fill_file_attributes(struct cifsd_work *work,
 	else
 		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
 
-	if (get_attr_store_dos(&work->tcon->share->config.attr)) {
+	if (test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		char *file_attribute = NULL;
 		int rc;
 

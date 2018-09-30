@@ -1,19 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #include <linux/mm.h>
@@ -22,6 +9,8 @@
 
 #include "glob.h"
 #include "buffer_pool.h"
+#include "transport_tcp.h"
+#include "mgmt/cifsd_ida.h"
 
 static struct kmem_cache *work_cache;
 static struct kmem_cache *filp_cache;
@@ -119,6 +108,8 @@ void cifsd_free_work_struct(struct cifsd_work *work)
 	cifsd_free_response(AUX_PAYLOAD(work));
 	cifsd_free_response(TRANSFORM_BUF(work));
 	cifsd_free_request(REQUEST_BUF(work));
+	if (work->async_id)
+		cifds_release_id(work->conn->async_ida, work->async_id);
 	kmem_cache_free(work_cache, work);
 }
 

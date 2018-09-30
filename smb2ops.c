@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/smb2ops.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include <linux/slab.h>
@@ -221,6 +206,7 @@ void init_smb2_0_server(struct cifsd_tcp_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 	conn->credits_granted = 0;
+	conn->srv_cap = 0;
 }
 
 /**
@@ -235,11 +221,10 @@ void init_smb2_1_server(struct cifsd_tcp_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
+	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
-
-	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
 }
 
 /**
@@ -254,11 +239,10 @@ void init_smb3_0_server(struct cifsd_tcp_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
+	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
-
-	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
@@ -279,11 +263,10 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
+	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
-
-	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
@@ -304,11 +287,10 @@ int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
+	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap = SMB2_GLOBAL_CAP_LEASING;
-
-	conn->srv_cap |= SMB2_GLOBAL_CAP_LARGE_MTU;
+		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
 		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;

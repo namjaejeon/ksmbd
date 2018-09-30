@@ -1,25 +1,10 @@
+// SPDX-License-Identifier: LGPL-2.1-or-later
 /*
- *   fs/cifsd/cifsacl.c
- *
  *   Copyright (C) International Business Machines  Corp., 2007,2008
  *   Author(s): Steve French (sfrench@us.ibm.com)
  *   Modified by Namjae Jeon (namjae.jeon@protocolfreedom.org)
  *
  *   Contains the routines for mapping CIFS/NTFS ACLs
- *
- *   This library is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU Lesser General Public License as published
- *   by the Free Software Foundation; either version 2.1 of the License, or
- *   (at your option) any later version.
- *
- *   This library is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See
- *   the GNU Lesser General Public License for more details.
- *
- *   You should have received a copy of the GNU Lesser General Public License
- *   along with this library; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
  */
 #include <linux/keyctl.h>
 #include <linux/key-type.h>
@@ -1056,6 +1041,7 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 	return offset;
 }
 
+#ifdef CONFIG_CIFSD_ACL
 int init_cifsd_idmap(void)
 {
 	struct cred *cred;
@@ -1121,4 +1107,13 @@ void exit_cifsd_idmap(void)
 	put_cred(root_cred);
 	cifsd_err("Unregistered %s key type\n", cifsd_idmap_key_type.name);
 }
+#else
+int init_cifsd_idmap(void)
+{
+	return 0;
+}
 
+void exit_cifsd_idmap(void)
+{
+}
+#endif

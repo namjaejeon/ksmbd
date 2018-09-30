@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/misc.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include <linux/kernel.h>
@@ -30,6 +15,12 @@
 #include "smb2pdu.h"
 #include "transport_tcp.h"
 #include "vfs.h"
+
+/* @FIXME rework this code */
+#include "server.h"
+#include "mgmt/user_session.h"
+
+/* @FIXME rework this code */
 
 static struct {
 	int index;
@@ -126,6 +117,8 @@ static inline int check_smb2_hdr(struct smb2_hdr *smb)
  */
 int check_smb_message(char *buf)
 {
+	/* @FIXME rework this code */
+
 	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
 		cifsd_debug("got SMB2 command\n");
@@ -151,7 +144,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	char debug_line[33];
 	unsigned char *buffer = buf;
 
-	if (likely(cifsd_debug_enable != 2))
+	if (likely(cifsd_debugging != 2))
 		return;
 
 	for (i = 0, j = 0; i < smb_buf_length; i++, j++) {
@@ -209,6 +202,7 @@ bool is_smb_request(struct cifsd_tcp_conn *conn)
 	return false;
 }
 
+/* @FIXME rework this code */
 int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 		__le16 byte_count)
 {
@@ -231,7 +225,8 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 					dialects);
 			if (!strncmp(dialects, protocols[i].name,
 						cli_count)) {
-				if (i >= server_min_pr && i <= server_max_pr) {
+				if (i >= server_conf.min_protocol &&
+					i <= server_conf.max_protocol) {
 					cifsd_debug("selected %s dialect\n",
 							protocols[i].name);
 					if (i == CIFS_PROT)
@@ -252,6 +247,7 @@ out:
 	return dialect_id;
 }
 
+/* @FIXME rework this code */
 #ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * find_matching_smb2_dialect() - find the greatest dialect between dialects
@@ -276,7 +272,8 @@ int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 				le16_to_cpu(cli_dialects[count]));
 			if (le16_to_cpu(cli_dialects[count]) ==
 					protocols[i].prot_id) {
-				if (i >= server_min_pr && i <= server_max_pr) {
+				if (i >= server_conf.min_protocol &&
+					i <= server_conf.max_protocol) {
 					cifsd_debug("selected %s dialect\n",
 							protocols[i].name);
 					dialect_id = protocols[i].prot_id;
@@ -300,6 +297,8 @@ out:
 int negotiate_dialect(void *buf)
 {
 	int start_index, ret = BAD_PROT_ID;
+
+/* @FIXME rework this code */
 
 #ifdef CONFIG_CIFS_SMB2_SERVER
 	start_index = SMB311_PROT;
@@ -327,45 +326,20 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
-		uint64_t sess_id)
-{
-	struct cifsd_sess *sess;
-	struct list_head *tmp, *t;
-
-	list_for_each_safe(tmp, t, &conn->cifsd_sess) {
-		sess = list_entry(tmp, struct cifsd_sess, cifsd_ses_list);
-		if (sess->sess_id == sess_id)
-			return sess;
-	}
-
-	cifsd_err("User session(ID : %llu) not found\n", sess_id);
-	return NULL;
-}
-
 /**
  * validate_sess_handle() - check for valid session handle
  * @sess:	handle to be validated
  *
  * Return:      matching session handle, otherwise NULL
  */
-struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session)
+struct cifsd_session *validate_sess_handle(struct cifsd_session *session)
 {
-	struct cifsd_sess *sess;
-	struct list_head *tmp, *t;
-
-	list_for_each_safe(tmp, t, &cifsd_session_list) {
-		sess = list_entry(tmp, struct cifsd_sess,
-				cifsd_ses_global_list);
-		if (sess == session)
-			return sess;
-	}
-
-	cifsd_err("session(%p) not found\n", session);
-	return NULL;
+	/* @FIXME: remove this code */
+	return session;
 }
 
 #ifndef CONFIG_CIFS_SMB2_SERVER
+/* @FIXME rework this code */
 void init_smb2_0_server(struct cifsd_tcp_conn *server) { }
 void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
 void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
@@ -756,41 +730,3 @@ int get_nlink(struct kstat *st)
 
 	return nlink;
 }
-
-bool cifsd_filter_filename_match(struct cifsd_share *share, char *filename)
-{
-	struct cifsd_filter *cf;
-	char *source_string;
-	struct ts_state state;
-	int pos, len;
-
-	list_for_each_entry(cf, &share->config.filter_list, entry) {
-		if (cf->type == FILTER_FILE_EXTENSION) {
-			source_string = strchr(filename, '.');
-			if (!source_string)
-				continue;
-			len = strlen(source_string);
-			pos = textsearch_find_continuous(cf->config, &state,
-				source_string, len);
-			if (!pos && state.offset == len)
-				return true;
-		} else if (cf->type == FILTER_WILDCARD) {
-			source_string = filename;
-			len = strlen(source_string);
-			pos = textsearch_find_continuous(cf->config, &state,
-				source_string, len);
-			if (pos >= 0)
-				return true;
-		} else {
-			source_string = filename;
-			len = strlen(source_string);
-			pos = textsearch_find_continuous(cf->config, &state,
-				source_string, len);
-			if (!pos && state.offset == len)
-				return true;
-		}
-	}
-
-	return false;
-}
-

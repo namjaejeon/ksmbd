@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/smb2pdu.h
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #ifndef _SMB2PDU_SERVER_H
@@ -228,18 +213,6 @@ struct preauth_integrity_info {
 	/* PreAuth integrity Hash Value */
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
 	int			CipherId;
-};
-
-struct channel {
-	__u8 smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	struct cifsd_tcp_conn *conn;
-	struct list_head chann_list;
-};
-
-struct preauth_session {
-	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	uint64_t		sess_id;
-	struct list_head	list_entry;
 };
 
 struct smb2_preauth_neg_context {
@@ -1396,8 +1369,10 @@ extern void smb3_set_sign_rsp(struct cifsd_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
-extern void smb2_send_interim_resp(struct cifsd_work *work);
-extern struct channel *lookup_chann_list(struct cifsd_sess *sess);
+extern int setup_async_work(struct cifsd_work *work, void (*fn)(void **),
+	void **arg);
+extern void smb2_send_interim_resp(struct cifsd_work *work, __le32 status);
+extern struct channel *lookup_chann_list(struct cifsd_session *sess);
 extern int smb3_is_transform_hdr(void *buf);
 extern int smb3_decrypt_req(struct cifsd_work *work);
 extern int smb3_encrypt_resp(struct cifsd_work *work);

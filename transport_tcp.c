@@ -1,20 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include <linux/mutex.h>
@@ -22,8 +9,10 @@
 #include "glob.h"
 #include "export.h"
 
+#include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "mgmt/cifsd_ida.h"
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
@@ -33,8 +22,6 @@ static DEFINE_MUTEX(init_lock);
 
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
-
-static int deny_new_conn;
 
 /**
  * cifsd_tcp_conn_alive() - check server is unresponsive or not
@@ -77,6 +64,7 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	conn->sock = NULL;
 
 	cifsd_free_request(conn->request_buf);
+	cifsd_ida_free(conn->async_ida);
 	kfree(conn->preauth_info);
 	kfree(conn);
 }
@@ -97,7 +85,6 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->sess_count = 0;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls_default();
@@ -107,11 +94,12 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->credits_granted = 0;
 	init_waitqueue_head(&conn->req_running_q);
 	INIT_LIST_HEAD(&conn->tcp_conns);
-	INIT_LIST_HEAD(&conn->cifsd_sess);
+	INIT_LIST_HEAD(&conn->sessions);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
 	conn->srv_cap = 0;
+	conn->async_ida = cifsd_ida_alloc();
 
 	write_lock(&tcp_conn_list_lock);
 	list_add(&conn->tcp_conns, &tcp_conn_list);
@@ -196,6 +184,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop()) {
+		if (!cifsd_server_running())
+			break;
 		if (conn->tcp_status == CIFSD_SESS_EXITING)
 			break;
 		if (!cifsd_tcp_conn_alive(conn))
@@ -223,13 +213,13 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 		}
 
-		size = pdu_size + conn->conn_ops->header_size_fn();
+		/* 4 for rfc1002 length field */
+		size = pdu_size + 4;
 		conn->request_buf = cifsd_alloc_request(size);
 		if (!conn->request_buf)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		conn->total_read = size;
 		if (!is_smb_request(conn))
 			continue;
 
@@ -243,7 +233,6 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 		}
 
-		conn->total_read += size;
 		if (size != pdu_size) {
 			cifsd_err("PDU error. Read: %d, Expected: %d\n",
 				  size,
@@ -285,34 +274,35 @@ static int cifsd_tcp_conn_handler_loop(void *p)
  */
 static int cifsd_tcp_new_connection(struct socket *client_sk)
 {
-	struct sockaddr_storage caddr;
-	struct sockaddr *csin = (struct sockaddr *)&caddr;
+	struct sockaddr *csin;
 	int rc = 0;
 	struct cifsd_tcp_conn *conn;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
-	int cslen;
-
-	if (kernel_getpeername(client_sk, csin, &cslen) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#else
-	if (kernel_getpeername(client_sk, csin) < 0) {
-		cifsd_err("client ip resolution failed\n");
-		return -EINVAL;
-	}
-#endif
 
 	conn = cifsd_tcp_conn_alloc(client_sk);
 	if (conn == NULL)
 		return -ENOMEM;
 
+	csin = CIFSD_TCP_PEER_SOCKADDR(conn);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+	if (kernel_getpeername(client_sk, csin, &rc) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		rc = -EINVAL;
+		goto out_error;
+	}
+	rc = 0;
+#else
+	if (kernel_getpeername(client_sk, csin) < 0) {
+		cifsd_err("client ip resolution failed\n");
+		rc = -EINVAL;
+		goto out_error;
+	}
+#endif
+
 	conn->conn_ops = &default_tcp_conn_ops;
 	if (conn->conn_ops->init_fn)
 		conn->conn_ops->init_fn(conn);
 
-	conn->family = csin->sa_family;
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
@@ -323,6 +313,10 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 		rc = PTR_ERR(conn->handler);
 		cifsd_tcp_conn_free(conn);
 	}
+	return rc;
+
+out_error:
+	cifsd_tcp_conn_free(conn);
 	return rc;
 }
 
@@ -338,9 +332,6 @@ static int cifsd_kthread_fn(void *p)
 	int ret;
 
 	while (!kthread_should_stop()) {
-		if (deny_new_conn)
-			continue;
-
 		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
 		if (ret) {
 			if (ret == -EAGAIN)
@@ -375,7 +366,6 @@ static int cifsd_tcp_run_kthread(void)
 {
 	int rc;
 
-	deny_new_conn = 0;
 	cifsd_kthread = kthread_run(cifsd_kthread_fn,
 				    NULL,
 				    "kcifsd_main");
@@ -493,10 +483,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	if (work->on_request_list && !work->multiRsp) {
 		list_del_init(&work->request_entry);
 		work->on_request_list = 0;
-		if (work->async) {
-			remove_async_id(work->async->async_id);
-			kfree(work->async);
-		}
 	}
 	spin_unlock(&conn->request_lock);
 
@@ -691,8 +677,6 @@ static void tcp_stop_kthread(void)
 void cifsd_tcp_destroy(void)
 {
 	mutex_lock(&init_lock);
-	deny_new_conn = 1;
-
 	tcp_destroy_socket();
 	tcp_stop_kthread();
 	tcp_stop_sessions();
@@ -730,6 +714,4 @@ void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 	default_tcp_conn_ops.init_fn = ops->init_fn;
 	default_tcp_conn_ops.process_fn = ops->process_fn;
 	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
-
-	default_tcp_conn_ops.header_size_fn = ops->header_size_fn;
 }

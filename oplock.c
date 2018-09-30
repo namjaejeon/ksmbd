@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/oplock.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include "glob.h"
@@ -29,6 +14,7 @@
 
 #include "buffer_pool.h"
 #include "transport_tcp.h"
+#include "mgmt/user_session.h"
 
 bool oplocks_enable;
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -59,7 +45,7 @@ MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
 static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 		uint64_t id, __u16 Tid)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	struct oplock_info *opinfo;
 
 	opinfo = kzalloc(sizeof(struct oplock_info), GFP_KERNEL);
@@ -838,7 +824,7 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 
 			in_work = list_entry(tmp, struct cifsd_work,
 				interim_entry);
-			smb2_send_interim_resp(in_work);
+			smb2_send_interim_resp(in_work, NT_STATUS_PENDING);
 			list_del(&in_work->interim_entry);
 		}
 		INIT_WORK(&work->work, smb2_send_lease_break_notification);
@@ -992,7 +978,7 @@ again:
 	write_unlock(&lease_list_lock);
 }
 
-int find_same_lease_key(struct cifsd_sess *sess, struct cifsd_inode *ci,
+int find_same_lease_key(struct cifsd_session *sess, struct cifsd_inode *ci,
 		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
@@ -1120,7 +1106,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
 	int share_ret)
 {
-	struct cifsd_sess *sess = work->sess;
+	struct cifsd_session *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_inode *ci = fp->f_ci;
@@ -1389,7 +1375,7 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 	/* we know unicode, long file name and use nt error codes */
 	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
 		SMBFLG2_ERR_STATUS;
-	rsp_hdr->Uid = work->sess->sess_id;
+	rsp_hdr->Uid = work->sess->id;
 	rsp_hdr->Pid = 0xFFFF;
 	rsp_hdr->Mid = 0xFFFF;
 	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);

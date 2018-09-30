@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/fh.c
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #include <linux/bootmem.h>
@@ -29,6 +14,7 @@
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "vfs.h"
+#include "mgmt/user_session.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -251,6 +237,7 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
  */
 int init_fidtable(struct fidtable_desc *ftab_desc)
 {
+#ifdef CONFIG_CIFS_SMB2_SERVER
 	ftab_desc->ftab = alloc_fidtable(CIFSD_NR_OPEN_DEFAULT);
 	if (!ftab_desc->ftab) {
 		cifsd_err("Failed to allocate fid table\n");
@@ -259,6 +246,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
 	ftab_desc->ftab->start_pos = 1;
 	spin_lock_init(&ftab_desc->fidtable_lock);
+#endif
 	return 0;
 }
 
@@ -276,8 +264,8 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_sess *sess,
-	struct cifsd_tcon *tcon, unsigned int id, struct file *filp)
+insert_id_in_fidtable(struct cifsd_session *sess,
+	struct cifsd_tree_connect *tcon, unsigned int id, struct file *filp)
 {
 	struct cifsd_file *fp = NULL;
 	struct fidtable *ftab;
@@ -319,7 +307,7 @@ insert_id_in_fidtable(struct cifsd_sess *sess,
  * Return:      cifsd file pointer if success, otherwise NULL
  */
 struct cifsd_file *
-get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
+get_id_from_fidtable(struct cifsd_session *sess, uint64_t id)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -356,8 +344,8 @@ get_id_from_fidtable(struct cifsd_sess *sess, uint64_t id)
 struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	int64_t req_pid)
 {
-	struct cifsd_sess *sess = work->sess;
-	struct cifsd_tcon *tcon = work->tcon;
+	struct cifsd_session *sess = work->sess;
+	struct cifsd_tree_connect *tcon = work->tcon;
 	struct cifsd_file *fp;
 	int64_t vid, pid;
 
@@ -391,7 +379,7 @@ struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
 	return fp;
 }
 
-struct cifsd_file *find_fp_using_filename(struct cifsd_sess *sess,
+struct cifsd_file *find_fp_using_filename(struct cifsd_session *sess,
 	char *filename)
 {
 	struct cifsd_file *file = NULL;
@@ -448,7 +436,7 @@ out:
  *
  * delete a fid from fid table and free associated cifsd file pointer
  */
-void delete_id_from_fidtable(struct cifsd_sess *sess, unsigned int id)
+void delete_id_from_fidtable(struct cifsd_session *sess, unsigned int id)
 {
 	struct fidtable *ftab;
 	struct cifsd_file *fp;
@@ -507,11 +495,11 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 
 static int close_fp(struct cifsd_file *fp)
 {
-	struct cifsd_sess *sess = fp->sess;
+	struct cifsd_session *sess = fp->sess;
 	struct cifsd_inode *ci;
 	struct file *filp;
 	struct dentry *dir, *dentry;
-	struct cifsd_lock *lock, *tmp;
+	struct cifsd_work *cancel_work, *ctmp;
 	int err;
 
 	ci = fp->f_ci;
@@ -529,30 +517,14 @@ static int close_fp(struct cifsd_file *fp)
 	else
 		filp = fp->filp;
 
-	list_for_each_entry_safe(lock, tmp, &fp->lock_list, flist) {
-		struct file_lock *flock = NULL;
-
-		if (lock->work && lock->work->type == ASYNC &&
-			lock->work->async->async_status == ASYNC_PROG) {
-			struct cifsd_work *async_work = lock->work;
-
-			async_work->async->async_status = ASYNC_CLOSE;
-		} else {
-			flock = smb_flock_init(filp);
-			flock->fl_type = F_UNLCK;
-			flock->fl_start = lock->start;
-			flock->fl_end = lock->end;
-			err = cifsd_vfs_lock(filp, 0, flock);
-			if (err)
-				cifsd_err("unlock fail : %d\n", err);
-			list_del(&lock->llist);
-			list_del(&lock->glist);
-			list_del(&lock->flist);
-			locks_free_lock(lock->fl);
-			locks_free_lock(flock);
-			kfree(lock);
-		}
+	spin_lock(&fp->f_lock);
+	list_for_each_entry_safe(cancel_work, ctmp, &fp->blocked_works,
+		fp_entry) {
+		list_del(&cancel_work->fp_entry);
+		cancel_work->state = WORK_STATE_CLOSED;
+		cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
+	spin_unlock(&fp->f_lock);
 
 	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
@@ -605,7 +577,7 @@ static int close_fp(struct cifsd_file *fp)
  *
  * Return:      0 on success, otherwise error number
  */
-int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
+int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifsd_file *fp;
 
@@ -639,7 +611,8 @@ int close_id(struct cifsd_sess *sess, uint64_t id, uint64_t p_id)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void close_opens_from_fibtable(struct cifsd_sess *sess, struct cifsd_tcon *tcon)
+void close_opens_from_fibtable(struct cifsd_session *sess,
+			       struct cifsd_tree_connect *tcon)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -690,7 +663,7 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
  * delete fid, free associated cifsd file pointer and clear fid bitmap entry
  * in fid table.
  */
-void destroy_fidtable(struct cifsd_sess *sess)
+void destroy_fidtable(struct cifsd_session *sess)
 {
 	struct cifsd_file *file;
 	struct fidtable *ftab;
@@ -737,7 +710,8 @@ void destroy_fidtable(struct cifsd_sess *sess)
  *
  * Return:      persistent_id on success, otherwise error number
  */
-int cifsd_insert_in_global_table(struct cifsd_sess *sess, struct cifsd_file *fp)
+int cifsd_insert_in_global_table(struct cifsd_session *sess,
+				 struct cifsd_file *fp)
 {
 	int persistent_id;
 	struct fidtable *ftab;
@@ -833,8 +807,9 @@ struct cifsd_file *lookup_fp_app_id(char *app_id)
  * @volatile_id:	volatile id
  * @filp:		file pointer
  */
-int cifsd_reconnect_durable_fp(struct cifsd_sess *sess, struct cifsd_file *fp,
-	struct cifsd_tcon *tcon)
+int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
+			       struct cifsd_file *fp,
+			       struct cifsd_tree_connect *tcon)
 {
 	struct fidtable *ftab;
 	unsigned int volatile_id;
@@ -934,83 +909,13 @@ void destroy_global_fidtable(void)
 	}
 	free_fidtable(ftab);
 }
+#else
+void destroy_global_fidtable(void)
+{
+}
 #endif
 
 /* End of persistent-ID functions */
-
-/**
- * get_pipe_id() - get a free id for a pipe
- * @conn:	TCP server instance of connection
- *
- * Return:	id on success, otherwise error
- */
-int get_pipe_id(struct cifsd_sess *sess, unsigned int pipe_type)
-{
-	int id;
-	struct cifsd_pipe *pipe_desc;
-
-	id = cifsd_get_unused_id(&sess->fidtable);
-	if (id < 0)
-		return -EMFILE;
-
-	sess->pipe_desc[pipe_type] = kzalloc(sizeof(struct cifsd_pipe),
-			GFP_KERNEL);
-	if (!sess->pipe_desc[pipe_type])
-		return -ENOMEM;
-
-	pipe_desc = sess->pipe_desc[pipe_type];
-	pipe_desc->id = id;
-	pipe_desc->pkt_type = -1;
-
-	pipe_desc->rsp_buf = kmalloc(NETLINK_CIFSD_MAX_PAYLOAD,
-			GFP_KERNEL);
-	if (!pipe_desc->rsp_buf) {
-		kfree(pipe_desc);
-		sess->pipe_desc[pipe_type] = NULL;
-		return -ENOMEM;
-	}
-
-	switch (pipe_type) {
-	case SRVSVC:
-		pipe_desc->pipe_type = SRVSVC;
-		break;
-	case WINREG:
-		pipe_desc->pipe_type = WINREG;
-		break;
-	default:
-		cifsd_err("pipe type :%d not supported\n", pipe_type);
-		return -EINVAL;
-	}
-
-	return id;
-}
-
-/**
- * close_pipe_id() - free id for pipe on a server thread
- * @sess:	session information
- * @pipe_type:	pipe type
- *
- * Return:	0 on success, otherwise error
- */
-int close_pipe_id(struct cifsd_sess *sess, int pipe_type)
-{
-	struct cifsd_pipe *pipe_desc;
-	int rc = 0;
-
-	pipe_desc = sess->pipe_desc[pipe_type];
-	if (!pipe_desc)
-		return -EINVAL;
-
-	rc = cifsd_close_id(&sess->fidtable, pipe_desc->id);
-	if (rc < 0)
-		return rc;
-
-	kfree(pipe_desc->rsp_buf);
-	kfree(pipe_desc);
-	sess->pipe_desc[pipe_type] = NULL;
-
-	return rc;
-}
 
 static void dispose_fp_list(struct list_head *head)
 {

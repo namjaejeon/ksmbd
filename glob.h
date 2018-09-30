@@ -1,22 +1,7 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/cifsd/glob.h
- *
- *   Copyright (C) 2015 Samsung Electronics Co., Ltd.
  *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+ *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
 #ifndef __CIFSD_GLOB_H
@@ -55,7 +40,9 @@
 #include <crypto/hash.h>
 #include "smberr.h"
 
-extern int cifsd_debug_enable;
+/* @FIXME clean up this code */
+
+extern int cifsd_debugging;
 extern int cifsd_caseless_search;
 extern bool oplocks_enable;
 extern bool lease_enable;
@@ -68,9 +55,9 @@ extern char *netbios_name;
 #define GSS_PADDING		6
 extern char NEGOTIATE_GSS_HEADER[GSS_LENGTH];
 
-extern bool global_signing;
-
 extern struct list_head global_lock_list;
+
+#define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
@@ -297,16 +284,12 @@ enum asyncEnum {
 	ASYNC_EXITING,
 };
 
-struct async_info {
-	__u64 async_id;	/* Async ID */
-	struct	work_struct async_work;
-	enum asyncEnum async_status;
-	int fd;
-	int wd;
-};
-
 #define SYNC 1
 #define ASYNC 2
+
+#define WORK_STATE_ENCRYPTED	0x1
+#define	WORK_STATE_CANCELLED	0x2
+#define WORK_STATE_CLOSED	0x3
 
 struct cifsd_tcp_conn;
 
@@ -323,8 +306,8 @@ struct cifsd_work {
 	char				*response_buf;
 	unsigned int			response_sz;
 
-	struct cifsd_sess		*sess;
-	struct cifsd_tcon		*tcon;
+	struct cifsd_session		*sess;
+	struct cifsd_tree_connect	*tcon;
 	__u64				cur_local_sess_id;
 
 	/* Read data buffer */
@@ -364,11 +347,17 @@ struct cifsd_work {
 	/* smb command code */
 	__le16				command;
 
-	struct async_info *async;
-	struct list_head interim_entry;
+	int				state;
+
+	/* cancel works */
+	uint64_t			async_id;
+	void				**cancel_argv;
+	void				(*cancel_fn)(void **argv);
+	struct list_head		fp_entry;
+	struct list_head		interim_entry;
 
 	/* request is encrypted or not */
-	bool encrypted;
+	bool				encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
@@ -396,9 +385,9 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*generate_signingkey)(struct cifsd_sess *sess, bool binding,
+	int (*generate_signingkey)(struct cifsd_session *sess, bool binding,
 		char *hash_value);
-	int (*generate_encryptionkey)(struct cifsd_sess *sess);
+	int (*generate_encryptionkey)(struct cifsd_session *sess);
 	int (*is_transform_hdr)(void *buf);
 	int (*decrypt_req)(struct cifsd_work *work);
 	int (*encrypt_resp)(struct cifsd_work *work);
@@ -431,7 +420,7 @@ struct FileNotifyInformation {
 
 #define cifsd_debug(fmt, ...)					\
 	do {							\
-		if (cifsd_debug_enable)				\
+		if (cifsd_debugging)				\
 			pr_err("kcifsd: %s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
@@ -493,28 +482,25 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 #define from_kern_timespec(ts) (ts)
 #endif
 
+/* @FIXME clean up this code */
+/* @FIXME clean up this code */
+/* @FIXME clean up this code */
+
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 int negotiate_dialect(void *buf);
-struct cifsd_sess *lookup_session_on_server(struct cifsd_tcp_conn *conn,
-		uint64_t sess_id);
 int get_nlink(struct kstat *st);
-
-/* cifsd export functions */
-extern int cifsd_export_init(void);
-extern void cifsd_export_exit(void);
 
 /* cifsd misc functions */
 extern int check_smb_message(char *buf);
 extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
-extern struct cifsd_sess *validate_sess_handle(struct cifsd_sess *session);
+extern struct cifsd_session *validate_sess_handle(struct cifsd_session *session);
 extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 extern int smb_check_shared_mode(struct file *filp,
 	struct cifsd_file *curr_fp);
-extern void remove_async_id(__u64 async_id);
 extern int pattern_cmp(const char *string, const char *pattern);
 extern bool is_matched(const char *fname, const char *exp);
 extern int check_invalid_stream_char(char *stream_name);
@@ -539,7 +525,7 @@ extern void init_smb2_neg_rsp(struct cifsd_work *work);
 extern int is_smb2_rsp(struct cifsd_work *work);
 
 /* functions */
-extern void smb_delete_session(struct cifsd_sess *sess);
+extern void smb_delete_session(struct cifsd_session *sess);
 
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
@@ -553,7 +539,8 @@ extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
 
 /* trans2 functions */
-char *convert_to_unix_name(char *name, int tid);
+struct cifsd_share_config;
+char *convert_to_unix_name(struct cifsd_share_config *share, char *name);
 void convert_delimiter(char *path, int flags);
 int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
 		loff_t offset, u64 ino, unsigned int d_type);
@@ -575,7 +562,7 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 /* netlink functions */
 int cifsd_net_init(void);
 void cifsd_net_exit(void);
-int cifsd_sendmsg(struct cifsd_sess *sess, unsigned int etype,
+int cifsd_sendmsg(struct cifsd_session *sess, unsigned int etype,
 		int pipe_type, unsigned int data_size,
 		unsigned char *data, unsigned int out_buflen);
 int cifsd_kthread_stop_status(int etype);

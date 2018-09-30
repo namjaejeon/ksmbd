@@ -1,19 +1,6 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *
- *   This program is free software; you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation; either version 2 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program; if not, write to the Free Software
- *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
  */
 
 #ifndef __CIFSD_TRANSPORT_TCP_H__
@@ -68,20 +55,14 @@ struct cifsd_tcp_conn_ops {
 	int	(*init_fn)(struct cifsd_tcp_conn *conn);
 	int	(*process_fn)(struct cifsd_tcp_conn *conn);
 	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
-
-	size_t	(*header_size_fn)(void);
 };
 
 struct cifsd_tcp_conn {
 	struct socket			*sock;
-	unsigned short			family;
-	/* The number of sessions attached with this connection */
-	int				sess_count;
 	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
 	unsigned int			max_cmds;
-	char				*hostname;
 	struct mutex			srv_mutex;
 	int				tcp_status;
 	unsigned int			cli_cap;
@@ -90,10 +71,9 @@ struct cifsd_tcp_conn {
 	unsigned int			nr_iov;
 	void 				*request_buf;
 	struct nls_table		*local_nls;
-	unsigned int			total_read;
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
-	struct list_head		cifsd_sess;
+	struct list_head		sessions;
 	struct task_struct		*handler;
 	unsigned long			last_active;
 	/* How many request are running currently */
@@ -145,7 +125,14 @@ struct cifsd_tcp_conn {
 
 	/* Preauth Session Table */
 	struct list_head		preauth_sess_table;
+
+	struct sockaddr_storage		peer_addr;
+
+	/* Identifier for async message */
+	struct cifsd_ida		*async_ida;
 };
+
+#define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
 void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
 void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn);
