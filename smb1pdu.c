@@ -2453,19 +2453,20 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	 */
 
 	if (!test_tree_conn_flag(work->tcon, CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+		err = -EACCES;
 		if (!file_present) {
-			if (open_flags & O_CREAT) {
-				err = -EACCES;
+			if (open_flags & O_CREAT)
 				cifsd_debug("returning as user does not have permission to write\n");
-			} else {
-				err = -EBADF;
+			else {
+				err = -ENOENT;
 				cifsd_debug("returning as file does not exist\n");
 			}
+			goto out;
 		}
 		goto free_path;
 	}
 
-	cifsd_err("filename : %s, open_flags = 0x%x\n", conv_name,
+	cifsd_debug("filename : %s, open_flags = 0x%x\n", conv_name,
 		open_flags);
 	if (!file_present && (open_flags & O_CREAT)) {
 
@@ -2665,7 +2666,6 @@ int smb_nt_create_andx(struct cifsd_work *work)
 free_path:
 	path_put(&path);
 out:
-	cifsd_err("err : %d\n", err);
 	switch (err) {
 	case 0:
 		conn->stats.open_files_count++;
@@ -4914,17 +4914,17 @@ static int smb_posix_open(struct cifsd_work *work)
 			goto out;
 	}
 
-	cifsd_err("filename : %s, posix_open_flags : %x\n", name,
+	cifsd_debug("filename : %s, posix_open_flags : %x\n", name,
 		posix_open_flags);
 	mode = (umode_t) le64_to_cpu(psx_req->Permissions);
 	rsp_info_level = le16_to_cpu(psx_req->Level);
 
 	if (!test_tree_conn_flag(work->tcon, CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+		err = -EACCES;
 		if (!file_present) {
-			if (posix_open_flags & O_CREAT) {
-				err = -EACCES;
+			if (posix_open_flags & O_CREAT)
 				cifsd_debug("returning as user does not have permission to write\n");
-			} else {
+			else {
 				err = -ENOENT;
 				cifsd_debug("returning as file does not exist\n");
 			}
@@ -5052,7 +5052,6 @@ prepare_rsp:
 free_path:
 	path_put(&path);
 out:
-	cifsd_err("err : %d\n", err);
 	switch (err) {
 	case 0:
 		conn->stats.open_files_count++;
