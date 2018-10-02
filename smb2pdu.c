@@ -2519,7 +2519,7 @@ int smb2_open(struct cifsd_work *work)
 		islink = true;
 		cifsd_debug("Case for symlink follow, name(%s)->path(%s)\n",
 				name, lname);
-		rc = cifsd_vfs_kern_path(name, 0, &lpath, 0);
+		rc = cifsd_vfs_kern_path(lname, 0, &lpath, 0);
 		if (rc) {
 			cifsd_err("cannot get linux path (%s), err = %d\n",
 				name, rc);
