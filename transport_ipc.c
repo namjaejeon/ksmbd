@@ -291,6 +291,8 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 		req = nla_data(info->attrs[info->genlhdr->cmd]);
 
 		server_conf.signing = req->signing;
+		server_conf.tcp_port = req->tcp_port;
+		server_conf.ipc_timeout = req->ipc_timeout;
 		ret = cifsd_set_netbios_name(req->netbios_name);
 		ret |= cifsd_set_server_string(req->server_string);
 		ret |= cifsd_set_work_group(req->work_group);

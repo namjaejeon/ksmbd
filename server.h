@@ -22,6 +22,8 @@ struct cifsd_server_config {
 	short		enforced_signing;
 	short		min_protocol;
 	short		max_protocol;
+	unsigned short	tcp_port;
+	unsigned short	ipc_timeout;
 };
 
 extern struct cifsd_server_config server_conf;
