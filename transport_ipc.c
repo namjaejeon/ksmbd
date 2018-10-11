@@ -309,10 +309,11 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 			if (ret >= 0)
 				server_conf.max_protocol = ret;
 		}
+
+		server_queue_ctrl_init_work();
 	}
 
 	cifsd_tools_pid = info->snd_portid;
-	cifsd_server_set_running();
 	return 0;
 }
 

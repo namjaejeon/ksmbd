@@ -41,10 +41,6 @@ static inline int cifsd_server_running(void)
 	return server_conf.state == SERVER_STATE_RUNNING;
 }
 
-static inline void cifsd_server_set_running(void)
-{
-	server_conf.state = SERVER_STATE_RUNNING;
-}
-
-int cifsd_server_shutdown(void);
+int server_queue_ctrl_init_work(void);
+int server_queue_ctrl_reset_work(void);
 #endif /* __SERVER_H__ */

@@ -41,6 +41,21 @@ unsigned int alloc_roundup_size = 1048576;
 
 struct cifsd_server_config server_conf;
 
+enum SERVER_CTRL_TYPE {
+	SERVER_CTRL_TYPE_INIT,
+	SERVER_CTRL_TYPE_RESET,
+};
+
+struct server_ctrl_struct {
+	int			type;
+	struct list_head	list;
+	struct work_struct	ctrl_work;
+};
+
+static DEFINE_MUTEX(ctrl_lock);
+static LIST_HEAD(ctrl_list);
+static DEFINE_MUTEX(ctrl_list_lock);
+
 static int ___server_conf_set(int idx, char *val)
 {
 	if (idx > sizeof(server_conf.conf))
@@ -391,15 +406,113 @@ static int server_conf_init(void)
 	return 0;
 }
 
-/**
- * init_smb_server() - initialize smb server at module init
- *
- * create smb request/response mempools, initialize export points,
- * initialize fid table and start forker thread to create new smb session
- * threads on new connection requests.
- *
- * Return:	0 on success, otherwise error
- */
+static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
+{
+	int ret;
+
+	ret = cifsd_tcp_init();
+	if (ret) {
+		pr_err("Failed to init TCP subsystem: %d\n", ret);
+		server_queue_ctrl_reset_work();
+		return;
+	}
+
+	server_conf.state = SERVER_STATE_RUNNING;
+}
+
+static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
+{
+	server_conf.state = SERVER_STATE_STARTING_UP;
+	cifsd_tcp_destroy();
+}
+
+static void server_ctrl_handle_work(struct work_struct *work)
+{
+	struct server_ctrl_struct *ctrl;
+
+	ctrl = container_of(work, struct server_ctrl_struct, ctrl_work);
+
+	mutex_lock(&ctrl_list_lock);
+	list_del(&ctrl->list);
+	mutex_unlock(&ctrl_list_lock);
+
+	mutex_lock(&ctrl_lock);
+	switch (ctrl->type) {
+	case SERVER_CTRL_TYPE_INIT:
+		server_ctrl_handle_init(ctrl);
+		break;
+	case SERVER_CTRL_TYPE_RESET:
+		server_ctrl_handle_reset(ctrl);
+		break;
+	default:
+		pr_err("Unknown server work type: %d\n", ctrl->type);
+	}
+	mutex_unlock(&ctrl_lock);
+	kfree(ctrl);
+}
+
+static int __queue_ctrl_work(int type)
+{
+	struct server_ctrl_struct *ctrl;
+
+	ctrl = kmalloc(sizeof(struct server_ctrl_struct), GFP_KERNEL);
+	if (!ctrl)
+		return -ENOMEM;
+
+	ctrl->type = type;
+	INIT_WORK(&ctrl->ctrl_work, server_ctrl_handle_work);
+
+	mutex_lock(&ctrl_list_lock);
+	list_add(&ctrl->list, &ctrl_list);
+	mutex_unlock(&ctrl_list_lock);
+
+	schedule_work(&ctrl->ctrl_work);
+	return 0;
+}
+
+int server_queue_ctrl_init_work(void)
+{
+	return __queue_ctrl_work(SERVER_CTRL_TYPE_INIT);
+}
+
+int server_queue_ctrl_reset_work(void)
+{
+	return __queue_ctrl_work(SERVER_CTRL_TYPE_RESET);
+}
+
+static void server_cancel_ctrl_works(void)
+{
+	struct server_ctrl_struct *ctrl;
+
+	mutex_lock(&ctrl_list_lock);
+	while (!list_empty(&ctrl_list)) {
+		ctrl = list_entry(ctrl_list.next,
+				  struct server_ctrl_struct,
+				  list);
+
+		list_del(&ctrl->list);
+		cancel_work_sync(&ctrl->ctrl_work);
+		kfree(ctrl);
+	}
+	mutex_unlock(&ctrl_list_lock);
+}
+
+static int cifsd_server_shutdown(void)
+{
+	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
+
+	cifsd_free_session_table();
+	cifsd_tcp_destroy();
+	cifsd_ipc_release();
+
+	destroy_global_fidtable();
+	destroy_lease_table(NULL);
+	cifsd_destroy_buffer_pools();
+	exit_cifsd_idmap();
+	server_conf_free();
+	return 0;
+}
+
 static int __init cifsd_server_init(void)
 {
 	int ret;
@@ -422,10 +535,6 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	ret = cifsd_tcp_init();
-	if (ret)
-		goto error;
-
 	ret = init_fidtable(&global_fidtable);
 	if (ret)
 		goto error;
@@ -440,22 +549,6 @@ static int __init cifsd_server_init(void)
 error:
 	cifsd_server_shutdown();
 	return ret;
-}
-
-int cifsd_server_shutdown(void)
-{
-	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
-
-	cifsd_free_session_table();
-	cifsd_tcp_destroy();
-	cifsd_ipc_release();
-
-	destroy_global_fidtable();
-	destroy_lease_table(NULL);
-	cifsd_destroy_buffer_pools();
-	exit_cifsd_idmap();
-	server_conf_free();
-	return 0;
 }
 
 /**

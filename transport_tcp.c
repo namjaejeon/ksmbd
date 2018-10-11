@@ -600,7 +600,7 @@ int cifsd_tcp_init(void)
 
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = PF_INET;
-	sin.sin_port = htons(CIFSD_SERVER_PORT);
+	sin.sin_port = htons(server_conf.tcp_port);
 
 	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
 				(char *)&opt, sizeof(opt));
