@@ -23,6 +23,9 @@ static DEFINE_MUTEX(init_lock);
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
 
+#define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
+#define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
+
 /**
  * cifsd_tcp_conn_alive() - check server is unresponsive or not
  * @conn:     TCP server instance of connection
@@ -198,10 +201,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		conn->request_buf = NULL;
 
 		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
-		if (size != sizeof(hdr_buf)) {
-			/* 7 seconds passed. It should be break */
+		if (size != sizeof(hdr_buf))
 			break;
-		}
 
 		pdu_size = get_rfc1002_length(hdr_buf);
 		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
@@ -415,28 +416,27 @@ static int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 		try_to_freeze();
 
 		if (!cifsd_tcp_conn_alive(conn)) {
-			total_read = -EAGAIN;
+			total_read = -ESHUTDOWN;
 			break;
 		}
 
 		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
-				iov, segs, to_read, 0);
-		if (conn->tcp_status == CIFSD_SESS_EXITING) {
+					iov, segs, to_read, 0);
+
+		if (conn->tcp_status == CIFSD_SESS_EXITING ||
+				length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
 		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
-		} else if (length == -ERESTARTSYS ||
-				length == -EAGAIN ||
-				length == -EINTR) {
+		} else if (length == -ERESTARTSYS || length == -EAGAIN) {
 			usleep_range(1000, 2000);
 			length = 0;
 			continue;
 		} else if (length <= 0) {
-			usleep_range(1000, 2000);
 			total_read = -EAGAIN;
 			break;
 		}
@@ -626,8 +626,8 @@ int cifsd_tcp_init(void)
 		goto out_error;
 	}
 
-	cifsd_socket->sk->sk_rcvtimeo = 7 * HZ;
-	cifsd_socket->sk->sk_sndtimeo = 5 * HZ;
+	cifsd_socket->sk->sk_rcvtimeo = CIFSD_TCP_RECV_TIMEOUT;
+	cifsd_socket->sk->sk_sndtimeo = CIFSD_TCP_SEND_TIMEOUT;
 
 	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
@@ -652,21 +652,22 @@ out_error:
 
 static void tcp_stop_sessions(void)
 {
-	int ret;
-	struct cifsd_tcp_conn *conn, *conn_tmp;
+	struct cifsd_tcp_conn *conn;
 
+again:
 	read_lock(&tcp_conn_list_lock);
-	list_for_each_entry_safe(conn, conn_tmp, &tcp_conn_list, tcp_conns) {
+	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
-
-		read_unlock(&tcp_conn_list_lock);
-		ret = kthread_stop(conn->handler);
-		read_lock(&tcp_conn_list_lock);
-
-		if (ret)
-			cifsd_err("Can't stop connection kthread: %d\n", ret);
+		cifsd_err("Stop session handler %s/%d\n",
+				conn->handler->comm,
+				task_pid_nr(conn->handler));
 	}
 	read_unlock(&tcp_conn_list_lock);
+
+	if (!list_empty(&tcp_conn_list)) {
+		schedule_timeout_interruptible(CIFSD_TCP_RECV_TIMEOUT / 2);
+		goto again;
+	}
 }
 
 static void tcp_stop_kthread(void)
