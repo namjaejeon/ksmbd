@@ -485,9 +485,9 @@ static int cifsd_server_shutdown(void)
 {
 	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
 
-	cifsd_free_session_table();
-	cifsd_tcp_destroy();
 	cifsd_ipc_release();
+	cifsd_tcp_destroy();
+	cifsd_free_session_table();
 
 	destroy_global_fidtable();
 	destroy_lease_table(NULL);
