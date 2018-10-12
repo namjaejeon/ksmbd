@@ -43,7 +43,7 @@ static unsigned int cifsd_tools_pid;
 		int ret = 0;						\
 									\
 		if (m->genlhdr->version != CIFSD_GENL_VERSION) {	\
-			pr_err("IPC protocol version mismatch: %d\n",	\
+			cifsd_err("IPC protocol version mismatch: %d\n",\
 				m->genlhdr->version);			\
 			ret = 1;					\
 		}							\
@@ -254,7 +254,7 @@ static int handle_response(int type, void *payload, size_t sz)
 		 * request message type + 1.
 		 */
 		if (entry->type + 1 != type) {
-			pr_err("Waiting for IPC type %d, got %d. Ignore.\n",
+			cifsd_err("Waiting for IPC type %d, got %d. Ignore.\n",
 				entry->type + 1, type);
 		}
 
@@ -314,7 +314,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&startup_lock);
 	if (!cifsd_server_configurable()) {
 		mutex_unlock(&startup_lock);
-		pr_err("Server reset is in progress, can't start daemon\n");
+		cifsd_err("Server reset is in progress, can't start daemon\n");
 		return -EINVAL;
 	}
 
@@ -324,7 +324,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 
-		pr_err("Reconnect to a new user space daemon\n");
+		cifsd_err("Reconnect to a new user space daemon\n");
 	} else {
 		struct cifsd_startup_request *req;
 
@@ -346,7 +346,7 @@ out:
 static int handle_unsupported_event(struct sk_buff *skb,
 				    struct genl_info *info)
 {
-	pr_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
+	cifsd_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
 	return -EINVAL;
 }
 
@@ -464,7 +464,7 @@ int cifsd_ipc_heartbeat(void)
 		cifsd_tools_pid = 0;
 		mutex_unlock(&startup_lock);
 
-		pr_err("No IPC daemon response for %lus\n", delta);
+		cifsd_err("No IPC daemon response for %lus\n", delta);
 		return -EINVAL;
 	}
 	return 0;
@@ -771,7 +771,8 @@ int cifsd_ipc_init(void)
 	int ret = genl_register_family(&cifsd_genl_family);
 
 	if (ret) {
-		pr_err("Failed to register CIFSD netlink interface %d\n", ret);
+		cifsd_err("Failed to register CIFSD netlink interface %d\n",
+				ret);
 		return ret;
 	}
 
