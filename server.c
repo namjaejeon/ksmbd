@@ -15,6 +15,7 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
 #endif
+#include <linux/workqueue.h>
 
 #include "server.h"
 #include "buffer_pool.h"
@@ -456,7 +457,7 @@ static int __queue_ctrl_work(int type)
 	__module_get(THIS_MODULE);
 	ctrl->type = type;
 	INIT_WORK(&ctrl->ctrl_work, server_ctrl_handle_work);
-	schedule_work(&ctrl->ctrl_work);
+	queue_work(system_long_wq, &ctrl->ctrl_work);
 	return 0;
 }
 
