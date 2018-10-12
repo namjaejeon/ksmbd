@@ -319,11 +319,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (cifsd_tools_pid) {
-		struct cifsd_heartbeat *beat;
-
-		beat = cifsd_ipc_heartbeat_request();
-		if (beat) {
-			cifsd_free(beat);
+		if (cifsd_ipc_heartbeat_request() == 0) {
 			ret = -EINVAL;
 			goto out;
 		}
@@ -457,13 +453,9 @@ int cifsd_ipc_heartbeat(void)
 	}
 
 	if (delta >= server_conf.ipc_timeout) {
-		struct cifsd_heartbeat *beat;
-
 		mutex_lock(&startup_lock);
-		beat = cifsd_ipc_heartbeat_request();
-		if (beat) {
+		if (cifsd_ipc_heartbeat_request() == 0) {
 			mutex_unlock(&startup_lock);
-			cifsd_free(beat);
 			return 0;
 		}
 
@@ -472,8 +464,7 @@ int cifsd_ipc_heartbeat(void)
 		cifsd_tools_pid = 0;
 		mutex_unlock(&startup_lock);
 
-		pr_err("No IPC daemon response for %lus %s\n",
-				delta, current->comm);
+		pr_err("No IPC daemon response for %lus\n", delta);
 		return -EINVAL;
 	}
 	return 0;
@@ -576,23 +567,19 @@ int cifsd_ipc_logout_request(const char *account)
 	return ret;
 }
 
-struct cifsd_heartbeat *cifsd_ipc_heartbeat_request(void)
+int cifsd_ipc_heartbeat_request(void)
 {
 	struct cifsd_ipc_msg *msg;
-	struct cifsd_heartbeat *out, *in;
+	int ret;
 
 	msg = ipc_msg_alloc(sizeof(struct cifsd_heartbeat));
 	if (!msg)
-		return NULL;
+		return -EINVAL;
 
 	msg->type = CIFSD_EVENT_HEARTBEAT_REQUEST;
-	out = CIFSD_IPC_MSG_PAYLOAD(msg);
-	out->handle = cifds_acquire_id(ida);
-
-	in = ipc_msg_send_request(msg, out->handle);
-	ipc_msg_handle_free(out->handle);
+	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
-	return in;
+	return ret;
 }
 
 struct cifsd_share_config_response *
