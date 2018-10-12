@@ -312,7 +312,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	mutex_lock(&startup_lock);
-	if (server_conf.state == SERVER_STATE_RESETTING) {
+	if (!cifsd_server_configurable()) {
 		mutex_unlock(&startup_lock);
 		pr_err("Server reset is in progress, can't start daemon\n");
 		return -EINVAL;
