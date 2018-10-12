@@ -268,19 +268,24 @@ static int handle_response(int type, void *payload, size_t sz)
 
 static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 {
+	static DEFINE_MUTEX(startup_lock);
+	int ret = 0;
+
 	if (CIFSD_INVALID_IPC_VERSION(info))
 		return -EINVAL;
 
 	if (!info->attrs[CIFSD_EVENT_STARTING_UP])
 		return -EINVAL;
 
+	mutex_lock(&startup_lock);
 	if (cifsd_tools_pid) {
 		struct cifsd_heartbeat *beat;
 
 		beat = cifsd_ipc_heartbeat_request();
 		if (beat) {
 			cifsd_free(beat);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 
 		pr_err("Reconnect to a new user space daemon");
@@ -296,8 +301,10 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 		ret = cifsd_set_netbios_name(req->netbios_name);
 		ret |= cifsd_set_server_string(req->server_string);
 		ret |= cifsd_set_work_group(req->work_group);
-		if (ret)
-			return -EINVAL;
+		if (ret) {
+			ret = -EINVAL;
+			goto out;
+		}
 
 		if (req->min_prot[0]) {
 			ret = get_protocol_idx(req->min_prot);
@@ -314,7 +321,10 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	cifsd_tools_pid = info->snd_portid;
-	return 0;
+
+out:
+	mutex_unlock(&startup_lock);
+	return ret;
 }
 
 static int handle_unsupported_event(struct sk_buff *skb,
