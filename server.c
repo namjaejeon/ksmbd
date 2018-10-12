@@ -419,8 +419,8 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
-	server_conf.state = SERVER_STATE_STARTING_UP;
 	cifsd_tcp_destroy();
+	server_conf.state = SERVER_STATE_STARTING_UP;
 }
 
 static void server_ctrl_handle_work(struct work_struct *work)
@@ -468,6 +468,17 @@ int server_queue_ctrl_init_work(void)
 int server_queue_ctrl_reset_work(void)
 {
 	return __queue_ctrl_work(SERVER_CTRL_TYPE_RESET);
+}
+
+int cifsd_server_daemon_heartbeat(void)
+{
+	if (cifsd_ipc_heartbeat()) {
+		server_conf_free();
+		server_conf_init();
+		server_queue_ctrl_reset_work();
+		return -EINVAL;
+	}
+	return 0;
 }
 
 static int cifsd_server_shutdown(void)

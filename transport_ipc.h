@@ -52,6 +52,7 @@ struct cifsd_rpc_command *cifsd_rpc_rap(struct cifsd_session *sess,
 					  void *payload,
 					  size_t payload_sz);
 
+int cifsd_ipc_heartbeat(void);
 void cifsd_ipc_release(void);
 int cifsd_ipc_init(void);
 #endif /* __CIFSD_TRANSPORT_IPC_H__ */
