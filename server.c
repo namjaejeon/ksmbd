@@ -48,13 +48,10 @@ enum SERVER_CTRL_TYPE {
 
 struct server_ctrl_struct {
 	int			type;
-	struct list_head	list;
 	struct work_struct	ctrl_work;
 };
 
 static DEFINE_MUTEX(ctrl_lock);
-static LIST_HEAD(ctrl_list);
-static DEFINE_MUTEX(ctrl_list_lock);
 
 static int ___server_conf_set(int idx, char *val)
 {
@@ -432,10 +429,6 @@ static void server_ctrl_handle_work(struct work_struct *work)
 
 	ctrl = container_of(work, struct server_ctrl_struct, ctrl_work);
 
-	mutex_lock(&ctrl_list_lock);
-	list_del(&ctrl->list);
-	mutex_unlock(&ctrl_list_lock);
-
 	mutex_lock(&ctrl_lock);
 	switch (ctrl->type) {
 	case SERVER_CTRL_TYPE_INIT:
@@ -449,6 +442,7 @@ static void server_ctrl_handle_work(struct work_struct *work)
 	}
 	mutex_unlock(&ctrl_lock);
 	kfree(ctrl);
+	module_put(THIS_MODULE);
 }
 
 static int __queue_ctrl_work(int type)
@@ -459,13 +453,9 @@ static int __queue_ctrl_work(int type)
 	if (!ctrl)
 		return -ENOMEM;
 
+	__module_get(THIS_MODULE);
 	ctrl->type = type;
 	INIT_WORK(&ctrl->ctrl_work, server_ctrl_handle_work);
-
-	mutex_lock(&ctrl_list_lock);
-	list_add(&ctrl->list, &ctrl_list);
-	mutex_unlock(&ctrl_list_lock);
-
 	schedule_work(&ctrl->ctrl_work);
 	return 0;
 }
@@ -478,23 +468,6 @@ int server_queue_ctrl_init_work(void)
 int server_queue_ctrl_reset_work(void)
 {
 	return __queue_ctrl_work(SERVER_CTRL_TYPE_RESET);
-}
-
-static void server_cancel_ctrl_works(void)
-{
-	struct server_ctrl_struct *ctrl;
-
-	mutex_lock(&ctrl_list_lock);
-	while (!list_empty(&ctrl_list)) {
-		ctrl = list_entry(ctrl_list.next,
-				  struct server_ctrl_struct,
-				  list);
-
-		list_del(&ctrl->list);
-		cancel_work_sync(&ctrl->ctrl_work);
-		kfree(ctrl);
-	}
-	mutex_unlock(&ctrl_list_lock);
 }
 
 static int cifsd_server_shutdown(void)
