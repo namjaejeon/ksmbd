@@ -571,10 +571,9 @@ static void tcp_destroy_socket(void)
 		return;
 
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
-	if (ret)
+	if (ret) {
 		cifsd_err("Failed to shutdown socket: %d\n", ret);
-
-	if (cifsd_socket) {
+	} else {
 		sock_release(cifsd_socket);
 		cifsd_socket = NULL;
 	}
@@ -654,12 +653,16 @@ out_error:
 static void tcp_stop_sessions(void)
 {
 	int ret;
-	struct cifsd_tcp_conn *conn;
+	struct cifsd_tcp_conn *conn, *conn_tmp;
 
 	read_lock(&tcp_conn_list_lock);
-	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
+	list_for_each_entry_safe(conn, conn_tmp, &tcp_conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
+
+		read_unlock(&tcp_conn_list_lock);
 		ret = kthread_stop(conn->handler);
+		read_lock(&tcp_conn_list_lock);
+
 		if (ret)
 			cifsd_err("Can't stop connection kthread: %d\n", ret);
 	}
@@ -676,7 +679,8 @@ static void tcp_stop_kthread(void)
 	ret = kthread_stop(cifsd_kthread);
 	if (ret)
 		cifsd_err("failed to stop forker thread\n");
-	cifsd_kthread = NULL;
+	else
+		cifsd_kthread = NULL;
 }
 
 void cifsd_tcp_destroy(void)
