@@ -80,9 +80,6 @@ static const struct nla_policy cifsd_nl_policy[CIFSD_EVENT_MAX] = {
 	[CIFSD_EVENT_HEARTBEAT_REQUEST] = {
 		.len = sizeof(struct cifsd_heartbeat),
 	},
-	[CIFSD_EVENT_HEARTBEAT_RESPONSE] = {
-		.len = sizeof(struct cifsd_heartbeat),
-	},
 	[CIFSD_EVENT_STARTING_UP] = {
 		.len = sizeof(struct cifsd_startup_request),
 	},
@@ -129,11 +126,6 @@ static const struct genl_ops cifsd_genl_ops[] = {
 		.cmd	= CIFSD_EVENT_HEARTBEAT_REQUEST,
 		.doit	= handle_unsupported_event,
 		.policy	= cifsd_nl_policy,
-	},
-	{
-		.cmd	= CIFSD_EVENT_HEARTBEAT_RESPONSE,
-		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_STARTING_UP,
