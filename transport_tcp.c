@@ -34,6 +34,12 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
  */
 static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 {
+	if (!cifsd_server_running())
+		return false;
+
+	if (conn->tcp_status == CIFSD_SESS_EXITING)
+		return false;
+
 	if (conn->stats.open_files_count > 0)
 		return true;
 
@@ -187,15 +193,11 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	conn->last_active = jiffies;
 
 	while (!kthread_should_stop()) {
-		if (!cifsd_server_running())
-			break;
-		if (conn->tcp_status == CIFSD_SESS_EXITING)
-			break;
-		if (!cifsd_tcp_conn_alive(conn))
-			break;
-
 		if (try_to_freeze())
 			continue;
+
+		if (!cifsd_tcp_conn_alive(conn))
+			break;
 
 		cifsd_free_request(conn->request_buf);
 		conn->request_buf = NULL;
@@ -419,14 +421,12 @@ static int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 			total_read = -ESHUTDOWN;
 			break;
 		}
-
 		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
 					iov, segs, to_read, 0);
 
-		if (conn->tcp_status == CIFSD_SESS_EXITING ||
-				length == -EINTR) {
+		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
 		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
