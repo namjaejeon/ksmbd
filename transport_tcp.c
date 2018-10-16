@@ -26,18 +26,15 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
 #define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
 #define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
 
-/**
- * cifsd_tcp_conn_alive() - check server is unresponsive or not
- * @conn:     TCP server instance of connection
- *
- * Return:	true if server unresponsive, otherwise  false
- */
 static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 {
 	if (!cifsd_server_running())
 		return false;
 
 	if (conn->tcp_status == CIFSD_SESS_EXITING)
+		return false;
+
+	if (kthread_should_stop())
 		return false;
 
 	if (conn->stats.open_files_count > 0)
@@ -48,10 +45,8 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 		cifsd_debug("No response from client in 120 secs\n");
 		return false;
 	}
-	return true;
-#else
-	return true;
 #endif
+	return true;
 }
 
 /**
@@ -192,12 +187,9 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	__module_get(THIS_MODULE);
 	conn->last_active = jiffies;
 
-	while (!kthread_should_stop()) {
+	while (cifsd_tcp_conn_alive(conn)) {
 		if (try_to_freeze())
 			continue;
-
-		if (!cifsd_tcp_conn_alive(conn))
-			break;
 
 		cifsd_free_request(conn->request_buf);
 		conn->request_buf = NULL;
