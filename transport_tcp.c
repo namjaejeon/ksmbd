@@ -258,6 +258,17 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	return 0;
 }
 
+static unsigned short cifsd_tcp_get_port(const struct sockaddr *sa)
+{
+	switch (sa->sa_family) {
+	case AF_INET:
+		return ntohs(((struct sockaddr_in *)sa)->sin_port);
+	case AF_INET6:
+		return ntohs(((struct sockaddr_in6 *)sa)->sin6_port);
+	}
+	return 0;
+}
+
 /**
  * cifsd_tcp_new_connection() - create a new tcp session on mount
  * @sock:	socket associated with new connection
@@ -302,7 +313,8 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
 				    conn,
-				    "kcifsd_worker");
+				    "kcifsd:%u",
+				    cifsd_tcp_get_port(csin));
 	if (IS_ERR(conn->handler)) {
 		cifsd_err("cannot start conn thread\n");
 		rc = PTR_ERR(conn->handler);
@@ -366,9 +378,7 @@ static int cifsd_tcp_run_kthread(void)
 {
 	int rc;
 
-	cifsd_kthread = kthread_run(cifsd_kthread_fn,
-				    NULL,
-				    "kcifsd_main");
+	cifsd_kthread = kthread_run(cifsd_kthread_fn, NULL, "kcifsd");
 	if (IS_ERR(cifsd_kthread)) {
 		rc = PTR_ERR(cifsd_kthread);
 		cifsd_kthread = NULL;
