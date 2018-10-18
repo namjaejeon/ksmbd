@@ -43,7 +43,7 @@ static void free_channel_list(struct cifsd_session *sess)
 
 static void __kill_smb1_session(struct cifsd_session *sess)
 {
-
+	destroy_fidtable(sess);
 }
 
 static void __kill_smb2_session(struct cifsd_session *sess)
@@ -238,7 +238,7 @@ static int __init_smb1_session(struct cifsd_session *sess)
 	if (id < 0)
 		return -EINVAL;
 	sess->id = id;
-	return 0;
+	return init_fidtable(&sess->fidtable);
 }
 
 static int __init_smb2_session(struct cifsd_session *sess)
