@@ -8,7 +8,8 @@
 
 #define SERVER_STATE_STARTING_UP	0
 #define SERVER_STATE_RUNNING		1
-#define SERVER_STATE_SHUTTING_DOWN	2
+#define SERVER_STATE_RESETTING		2
+#define SERVER_STATE_SHUTTING_DOWN	3
 
 #define SERVER_CONF_NETBIOS_NAME	0
 #define SERVER_CONF_SERVER_STRING	1
@@ -22,6 +23,9 @@ struct cifsd_server_config {
 	short		enforced_signing;
 	short		min_protocol;
 	short		max_protocol;
+	unsigned short	tcp_port;
+	unsigned short	ipc_timeout;
+	unsigned long	ipc_last_active;
 };
 
 extern struct cifsd_server_config server_conf;
@@ -39,10 +43,13 @@ static inline int cifsd_server_running(void)
 	return server_conf.state == SERVER_STATE_RUNNING;
 }
 
-static inline void cifsd_server_set_running(void)
+static inline int cifsd_server_configurable(void)
 {
-	server_conf.state = SERVER_STATE_RUNNING;
+	return server_conf.state < SERVER_STATE_RESETTING;
 }
 
-int cifsd_server_shutdown(void);
+int server_queue_ctrl_init_work(void);
+int server_queue_ctrl_reset_work(void);
+
+int cifsd_server_daemon_heartbeat(void);
 #endif /* __SERVER_H__ */

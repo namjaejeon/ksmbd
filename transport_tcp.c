@@ -23,14 +23,20 @@ static DEFINE_MUTEX(init_lock);
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
 
-/**
- * cifsd_tcp_conn_alive() - check server is unresponsive or not
- * @conn:     TCP server instance of connection
- *
- * Return:	true if server unresponsive, otherwise  false
- */
+#define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
+#define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
+
 static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 {
+	if (!cifsd_server_running())
+		return false;
+
+	if (conn->tcp_status == CIFSD_SESS_EXITING)
+		return false;
+
+	if (kthread_should_stop())
+		return false;
+
 	if (conn->stats.open_files_count > 0)
 		return true;
 
@@ -39,10 +45,8 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 		cifsd_debug("No response from client in 120 secs\n");
 		return false;
 	}
-	return true;
-#else
-	return true;
 #endif
+	return true;
 }
 
 /**
@@ -183,14 +187,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	__module_get(THIS_MODULE);
 	conn->last_active = jiffies;
 
-	while (!kthread_should_stop()) {
-		if (!cifsd_server_running())
-			break;
-		if (conn->tcp_status == CIFSD_SESS_EXITING)
-			break;
-		if (!cifsd_tcp_conn_alive(conn))
-			break;
-
+	while (cifsd_tcp_conn_alive(conn)) {
 		if (try_to_freeze())
 			continue;
 
@@ -198,10 +195,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		conn->request_buf = NULL;
 
 		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
-		if (size != sizeof(hdr_buf)) {
-			/* 7 seconds passed. It should be break */
+		if (size != sizeof(hdr_buf))
 			break;
-		}
 
 		pdu_size = get_rfc1002_length(hdr_buf);
 		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
@@ -263,6 +258,17 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	return 0;
 }
 
+static unsigned short cifsd_tcp_get_port(const struct sockaddr *sa)
+{
+	switch (sa->sa_family) {
+	case AF_INET:
+		return ntohs(((struct sockaddr_in *)sa)->sin_port);
+	case AF_INET6:
+		return ntohs(((struct sockaddr_in6 *)sa)->sin6_port);
+	}
+	return 0;
+}
+
 /**
  * cifsd_tcp_new_connection() - create a new tcp session on mount
  * @sock:	socket associated with new connection
@@ -307,7 +313,8 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
 				    conn,
-				    "kcifsd_worker");
+				    "kcifsd:%u",
+				    cifsd_tcp_get_port(csin));
 	if (IS_ERR(conn->handler)) {
 		cifsd_err("cannot start conn thread\n");
 		rc = PTR_ERR(conn->handler);
@@ -332,6 +339,11 @@ static int cifsd_kthread_fn(void *p)
 	int ret;
 
 	while (!kthread_should_stop()) {
+		if (cifsd_server_daemon_heartbeat()) {
+			schedule_timeout_interruptible(HZ);
+			continue;
+		}
+
 		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
 		if (ret) {
 			if (ret == -EAGAIN)
@@ -366,9 +378,7 @@ static int cifsd_tcp_run_kthread(void)
 {
 	int rc;
 
-	cifsd_kthread = kthread_run(cifsd_kthread_fn,
-				    NULL,
-				    "kcifsd_main");
+	cifsd_kthread = kthread_run(cifsd_kthread_fn, NULL, "kcifsd");
 	if (IS_ERR(cifsd_kthread)) {
 		rc = PTR_ERR(cifsd_kthread);
 		cifsd_kthread = NULL;
@@ -410,28 +420,25 @@ static int cifsd_tcp_readv(struct cifsd_tcp_conn *conn,
 		try_to_freeze();
 
 		if (!cifsd_tcp_conn_alive(conn)) {
-			total_read = -EAGAIN;
+			total_read = -ESHUTDOWN;
 			break;
 		}
-
 		segs = kvec_array_init(iov, iov_orig, nr_segs, total_read);
 
 		length = kernel_recvmsg(conn->sock, &cifsd_msg,
-				iov, segs, to_read, 0);
-		if (conn->tcp_status == CIFSD_SESS_EXITING) {
+					iov, segs, to_read, 0);
+
+		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
 		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
-		} else if (length == -ERESTARTSYS ||
-				length == -EAGAIN ||
-				length == -EINTR) {
+		} else if (length == -ERESTARTSYS || length == -EAGAIN) {
 			usleep_range(1000, 2000);
 			length = 0;
 			continue;
 		} else if (length <= 0) {
-			usleep_range(1000, 2000);
 			total_read = -EAGAIN;
 			break;
 		}
@@ -566,10 +573,9 @@ static void tcp_destroy_socket(void)
 		return;
 
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
-	if (ret)
+	if (ret) {
 		cifsd_err("Failed to shutdown socket: %d\n", ret);
-
-	if (cifsd_socket) {
+	} else {
 		sock_release(cifsd_socket);
 		cifsd_socket = NULL;
 	}
@@ -600,7 +606,7 @@ int cifsd_tcp_init(void)
 
 	sin.sin_addr.s_addr = htonl(INADDR_ANY);
 	sin.sin_family = PF_INET;
-	sin.sin_port = htons(CIFSD_SERVER_PORT);
+	sin.sin_port = htons(server_conf.tcp_port);
 
 	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
 				(char *)&opt, sizeof(opt));
@@ -622,8 +628,8 @@ int cifsd_tcp_init(void)
 		goto out_error;
 	}
 
-	cifsd_socket->sk->sk_rcvtimeo = 7 * HZ;
-	cifsd_socket->sk->sk_sndtimeo = 5 * HZ;
+	cifsd_socket->sk->sk_rcvtimeo = CIFSD_TCP_RECV_TIMEOUT;
+	cifsd_socket->sk->sk_sndtimeo = CIFSD_TCP_SEND_TIMEOUT;
 
 	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
@@ -648,17 +654,22 @@ out_error:
 
 static void tcp_stop_sessions(void)
 {
-	int ret;
 	struct cifsd_tcp_conn *conn;
 
+again:
 	read_lock(&tcp_conn_list_lock);
 	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
-		ret = kthread_stop(conn->handler);
-		if (ret)
-			cifsd_err("Can't stop connection kthread: %d\n", ret);
+		cifsd_err("Stop session handler %s/%d\n",
+				conn->handler->comm,
+				task_pid_nr(conn->handler));
 	}
 	read_unlock(&tcp_conn_list_lock);
+
+	if (!list_empty(&tcp_conn_list)) {
+		schedule_timeout_interruptible(CIFSD_TCP_RECV_TIMEOUT / 2);
+		goto again;
+	}
 }
 
 static void tcp_stop_kthread(void)
@@ -671,7 +682,8 @@ static void tcp_stop_kthread(void)
 	ret = kthread_stop(cifsd_kthread);
 	if (ret)
 		cifsd_err("failed to stop forker thread\n");
-	cifsd_kthread = NULL;
+	else
+		cifsd_kthread = NULL;
 }
 
 void cifsd_tcp_destroy(void)

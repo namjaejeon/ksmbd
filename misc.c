@@ -7,7 +7,6 @@
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
-#include <linux/textsearch.h>
 
 #include "glob.h"
 #include "export.h"

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ *
+ *   linux-cifsd-devel@lists.sourceforge.net
  */
 
 #ifndef _LINUX_CIFSD_SERVER_H
@@ -30,6 +32,8 @@ struct cifsd_startup_request {
 	__s8	netbios_name[16];
 	__s8	work_group[64];
 	__s8	server_string[64];
+	__u16	tcp_port;
+	__u16	ipc_timeout;
 } __align;
 
 struct cifsd_shutdown_request {
@@ -115,28 +119,27 @@ struct cifsd_rpc_command {
 enum cifsd_event {
 	CIFSD_EVENT_UNSPEC			= 0,
 	CIFSD_EVENT_HEARTBEAT_REQUEST,
-	CIFSD_EVENT_HEARTBEAT_RESPONSE,
 
 	CIFSD_EVENT_STARTING_UP,
 	CIFSD_EVENT_SHUTTING_DOWN,
 
-	CIFSD_EVENT_LOGIN_REQUEST		= 5,
-	CIFSD_EVENT_LOGIN_RESPONSE,
+	CIFSD_EVENT_LOGIN_REQUEST,
+	CIFSD_EVENT_LOGIN_RESPONSE		= 5,
 
 	CIFSD_EVENT_SHARE_CONFIG_REQUEST,
 	CIFSD_EVENT_SHARE_CONFIG_RESPONSE,
 
 	CIFSD_EVENT_TREE_CONNECT_REQUEST,
-	CIFSD_EVENT_TREE_CONNECT_RESPONSE	= 10,
+	CIFSD_EVENT_TREE_CONNECT_RESPONSE,
 
-	CIFSD_EVENT_TREE_DISCONNECT_REQUEST,
+	CIFSD_EVENT_TREE_DISCONNECT_REQUEST	= 10,
 
 	CIFSD_EVENT_LOGOUT_REQUEST,
 
 	CIFSD_EVENT_RPC_REQUEST,
 	CIFSD_EVENT_RPC_RESPONSE,
 
-	CIFSD_EVENT_MAX				= 15
+	CIFSD_EVENT_MAX
 };
 
 enum CIFSD_TREE_CONN_STATUS {
