@@ -279,18 +279,6 @@ int negotiate_dialect(void *buf)
 	return ret;
 }
 
-/**
- * validate_sess_handle() - check for valid session handle
- * @sess:	handle to be validated
- *
- * Return:      matching session handle, otherwise NULL
- */
-struct cifsd_session *validate_sess_handle(struct cifsd_session *session)
-{
-	/* @FIXME: remove this code */
-	return session;
-}
-
 #ifndef CONFIG_CIFS_SMB2_SERVER
 /* @FIXME rework this code */
 void init_smb2_0_server(struct cifsd_tcp_conn *server) { }
