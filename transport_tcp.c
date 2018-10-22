@@ -306,9 +306,6 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 #endif
 
 	conn->conn_ops = &default_tcp_conn_ops;
-	if (conn->conn_ops->init_fn)
-		conn->conn_ops->init_fn(conn);
-
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
@@ -723,7 +720,6 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 {
-	default_tcp_conn_ops.init_fn = ops->init_fn;
 	default_tcp_conn_ops.process_fn = ops->process_fn;
 	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
 }

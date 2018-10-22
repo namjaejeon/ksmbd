@@ -345,12 +345,6 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static int cifsd_server_init_conn(struct cifsd_tcp_conn *conn)
-{
-	init_smb1_server(conn);
-	return 0;
-}
-
 static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
 {
 	return queue_cifsd_work(conn);
@@ -367,7 +361,6 @@ static void cifsd_server_tcp_callbacks_init(void)
 {
 	struct cifsd_tcp_conn_ops ops;
 
-	ops.init_fn = cifsd_server_init_conn;
 	ops.process_fn = cifsd_server_process_request;
 	ops.terminate_fn = cifsd_server_terminate_conn;
 

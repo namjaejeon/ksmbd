@@ -49,7 +49,6 @@ struct cifsd_secmech {
 };
 
 struct cifsd_tcp_conn_ops {
-	int	(*init_fn)(struct cifsd_tcp_conn *conn);
 	int	(*process_fn)(struct cifsd_tcp_conn *conn);
 	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
 };
