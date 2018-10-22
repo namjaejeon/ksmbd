@@ -1360,6 +1360,17 @@ struct create_ea_buf_req {
 } __packed;
 
 /* functions */
+
+void init_smb2_0_server(struct cifsd_tcp_conn *server);
+void init_smb2_1_server(struct cifsd_tcp_conn *server);
+void init_smb3_0_server(struct cifsd_tcp_conn *server);
+void init_smb3_02_server(struct cifsd_tcp_conn *server);
+int init_smb3_11_server(struct cifsd_tcp_conn *server);
+int is_smb2_neg_cmd(struct cifsd_work *work);
+bool is_chained_smb2_message(struct cifsd_work *work);
+void init_smb2_neg_rsp(struct cifsd_work *work);
+int is_smb2_rsp(struct cifsd_work *work);
+
 extern int get_smb2_cmd_val(struct cifsd_work *work);
 extern void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err);
 extern int init_smb2_rsp_hdr(struct cifsd_work *work);
