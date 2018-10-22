@@ -131,8 +131,8 @@ extern struct list_head global_lock_list;
 #define CIFS_CPHTXT_SIZE (16)
 #define CIFS_NTHASH_SIZE (16)
 
-/* We don't include wc in HEADER_SIZE */
-#define HEADER_SIZE(conn) ((conn)->vals->header_size - 1)
+#define HEADER_SIZE(conn) ((conn)->vals->header_size)
+#define HEADER_SIZE_NO_BUF_LEN(conn) ((conn)->vals->header_size - 4)
 #define MAX_HEADER_SIZE(conn) ((conn)->vals->max_header_size)
 
 /* CreateOptions */

@@ -276,7 +276,7 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 
 	rsp_hdr->smb2_buf_length =
-		cpu_to_be32(sizeof(struct smb2_hdr) - 4);
+		cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
@@ -458,7 +458,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	next_hdr_offset = le32_to_cpu(rcv_hdr->NextCommand);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 
-	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
+	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;

@@ -436,7 +436,7 @@ static void smb2_send_lease_break_notification(struct work_struct *wk)
 
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
+	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
@@ -1359,9 +1359,10 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 
 	/* Init response header */
 	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
-	/* wct is 8 for locking andx */
-	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2 + 8*2);
-	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE(conn) - 1 + 8*2);
+	/* wct is 8 for locking andx(18) */
+	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
+	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn)
+		+ 18);
 	rsp_hdr->Protocol[0] = 0xFF;
 	rsp_hdr->Protocol[1] = 'S';
 	rsp_hdr->Protocol[2] = 'M';
@@ -1439,7 +1440,7 @@ void smb2_send_oplock_break_notification(struct work_struct *wk)
 
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
+	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
