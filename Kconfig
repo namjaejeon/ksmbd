@@ -17,11 +17,21 @@ config CIFS_SERVER
 	select CRYPTO_CCM
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
+
+config CIFS_SMB1_SERVER
+        bool "SMB1 server support"
+        depends on CIFS_SERVER && INET
+        select NLS
+	default n
+
+        help
+	  This enables deprecated SMB1 protocol.
 	
 config CIFS_SMB2_SERVER
         bool "SMB2 server support"
         depends on CIFS_SERVER && INET
         select NLS
+	default y
 
         help
 	  This enables experimental support for the SMB2 (Server Message Block
