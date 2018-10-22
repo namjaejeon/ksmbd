@@ -136,7 +136,6 @@ static void handle_cifsd_work(struct work_struct *wk)
 	struct smb_version_cmds *cmds;
 	long int start_time = 0, end_time = 0, time_elapsed = 0;
 
-
 	cifsd_tcp_conn_lock(conn);
 
 	if (cifsd_debugging)
@@ -144,14 +143,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 
 	conn->stats.request_served++;
 
-	if (unlikely(conn->need_neg)) {
-		if (is_smb2_neg_cmd(work))
-			init_smb2_0_server(conn);
-		else if (conn->ops->get_cmd_val(work) !=
-						SMB_COM_NEGOTIATE)
-			conn->need_neg = false;
-	}
-
+	cifsd_init_smb_server(work);
 	if (conn->ops->allocate_rsp_buf(work)) {
 		rc = -ENOMEM;
 		goto nosend;
@@ -161,8 +153,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 		conn->ops->is_transform_hdr(REQUEST_BUF(work))) {
 		rc = conn->ops->decrypt_req(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work,
-					NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 
@@ -216,8 +207,7 @@ again:
 	cmds = &conn->cmds[command];
 	if (cmds->proc == NULL) {
 		cifsd_err("*** not implemented yet cmd = %x\n", command);
-		conn->ops->set_rsp_status(work,
-						NT_STATUS_NOT_IMPLEMENTED);
+		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
 		goto send;
 	}
 
@@ -227,8 +217,7 @@ again:
 		conn->ops->is_sign_req(work, command)) {
 		rc = conn->ops->check_sign_req(work);
 		if (!rc) {
-			conn->ops->set_rsp_status(work,
-							NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 	}
@@ -280,8 +269,7 @@ send:
 		conn->ops->encrypt_resp) {
 		rc = conn->ops->encrypt_resp(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work,
-					NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 	} else if (work->sess && (work->sess->sign ||

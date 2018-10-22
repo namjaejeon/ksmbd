@@ -253,3 +253,20 @@ int cifsd_negotiate_smb_dialect(void *buf)
 
 	return ret;
 }
+
+void cifsd_init_smb_server(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+
+	if (!conn->need_neg)
+		return;
+
+	if (is_smb2_neg_cmd(work)) {
+		init_smb2_0_server(conn);
+		return;
+	}
+
+	init_smb1_server(conn);
+	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
+		conn->need_neg = false;
+}
