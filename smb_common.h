@@ -38,12 +38,6 @@
 
 #define IS_SMB2(x) ((x)->vals->protocol_id != CIFSD_SMB10_PROT_ID)
 
-#ifdef CONFIG_CIFS_SMB1_SERVER
-#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
-#else
-#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
-#endif
-
 struct cifsd_work;
 struct cifsd_tcp_conn;
 struct cifsd_tcp_conn;
@@ -62,4 +56,5 @@ int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
 int cifsd_negotiate_smb_dialect(void *buf);
 void cifsd_init_smb_server(struct cifsd_work *work);
 
+bool cifsd_pdu_size_has_room(unsigned int pdu);
 #endif /* __SMB_COMMON_H__ */

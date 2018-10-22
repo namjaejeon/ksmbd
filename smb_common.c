@@ -12,6 +12,12 @@
 /* @FIXME */
 #include "transport_tcp.h"
 
+#ifdef CONFIG_CIFS_SMB1_SERVER
+#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
+#else
+#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
+#endif
+
 struct smb_protocol {
 	int		index;
 	char		*name;
@@ -272,4 +278,9 @@ void cifsd_init_smb_server(struct cifsd_work *work)
 	init_smb1_server(conn);
 	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
 		conn->need_neg = false;
+}
+
+bool cifsd_pdu_size_has_room(unsigned int pdu)
+{
+	return (pdu >= CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4);
 }
