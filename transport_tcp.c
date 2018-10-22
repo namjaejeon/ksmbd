@@ -202,7 +202,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
 
 		/* make sure we have enough to get to SMB header end */
-		if (pdu_size < HEADER_SIZE(conn) - 4) {
+		if (pdu_size < CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4) {
 			cifsd_debug("SMB request too short (%u bytes)\n",
 				    pdu_size);
 			continue;
