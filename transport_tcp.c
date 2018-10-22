@@ -41,12 +41,10 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	if (conn->stats.open_files_count > 0)
 		return true;
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
 		cifsd_debug("No response from client in 120 secs\n");
 		return false;
 	}
-#endif
 	return true;
 }
 
