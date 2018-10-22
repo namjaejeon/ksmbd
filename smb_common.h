@@ -8,9 +8,6 @@
 
 #include <linux/kernel.h>
 
-#include "smb1pdu.h"
-#include "smb2pdu.h"
-
 #define CIFSD_SMB1_PROT		0
 #define CIFSD_SMB2_PROT		1
 #define CIFSD_SMB21_PROT		2
