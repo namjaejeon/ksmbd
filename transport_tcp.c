@@ -701,7 +701,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	struct list_head *requests_queue = NULL;
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
-	if (*(__le32 *)hdr->ProtocolId == SMB2_PROTO_NUMBER) {
+	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		unsigned int command = conn->ops->get_cmd_val(work);
 
 		if (command != SMB2_CANCEL) {

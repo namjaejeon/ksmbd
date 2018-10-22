@@ -193,7 +193,7 @@ int is_smb2_neg_cmd(struct cifsd_work *work)
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 
 	/* is it SMB2 header ? */
-	if (*(__le32 *)hdr->ProtocolId != SMB2_PROTO_NUMBER)
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
 		return 0;
 
 	/* make sure it is request not response message */
@@ -217,7 +217,7 @@ int is_smb2_rsp(struct cifsd_work *work)
 	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 
 	/* is it SMB2 header ? */
-	if (*(__le32 *)hdr->ProtocolId != SMB2_PROTO_NUMBER)
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
 		return 0;
 
 	/* make sure it is response not request message */
@@ -278,11 +278,7 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp_hdr->smb2_buf_length =
 		cpu_to_be32(sizeof(struct smb2_hdr) - 4);
 
-	rsp_hdr->ProtocolId[0] = 0xFE;
-	rsp_hdr->ProtocolId[1] = 'S';
-	rsp_hdr->ProtocolId[2] = 'M';
-	rsp_hdr->ProtocolId[3] = 'B';
-
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(1);
 	rsp_hdr->Command = 0;
@@ -391,7 +387,7 @@ void init_chained_smb2_rsp(struct cifsd_work *work)
 		work->cur_local_pfid = -1;
 	}
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
-	memcpy(rsp_hdr->ProtocolId, rcv_hdr->ProtocolId, 4);
+	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
@@ -420,7 +416,7 @@ bool is_chained_smb2_message(struct cifsd_work *work)
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	unsigned int len;
 
-	if (*(__le32 *)(hdr->ProtocolId) != SMB2_PROTO_NUMBER)
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
 		return false;
 
 	hdr = (struct smb2_hdr *)(REQUEST_BUF(work) +
@@ -463,8 +459,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
-
-	memcpy(rsp_hdr->ProtocolId, rcv_hdr->ProtocolId, 4);
+	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
@@ -751,15 +746,6 @@ static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 
 	return attr;
 }
-
-/* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
- * sizeof(struct smb2_negotiate_rsp) - 4 =
- * header(64) + response(64) + GSS_LENGTH(74) + GSS_PADDING(6)
- */
-#define OFFSET_OF_NEG_CONTEXT	0xd0
-
-#define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
-#define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
 
 static void
 build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, int hash_id)
@@ -1207,7 +1193,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	if (sess->state & SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
 
-	negblob = (NEGOTIATE_MESSAGE *)(req->hdr.ProtocolId +
+	negblob = (NEGOTIATE_MESSAGE *)((char *)&req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (conn->use_spnego) {
@@ -1266,7 +1252,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		if (rc)
 			goto out_err;
 
-		chgblob = (CHALLENGE_MESSAGE *)(rsp->hdr.ProtocolId +
+		chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId +
 				rsp->SecurityBufferOffset);
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
@@ -1297,7 +1283,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			memcpy((char *)rsp->hdr.ProtocolId +
+			memcpy((char *)&rsp->hdr.ProtocolId +
 					rsp->SecurityBufferOffset, spnego_blob,
 					spnego_blob_len);
 			rsp->SecurityBufferLength =
@@ -1345,7 +1331,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
 		else
 			authblob = (AUTHENTICATE_MESSAGE *)
-				(req->hdr.ProtocolId +
+				((char *)&req->hdr.ProtocolId +
 				 req->SecurityBufferOffset);
 
 		username = smb_strndup_from_utf16((const char *)authblob +
@@ -1457,7 +1443,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			memcpy((char *)rsp->hdr.ProtocolId +
+			memcpy((char *)&rsp->hdr.ProtocolId +
 				rsp->SecurityBufferOffset,
 				spnego_blob, spnego_blob_len);
 			rsp->SecurityBufferLength =
@@ -6345,7 +6331,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		id = le64_to_cpu(req->VolatileFileId);
 
 	cnt_code = le32_to_cpu(req->CntCode);
-	out_buf_len = le32_to_cpu(req->maxoutputresp);
+	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
 	out_buf_len = min(NETLINK_CIFSD_MAX_PAYLOAD, out_buf_len);
 	data_buf = (char *)&req->Buffer[0];
 
@@ -6383,7 +6369,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		rpc_resp = cifsd_rpc_ioctl(work->sess, id,
 					   data_buf,
-					   le32_to_cpu(req->inputcount));
+					   le32_to_cpu(req->InputCount));
 		if (rpc_resp) {
 			if (rpc_resp->flags == CIFSD_RPC_ENOTIMPLEMENTED) {
 				rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
@@ -6585,13 +6571,13 @@ int smb2_ioctl(struct cifsd_work *work)
 		goto out;
 	}
 	rsp->CntCode = cpu_to_le32(cnt_code);
-	rsp->inputcount = cpu_to_le32(0);
-	rsp->inputoffset = cpu_to_le32(112);
-	rsp->outputoffset = cpu_to_le32(112);
-	rsp->outputcount = cpu_to_le32(nbytes);
+	rsp->InputCount = cpu_to_le32(0);
+	rsp->InputOffset = cpu_to_le32(112);
+	rsp->OutputOffset = cpu_to_le32(112);
+	rsp->OutputCount = cpu_to_le32(nbytes);
 	rsp->StructureSize = cpu_to_le16(49);
 	rsp->Reserved = cpu_to_le16(0);
-	rsp->flags = cpu_to_le32(0);
+	rsp->Flags = cpu_to_le32(0);
 	rsp->Reserved2 = cpu_to_le32(0);
 	inc_rfc1001_len(rsp_org, 48 + nbytes);
 
@@ -6996,7 +6982,7 @@ int smb2_check_sign_req(struct cifsd_work *work)
 	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
 	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
 
-	iov[0].iov_base = rcv_hdr2->ProtocolId;
+	iov[0].iov_base = (char *)&rcv_hdr2->ProtocolId;
 	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
 	if (smb2_sign_smbpdu(work->conn, work->sess->sess_key, iov, 1,
@@ -7026,7 +7012,7 @@ void smb2_set_sign_rsp(struct cifsd_work *work)
 	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
 
-	iov[0].iov_base = rsp_hdr->ProtocolId;
+	iov[0].iov_base = (char *)&rsp_hdr->ProtocolId;
 	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
 
 	if (HAS_AUX_PAYLOAD(work)) {
@@ -7091,7 +7077,7 @@ int smb3_check_sign_req(struct cifsd_work *work)
 
 	memcpy(signature_req, hdr->Signature, SMB2_SIGNATURE_SIZE);
 	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	iov[0].iov_base = hdr->ProtocolId;
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
 	iov[0].iov_len = len;
 
 	if (smb3_sign_smbpdu(conn, signing_key, iov, 1, signature))
@@ -7162,7 +7148,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 
 	hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-	iov[0].iov_base = hdr->ProtocolId;
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
 	iov[0].iov_len = len;
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);

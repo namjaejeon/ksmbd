@@ -197,6 +197,12 @@ chained:
 	if (rc)
 		goto send;
 
+	/* check if the message is ok */
+	if (check_message(work)) {
+		cifsd_err("Malformed smb request\n");
+		goto nosend;
+	}
+
 	conn_valid = true;
 	command = conn->ops->get_cmd_val(work);
 again:
@@ -325,12 +331,6 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	struct cifsd_work *work;
 
 	dump_smb_msg(conn->request_buf, HEADER_SIZE(conn));
-
-	/* check if the message is ok */
-	if (check_smb_message(conn->request_buf)) {
-		cifsd_debug("Malformed smb request\n");
-		return -EINVAL;
-	}
 
 	work = cifsd_alloc_work_struct();
 	if (!work) {

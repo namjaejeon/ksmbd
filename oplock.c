@@ -437,11 +437,7 @@ static void smb2_send_lease_break_notification(struct work_struct *wk)
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
-
-	rsp_hdr->ProtocolId[0] = 0XFE;
-	rsp_hdr->ProtocolId[1] = 'S';
-	rsp_hdr->ProtocolId[2] = 'M';
-	rsp_hdr->ProtocolId[3] = 'B';
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
 	rsp_hdr->Command = cpu_to_le16(0x12);
@@ -1444,11 +1440,7 @@ void smb2_send_oplock_break_notification(struct work_struct *wk)
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(sizeof(struct smb2_hdr) - 4);
-
-	rsp_hdr->ProtocolId[0] = 0XFE;
-	rsp_hdr->ProtocolId[1] = 'S';
-	rsp_hdr->ProtocolId[2] = 'M';
-	rsp_hdr->ProtocolId[3] = 'B';
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
 	rsp_hdr->Command = cpu_to_le16(0x12);

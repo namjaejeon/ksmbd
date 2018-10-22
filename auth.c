@@ -1045,9 +1045,9 @@ int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
 	int rc = -1;
 	struct crypto_shash *c_shash;
 	struct sdesc *c_sdesc;
-	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)buf;
-	char *all_bytes_msg = rcv_hdr2->ProtocolId;
-	int msg_size = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)buf;
+	char *all_bytes_msg = (char *)&rcv_hdr->ProtocolId;
+	int msg_size = be32_to_cpu(rcv_hdr->smb2_buf_length);
 
 	if (conn->preauth_info->Preauth_HashId ==
 		SMB2_PREAUTH_INTEGRITY_SHA512) {

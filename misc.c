@@ -66,69 +66,23 @@ int get_protocol_idx(char *str)
 }
 
 /**
- * check_smb_hdr() - check for valid smb request header
- * @smb:	smb header to be checked
- *
- * check for valid smb signature and packet direction(request/response)
- * TODO: properly check client authetication and tree authentication
- *
- * Return:      0 on success, otherwise 1
- */
-static int check_smb_hdr(struct smb_hdr *smb)
-{
-	/* does it have the right SMB "signature" ? */
-	if (*(__le32 *) smb->Protocol != SMB1_PROTO_NUMBER) {
-		cifsd_debug("Bad protocol string signature header 0x%x\n",
-			*(unsigned int *)smb->Protocol);
-		return 1;
-	} else
-		cifsd_debug("got SMB\n");
-
-	/* if it's not a response then accept */
-	/* TODO : check for oplock break */
-	if (!(smb->Flags & SMBFLG_RESPONSE))
-		return 0;
-
-	cifsd_debug("Server sent request, not response\n");
-	return 1;
-}
-
-/**
- * check_smb2_hdr() - helper function to check for valid smb2 request header
- * @smb:	smb2 header to be checked
- *
- * Return:      0 on success, otherwise 1
- */
-static inline int check_smb2_hdr(struct smb2_hdr *smb)
-{
-	if (!(smb->Flags & SMB2_FLAGS_SERVER_TO_REDIR))
-		return 0;
-	return 1;
-}
-
-/**
- * check_smb2_hdr() - check for valid smb2 request header
+ * check_smb_message() - check for valid smb2 request header
  * @buf:	smb2 header to be checked
  *
  * check for valid smb signature and packet direction(request/response)
  *
  * Return:      0 on success, otherwise 1
  */
-int check_smb_message(char *buf)
+int check_message(struct cifsd_work *work)
 {
-	/* @FIXME rework this code */
+	struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
 
-	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
-			SMB2_PROTO_NUMBER) {
+	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		cifsd_debug("got SMB2 command\n");
-		return check_smb2_hdr((struct smb2_hdr *)buf);
+		return smb2_check_message(work);
 	}
 
-	if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
-		SMB2_TRANSFORM_PROTO_NUM)
-		return 0;
-
-	return check_smb_hdr((struct smb_hdr *)buf);
+	return smb1_check_message(work);
 }
 
 /**
@@ -311,7 +265,7 @@ int negotiate_dialect(void *buf)
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
 		ret = find_matching_smb1_dialect(start_index,
 			req->DialectsArray, le16_to_cpu(req->ByteCount));
-	} else if (*(__le32 *)((struct smb2_hdr *)buf)->ProtocolId ==
+	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
 		/* SMB2 neg protocol */
