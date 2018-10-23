@@ -44,12 +44,14 @@ static struct smb_protocol smb1_protos[] = {
 };
 
 static struct smb_protocol smb2_protos[] = {
+#ifdef CIFS_INSECURE_SERVER
 	{
 		CIFSD_SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
 		CIFSD_SMB20_PROT_ID
 	},
+#endif
 	{
 		CIFSD_SMB21_PROT,
 		"\2SMB 2.1",
