@@ -6,7 +6,6 @@
 
 #include <linux/mutex.h>
 
-#include "glob.h"
 #include "export.h"
 
 #include "server.h"
