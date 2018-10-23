@@ -55,7 +55,6 @@ struct cifsd_session {
 	struct cifsd_ida		*tree_conn_ida;
 	struct list_head		rpc_handle_list;
 
-	/* should be under CONFIG_CIFS_SMB2_SERVER */
 	struct fidtable_desc		fidtable;
 	__u8				smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
