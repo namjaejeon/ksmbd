@@ -16,6 +16,7 @@
 #include "transport_ipc.h"
 #include "vfs.h"
 
+#include "auth.h"
 #include "server.h"
 #include "smb_common.h"
 #include "mgmt/user_config.h"

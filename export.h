@@ -50,28 +50,6 @@ extern unsigned int SMBMaxBufSize;
 
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
-int process_ntlm(struct cifsd_session *sess, char *pw_buf);
-int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
-                int blen, char *domain_name);
-int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-                int blob_len, struct cifsd_session *sess);
-unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-                struct cifsd_session *sess);
-int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-                int blob_len, struct cifsd_session *sess);
-int smb1_sign_smbpdu(struct cifsd_session *sess, struct kvec *iov, int n_vec,
-                char *sig);
-int smb2_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
-        int n_vec, char *sig);
-int smb3_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
-        int n_vec, char *sig);
-int compute_sess_key(struct cifsd_session *sess, char *hash, char *hmac);
-int generate_smb30signingkey(struct cifsd_session *sess, bool binding,
-        char *hash_value);
-int generate_smb311signingkey(struct cifsd_session *sess, bool binding,
-        char *hash_value);
-int generate_smb30encryptionkey(struct cifsd_session *sess);
-int generate_smb311encryptionkey(struct cifsd_session *sess);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
                 struct cifsd_session *sess, char *sharename, bool *can_write);

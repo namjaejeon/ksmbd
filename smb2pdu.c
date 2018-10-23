@@ -16,6 +16,7 @@
 #include "oplock.h"
 #include "cifsacl.h"
 
+#include "auth.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "transport_ipc.h"

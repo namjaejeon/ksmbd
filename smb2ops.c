@@ -9,6 +9,7 @@
 #include "export.h"
 #include "smb2pdu.h"
 
+#include "auth.h"
 #include "transport_tcp.h"
 #include "smb_common.h"
 

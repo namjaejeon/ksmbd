@@ -11,13 +11,17 @@
 #include <linux/writeback.h>
 #include <linux/xattr.h>
 
+#include "smb1pdu.h"
+#include "smb2pdu.h"
+
+#include "auth.h"
 #include "glob.h"
-#include "export.h"
 
 #include "server.h"
 #include "smb_common.h"
 #include "transport_tcp.h"
 #include "mgmt/user_session.h"
+#include "mgmt/user_config.h"
 
 /* Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
