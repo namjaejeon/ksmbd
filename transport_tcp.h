@@ -48,11 +48,6 @@ struct cifsd_secmech {
 	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
 };
 
-struct cifsd_tcp_conn_ops {
-	int	(*process_fn)(struct cifsd_tcp_conn *conn);
-	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
-};
-
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	struct smb_version_values	*vals;
@@ -126,6 +121,11 @@ struct cifsd_tcp_conn {
 
 	/* Identifier for async message */
 	struct cifsd_ida		*async_ida;
+};
+
+struct cifsd_tcp_conn_ops {
+	int	(*process_fn)(struct cifsd_tcp_conn *conn);
+	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
 };
 
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
