@@ -172,7 +172,6 @@ struct smb_version_ops smb3_11_server_ops = {
 	.encrypt_resp		=	smb3_encrypt_resp
 };
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate, },
 	[SMB2_SESSION_SETUP_HE] =	{ .proc = smb2_sess_setup, },
@@ -195,6 +194,7 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 	[SMB2_CHANGE_NOTIFY_HE]	=	{ .proc = smb2_notify},
 };
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * init_smb2_0_server() - initialize a smb server connection with smb2.0
  *			command dispatcher
