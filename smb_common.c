@@ -180,7 +180,7 @@ static bool supported_protocol(int idx)
 }
 
 #ifdef CIFS_INSECURE_SERVER
-static int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
+static int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 {
 	int i, smb1_index, cli_count, bcount;
 	char *dialects = NULL;
@@ -213,7 +213,7 @@ static int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 	return CIFSD_BAD_PROT_ID;
 }
 #else
-static int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
+static int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 {
 	return CIFSD_BAD_PROT_ID;
 }
@@ -262,7 +262,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 		NEGOTIATE_REQ *req;
 
 		req = (NEGOTIATE_REQ *)buf;
-		return cifsd_lookup_insecure_dialect(req->DialectsArray,
+		return cifsd_lookup_smb1_dialect(req->DialectsArray,
 					le16_to_cpu(req->ByteCount));
 	}
 
