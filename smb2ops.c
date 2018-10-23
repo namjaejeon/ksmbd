@@ -172,6 +172,7 @@ struct smb_version_ops smb3_11_server_ops = {
 	.encrypt_resp		=	smb3_encrypt_resp
 };
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate, },
 	[SMB2_SESSION_SETUP_HE] =	{ .proc = smb2_sess_setup, },
@@ -199,7 +200,7 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb2_0_server(struct cifsd_tcp_conn *conn)
+int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb20_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -208,7 +209,15 @@ void init_smb2_0_server(struct cifsd_tcp_conn *conn)
 	conn->max_credits = SMB2_MAX_CREDITS;
 	conn->credits_granted = 0;
 	conn->srv_cap = 0;
+	return 0;
 }
+#else
+int init_smb2_0_server(struct cifsd_tcp_conn *conn)
+{
+	cifsd_err("Unsupported SMB2.0 dialect requested\n");
+	return -ENOTSUPP;
+}
+#endif
 
 /**
  * init_smb2_1_server() - initialize a smb server connection with smb2.1
@@ -301,4 +310,10 @@ int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;
+}
+
+void init_supported_smb2_server(struct cifsd_tcp_conn *conn)
+{
+	if (init_smb2_0_server(conn) == -ENOTSUPP)
+		init_smb2_1_server(conn);
 }
