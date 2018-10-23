@@ -271,7 +271,6 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct timespec64 ts64;
 
-	init_smb2_0_server(conn);
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
