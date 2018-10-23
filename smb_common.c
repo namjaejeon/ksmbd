@@ -277,7 +277,8 @@ void cifsd_init_smb_server(struct cifsd_work *work)
 		return;
 
 	if (is_smb2_neg_cmd(work)) {
-		init_supported_smb2_server(conn);
+		if (init_smb2_0_server(conn) == -ENOTSUPP)
+			init_smb2_1_server(conn);
 		return;
 	}
 

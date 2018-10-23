@@ -311,9 +311,3 @@ int init_smb3_11_server(struct cifsd_tcp_conn *conn)
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;
 }
-
-void init_supported_smb2_server(struct cifsd_tcp_conn *conn)
-{
-	if (init_smb2_0_server(conn) == -ENOTSUPP)
-		init_smb2_1_server(conn);
-}
