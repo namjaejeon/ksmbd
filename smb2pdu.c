@@ -2166,7 +2166,6 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out1;
 		}
 	} else {
-		// share = find_matching_share(tree_id);
 		share = tcon->share_conf;
 		if (!share) {
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;

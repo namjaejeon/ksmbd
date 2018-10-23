@@ -50,7 +50,6 @@ extern unsigned int SMBMaxBufSize;
 
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
-extern struct cifsd_share *find_matching_share(__u16 tid);
 int process_ntlm(struct cifsd_session *sess, char *pw_buf);
 int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
                 int blen, char *domain_name);
