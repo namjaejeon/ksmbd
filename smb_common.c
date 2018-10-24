@@ -246,24 +246,27 @@ int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count)
 
 int cifsd_negotiate_smb_dialect(void *buf)
 {
-	int ret = CIFSD_BAD_PROT_ID;
-
-	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
-			SMB1_PROTO_NUMBER) {
-		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
-
-		ret = cifsd_lookup_insecure_dialect(req->DialectsArray,
-					le16_to_cpu(req->ByteCount));
-	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
-			SMB2_PROTO_NUMBER) {
+	int proto;
+ 
+	proto = ((struct smb2_hdr *)buf)->ProtocolId;
+	if (proto == SMB2_PROTO_NUMBER) {
 		struct smb2_negotiate_req *req;
 
 		req = (struct smb2_negotiate_req *)buf;
-		ret = cifsd_lookup_smb2_dialect(req->Dialects,
+		return cifsd_lookup_smb2_dialect(req->Dialects,
 					le16_to_cpu(req->DialectCount));
 	}
 
-	return ret;
+	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+	if (proto == SMB1_PROTO_NUMBER) {
+		NEGOTIATE_REQ *req;
+
+		req = (NEGOTIATE_REQ *)buf;
+		return cifsd_lookup_insecure_dialect(req->DialectsArray,
+					le16_to_cpu(req->ByteCount));
+	}
+
+	return CIFSD_BAD_PROT_ID;
 }
 
 void cifsd_init_smb_server(struct cifsd_work *work)
