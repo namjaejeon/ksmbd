@@ -6406,16 +6406,10 @@ int smb2_ioctl(struct cifsd_work *work)
 	{
 		struct validate_negotiate_info_req *neg_req;
 		struct validate_negotiate_info_rsp *neg_rsp;
-		int ret, start_index;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		start_index = CIFSD_SMB311_PROT;
-#else
-		start_index = CIFSD_CIFS_PROT;
-#endif
+		int ret;
 
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
-		ret = find_matching_smb2_dialect(start_index, neg_req->Dialects,
+		ret = cifsd_lookup_smb2_dialect(neg_req->Dialects,
 					le16_to_cpu(neg_req->DialectCount));
 		if (ret == CIFSD_BAD_PROT_ID || ret != conn->dialect)
 			goto out;

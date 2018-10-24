@@ -174,7 +174,7 @@ int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 	int i, smb1_index, cli_count, bcount;
 	char *dialects = NULL;
 
-	for (i = ARRAY_SIZE(smb1_protos) - 1; i >= CIFSD_SMB1_PROT; i--) {
+	for (i = ARRAY_SIZE(smb1_protos) - 1; i >= 0; i--) {
 		smb1_index = 0;
 		bcount = le16_to_cpu(byte_count);
 		dialects = cli_dialects;
@@ -208,46 +208,30 @@ int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 }
 #endif
 
-/* @FIXME rework this code */
-#ifdef CONFIG_CIFS_SMB2_SERVER
-/**
- * find_matching_smb2_dialect() - find the greatest dialect between dialects
- * client and server support.
- * @start_index:	start protocol id for lookup
- * @cli_dialects:	client dialects
- * @srv_dialects:	server dialects
- * @directs_count:	client dialect count
- *
- * Return:      0
- */
-int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
-	__le16 dialects_count)
+int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count)
 {
-	int i, dialect_id = CIFSD_BAD_PROT_ID;
+	int i;
 	int count;
 
-	for (i = start_index; i >= CIFSD_SMB2_PROT; i--) {
+	for (i = ARRAY_SIZE(smb2_protos) - 1; i >= 0; i--) {
 		count = le16_to_cpu(dialects_count);
 		while (--count >= 0) {
 			cifsd_debug("client requested dialect 0x%x\n",
 				le16_to_cpu(cli_dialects[count]));
-			if (le16_to_cpu(cli_dialects[count]) ==
-					smb2_protos[i].prot_id) {
-				if (i >= server_conf.min_protocol &&
-					i <= server_conf.max_protocol) {
-					cifsd_debug("selected %s dialect\n",
-							smb2_protos[i].name);
-					dialect_id = smb2_protos[i].prot_id;
-				}
-				goto out;
+			if (le16_to_cpu(cli_dialects[count]) !=
+					smb2_protos[i].prot_id)
+				continue;
+
+			if (supported_protocol(i)) {
+				cifsd_debug("selected %s dialect\n",
+					smb2_protos[i].name);
+				return smb2_protos[i].prot_id;
 			}
 		}
 	}
 
-out:
-	return dialect_id;
+	return CIFSD_BAD_PROT_ID;
 }
-#endif
 
 /**
  * negotiate_dialect() - negotiate smb dialect with smb client
@@ -257,31 +241,21 @@ out:
  */
 int negotiate_dialect(void *buf)
 {
-	int start_index, ret = CIFSD_BAD_PROT_ID;
-
-/* @FIXME rework this code */
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	start_index = CIFSD_SMB311_PROT;
-#else
-	start_index = CIFSD_SMB1_PROT;
-#endif
+	int ret = CIFSD_BAD_PROT_ID;
 
 	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
 			SMB1_PROTO_NUMBER) {
 		/* SMB1 neg protocol */
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
 		ret = cifsd_lookup_smb1_dialect(req->DialectsArray,
-						le16_to_cpu(req->ByteCount));
+					le16_to_cpu(req->ByteCount));
 	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		/* SMB2 neg protocol */
 		struct smb2_negotiate_req *req;
+
 		req = (struct smb2_negotiate_req *)buf;
-		ret = find_matching_smb2_dialect(start_index, req->Dialects,
-			le16_to_cpu(req->DialectCount));
-#endif
+		ret = cifsd_lookup_smb2_dialect(req->Dialects,
+					le16_to_cpu(req->DialectCount));
 	}
 
 	return ret;
