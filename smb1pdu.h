@@ -1916,6 +1916,15 @@ typedef struct smb_com_setattr_rsp {
 	__u16 ByteCount;        /* bct = 0 */
 } __attribute__((packed)) SETATTR_RSP;
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+extern int init_smb1_server(struct cifsd_tcp_conn *conn);
+#else
+static inline int init_smb1_server(struct cifsd_tcp_conn *conn)
+{
+	return -ENOTSUPP;
+}
+#endif
+
 /* function prototypes */
 extern int init_smb_rsp_hdr(struct cifsd_work *swork);
 extern int get_smb_cmd_val(struct cifsd_work *work);

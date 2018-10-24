@@ -332,7 +332,10 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
 
-	cifsd_init_smb_server(work);
+	if (cifsd_init_smb_server(work)) {
+		cifsd_free_work_struct(work);
+		return -EINVAL;
+	}
 	cifsd_tcp_enqueue_request(work);
 
 	/* update activity on connection */

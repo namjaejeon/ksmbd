@@ -72,12 +72,13 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_PROCESS_EXIT]		= { .proc = smb_process_exit, },
 };
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * init_smb1_server() - initialize a smb server connection with smb1
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb1_server(struct cifsd_tcp_conn *conn)
+int init_smb1_server(struct cifsd_tcp_conn *conn)
 {
 	if (!conn)
 		return;
@@ -86,4 +87,6 @@ void init_smb1_server(struct cifsd_tcp_conn *conn)
 	conn->ops = &smb1_server_ops;
 	conn->cmds = smb1_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb1_server_cmds);
+	return 0;
 }
+#endif

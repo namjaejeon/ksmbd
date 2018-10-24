@@ -467,9 +467,6 @@ extern int construct_xattr_stream_name(char *stream_name,
 	char **xattr_stream_name);
 extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
-/* smb1ops functions */
-extern void init_smb1_server(struct cifsd_tcp_conn *conn);
-
 /* functions */
 extern void smb_delete_session(struct cifsd_session *sess);
 

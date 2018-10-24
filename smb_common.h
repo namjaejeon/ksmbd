@@ -53,7 +53,7 @@ bool is_smb_request(struct cifsd_tcp_conn *conn);
 int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
 
 int cifsd_negotiate_smb_dialect(void *buf);
-void cifsd_init_smb_server(struct cifsd_work *work);
+int cifsd_init_smb_server(struct cifsd_work *work);
 
 bool cifsd_pdu_size_has_room(unsigned int pdu);
 #endif /* __SMB_COMMON_H__ */
