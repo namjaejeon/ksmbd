@@ -18,6 +18,7 @@
 #include <linux/workqueue.h>
 
 #include "server.h"
+#include "smb_common.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "transport_ipc.h"
@@ -234,12 +235,12 @@ again:
 
 	rc = cmds->proc(work);
 	mutex_lock(&conn->srv_mutex);
-	if (conn->need_neg && (conn->dialect == SMB20_PROT_ID ||
-				conn->dialect == SMB21_PROT_ID ||
-				conn->dialect == SMB2X_PROT_ID ||
-				conn->dialect == SMB30_PROT_ID ||
-				conn->dialect == SMB302_PROT_ID ||
-				conn->dialect == SMB311_PROT_ID)) {
+	if (conn->need_neg && (conn->dialect == CIFSD_SMB20_PROT_ID ||
+				conn->dialect == CIFSD_SMB21_PROT_ID ||
+				conn->dialect == CIFSD_SMB2X_PROT_ID ||
+				conn->dialect == CIFSD_SMB30_PROT_ID ||
+				conn->dialect == CIFSD_SMB302_PROT_ID ||
+				conn->dialect == CIFSD_SMB311_PROT_ID)) {
 		cifsd_debug("Need to send the smb2 negotiate response\n");
 		init_smb2_neg_rsp(work);
 		goto send;
@@ -272,7 +273,7 @@ send:
 	if (is_smb2_rsp(work))
 		conn->ops->set_rsp_credits(work);
 
-	if (conn->dialect == SMB311_PROT_ID)
+	if (conn->dialect == CIFSD_SMB311_PROT_ID)
 		smb3_preauth_hash_rsp(work);
 
 	if (work->sess && work->sess->enc && work->encrypted &&

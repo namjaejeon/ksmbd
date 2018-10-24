@@ -10,10 +10,11 @@
 #include "smb2pdu.h"
 
 #include "transport_tcp.h"
+#include "smb_common.h"
 
 struct smb_version_values smb20_server_values = {
-	.version_string = SMB20_VERSION_STRING,
-	.protocol_id = SMB20_PROT_ID,
+	.version_string = CIFSD_SMB20_VERSION_STRING,
+	.protocol_id = CIFSD_SMB20_PROT_ID,
 	.req_capabilities = 0, /* MBZ */
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
@@ -33,8 +34,8 @@ struct smb_version_values smb20_server_values = {
 };
 
 struct smb_version_values smb21_server_values = {
-	.version_string = SMB21_VERSION_STRING,
-	.protocol_id = SMB21_PROT_ID,
+	.version_string = CIFSD_SMB21_VERSION_STRING,
+	.protocol_id = CIFSD_SMB21_PROT_ID,
 	.req_capabilities = 0, /* MBZ */
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
@@ -54,8 +55,8 @@ struct smb_version_values smb21_server_values = {
 };
 
 struct smb_version_values smb30_server_values = {
-	.version_string = SMB30_VERSION_STRING,
-	.protocol_id = SMB30_PROT_ID,
+	.version_string = CIFSD_SMB30_VERSION_STRING,
+	.protocol_id = CIFSD_SMB30_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
 						| SMB2_GLOBAL_CAP_LARGE_MTU,
 	.large_lock_type = 0,
@@ -77,8 +78,8 @@ struct smb_version_values smb30_server_values = {
 };
 
 struct smb_version_values smb302_server_values = {
-	.version_string = SMB302_VERSION_STRING,
-	.protocol_id = SMB302_PROT_ID,
+	.version_string = CIFSD_SMB302_VERSION_STRING,
+	.protocol_id = CIFSD_SMB302_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
 						| SMB2_GLOBAL_CAP_LARGE_MTU,
 	.large_lock_type = 0,
@@ -100,8 +101,8 @@ struct smb_version_values smb302_server_values = {
 };
 
 struct smb_version_values smb311_server_values = {
-	.version_string = SMB311_VERSION_STRING,
-	.protocol_id = SMB311_PROT_ID,
+	.version_string = CIFSD_SMB311_VERSION_STRING,
+	.protocol_id = CIFSD_SMB311_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
 						| SMB2_GLOBAL_CAP_LARGE_MTU,
 	.large_lock_type = 0,

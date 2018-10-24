@@ -15,6 +15,7 @@
 #include "transport_tcp.h"
 #include "vfs.h"
 #include "mgmt/user_session.h"
+#include "smb_common.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management

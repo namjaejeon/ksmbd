@@ -15,15 +15,6 @@
 
 /* @FIXME rework this code */
 
-#define CIFS_PROT	0
-#define SMB2_PROT	1
-#define SMB21_PROT	2
-#define SMB2X_PROT	3	/* multi-protocol negotiate request */
-#define SMB30_PROT	4
-#define SMB302_PROT	5
-#define SMB311_PROT	6
-#define BAD_PROT	0xFFFF
-
 #ifdef CONFIG_CIFS_SMB2_SERVER
 #define CIFS_NUM_PROT 5
 #else

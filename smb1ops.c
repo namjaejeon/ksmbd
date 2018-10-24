@@ -9,10 +9,11 @@
 #include "smb1pdu.h"
 
 #include "transport_tcp.h"
+#include "smb_common.h"
 
 struct smb_version_values smb1_server_values = {
-	.version_string = SMB1_VERSION_STRING,
-	.protocol_id = SMB10_PROT_ID,
+	.version_string = CIFSD_SMB1_VERSION_STRING,
+	.protocol_id = CIFSD_SMB10_PROT_ID,
 	.large_lock_type = LOCKING_ANDX_LARGE_FILES,
 	.exclusive_lock_type = 0,
 	.shared_lock_type = LOCKING_ANDX_SHARED_LOCK,

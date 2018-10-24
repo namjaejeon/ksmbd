@@ -48,9 +48,6 @@ extern int cifsd_debugging;
 
 extern unsigned int SMBMaxBufSize;
 
-extern int cifsd_max_protocol(void);
-extern int cifsd_min_protocol(void);
-extern int get_protocol_idx(char *str);
 extern int cifsd_init_registry(void);
 extern void cifsd_free_registry(void);
 extern struct cifsd_share *find_matching_share(__u16 tid);

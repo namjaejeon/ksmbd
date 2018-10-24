@@ -12,6 +12,7 @@
 #endif
 #include "oplock.h"
 
+#include "smb_common.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "mgmt/user_session.h"

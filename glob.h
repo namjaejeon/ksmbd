@@ -62,23 +62,6 @@ extern struct list_head global_lock_list;
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
 
-#define SMB1_VERSION_STRING     "1.0"
-#define SMB20_VERSION_STRING    "2.0"
-#define SMB21_VERSION_STRING    "2.1"
-#define SMB30_VERSION_STRING	"3.0"
-#define SMB302_VERSION_STRING	"3.02"
-#define SMB311_VERSION_STRING	"3.1.1"
-
-/* Dialects */
-#define SMB10_PROT_ID	0x00
-#define SMB20_PROT_ID	0x0202
-#define SMB21_PROT_ID	0x0210
-#define SMB30_PROT_ID	0x0300
-#define SMB302_PROT_ID	0x0302
-#define SMB311_PROT_ID	0x0311
-#define SMB2X_PROT_ID	0x02FF    /* multi-protocol negotiate request */
-#define BAD_PROT_ID	0xFFFF
-
 #define LOCKING_ANDX_SHARED_LOCK     0x01
 #define LOCKING_ANDX_OPLOCK_RELEASE  0x02
 #define LOCKING_ANDX_CHANGE_LOCKTYPE 0x04
@@ -511,17 +494,6 @@ extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 /* smb1ops functions */
 extern void init_smb1_server(struct cifsd_tcp_conn *conn);
-
-/* smb2ops functions */
-extern void init_smb2_0_server(struct cifsd_tcp_conn *conn);
-extern void init_smb2_1_server(struct cifsd_tcp_conn *conn);
-extern void init_smb3_0_server(struct cifsd_tcp_conn *conn);
-extern void init_smb3_02_server(struct cifsd_tcp_conn *conn);
-extern int init_smb3_11_server(struct cifsd_tcp_conn *conn);
-extern int is_smb2_neg_cmd(struct cifsd_work *work);
-extern bool is_chained_smb2_message(struct cifsd_work *work);
-extern void init_smb2_neg_rsp(struct cifsd_work *work);
-extern int is_smb2_rsp(struct cifsd_work *work);
 
 /* functions */
 extern void smb_delete_session(struct cifsd_session *sess);

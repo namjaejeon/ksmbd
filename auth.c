@@ -15,6 +15,7 @@
 #include "export.h"
 
 #include "server.h"
+#include "smb_common.h"
 #include "transport_tcp.h"
 #include "mgmt/user_session.h"
 
@@ -903,7 +904,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	if (!chann)
 		return 0;
 
-	if (sess->conn->dialect >= SMB30_PROT_ID && signing->binding)
+	if (sess->conn->dialect >= CIFSD_SMB30_PROT_ID && signing->binding)
 		key = chann->smb3signingkey;
 	else
 		key = sess->smb3signingkey;
@@ -913,7 +914,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	if (rc)
 		return rc;
 
-	if (!(sess->conn->dialect >= SMB30_PROT_ID && signing->binding))
+	if (!(sess->conn->dialect >= CIFSD_SMB30_PROT_ID && signing->binding))
 		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
 	cifsd_debug("%s: dumping generated AES signing keys\n", __func__);

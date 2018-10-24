@@ -17,6 +17,7 @@
 #include "vfs.h"
 
 #include "server.h"
+#include "smb_common.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -905,16 +906,16 @@ int smb_negotiate(struct cifsd_work *work)
 
 	conn->dialect = negotiate_dialect(REQUEST_BUF(work));
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
-	if (conn->dialect == BAD_PROT_ID) {
+	if (conn->dialect == CIFSD_BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
 		rc = -EINVAL;
 		goto err_out;
-	} else if (conn->dialect == SMB20_PROT_ID ||
-			conn->dialect == SMB21_PROT_ID ||
-			conn->dialect == SMB2X_PROT_ID ||
-			conn->dialect == SMB30_PROT_ID ||
-			conn->dialect == SMB302_PROT_ID ||
-			conn->dialect == SMB311_PROT_ID)
+	} else if (conn->dialect == CIFSD_SMB20_PROT_ID ||
+			conn->dialect == CIFSD_SMB21_PROT_ID ||
+			conn->dialect == CIFSD_SMB2X_PROT_ID ||
+			conn->dialect == CIFSD_SMB30_PROT_ID ||
+			conn->dialect == CIFSD_SMB302_PROT_ID ||
+			conn->dialect == CIFSD_SMB311_PROT_ID)
 		return conn->dialect;
 
 	conn->connection_type = 0;
