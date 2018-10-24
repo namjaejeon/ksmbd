@@ -181,7 +181,6 @@ struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
 struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
 struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 /* Persistent-ID operations */
 int cifsd_insert_in_global_table(struct cifsd_session *sess,
 	struct cifsd_file *fp);
@@ -198,6 +197,5 @@ struct cifsd_file *find_fp_using_filename(struct cifsd_session *sess,
 	char *filename);
 struct cifsd_file *find_fp_using_inode(struct inode *inode);
 int close_disconnected_handle(struct inode *inode);
-#endif
 
 #endif /* __CIFSD_FH_H */

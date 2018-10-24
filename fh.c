@@ -238,7 +238,6 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
  */
 int init_fidtable(struct fidtable_desc *ftab_desc)
 {
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	ftab_desc->ftab = alloc_fidtable(CIFSD_NR_OPEN_DEFAULT);
 	if (!ftab_desc->ftab) {
 		cifsd_err("Failed to allocate fid table\n");
@@ -247,7 +246,6 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
 	ftab_desc->ftab->start_pos = 1;
 	spin_lock_init(&ftab_desc->fidtable_lock);
-#endif
 	return 0;
 }
 
@@ -280,9 +278,7 @@ insert_id_in_fidtable(struct cifsd_session *sess,
 	fp->filp = filp;
 	fp->conn = sess->conn;
 	fp->tcon = tcon;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess = sess;
-#endif
 	fp->f_state = FP_NEW;
 	fp->volatile_id = id;
 	INIT_LIST_HEAD(&fp->node);
@@ -700,7 +696,6 @@ void destroy_fidtable(struct cifsd_session *sess)
 
 /* Persistent-ID operations */
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * cifsd_insert_in_global_table() - insert a fid in global fid table
  *					for persistent id
@@ -837,9 +832,7 @@ int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
 	}
 
 	fp->conn = sess->conn;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess = sess;
-#endif
 	fp->tcon = tcon;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
@@ -910,11 +903,6 @@ void destroy_global_fidtable(void)
 	}
 	free_fidtable(ftab);
 }
-#else
-void destroy_global_fidtable(void)
-{
-}
-#endif
 
 /* End of persistent-ID functions */
 
