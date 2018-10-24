@@ -75,17 +75,6 @@ extern struct list_head global_lock_list;
 #endif
 
 /*
- *  * Size of encrypted user password in bytes
- *   */
-#define CIFS_ENCPWD_SIZE (16)
-
-/*
- *  * Size of the crypto key returned on the negotiate SMB in bytes
- *   */
-#define CIFS_CRYPTO_KEY_SIZE (8)
-#define CIFS_KEY_SIZE (40)
-
-/*
  *  * Size of the ntlm client response
  *   */
 #define CIFS_AUTH_RESP_SIZE (24)
@@ -108,7 +97,6 @@ extern struct list_head global_lock_list;
 #define CIFS_CLIENT_CHALLENGE_SIZE (8)
 #define CIFS_SERVER_CHALLENGE_SIZE (8)
 #define CIFS_HMAC_MD5_HASH_SIZE (16)
-#define CIFS_CPHTXT_SIZE (16)
 #define CIFS_NTHASH_SIZE (16)
 
 #define HEADER_SIZE(conn) ((conn)->vals->header_size)
@@ -246,15 +234,6 @@ struct cifsd_stats {
 	int request_served;
 	long int avg_req_duration;
 	long int max_timed_request;
-};
-
-/* per smb session structure/fields */
-struct ntlmssp_auth {
-	bool sesskey_per_smbsess; /* whether session key is per smb session */
-	__u32 client_flags; /* sent by client in type 1 ntlmsssp exchange */
-	__u32 conn_flags; /* sent by server in type 2 ntlmssp exchange */
-	unsigned char ciphertext[CIFS_CPHTXT_SIZE]; /* sent to server */
-	char cryptkey[CIFS_CRYPTO_KEY_SIZE]; /* used by ntlmssp */
 };
 
 enum asyncEnum {

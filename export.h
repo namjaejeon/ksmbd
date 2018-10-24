@@ -7,14 +7,12 @@
 #ifndef __CIFSD_EXPORT_H
 #define __CIFSD_EXPORT_H
 
-#include "smb1pdu.h"
 #include "ntlmssp.h"
 
-#include "mgmt/user_config.h"
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
+#include "smb1pdu.h"
 #include "smb2pdu.h"
-#endif
+
+#include "mgmt/user_config.h"
 
 extern int cifsd_debugging;
 

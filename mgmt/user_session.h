@@ -9,6 +9,7 @@
 #include <linux/hashtable.h>
 
 #include "../glob.h"  /* FIXME */
+#include "../ntlmssp.h"
 
 #define CIFDS_SESSION_FLAG_SMB1		(1 << 0)
 #define CIFDS_SESSION_FLAG_SMB2		(1 << 1)
