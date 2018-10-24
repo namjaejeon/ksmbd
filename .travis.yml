@@ -19,20 +19,38 @@ script:
  - mkdir ../linux/fs/cifsd
  - cp -ar * ../linux/fs/cifsd/
 
- # Compilation with 4.1 kernel
+ # Compile with 4.1 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
- - echo 'CIFS_INSECURE_SERVER=y' >> .config
+ - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - make fs/cifsd/cifsd.ko
 
- # Compilation with latest tovalds kernel
+ # Compile with latest Tovalds' kernel
  - cd ../linux
  - yes "" | make oldconfig
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
- - echo 'CIFS_INSECURE_SERVER=y' >> .config
+ - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
+ - make fs/cifsd/cifsd.ko
+
+ # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
+ - cd ../linux-stable
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - make fs/cifsd/cifsd.ko
+
+ # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
+ - cd ../linux
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - make fs/cifsd/cifsd.ko
