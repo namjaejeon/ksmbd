@@ -15,12 +15,6 @@
 
 /* @FIXME rework this code */
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-#define CIFS_NUM_PROT 5
-#else
-#define CIFS_NUM_PROT 1
-#endif
-
 #define SMB1_CLIENT_GUID_SIZE (16)
 
 /* Service Type of TreeConnect*/
