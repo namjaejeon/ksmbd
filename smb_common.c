@@ -12,7 +12,7 @@
 /* @FIXME */
 #include "transport_tcp.h"
 
-#ifdef CONFIG_CIFS_SMB1_SERVER
+#ifdef CIFS_INSECURE_SERVER
 #define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
 #else
 #define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
@@ -26,7 +26,7 @@ struct smb_protocol {
 };
 
 static struct smb_protocol smb1_protos[] = {
-#ifdef CONFIG_CIFS_SMB1_SERVER
+#ifdef CIFS_INSECURE_SERVER
 	{
 		CIFSD_SMB1_PROT,
 		"\2NT LM 0.12",
@@ -84,7 +84,7 @@ static struct smb_protocol smb2_protos[] = {
 
 inline int cifsd_min_protocol(void)
 {
-#ifdef CONFIG_CIFS_SMB1_SERVER
+#ifdef CIFS_INSECURE_SERVER
 	return smb1_protos[0].index;
 #else
 	return smb2_protos[0].index;
@@ -177,8 +177,8 @@ static bool supported_protocol(int idx)
 			idx <= server_conf.max_protocol);
 }
 
-#ifdef CONFIG_CIFS_SMB1_SERVER
-int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
+#ifdef CIFS_INSECURE_SERVER
+int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 {
 	int i, smb1_index, cli_count, bcount;
 	char *dialects = NULL;
@@ -211,7 +211,7 @@ int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 	return CIFSD_BAD_PROT_ID;
 }
 #else
-int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
+int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 {
 	return CIFSD_BAD_PROT_ID;
 }
@@ -249,7 +249,8 @@ int cifsd_negotiate_smb_dialect(void *buf)
 	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
 			SMB1_PROTO_NUMBER) {
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
-		ret = cifsd_lookup_smb1_dialect(req->DialectsArray,
+
+		ret = cifsd_lookup_insecure_dialect(req->DialectsArray,
 					le16_to_cpu(req->ByteCount));
 	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {

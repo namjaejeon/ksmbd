@@ -50,7 +50,7 @@ int get_protocol_idx(char *str);
 int check_message(struct cifsd_work *work);
 bool is_smb_request(struct cifsd_tcp_conn *conn);
 
-int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count);
+int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count);
 int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
 
 int cifsd_negotiate_smb_dialect(void *buf);
