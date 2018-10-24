@@ -27,14 +27,3 @@ config CIFS_INSECURE_SERVER
         help
 	  This enables deprecated insecure protocols dialects: SMB1/CIFS
 	  and SMB2.0
-
-config CIFS_SMB2_SERVER
-        bool "SMB2 server support"
-        depends on CIFS_SERVER && INET
-        select NLS
-	default y
-
-        help
-	  This enables experimental support for the SMB2 (Server Message Block
-	  version 2) protocol.
-

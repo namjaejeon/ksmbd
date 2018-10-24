@@ -25,7 +25,7 @@ script:
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
- - echo 'CONFIG_CIFS_SMB2_SERVER=y' >> .config
+ - echo 'CIFS_INSECURE_SERVER=y' >> .config
  - make fs/cifsd/cifsd.ko
 
  # Compilation with latest tovalds kernel
@@ -34,5 +34,5 @@ script:
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
- - echo 'CONFIG_CIFS_SMB2_SERVER=y' >> .config
+ - echo 'CIFS_INSECURE_SERVER=y' >> .config
  - make fs/cifsd/cifsd.ko
