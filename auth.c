@@ -623,8 +623,6 @@ out:
 	return rc;
 }
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-
 static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
@@ -1117,4 +1115,3 @@ int cifsd_gen_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
 out:
 	return rc;
 }
-#endif
