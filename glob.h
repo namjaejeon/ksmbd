@@ -485,22 +485,11 @@ extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 struct cifsd_share_config;
 char *convert_to_unix_name(struct cifsd_share_config *share, char *name);
 void convert_delimiter(char *path, int flags);
-int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type);
-int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
-		char *shortname);
 /* fill SMB specific fields when smb2 query dir is requested */
 char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment, bool no_namelen_field);
-
-struct cifsd_kstat;
-int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
-		int info_level, struct cifsd_file *dir,
-		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct cifsd_kstat *));
 
 /* netlink functions */
 int cifsd_net_init(void);

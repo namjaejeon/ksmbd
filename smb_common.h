@@ -56,4 +56,18 @@ int cifsd_negotiate_smb_dialect(void *buf);
 int cifsd_init_smb_server(struct cifsd_work *work);
 
 bool cifsd_pdu_size_has_room(unsigned int pdu);
+
+struct cifsd_kstat;
+int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+		int info_level, struct cifsd_file *dir,
+		struct cifsd_dir_info *d_info, char *search_pattern,
+		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
+		int, struct cifsd_dir_info *, struct cifsd_kstat *));
+
+int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
+		char *shortname);
+
+int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
+		loff_t offset, u64 ino, unsigned int d_type);
+
 #endif /* __SMB_COMMON_H__ */

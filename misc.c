@@ -15,6 +15,8 @@
 #include "transport_tcp.h"
 #include "vfs.h"
 
+#include "mgmt/share_config.h"
+
 /* @FIXME rework this code */
 
 /**
@@ -427,4 +429,137 @@ int get_nlink(struct kstat *st)
 		nlink--;
 
 	return nlink;
+}
+
+/**
+ * convert_delimiter() - convert windows path to unix format or unix format
+ *			 to windos path
+ * @path:	path to be converted
+ * @flags:	1 is to convert windows, 2 is to convert unix
+ *
+ */
+void convert_delimiter(char *path, int flags)
+{
+	char *pos = path;
+
+	if (flags == 1)
+		while ((pos = strchr(pos, '/')))
+			*pos = '\\';
+	else
+		while ((pos = strchr(pos, '\\')))
+			*pos = '/';
+}
+
+/**
+ * extract_sharename() - get share name from tree connect request
+ * @treename:	buffer containing tree name and share name
+ *
+ * Return:      share name on success, otherwise error
+ */
+char *extract_sharename(char *treename)
+{
+	int len;
+	char *dst;
+
+	/* skip double chars at the beginning */
+	while (strchr(treename, '\\'))
+		strsep(&treename, "\\");
+	len = strlen(treename);
+
+	/* caller has to free the memory */
+	dst = kstrndup(treename, len, GFP_KERNEL);
+	if (!dst)
+		return ERR_PTR(-ENOMEM);
+
+	return dst;
+}
+
+/**
+ * convert_to_unix_name() - convert windows name to unix format
+ * @path:	name to be converted
+ * @tid:	tree id of mathing share
+ *
+ * Return:	converted name on success, otherwise NULL
+ */
+char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
+{
+	int len;
+	char *new_name;
+
+	len = strlen(share->path);
+	len += strlen(name);
+
+	/* for '/' needed for smb2
+	 * as '/' is not present in beginning of name*/
+	if (name[0] != '/')
+		len++;
+
+	/* 1 extra for NULL byte */
+	cifsd_debug("new_name len = %d\n", len);
+	new_name = kmalloc(len + 1, GFP_KERNEL);
+
+	if (new_name == NULL) {
+		cifsd_debug("Failed to allocate memory\n");
+		return new_name;
+	}
+
+	memcpy(new_name, share->path, strlen(share->path));
+
+	if (name[0] != '/') {
+		memset(new_name + strlen(share->path), '/', 1);
+		memcpy(new_name + strlen(share->path) + 1, name, strlen(name));
+	} else
+		memcpy(new_name + strlen(share->path), name, strlen(name));
+
+	*(new_name + len) = '\0';
+
+	return new_name;
+}
+
+/**
+ * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
+ * @namestr:            source filename buffer
+ * @len:                source buffer length
+ * @size:               used buffer size
+ * @local_nls           code page table
+ * @name_len:           file name length after conversion
+ * @next_entry_offset:  offset of dentry
+ * @buf_len:            response buffer length
+ * @data_count:         used response buffer size
+ * @no_namelen_field:	flag which shows if a namelen field flag exist
+ *
+ * Return:      return error if next entry could not fit in current response
+ *              buffer, otherwise return encode buffer.
+ */
+char *convname_updatenextoffset(char *namestr, int len, int size,
+		const struct nls_table *local_nls, int *name_len,
+		int *next_entry_offset, int *buf_len, int *data_count,
+		int alignment, bool no_namelen_field)
+{
+	char *enc_buf;
+
+	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!enc_buf)
+		return NULL;
+
+	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
+			namestr, len, local_nls, 0);
+	*name_len *= 2;
+	if (no_namelen_field) {
+		enc_buf[*name_len] = '\0';
+		enc_buf[*name_len+1] = '\0';
+		*name_len += 2;
+	}
+
+	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
+
+	if (*next_entry_offset > *buf_len) {
+		cifsd_debug("buf_len : %d next_entry_offset : %d"
+				" data_count : %d\n", *buf_len,
+				*next_entry_offset, *data_count);
+		*buf_len = -1;
+		kfree(enc_buf);
+		return NULL;
+	}
+	return enc_buf;
 }

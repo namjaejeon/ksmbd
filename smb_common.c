@@ -12,6 +12,13 @@
 /* @FIXME */
 #include "transport_tcp.h"
 
+/*for shortname implementation */
+static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
+#define MANGLE_BASE       (sizeof(basechars)/sizeof(char)-1)
+#define MAGIC_CHAR '~'
+#define PERIOD '.'
+#define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
+
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 #define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
 #else
@@ -294,4 +301,158 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 bool cifsd_pdu_size_has_room(unsigned int pdu)
 {
 	return (pdu >= CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4);
+}
+
+int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+		int info_level, struct cifsd_file *dir,
+		struct cifsd_dir_info *d_info, char *search_pattern,
+		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
+		int, struct cifsd_dir_info *, struct cifsd_kstat *))
+{
+	int i, rc = 0;
+
+	for (i = 0; i < 2; i++) {
+		struct kstat kstat;
+		struct cifsd_kstat cifsd_kstat;
+
+		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
+			if (i == 0)
+				d_info->name = ".";
+			else
+				d_info->name = "..";
+
+			if (!is_matched(d_info->name, search_pattern)) {
+				dir->dot_dotdot[i] = 1;
+				continue;
+			}
+
+			generic_fillattr(PARENT_INODE(dir), &kstat);
+			cifsd_kstat.file_attributes = ATTR_DIRECTORY;
+			cifsd_kstat.kstat = &kstat;
+			rc = populate_readdir_entry_fn(conn, info_level,
+				d_info, &cifsd_kstat);
+			if (rc)
+				break;
+			if (d_info->out_buf_len <= 0)
+				break;
+
+			dir->dot_dotdot[i] = 1;
+		}
+	}
+
+	return rc;
+}
+
+/**
+ * smb_get_shortname() - get shortname from long filename
+ * @conn:	TCP server instance of connection
+ * @longname:	source long filename
+ * @shortname:	destination short filename
+ *
+ * Return:	shortname length or 0 when source long name is '.' or '..'
+ * TODO: Though this function comforms the restriction of 8.3 Filename spec,
+ * but the result is different with Windows 7's one. need to check.
+ */
+int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
+		char *shortname)
+{
+	char *p, *sp;
+	char base[9], extension[4];
+	char out[13] = {0};
+	int baselen = 0;
+	int extlen = 0, len = 0;
+	unsigned int csum = 0;
+	unsigned char *ptr;
+	bool dot_present = true;
+
+	p = longname;
+	if ((*p == '.') || (!(strcmp(p, "..")))) {
+		/*no mangling required */
+		shortname = NULL;
+		return 0;
+	}
+	p = strrchr(longname, '.');
+	if (p == longname) { /*name starts with a dot*/
+		sp = "___";
+		memcpy(extension, sp, 3);
+		extension[3] = '\0';
+	} else {
+		if (p != NULL) {
+			p++;
+			while (*p && extlen < 3) {
+				if (*p != '.')
+					extension[extlen++] = toupper(*p);
+				p++;
+			}
+			extension[extlen] = '\0';
+		} else
+			dot_present = false;
+	}
+
+	p = longname;
+	if (*p == '.')
+		*p++ = 0;
+	while (*p && (baselen < 5)) {
+		if (*p != '.')
+			base[baselen++] = toupper(*p);
+		p++;
+	}
+
+	base[baselen] = MAGIC_CHAR;
+	memcpy(out, base, baselen+1);
+
+	ptr = longname;
+	len = strlen(longname);
+	for (; len > 0; len--, ptr++)
+		csum += *ptr;
+
+	csum = csum % (MANGLE_BASE * MANGLE_BASE);
+	out[baselen+1] = mangle(csum/MANGLE_BASE);
+	out[baselen+2] = mangle(csum);
+	out[baselen+3] = PERIOD;
+
+	if (dot_present)
+		memcpy(&out[baselen+4], extension, 4);
+	else
+		out[baselen+4] = '\0';
+	smbConvertToUTF16((__le16 *)shortname, out, PATH_MAX,
+			conn->local_nls, 0);
+	len = strlen(out) * 2;
+	return len;
+}
+
+/**
+ * smb_filldir() - populates a dirent details in readdir
+ * @ctx:	dir_context information
+ * @name:	dirent name
+ * @namelen:	dirent name length
+ * @offset:	dirent offset in directory
+ * @ino:	dirent inode number
+ * @d_type:	dirent type
+ *
+ * Return:	0 on success, otherwise -EINVAL
+ */
+int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
+		loff_t offset, u64 ino, unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf =
+		container_of(ctx, struct cifsd_readdir_data, ctx);
+	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
+	unsigned int reclen;
+
+	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
+	if (buf->used + reclen > PAGE_SIZE) {
+		buf->full = 1;
+		return -EINVAL;
+	}
+
+	de->namelen = namlen;
+	de->offset = offset;
+	de->ino = ino;
+	de->d_type = d_type;
+	memcpy(de->name, name, namlen);
+	buf->used += reclen;
+	buf->dirent_count++;
+
+	return 0;
 }
