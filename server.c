@@ -143,7 +143,6 @@ static void handle_cifsd_work(struct work_struct *wk)
 
 	conn->stats.request_served++;
 
-	cifsd_init_smb_server(work);
 	if (conn->ops->allocate_rsp_buf(work)) {
 		rc = -ENOMEM;
 		goto nosend;
@@ -319,8 +318,6 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 {
 	struct cifsd_work *work;
 
-	dump_smb_msg(conn->request_buf, HEADER_SIZE(conn));
-
 	work = cifsd_alloc_work_struct();
 	if (!work) {
 		cifsd_err("allocation for work failed\n");
@@ -336,6 +333,8 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
+
+	cifsd_init_smb_server(work);
 	cifsd_tcp_enqueue_request(work);
 
 	/* update activity on connection */
