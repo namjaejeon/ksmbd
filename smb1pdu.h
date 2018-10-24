@@ -1928,8 +1928,6 @@ extern int get_smb_cmd_val(struct cifsd_work *work);
 extern void set_smb_rsp_status(struct cifsd_work *work, unsigned int err);
 extern int init_smb_rsp_hdr(struct cifsd_work *work);
 extern int smb_allocate_rsp_buf(struct cifsd_work *work);
-extern int find_matching_smb1_dialect(int start_index, char *cli_dialects,
-	__le16 byte_count);
 extern int smb1_is_sign_req(struct cifsd_work *work, unsigned int command);
 extern int smb1_check_sign_req(struct cifsd_work *work);
 extern void smb1_set_sign_rsp(struct cifsd_work *work);

@@ -162,11 +162,16 @@ bool is_smb_request(struct cifsd_tcp_conn *conn)
 	return false;
 }
 
-/* @FIXME rework this code */
-int find_matching_smb1_dialect(int start_index, char *cli_dialects,
-		__le16 byte_count)
+static bool supported_protocol(int idx)
 {
-	int i, smb1_index, cli_count, bcount, dialect_id = CIFSD_BAD_PROT_ID;
+	return (server_conf.min_protocol <= idx &&
+			idx <= server_conf.max_protocol);
+}
+
+#ifdef CONFIG_CIFS_SMB1_SERVER
+int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
+{
+	int i, smb1_index, cli_count, bcount;
 	char *dialects = NULL;
 
 	for (i = ARRAY_SIZE(smb1_protos) - 1; i >= CIFSD_SMB1_PROT; i--) {
@@ -180,17 +185,13 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 					dialects);
 			if (!strncmp(dialects, smb1_protos[i].name,
 						cli_count)) {
-				if (i >= server_conf.min_protocol &&
-					i <= server_conf.max_protocol) {
+				if (supported_protocol(i)) {
 					cifsd_debug("selected %s dialect\n",
 							smb1_protos[i].name);
 					if (i == CIFSD_SMB1_PROT)
-						dialect_id = smb1_index;
-					else
-						dialect_id =
-						smb1_protos[i].prot_id;
+						return smb1_index;
+					return smb1_protos[i].prot_id;
 				}
-				goto out;
 			}
 			bcount -= (++cli_count);
 			dialects += cli_count;
@@ -198,9 +199,14 @@ int find_matching_smb1_dialect(int start_index, char *cli_dialects,
 		}
 	}
 
-out:
-	return dialect_id;
+	return CIFSD_BAD_PROT_ID;
 }
+#else
+int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
+{
+	return CIFSD_BAD_PROT_ID;
+}
+#endif
 
 /* @FIXME rework this code */
 #ifdef CONFIG_CIFS_SMB2_SERVER
@@ -265,8 +271,8 @@ int negotiate_dialect(void *buf)
 			SMB1_PROTO_NUMBER) {
 		/* SMB1 neg protocol */
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
-		ret = find_matching_smb1_dialect(start_index,
-			req->DialectsArray, le16_to_cpu(req->ByteCount));
+		ret = cifsd_lookup_smb1_dialect(req->DialectsArray,
+						le16_to_cpu(req->ByteCount));
 	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
 			SMB2_PROTO_NUMBER) {
 #ifdef CONFIG_CIFS_SMB2_SERVER
