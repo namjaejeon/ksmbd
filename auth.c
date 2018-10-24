@@ -109,13 +109,13 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 }
 
 /**
- * compute_sess_key() - function to generate session key
+ * cifsd_gen_sess_key() - function to generate session key
  * @sess:	session of connection
  * @hash:	source hash value to be used for find session key
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-int compute_sess_key(struct cifsd_session *sess, char *hash, char *hmac)
+int cifsd_gen_sess_key(struct cifsd_session *sess, char *hash, char *hmac)
 {
 	int rc;
 
@@ -237,14 +237,14 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 }
 
 /**
- * process_ntlm() - NTLM authentication handler
+ * cifsd_auth_ntlm() - NTLM authentication handler
  * @sess:	session of connection
  * @pw_buf:	NTLM challenge response
  * @passkey:	user password
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlm(struct cifsd_session *sess, char *pw_buf)
+int cifsd_auth_ntlm(struct cifsd_session *sess, char *pw_buf)
 {
 	int rc;
 	unsigned char p21[21];
@@ -275,7 +275,7 @@ int process_ntlm(struct cifsd_session *sess, char *pw_buf)
 }
 
 /**
- * process_ntlmv2() - NTLMv2 authentication handler
+ * cifsd_auth_ntlmv2() - NTLMv2 authentication handler
  * @sess:	session of connection
  * @ntlmv2:		NTLMv2 challenge response
  * @blen:		NTLMv2 blob length
@@ -283,8 +283,10 @@ int process_ntlm(struct cifsd_session *sess, char *pw_buf)
  *
  * Return:	0 on success, error number on error
  */
-int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
-		int blen, char *domain_name)
+int cifsd_auth_ntlmv2(struct cifsd_session *sess,
+		      struct ntlmv2_resp *ntlmv2,
+		      int blen,
+		      char *domain_name)
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
@@ -346,7 +348,7 @@ int process_ntlmv2(struct cifsd_session *sess, struct ntlmv2_resp *ntlmv2,
 		goto out;
 	}
 
-	rc = compute_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
+	rc = cifsd_gen_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
 	if (rc) {
 		cifsd_debug("%s: Could not generate sess key\n", __func__);
 		goto out;
@@ -358,15 +360,16 @@ out:
 }
 
 /**
- * process_ntlm2() - NTLM2(extended security) authentication handler
+ * __cifsd_auth_ntlmv2() - NTLM2(extended security) authentication handler
  * @sess:	session of connection
  * @client_nonce:	client nonce from LM response.
  * @ntlm_resp:		ntlm response data from client.
  *
  * Return:	0 on success, error number on error
  */
-static int process_ntlm2(struct cifsd_session *sess, char *client_nonce,
-	 char *ntlm_resp)
+static int __cifsd_auth_ntlmv2(struct cifsd_session *sess,
+			       char *client_nonce,
+			       char *ntlm_resp)
 {
 	char sess_key[CIFS_SMB1_SESSKEY_SIZE] = {0};
 	int rc;
@@ -390,12 +393,11 @@ static int process_ntlm2(struct cifsd_session *sess, char *client_nonce,
 
 	rc = memcmp(ntlm_resp, key, CIFS_AUTH_RESP_SIZE);
 out:
-
 	return rc;
 }
 
 /**
- * decode_ntlmssp_authenticate_blob() - helper function to construct
+ * cifsd_decode_ntlmssp_auth_blob() - helper function to construct
  * authenticate blob
  * @authblob:	authenticate blob source pointer
  * @usr:	user details
@@ -403,8 +405,9 @@ out:
  *
  * Return:	0 on success, error number on error
  */
-int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
-	int blob_len, struct cifsd_session *sess)
+int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
+				   int blob_len,
+				   struct cifsd_session *sess)
 {
 	char *domain_name;
 
@@ -422,12 +425,12 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 	/* process NTLM authentication */
 	if (authblob->NtChallengeResponse.Length == CIFS_AUTH_RESP_SIZE) {
 		if (authblob->NegotiateFlags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
-			return process_ntlm2(sess, (char *)authblob +
+			return __cifsd_auth_ntlmv2(sess, (char *)authblob +
 				authblob->LmChallengeResponse.BufferOffset,
 				(char *)authblob +
 				authblob->NtChallengeResponse.BufferOffset);
 		else
-			return process_ntlm(sess, (char *)authblob +
+			return cifsd_auth_ntlm(sess, (char *)authblob +
 				authblob->NtChallengeResponse.BufferOffset);
 	}
 
@@ -441,21 +444,23 @@ int decode_ntlmssp_authenticate_blob(AUTHENTICATE_MESSAGE *authblob,
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
-	return process_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
+	return cifsd_auth_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
 		authblob->NtChallengeResponse.BufferOffset),
 		authblob->NtChallengeResponse.Length - CIFS_ENCPWD_SIZE,
 		domain_name);
 }
 
 /**
- * decode_ntlmssp_negotiate_blob() - helper function to construct negotiate blob
+ * cifsd_decode_ntlmssp_neg_blob() - helper function to construct
+ * 	negotiate blob
  * @negblob:	negotiate blob source pointer
  * @rsp:	response header pointer to be updated
  * @sess:	session of connection
  *
  */
-int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
-		int blob_len, struct cifsd_session *sess)
+int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
+				  int blob_len,
+				  struct cifsd_session *sess)
 {
 	if (blob_len < sizeof(NEGOTIATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -473,14 +478,15 @@ int decode_ntlmssp_negotiate_blob(NEGOTIATE_MESSAGE *negblob,
 }
 
 /**
- * build_ntlmssp_challenge_blob() - helper function to construct challenge blob
+ * cifsd_gen_ntlmssp_challenge_blob() - helper function to construct
+ * 	challenge blob
  * @chgblob:	challenge blob source pointer to initialize
  * @rsp:	response header pointer to be updated
  * @sess:	session of connection
  *
  */
-unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-		struct cifsd_session *sess)
+unsigned int cifsd_gen_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+					      struct cifsd_session *sess)
 {
 	TargetInfo *tinfo;
 	wchar_t *name;
@@ -565,15 +571,17 @@ unsigned int build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 }
 
 /**
- * smb1_sign_smbpdu() - function to generate SMB1 packet signing
+ * cifsd_sign_smb1_pdu() - function to generate SMB1 packet signing
  * @sess:	session of connection
  * @iov:        buffer iov array
  * @n_vec:	number of iovecs
  * @sig:        signature value generated for client request packet
  *
  */
-int smb1_sign_smbpdu(struct cifsd_session *sess, struct kvec *iov, int n_vec,
-		char *sig)
+int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
+			struct kvec *iov,
+			int n_vec,
+			char *sig)
 {
 	int rc;
 	int i;
@@ -712,7 +720,7 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 }
 
 /**
- * smb2_sign_smbpdu() - function to generate packet signing
+ * cifsd_sign_smb2_pdu() - function to generate packet signing
  * @conn:	connection
  * @key:	signing key
  * @iov:        buffer iov array
@@ -720,8 +728,11 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
  * @sig:	signature value generated for client request packet
  *
  */
-int smb2_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
-	int n_vec, char *sig)
+int cifsd_sign_smb2_pdu(struct cifsd_tcp_conn *conn,
+			char *key,
+			struct kvec *iov,
+			int n_vec,
+			char *sig)
 {
 	int rc;
 	int i;
@@ -765,7 +776,7 @@ out:
 }
 
 /**
- * smb3_sign_smbpdu() - function to generate packet signing
+ * cifsd_sign_smb3_pdu() - function to generate packet signing
  * @conn:	connection
  * @key:	signing key
  * @iov:        buffer iov array
@@ -773,8 +784,11 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int smb3_sign_smbpdu(struct cifsd_tcp_conn *conn, char *key, struct kvec *iov,
-	int n_vec, char *sig)
+int cifsd_sign_smb3_pdu(struct cifsd_tcp_conn *conn,
+			char *key,
+			struct kvec *iov,
+			int n_vec,
+			char *sig)
 {
 	int rc;
 	int i;
@@ -941,8 +955,9 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	return rc;
 }
 
-int generate_smb30signingkey(struct cifsd_session *sess, bool binding,
-	char *hash_value)
+int cifsd_gen_smb30_signingkey(struct cifsd_session *sess,
+			       bool binding,
+			       char *hash_value)
 {
 	struct derivation d;
 
@@ -955,8 +970,9 @@ int generate_smb30signingkey(struct cifsd_session *sess, bool binding,
 	return generate_smb3signingkey(sess, &d);
 }
 
-int generate_smb311signingkey(struct cifsd_session *sess, bool binding,
-	char *hash_value)
+int cifsd_gen_smb311_signingkey(struct cifsd_session *sess,
+				bool binding,
+				char *hash_value)
 {
 	struct derivation d;
 
@@ -1010,7 +1026,7 @@ static int generate_smb3encryptionkey(struct cifsd_session *sess,
 	return rc;
 }
 
-int generate_smb30encryptionkey(struct cifsd_session *sess)
+int cifsd_gen_smb30_encryptionkey(struct cifsd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;
@@ -1030,7 +1046,7 @@ int generate_smb30encryptionkey(struct cifsd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int generate_smb311encryptionkey(struct cifsd_session *sess)
+int cifsd_gen_smb311_encryptionkey(struct cifsd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;
@@ -1050,8 +1066,9 @@ int generate_smb311encryptionkey(struct cifsd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn, char *buf,
-	__u8 *pi_hash)
+int cifsd_gen_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
+				     char *buf,
+				     __u8 *pi_hash)
 {
 	int rc = -1;
 	struct crypto_shash *c_shash;

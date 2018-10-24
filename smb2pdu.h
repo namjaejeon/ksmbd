@@ -1401,8 +1401,6 @@ extern int smb3_encrypt_resp(struct cifsd_work *work);
 extern int smb2_check_message(struct cifsd_work *work);
 
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
-	char *buf, __u8 *pi_hash);
 extern int smb2_negotiate(struct cifsd_work *work);
 extern int smb2_sess_setup(struct cifsd_work *work);
 extern int smb2_tree_connect(struct cifsd_work *work);

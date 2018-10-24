@@ -1029,7 +1029,7 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 		goto no_password_check;
 
 	if (req->CaseSensitivePasswordLength == CIFS_AUTH_RESP_SIZE) {
-		err = process_ntlm(sess, req->CaseInsensitivePassword +
+		err = cifsd_auth_ntlm(sess, req->CaseInsensitivePassword +
 				req->CaseInsensitivePasswordLength);
 		if (err) {
 			cifsd_err("ntlm authentication failed for user %s\n",
@@ -1052,7 +1052,8 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 			goto out_err;
 		}
 
-		err = process_ntlmv2(sess, (struct ntlmv2_resp *) ((char *)
+		err = cifsd_auth_ntlmv2(sess,
+				(struct ntlmv2_resp *) ((char *)
 					req->CaseInsensitivePassword +
 					req->CaseInsensitivePasswordLength),
 				req->CaseSensitivePasswordLength -
@@ -1129,8 +1130,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		CHALLENGE_MESSAGE *chgblob;
 
 		cifsd_debug("negotiate phase\n");
-		err = decode_ntlmssp_negotiate_blob(negblob,
-				le16_to_cpu(req->SecurityBlobLength), sess);
+		err = cifsd_decode_ntlmssp_neg_blob(negblob,
+				le16_to_cpu(req->SecurityBlobLength),
+				sess);
 		if (err)
 			goto out_err;
 
@@ -1148,8 +1150,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = build_ntlmssp_challenge_blob(
-					chgblob, sess);
+			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+					chgblob,
+					sess);
 			if (neg_blob_len < 0) {
 				kfree(neg_blob);
 				err = -ENOMEM;
@@ -1171,7 +1174,8 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
 				err = -ENOMEM;
@@ -1223,8 +1227,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		if (user_guest(sess->user))
 			goto no_password_check;
 
-		err = decode_ntlmssp_authenticate_blob(authblob,
-				le16_to_cpu(req->SecurityBlobLength), sess);
+		err = cifsd_decode_ntlmssp_auth_blob(authblob,
+				le16_to_cpu(req->SecurityBlobLength),
+				sess);
 		if (err) {
 			cifsd_debug("authentication failed\n");
 			err = -EINVAL;
@@ -8368,7 +8373,7 @@ int smb1_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = rcv_hdr1->Protocol;
 	iov[0].iov_len = be32_to_cpu(rcv_hdr1->smb_buf_length);
 
-	if (smb1_sign_smbpdu(work->sess, iov, 1, signature))
+	if (cifsd_sign_smb1_pdu(work->sess, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, CIFS_SMB1_SIGNATURE_SIZE)) {
@@ -8407,7 +8412,7 @@ void smb1_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (smb1_sign_smbpdu(work->sess, iov, n_vec, signature))
+	if (cifsd_sign_smb1_pdu(work->sess, iov, n_vec, signature))
 		memset(rsp_hdr->Signature.SecuritySignature,
 				0, CIFS_SMB1_SIGNATURE_SIZE);
 	else

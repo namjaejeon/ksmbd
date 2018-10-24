@@ -943,7 +943,7 @@ int smb2_negotiate(struct cifsd_work *work)
 			goto err_out;
 		}
 
-		calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
+		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
 			conn->preauth_info->Preauth_HashValue);
 		rsp->NegotiateContextOffset =
 			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
@@ -1244,7 +1244,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 			preauth_hashvalue = sess->Preauth_HashValue;
 		}
-		calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
+		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
 			preauth_hashvalue);
 	}
 
@@ -1252,8 +1252,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 		CHALLENGE_MESSAGE *chgblob;
 
 		cifsd_debug("negotiate phase\n");
-		rc = decode_ntlmssp_negotiate_blob(negblob,
-			le16_to_cpu(req->SecurityBufferLength), sess);
+		rc = cifsd_decode_ntlmssp_neg_blob(negblob,
+			le16_to_cpu(req->SecurityBufferLength),
+			sess);
 		if (rc)
 			goto out_err;
 
@@ -1272,8 +1273,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = build_ntlmssp_challenge_blob(
-					chgblob, sess);
+			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+					chgblob,
+					sess);
 			if (neg_blob_len < 0) {
 				kfree(neg_blob);
 				rc = -ENOMEM;
@@ -1296,7 +1298,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
 				rc = -ENOMEM;
@@ -1380,8 +1383,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				sess->is_guest	= false;
 			}
 		} else {
-			rc = decode_ntlmssp_authenticate_blob(authblob,
-				le16_to_cpu(req->SecurityBufferLength), sess);
+			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
+				le16_to_cpu(req->SecurityBufferLength),
+				sess);
 			if (rc) {
 				set_user_flag(sess->user,
 					      CIFSD_USER_FLAG_BAD_PASSWORD);
@@ -6983,7 +6987,7 @@ int smb2_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = (char *)&rcv_hdr2->ProtocolId;
 	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	if (smb2_sign_smbpdu(work->conn, work->sess->sess_key, iov, 1,
+	if (cifsd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, 1,
 		signature))
 		return 0;
 
@@ -7021,7 +7025,7 @@ void smb2_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (!smb2_sign_smbpdu(work->conn, work->sess->sess_key, iov, n_vec,
+	if (!cifsd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, n_vec,
 		signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
@@ -7078,7 +7082,7 @@ int smb3_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = (char *)&hdr->ProtocolId;
 	iov[0].iov_len = len;
 
-	if (smb3_sign_smbpdu(conn, signing_key, iov, 1, signature))
+	if (cifsd_sign_smb3_pdu(conn, signing_key, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
@@ -7155,7 +7159,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (!smb3_sign_smbpdu(conn, signing_key, iov, n_vec, signature))
+	if (!cifsd_sign_smb3_pdu(conn, signing_key, iov, n_vec, signature))
 		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
 
@@ -7179,7 +7183,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
-		calc_preauth_integrity_hash(conn, (char *)rsp,
+		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
 			conn->preauth_info->Preauth_HashValue);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
@@ -7197,7 +7201,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 		} else
 			hash_value = sess->Preauth_HashValue;
 
-		calc_preauth_integrity_hash(conn, (char *)rsp,
+		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
 				hash_value);
 	}
 }
