@@ -56,6 +56,6 @@ bool is_smb_request(struct cifsd_tcp_conn *conn);
 int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count);
 int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
 
-int negotiate_dialect(void *buf);
+int cifsd_negotiate_smb_dialect(void *buf);
 
 #endif /* __SMB_COMMON_H__ */

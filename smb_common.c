@@ -233,19 +233,12 @@ int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count)
 	return CIFSD_BAD_PROT_ID;
 }
 
-/**
- * negotiate_dialect() - negotiate smb dialect with smb client
- * @buf:	smb header
- *
- * Return:     protocol index on success, otherwise bad protocol id error
- */
-int negotiate_dialect(void *buf)
+int cifsd_negotiate_smb_dialect(void *buf)
 {
 	int ret = CIFSD_BAD_PROT_ID;
 
 	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
 			SMB1_PROTO_NUMBER) {
-		/* SMB1 neg protocol */
 		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
 		ret = cifsd_lookup_smb1_dialect(req->DialectsArray,
 					le16_to_cpu(req->ByteCount));

@@ -915,7 +915,7 @@ int smb2_negotiate(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	conn->dialect = negotiate_dialect(REQUEST_BUF(work));
+	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 
 	conn->cli_cap = req->Capabilities;

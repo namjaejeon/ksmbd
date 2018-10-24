@@ -470,7 +470,6 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 /* @FIXME clean up this code */
 
 bool is_smb_request(struct cifsd_tcp_conn *conn);
-int negotiate_dialect(void *buf);
 int get_nlink(struct kstat *st);
 
 /* cifsd misc functions */
