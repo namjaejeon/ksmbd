@@ -51,9 +51,6 @@ extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
 extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
-#define GSS_LENGTH		74
-#define GSS_PADDING		6
-extern char NEGOTIATE_GSS_HEADER[GSS_LENGTH];
 
 extern struct list_head global_lock_list;
 

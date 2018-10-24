@@ -8,8 +8,13 @@
 
 #include "ntlmssp.h"
 
+#define AUTH_GSS_LENGTH		74
+#define AUTH_GSS_PADDING	6
+
 struct cifsd_session;
 struct cifsd_tcp_conn;
+
+void cifsd_copy_gss_neg_header(void *buf);
 
 int compute_sess_key(struct cifsd_session *sess, char *hash, char *hmac);
 

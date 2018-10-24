@@ -965,12 +965,12 @@ int smb_negotiate(struct cifsd_work *work)
 		inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
 	} else {
 		neg_rsp->EncryptionKeyLength = 0;
-		neg_rsp->ByteCount = SMB1_CLIENT_GUID_SIZE + 74;
+		neg_rsp->ByteCount = SMB1_CLIENT_GUID_SIZE + AUTH_GSS_LENGTH;
 		get_random_bytes(neg_rsp->u.extended_response.GUID,
 			SMB1_CLIENT_GUID_SIZE);
-		memcpy(neg_rsp->u.extended_response.SecurityBlob,
-			NEGOTIATE_GSS_HEADER, 74);
-		inc_rfc1001_len(neg_rsp, (17 * 2 + 16 + 74));
+		cifsd_copy_gss_neg_header(
+				neg_rsp->u.extended_response.SecurityBlob);
+		inc_rfc1001_len(neg_rsp, (17 * 2 + 16 + AUTH_GSS_LENGTH));
 	}
 
 	/* Null terminated domain name in unicode */

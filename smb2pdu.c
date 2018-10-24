@@ -312,12 +312,12 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
-	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
-		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
+	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
+		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
@@ -783,7 +783,7 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
 	inc_rfc1001_len(rsp,
-		GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
+		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
 	if (conn->preauth_info->CipherId) {
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
@@ -1007,12 +1007,12 @@ int smb2_negotiate(struct cifsd_work *work)
 		le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
-	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
-		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
+	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
+		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 

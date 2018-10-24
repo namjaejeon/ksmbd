@@ -23,11 +23,12 @@
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
-/* Fixed format data defining GSS header and fixed string
+/*
+ * Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
  * So sec blob data in neg phase could be generated statically.
  */
-char NEGOTIATE_GSS_HEADER[GSS_LENGTH] =  {
+static char NEGOTIATE_GSS_HEADER[AUTH_GSS_LENGTH] = {
 	0x60, 0x48, 0x06, 0x06, 0x2b, 0x06, 0x01, 0x05,
 	0x05, 0x02, 0xa0, 0x3e, 0x30, 0x3c, 0xa0, 0x0e,
 	0x30, 0x0c, 0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04,
@@ -39,6 +40,11 @@ char NEGOTIATE_GSS_HEADER[GSS_LENGTH] =  {
 	0x61, 0x73, 0x65, 0x5f, 0x69, 0x67, 0x6e, 0x6f,
 	0x72, 0x65
 };
+
+void cifsd_copy_gss_neg_header(void *buf)
+{
+	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
+}
 
 static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 {
