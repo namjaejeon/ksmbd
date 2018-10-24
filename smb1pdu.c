@@ -15,6 +15,7 @@
 #include "transport_tcp.h"
 #include "transport_ipc.h"
 #include "vfs.h"
+#include "misc.h"
 
 #include "auth.h"
 #include "server.h"

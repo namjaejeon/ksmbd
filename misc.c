@@ -8,10 +8,9 @@
 #include <linux/version.h>
 #include <linux/xattr.h>
 
-#include "glob.h"
+#include "misc.h"
 #include "export.h"
-#include "smb1pdu.h"
-#include "smb2pdu.h"
+#include "smb_common.h"
 #include "transport_tcp.h"
 #include "vfs.h"
 

@@ -40,7 +40,9 @@
 
 struct cifsd_work;
 struct cifsd_tcp_conn;
-struct cifsd_tcp_conn;
+struct cifsd_dir_info;
+struct cifsd_file;
+struct dir_context;
 
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);

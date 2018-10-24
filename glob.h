@@ -446,26 +446,12 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 /* @FIXME clean up this code */
 
 bool is_smb_request(struct cifsd_tcp_conn *conn);
-int get_nlink(struct kstat *st);
 
 /* cifsd misc functions */
-extern int check_message(struct cifsd_work *work);
-extern void dump_smb_msg(void *buf, int smb_buf_length);
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
-extern int get_pos_strnstr(const char *s1, const char *s2, size_t len);
 extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
-extern int smb_check_shared_mode(struct file *filp,
-	struct cifsd_file *curr_fp);
-extern int pattern_cmp(const char *string, const char *pattern);
-extern bool is_matched(const char *fname, const char *exp);
-extern int check_invalid_stream_char(char *stream_name);
-extern int check_invalid_char(char *filename);
-extern int parse_stream_name(char *filename, char **stream_name, int *s_type);
-extern int construct_xattr_stream_name(char *stream_name,
-	char **xattr_stream_name);
-extern char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 /* functions */
 extern void smb_delete_session(struct cifsd_session *sess);
@@ -480,16 +466,6 @@ extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
-
-/* trans2 functions */
-struct cifsd_share_config;
-char *convert_to_unix_name(struct cifsd_share_config *share, char *name);
-void convert_delimiter(char *path, int flags);
-/* fill SMB specific fields when smb2 query dir is requested */
-char *convname_updatenextoffset(char *namestr, int len, int size,
-		const struct nls_table *local_nls, int *name_len,
-		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment, bool no_namelen_field);
 
 /* netlink functions */
 int cifsd_net_init(void);

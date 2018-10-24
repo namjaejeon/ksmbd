@@ -9,6 +9,7 @@
 #include "smb1pdu.h"
 #include "smb2pdu.h"
 
+#include "misc.h"
 /* @FIXME */
 #include "transport_tcp.h"
 

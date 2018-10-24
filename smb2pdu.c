@@ -22,6 +22,7 @@
 #include "transport_ipc.h"
 #include "vfs.h"
 #include "fh.h"
+#include "misc.h"
 
 #include "server.h"
 #include "smb_common.h"
