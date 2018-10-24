@@ -322,13 +322,7 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 
-	/*
-	 * Increment ref count for the Server object, as after this
-	 * only fallback point is from handle_cifsd_work
-	 */
-	atomic_inc(&conn->r_count);
 	work->conn = conn;
-
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
 
@@ -336,8 +330,9 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 		cifsd_free_work_struct(work);
 		return -EINVAL;
 	}
-	cifsd_tcp_enqueue_request(work);
 
+	cifsd_tcp_enqueue_request(work);
+	atomic_inc(&conn->r_count);
 	/* update activity on connection */
 	conn->last_active = jiffies;
 	INIT_WORK(&work->work, handle_cifsd_work);
