@@ -213,8 +213,9 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		if (!is_smb_request(conn))
-			continue;
+		if (!is_smb_request(conn)) {
+			break;
+		}
 
 		/*
 		 * We already read 4 bytes to find out PDU size, now
@@ -223,7 +224,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
 		if (size < 0) {
 			cifsd_err("sock_read failed: %d\n", size);
-			continue;
+			break;
 		}
 
 		if (size != pdu_size) {
