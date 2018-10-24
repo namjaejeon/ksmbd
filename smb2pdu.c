@@ -2683,7 +2683,7 @@ int smb2_open(struct cifsd_work *work)
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 	if (!S_ISDIR(file_inode(filp)->i_mode) && open_flags & O_TRUNC
-		&& !fp->attrib_only) {
+		&& !fp->attrib_only && !stream_name) {
 		if (oplocks_enable)
 			smb_break_all_oplock(work, fp);
 		need_truncate = 1;
