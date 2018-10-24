@@ -907,7 +907,7 @@ int smb2_negotiate(struct cifsd_work *work)
 		return rc;
 	}
 
-	if (req->StructureSize != 36 || req->DialectCount == 0) {
+	if (req->DialectCount == 0) {
 		cifsd_err("malformed packet\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
@@ -1092,18 +1092,12 @@ int smb2_sess_setup(struct cifsd_work *work)
 	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("Received request for session setup\n");
-	if (req->StructureSize != 25) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
 
 	rsp->StructureSize = cpu_to_le16(9);
 	rsp->SessionFlags = 0;
 	rsp->SecurityBufferOffset = cpu_to_le16(72);
 	rsp->SecurityBufferLength = 0;
 	inc_rfc1001_len(rsp, 9);
-
 
 	if (!req->hdr.SessionId) {
 		/* Check for previous session */
@@ -1496,12 +1490,6 @@ int smb2_tree_connect(struct cifsd_work *work)
 	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
 
-	if (req->StructureSize != 9) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
-
 	treename = smb_strndup_from_utf16(req->Buffer, req->PathLength,
 					  true, conn->local_nls);
 	if (IS_ERR(treename)) {
@@ -1661,11 +1649,6 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 	req = (struct smb2_tree_disconnect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_disconnect_rsp *)RESPONSE_BUF(work);
 
-	if (req->StructureSize != 4) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
@@ -1699,12 +1682,6 @@ int smb2_session_logoff(struct cifsd_work *work)
 
 	req = (struct smb2_logoff_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_logoff_rsp *)RESPONSE_BUF(work);
-
-	if (req->StructureSize != 4) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
 
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
@@ -2120,12 +2097,6 @@ int smb2_open(struct cifsd_work *work)
 		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		smb2_set_err_rsp(work);
 		return -EINVAL;
-	}
-
-	if (req->StructureSize != 57) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
 	}
 
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -3208,12 +3179,6 @@ int smb2_query_dir(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_query_directory_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
-	}
-
-	if (req->StructureSize != 33) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
 	}
 
 	dir_fp = get_fp(work, le64_to_cpu(req->VolatileFileId),
@@ -4477,12 +4442,6 @@ int smb2_query_info(struct cifsd_work *work)
 
 	cifsd_debug("GOT query info request\n");
 
-	if (req->StructureSize != 41) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
-
 	switch (req->InfoType) {
 	case SMB2_O_INFO_FILE:
 		cifsd_debug("GOT SMB2_O_INFO_FILE\n");
@@ -4579,12 +4538,6 @@ int smb2_close(struct cifsd_work *work)
 					work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_close_rsp *)((char *)rsp +
 					work->next_smb2_rsp_hdr_off);
-	}
-
-	if (req->StructureSize != 24) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
 	}
 
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -4689,12 +4642,6 @@ int smb2_echo(struct cifsd_work *work)
 		(struct smb2_echo_req *)REQUEST_BUF(work);
 	struct smb2_echo_rsp *rsp =
 		(struct smb2_echo_rsp *)RESPONSE_BUF(work);
-
-	if (req->StructureSize != 4) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
 
 	rsp->StructureSize = cpu_to_le16(4);
 	rsp->Reserved = 0;
@@ -5336,10 +5283,6 @@ int smb2_set_info(struct cifsd_work *work)
 				work->next_smb2_rsp_hdr_off);
 	}
 
-	if (le16_to_cpu(req->StructureSize) != 33) {
-		rc = -EINVAL;
-		goto err_out;
-	}
 	cifsd_debug("%s: Received set info request\n", __func__);
 	rsp->StructureSize = cpu_to_le16(33);
 
@@ -5477,12 +5420,6 @@ int smb2_read(struct cifsd_work *work)
 					work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_read_rsp *)((char *)rsp +
 					work->next_smb2_rsp_hdr_off);
-	}
-
-	if (req->StructureSize != 49) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
 	}
 
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -5670,12 +5607,6 @@ int smb2_write(struct cifsd_work *work)
 				work->next_smb2_rsp_hdr_off);
 	}
 
-	if (req->StructureSize != 49) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
-
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
 		cifsd_debug("IPC pipe write request\n");
@@ -5762,12 +5693,6 @@ int smb2_flush(struct cifsd_work *work)
 
 	req = (struct smb2_flush_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_flush_rsp *)RESPONSE_BUF(work);
-
-	if (req->StructureSize != 24) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
-	}
 
 	cifsd_debug("SMB2_FLUSH called for fid %llu\n",
 			le64_to_cpu(req->VolatileFileId));
@@ -5931,11 +5856,6 @@ int smb2_lock(struct cifsd_work *work)
 
 	req = (struct smb2_lock_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_lock_rsp *)RESPONSE_BUF(work);
-
-	if (le16_to_cpu(req->StructureSize) != 48) {
-		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-		goto out2;
-	}
 
 	cifsd_debug("Recieved lock request\n");
 	fp = get_fp(work, le64_to_cpu(req->VolatileFileId),
@@ -6319,12 +6239,6 @@ int smb2_ioctl(struct cifsd_work *work)
 					work->cur_local_fid);
 			id = work->cur_local_fid;
 		}
-	}
-
-	if (req->StructureSize != 57) {
-		cifsd_err("malformed packet\n");
-		work->send_no_response = 1;
-		return 0;
 	}
 
 	if (id == -1)
@@ -6910,12 +6824,6 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 		cifsd_work->next_smb2_rcv_hdr_off);
 	rsp = (struct smb2_notify_rsp *)((char *)rsp +
 		cifsd_work->next_smb2_rsp_hdr_off);
-	}
-
-	if (req->StructureSize != 32) {
-		cifsd_err("malformed packet\n");
-		cifsd_work->send_no_response = 1;
-		return 0;
 	}
 
 	if (cifsd_work->next_smb2_rcv_hdr_off &&
