@@ -81,9 +81,7 @@ struct cifsd_tcp_conn {
 	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-#endif
 	struct cifsd_secmech		secmech;
 	union {
 		/* pending trans request table */
