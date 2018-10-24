@@ -241,7 +241,7 @@ int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count)
 					smb2_protos[i].prot_id)
 				continue;
 
-			if (supported_protocol(i)) {
+			if (supported_protocol(smb2_protos[i].index)) {
 				cifsd_debug("selected %s dialect\n",
 					smb2_protos[i].name);
 				return smb2_protos[i].prot_id;
