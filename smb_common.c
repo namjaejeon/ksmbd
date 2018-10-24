@@ -180,7 +180,7 @@ static bool supported_protocol(int idx)
 }
 
 #ifdef CIFS_INSECURE_SERVER
-int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
+static int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 {
 	int i, smb1_index, cli_count, bcount;
 	char *dialects = NULL;
@@ -213,7 +213,7 @@ int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 	return CIFSD_BAD_PROT_ID;
 }
 #else
-int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
+static int cifsd_lookup_insecure_dialect(char *cli_dialects, __le16 byte_count)
 {
 	return CIFSD_BAD_PROT_ID;
 }
