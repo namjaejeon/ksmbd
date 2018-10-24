@@ -7,9 +7,7 @@
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
-#ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
-#endif
 #include "oplock.h"
 #include "cifsacl.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
