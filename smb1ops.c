@@ -72,7 +72,6 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_PROCESS_EXIT]		= { .proc = smb_process_exit, },
 };
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * init_smb1_server() - initialize a smb server connection with smb1
  *			command dispatcher
@@ -81,7 +80,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 int init_smb1_server(struct cifsd_tcp_conn *conn)
 {
 	if (!conn)
-		return;
+		return -EINVAL;
 
 	conn->vals = &smb1_server_values;
 	conn->ops = &smb1_server_ops;
@@ -89,4 +88,3 @@ int init_smb1_server(struct cifsd_tcp_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb1_server_cmds);
 	return 0;
 }
-#endif
