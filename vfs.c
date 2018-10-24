@@ -146,7 +146,6 @@ int cifsd_vfs_read(struct cifsd_work *work,
 	if (unlikely(count == 0))
 		return 0;
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
@@ -155,7 +154,6 @@ int cifsd_vfs_read(struct cifsd_work *work,
 			return -EACCES;
 		}
 	}
-#endif
 
 	if (fp->is_stream)
 		return cifsd_vfs_stream_read(fp, rbuf, pos, count);
@@ -268,7 +266,6 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 	mm_segment_t old_fs;
 #endif
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
 		   FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
@@ -278,7 +275,6 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 			goto out;
 		}
 	}
-#endif
 
 	filp = fp->filp;
 
@@ -1247,7 +1243,6 @@ unsigned short cifsd_vfs_logical_sector_size(struct inode *inode)
 	return ret_val;
 }
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 /*
  * cifsd_vfs_get_smb2_sector_size() - get fs sector sizes
  * @inode: inode
@@ -1278,12 +1273,6 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 			fs_ss->optimal_io_size = q->limits.io_opt;
 	}
 }
-#else
-void cifsd_vfs_get_smb2_sector_size(struct inode *inode,
-	struct cifsd_fs_sector_size *fs_ss)
-{
-}
-#endif
 
 /**
  * cifsd_vfs_dentry_open() - open a dentry and provide fid for it
