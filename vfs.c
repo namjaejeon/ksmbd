@@ -1167,8 +1167,7 @@ out:
 	return error;
 }
 
-int cifsd_vfs_readdir(struct file *file, filldir_t filler,
-			struct cifsd_readdir_data *rdata)
+int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata)
 {
 	return iterate_dir(file, &rdata->ctx);
 }
@@ -1387,7 +1386,7 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	r_data.used = 0;
 	r_data.full = 0;
 
-	err = cifsd_vfs_readdir(filp, cifsd_fill_dirent, &r_data);
+	err = cifsd_vfs_readdir(filp, &r_data);
 	if (r_data.dirent_count > 2) {
 		fput(filp);
 		path_put(&dir_path);
@@ -1480,7 +1479,6 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		readdir_data.used = 0;
 		readdir_data.full = 0;
 		ret = cifsd_vfs_readdir(dfilp,
-					cifsd_fill_dirent,
 					&readdir_data);
 		used_count = readdir_data.used;
 		if (ret || !used_count)

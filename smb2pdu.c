@@ -3350,7 +3350,6 @@ int smb2_query_dir(struct cifsd_work *work)
 			r_data.used = 0;
 			r_data.full = 0;
 			rc = cifsd_vfs_readdir(dir_fp->filp,
-					       cifsd_fill_dirent,
 					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
