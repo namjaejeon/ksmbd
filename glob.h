@@ -232,8 +232,6 @@ struct smb_version_values {
 struct cifsd_stats {
 	int open_files_count;
 	int request_served;
-	long int avg_req_duration;
-	long int max_timed_request;
 };
 
 enum asyncEnum {

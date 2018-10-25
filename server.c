@@ -132,13 +132,8 @@ static void handle_cifsd_work(struct work_struct *wk)
 	int rc;
 	bool conn_valid = false;
 	struct smb_version_cmds *cmds;
-	long int start_time = 0, end_time = 0, time_elapsed = 0;
 
 	cifsd_tcp_conn_lock(conn);
-
-	if (cifsd_debugging)
-		start_time = jiffies;
-
 	conn->stats.request_served++;
 
 	if (conn->ops->allocate_rsp_buf(work)) {
@@ -276,20 +271,6 @@ send:
 	cifsd_tcp_write(work);
 
 nosend:
-	if (cifsd_debugging) {
-		end_time = jiffies;
-
-		time_elapsed = end_time - start_time;
-		conn->stats.avg_req_duration =
-				(conn->stats.avg_req_duration *
-					conn->stats.request_served +
-					time_elapsed)/
-					conn->stats.request_served;
-
-		if (time_elapsed > conn->stats.max_timed_request)
-			conn->stats.max_timed_request = time_elapsed;
-	}
-
 	if (cifsd_tcp_exiting(work))
 		force_sig(SIGKILL, conn->handler);
 
