@@ -4638,8 +4638,6 @@ out:
  */
 int smb2_echo(struct cifsd_work *work)
 {
-	struct smb2_echo_req *req =
-		(struct smb2_echo_req *)REQUEST_BUF(work);
 	struct smb2_echo_rsp *rsp =
 		(struct smb2_echo_rsp *)RESPONSE_BUF(work);
 

@@ -270,7 +270,7 @@ unsigned int smb2_calc_size(void *buf)
 	int offset; /* the offset from the beginning of SMB to data area */
 	int data_length; /* the length of the variable length data area */
 	/* Structure Size has already been checked to make sure it is 64 */
-	int len = 4 + le16_to_cpu(hdr->StructureSize);
+	int len = le16_to_cpu(hdr->StructureSize);
 
 	/*
 	 * StructureSize2, ie length of fixed parameter area has already
@@ -289,14 +289,13 @@ unsigned int smb2_calc_size(void *buf)
 		 * Check to make sure that data area begins after fixed area,
 		 * Note that last byte of the fixed area is part of data area
 		 * for some commands, typically those with odd StructureSize,
-		 * so we must add one to the calculation (and 4 to account for
-		 * the size of the RFC1001 hdr.
+		 * so we must add one to the calculation.
 		 */
-		if (offset + 4 + 1 < len)
+		if (offset + 1 < len)
 			cifsd_debug("data area offset %d overlaps SMB2 header %d\n",
-					offset + 4 + 1, len);
+					offset + 1, len);
 		else
-			len = 4 + offset + data_length;
+			len = offset + data_length;
 	}
 calc_size_exit:
 	cifsd_debug("SMB2 len %d\n", len);
@@ -358,10 +357,10 @@ int smb2_check_message(struct cifsd_work *work)
 	}
 
 	clc_len = smb2_calc_size(hdr);
-	if (4 + len != clc_len) {
+	if (len != clc_len) {
 		__u64 mid = le64_to_cpu(hdr->MessageId);
 		/* server can return one byte more due to implied bcc[0] */
-		if (clc_len == 4 + len + 1)
+		if (clc_len == len + 1)
 			return 0;
 
 		/*
@@ -378,7 +377,7 @@ int smb2_check_message(struct cifsd_work *work)
 		 * continue since the frame is parseable.
 		 */
 		if (clc_len < len) {
-			cifsd_err(
+			cifsd_debug(
 				"srv rsp padded more than expected. Length %d not %d for cmd:%d mid:%llu\n",
 					len, clc_len, command, mid);
 			return 0;
