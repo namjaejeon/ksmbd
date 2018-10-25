@@ -1362,7 +1362,7 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	struct path dir_path;
 	struct file *filp;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
 		.dirent_count = 0
 	};
@@ -1387,7 +1387,7 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	r_data.used = 0;
 	r_data.full = 0;
 
-	err = cifsd_vfs_readdir(filp, smb_filldir, &r_data);
+	err = cifsd_vfs_readdir(filp, cifsd_fill_dirent, &r_data);
 	if (r_data.dirent_count > 2) {
 		fput(filp);
 		path_put(&dir_path);
@@ -1400,7 +1400,6 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	path_put(&dir_path);
 	return true;
 }
-
 
 /**
  * cifsd_vfs_kern_path() - lookup a file and get path info
@@ -1457,7 +1456,7 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 	int dirnamelen = strlen(dirname);
 	bool match_found = false;
 	struct cifsd_readdir_data readdir_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
@@ -1480,7 +1479,9 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 	while (!ret && !match_found) {
 		readdir_data.used = 0;
 		readdir_data.full = 0;
-		ret = cifsd_vfs_readdir(dfilp, smb_filldir, &readdir_data);
+		ret = cifsd_vfs_readdir(dfilp,
+					cifsd_fill_dirent,
+					&readdir_data);
 		used_count = readdir_data.used;
 		if (ret || !used_count)
 			break;

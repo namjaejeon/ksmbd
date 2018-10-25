@@ -4256,8 +4256,10 @@ static int query_path_info(struct cifsd_work *work)
 			base = name;
 		else
 			base += 1;
-		alt_name_info->FileNameLength = smb_get_shortname(conn,
-			base, alt_name_info->FileName);
+		alt_name_info->FileNameLength =
+				cifsd_extract_shortname(conn,
+						base,
+						alt_name_info->FileName);
 		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
 		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
 
@@ -5636,8 +5638,9 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = smb_get_shortname(conn,
-			d_info->name, fbdinfo->ShortName);
+		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+							d_info->name,
+							fbdinfo->ShortName);
 		fbdinfo->Reserved = 0;
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
@@ -5688,8 +5691,9 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->ShortNameLength = smb_get_shortname(conn,
-			d_info->name, fibdinfo->ShortName);
+		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+							d_info->name,
+							fibdinfo->ShortName);
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
@@ -5777,7 +5781,7 @@ static int find_first(struct cifsd_work *work)
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 	int header_size;
@@ -5843,9 +5847,12 @@ static int find_first(struct cifsd_work *work)
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
 	if (!*srch_ptr || !strcmp(srch_ptr, "*")) {
-		rc = smb_populate_dot_dotdot_entries(conn,
-			req_params->InformationLevel, dir_fp, &d_info,
-			srch_ptr, smb_populate_readdir_entry);
+		rc = cifsd_populate_dot_dotdot_entries(conn,
+						req_params->InformationLevel,
+						dir_fp,
+						&d_info,
+						srch_ptr,
+						smb_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -5855,8 +5862,9 @@ static int find_first(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       cifsd_fill_dirent,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
@@ -6021,7 +6029,7 @@ static int find_next(struct cifsd_work *work)
 	char *name = NULL;
 	char *pathname = NULL;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 	};
 	int header_size;
 
@@ -6080,8 +6088,9 @@ static int find_next(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       cifsd_fill_dirent,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;

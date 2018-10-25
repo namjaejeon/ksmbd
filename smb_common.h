@@ -47,10 +47,10 @@ struct dir_context;
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);
 
-int get_protocol_idx(char *str);
+int cifsd_lookup_protocol_idx(char *str);
 
-int check_message(struct cifsd_work *work);
-bool is_smb_request(struct cifsd_tcp_conn *conn);
+int cifsd_verify_smb_message(struct cifsd_work *work);
+bool cifsd_smb_request(struct cifsd_tcp_conn *conn);
 
 int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
 
@@ -60,16 +60,24 @@ int cifsd_init_smb_server(struct cifsd_work *work);
 bool cifsd_pdu_size_has_room(unsigned int pdu);
 
 struct cifsd_kstat;
-int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
-		int info_level, struct cifsd_file *dir,
-		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct cifsd_kstat *));
+int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+				      int info_level,
+				      struct cifsd_file *dir,
+				      struct cifsd_dir_info *d_info,
+				      char *search_pattern,
+				      int (*fn)(struct cifsd_tcp_conn *,
+						int,
+						struct cifsd_dir_info *,
+						struct cifsd_kstat *));
 
-int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
-		char *shortname);
+int cifsd_extract_shortname(struct cifsd_tcp_conn *conn,
+			    char *longname,
+			    char *shortname);
 
-int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type);
-
+int cifsd_fill_dirent(struct dir_context *ctx,
+		      const char *name,
+		      int namlen,
+		      loff_t offset,
+		      u64 ino,
+		      unsigned int d_type);
 #endif /* __SMB_COMMON_H__ */

@@ -213,9 +213,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		if (!is_smb_request(conn)) {
+		if (!cifsd_smb_request(conn))
 			break;
-		}
 
 		/*
 		 * We already read 4 bytes to find out PDU size, now

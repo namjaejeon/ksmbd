@@ -445,8 +445,6 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 /* @FIXME clean up this code */
 /* @FIXME clean up this code */
 
-bool is_smb_request(struct cifsd_tcp_conn *conn);
-
 /* cifsd misc functions */
 extern int switch_rsp_buf(struct cifsd_work *work);
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);

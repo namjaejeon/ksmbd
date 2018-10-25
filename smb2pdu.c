@@ -3069,8 +3069,9 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
-			&(fbdinfo->ShortName[0]));
+		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+						d_info->name,
+						&(fbdinfo->ShortName[0]));
 		fbdinfo->Reserved = 0;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
@@ -3153,9 +3154,9 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
-		fibdinfo->ShortNameLength =
-			smb_get_shortname(conn, d_info->name,
-					&(fibdinfo->ShortName[0]));
+		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+						d_info->name,
+						&(fibdinfo->ShortName[0]));
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
@@ -3205,7 +3206,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 	};
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
@@ -3333,9 +3334,12 @@ int smb2_query_dir(struct cifsd_work *work)
 		 * reserve dot and dotdot entries in head of buffer
 		 * in first response
 		 */
-		rc = smb_populate_dot_dotdot_entries(conn,
-			req->FileInformationClass, dir_fp, &d_info,
-			srch_ptr, smb2_populate_readdir_entry);
+		rc = cifsd_populate_dot_dotdot_entries(conn,
+						req->FileInformationClass,
+						dir_fp,
+						&d_info,
+						srch_ptr,
+						smb2_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -3345,8 +3349,9 @@ int smb2_query_dir(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       cifsd_fill_dirent,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
@@ -3905,8 +3910,9 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		filename = (char *)FP_FILENAME(fp);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
-		uni_filename_len = smb_get_shortname(conn, filename,
-				file_info->FileName);
+		uni_filename_len = cifsd_extract_shortname(conn,
+							filename,
+							file_info->FileName);
 		file_info->FileNameLength = cpu_to_le32(uni_filename_len);
 
 		rsp->OutputBufferLength =

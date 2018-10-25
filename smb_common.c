@@ -121,7 +121,7 @@ static int __lookup_proto_idx(char *str, struct smb_protocol *list, int offt)
 	return -1;
 }
 
-int get_protocol_idx(char *str)
+int cifsd_lookup_protocol_idx(char *str)
 {
 	int idx;
 
@@ -144,7 +144,7 @@ int get_protocol_idx(char *str)
  *
  * Return:      0 on success, otherwise 1
  */
-int check_message(struct cifsd_work *work)
+int cifsd_verify_smb_message(struct cifsd_work *work)
 {
 	struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
 
@@ -163,7 +163,7 @@ int check_message(struct cifsd_work *work)
  *
  * Return:      true on success, otherwise false
  */
-bool is_smb_request(struct cifsd_tcp_conn *conn)
+bool cifsd_smb_request(struct cifsd_tcp_conn *conn)
 {
 	int type = *(char *)conn->request_buf;
 
@@ -304,11 +304,15 @@ bool cifsd_pdu_size_has_room(unsigned int pdu)
 	return (pdu >= CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4);
 }
 
-int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
-		int info_level, struct cifsd_file *dir,
-		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct cifsd_kstat *))
+int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+				      int info_level,
+				      struct cifsd_file *dir,
+				      struct cifsd_dir_info *d_info,
+				      char *search_pattern,
+				      int (*fn)(struct cifsd_tcp_conn *,
+						int,
+						struct cifsd_dir_info *,
+						struct cifsd_kstat *))
 {
 	int i, rc = 0;
 
@@ -330,8 +334,7 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 			generic_fillattr(PARENT_INODE(dir), &kstat);
 			cifsd_kstat.file_attributes = ATTR_DIRECTORY;
 			cifsd_kstat.kstat = &kstat;
-			rc = populate_readdir_entry_fn(conn, info_level,
-				d_info, &cifsd_kstat);
+			rc = fn(conn, info_level, d_info, &cifsd_kstat);
 			if (rc)
 				break;
 			if (d_info->out_buf_len <= 0)
@@ -345,7 +348,7 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 }
 
 /**
- * smb_get_shortname() - get shortname from long filename
+ * cifsd_extract_shortname() - get shortname from long filename
  * @conn:	TCP server instance of connection
  * @longname:	source long filename
  * @shortname:	destination short filename
@@ -354,8 +357,9 @@ int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
  * TODO: Though this function comforms the restriction of 8.3 Filename spec,
  * but the result is different with Windows 7's one. need to check.
  */
-int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
-		char *shortname)
+int cifsd_extract_shortname(struct cifsd_tcp_conn *conn,
+			    char *longname,
+			    char *shortname)
 {
 	char *p, *sp;
 	char base[9], extension[4];
@@ -423,7 +427,7 @@ int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
 }
 
 /**
- * smb_filldir() - populates a dirent details in readdir
+ * cifsd_fill_dirent() - populates a dirent details in readdir
  * @ctx:	dir_context information
  * @name:	dirent name
  * @namelen:	dirent name length
@@ -433,8 +437,12 @@ int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
  *
  * Return:	0 on success, otherwise -EINVAL
  */
-int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type)
+int cifsd_fill_dirent(struct dir_context *ctx,
+		      const char *name,
+		      int namlen,
+		      loff_t offset,
+		      u64 ino,
+		      unsigned int d_type)
 {
 	struct cifsd_readdir_data *buf =
 		container_of(ctx, struct cifsd_readdir_data, ctx);

@@ -186,8 +186,7 @@ chained:
 	if (rc)
 		goto send;
 
-	/* check if the message is ok */
-	if (check_message(work)) {
+	if (cifsd_verify_smb_message(work)) {
 		cifsd_err("Malformed smb request\n");
 		goto nosend;
 	}
