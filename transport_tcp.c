@@ -481,13 +481,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	struct kvec iov[3];
 	int iov_idx = 0;
 
-	spin_lock(&conn->request_lock);
-	if (work->on_request_list && !work->multiRsp) {
-		list_del_init(&work->request_entry);
-		work->on_request_list = 0;
-	}
-	spin_unlock(&conn->request_lock);
-
+	cifsd_tcp_try_dequeue_request(work);
 	if (rsp_hdr == NULL) {
 		cifsd_err("NULL response header\n");
 		return -EINVAL;
@@ -714,6 +708,24 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 		work->on_request_list = 1;
 		spin_unlock(&conn->request_lock);
 	}
+}
+
+int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	int ret = 1;
+
+	if (!work->on_request_list)
+		return 0;
+
+	spin_lock(&conn->request_lock);
+	if (!work->multiRsp) {
+		list_del_init(&work->request_entry);
+		work->on_request_list = 0;
+		ret = 0;
+	}
+	spin_unlock(&conn->request_lock);
+	return ret;
 }
 
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
