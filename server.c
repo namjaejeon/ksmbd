@@ -271,13 +271,9 @@ send:
 	cifsd_tcp_write(work);
 
 nosend:
-	if (cifsd_tcp_exiting(work))
-		force_sig(SIGKILL, conn->handler);
-
 	cifsd_tcp_conn_unlock(conn);
 	/* Now can free cifsd work */
 	cifsd_free_work_struct(work);
-
 	/*
 	 * Decrement Ref count when all processing finished
 	 *  - in both success or failure cases
