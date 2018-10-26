@@ -215,7 +215,6 @@ int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 #else
 int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 {
-	cifsd_err("Unsupported SMB2.0 dialect requested\n");
 	return -ENOTSUPP;
 }
 #endif
