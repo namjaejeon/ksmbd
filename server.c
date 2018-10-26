@@ -166,16 +166,11 @@ andx_again:
 	if (ret < 0)
 		cifsd_err("Failed to process %u [%d]\n", command, ret);
 
-	if (conn->need_neg && (conn->dialect == CIFSD_SMB20_PROT_ID ||
-				conn->dialect == CIFSD_SMB21_PROT_ID ||
-				conn->dialect == CIFSD_SMB2X_PROT_ID ||
-				conn->dialect == CIFSD_SMB30_PROT_ID ||
-				conn->dialect == CIFSD_SMB302_PROT_ID ||
-				conn->dialect == CIFSD_SMB311_PROT_ID)) {
+	if (init_smb2_neg_rsp(work) == 0) {
 		cifsd_debug("Need to send the smb2 negotiate response\n");
-		init_smb2_neg_rsp(work);
 		return TCP_HANDLER_CONTINUE;
 	}
+
 	/* AndX commands - chained request can return positive values */
 	if (ret > 0) {
 		command = ret;

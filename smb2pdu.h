@@ -1361,22 +1361,21 @@ struct create_ea_buf_req {
 
 /* functions */
 
-int init_smb2_0_server(struct cifsd_tcp_conn *conn);
-void init_smb2_1_server(struct cifsd_tcp_conn *conn);
-void init_smb3_0_server(struct cifsd_tcp_conn *conn);
-void init_smb3_02_server(struct cifsd_tcp_conn *conn);
-int init_smb3_11_server(struct cifsd_tcp_conn *conn);
-int is_smb2_neg_cmd(struct cifsd_work *work);
-bool is_chained_smb2_message(struct cifsd_work *work);
-void init_smb2_neg_rsp(struct cifsd_work *work);
-int is_smb2_rsp(struct cifsd_work *work);
+extern int init_smb2_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb2_1_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_02_server(struct cifsd_tcp_conn *conn);
+extern int init_smb3_11_server(struct cifsd_tcp_conn *conn);
+
+extern int is_smb2_neg_cmd(struct cifsd_work *work);
+extern int is_smb2_rsp(struct cifsd_work *work);
 
 extern int get_smb2_cmd_val(struct cifsd_work *work);
 extern void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err);
 extern int init_smb2_rsp_hdr(struct cifsd_work *work);
 extern int smb2_allocate_rsp_buf(struct cifsd_work *work);
 extern bool is_chained_smb2_message(struct cifsd_work *work);
-extern void init_smb2_neg_rsp(struct cifsd_work *work);
+extern int init_smb2_neg_rsp(struct cifsd_work *work);
 extern void smb2_set_rsp_credits(struct cifsd_work *work);
 extern void smb2_set_err_rsp(struct cifsd_work *work);
 extern int smb2_check_user_session(struct cifsd_work *work);

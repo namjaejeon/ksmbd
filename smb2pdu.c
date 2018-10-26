@@ -266,12 +266,18 @@ void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
  * smb2 negotiate response is sent in reply of smb1 negotiate command for
  * dialect auto-negotiation.
  */
-void init_smb2_neg_rsp(struct cifsd_work *work)
+int init_smb2_neg_rsp(struct cifsd_work *work)
 {
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct timespec64 ts64;
+
+	if (!conn->need_neg)
+		return -EINVAL;
+	if (!(conn->dialect >= CIFSD_SMB20_PROT_ID &&
+		conn->dialect <= CIFSD_SMB311_PROT_ID))
+		return -EINVAL;
 
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 
@@ -324,6 +330,7 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 
 	cifsd_tcp_set_need_negotiate(work);
 	rsp->hdr.CreditRequest = cpu_to_le16(2);
+	return 0;
 }
 
 /**
