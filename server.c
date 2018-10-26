@@ -118,28 +118,16 @@ static inline int check_conn_state(struct cifsd_work *work)
 
 /* @FIXME what a mess... god help. */
 
-/**
- * handle_cifsd_work() - process pending smb work requests
- * @cifsd_work:	smb work containing request command buffer
- *
- * called by kworker threads to processing remaining smb work requests
- */
-static void handle_cifsd_work(struct work_struct *wk)
+static void __handle_cifsd_work(struct cifsd_work *work,
+				struct cifsd_tcp_conn *conn)
 {
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
 	unsigned int command = 0;
 	int rc;
 	bool conn_valid = false;
 	struct smb_version_cmds *cmds;
 
-	cifsd_tcp_conn_lock(conn);
-	conn->stats.request_served++;
-
-	if (conn->ops->allocate_rsp_buf(work)) {
-		rc = -ENOMEM;
-		goto nosend;
-	}
+	if (conn->ops->allocate_rsp_buf(work))
+		return;
 
 	if (conn->ops->is_transform_hdr &&
 		conn->ops->is_transform_hdr(REQUEST_BUF(work))) {
@@ -183,7 +171,7 @@ chained:
 
 	if (cifsd_verify_smb_message(work)) {
 		cifsd_err("Malformed smb request\n");
-		goto nosend;
+		return;
 	}
 
 	conn_valid = true;
@@ -240,7 +228,7 @@ again:
 			work->on_request_list = 0;
 		}
 		spin_unlock(&conn->request_lock);
-		goto nosend;
+		return;
 	}
 
 send:
@@ -269,15 +257,26 @@ send:
 		conn->ops->set_sign_rsp(work);
 
 	cifsd_tcp_write(work);
+}
 
-nosend:
+/**
+ * handle_cifsd_work() - process pending smb work requests
+ * @cifsd_work:	smb work containing request command buffer
+ *
+ * called by kworker threads to processing remaining smb work requests
+ */
+static void handle_cifsd_work(struct work_struct *wk)
+{
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
+
+	cifsd_tcp_conn_lock(conn);
+	conn->stats.request_served++;
+
+	__handle_cifsd_work(work, conn);
+
 	cifsd_tcp_conn_unlock(conn);
-	/* Now can free cifsd work */
 	cifsd_free_work_struct(work);
-	/*
-	 * Decrement Ref count when all processing finished
-	 *  - in both success or failure cases
-	 */
 	atomic_dec(&conn->r_count);
 }
 
