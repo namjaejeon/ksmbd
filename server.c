@@ -221,15 +221,8 @@ again:
 		cifsd_debug("error(%d) while processing cmd %u\n",
 							rc, command);
 
-	if (work->send_no_response) {
-		spin_lock(&conn->request_lock);
-		if (work->on_request_list) {
-			list_del_init(&work->request_entry);
-			work->on_request_list = 0;
-		}
-		spin_unlock(&conn->request_lock);
+	if (work->send_no_response)
 		return;
-	}
 
 send:
 	if (is_chained_smb2_message(work))
@@ -275,6 +268,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 
 	__handle_cifsd_work(work, conn);
 
+	cifsd_tcp_try_dequeue_request(work);
 	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(work);
 	atomic_dec(&conn->r_count);
