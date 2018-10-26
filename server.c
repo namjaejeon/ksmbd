@@ -190,8 +190,6 @@ again:
 		goto send;
 	}
 
-	mutex_unlock(&conn->srv_mutex);
-
 	if (work->sess && conn->ops->is_sign_req &&
 		conn->ops->is_sign_req(work, command)) {
 		rc = conn->ops->check_sign_req(work);
@@ -202,7 +200,6 @@ again:
 	}
 
 	rc = cmds->proc(work);
-	mutex_lock(&conn->srv_mutex);
 	if (conn->need_neg && (conn->dialect == CIFSD_SMB20_PROT_ID ||
 				conn->dialect == CIFSD_SMB21_PROT_ID ||
 				conn->dialect == CIFSD_SMB2X_PROT_ID ||
