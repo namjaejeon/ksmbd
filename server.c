@@ -118,13 +118,81 @@ static inline int check_conn_state(struct cifsd_work *work)
 
 /* @FIXME what a mess... god help. */
 
+#define TCP_HANDLER_CONTINUE	0
+#define TCP_HANDLER_ABORT	1
+
+static int __process_request(struct cifsd_work *work,
+			     struct cifsd_tcp_conn *conn,
+			     unsigned int *cmd)
+{
+	struct smb_version_cmds *cmds;
+	unsigned int command;
+	int ret;
+
+	if (check_conn_state(work))
+		return TCP_HANDLER_CONTINUE;
+
+	if (cifsd_verify_smb_message(work)) {
+		cifsd_err("Malformed smb request\n");
+		return TCP_HANDLER_ABORT;
+	}
+
+	command = conn->ops->get_cmd_val(work);
+	*cmd = command;
+
+andx_again:
+	if (command >= conn->max_cmds) {
+		conn->ops->set_rsp_status(work, NT_STATUS_INVALID_PARAMETER);
+		return TCP_HANDLER_CONTINUE;
+	}
+
+	cmds = &conn->cmds[command];
+	if (cmds->proc == NULL) {
+		cifsd_err("*** not implemented yet cmd = %x\n", command);
+		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
+		return TCP_HANDLER_CONTINUE;
+	}
+
+	if (work->sess && conn->ops->is_sign_req &&
+		conn->ops->is_sign_req(work, command)) {
+		ret = conn->ops->check_sign_req(work);
+		if (!ret) {
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
+			return TCP_HANDLER_CONTINUE;
+		}
+	}
+
+	ret = cmds->proc(work);
+	if (ret < 0)
+		cifsd_err("Failed to process %u [%d]\n", command, ret);
+
+	if (conn->need_neg && (conn->dialect == CIFSD_SMB20_PROT_ID ||
+				conn->dialect == CIFSD_SMB21_PROT_ID ||
+				conn->dialect == CIFSD_SMB2X_PROT_ID ||
+				conn->dialect == CIFSD_SMB30_PROT_ID ||
+				conn->dialect == CIFSD_SMB302_PROT_ID ||
+				conn->dialect == CIFSD_SMB311_PROT_ID)) {
+		cifsd_debug("Need to send the smb2 negotiate response\n");
+		init_smb2_neg_rsp(work);
+		return TCP_HANDLER_CONTINUE;
+	}
+	/* AndX commands - chained request can return positive values */
+	if (ret > 0) {
+		command = ret;
+		*cmd = command;
+		goto andx_again;
+	}
+
+	if (work->send_no_response)
+		return TCP_HANDLER_ABORT;
+	return TCP_HANDLER_CONTINUE;
+}
+
 static void __handle_cifsd_work(struct cifsd_work *work,
 				struct cifsd_tcp_conn *conn)
 {
 	unsigned int command = 0;
 	int rc;
-	bool conn_valid = false;
-	struct smb_version_cmds *cmds;
 
 	if (conn->ops->allocate_rsp_buf(work))
 		return;
@@ -164,68 +232,15 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 		}
 	}
 
-chained:
-	rc = check_conn_state(work);
-	if (rc)
-		goto send;
-
-	if (cifsd_verify_smb_message(work)) {
-		cifsd_err("Malformed smb request\n");
-		return;
-	}
-
-	conn_valid = true;
-	command = conn->ops->get_cmd_val(work);
-again:
-	if (command >= conn->max_cmds) {
-		conn->ops->set_rsp_status(work,
-					NT_STATUS_INVALID_PARAMETER);
-		goto send;
-	}
-
-	cmds = &conn->cmds[command];
-	if (cmds->proc == NULL) {
-		cifsd_err("*** not implemented yet cmd = %x\n", command);
-		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
-		goto send;
-	}
-
-	if (work->sess && conn->ops->is_sign_req &&
-		conn->ops->is_sign_req(work, command)) {
-		rc = conn->ops->check_sign_req(work);
-		if (!rc) {
-			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
-			goto send;
-		}
-	}
-
-	rc = cmds->proc(work);
-	if (conn->need_neg && (conn->dialect == CIFSD_SMB20_PROT_ID ||
-				conn->dialect == CIFSD_SMB21_PROT_ID ||
-				conn->dialect == CIFSD_SMB2X_PROT_ID ||
-				conn->dialect == CIFSD_SMB30_PROT_ID ||
-				conn->dialect == CIFSD_SMB302_PROT_ID ||
-				conn->dialect == CIFSD_SMB311_PROT_ID)) {
-		cifsd_debug("Need to send the smb2 negotiate response\n");
-		init_smb2_neg_rsp(work);
-		goto send;
-	}
-	/* AndX commands - chained request can return positive values */
-	if (rc > 0) {
-		command = rc;
-		goto again;
-	} else if (rc < 0)
-		cifsd_debug("error(%d) while processing cmd %u\n",
-							rc, command);
-
-	if (work->send_no_response)
-		return;
+	do {
+		rc = __process_request(work, conn, &command);
+		if (rc == TCP_HANDLER_ABORT)
+			return;
+	} while (is_chained_smb2_message(work));
 
 send:
-	if (is_chained_smb2_message(work))
-		goto chained;
-
-	/* call set_rsp_credits() function to set number of credits granted in
+	/*
+	 * Call set_rsp_credits() function to set number of credits granted in
 	 * hdr of smb2 response.
 	 */
 	if (is_smb2_rsp(work))
