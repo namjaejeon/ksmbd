@@ -7181,6 +7181,9 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	struct smb2_hdr *req = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
 
+	if (conn->dialect != CIFSD_SMB311_PROT_ID)
+		return;
+
 	if (work->next_smb2_rcv_hdr_off) {
 		req = (struct smb2_hdr *)((char *)req +
 				work->next_smb2_rcv_hdr_off);

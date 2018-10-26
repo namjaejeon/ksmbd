@@ -246,9 +246,7 @@ send:
 	if (is_smb2_rsp(work))
 		conn->ops->set_rsp_credits(work);
 
-	if (conn->dialect == CIFSD_SMB311_PROT_ID)
-		smb3_preauth_hash_rsp(work);
-
+	smb3_preauth_hash_rsp(work);
 	if (work->sess && work->sess->enc && work->encrypted &&
 		conn->ops->encrypt_resp) {
 		rc = conn->ops->encrypt_resp(work);
