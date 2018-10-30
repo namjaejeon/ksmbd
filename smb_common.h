@@ -81,5 +81,6 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 		      u64 ino,
 		      unsigned int d_type);
 
+void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
 #endif /* __SMB_COMMON_H__ */

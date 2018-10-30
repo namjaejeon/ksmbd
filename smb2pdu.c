@@ -967,11 +967,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		init_smb2_1_server(conn);
 		break;
 	case CIFSD_SMB20_PROT_ID:
-		if (init_smb2_0_server(conn) == -ENOTSUPP) {
-			rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
-			rc = -EINVAL;
-			goto err_out;
-		}
+		cifsd_init_smb2_server_common(conn);
 		break;
 	case CIFSD_SMB2X_PROT_ID:
 	case CIFSD_BAD_PROT_ID:
