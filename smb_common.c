@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2018 Namjae Jeon <namjae.jeon@protocolfreedom.org>
  */
 
 #include "smb_common.h"
