@@ -37,7 +37,6 @@ extern int cifsd_debugging;
 
 #define CIFSD_MAJOR_VERSION 1
 #define CIFSD_MINOR_VERSION 0
-#define STR_IPC	"IPC$"
 #define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
