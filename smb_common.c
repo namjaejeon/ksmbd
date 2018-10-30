@@ -76,7 +76,11 @@ static struct smb_protocol smb_protos[] = {
 
 inline int cifsd_min_protocol(void)
 {
-	return smb_protos[0].index;
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+	return CIFSD_SMB1_PROT;
+#else
+	return CIFSD_SMB2_PROT;
+#endif
 }
 
 inline int cifsd_max_protocol(void)
