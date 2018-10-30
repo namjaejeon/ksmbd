@@ -797,7 +797,7 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(cifsd_tcp_good(work));
 
-	if (conn->dialect == CIFSD_BAD_PROT_ID) {
+	if (conn->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
 		rc = -EINVAL;
 		goto err_out;

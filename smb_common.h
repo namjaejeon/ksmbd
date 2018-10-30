@@ -8,35 +8,35 @@
 
 #include <linux/kernel.h>
 
-#define CIFSD_SMB1_PROT		0
-#define CIFSD_SMB2_PROT		1
-#define CIFSD_SMB21_PROT		2
+#define SMB1_PROT		0
+#define SMB2_PROT		1
+#define SMB21_PROT		2
 /* multi-protocol negotiate request */
-#define CIFSD_SMB2X_PROT		3
-#define CIFSD_SMB30_PROT		4
-#define CIFSD_SMB302_PROT		5
-#define CIFSD_SMB311_PROT		6
-#define CIFSD_BAD_PROT		0xFFFF
+#define SMB2X_PROT		3
+#define SMB30_PROT		4
+#define SMB302_PROT		5
+#define SMB311_PROT		6
+#define BAD_PROT		0xFFFF
 
-#define CIFSD_SMB1_VERSION_STRING	"1.0"
-#define CIFSD_SMB20_VERSION_STRING	"2.0"
-#define CIFSD_SMB21_VERSION_STRING	"2.1"
-#define CIFSD_SMB30_VERSION_STRING	"3.0"
-#define CIFSD_SMB302_VERSION_STRING	"3.02"
-#define CIFSD_SMB311_VERSION_STRING	"3.1.1"
+#define SMB1_VERSION_STRING	"1.0"
+#define SMB20_VERSION_STRING	"2.0"
+#define SMB21_VERSION_STRING	"2.1"
+#define SMB30_VERSION_STRING	"3.0"
+#define SMB302_VERSION_STRING	"3.02"
+#define SMB311_VERSION_STRING	"3.1.1"
 
 /* Dialects */
-#define CIFSD_SMB10_PROT_ID		0x00
-#define CIFSD_SMB20_PROT_ID		0x0202
-#define CIFSD_SMB21_PROT_ID		0x0210
+#define SMB10_PROT_ID		0x00
+#define SMB20_PROT_ID		0x0202
+#define SMB21_PROT_ID		0x0210
 /* multi-protocol negotiate request */
-#define CIFSD_SMB2X_PROT_ID		0x02FF
-#define CIFSD_SMB30_PROT_ID		0x0300
-#define CIFSD_SMB302_PROT_ID		0x0302
-#define CIFSD_SMB311_PROT_ID		0x0311
-#define CIFSD_BAD_PROT_ID		0xFFFF
+#define SMB2X_PROT_ID		0x02FF
+#define SMB30_PROT_ID		0x0300
+#define SMB302_PROT_ID		0x0302
+#define SMB311_PROT_ID		0x0311
+#define BAD_PROT_ID		0xFFFF
 
-#define IS_SMB2(x) ((x)->vals->protocol_id != CIFSD_SMB10_PROT_ID)
+#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
 
 struct cifsd_work;
 struct cifsd_tcp_conn;

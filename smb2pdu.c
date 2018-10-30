@@ -275,8 +275,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 
 	if (!conn->need_neg)
 		return -EINVAL;
-	if (!(conn->dialect >= CIFSD_SMB20_PROT_ID &&
-		conn->dialect <= CIFSD_SMB311_PROT_ID))
+	if (!(conn->dialect >= SMB20_PROT_ID &&
+		conn->dialect <= SMB311_PROT_ID))
 		return -EINVAL;
 
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
@@ -925,7 +925,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 
 	conn->cli_cap = req->Capabilities;
 	switch (conn->dialect) {
-	case CIFSD_SMB311_PROT_ID:
+	case SMB311_PROT_ID:
 		conn->preauth_info =
 			kzalloc(sizeof(struct preauth_integrity_info),
 			GFP_KERNEL);
@@ -954,20 +954,20 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 		assemble_neg_contexts(conn, rsp);
 		break;
-	case CIFSD_SMB302_PROT_ID:
+	case SMB302_PROT_ID:
 		init_smb3_02_server(conn);
 		break;
-	case CIFSD_SMB30_PROT_ID:
+	case SMB30_PROT_ID:
 		init_smb3_0_server(conn);
 		break;
-	case CIFSD_SMB21_PROT_ID:
+	case SMB21_PROT_ID:
 		init_smb2_1_server(conn);
 		break;
-	case CIFSD_SMB20_PROT_ID:
+	case SMB20_PROT_ID:
 		cifsd_init_smb2_server_common(conn);
 		break;
-	case CIFSD_SMB2X_PROT_ID:
-	case CIFSD_BAD_PROT_ID:
+	case SMB2X_PROT_ID:
+	case BAD_PROT_ID:
 	default:
 		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
@@ -981,7 +981,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
 	limit = SMBMaxBufSize;
 
-	if (conn->dialect > CIFSD_SMB20_PROT_ID) {
+	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
 		/* With LargeMTU above SMB2.0, default message limit is 1MB */
@@ -1171,7 +1171,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			if (conn->dialect >= CIFSD_SMB311_PROT_ID) {
+			if (conn->dialect >= SMB311_PROT_ID) {
 				p_sess = get_preauth_session(conn,
 					le64_to_cpu(req->hdr.SessionId));
 				if (!p_sess) {
@@ -1223,7 +1223,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
 	}
 
-	if (conn->dialect == CIFSD_SMB311_PROT_ID) {
+	if (conn->dialect == SMB311_PROT_ID) {
 		__u8 *preauth_hashvalue;
 
 		if (p_sess)
@@ -1318,7 +1318,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
 
-		if (conn->dialect >= CIFSD_SMB30_PROT_ID) {
+		if (conn->dialect >= SMB30_PROT_ID) {
 			chann = lookup_chann_list(sess);
 			if (!chann) {
 				chann = kmalloc(sizeof(struct channel),
@@ -1399,7 +1399,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			if (!sess->sign && ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || server_conf.enforced_signing) ||
-				(conn->dialect >= CIFSD_SMB30_PROT_ID))) {
+				(conn->dialect >= SMB30_PROT_ID))) {
 				if (conn->ops->generate_signingkey) {
 					rc = conn->ops->generate_signingkey(
 						sess, binding_flags,
@@ -1435,7 +1435,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		}
 
-		if (conn->dialect > CIFSD_SMB20_PROT_ID)
+		if (conn->dialect > SMB20_PROT_ID)
 			if (cifsd_tcp_for_each_conn(match_conn_by_dialect,
 				conn)) {
 				cifsd_err("fail to verify the dialect\n");
@@ -6424,7 +6424,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
 		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
 					le16_to_cpu(neg_req->DialectCount));
-		if (ret == CIFSD_BAD_PROT_ID || ret != conn->dialect)
+		if (ret == BAD_PROT_ID || ret != conn->dialect)
 			goto out;
 
 		if (strncmp(neg_req->Guid, conn->ClientGUID,
@@ -7181,7 +7181,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	struct smb2_hdr *req = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
 
-	if (conn->dialect != CIFSD_SMB311_PROT_ID)
+	if (conn->dialect != SMB311_PROT_ID)
 		return;
 
 	if (work->next_smb2_rcv_hdr_off) {
@@ -7200,7 +7200,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 		__u8 *hash_value;
 
 		if (multi_channel_enable &&
-				conn->dialect >= CIFSD_SMB311_PROT_ID &&
+				conn->dialect >= SMB311_PROT_ID &&
 				req->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
 			struct preauth_session *preauth_sess;
 

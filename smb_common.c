@@ -37,56 +37,56 @@ struct smb_protocol {
 static struct smb_protocol smb_protos[] = {
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 	{
-		CIFSD_SMB1_PROT,
+		SMB1_PROT,
 		"\2NT LM 0.12",
 		"NT1",
-		CIFSD_SMB10_PROT_ID
+		SMB10_PROT_ID
 	},
 #endif
 	{
-		CIFSD_SMB311_PROT,
+		SMB311_PROT,
 		"\2SMB 3.1.1",
 		"SMB3_11",
-		CIFSD_SMB311_PROT_ID
+		SMB311_PROT_ID
 	},
 	{
-		CIFSD_SMB2_PROT,
+		SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
-		CIFSD_SMB20_PROT_ID
+		SMB20_PROT_ID
 	},
 	{
-		CIFSD_SMB21_PROT,
+		SMB21_PROT,
 		"\2SMB 2.1",
 		"SMB2_10",
-		CIFSD_SMB21_PROT_ID
+		SMB21_PROT_ID
 	},
 	{
-		CIFSD_SMB30_PROT,
+		SMB30_PROT,
 		"\2SMB 3.0",
 		"SMB3_00",
-		CIFSD_SMB30_PROT_ID
+		SMB30_PROT_ID
 	},
 	{
-		CIFSD_SMB302_PROT,
+		SMB302_PROT,
 		"\2SMB 3.02",
 		"SMB3_02",
-		CIFSD_SMB302_PROT_ID
+		SMB302_PROT_ID
 	},
 };
 
 inline int cifsd_min_protocol(void)
 {
 #ifdef CONFIG_CIFS_INSECURE_SERVER
-	return CIFSD_SMB1_PROT;
+	return SMB1_PROT;
 #else
-	return CIFSD_SMB2_PROT;
+	return SMB2_PROT;
 #endif
 }
 
 inline int cifsd_max_protocol(void)
 {
-	return CIFSD_SMB311_PROT;
+	return SMB311_PROT;
 }
 
 int cifsd_lookup_protocol_idx(char *str)
@@ -187,7 +187,7 @@ static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 			prot = lower_dialect(cli_dialects, prot);
 		}
 	}
-	return CIFSD_BAD_PROT_ID;
+	return BAD_PROT_ID;
 }
 
 int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
@@ -212,7 +212,7 @@ int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 		}
 	}
 
-	return CIFSD_BAD_PROT_ID;
+	return BAD_PROT_ID;
 }
 
 int cifsd_negotiate_smb_dialect(void *buf)
@@ -237,7 +237,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 					le16_to_cpu(req->ByteCount));
 	}
 
-	return CIFSD_BAD_PROT_ID;
+	return BAD_PROT_ID;
 }
 
 void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn)
@@ -437,8 +437,8 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 
 static int __smb2_negotiate(struct cifsd_tcp_conn *conn)
 {
-	return (conn->dialect >= CIFSD_SMB20_PROT_ID &&
-			conn->dialect <= CIFSD_SMB311_PROT_ID);
+	return (conn->dialect >= SMB20_PROT_ID &&
+			conn->dialect <= SMB311_PROT_ID);
 }
 
 #ifndef CONFIG_CIFS_INSECURE_SERVER
