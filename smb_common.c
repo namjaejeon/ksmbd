@@ -460,9 +460,17 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 
 	if (command == SMB2_NEGOTIATE_HE) {
+		struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
+
+		if (smb2_hdr->ProtocolId != SMB2_PROTO_NUMBER) {
+			cifsd_debug("Downgrade to SMB1 negotiation\n");
+			command = SMB_COM_NEGOTIATE;
+		}
+	}
+
+	if (command == SMB2_NEGOTIATE_HE) {
 		ret = smb2_handle_negotiate(work);
 		init_smb2_neg_rsp(work);
-		cifsd_debug("Need to send the smb2 negotiate response\n");
 		return ret;
 	}
 
@@ -471,7 +479,7 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
 			conn->need_neg = true;
 			__init_smb2_server(conn);
 			init_smb2_neg_rsp(work);
-			cifsd_debug("Need to send the smb2 negotiate response\n");
+			cifsd_debug("Upgrade to SMB2 negotiation\n");
 			return 0;
 		}
 		return smb_handle_negotiate(work);
