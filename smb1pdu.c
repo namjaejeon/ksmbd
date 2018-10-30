@@ -797,19 +797,11 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(cifsd_tcp_good(work));
 
-	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));
-	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 	if (conn->dialect == CIFSD_BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
 		rc = -EINVAL;
 		goto err_out;
-	} else if (conn->dialect == CIFSD_SMB20_PROT_ID ||
-			conn->dialect == CIFSD_SMB21_PROT_ID ||
-			conn->dialect == CIFSD_SMB2X_PROT_ID ||
-			conn->dialect == CIFSD_SMB30_PROT_ID ||
-			conn->dialect == CIFSD_SMB302_PROT_ID ||
-			conn->dialect == CIFSD_SMB311_PROT_ID)
-		return conn->dialect;
+	}
 
 	conn->connection_type = 0;
 
