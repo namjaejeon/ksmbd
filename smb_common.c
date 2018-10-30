@@ -204,7 +204,7 @@ static int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 					dialects);
 			if (!strncmp(dialects, smb1_protos[i].name,
 						cli_count)) {
-				if (supported_protocol(i)) {
+				if (supported_protocol(smb1_protos[i].index)) {
 					cifsd_debug("selected %s dialect\n",
 							smb1_protos[i].name);
 					if (i == CIFSD_SMB1_PROT)
