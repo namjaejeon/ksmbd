@@ -158,13 +158,16 @@ static bool supported_protocol(int idx)
 
 static char *lower_dialect(char *head, char *tail)
 {
+	if (tail == head)
+		return NULL;
+
 	tail--;
 	while (tail > head) {
 		tail--;
 		if ((char)(*tail) == '\0')
 			return tail + 1;
 	}
-	return NULL;
+	return head;
 }
 
 static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
