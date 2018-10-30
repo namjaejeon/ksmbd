@@ -478,15 +478,15 @@ int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
 }
 
 /**
- * cifsd_gen_ntlmssp_challenge_blob() - helper function to construct
+ * cifsd_build_ntlmssp_challenge_blob() - helper function to construct
  * 	challenge blob
  * @chgblob:	challenge blob source pointer to initialize
  * @rsp:	response header pointer to be updated
  * @sess:	session of connection
  *
  */
-unsigned int cifsd_gen_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-					      struct cifsd_session *sess)
+unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+						struct cifsd_session *sess)
 {
 	TargetInfo *tinfo;
 	wchar_t *name;

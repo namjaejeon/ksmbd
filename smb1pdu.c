@@ -1034,7 +1034,7 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
 					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
@@ -1058,7 +1058,7 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
 					chgblob,
 					sess);
 			if (neg_blob_len < 0) {

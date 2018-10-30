@@ -1274,7 +1274,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
 					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
@@ -1299,7 +1299,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = cifsd_gen_ntlmssp_challenge_blob(
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
 					chgblob,
 					sess);
 			if (neg_blob_len < 0) {

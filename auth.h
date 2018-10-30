@@ -36,9 +36,8 @@ int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
 				  int blob_len,
 				  struct cifsd_session *sess);
 
-unsigned int
-cifsd_gen_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-				 struct cifsd_session *sess);
+unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
+						struct cifsd_session *sess);
 
 int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 			struct kvec *iov,
