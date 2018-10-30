@@ -49,16 +49,16 @@ static struct smb_protocol smb_protos[] = {
 		CIFSD_SMB311_PROT_ID
 	},
 	{
-		CIFSD_SMB302_PROT,
-		"\2SMB 3.02",
-		"SMB3_02",
-		CIFSD_SMB302_PROT_ID
-	},
-	{
 		CIFSD_SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
 		CIFSD_SMB20_PROT_ID
+	},
+	{
+		CIFSD_SMB21_PROT,
+		"\2SMB 2.1",
+		"SMB2_10",
+		CIFSD_SMB21_PROT_ID
 	},
 	{
 		CIFSD_SMB30_PROT,
@@ -67,10 +67,10 @@ static struct smb_protocol smb_protos[] = {
 		CIFSD_SMB30_PROT_ID
 	},
 	{
-		CIFSD_SMB21_PROT,
-		"\2SMB 2.1",
-		"SMB2_10",
-		CIFSD_SMB21_PROT_ID
+		CIFSD_SMB302_PROT,
+		"\2SMB 3.02",
+		"SMB3_02",
+		CIFSD_SMB302_PROT_ID
 	},
 };
 
