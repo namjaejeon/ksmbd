@@ -1935,16 +1935,7 @@ extern int smb1_check_sign_req(struct cifsd_work *work);
 extern void smb1_set_sign_rsp(struct cifsd_work *work);
 extern int smb_check_user_session(struct cifsd_work *work);
 extern int smb_get_cifsd_tcon(struct cifsd_work *work);
-
-/* smb1 misc functions */
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 extern int smb1_check_message(struct cifsd_work *work);
-#else
-static inline int smb1_check_message(struct cifsd_work *work)
-{
-	return -EINVAL;
-}
-#endif
 
 /* smb1 command handlers */
 extern int smb_rename(struct cifsd_work *work);
