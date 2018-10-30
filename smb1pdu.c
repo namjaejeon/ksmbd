@@ -4465,8 +4465,7 @@ static int query_fs_info(struct cifsd_work *work)
 		return -ENOENT;
 	share = tree_conn->share_conf;
 
-	/* share path NULL represents IPC$ share */
-	if (!share->path)
+	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE))
 		return -ENOENT;
 
 	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
