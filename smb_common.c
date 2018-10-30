@@ -55,12 +55,6 @@ static struct smb_protocol smb_protos[] = {
 		CIFSD_SMB21_PROT_ID
 	},
 	{
-		CIFSD_SMB2X_PROT,
-		"\2SMB 2.???",
-		"SMB2_22",
-		CIFSD_SMB2X_PROT_ID
-	},
-	{
 		CIFSD_SMB30_PROT,
 		"\2SMB 3.0",
 		"SMB3_00",
