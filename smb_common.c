@@ -235,25 +235,31 @@ int cifsd_negotiate_smb_dialect(void *buf)
 	return CIFSD_BAD_PROT_ID;
 }
 
+static void __init_smb2_server(struct cifsd_tcp_conn *conn)
+{
+	if (init_smb2_0_server(conn) == -ENOTSUPP)
+		init_smb2_1_server(conn);
+}
+
 int cifsd_init_smb_server(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
+	void *buf = REQUEST_BUF(work);
+	int proto;
 
 	if (!conn->need_neg)
 		return 0;
 
-	if (is_smb2_neg_cmd(work)) {
-		if (init_smb2_0_server(conn) == -ENOTSUPP)
-			init_smb2_1_server(conn);
-		return 0;
+	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+	if (proto == SMB1_PROTO_NUMBER) {
+		if (init_smb1_server(conn) == -ENOTSUPP)
+			__init_smb2_server(conn);
+	} else {
+		__init_smb2_server(conn);
 	}
-
-	if (init_smb1_server(conn) == -ENOTSUPP)
-		return -EINVAL;
 
 	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
 		conn->need_neg = false;
-
 	return 0;
 }
 
