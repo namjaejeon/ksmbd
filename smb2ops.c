@@ -174,7 +174,7 @@ struct smb_version_ops smb3_11_server_ops = {
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
-	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate, },
+	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate_request, },
 	[SMB2_SESSION_SETUP_HE] =	{ .proc = smb2_sess_setup, },
 	[SMB2_TREE_CONNECT_HE]  =	{ .proc = smb2_tree_connect,},
 	[SMB2_TREE_DISCONNECT_HE]  =	{ .proc = smb2_tree_disconnect,},

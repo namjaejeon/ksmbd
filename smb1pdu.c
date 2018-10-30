@@ -780,12 +780,12 @@ out:
 }
 
 /**
- * smb_negotiate() - negotiate request handler
+ * smb_handle_negotiate() - negotiate request handler
  * @work:	smb work containing negotiate request buffer
  *
  * Return:      0 on success, otherwise error
  */
-int smb_negotiate(struct cifsd_work *work)
+int smb_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);

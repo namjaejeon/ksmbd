@@ -7,6 +7,7 @@
 #include "glob.h"
 #include "nterr.h"
 #include "smb1pdu.h"
+#include "smb_common.h"
 #include "mgmt/user_session.h"
 
 /**
@@ -47,3 +48,7 @@ int smb1_check_message(struct cifsd_work *work)
 	return 0;
 }
 
+int smb_negotiate_request(struct cifsd_work *work)
+{
+	return cifsd_smb_negotiate_common(work, SMB_COM_NEGOTIATE);
+}

@@ -429,3 +429,50 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 
 	return 0;
 }
+
+static int __smb2_negotiate(struct cifsd_tcp_conn *conn)
+{
+	return (conn->dialect >= CIFSD_SMB20_PROT_ID &&
+			conn->dialect <= CIFSD_SMB311_PROT_ID);
+}
+
+#ifndef CONFIG_CIFS_INSECURE_SERVER
+int smb_handle_negotiate(struct cifsd_work *work)
+{
+	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
+
+	cifsd_err("Unsupported SMB protocol\n");
+	neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
+	return -EINVAL;
+}
+#endif
+
+int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	int ret;
+
+	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));
+	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
+
+	if (command == SMB2_NEGOTIATE_HE) {
+		ret = smb2_handle_negotiate(work);
+		init_smb2_neg_rsp(work);
+		cifsd_debug("Need to send the smb2 negotiate response\n");
+		return ret;
+	}
+
+	if (command == SMB_COM_NEGOTIATE) {
+		if (__smb2_negotiate(conn)) {
+			conn->need_neg = true;
+			__init_smb2_server(conn);
+			init_smb2_neg_rsp(work);
+			cifsd_debug("Need to send the smb2 negotiate response\n");
+			return 0;
+		}
+		return smb_handle_negotiate(work);
+	}
+
+	cifsd_err("Unknown SMB negotiation command: %u\n", command);
+	return -EINVAL;
+}

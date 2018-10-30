@@ -60,7 +60,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_TRANSACTION2]		= { .proc = smb_trans2, },
 	[SMB_COM_FIND_CLOSE2]		= { .proc = smb_closedir, },
 	[SMB_COM_TREE_DISCONNECT]	= { .proc = smb_tree_disconnect, },
-	[SMB_COM_NEGOTIATE]		= { .proc = smb_negotiate, },
+	[SMB_COM_NEGOTIATE]		= { .proc = smb_negotiate_request, },
 	[SMB_COM_SESSION_SETUP_ANDX]	= { .proc = smb_session_setup_andx, },
 	[SMB_COM_LOGOFF_ANDX]           = { .proc = smb_session_disconnect, },
 	[SMB_COM_TREE_CONNECT_ANDX]	= { .proc = smb_tree_connect_andx, },

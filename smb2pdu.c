@@ -890,12 +890,12 @@ deassemble_neg_contexts(struct cifsd_tcp_conn *conn,
 }
 
 /**
- * smb2_negotiate() - handler for smb2 negotiate command
+ * smb2_handle_negotiate() - handler for smb2 negotiate command
  * @work:	smb work containing smb request buffer
  *
  * Return:      0
  */
-int smb2_negotiate(struct cifsd_work *work)
+int smb2_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_negotiate_req *req;

@@ -1949,7 +1949,8 @@ static inline int smb1_check_message(struct cifsd_work *work)
 
 /* smb1 command handlers */
 extern int smb_rename(struct cifsd_work *work);
-extern int smb_negotiate(struct cifsd_work *work);
+extern int smb_negotiate_request(struct cifsd_work *work);
+extern int smb_handle_negotiate(struct cifsd_work *work);
 extern int smb_session_setup_andx(struct cifsd_work *work);
 extern int smb_tree_connect_andx(struct cifsd_work *work);
 extern int smb_trans2(struct cifsd_work *work);
