@@ -165,12 +165,6 @@ andx_again:
 	ret = cmds->proc(work);
 	if (ret < 0)
 		cifsd_err("Failed to process %u [%d]\n", command, ret);
-
-	if (init_smb2_neg_rsp(work) == 0) {
-		cifsd_debug("Need to send the smb2 negotiate response\n");
-		return TCP_HANDLER_CONTINUE;
-	}
-
 	/* AndX commands - chained request can return positive values */
 	if (ret > 0) {
 		command = ret;
