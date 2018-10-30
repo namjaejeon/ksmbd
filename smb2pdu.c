@@ -6429,7 +6429,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		int ret;
 
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
-		ret = cifsd_lookup_smb2_dialect(neg_req->Dialects,
+		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
 					le16_to_cpu(neg_req->DialectCount));
 		if (ret == CIFSD_BAD_PROT_ID || ret != conn->dialect)
 			goto out;

@@ -52,7 +52,7 @@ int cifsd_lookup_protocol_idx(char *str);
 int cifsd_verify_smb_message(struct cifsd_work *work);
 bool cifsd_smb_request(struct cifsd_tcp_conn *conn);
 
-int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count);
+int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count);
 
 int cifsd_negotiate_smb_dialect(void *buf);
 int cifsd_init_smb_server(struct cifsd_work *work);

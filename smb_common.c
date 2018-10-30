@@ -162,7 +162,7 @@ static char *lower_dialect(char *head, char *tail)
 	return NULL;
 }
 
-static int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
+static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 {
 	int i, bcount = le16_to_cpu(byte_count);
 	char *prot = NULL;
@@ -185,7 +185,7 @@ static int cifsd_lookup_smb1_dialect(char *cli_dialects, __le16 byte_count)
 	return CIFSD_BAD_PROT_ID;
 }
 
-int cifsd_lookup_smb2_dialect(__le16 *cli_dialects, __le16 dialects_count)
+int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 {
 	int i;
 	int count;
@@ -219,7 +219,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 		struct smb2_negotiate_req *req;
 
 		req = (struct smb2_negotiate_req *)buf;
-		return cifsd_lookup_smb2_dialect(req->Dialects,
+		return cifsd_lookup_dialect_by_id(req->Dialects,
 					le16_to_cpu(req->DialectCount));
 	}
 
@@ -228,7 +228,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 		NEGOTIATE_REQ *req;
 
 		req = (NEGOTIATE_REQ *)buf;
-		return cifsd_lookup_smb1_dialect(req->DialectsArray,
+		return cifsd_lookup_dialect_by_name(req->DialectsArray,
 					le16_to_cpu(req->ByteCount));
 	}
 
