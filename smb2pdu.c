@@ -923,9 +923,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));
-	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
-
 	conn->cli_cap = req->Capabilities;
 	switch (conn->dialect) {
 	case CIFSD_SMB311_PROT_ID:
