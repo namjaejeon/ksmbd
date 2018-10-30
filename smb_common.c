@@ -41,24 +41,12 @@ static struct smb_protocol smb_protos[] = {
 		"NT1",
 		CIFSD_SMB10_PROT_ID
 	},
-	{
-		CIFSD_SMB2_PROT,
-		"\2SMB 2.002",
-		"SMB2_02",
-		CIFSD_SMB20_PROT_ID
-	},
 #endif
 	{
-		CIFSD_SMB21_PROT,
-		"\2SMB 2.1",
-		"SMB2_10",
-		CIFSD_SMB21_PROT_ID
-	},
-	{
-		CIFSD_SMB30_PROT,
-		"\2SMB 3.0",
-		"SMB3_00",
-		CIFSD_SMB30_PROT_ID
+		CIFSD_SMB311_PROT,
+		"\2SMB 3.1.1",
+		"SMB3_11",
+		CIFSD_SMB311_PROT_ID
 	},
 	{
 		CIFSD_SMB302_PROT,
@@ -67,10 +55,22 @@ static struct smb_protocol smb_protos[] = {
 		CIFSD_SMB302_PROT_ID
 	},
 	{
-		CIFSD_SMB311_PROT,
-		"\2SMB 3.1.1",
-		"SMB3_11",
-		CIFSD_SMB311_PROT_ID
+		CIFSD_SMB2_PROT,
+		"\2SMB 2.002",
+		"SMB2_02",
+		CIFSD_SMB20_PROT_ID
+	},
+	{
+		CIFSD_SMB30_PROT,
+		"\2SMB 3.0",
+		"SMB3_00",
+		CIFSD_SMB30_PROT_ID
+	},
+	{
+		CIFSD_SMB21_PROT,
+		"\2SMB 2.1",
+		"SMB2_10",
+		CIFSD_SMB21_PROT_ID
 	},
 };
 
@@ -81,7 +81,7 @@ inline int cifsd_min_protocol(void)
 
 inline int cifsd_max_protocol(void)
 {
-	return smb_protos[ARRAY_SIZE(smb_protos) - 1].index;
+	return CIFSD_SMB311_PROT;
 }
 
 int cifsd_lookup_protocol_idx(char *str)
