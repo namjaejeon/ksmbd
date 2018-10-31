@@ -84,7 +84,9 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-int cifsd_gen_sess_key(struct cifsd_session *sess, char *hash, char *hmac)
+static int cifsd_gen_sess_key(struct cifsd_session *sess,
+			      char *hash,
+			      char *hmac)
 {
 	int rc;
 

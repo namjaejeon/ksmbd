@@ -16,10 +16,6 @@ struct cifsd_tcp_conn;
 
 void cifsd_copy_gss_neg_header(void *buf);
 
-int cifsd_gen_sess_key(struct cifsd_session *sess,
-		       char *hash,
-		       char *hmac);
-
 int cifsd_auth_ntlm(struct cifsd_session *sess,
 		    char *pw_buf);
 
