@@ -328,6 +328,7 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * smb_check_attrs() - sanitize inode attributes
  * @inode:	inode
@@ -452,6 +453,15 @@ out:
 		path_put(&path);
 	return err;
 }
+#else
+void smb_check_attrs(struct inode *inode, struct iattr *attrs);
+
+int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
+		      uint64_t fid, struct iattr *attrs)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 /**
  * cifsd_vfs_getattr() - vfs helper for smb getattr
