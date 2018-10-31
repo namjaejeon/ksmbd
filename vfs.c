@@ -516,8 +516,41 @@ int cifsd_vfs_symlink(const char *name, const char *symname)
 
 	return err;
 }
+
+/**
+ * cifsd_vfs_readlink() - vfs helper for reading value of symlink
+ * @path:	path of symlink
+ * @buf:	destination buffer for symlink value
+ * @lenp:	destination buffer length
+ *
+ * Return:	symlink value length on success, otherwise error
+ */
+int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
+{
+	struct inode *inode;
+	mm_segment_t old_fs;
+	int err;
+
+	if (!path)
+		return -ENOENT;
+
+	inode = path->dentry->d_inode;
+	if (!S_ISLNK(inode->i_mode))
+		return -EINVAL;
+
+	old_fs = get_fs();
+	set_fs(KERNEL_DS);
+	err = inode->i_op->readlink(path->dentry, (char __user *)buf, lenp);
+	set_fs(old_fs);
+	if (err < 0)
+		cifsd_err("readlink failed, err = %d\n", err);
+
+	return err;
+}
 #else
-void smb_check_attrs(struct inode *inode, struct iattr *attrs);
+void smb_check_attrs(struct inode *inode, struct iattr *attrs)
+{
+}
 
 int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		      uint64_t fid, struct iattr *attrs)
@@ -532,6 +565,11 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 }
 
 int cifsd_vfs_symlink(const char *name, const char *symname)
+{
+	return -ENOTSUPP;
+}
+
+int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	return -ENOTSUPP;
 }
@@ -686,37 +724,6 @@ out2:
 	path_put(&oldpath);
 
 out1:
-	return err;
-}
-
-/**
- * cifsd_vfs_readlink() - vfs helper for reading value of symlink
- * @path:	path of symlink
- * @buf:	destination buffer for symlink value
- * @lenp:	destination buffer length
- *
- * Return:	symlink value length on success, otherwise error
- */
-int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
-{
-	struct inode *inode;
-	mm_segment_t old_fs;
-	int err;
-
-	if (!path)
-		return -ENOENT;
-
-	inode = path->dentry->d_inode;
-	if (!S_ISLNK(inode->i_mode))
-		return -EINVAL;
-
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	err = inode->i_op->readlink(path->dentry, (char __user *)buf, lenp);
-	set_fs(old_fs);
-	if (err < 0)
-		cifsd_err("readlink failed, err = %d\n", err);
-
 	return err;
 }
 
