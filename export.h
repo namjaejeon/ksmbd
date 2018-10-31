@@ -45,8 +45,6 @@ extern int cifsd_debugging;
 
 extern unsigned int SMBMaxBufSize;
 
-extern int cifsd_init_registry(void);
-extern void cifsd_free_registry(void);
 extern struct cifsd_user *cifsd_is_user_present(char *name);
 struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
                 struct cifsd_session *sess, char *sharename, bool *can_write);
