@@ -14,6 +14,7 @@
 #include "smb1pdu.h"
 #include "glob.h"
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 int smb1_utf16_name_length(const __le16 *from, int maxbytes)
 {
 	int i, len = 0;
@@ -29,6 +30,12 @@ int smb1_utf16_name_length(const __le16 *from, int maxbytes)
 
 	return len;
 }
+#else
+int smb1_utf16_name_length(const __le16 *from, int maxbytes)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 /*
  * smb_utf16_bytes() - how long will a string be after conversion?
