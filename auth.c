@@ -46,37 +46,6 @@ void cifsd_copy_gss_neg_header(void *buf)
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
 }
 
-static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
-{
-	int rc;
-	unsigned int size;
-
-	/* check if already allocated */
-	if (conn->secmech.md5)
-		return 0;
-
-	conn->secmech.md5 = crypto_alloc_shash("md5", 0, 0);
-	if (IS_ERR(conn->secmech.md5)) {
-		cifsd_debug("could not allocate crypto md5\n");
-		rc = PTR_ERR(conn->secmech.md5);
-		conn->secmech.md5 = NULL;
-		return rc;
-	}
-
-	size = sizeof(struct shash_desc) +
-		crypto_shash_descsize(conn->secmech.md5);
-	conn->secmech.sdescmd5 = kmalloc(size, GFP_KERNEL);
-	if (!conn->secmech.sdescmd5) {
-		crypto_free_shash(conn->secmech.md5);
-		conn->secmech.md5 = NULL;
-		return -ENOMEM;
-	}
-	conn->secmech.sdescmd5->shash.tfm = conn->secmech.md5;
-	conn->secmech.sdescmd5->shash.flags = 0x0;
-
-	return 0;
-}
-
 static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
@@ -571,6 +540,37 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 }
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
+static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
+{
+	int rc;
+	unsigned int size;
+
+	/* check if already allocated */
+	if (conn->secmech.md5)
+		return 0;
+
+	conn->secmech.md5 = crypto_alloc_shash("md5", 0, 0);
+	if (IS_ERR(conn->secmech.md5)) {
+		cifsd_debug("could not allocate crypto md5\n");
+		rc = PTR_ERR(conn->secmech.md5);
+		conn->secmech.md5 = NULL;
+		return rc;
+	}
+
+	size = sizeof(struct shash_desc) +
+		crypto_shash_descsize(conn->secmech.md5);
+	conn->secmech.sdescmd5 = kmalloc(size, GFP_KERNEL);
+	if (!conn->secmech.sdescmd5) {
+		crypto_free_shash(conn->secmech.md5);
+		conn->secmech.md5 = NULL;
+		return -ENOMEM;
+	}
+	conn->secmech.sdescmd5->shash.tfm = conn->secmech.md5;
+	conn->secmech.sdescmd5->shash.flags = 0x0;
+
+	return 0;
+}
+
 /**
  * cifsd_sign_smb1_pdu() - function to generate SMB1 packet signing
  * @sess:	session of connection
