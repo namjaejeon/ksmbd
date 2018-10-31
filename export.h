@@ -40,8 +40,5 @@ extern int cifsd_debugging;
 #define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
-#define O_SERVER 1
-#define O_CLIENT 2
-
 extern unsigned int SMBMaxBufSize;
 #endif /* __CIFSD_EXPORT_H */
