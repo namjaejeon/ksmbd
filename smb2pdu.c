@@ -17,6 +17,7 @@
 #include "cifsacl.h"
 
 #include "auth.h"
+#include "asn1.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "transport_ipc.h"

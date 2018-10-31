@@ -18,6 +18,7 @@
 #include "misc.h"
 
 #include "auth.h"
+#include "asn1.h"
 #include "server.h"
 #include "smb_common.h"
 #include "mgmt/user_config.h"

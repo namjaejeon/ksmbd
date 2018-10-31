@@ -471,15 +471,5 @@ int cifsd_sendmsg(struct cifsd_session *sess, unsigned int etype,
 		unsigned char *data, unsigned int out_buflen);
 int cifsd_kthread_stop_status(int etype);
 
-/* asn1 functions */
-extern int cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
-		struct cifsd_tcp_conn *conn);
-extern int cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
-		struct cifsd_tcp_conn *conn);
-extern int build_spnego_ntlmssp_neg_blob(unsigned char **pbuffer, u16 *buflen,
-		char *ntlm_blob, int ntlm_blob_len);
-extern int build_spnego_ntlmssp_auth_blob(unsigned char **pbuffer, u16 *buflen,
-		int neg_result);
-
 void smb3_preauth_hash_rsp(struct cifsd_work *work);
 #endif /* __CIFSD_GLOB_H */

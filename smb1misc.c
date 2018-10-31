@@ -5,6 +5,7 @@
  */
 
 #include "glob.h"
+#include "asn1.h"
 #include "nterr.h"
 #include "smb1pdu.h"
 #include "smb_common.h"
