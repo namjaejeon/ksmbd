@@ -463,13 +463,5 @@ extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
 
-/* netlink functions */
-int cifsd_net_init(void);
-void cifsd_net_exit(void);
-int cifsd_sendmsg(struct cifsd_session *sess, unsigned int etype,
-		int pipe_type, unsigned int data_size,
-		unsigned char *data, unsigned int out_buflen);
-int cifsd_kthread_stop_status(int etype);
-
 void smb3_preauth_hash_rsp(struct cifsd_work *work);
 #endif /* __CIFSD_GLOB_H */
