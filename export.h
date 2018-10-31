@@ -21,8 +21,6 @@ extern int cifsd_debugging;
 
 #define CIFS_DEFAULT_IOSIZE (1024 * 1024)
 
-#define CIFSD_MAJOR_VERSION 1
-#define CIFSD_MINOR_VERSION 0
 #define STR_SRV_NAME	"CIFSD SERVER"
 #define STR_WRKGRP	"WORKGROUP"
 
