@@ -99,7 +99,6 @@ ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
-int cifsd_vfs_lookup_in_dir(char *dirname, char *filename);
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);

@@ -1453,48 +1453,13 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 }
 
 /**
- * cifsd_vfs_kern_path() - lookup a file and get path info
- * @name:	name of file for lookup
- * @flags:	lookup flags
- * @path:	if lookup succeed, return path info
- * @caseless:	caseless filename lookup
- *
- * Return:	0 on success, otherwise error
- */
-int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
-		bool caseless)
-{
-	int err;
-
-	err = kern_path(name, flags, path);
-	if (err && caseless) {
-		char *filename = strrchr((const char *)name, '/');
-		if (filename == NULL)
-			return err;
-		*(filename++) = '\0';
-		if (strlen(name) == 0) {
-			/* root reached */
-			filename--;
-			*filename = '/';
-			return err;
-		}
-		err = cifsd_vfs_lookup_in_dir(name, filename);
-		if (err)
-			return err;
-		err = kern_path(name, flags, path);
-		return err;
-	} else
-		return err;
-}
-
-/**
  * cifsd_vfs_lookup_in_dir() - lookup a file in a directory
  * @dirname:	directory name
  * @filename:	filename to lookup
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
+static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 {
 	struct path dir_path;
 	int ret;
@@ -1561,6 +1526,41 @@ out2:
 out:
 	dirname[dirnamelen] = '/';
 	return ret;
+}
+
+/**
+ * cifsd_vfs_kern_path() - lookup a file and get path info
+ * @name:	name of file for lookup
+ * @flags:	lookup flags
+ * @path:	if lookup succeed, return path info
+ * @caseless:	caseless filename lookup
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
+		bool caseless)
+{
+	int err;
+
+	err = kern_path(name, flags, path);
+	if (err && caseless) {
+		char *filename = strrchr((const char *)name, '/');
+		if (filename == NULL)
+			return err;
+		*(filename++) = '\0';
+		if (strlen(name) == 0) {
+			/* root reached */
+			filename--;
+			*filename = '/';
+			return err;
+		}
+		err = cifsd_vfs_lookup_in_dir(name, filename);
+		if (err)
+			return err;
+		err = kern_path(name, flags, path);
+		return err;
+	} else
+		return err;
 }
 
 /**
