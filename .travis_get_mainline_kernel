@@ -11,27 +11,27 @@ if [ $? -ne 0 ]; then
 	exit 1
 fi
 
-VER=`cat releases.json | python2.7 -c "import sys, json; print json.load(sys.stdin)['latest_stable']['version']"`
+VER=$(cat releases.json | python2.7 -c "import sys, json; print json.load(sys.stdin)['latest_stable']['version']")
 if [ $? -ne 0 ]; then
 	echo "Could not parse release.json"
 	exit 1
 fi
 
-if [ "z$VER" == "z" ]; then
+if [ "z$VER" = "z" ]; then
 	echo "Could not determine latest release version"
 	exit 1
 fi
 
-wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-${VER}.tar.gz
+wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-"$VER".tar.gz
 if [ $? -ne 0 ]; then
 	echo "Could not download $VER kernel version"
 	exit 1
 fi
 
-tar xf linux-${VER}.tar.gz
+tar xf linux-"$VER".tar.gz
 if [ $? -ne 0 ]; then
 	echo "Could not untar kernel tar ball"
 	exit 1
 fi
 
-mv linux-${VER} linux
+mv linux-"$VER" linux
