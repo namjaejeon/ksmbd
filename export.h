@@ -21,8 +21,5 @@ extern int cifsd_debugging;
 
 #define CIFS_DEFAULT_IOSIZE (1024 * 1024)
 
-#define STR_SRV_NAME	"CIFSD SERVER"
-#define STR_WRKGRP	"WORKGROUP"
-
 extern unsigned int SMBMaxBufSize;
 #endif /* __CIFSD_EXPORT_H */
