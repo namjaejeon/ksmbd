@@ -459,6 +459,4 @@ extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
-
-void smb3_preauth_hash_rsp(struct cifsd_work *work);
 #endif /* __CIFSD_GLOB_H */
