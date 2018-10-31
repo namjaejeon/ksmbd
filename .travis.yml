@@ -6,11 +6,11 @@ notifications:
 
 before_script:
  # Download the kernel
- - sudo apt-get install libelf-dev wget tar gzip
+ - sudo apt-get install libelf-dev wget tar gzip python
  - wget https://mirrors.edge.kernel.org/pub/linux/kernel/v4.x/linux-4.1.36.tar.gz
  - tar xf linux-4.1.36.tar.gz
  - mv linux-4.1.36 linux-stable
- - git clone --depth 1 https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+ - ./.travis_get_mainline_kernel
 
 script:
  # Copy cifsd source to kernel
