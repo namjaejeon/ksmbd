@@ -179,9 +179,12 @@ static inline int is_char_allowed(char *ch)
  *
  * Return:	string length after conversion
  */
-int
-smb_from_utf16(char *to, const __le16 *from, int tolen, int fromlen,
-		 const struct nls_table *codepage, bool mapchar)
+static int smb_from_utf16(char *to,
+			  const __le16 *from,
+			  int tolen,
+			  int fromlen,
+			  const struct nls_table *codepage,
+			  bool mapchar)
 {
 	int i, charlen, safelen;
 	int outlen = 0;
