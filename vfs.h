@@ -73,9 +73,6 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 			   char *xattr_name,
 			   char **xattr_buf);
 
-ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
-			    char *xattr_name);
-
 ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 				char *attr_name,
 				int attr_name_len);
@@ -95,21 +92,12 @@ int cifsd_vfs_fsetxattr(const char *filename,
 int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams);
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 
-ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
-			       char *attr_name,
-			       int attr_name_len,
-			       char **attr_value);
-
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
-int cifsd_vfs_lookup_in_dir(char *dirname, char *filename);
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int check_lock_range(struct file *filp, loff_t start,
-		loff_t end, unsigned char type);
-int cifsd_vfs_readdir(struct file *file, filldir_t filler,
-			struct cifsd_readdir_data *buf);
+int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *buf);
 int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len);

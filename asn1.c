@@ -15,6 +15,7 @@
 #include "glob.h"
 #include "export.h"
 
+#include "asn1.h"
 #include "transport_tcp.h"
 
 /*****************************************************************************
@@ -560,7 +561,7 @@ cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
 	return 1;
 }
 
-int compute_asn_hdr_len_bytes(int len)
+static int compute_asn_hdr_len_bytes(int len)
 {
 	if (len > 0xFFFFFF)
 		return 4;
@@ -574,8 +575,11 @@ int compute_asn_hdr_len_bytes(int len)
 		return 0;
 }
 
-void encode_asn_tag(char *buf, unsigned int *ofs, char tag, char seq,
-		int length)
+static void encode_asn_tag(char *buf,
+			   unsigned int *ofs,
+			   char tag,
+			   char seq,
+			   int length)
 {
 	int i;
 	int index = *ofs;

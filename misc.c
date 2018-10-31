@@ -8,82 +8,15 @@
 #include <linux/version.h>
 #include <linux/xattr.h>
 
-#include "glob.h"
+#include "misc.h"
 #include "export.h"
-#include "smb1pdu.h"
-#include "smb2pdu.h"
+#include "smb_common.h"
 #include "transport_tcp.h"
 #include "vfs.h"
 
-/* @FIXME rework this code */
-#include "server.h"
-#include "mgmt/user_session.h"
+#include "mgmt/share_config.h"
 
 /* @FIXME rework this code */
-
-static struct {
-	int index;
-	char *name;
-	char *prot;
-	__u16 prot_id;
-} protocols[] = {
-	{CIFS_PROT, "\2NT LM 0.12", "NT1", 0},
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	{SMB2_PROT, "\2SMB 2.002", "SMB2_02", SMB20_PROT_ID},
-	{SMB21_PROT, "\2SMB 2.1", "SMB2_10", SMB21_PROT_ID},
-	{SMB2X_PROT, "\2SMB 2.???", "SMB2_22", SMB2X_PROT_ID},
-	{SMB30_PROT, "\2SMB 3.0", "SMB3_00", SMB30_PROT_ID},
-	{SMB302_PROT, "\2SMB 3.02", "SMB3_02", SMB302_PROT_ID},
-	{SMB311_PROT, "\2SMB 3.1.1", "SMB3_11", SMB311_PROT_ID},
-#endif
-};
-
-inline int cifsd_min_protocol(void)
-{
-	return protocols[0].index;
-}
-
-inline int cifsd_max_protocol(void)
-{
-	return protocols[ARRAY_SIZE(protocols) - 1].index;
-}
-
-int get_protocol_idx(char *str)
-{
-	int res = -1, i;
-	int protocol_index = protocols[ARRAY_SIZE(protocols) - 1].index;
-	int len = strlen(str);
-
-	for (i = 0; i <= protocol_index; i++) {
-		if (!strncmp(str, protocols[i].prot, len)) {
-			cifsd_debug("selected %s dialect i = %d\n",
-				protocols[i].prot, i);
-			res = protocols[i].index;
-			break;
-		}
-	}
-	return res;
-}
-
-/**
- * check_smb_message() - check for valid smb2 request header
- * @buf:	smb2 header to be checked
- *
- * check for valid smb signature and packet direction(request/response)
- *
- * Return:      0 on success, otherwise 1
- */
-int check_message(struct cifsd_work *work)
-{
-	struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
-
-	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		cifsd_debug("got SMB2 command\n");
-		return smb2_check_message(work);
-	}
-
-	return smb1_check_message(work);
-}
 
 /**
  * dump_smb_msg() - print smb packet for debugging
@@ -128,212 +61,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	}
 	pr_cont(" | %s\n", debug_line);
 	return;
-}
-
-/**
- * is_smb_request() - check for valid smb request type
- * @conn:     TCP server instance of connection
- * @type:	smb request type
- *
- * Return:      true on success, otherwise false
- */
-bool is_smb_request(struct cifsd_tcp_conn *conn)
-{
-	int type = *(char *)conn->request_buf;
-
-	switch (type) {
-	case RFC1002_SESSION_MESSAGE:
-		/* Regular SMB request */
-		return true;
-	case RFC1002_SESSION_KEEP_ALIVE:
-		cifsd_debug("RFC 1002 session keep alive\n");
-		break;
-	default:
-		cifsd_debug("RFC 1002 unknown request type 0x%x\n", type);
-	}
-
-	return false;
-}
-
-/* @FIXME rework this code */
-int find_matching_smb1_dialect(int start_index, char *cli_dialects,
-		__le16 byte_count)
-{
-	int i, smb1_index, cli_count, bcount, dialect_id = BAD_PROT_ID;
-	char *dialects = NULL;
-
-	if (unlikely(start_index >= ARRAY_SIZE(protocols))) {
-		cifsd_err("bad start_index %d\n", start_index);
-		return dialect_id;
-	}
-
-	for (i = start_index; i >= CIFS_PROT; i--) {
-		smb1_index = 0;
-		bcount = le16_to_cpu(byte_count);
-		dialects = cli_dialects;
-
-		while (bcount) {
-			cli_count = strlen(dialects);
-			cifsd_debug("client requested dialect %s\n",
-					dialects);
-			if (!strncmp(dialects, protocols[i].name,
-						cli_count)) {
-				if (i >= server_conf.min_protocol &&
-					i <= server_conf.max_protocol) {
-					cifsd_debug("selected %s dialect\n",
-							protocols[i].name);
-					if (i == CIFS_PROT)
-						dialect_id = smb1_index;
-					else
-						dialect_id =
-						protocols[i].prot_id;
-				}
-				goto out;
-			}
-			bcount -= (++cli_count);
-			dialects += cli_count;
-			smb1_index++;
-		}
-	}
-
-out:
-	return dialect_id;
-}
-
-/* @FIXME rework this code */
-#ifdef CONFIG_CIFS_SMB2_SERVER
-/**
- * find_matching_smb2_dialect() - find the greatest dialect between dialects
- * client and server support.
- * @start_index:	start protocol id for lookup
- * @cli_dialects:	client dialects
- * @srv_dialects:	server dialects
- * @directs_count:	client dialect count
- *
- * Return:      0
- */
-int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
-	__le16 dialects_count)
-{
-	int i, dialect_id = BAD_PROT_ID;
-	int count;
-
-	for (i = start_index; i >= SMB2_PROT; i--) {
-		count = le16_to_cpu(dialects_count);
-		while (--count >= 0) {
-			cifsd_debug("client requested dialect 0x%x\n",
-				le16_to_cpu(cli_dialects[count]));
-			if (le16_to_cpu(cli_dialects[count]) ==
-					protocols[i].prot_id) {
-				if (i >= server_conf.min_protocol &&
-					i <= server_conf.max_protocol) {
-					cifsd_debug("selected %s dialect\n",
-							protocols[i].name);
-					dialect_id = protocols[i].prot_id;
-				}
-				goto out;
-			}
-		}
-	}
-
-out:
-	return dialect_id;
-}
-#endif
-
-/**
- * negotiate_dialect() - negotiate smb dialect with smb client
- * @buf:	smb header
- *
- * Return:     protocol index on success, otherwise bad protocol id error
- */
-int negotiate_dialect(void *buf)
-{
-	int start_index, ret = BAD_PROT_ID;
-
-/* @FIXME rework this code */
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-	start_index = SMB311_PROT;
-#else
-	start_index = CIFS_PROT;
-#endif
-
-	if (*(__le32 *)((struct smb_hdr *)buf)->Protocol ==
-			SMB1_PROTO_NUMBER) {
-		/* SMB1 neg protocol */
-		NEGOTIATE_REQ *req = (NEGOTIATE_REQ *)buf;
-		ret = find_matching_smb1_dialect(start_index,
-			req->DialectsArray, le16_to_cpu(req->ByteCount));
-	} else if (((struct smb2_hdr *)buf)->ProtocolId ==
-			SMB2_PROTO_NUMBER) {
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		/* SMB2 neg protocol */
-		struct smb2_negotiate_req *req;
-		req = (struct smb2_negotiate_req *)buf;
-		ret = find_matching_smb2_dialect(start_index, req->Dialects,
-			le16_to_cpu(req->DialectCount));
-#endif
-	}
-
-	return ret;
-}
-
-/**
- * validate_sess_handle() - check for valid session handle
- * @sess:	handle to be validated
- *
- * Return:      matching session handle, otherwise NULL
- */
-struct cifsd_session *validate_sess_handle(struct cifsd_session *session)
-{
-	/* @FIXME: remove this code */
-	return session;
-}
-
-#ifndef CONFIG_CIFS_SMB2_SERVER
-/* @FIXME rework this code */
-void init_smb2_0_server(struct cifsd_tcp_conn *server) { }
-void init_smb2_1_server(struct cifsd_tcp_conn *server) { }
-void init_smb3_0_server(struct cifsd_tcp_conn *server) { }
-void init_smb3_02_server(struct cifsd_tcp_conn *server) { }
-void init_smb3_11_server(struct cifsd_tcp_conn *server) { }
-int is_smb2_neg_cmd(struct cifsd_work *work)
-{
-	return 0;
-}
-
-bool is_chained_smb2_message(struct cifsd_work *work)
-{
-	return 0;
-}
-
-void init_smb2_neg_rsp(struct cifsd_work *work)
-{
-}
-int is_smb2_rsp(struct cifsd_work *work)
-{
-	return 0;
-};
-#endif
-
-int get_pos_strnstr(const char *s1, const char *s2, size_t len)
-{
-	size_t l2;
-	int index = 0;
-
-	l2 = strlen(s2);
-	if (!l2)
-		return 0;
-
-	while (len >= l2) {
-		len--;
-		if (!memcmp(s1, s2, l2))
-			return index;
-		s1++;
-		index++;
-	}
-	return 0;
 }
 
 int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
@@ -682,4 +409,137 @@ int get_nlink(struct kstat *st)
 		nlink--;
 
 	return nlink;
+}
+
+/**
+ * convert_delimiter() - convert windows path to unix format or unix format
+ *			 to windos path
+ * @path:	path to be converted
+ * @flags:	1 is to convert windows, 2 is to convert unix
+ *
+ */
+void convert_delimiter(char *path, int flags)
+{
+	char *pos = path;
+
+	if (flags == 1)
+		while ((pos = strchr(pos, '/')))
+			*pos = '\\';
+	else
+		while ((pos = strchr(pos, '\\')))
+			*pos = '/';
+}
+
+/**
+ * extract_sharename() - get share name from tree connect request
+ * @treename:	buffer containing tree name and share name
+ *
+ * Return:      share name on success, otherwise error
+ */
+char *extract_sharename(char *treename)
+{
+	int len;
+	char *dst;
+
+	/* skip double chars at the beginning */
+	while (strchr(treename, '\\'))
+		strsep(&treename, "\\");
+	len = strlen(treename);
+
+	/* caller has to free the memory */
+	dst = kstrndup(treename, len, GFP_KERNEL);
+	if (!dst)
+		return ERR_PTR(-ENOMEM);
+
+	return dst;
+}
+
+/**
+ * convert_to_unix_name() - convert windows name to unix format
+ * @path:	name to be converted
+ * @tid:	tree id of mathing share
+ *
+ * Return:	converted name on success, otherwise NULL
+ */
+char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
+{
+	int len;
+	char *new_name;
+
+	len = strlen(share->path);
+	len += strlen(name);
+
+	/* for '/' needed for smb2
+	 * as '/' is not present in beginning of name*/
+	if (name[0] != '/')
+		len++;
+
+	/* 1 extra for NULL byte */
+	cifsd_debug("new_name len = %d\n", len);
+	new_name = kmalloc(len + 1, GFP_KERNEL);
+
+	if (new_name == NULL) {
+		cifsd_debug("Failed to allocate memory\n");
+		return new_name;
+	}
+
+	memcpy(new_name, share->path, strlen(share->path));
+
+	if (name[0] != '/') {
+		memset(new_name + strlen(share->path), '/', 1);
+		memcpy(new_name + strlen(share->path) + 1, name, strlen(name));
+	} else
+		memcpy(new_name + strlen(share->path), name, strlen(name));
+
+	*(new_name + len) = '\0';
+
+	return new_name;
+}
+
+/**
+ * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
+ * @namestr:            source filename buffer
+ * @len:                source buffer length
+ * @size:               used buffer size
+ * @local_nls           code page table
+ * @name_len:           file name length after conversion
+ * @next_entry_offset:  offset of dentry
+ * @buf_len:            response buffer length
+ * @data_count:         used response buffer size
+ * @no_namelen_field:	flag which shows if a namelen field flag exist
+ *
+ * Return:      return error if next entry could not fit in current response
+ *              buffer, otherwise return encode buffer.
+ */
+char *convname_updatenextoffset(char *namestr, int len, int size,
+		const struct nls_table *local_nls, int *name_len,
+		int *next_entry_offset, int *buf_len, int *data_count,
+		int alignment, bool no_namelen_field)
+{
+	char *enc_buf;
+
+	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!enc_buf)
+		return NULL;
+
+	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
+			namestr, len, local_nls, 0);
+	*name_len *= 2;
+	if (no_namelen_field) {
+		enc_buf[*name_len] = '\0';
+		enc_buf[*name_len+1] = '\0';
+		*name_len += 2;
+	}
+
+	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
+
+	if (*next_entry_offset > *buf_len) {
+		cifsd_debug("buf_len : %d next_entry_offset : %d"
+				" data_count : %d\n", *buf_len,
+				*next_entry_offset, *data_count);
+		*buf_len = -1;
+		kfree(enc_buf);
+		return NULL;
+	}
+	return enc_buf;
 }

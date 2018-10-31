@@ -17,8 +17,6 @@
 
 #define CIFSD_SOCKET_BACKLOG		16
 
-#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
-
 /*
  * WARNING
  *
@@ -48,12 +46,6 @@ struct cifsd_secmech {
 	struct sdesc *sdescsha512;  /* ctxt to generate preauth integrity */
 	struct crypto_aead *ccmaesencrypt; /* smb3 encryption aead */
 	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
-};
-
-struct cifsd_tcp_conn_ops {
-	int	(*init_fn)(struct cifsd_tcp_conn *conn);
-	int	(*process_fn)(struct cifsd_tcp_conn *conn);
-	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
 };
 
 struct cifsd_tcp_conn {
@@ -89,9 +81,7 @@ struct cifsd_tcp_conn {
 	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-#endif
 	struct cifsd_secmech		secmech;
 	union {
 		/* pending trans request table */
@@ -131,6 +121,11 @@ struct cifsd_tcp_conn {
 	struct cifsd_ida		*async_ida;
 };
 
+struct cifsd_tcp_conn_ops {
+	int	(*process_fn)(struct cifsd_tcp_conn *conn);
+	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
+};
+
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
 void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
@@ -146,6 +141,7 @@ struct cifsd_work;
 int cifsd_tcp_write(struct cifsd_work *work);
 
 void cifsd_tcp_enqueue_request(struct cifsd_work *work);
+int cifsd_tcp_try_dequeue_request(struct cifsd_work *work);
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
 void cifsd_tcp_destroy(void);

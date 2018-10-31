@@ -15,97 +15,16 @@
 #include "transport_tcp.h"
 #include "transport_ipc.h"
 #include "vfs.h"
+#include "misc.h"
 
+#include "auth.h"
+#include "asn1.h"
 #include "server.h"
+#include "smb_common.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
-
-/*for shortname implementation */
-static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
-#define MANGLE_BASE       (sizeof(basechars)/sizeof(char)-1)
-#define MAGIC_CHAR '~'
-#define PERIOD '.'
-#define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
-
-/**
- * smb_get_shortname() - get shortname from long filename
- * @conn:	TCP server instance of connection
- * @longname:	source long filename
- * @shortname:	destination short filename
- *
- * Return:	shortname length or 0 when source long name is '.' or '..'
- * TODO: Though this function comforms the restriction of 8.3 Filename spec,
- * but the result is different with Windows 7's one. need to check.
- */
-int smb_get_shortname(struct cifsd_tcp_conn *conn, char *longname,
-		char *shortname)
-{
-	char *p, *sp;
-	char base[9], extension[4];
-	char out[13] = {0};
-	int baselen = 0;
-	int extlen = 0, len = 0;
-	unsigned int csum = 0;
-	unsigned char *ptr;
-	bool dot_present = true;
-
-	p = longname;
-	if ((*p == '.') || (!(strcmp(p, "..")))) {
-		/*no mangling required */
-		shortname = NULL;
-		return 0;
-	}
-	p = strrchr(longname, '.');
-	if (p == longname) { /*name starts with a dot*/
-		sp = "___";
-		memcpy(extension, sp, 3);
-		extension[3] = '\0';
-	} else {
-		if (p != NULL) {
-			p++;
-			while (*p && extlen < 3) {
-				if (*p != '.')
-					extension[extlen++] = toupper(*p);
-				p++;
-			}
-			extension[extlen] = '\0';
-		} else
-			dot_present = false;
-	}
-
-	p = longname;
-	if (*p == '.')
-		*p++ = 0;
-	while (*p && (baselen < 5)) {
-		if (*p != '.')
-			base[baselen++] = toupper(*p);
-		p++;
-	}
-
-	base[baselen] = MAGIC_CHAR;
-	memcpy(out, base, baselen+1);
-
-	ptr = longname;
-	len = strlen(longname);
-	for (; len > 0; len--, ptr++)
-		csum += *ptr;
-
-	csum = csum % (MANGLE_BASE * MANGLE_BASE);
-	out[baselen+1] = mangle(csum/MANGLE_BASE);
-	out[baselen+2] = mangle(csum);
-	out[baselen+3] = PERIOD;
-
-	if (dot_present)
-		memcpy(&out[baselen+4], extension, 4);
-	else
-		out[baselen+4] = '\0';
-	smbConvertToUTF16((__le16 *)shortname, out, PATH_MAX,
-			conn->local_nls, 0);
-	len = strlen(out) * 2;
-	return len;
-}
 
 /**
  * smb_NTtimeToUnix() - convert NTFS time to unix style time format
@@ -290,30 +209,6 @@ static char *andx_response_buffer(char *buf)
 {
 	int pdu_length = get_rfc1002_length(buf);
 	return buf + 4 + pdu_length;
-}
-
-/**
- * extract_sharename() - get share name from tree connect request
- * @treename:	buffer containing tree name and share name
- *
- * Return:      share name on success, otherwise error
- */
-char *extract_sharename(char *treename)
-{
-	int len;
-	char *dst;
-
-	/* skip double chars at the beginning */
-	while (strchr(treename, '\\'))
-		strsep(&treename, "\\");
-	len = strlen(treename);
-
-	/* caller has to free the memory */
-	dst = kstrndup(treename, len, GFP_KERNEL);
-	if (!dst)
-		return ERR_PTR(-ENOMEM);
-
-	return dst;
 }
 
 /**
@@ -886,12 +781,12 @@ out:
 }
 
 /**
- * smb_negotiate() - negotiate request handler
+ * smb_handle_negotiate() - negotiate request handler
  * @work:	smb work containing negotiate request buffer
  *
  * Return:      0 on success, otherwise error
  */
-int smb_negotiate(struct cifsd_work *work)
+int smb_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
@@ -903,19 +798,11 @@ int smb_negotiate(struct cifsd_work *work)
 	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(cifsd_tcp_good(work));
 
-	conn->dialect = negotiate_dialect(REQUEST_BUF(work));
-	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 	if (conn->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_LOGON_TYPE;
 		rc = -EINVAL;
 		goto err_out;
-	} else if (conn->dialect == SMB20_PROT_ID ||
-			conn->dialect == SMB21_PROT_ID ||
-			conn->dialect == SMB2X_PROT_ID ||
-			conn->dialect == SMB30_PROT_ID ||
-			conn->dialect == SMB302_PROT_ID ||
-			conn->dialect == SMB311_PROT_ID)
-		return conn->dialect;
+	}
 
 	conn->connection_type = 0;
 
@@ -963,12 +850,12 @@ int smb_negotiate(struct cifsd_work *work)
 		inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
 	} else {
 		neg_rsp->EncryptionKeyLength = 0;
-		neg_rsp->ByteCount = SMB1_CLIENT_GUID_SIZE + 74;
+		neg_rsp->ByteCount = SMB1_CLIENT_GUID_SIZE + AUTH_GSS_LENGTH;
 		get_random_bytes(neg_rsp->u.extended_response.GUID,
 			SMB1_CLIENT_GUID_SIZE);
-		memcpy(neg_rsp->u.extended_response.SecurityBlob,
-			NEGOTIATE_GSS_HEADER, 74);
-		inc_rfc1001_len(neg_rsp, (17 * 2 + 16 + 74));
+		cifsd_copy_gss_neg_header(
+				neg_rsp->u.extended_response.SecurityBlob);
+		inc_rfc1001_len(neg_rsp, (17 * 2 + 16 + AUTH_GSS_LENGTH));
 	}
 
 	/* Null terminated domain name in unicode */
@@ -1027,7 +914,7 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 		goto no_password_check;
 
 	if (req->CaseSensitivePasswordLength == CIFS_AUTH_RESP_SIZE) {
-		err = process_ntlm(sess, req->CaseInsensitivePassword +
+		err = cifsd_auth_ntlm(sess, req->CaseInsensitivePassword +
 				req->CaseInsensitivePasswordLength);
 		if (err) {
 			cifsd_err("ntlm authentication failed for user %s\n",
@@ -1050,7 +937,8 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 			goto out_err;
 		}
 
-		err = process_ntlmv2(sess, (struct ntlmv2_resp *) ((char *)
+		err = cifsd_auth_ntlmv2(sess,
+				(struct ntlmv2_resp *) ((char *)
 					req->CaseInsensitivePassword +
 					req->CaseInsensitivePasswordLength),
 				req->CaseSensitivePasswordLength -
@@ -1127,8 +1015,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		CHALLENGE_MESSAGE *chgblob;
 
 		cifsd_debug("negotiate phase\n");
-		err = decode_ntlmssp_negotiate_blob(negblob,
-				le16_to_cpu(req->SecurityBlobLength), sess);
+		err = cifsd_decode_ntlmssp_neg_blob(negblob,
+				le16_to_cpu(req->SecurityBlobLength),
+				sess);
 		if (err)
 			goto out_err;
 
@@ -1146,8 +1035,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = build_ntlmssp_challenge_blob(
-					chgblob, sess);
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
+					chgblob,
+					sess);
 			if (neg_blob_len < 0) {
 				kfree(neg_blob);
 				err = -ENOMEM;
@@ -1169,7 +1059,8 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
+					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
 				err = -ENOMEM;
@@ -1221,8 +1112,9 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		if (user_guest(sess->user))
 			goto no_password_check;
 
-		err = decode_ntlmssp_authenticate_blob(authblob,
-				le16_to_cpu(req->SecurityBlobLength), sess);
+		err = cifsd_decode_ntlmssp_auth_blob(authblob,
+				le16_to_cpu(req->SecurityBlobLength),
+				sess);
 		if (err) {
 			cifsd_debug("authentication failed\n");
 			err = -EINVAL;
@@ -3270,67 +3162,6 @@ out:
  *****************************************************************************/
 
 /**
- * convert_delimiter() - convert windows path to unix format or unix format
- *			 to windos path
- * @path:	path to be converted
- * @flags:	1 is to convert windows, 2 is to convert unix
- *
- */
-void convert_delimiter(char *path, int flags)
-{
-	char *pos = path;
-
-	if (flags == 1)
-		while ((pos = strchr(pos, '/')))
-			*pos = '\\';
-	else
-		while ((pos = strchr(pos, '\\')))
-			*pos = '/';
-}
-
-/**
- * convert_to_unix_name() - convert windows name to unix format
- * @path:	name to be converted
- * @tid:	tree id of mathing share
- *
- * Return:	converted name on success, otherwise NULL
- */
-char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
-{
-	int len;
-	char *new_name;
-
-	len = strlen(share->path);
-	len += strlen(name);
-
-	/* for '/' needed for smb2
-	 * as '/' is not present in beginning of name*/
-	if (name[0] != '/')
-		len++;
-
-	/* 1 extra for NULL byte */
-	cifsd_debug("new_name len = %d\n", len);
-	new_name = kmalloc(len + 1, GFP_KERNEL);
-
-	if (new_name == NULL) {
-		cifsd_debug("Failed to allocate memory\n");
-		return new_name;
-	}
-
-	memcpy(new_name, share->path, strlen(share->path));
-
-	if (name[0] != '/') {
-		memset(new_name + strlen(share->path), '/', 1);
-		memcpy(new_name + strlen(share->path) + 1, name, strlen(name));
-	} else
-		memcpy(new_name + strlen(share->path), name, strlen(name));
-
-	*(new_name + len) = '\0';
-
-	return new_name;
-}
-
-/**
  * get_filetype() - convert file mode to smb file type
  * @mode:	file mode to be convertd
  *
@@ -4418,8 +4249,10 @@ static int query_path_info(struct cifsd_work *work)
 			base = name;
 		else
 			base += 1;
-		alt_name_info->FileNameLength = smb_get_shortname(conn,
-			base, alt_name_info->FileName);
+		alt_name_info->FileNameLength =
+				cifsd_extract_shortname(conn,
+						base,
+						alt_name_info->FileName);
 		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
 		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
 
@@ -4633,8 +4466,7 @@ static int query_fs_info(struct cifsd_work *work)
 		return -ENOENT;
 	share = tree_conn->share_conf;
 
-	/* share path NULL represents IPC$ share */
-	if (!share->path)
+	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE))
 		return -ENOENT;
 
 	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
@@ -5798,8 +5630,9 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = smb_get_shortname(conn,
-			d_info->name, fbdinfo->ShortName);
+		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+							d_info->name,
+							fbdinfo->ShortName);
 		fbdinfo->Reserved = 0;
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
@@ -5850,8 +5683,9 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->ShortNameLength = smb_get_shortname(conn,
-			d_info->name, fibdinfo->ShortName);
+		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+							d_info->name,
+							fibdinfo->ShortName);
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
@@ -5939,7 +5773,7 @@ static int find_first(struct cifsd_work *work)
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 	int header_size;
@@ -6005,9 +5839,12 @@ static int find_first(struct cifsd_work *work)
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
 	if (!*srch_ptr || !strcmp(srch_ptr, "*")) {
-		rc = smb_populate_dot_dotdot_entries(conn,
-			req_params->InformationLevel, dir_fp, &d_info,
-			srch_ptr, smb_populate_readdir_entry);
+		rc = cifsd_populate_dot_dotdot_entries(conn,
+						req_params->InformationLevel,
+						dir_fp,
+						&d_info,
+						srch_ptr,
+						smb_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -6017,8 +5854,8 @@ static int find_first(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
@@ -6183,7 +6020,7 @@ static int find_next(struct cifsd_work *work)
 	char *name = NULL;
 	char *pathname = NULL;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 	};
 	int header_size;
 
@@ -6242,8 +6079,8 @@ static int find_next(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
@@ -7365,130 +7202,6 @@ int smb_trans2(struct cifsd_work *work)
 }
 
 /**
- * smb_filldir() - populates a dirent details in readdir
- * @ctx:	dir_context information
- * @name:	dirent name
- * @namelen:	dirent name length
- * @offset:	dirent offset in directory
- * @ino:	dirent inode number
- * @d_type:	dirent type
- *
- * Return:	0 on success, otherwise -EINVAL
- */
-int smb_filldir(struct dir_context *ctx, const char *name, int namlen,
-		loff_t offset, u64 ino, unsigned int d_type)
-{
-	struct cifsd_readdir_data *buf =
-		container_of(ctx, struct cifsd_readdir_data, ctx);
-	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
-	unsigned int reclen;
-
-	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
-	if (buf->used + reclen > PAGE_SIZE) {
-		buf->full = 1;
-		return -EINVAL;
-	}
-
-	de->namelen = namlen;
-	de->offset = offset;
-	de->ino = ino;
-	de->d_type = d_type;
-	memcpy(de->name, name, namlen);
-	buf->used += reclen;
-	buf->dirent_count++;
-
-	return 0;
-}
-
-/**
- * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
- * @namestr:            source filename buffer
- * @len:                source buffer length
- * @size:               used buffer size
- * @local_nls           code page table
- * @name_len:           file name length after conversion
- * @next_entry_offset:  offset of dentry
- * @buf_len:            response buffer length
- * @data_count:         used response buffer size
- * @no_namelen_field:	flag which shows if a namelen field flag exist
- *
- * Return:      return error if next entry could not fit in current response
- *              buffer, otherwise return encode buffer.
- */
-char *convname_updatenextoffset(char *namestr, int len, int size,
-		const struct nls_table *local_nls, int *name_len,
-		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment, bool no_namelen_field)
-{
-	char *enc_buf;
-
-	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!enc_buf)
-		return NULL;
-
-	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
-			namestr, len, local_nls, 0);
-	*name_len *= 2;
-	if (no_namelen_field) {
-		enc_buf[*name_len] = '\0';
-		enc_buf[*name_len+1] = '\0';
-		*name_len += 2;
-	}
-
-	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
-
-	if (*next_entry_offset > *buf_len) {
-		cifsd_debug("buf_len : %d next_entry_offset : %d"
-				" data_count : %d\n", *buf_len,
-				*next_entry_offset, *data_count);
-		*buf_len = -1;
-		kfree(enc_buf);
-		return NULL;
-	}
-	return enc_buf;
-}
-
-int smb_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
-		int info_level, struct cifsd_file *dir,
-		struct cifsd_dir_info *d_info, char *search_pattern,
-		int (*populate_readdir_entry_fn)(struct cifsd_tcp_conn *,
-		int, struct cifsd_dir_info *, struct cifsd_kstat *))
-{
-	int i, rc = 0;
-
-	for (i = 0; i < 2; i++) {
-		struct kstat kstat;
-		struct cifsd_kstat cifsd_kstat;
-
-		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
-			if (i == 0)
-				d_info->name = ".";
-			else
-				d_info->name = "..";
-
-			if (!is_matched(d_info->name, search_pattern)) {
-				dir->dot_dotdot[i] = 1;
-				continue;
-			}
-
-			generic_fillattr(PARENT_INODE(dir), &kstat);
-			cifsd_kstat.file_attributes = ATTR_DIRECTORY;
-			cifsd_kstat.kstat = &kstat;
-			rc = populate_readdir_entry_fn(conn, info_level,
-				d_info, &cifsd_kstat);
-			if (rc)
-				break;
-			if (d_info->out_buf_len <= 0)
-				break;
-
-			dir->dot_dotdot[i] = 1;
-		}
-	}
-
-	return rc;
-}
-
-/**
  * smb_mkdir() - handler for smb mkdir
  * @work:	smb work containing creat directory command buffer
  *
@@ -8366,7 +8079,7 @@ int smb1_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = rcv_hdr1->Protocol;
 	iov[0].iov_len = be32_to_cpu(rcv_hdr1->smb_buf_length);
 
-	if (smb1_sign_smbpdu(work->sess, iov, 1, signature))
+	if (cifsd_sign_smb1_pdu(work->sess, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, CIFS_SMB1_SIGNATURE_SIZE)) {
@@ -8405,7 +8118,7 @@ void smb1_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (smb1_sign_smbpdu(work->sess, iov, n_vec, signature))
+	if (cifsd_sign_smb1_pdu(work->sess, iov, n_vec, signature))
 		memset(rsp_hdr->Signature.SecuritySignature,
 				0, CIFS_SMB1_SIGNATURE_SIZE);
 	else

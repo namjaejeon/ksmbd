@@ -7,9 +7,7 @@
 #include "glob.h"
 #include "export.h"
 #include "smb1pdu.h"
-#ifdef CONFIG_CIFS_SMB2_SERVER
 #include "smb2pdu.h"
-#endif
 #include "oplock.h"
 #include "cifsacl.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -18,6 +16,7 @@
 #include <linux/workqueue.h>
 
 #include "server.h"
+#include "smb_common.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "transport_ipc.h"
@@ -119,49 +118,79 @@ static inline int check_conn_state(struct cifsd_work *work)
 
 /* @FIXME what a mess... god help. */
 
-/**
- * handle_cifsd_work() - process pending smb work requests
- * @cifsd_work:	smb work containing request command buffer
- *
- * called by kworker threads to processing remaining smb work requests
- */
-static void handle_cifsd_work(struct work_struct *wk)
+#define TCP_HANDLER_CONTINUE	0
+#define TCP_HANDLER_ABORT	1
+
+static int __process_request(struct cifsd_work *work,
+			     struct cifsd_tcp_conn *conn,
+			     unsigned int *cmd)
 {
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb_version_cmds *cmds;
+	unsigned int command;
+	int ret;
+
+	if (check_conn_state(work))
+		return TCP_HANDLER_CONTINUE;
+
+	if (cifsd_verify_smb_message(work)) {
+		cifsd_err("Malformed smb request\n");
+		return TCP_HANDLER_ABORT;
+	}
+
+	command = conn->ops->get_cmd_val(work);
+	*cmd = command;
+
+andx_again:
+	if (command >= conn->max_cmds) {
+		conn->ops->set_rsp_status(work, NT_STATUS_INVALID_PARAMETER);
+		return TCP_HANDLER_CONTINUE;
+	}
+
+	cmds = &conn->cmds[command];
+	if (cmds->proc == NULL) {
+		cifsd_err("*** not implemented yet cmd = %x\n", command);
+		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
+		return TCP_HANDLER_CONTINUE;
+	}
+
+	if (work->sess && conn->ops->is_sign_req &&
+		conn->ops->is_sign_req(work, command)) {
+		ret = conn->ops->check_sign_req(work);
+		if (!ret) {
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
+			return TCP_HANDLER_CONTINUE;
+		}
+	}
+
+	ret = cmds->proc(work);
+	if (ret < 0)
+		cifsd_err("Failed to process %u [%d]\n", command, ret);
+	/* AndX commands - chained request can return positive values */
+	if (ret > 0) {
+		command = ret;
+		*cmd = command;
+		goto andx_again;
+	}
+
+	if (work->send_no_response)
+		return TCP_HANDLER_ABORT;
+	return TCP_HANDLER_CONTINUE;
+}
+
+static void __handle_cifsd_work(struct cifsd_work *work,
+				struct cifsd_tcp_conn *conn)
+{
 	unsigned int command = 0;
 	int rc;
-	bool conn_valid = false;
-	struct smb_version_cmds *cmds;
-	long int start_time = 0, end_time = 0, time_elapsed = 0;
 
-
-	cifsd_tcp_conn_lock(conn);
-
-	if (cifsd_debugging)
-		start_time = jiffies;
-
-	conn->stats.request_served++;
-
-	if (unlikely(conn->need_neg)) {
-		if (is_smb2_neg_cmd(work))
-			init_smb2_0_server(conn);
-		else if (conn->ops->get_cmd_val(work) !=
-						SMB_COM_NEGOTIATE)
-			conn->need_neg = false;
-	}
-
-	if (conn->ops->allocate_rsp_buf(work)) {
-		rc = -ENOMEM;
-		goto nosend;
-	}
+	if (conn->ops->allocate_rsp_buf(work))
+		return;
 
 	if (conn->ops->is_transform_hdr &&
 		conn->ops->is_transform_hdr(REQUEST_BUF(work))) {
 		rc = conn->ops->decrypt_req(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work,
-					NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 
@@ -192,95 +221,26 @@ static void handle_cifsd_work(struct work_struct *wk)
 		}
 	}
 
-chained:
-	rc = check_conn_state(work);
-	if (rc)
-		goto send;
-
-	/* check if the message is ok */
-	if (check_message(work)) {
-		cifsd_err("Malformed smb request\n");
-		goto nosend;
-	}
-
-	conn_valid = true;
-	command = conn->ops->get_cmd_val(work);
-again:
-	if (command >= conn->max_cmds) {
-		conn->ops->set_rsp_status(work,
-					NT_STATUS_INVALID_PARAMETER);
-		goto send;
-	}
-
-	cmds = &conn->cmds[command];
-	if (cmds->proc == NULL) {
-		cifsd_err("*** not implemented yet cmd = %x\n", command);
-		conn->ops->set_rsp_status(work,
-						NT_STATUS_NOT_IMPLEMENTED);
-		goto send;
-	}
-
-	mutex_unlock(&conn->srv_mutex);
-
-	if (work->sess && conn->ops->is_sign_req &&
-		conn->ops->is_sign_req(work, command)) {
-		rc = conn->ops->check_sign_req(work);
-		if (!rc) {
-			conn->ops->set_rsp_status(work,
-							NT_STATUS_DATA_ERROR);
-			goto send;
-		}
-	}
-
-	rc = cmds->proc(work);
-	mutex_lock(&conn->srv_mutex);
-	if (conn->need_neg && (conn->dialect == SMB20_PROT_ID ||
-				conn->dialect == SMB21_PROT_ID ||
-				conn->dialect == SMB2X_PROT_ID ||
-				conn->dialect == SMB30_PROT_ID ||
-				conn->dialect == SMB302_PROT_ID ||
-				conn->dialect == SMB311_PROT_ID)) {
-		cifsd_debug("Need to send the smb2 negotiate response\n");
-		init_smb2_neg_rsp(work);
-		goto send;
-	}
-	/* AndX commands - chained request can return positive values */
-	if (rc > 0) {
-		command = rc;
-		goto again;
-	} else if (rc < 0)
-		cifsd_debug("error(%d) while processing cmd %u\n",
-							rc, command);
-
-	if (work->send_no_response) {
-		spin_lock(&conn->request_lock);
-		if (work->on_request_list) {
-			list_del_init(&work->request_entry);
-			work->on_request_list = 0;
-		}
-		spin_unlock(&conn->request_lock);
-		goto nosend;
-	}
+	do {
+		rc = __process_request(work, conn, &command);
+		if (rc == TCP_HANDLER_ABORT)
+			return;
+	} while (is_chained_smb2_message(work));
 
 send:
-	if (is_chained_smb2_message(work))
-		goto chained;
-
-	/* call set_rsp_credits() function to set number of credits granted in
+	/*
+	 * Call set_rsp_credits() function to set number of credits granted in
 	 * hdr of smb2 response.
 	 */
 	if (is_smb2_rsp(work))
 		conn->ops->set_rsp_credits(work);
 
-	if (conn->dialect == SMB311_PROT_ID)
-		smb3_preauth_hash_rsp(work);
-
+	smb3_preauth_hash_rsp(work);
 	if (work->sess && work->sess->enc && work->encrypted &&
 		conn->ops->encrypt_resp) {
 		rc = conn->ops->encrypt_resp(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work,
-					NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
 			goto send;
 		}
 	} else if (work->sess && (work->sess->sign ||
@@ -289,33 +249,27 @@ send:
 		conn->ops->set_sign_rsp(work);
 
 	cifsd_tcp_write(work);
+}
 
-nosend:
-	if (cifsd_debugging) {
-		end_time = jiffies;
+/**
+ * handle_cifsd_work() - process pending smb work requests
+ * @cifsd_work:	smb work containing request command buffer
+ *
+ * called by kworker threads to processing remaining smb work requests
+ */
+static void handle_cifsd_work(struct work_struct *wk)
+{
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
 
-		time_elapsed = end_time - start_time;
-		conn->stats.avg_req_duration =
-				(conn->stats.avg_req_duration *
-					conn->stats.request_served +
-					time_elapsed)/
-					conn->stats.request_served;
+	cifsd_tcp_conn_lock(conn);
+	conn->stats.request_served++;
 
-		if (time_elapsed > conn->stats.max_timed_request)
-			conn->stats.max_timed_request = time_elapsed;
-	}
+	__handle_cifsd_work(work, conn);
 
-	if (cifsd_tcp_exiting(work))
-		force_sig(SIGKILL, conn->handler);
-
+	cifsd_tcp_try_dequeue_request(work);
 	cifsd_tcp_conn_unlock(conn);
-	/* Now can free cifsd work */
 	cifsd_free_work_struct(work);
-
-	/*
-	 * Decrement Ref count when all processing finished
-	 *  - in both success or failure cases
-	 */
 	atomic_dec(&conn->r_count);
 }
 
@@ -330,35 +284,27 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 {
 	struct cifsd_work *work;
 
-	dump_smb_msg(conn->request_buf, HEADER_SIZE(conn));
-
 	work = cifsd_alloc_work_struct();
 	if (!work) {
 		cifsd_err("allocation for work failed\n");
 		return -ENOMEM;
 	}
 
-	/*
-	 * Increment ref count for the Server object, as after this
-	 * only fallback point is from handle_cifsd_work
-	 */
-	atomic_inc(&conn->r_count);
 	work->conn = conn;
-
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
-	cifsd_tcp_enqueue_request(work);
 
+	if (cifsd_init_smb_server(work)) {
+		cifsd_free_work_struct(work);
+		return -EINVAL;
+	}
+
+	cifsd_tcp_enqueue_request(work);
+	atomic_inc(&conn->r_count);
 	/* update activity on connection */
 	conn->last_active = jiffies;
 	INIT_WORK(&work->work, handle_cifsd_work);
 	schedule_work(&work->work);
-	return 0;
-}
-
-static int cifsd_server_init_conn(struct cifsd_tcp_conn *conn)
-{
-	init_smb1_server(conn);
 	return 0;
 }
 
@@ -378,7 +324,6 @@ static void cifsd_server_tcp_callbacks_init(void)
 {
 	struct cifsd_tcp_conn_ops ops;
 
-	ops.init_fn = cifsd_server_init_conn;
 	ops.process_fn = cifsd_server_process_request;
 	ops.terminate_fn = cifsd_server_terminate_conn;
 

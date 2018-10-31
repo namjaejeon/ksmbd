@@ -6,13 +6,13 @@
 
 #include <linux/mutex.h>
 
-#include "glob.h"
 #include "export.h"
 
 #include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "mgmt/cifsd_ida.h"
+#include "smb_common.h"
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket = NULL;
@@ -40,12 +40,10 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	if (conn->stats.open_files_count > 0)
 		return true;
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
 		cifsd_debug("No response from client in 120 secs\n");
 		return false;
 	}
-#endif
 	return true;
 }
 
@@ -202,7 +200,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
 
 		/* make sure we have enough to get to SMB header end */
-		if (pdu_size < HEADER_SIZE(conn) - 4) {
+		if (!cifsd_pdu_size_has_room(pdu_size)) {
 			cifsd_debug("SMB request too short (%u bytes)\n",
 				    pdu_size);
 			continue;
@@ -215,8 +213,8 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 			continue;
 
 		memcpy(conn->request_buf, hdr_buf, sizeof(hdr_buf));
-		if (!is_smb_request(conn))
-			continue;
+		if (!cifsd_smb_request(conn))
+			break;
 
 		/*
 		 * We already read 4 bytes to find out PDU size, now
@@ -225,7 +223,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
 		if (size < 0) {
 			cifsd_err("sock_read failed: %d\n", size);
-			continue;
+			break;
 		}
 
 		if (size != pdu_size) {
@@ -306,9 +304,6 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 #endif
 
 	conn->conn_ops = &default_tcp_conn_ops;
-	if (conn->conn_ops->init_fn)
-		conn->conn_ops->init_fn(conn);
-
 	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
 
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
@@ -486,13 +481,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	struct kvec iov[3];
 	int iov_idx = 0;
 
-	spin_lock(&conn->request_lock);
-	if (work->on_request_list && !work->multiRsp) {
-		list_del_init(&work->request_entry);
-		work->on_request_list = 0;
-	}
-	spin_unlock(&conn->request_lock);
-
+	cifsd_tcp_try_dequeue_request(work);
 	if (rsp_hdr == NULL) {
 		cifsd_err("NULL response header\n");
 		return -EINVAL;
@@ -721,9 +710,26 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	}
 }
 
+int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	int ret = 1;
+
+	if (!work->on_request_list)
+		return 0;
+
+	spin_lock(&conn->request_lock);
+	if (!work->multiRsp) {
+		list_del_init(&work->request_entry);
+		work->on_request_list = 0;
+		ret = 0;
+	}
+	spin_unlock(&conn->request_lock);
+	return ret;
+}
+
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 {
-	default_tcp_conn_ops.init_fn = ops->init_fn;
 	default_tcp_conn_ops.process_fn = ops->process_fn;
 	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
 }

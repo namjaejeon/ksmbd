@@ -12,6 +12,18 @@
 /* Security blob target info data */
 #define TGT_Name        "CIFSD"
 
+/*
+ * Size of the crypto key returned on the negotiate SMB in bytes
+ */
+#define CIFS_CRYPTO_KEY_SIZE	(8)
+#define CIFS_KEY_SIZE	(40)
+
+/*
+ * Size of encrypted user password in bytes
+ */
+#define CIFS_ENCPWD_SIZE	(16)
+#define CIFS_CPHTXT_SIZE	(16)
+
 /* Message Types */
 #define NtLmNegotiate     cpu_to_le32(1)
 #define NtLmChallenge     cpu_to_le32(2)
@@ -144,4 +156,17 @@ struct ntlmv2_resp {
 	/* array of name entries could follow ending in minimum 4 byte struct */
 } __attribute__((packed));
 
+/* per smb session structure/fields */
+struct ntlmssp_auth {
+	/* whether session key is per smb session */
+	bool		sesskey_per_smbsess;
+	/* sent by client in type 1 ntlmsssp exchange */
+	__u32		client_flags;
+	/* sent by server in type 2 ntlmssp exchange */
+	__u32		conn_flags;
+	/* sent to server */
+	unsigned char	ciphertext[CIFS_CPHTXT_SIZE];
+	/* used by ntlmssp */
+	char		cryptkey[CIFS_CRYPTO_KEY_SIZE];
+};
 #endif /* __CIFSD_NTLMSSP_H */

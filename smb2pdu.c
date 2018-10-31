@@ -16,13 +16,17 @@
 #include "oplock.h"
 #include "cifsacl.h"
 
+#include "auth.h"
+#include "asn1.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "transport_ipc.h"
 #include "vfs.h"
 #include "fh.h"
+#include "misc.h"
 
 #include "server.h"
+#include "smb_common.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -263,14 +267,19 @@ void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
  * smb2 negotiate response is sent in reply of smb1 negotiate command for
  * dialect auto-negotiation.
  */
-void init_smb2_neg_rsp(struct cifsd_work *work)
+int init_smb2_neg_rsp(struct cifsd_work *work)
 {
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct timespec64 ts64;
 
-	init_smb2_0_server(conn);
+	if (!conn->need_neg)
+		return -EINVAL;
+	if (!(conn->dialect >= SMB20_PROT_ID &&
+		conn->dialect <= SMB311_PROT_ID))
+		return -EINVAL;
+
 	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
@@ -311,17 +320,18 @@ void init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
-	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
-		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
+	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
+		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
 	cifsd_tcp_set_need_negotiate(work);
 	rsp->hdr.CreditRequest = cpu_to_le16(2);
+	return 0;
 }
 
 /**
@@ -782,7 +792,7 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(1);
 	inc_rfc1001_len(rsp,
-		GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
+		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
 	if (conn->preauth_info->CipherId) {
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
@@ -881,12 +891,12 @@ deassemble_neg_contexts(struct cifsd_tcp_conn *conn,
 }
 
 /**
- * smb2_negotiate() - handler for smb2 negotiate command
+ * smb2_handle_negotiate() - handler for smb2 negotiate command
  * @work:	smb work containing smb request buffer
  *
  * Return:      0
  */
-int smb2_negotiate(struct cifsd_work *work)
+int smb2_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_negotiate_req *req;
@@ -914,9 +924,6 @@ int smb2_negotiate(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	conn->dialect = negotiate_dialect(REQUEST_BUF(work));
-	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
-
 	conn->cli_cap = req->Capabilities;
 	switch (conn->dialect) {
 	case SMB311_PROT_ID:
@@ -942,7 +949,7 @@ int smb2_negotiate(struct cifsd_work *work)
 			goto err_out;
 		}
 
-		calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
+		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
 			conn->preauth_info->Preauth_HashValue);
 		rsp->NegotiateContextOffset =
 			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
@@ -958,7 +965,7 @@ int smb2_negotiate(struct cifsd_work *work)
 		init_smb2_1_server(conn);
 		break;
 	case SMB20_PROT_ID:
-		init_smb2_0_server(conn);
+		cifsd_init_smb2_server_common(conn);
 		break;
 	case SMB2X_PROT_ID:
 	case BAD_PROT_ID:
@@ -1002,12 +1009,12 @@ int smb2_negotiate(struct cifsd_work *work)
 		le16_to_cpu(rsp->NegotiateContextCount));
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
-	rsp->SecurityBufferLength = cpu_to_le16(GSS_LENGTH);
-	memcpy(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset,
-		NEGOTIATE_GSS_HEADER, GSS_LENGTH);
+	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
+	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
+		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
-		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) + GSS_LENGTH);
+		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
+		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
 	conn->use_spnego = true;
 
@@ -1233,7 +1240,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 			preauth_hashvalue = sess->Preauth_HashValue;
 		}
-		calc_preauth_integrity_hash(conn, REQUEST_BUF(work),
+		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
 			preauth_hashvalue);
 	}
 
@@ -1241,8 +1248,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 		CHALLENGE_MESSAGE *chgblob;
 
 		cifsd_debug("negotiate phase\n");
-		rc = decode_ntlmssp_negotiate_blob(negblob,
-			le16_to_cpu(req->SecurityBufferLength), sess);
+		rc = cifsd_decode_ntlmssp_neg_blob(negblob,
+			le16_to_cpu(req->SecurityBufferLength),
+			sess);
 		if (rc)
 			goto out_err;
 
@@ -1261,8 +1269,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = build_ntlmssp_challenge_blob(
-					chgblob, sess);
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
+					chgblob,
+					sess);
 			if (neg_blob_len < 0) {
 				kfree(neg_blob);
 				rc = -ENOMEM;
@@ -1285,7 +1294,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			kfree(spnego_blob);
 			kfree(neg_blob);
 		} else {
-			neg_blob_len = build_ntlmssp_challenge_blob(chgblob,
+			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
+					chgblob,
 					sess);
 			if (neg_blob_len < 0) {
 				rc = -ENOMEM;
@@ -1369,8 +1379,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				sess->is_guest	= false;
 			}
 		} else {
-			rc = decode_ntlmssp_authenticate_blob(authblob,
-				le16_to_cpu(req->SecurityBufferLength), sess);
+			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
+				le16_to_cpu(req->SecurityBufferLength),
+				sess);
 			if (rc) {
 				set_user_flag(sess->user,
 					      CIFSD_USER_FLAG_BAD_PASSWORD);
@@ -2133,7 +2144,6 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out1;
 		}
 	} else {
-		// share = find_matching_share(tree_id);
 		share = tcon->share_conf;
 		if (!share) {
 			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
@@ -3031,8 +3041,9 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = smb_get_shortname(conn, d_info->name,
-			&(fbdinfo->ShortName[0]));
+		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+						d_info->name,
+						&(fbdinfo->ShortName[0]));
 		fbdinfo->Reserved = 0;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
@@ -3115,9 +3126,9 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
-		fibdinfo->ShortNameLength =
-			smb_get_shortname(conn, d_info->name,
-					&(fibdinfo->ShortName[0]));
+		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
+						d_info->name,
+						&(fibdinfo->ShortName[0]));
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
@@ -3167,7 +3178,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = smb_filldir,
+		.ctx.actor = cifsd_fill_dirent,
 	};
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
@@ -3289,9 +3300,12 @@ int smb2_query_dir(struct cifsd_work *work)
 		 * reserve dot and dotdot entries in head of buffer
 		 * in first response
 		 */
-		rc = smb_populate_dot_dotdot_entries(conn,
-			req->FileInformationClass, dir_fp, &d_info,
-			srch_ptr, smb2_populate_readdir_entry);
+		rc = cifsd_populate_dot_dotdot_entries(conn,
+						req->FileInformationClass,
+						dir_fp,
+						&d_info,
+						srch_ptr,
+						smb2_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -3301,8 +3315,8 @@ int smb2_query_dir(struct cifsd_work *work)
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
 			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp, smb_filldir,
-					&r_data);
+			rc = cifsd_vfs_readdir(dir_fp->filp,
+					       &r_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
@@ -3861,8 +3875,9 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		filename = (char *)FP_FILENAME(fp);
 
 		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
-		uni_filename_len = smb_get_shortname(conn, filename,
-				file_info->FileName);
+		uni_filename_len = cifsd_extract_shortname(conn,
+							filename,
+							file_info->FileName);
 		file_info->FileNameLength = cpu_to_le32(uni_filename_len);
 
 		rsp->OutputBufferLength =
@@ -6317,16 +6332,10 @@ int smb2_ioctl(struct cifsd_work *work)
 	{
 		struct validate_negotiate_info_req *neg_req;
 		struct validate_negotiate_info_rsp *neg_rsp;
-		int ret, start_index;
-
-#ifdef CONFIG_CIFS_SMB2_SERVER
-		start_index = SMB311_PROT;
-#else
-		start_index = CIFS_PROT;
-#endif
+		int ret;
 
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
-		ret = find_matching_smb2_dialect(start_index, neg_req->Dialects,
+		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
 					le16_to_cpu(neg_req->DialectCount));
 		if (ret == BAD_PROT_ID || ret != conn->dialect)
 			goto out;
@@ -6891,7 +6900,7 @@ int smb2_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = (char *)&rcv_hdr2->ProtocolId;
 	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
 
-	if (smb2_sign_smbpdu(work->conn, work->sess->sess_key, iov, 1,
+	if (cifsd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, 1,
 		signature))
 		return 0;
 
@@ -6929,7 +6938,7 @@ void smb2_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (!smb2_sign_smbpdu(work->conn, work->sess->sess_key, iov, n_vec,
+	if (!cifsd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, n_vec,
 		signature))
 		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
@@ -6986,7 +6995,7 @@ int smb3_check_sign_req(struct cifsd_work *work)
 	iov[0].iov_base = (char *)&hdr->ProtocolId;
 	iov[0].iov_len = len;
 
-	if (smb3_sign_smbpdu(conn, signing_key, iov, 1, signature))
+	if (cifsd_sign_smb3_pdu(conn, signing_key, iov, 1, signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
@@ -7063,7 +7072,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 		n_vec++;
 	}
 
-	if (!smb3_sign_smbpdu(conn, signing_key, iov, n_vec, signature))
+	if (!cifsd_sign_smb3_pdu(conn, signing_key, iov, n_vec, signature))
 		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
 
@@ -7079,6 +7088,9 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	struct smb2_hdr *req = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
 
+	if (conn->dialect != SMB311_PROT_ID)
+		return;
+
 	if (work->next_smb2_rcv_hdr_off) {
 		req = (struct smb2_hdr *)((char *)req +
 				work->next_smb2_rcv_hdr_off);
@@ -7087,15 +7099,16 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
-		calc_preauth_integrity_hash(conn, (char *)rsp,
+		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
 			conn->preauth_info->Preauth_HashValue);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
 			rsp->Status == NT_STATUS_MORE_PROCESSING_REQUIRED) {
 		__u8 *hash_value;
 
-		if (multi_channel_enable && conn->dialect >= SMB311_PROT_ID &&
-			req->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
+		if (multi_channel_enable &&
+				conn->dialect >= SMB311_PROT_ID &&
+				req->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
 			struct preauth_session *preauth_sess;
 
 			preauth_sess = get_preauth_session(conn,
@@ -7104,7 +7117,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 		} else
 			hash_value = sess->Preauth_HashValue;
 
-		calc_preauth_integrity_hash(conn, (char *)rsp,
+		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
 				hash_value);
 	}
 }

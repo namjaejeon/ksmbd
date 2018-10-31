@@ -15,6 +15,7 @@
 #include "transport_ipc.h"
 #include "buffer_pool.h"
 #include "server.h"
+#include "smb_common.h"
 
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
@@ -280,12 +281,12 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 		return ret;
 
 	if (req->min_prot[0]) {
-		ret = get_protocol_idx(req->min_prot);
+		ret = cifsd_lookup_protocol_idx(req->min_prot);
 		if (ret >= 0)
 			server_conf.min_protocol = ret;
 	}
 	if (req->max_prot[0]) {
-		ret = get_protocol_idx(req->max_prot);
+		ret = cifsd_lookup_protocol_idx(req->max_prot);
 		if (ret >= 0)
 			server_conf.max_protocol = ret;
 	}

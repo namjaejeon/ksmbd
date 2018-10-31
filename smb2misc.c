@@ -7,6 +7,7 @@
 #include "glob.h"
 #include "nterr.h"
 #include "smb2pdu.h"
+#include "smb_common.h"
 #include "mgmt/user_session.h"
 
 static int check_smb2_hdr(struct smb2_hdr *hdr)
@@ -389,4 +390,9 @@ int smb2_check_message(struct cifsd_work *work)
 		return 1;
 	}
 	return 0;
+}
+
+int smb2_negotiate_request(struct cifsd_work *work)
+{
+	return cifsd_smb_negotiate_common(work, SMB2_NEGOTIATE_HE);
 }
