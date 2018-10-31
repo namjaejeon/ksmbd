@@ -85,6 +85,11 @@ unsigned int cifsd_default_io_size(void)
 	return (1024 * 1024);
 }
 
+unsigned int cifsd_small_buffer_size(void)
+{
+	return 448;
+}
+
 inline int cifsd_min_protocol(void)
 {
 #ifdef CONFIG_CIFS_INSECURE_SERVER

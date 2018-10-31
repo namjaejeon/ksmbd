@@ -134,7 +134,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 {
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
-	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
+	size_t small_sz = cifsd_small_buffer_size();
 	size_t large_sz = cifsd_max_msg_size() + MAX_CIFS_HDR_SIZE;
 	size_t sz = small_sz;
 
@@ -162,7 +162,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 
 		/* size of ECHO_RSP + Bytecount - Size of Data in ECHO_RSP */
 		resp_size = sizeof(ECHO_RSP) + req->ByteCount - 1;
-		if (resp_size > MAX_CIFS_SMALL_BUFFER_SIZE)
+		if (resp_size > cifsd_small_buffer_size())
 			sz = large_sz;
 	}
 
@@ -2688,10 +2688,10 @@ static int smb_read_andx_pipe(struct cifsd_work *work)
 	int ret = 0, nbytes = 0;
 	int id;
 	unsigned int count;
-	unsigned int rsp_buflen = MAX_CIFS_SMALL_BUFFER_SIZE - sizeof(READ_RSP);
+	unsigned int rsp_buflen = cifsd_small_buffer_size() - sizeof(READ_RSP);
 
 	rsp_buflen = min((unsigned int)
-			(MAX_CIFS_SMALL_BUFFER_SIZE - sizeof(READ_RSP)),
+			(cifsd_small_buffer_size() - sizeof(READ_RSP)),
 			rsp_buflen);
 
 	count = min_t(unsigned int, le16_to_cpu(req->MaxCount), rsp_buflen);

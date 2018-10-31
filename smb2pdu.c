@@ -515,7 +515,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_query_info_req *req;
-	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
+	size_t small_sz = cifsd_small_buffer_size();
 	size_t large_sz = cifsd_max_msg_size() + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);

@@ -86,4 +86,5 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
 
 unsigned int cifsd_max_msg_size(void);
 unsigned int cifsd_default_io_size(void);
+unsigned int cifsd_small_buffer_size(void);
 #endif /* __SMB_COMMON_H__ */

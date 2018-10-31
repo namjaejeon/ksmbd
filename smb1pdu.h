@@ -11,7 +11,6 @@
 #include "nterr.h"
 
 #define MAX_CIFS_HDR_SIZE 0x58
-#define MAX_CIFS_SMALL_BUFFER_SIZE 448
 
 /* @FIXME rework this code */
 
