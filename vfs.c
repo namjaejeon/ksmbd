@@ -1033,6 +1033,7 @@ int cifsd_vfs_setxattr(struct dentry *dentry,
 	return err;
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 int cifsd_vfs_fsetxattr(const char *filename,
 			const char *attr_name,
 			const void *attr_value,
@@ -1058,6 +1059,16 @@ int cifsd_vfs_fsetxattr(const char *filename,
 	path_put(&path);
 	return err;
 }
+#else
+int cifsd_vfs_fsetxattr(const char *filename,
+			const char *attr_name,
+			const void *attr_value,
+			size_t attr_size,
+			int flags)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 {
