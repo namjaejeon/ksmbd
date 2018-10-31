@@ -1313,6 +1313,7 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 	}
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * cifsd_vfs_dentry_open() - open a dentry and provide fid for it
  * @work:	smb work ptr
@@ -1388,6 +1389,16 @@ err_out3:
 	}
 	return fp;
 }
+#else
+struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
+					 const struct path *path,
+					 int flags,
+					 int option,
+					 int fexist)
+{
+	return NULL;
+}
+#endif
 
 /**
  * cifsd_vfs_empty_dir() - check for empty directory
