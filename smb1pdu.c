@@ -816,10 +816,10 @@ int smb_handle_negotiate(struct cifsd_work *work)
 		conn->sign = true;
 		neg_rsp->SecurityMode |= SECMODE_SIGN_ENABLED;
 	}
-	neg_rsp->MaxMpxCount = SERVER_MAX_MPX_COUNT;
-	neg_rsp->MaxNumberVcs = SERVER_MAX_VCS;
+	neg_rsp->MaxMpxCount = SMB1_MAX_MPX_COUNT;
+	neg_rsp->MaxNumberVcs = SMB1_MAX_VCS;
 	neg_rsp->MaxBufferSize = SMBMaxBufSize;
-	neg_rsp->MaxRawSize = SERVER_MAX_RAW_SIZE;
+	neg_rsp->MaxRawSize = SMB1_MAX_RAW_SIZE;
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = conn->srv_cap = SMB1_SERVER_CAPS;
 
