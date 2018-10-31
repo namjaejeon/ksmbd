@@ -449,8 +449,6 @@ extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 
 /* functions */
-extern void smb_delete_session(struct cifsd_session *sess);
-
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
