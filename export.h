@@ -16,10 +16,5 @@
 
 extern int cifsd_debugging;
 
-/* Global defines for server */
-#define CIFS_MAX_MSGSIZE 65536
-
-#define CIFS_DEFAULT_IOSIZE (1024 * 1024)
-
 extern unsigned int SMBMaxBufSize;
 #endif /* __CIFSD_EXPORT_H */

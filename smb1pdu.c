@@ -135,7 +135,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
 	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
-	size_t large_sz = SMBMaxBufSize + MAX_CIFS_HDR_SIZE;
+	size_t large_sz = cifsd_max_msg_size() + MAX_CIFS_HDR_SIZE;
 	size_t sz = small_sz;
 
 	if (cmd == SMB_COM_TRANSACTION2) {
@@ -818,7 +818,7 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	}
 	neg_rsp->MaxMpxCount = SMB1_MAX_MPX_COUNT;
 	neg_rsp->MaxNumberVcs = SMB1_MAX_VCS;
-	neg_rsp->MaxBufferSize = SMBMaxBufSize;
+	neg_rsp->MaxBufferSize = cifsd_max_msg_size();
 	neg_rsp->MaxRawSize = SMB1_MAX_RAW_SIZE;
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = conn->srv_cap = SMB1_SERVER_CAPS;
@@ -2780,12 +2780,12 @@ int smb_read_andx(struct cifsd_work *work)
 	if (conn->srv_cap & CAP_LARGE_READ_X)
 		count |= le32_to_cpu(req->MaxCountHigh) << 16;
 
-	if (count > CIFS_DEFAULT_IOSIZE) {
+	if (count > cifsd_default_io_size()) {
 		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				count, CIFS_DEFAULT_IOSIZE);
+				count, cifsd_default_io_size());
 		cifsd_debug("limiting read size to max size(%u)\n",
-				CIFS_DEFAULT_IOSIZE);
-		count = CIFS_DEFAULT_IOSIZE;
+				cifsd_default_io_size());
+		count = cifsd_default_io_size();
 	}
 
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
@@ -3000,12 +3000,12 @@ int smb_write_andx(struct cifsd_work *work)
 	if (conn->srv_cap & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
-	if (count > CIFS_DEFAULT_IOSIZE) {
+	if (count > cifsd_default_io_size()) {
 		cifsd_debug("write size(%zu) exceeds max size(%u)\n",
-				count, CIFS_DEFAULT_IOSIZE);
+				count, cifsd_default_io_size());
 		cifsd_debug("limiting write size to max size(%u)\n",
-				CIFS_DEFAULT_IOSIZE);
-		count = CIFS_DEFAULT_IOSIZE;
+				cifsd_default_io_size());
+		count = cifsd_default_io_size();
 	}
 
 	if (le16_to_cpu(req->DataOffset) ==
@@ -3781,7 +3781,7 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	__u16 rsp_data_cnt = 4;
 
 	eabuf->list_len = cpu_to_le32(rsp_data_cnt);
-	buf_free_len = SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
+	buf_free_len = cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp) + 4) -
 		sizeof(TRANSACTION2_RSP);
 	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);

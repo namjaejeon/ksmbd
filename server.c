@@ -29,7 +29,6 @@ int cifsd_debugging;
  * keep MaxBufSize Default: 65536
  * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
  */
-unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
 struct fidtable_desc global_fidtable;
 
