@@ -63,25 +63,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	return;
 }
 
-int get_pos_strnstr(const char *s1, const char *s2, size_t len)
-{
-	size_t l2;
-	int index = 0;
-
-	l2 = strlen(s2);
-	if (!l2)
-		return 0;
-
-	while (len >= l2) {
-		len--;
-		if (!memcmp(s1, s2, l2))
-			return index;
-		s1++;
-		index++;
-	}
-	return 0;
-}
-
 int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 {
 	int rc = 0;
