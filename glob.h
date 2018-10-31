@@ -66,15 +66,6 @@ extern struct list_head global_lock_list;
 #define LOCKING_ANDX_LARGE_FILES     0x10
 
 /*
- *  * max peer IPv4/IPv6 addr size (including '\0')
- *   */
-#ifdef IPV6_SUPPORTED
-#define MAX_ADDRBUFLEN 128
-#else
-#define MAX_ADDRBUFLEN 16
-#endif
-
-/*
  *  * Size of the ntlm client response
  *   */
 #define CIFS_AUTH_RESP_SIZE (24)

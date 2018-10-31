@@ -17,6 +17,13 @@
 
 #define CIFSD_SOCKET_BACKLOG		16
 
+/* max peer IPv4/IPv6 addr size (including '\0') */
+#ifdef IPV6_SUPPORTED
+#define TCP_CONN_ADDRBUF_SZ		128
+#else
+#define TCP_CONN_ADDRBUF_SZ		16
+#endif
+
 /*
  * WARNING
  *
@@ -78,7 +85,7 @@ struct cifsd_tcp_conn {
 	struct list_head		async_requests;
 	int				max_credits;
 	int				credits_granted;
-	char				peeraddr[MAX_ADDRBUFLEN];
+	char				peeraddr[TCP_CONN_ADDRBUF_SZ];
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
