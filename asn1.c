@@ -575,8 +575,11 @@ static int compute_asn_hdr_len_bytes(int len)
 		return 0;
 }
 
-void encode_asn_tag(char *buf, unsigned int *ofs, char tag, char seq,
-		int length)
+static void encode_asn_tag(char *buf,
+			   unsigned int *ofs,
+			   char tag,
+			   char seq,
+			   int length)
 {
 	int i;
 	int index = *ofs;

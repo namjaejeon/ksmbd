@@ -18,12 +18,6 @@ int cifsd_decode_negTokenTarg(unsigned char *security_blob,
 			      int length,
 			      struct cifsd_tcp_conn *conn);
 
-void encode_asn_tag(char *buf,
-		    unsigned int *ofs,
-		    char tag,
-		    char seq,
-		    int length);
-
 int build_spnego_ntlmssp_neg_blob(unsigned char **pbuffer,
 				  u16 *buflen,
 				  char *ntlm_blob,
