@@ -90,6 +90,40 @@ int cifsd_vfs_mkdir(const char *name, umode_t mode)
 	return err;
 }
 
+static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
+				      char *attr_name,
+				      int attr_name_len,
+				      char **attr_value)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t value_len = -ENOENT, xattr_list_len;
+
+	xattr_list_len = cifsd_vfs_listxattr(dentry,
+					     &xattr_list,
+					     XATTR_LIST_MAX);
+	if (xattr_list_len <= 0)
+		goto out;
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strncasecmp(attr_name, name, attr_name_len))
+			continue;
+
+		value_len = cifsd_vfs_getxattr(dentry,
+					       name,
+					       attr_value);
+		if (value_len < 0)
+			cifsd_err("failed to get xattr in file\n");
+		break;
+	}
+
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+	return value_len;
+}
+
 static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 	size_t count)
 {
@@ -1716,40 +1750,6 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	name[de->namelen] = '\0';
 	path_put(&path);
 	return name;
-}
-
-ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
-			       char *attr_name,
-			       int attr_name_len,
-			       char **attr_value)
-{
-	char *name, *xattr_list = NULL;
-	ssize_t value_len = -ENOENT, xattr_list_len;
-
-	xattr_list_len = cifsd_vfs_listxattr(dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
-	if (xattr_list_len <= 0)
-		goto out;
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
-		if (strncasecmp(attr_name, name, attr_name_len))
-			continue;
-
-		value_len = cifsd_vfs_getxattr(dentry,
-					       name,
-					       attr_value);
-		if (value_len < 0)
-			cifsd_err("failed to get xattr in file\n");
-		break;
-	}
-
-out:
-	if (xattr_list)
-		vfree(xattr_list);
-	return value_len;
 }
 
 ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,

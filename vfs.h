@@ -92,11 +92,6 @@ int cifsd_vfs_fsetxattr(const char *filename,
 int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams);
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 
-ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
-			       char *attr_name,
-			       int attr_name_len,
-			       char **attr_value);
-
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
