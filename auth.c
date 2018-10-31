@@ -570,6 +570,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	return blob_len;
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * cifsd_sign_smb1_pdu() - function to generate SMB1 packet signing
  * @sess:	session of connection
@@ -622,6 +623,15 @@ int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 out:
 	return rc;
 }
+#else
+int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
+			struct kvec *iov,
+			int n_vec,
+			char *sig)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 {
