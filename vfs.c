@@ -453,15 +453,6 @@ out:
 		path_put(&path);
 	return err;
 }
-#else
-void smb_check_attrs(struct inode *inode, struct iattr *attrs);
-
-int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
-		      uint64_t fid, struct iattr *attrs)
-{
-	return -ENOTSUPP;
-}
-#endif
 
 /**
  * cifsd_vfs_getattr() - vfs helper for smb getattr
@@ -496,6 +487,21 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
 	return err;
 }
+#else
+void smb_check_attrs(struct inode *inode, struct iattr *attrs);
+
+int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
+		      uint64_t fid, struct iattr *attrs)
+{
+	return -ENOTSUPP;
+}
+
+int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
+		      struct kstat *stat)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 /**
  * cifsd_vfs_fsync() - vfs helper for smb fsync
