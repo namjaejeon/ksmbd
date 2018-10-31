@@ -18,7 +18,6 @@ int cifsd_decode_negTokenTarg(unsigned char *security_blob,
 			      int length,
 			      struct cifsd_tcp_conn *conn);
 
-int compute_asn_hdr_len_bytes(int len);
 void encode_asn_tag(char *buf,
 		    unsigned int *ofs,
 		    char tag,

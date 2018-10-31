@@ -561,7 +561,7 @@ cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
 	return 1;
 }
 
-int compute_asn_hdr_len_bytes(int len)
+static int compute_asn_hdr_len_bytes(int len)
 {
 	if (len > 0xFFFFFF)
 		return 4;
