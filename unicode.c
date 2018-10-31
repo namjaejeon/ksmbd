@@ -49,9 +49,9 @@ int smb1_utf16_name_length(const __le16 *from, int maxbytes)
  *
  * Return:	string length after conversion
  */
-int
-smb_utf16_bytes(const __le16 *from, int maxbytes,
-		const struct nls_table *codepage)
+static int smb_utf16_bytes(const __le16 *from,
+			   int maxbytes,
+			   const struct nls_table *codepage)
 {
 	int i;
 	int charlen, outlen = 0;
