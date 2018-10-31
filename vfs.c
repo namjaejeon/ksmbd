@@ -970,7 +970,7 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
 	return err;
 }
 
-ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
+static ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
 			   char *xattr_name)
 {
 	return vfs_getxattr(dentry, xattr_name, NULL, 0);

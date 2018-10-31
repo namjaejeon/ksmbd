@@ -73,9 +73,6 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 			   char *xattr_name,
 			   char **xattr_buf);
 
-ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
-			    char *xattr_name);
-
 ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 				char *attr_name,
 				int attr_name_len);
