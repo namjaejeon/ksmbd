@@ -103,8 +103,6 @@ int cifsd_vfs_lookup_in_dir(char *dirname, char *filename);
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int check_lock_range(struct file *filp, loff_t start,
-		loff_t end, unsigned char type);
 int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *buf);
 int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,

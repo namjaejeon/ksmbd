@@ -115,6 +115,50 @@ static int cifsd_vfs_stream_read(struct cifsd_file *fp, char *buf, loff_t *pos,
 }
 
 /**
+ * check_lock_range() - vfs helper for smb byte range file locking
+ * @filp:	the file to apply the lock to
+ * @start:	lock start byte offset
+ * @end:	lock end byte offset
+ * @type:	byte range type read/write
+ *
+ * Return:	0 on success, otherwise error
+ */
+static int check_lock_range(struct file *filp,
+			    loff_t start,
+			    loff_t end,
+			    unsigned char type)
+{
+	struct file_lock *flock;
+	struct file_lock_context *ctx = file_inode(filp)->i_flctx;
+	int error = 0;
+
+	if (!ctx || list_empty_careful(&ctx->flc_posix))
+		return 0;
+
+	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
+		/* check conflict locks */
+		if (flock->fl_end >= start && end >= flock->fl_start) {
+			if (flock->fl_type == F_RDLCK) {
+				if (type == WRITE) {
+					cifsd_err("not allow write by shared lock\n");
+					error = 1;
+					goto out;
+				}
+			} else if (flock->fl_type == F_WRLCK) {
+				/* check owner in lock */
+				if (flock->fl_file != filp) {
+					error = 1;
+					cifsd_err("not allow rw access by exclusive lock from other opens\n");
+					goto out;
+				}
+			}
+		}
+	}
+out:
+	return error;
+}
+
+/**
  * cifsd_vfs_read() - vfs helper for smb file read
  * @work:	smb work
  * @fid:	file id of open file
@@ -1162,48 +1206,6 @@ int cifsd_vfs_lock(struct file *filp, int cmd,
 {
 	cifsd_debug("%s: calling vfs_lock_file\n", __func__);
 	return vfs_lock_file(filp, cmd, flock, NULL);
-}
-
-/**
- * check_lock_range() - vfs helper for smb byte range file locking
- * @filp:	the file to apply the lock to
- * @start:	lock start byte offset
- * @end:	lock end byte offset
- * @type:	byte range type read/write
- *
- * Return:	0 on success, otherwise error
- */
-int check_lock_range(struct file *filp, loff_t start, loff_t end,
-		unsigned char type)
-{
-	struct file_lock *flock;
-	struct file_lock_context *ctx = file_inode(filp)->i_flctx;
-	int error = 0;
-
-	if (!ctx || list_empty_careful(&ctx->flc_posix))
-		return 0;
-
-	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
-		/* check conflict locks */
-		if (flock->fl_end >= start && end >= flock->fl_start) {
-			if (flock->fl_type == F_RDLCK) {
-				if (type == WRITE) {
-					cifsd_err("not allow write by shared lock\n");
-					error = 1;
-					goto out;
-				}
-			} else if (flock->fl_type == F_WRLCK) {
-				/* check owner in lock */
-				if (flock->fl_file != filp) {
-					error = 1;
-					cifsd_err("not allow rw access by exclusive lock from other opens\n");
-					goto out;
-				}
-			}
-		}
-	}
-out:
-	return error;
 }
 
 int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata)
