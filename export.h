@@ -44,12 +44,4 @@ extern int cifsd_debugging;
 #define O_CLIENT 2
 
 extern unsigned int SMBMaxBufSize;
-
-extern struct cifsd_user *cifsd_is_user_present(char *name);
-struct cifsd_share *get_cifsd_share(struct cifsd_tcp_conn *conn,
-                struct cifsd_session *sess, char *sharename, bool *can_write);
-extern struct cifsd_tcon *get_cifsd_tcon(struct cifsd_session *sess,
-                        unsigned int tid);
-struct cifsd_user *get_smb_session_user(struct cifsd_session *sess);
-
 #endif /* __CIFSD_EXPORT_H */
