@@ -487,6 +487,35 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
 	return err;
 }
+
+/**
+ * cifsd_vfs_symlink() - vfs helper for creating smb symlink
+ * @name:	source file name
+ * @symname:	symlink name
+ *
+ * Return:	0 on success, otherwise error
+ */
+int cifsd_vfs_symlink(const char *name, const char *symname)
+{
+	struct path path;
+	struct dentry *dentry;
+	int err;
+
+	dentry = kern_path_create(AT_FDCWD, symname, &path, 0);
+	if (IS_ERR(dentry)) {
+		err = PTR_ERR(dentry);
+		cifsd_err("path create failed for %s, err %d\n", name, err);
+		return err;
+	}
+
+	err = vfs_symlink(dentry->d_parent->d_inode, dentry, name);
+	if (err && (err != -EEXIST || err != -ENOSPC))
+		cifsd_debug("failed to create symlink, err %d\n", err);
+
+	done_path_create(&path, dentry);
+
+	return err;
+}
 #else
 void smb_check_attrs(struct inode *inode, struct iattr *attrs);
 
@@ -498,6 +527,11 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 
 int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		      struct kstat *stat)
+{
+	return -ENOTSUPP;
+}
+
+int cifsd_vfs_symlink(const char *name, const char *symname)
 {
 	return -ENOTSUPP;
 }
@@ -652,35 +686,6 @@ out2:
 	path_put(&oldpath);
 
 out1:
-	return err;
-}
-
-/**
- * cifsd_vfs_symlink() - vfs helper for creating smb symlink
- * @name:	source file name
- * @symname:	symlink name
- *
- * Return:	0 on success, otherwise error
- */
-int cifsd_vfs_symlink(const char *name, const char *symname)
-{
-	struct path path;
-	struct dentry *dentry;
-	int err;
-
-	dentry = kern_path_create(AT_FDCWD, symname, &path, 0);
-	if (IS_ERR(dentry)) {
-		err = PTR_ERR(dentry);
-		cifsd_err("path create failed for %s, err %d\n", name, err);
-		return err;
-	}
-
-	err = vfs_symlink(dentry->d_parent->d_inode, dentry, name);
-	if (err && (err != -EEXIST || err != -ENOSPC))
-		cifsd_debug("failed to create symlink, err %d\n", err);
-
-	done_path_create(&path, dentry);
-
 	return err;
 }
 
