@@ -190,12 +190,6 @@ extern struct list_head global_lock_list;
 #define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
 #define XATTR_NAME_SD_DACL_LEN	(sizeof(XATTR_NAME_SD_DACL) - 1)
 
-/* crypto security descriptor definition */
-struct sdesc {
-	struct shash_desc shash;
-	char ctx[];
-};
-
 struct smb_version_values {
 	char            *version_string;
 	__u16           protocol_id;
@@ -438,16 +432,4 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
 extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
-
-/* functions */
-extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
-		const struct nls_table *);
-extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
-		const struct nls_table *codepage);
-extern int E_P24(unsigned char *p21, const unsigned char *c8,
-		unsigned char *p24);
-extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
-		int link_len);
-extern int update_sess_key(unsigned char *md5_hash, char *nonce,
-	char *server_challenge, int len);
 #endif /* __CIFSD_GLOB_H */

@@ -17,8 +17,11 @@
 #include <linux/kernel.h>
 #include <linux/random.h>
 #include <crypto/hash.h>
+#include <linux/scatterlist.h>
+
+#include "glob.h" /* FIXME */
 #include "unicode.h"
-#include "glob.h"
+#include "encrypt.h"
 
 #ifndef false
 #define false 0
@@ -33,7 +36,7 @@
 	(CVAL((buf), (pos)) = (val) & 0xFF, CVAL((buf), (pos)+1) = (val) >> 8)
 #define SSVAL(buf, pos, val) SSVALX((buf), (pos), ((__u16)(val)))
 
-	static void
+static void
 str_to_key(unsigned char *str, unsigned char *key)
 {
 	int i;
@@ -50,7 +53,7 @@ str_to_key(unsigned char *str, unsigned char *key)
 		key[i] = (key[i] << 1);
 }
 
-	static int
+static int
 smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 {
 	int rc;
@@ -84,8 +87,7 @@ smbhash_err:
 	return rc;
 }
 
-	static int
-E_P16(unsigned char *p14, unsigned char *p16)
+static int E_P16(unsigned char *p14, unsigned char *p16)
 {
 	int rc;
 	unsigned char sp8[8] = {
@@ -98,8 +100,7 @@ E_P16(unsigned char *p14, unsigned char *p16)
 	return rc;
 }
 
-	int
-E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
+int E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 {
 	int rc;
 
@@ -114,8 +115,7 @@ E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 }
 
 /* produce a md4 message digest from data of length n bytes */
-int
-smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
+int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
 {
 	int rc;
 	unsigned int size;
@@ -160,8 +160,10 @@ smb_mdfour_err:
 }
 
 /* produce sess key using md5 with client nonce and server chanllenge */
-int update_sess_key(unsigned char *md5_hash, char *nonce,
-	char *server_challenge, int len)
+int update_sess_key(unsigned char *md5_hash,
+		    char *nonce,
+		    char *server_challenge,
+		    int len)
 {
 	int rc;
 	unsigned int size;
@@ -218,8 +220,9 @@ err_out:
    It takes a password, a 8 byte "crypt key" and puts 24 bytes of
    encrypted password into p24 */
 /* Note that password must be uppercased and null terminated */
-	int
-SMB_encrypt(unsigned char *passwd, const unsigned char *c8, unsigned char *p24)
+int SMB_encrypt(unsigned char *passwd,
+		const unsigned char *c8,
+		unsigned char *p24)
 {
 	int rc;
 	unsigned char p14[14], p16[16], p21[21];
@@ -243,9 +246,9 @@ SMB_encrypt(unsigned char *passwd, const unsigned char *c8, unsigned char *p24)
  * Creates the MD4 Hash of the users password in NT UNICODE.
  */
 
-	int
-smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
-		const struct nls_table *codepage)
+int smb_E_md4hash(const unsigned char *passwd,
+		  unsigned char *p16,
+		  const struct nls_table *codepage)
 {
 	int rc;
 	int len;
@@ -266,9 +269,10 @@ smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
 }
 
 /* Does the NT MD4 hash then des encryption. */
-	int
-SMB_NTencrypt(unsigned char *passwd, unsigned char *c8, unsigned char *p24,
-		const struct nls_table *codepage)
+int SMB_NTencrypt(unsigned char *passwd,
+		  unsigned char *c8,
+		  unsigned char *p24,
+		  const struct nls_table *codepage)
 {
 	int rc;
 	unsigned char p16[16], p21[21];

@@ -15,6 +15,7 @@
 #include "auth.h"
 #include "glob.h"
 
+#include "encrypt.h"
 #include "server.h"
 #include "smb_common.h"
 #include "transport_tcp.h"
