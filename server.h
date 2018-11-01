@@ -15,6 +15,8 @@
 #define SERVER_CONF_SERVER_STRING	1
 #define SERVER_CONF_WORK_GROUP		2
 
+extern int cifsd_debugging;
+
 struct cifsd_server_config {
 	int		state;
 	char		*conf[SERVER_CONF_WORK_GROUP + 1];

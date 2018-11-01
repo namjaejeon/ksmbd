@@ -14,7 +14,6 @@
 
 #include "mgmt/user_config.h"
 
-extern int cifsd_debugging;
 
 extern unsigned int SMBMaxBufSize;
 #endif /* __CIFSD_EXPORT_H */
