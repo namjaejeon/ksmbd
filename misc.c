@@ -7,6 +7,7 @@
 #include <linux/kernel.h>
 #include <linux/version.h>
 #include <linux/xattr.h>
+#include <linux/fs.h>
 
 #include "misc.h"
 #include "smb_common.h"
