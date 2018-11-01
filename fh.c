@@ -242,7 +242,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 		return -ENOMEM;
 	}
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
-	ftab_desc->ftab->start_pos = 1;
+	ftab_desc->ftab->start_pos = 0;
 	spin_lock_init(&ftab_desc->fidtable_lock);
 	return 0;
 }
