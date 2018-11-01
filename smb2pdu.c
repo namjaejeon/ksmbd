@@ -4287,8 +4287,9 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			obj_info = (struct object_id_info *)(rsp->Buffer);
 
 			if (!user_guest(sess->user)) {
-				smb_E_md4hash(user_passkey(sess->user),
-					objid, conn->local_nls);
+				cifsd_enc_md4hash(user_passkey(sess->user),
+						  objid,
+						  conn->local_nls);
 				memcpy(obj_info->objid, objid, 16);
 			} else
 				memset(obj_info->objid, 0, 16);

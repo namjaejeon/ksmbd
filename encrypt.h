@@ -23,25 +23,25 @@ struct sdesc {
 	char			ctx[];
 };
 
-int SMB_NTencrypt(unsigned char *,
-		  unsigned char *,
-		  unsigned char *,
-		  const struct nls_table *);
+int cifsd_enc_ntmd4(unsigned char *,
+		    unsigned char *,
+		    unsigned char *,
+		    const struct nls_table *);
 
-int smb_E_md4hash(const unsigned char *passwd,
-		  unsigned char *p16,
-		  const struct nls_table *codepage);
+int cifsd_enc_md4hash(const unsigned char *passwd,
+		      unsigned char *p16,
+		      const struct nls_table *codepage);
 
-int E_P24(unsigned char *p21,
-	  const unsigned char *c8,
-	  unsigned char *p24);
+int cifsd_enc_p24(unsigned char *p21,
+		  const unsigned char *c8,
+		  unsigned char *p24);
 
-int smb_mdfour(unsigned char *md4_hash,
-	       unsigned char *link_str,
-	       int link_len);
+int cifsd_enc_md4(unsigned char *md4_hash,
+		  unsigned char *link_str,
+		  int link_len);
 
-int update_sess_key(unsigned char *md5_hash,
-		    char *nonce,
-		    char *server_challenge,
-		    int len);
+int cifsd_enc_update_sess_key(unsigned char *md5_hash,
+			      char *nonce,
+			      char *server_challenge,
+			      int len);
 #endif /* __ENCRYPT_H__ */

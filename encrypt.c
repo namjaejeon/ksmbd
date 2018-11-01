@@ -100,7 +100,9 @@ static int E_P16(unsigned char *p14, unsigned char *p16)
 	return rc;
 }
 
-int E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
+int cifsd_enc_p24(unsigned char *p21,
+		  const unsigned char *c8,
+		  unsigned char *p24)
 {
 	int rc;
 
@@ -115,7 +117,9 @@ int E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 }
 
 /* produce a md4 message digest from data of length n bytes */
-int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
+int cifsd_enc_md4(unsigned char *md4_hash,
+		  unsigned char *link_str,
+		  int link_len)
 {
 	int rc;
 	unsigned int size;
@@ -160,10 +164,10 @@ smb_mdfour_err:
 }
 
 /* produce sess key using md5 with client nonce and server chanllenge */
-int update_sess_key(unsigned char *md5_hash,
-		    char *nonce,
-		    char *server_challenge,
-		    int len)
+int cifsd_enc_update_sess_key(unsigned char *md5_hash,
+			      char *nonce,
+			      char *server_challenge,
+			      int len)
 {
 	int rc;
 	unsigned int size;
@@ -237,16 +241,14 @@ int SMB_encrypt(unsigned char *passwd,
 		return rc;
 
 	memcpy(p21, p16, 16);
-	rc = E_P24(p21, c8, p24);
-
+	rc = cifsd_enc_p24(p21, c8, p24);
 	return rc;
 }
 
 /*
  * Creates the MD4 Hash of the users password in NT UNICODE.
  */
-
-int smb_E_md4hash(const unsigned char *passwd,
+int cifsd_enc_md4hash(const unsigned char *passwd,
 		  unsigned char *p16,
 		  const struct nls_table *codepage)
 {
@@ -262,17 +264,16 @@ int smb_E_md4hash(const unsigned char *passwd,
 		*wpwd = 0; /* Ensure string is null terminated */
 	}
 
-	rc = smb_mdfour(p16, (unsigned char *) wpwd, len * sizeof(__le16));
+	rc = cifsd_enc_md4(p16, (unsigned char *) wpwd, len * sizeof(__le16));
 	memset(wpwd, 0, 129 * sizeof(__le16));
-
 	return rc;
 }
 
 /* Does the NT MD4 hash then des encryption. */
-int SMB_NTencrypt(unsigned char *passwd,
-		  unsigned char *c8,
-		  unsigned char *p24,
-		  const struct nls_table *codepage)
+int cifsd_enc_ntmd4(unsigned char *passwd,
+		    unsigned char *c8,
+		    unsigned char *p24,
+		    const struct nls_table *codepage)
 {
 	int rc;
 	unsigned char p16[16], p21[21];
@@ -280,13 +281,13 @@ int SMB_NTencrypt(unsigned char *passwd,
 	memset(p16, '\0', 16);
 	memset(p21, '\0', 21);
 
-	rc = smb_E_md4hash(passwd, p16, codepage);
+	rc = cifsd_enc_md4hash(passwd, p16, codepage);
 	if (rc) {
 		cifsd_debug("%s Can't generate NT hash, error: %d\n",
 				__func__, rc);
 		return rc;
 	}
 	memcpy(p21, p16, 16);
-	rc = E_P24(p21, c8, p24);
+	rc = cifsd_enc_p24(p21, c8, p24);
 	return rc;
 }
