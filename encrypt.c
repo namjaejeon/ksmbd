@@ -23,19 +23,6 @@
 #include "unicode.h"
 #include "encrypt.h"
 
-#ifndef false
-#define false 0
-#endif
-#ifndef true
-#define true 1
-#endif
-
-/* following came from the other byteorder.h to avoid include conflicts */
-#define CVAL(buf, pos) (((unsigned char *)(buf))[(pos)])
-#define SSVALX(buf, pos, val)	\
-	(CVAL((buf), (pos)) = (val) & 0xFF, CVAL((buf), (pos)+1) = (val) >> 8)
-#define SSVAL(buf, pos, val) SSVALX((buf), (pos), ((__u16)(val)))
-
 static void
 str_to_key(unsigned char *str, unsigned char *key)
 {
@@ -210,8 +197,8 @@ err_out:
  * Creates the MD4 Hash of the users password in NT UNICODE.
  */
 int cifsd_enc_md4hash(const unsigned char *passwd,
-		  unsigned char *p16,
-		  const struct nls_table *codepage)
+		      unsigned char *p16,
+		      const struct nls_table *codepage)
 {
 	int rc;
 	int len;
