@@ -11,9 +11,6 @@
 #include <linux/writeback.h>
 #include <linux/xattr.h>
 
-#include "smb1pdu.h"
-#include "smb2pdu.h"
-
 #include "auth.h"
 #include "glob.h"
 

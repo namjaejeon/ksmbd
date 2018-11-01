@@ -11,8 +11,8 @@
 #include <asm-generic/unaligned.h>
 #include "unicode.h"
 #include "uniupr.h"
-#include "smb1pdu.h"
 #include "glob.h"
+#include "smb_common.h"
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 int smb1_utf16_name_length(const __le16 *from, int maxbytes)

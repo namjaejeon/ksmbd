@@ -11,8 +11,7 @@
 #include <keys/user-type.h>
 
 #include "glob.h"
-#include "smb1pdu.h"
-#include "smb2pdu.h"
+#include "smb_common.h"
 #include "cifsacl.h"
 
 /* security id for everyone/world system group */
