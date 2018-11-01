@@ -15,6 +15,8 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
+#include "glob.h" /* FIXME */
+
 #define CIFSD_SOCKET_BACKLOG		16
 
 /* max peer IPv4/IPv6 addr size (including '\0') */

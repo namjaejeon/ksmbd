@@ -10,7 +10,6 @@
 #include <crypto/aead.h>
 
 #include "glob.h"
-#include "export.h"
 #include "smb2pdu.h"
 #include "smbfsctl.h"
 #include "oplock.h"

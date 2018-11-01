@@ -6,8 +6,6 @@
 
 #include <linux/mutex.h>
 
-#include "export.h"
-
 #include "server.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"

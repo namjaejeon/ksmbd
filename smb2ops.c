@@ -6,7 +6,6 @@
 
 #include <linux/slab.h>
 #include "glob.h"
-#include "export.h"
 #include "smb2pdu.h"
 
 #include "auth.h"

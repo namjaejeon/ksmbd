@@ -5,7 +5,6 @@
  */
 
 #include "glob.h"
-#include "export.h"
 #include "oplock.h"
 #include "cifsacl.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)

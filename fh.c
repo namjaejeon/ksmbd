@@ -8,7 +8,6 @@
 #include <linux/xattr.h>
 
 #include "glob.h"
-#include "export.h"
 #include "oplock.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"

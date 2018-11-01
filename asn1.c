@@ -13,7 +13,6 @@
 #include <linux/slab.h>
 
 #include "glob.h"
-#include "export.h"
 
 #include "asn1.h"
 #include "transport_tcp.h"

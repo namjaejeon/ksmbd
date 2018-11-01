@@ -5,7 +5,6 @@
  */
 
 #include "glob.h"
-#include "export.h"
 #include "oplock.h"
 
 #include "smb_common.h"

@@ -15,6 +15,7 @@ cifsd_ipc_login_request(const char *account);
 struct cifsd_session;
 struct cifsd_share_config;
 struct cifsd_tree_connect;
+struct sockaddr;
 
 struct cifsd_tree_connect_response *
 cifsd_ipc_tree_connect_request(struct cifsd_session *sess,

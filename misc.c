@@ -9,7 +9,6 @@
 #include <linux/xattr.h>
 
 #include "misc.h"
-#include "export.h"
 #include "smb_common.h"
 #include "transport_tcp.h"
 #include "vfs.h"
