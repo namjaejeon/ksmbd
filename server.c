@@ -160,7 +160,7 @@ andx_again:
 
 	ret = cmds->proc(work);
 	if (ret < 0)
-		cifsd_err("Failed to process %u [%d]\n", command, ret);
+		cifsd_debug("Failed to process %u [%d]\n", command, ret);
 	/* AndX commands - chained request can return positive values */
 	if (ret > 0) {
 		command = ret;
