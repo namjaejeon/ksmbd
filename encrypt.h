@@ -23,11 +23,6 @@ struct sdesc {
 	char			ctx[];
 };
 
-int cifsd_enc_ntmd4(unsigned char *,
-		    unsigned char *,
-		    unsigned char *,
-		    const struct nls_table *);
-
 int cifsd_enc_md4hash(const unsigned char *passwd,
 		      unsigned char *p16,
 		      const struct nls_table *codepage);

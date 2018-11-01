@@ -87,19 +87,6 @@ smbhash_err:
 	return rc;
 }
 
-static int E_P16(unsigned char *p14, unsigned char *p16)
-{
-	int rc;
-	unsigned char sp8[8] = {
-	0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
-
-	rc = smbhash(p16, sp8, p14);
-	if (rc)
-		return rc;
-	rc = smbhash(p16 + 8, sp8, p14 + 7);
-	return rc;
-}
-
 int cifsd_enc_p24(unsigned char *p21,
 		  const unsigned char *c8,
 		  unsigned char *p24)
@@ -220,32 +207,6 @@ err_out:
 }
 
 /*
-   This implements the X/Open SMB password encryption
-   It takes a password, a 8 byte "crypt key" and puts 24 bytes of
-   encrypted password into p24 */
-/* Note that password must be uppercased and null terminated */
-int SMB_encrypt(unsigned char *passwd,
-		const unsigned char *c8,
-		unsigned char *p24)
-{
-	int rc;
-	unsigned char p14[14], p16[16], p21[21];
-
-	memset(p14, '\0', 14);
-	memset(p16, '\0', 16);
-	memset(p21, '\0', 21);
-
-	memcpy(p14, passwd, 14);
-	rc = E_P16(p14, p16);
-	if (rc)
-		return rc;
-
-	memcpy(p21, p16, 16);
-	rc = cifsd_enc_p24(p21, c8, p24);
-	return rc;
-}
-
-/*
  * Creates the MD4 Hash of the users password in NT UNICODE.
  */
 int cifsd_enc_md4hash(const unsigned char *passwd,
@@ -266,28 +227,5 @@ int cifsd_enc_md4hash(const unsigned char *passwd,
 
 	rc = cifsd_enc_md4(p16, (unsigned char *) wpwd, len * sizeof(__le16));
 	memset(wpwd, 0, 129 * sizeof(__le16));
-	return rc;
-}
-
-/* Does the NT MD4 hash then des encryption. */
-int cifsd_enc_ntmd4(unsigned char *passwd,
-		    unsigned char *c8,
-		    unsigned char *p24,
-		    const struct nls_table *codepage)
-{
-	int rc;
-	unsigned char p16[16], p21[21];
-
-	memset(p16, '\0', 16);
-	memset(p21, '\0', 21);
-
-	rc = cifsd_enc_md4hash(passwd, p16, codepage);
-	if (rc) {
-		cifsd_debug("%s Can't generate NT hash, error: %d\n",
-				__func__, rc);
-		return rc;
-	}
-	memcpy(p21, p16, 16);
-	rc = cifsd_enc_p24(p21, c8, p24);
 	return rc;
 }
