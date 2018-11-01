@@ -302,8 +302,6 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 #endif
 
 	conn->conn_ops = &default_tcp_conn_ops;
-	snprintf(conn->peeraddr, sizeof(conn->peeraddr), "%pIS", csin);
-
 	conn->handler = kthread_run(cifsd_tcp_conn_handler_loop,
 				    conn,
 				    "kcifsd:%u",
