@@ -10,7 +10,6 @@
 #include <crypto/aead.h>
 
 #include "glob.h"
-#include "export.h"
 #include "smb2pdu.h"
 #include "smbfsctl.h"
 #include "oplock.h"
@@ -310,9 +309,9 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	 * not used by client for identifying connection */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
-	rsp->MaxTransactSize = SMBMaxBufSize;
-	rsp->MaxReadSize = SMBMaxBufSize;
-	rsp->MaxWriteSize = SMBMaxBufSize;
+	rsp->MaxTransactSize = cifsd_max_msg_size();
+	rsp->MaxReadSize = cifsd_max_msg_size();
+	rsp->MaxWriteSize = cifsd_max_msg_size();
 
 	getnstimeofday64(&ts64);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
@@ -515,8 +514,8 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_query_info_req *req;
-	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
-	size_t large_sz = SMBMaxBufSize + MAX_SMB2_HDR_SIZE;
+	size_t small_sz = cifsd_small_buffer_size();
+	size_t large_sz = cifsd_max_msg_size() + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);
 
@@ -980,13 +979,13 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* For stats */
 	conn->connection_type = conn->dialect;
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
-	limit = SMBMaxBufSize;
+	limit = cifsd_max_msg_size();
 
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
 		/* With LargeMTU above SMB2.0, default message limit is 1MB */
-		limit = CIFS_DEFAULT_IOSIZE;
+		limit = cifsd_default_io_size();
 		conn->cli_sec_mode = req->SecurityMode;
 	}
 
@@ -995,9 +994,9 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* Not setting conn guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
-	rsp->MaxTransactSize = SMBMaxBufSize;
-	rsp->MaxReadSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
-	rsp->MaxWriteSize = min(limit, (unsigned int)CIFS_DEFAULT_IOSIZE);
+	rsp->MaxTransactSize = cifsd_max_msg_size();
+	rsp->MaxReadSize = min(limit, (unsigned int)cifsd_default_io_size());
+	rsp->MaxWriteSize = min(limit, (unsigned int)cifsd_default_io_size());
 
 	getnstimeofday64(&ts64);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
@@ -3290,7 +3289,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = min_t(int, (SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
+	d_info.out_buf_len = min_t(int, (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp_org) + 4)),
 		le32_to_cpu(req->OutputBufferLength)) -
 		sizeof(struct smb2_query_directory_rsp);
@@ -3570,7 +3569,7 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
 	}
 
-	buf_free_len = SMBMaxBufSize + MAX_HEADER_SIZE(conn) -
+	buf_free_len = cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp_org) + 4)
 		- sizeof(struct smb2_query_info_rsp);
 
@@ -5452,12 +5451,12 @@ int smb2_read(struct cifsd_work *work)
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
-	if (length > CIFS_DEFAULT_IOSIZE) {
+	if (length > cifsd_default_io_size()) {
 		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				length, CIFS_DEFAULT_IOSIZE);
+				length, cifsd_default_io_size());
 		cifsd_debug("limiting read size to max size(%u)\n",
-				CIFS_DEFAULT_IOSIZE);
-		length = CIFS_DEFAULT_IOSIZE;
+				cifsd_default_io_size());
+		length = cifsd_default_io_size();
 	}
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),

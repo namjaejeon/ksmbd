@@ -6,10 +6,6 @@
 
 #include "smb_common.h"
 #include "server.h"
-
-#include "smb1pdu.h"
-#include "smb2pdu.h"
-
 #include "misc.h"
 /* @FIXME */
 #include "transport_tcp.h"
@@ -74,6 +70,21 @@ static struct smb_protocol smb_protos[] = {
 		SMB302_PROT_ID
 	},
 };
+
+unsigned int cifsd_max_msg_size(void)
+{
+	return 65536;
+}
+
+unsigned int cifsd_default_io_size(void)
+{
+	return (1024 * 1024);
+}
+
+unsigned int cifsd_small_buffer_size(void)
+{
+	return 448;
+}
 
 inline int cifsd_min_protocol(void)
 {

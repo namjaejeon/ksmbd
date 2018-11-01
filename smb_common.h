@@ -8,6 +8,9 @@
 
 #include <linux/kernel.h>
 
+#include "smb1pdu.h"
+#include "smb2pdu.h"
+
 #define SMB1_PROT		0
 #define SMB2_PROT		1
 #define SMB21_PROT		2
@@ -83,4 +86,8 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 
 void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
+
+unsigned int cifsd_max_msg_size(void);
+unsigned int cifsd_default_io_size(void);
+unsigned int cifsd_small_buffer_size(void);
 #endif /* __SMB_COMMON_H__ */

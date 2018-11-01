@@ -15,7 +15,6 @@
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
 
-#include "export.h"
 #include "glob.h"
 #include "oplock.h"
 #include "transport_tcp.h"

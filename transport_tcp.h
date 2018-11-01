@@ -15,6 +15,8 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
+#include "glob.h" /* FIXME */
+
 #define CIFSD_SOCKET_BACKLOG		16
 
 /*
@@ -78,7 +80,6 @@ struct cifsd_tcp_conn {
 	struct list_head		async_requests;
 	int				max_credits;
 	int				credits_granted;
-	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];

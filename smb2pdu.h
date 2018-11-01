@@ -1392,6 +1392,7 @@ extern int setup_async_work(struct cifsd_work *work, void (*fn)(void **),
 	void **arg);
 extern void smb2_send_interim_resp(struct cifsd_work *work, __le32 status);
 extern struct channel *lookup_chann_list(struct cifsd_session *sess);
+extern void smb3_preauth_hash_rsp(struct cifsd_work *work);
 extern int smb3_is_transform_hdr(void *buf);
 extern int smb3_decrypt_req(struct cifsd_work *work);
 extern int smb3_encrypt_resp(struct cifsd_work *work);

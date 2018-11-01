@@ -11,6 +11,7 @@
 #include <linux/hashtable.h>
 #include <net/net_namespace.h>
 #include <net/genetlink.h>
+#include <linux/socket.h>
 
 #include "transport_ipc.h"
 #include "buffer_pool.h"

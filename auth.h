@@ -13,6 +13,7 @@
 
 struct cifsd_session;
 struct cifsd_tcp_conn;
+struct kvec;
 
 void cifsd_copy_gss_neg_header(void *buf);
 

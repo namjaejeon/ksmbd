@@ -5,9 +5,6 @@
  */
 
 #include "glob.h"
-#include "export.h"
-#include "smb1pdu.h"
-#include "smb2pdu.h"
 #include "oplock.h"
 #include "cifsacl.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -29,7 +26,6 @@ int cifsd_debugging;
  * keep MaxBufSize Default: 65536
  * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
  */
-unsigned int SMBMaxBufSize = CIFS_MAX_MSGSIZE;
 
 struct fidtable_desc global_fidtable;
 

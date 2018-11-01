@@ -66,15 +66,6 @@ extern struct list_head global_lock_list;
 #define LOCKING_ANDX_LARGE_FILES     0x10
 
 /*
- *  * max peer IPv4/IPv6 addr size (including '\0')
- *   */
-#ifdef IPV6_SUPPORTED
-#define MAX_ADDRBUFLEN 128
-#else
-#define MAX_ADDRBUFLEN 16
-#endif
-
-/*
  *  * Size of the ntlm client response
  *   */
 #define CIFS_AUTH_RESP_SIZE (24)
@@ -449,8 +440,6 @@ extern int smb_check_delete_pending(struct file *filp,
 	struct cifsd_file *curr_fp);
 
 /* functions */
-extern void smb_delete_session(struct cifsd_session *sess);
-
 extern int SMB_NTencrypt(unsigned char *, unsigned char *, unsigned char *,
 		const struct nls_table *);
 extern int smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
@@ -461,6 +450,4 @@ extern int smb_mdfour(unsigned char *md4_hash, unsigned char *link_str,
 		int link_len);
 extern int update_sess_key(unsigned char *md5_hash, char *nonce,
 	char *server_challenge, int len);
-
-void smb3_preauth_hash_rsp(struct cifsd_work *work);
 #endif /* __CIFSD_GLOB_H */

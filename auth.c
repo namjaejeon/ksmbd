@@ -9,10 +9,8 @@
 #include <linux/uaccess.h>
 #include <linux/backing-dev.h>
 #include <linux/writeback.h>
+#include <linux/uio.h>
 #include <linux/xattr.h>
-
-#include "smb1pdu.h"
-#include "smb2pdu.h"
 
 #include "auth.h"
 #include "glob.h"
