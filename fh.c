@@ -576,7 +576,7 @@ int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifsd_file *fp;
 
-	if (p_id > 0) {
+	if (p_id != CIFSD_NO_FID) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
 			cifsd_err("Invalid id for close: %llu\n", p_id);
@@ -741,7 +741,7 @@ struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if ((pid < CIFSD_START_FID) || (pid > ftab->max_fids - 1)) {
+	if (pid > ftab->max_fids - 1) {
 		cifsd_err("invalid persistentID (%lld)\n", pid);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;

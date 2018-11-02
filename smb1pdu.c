@@ -2653,7 +2653,7 @@ int smb_close(struct cifsd_work *work)
 	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
 		cifsd_info("need to set last modified time before close\n");
 
-	err = close_id(work->sess, req->FileID, 0);
+	err = close_id(work->sess, req->FileID, CIFSD_NO_FID);
 	if (err)
 		goto out;
 
@@ -5942,7 +5942,7 @@ static int find_first(struct cifsd_work *work)
 		cifsd_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, dir_fp->volatile_id, 0);
+		close_id(sess, dir_fp->volatile_id, CIFSD_NO_FID);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -5976,7 +5976,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, dir_fp->volatile_id, 0);
+		close_id(sess, dir_fp->volatile_id, CIFSD_NO_FID);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -6155,7 +6155,7 @@ static int find_next(struct cifsd_work *work)
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
+		close_id(sess, sid, CIFSD_NO_FID);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -6189,7 +6189,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, 0);
+		close_id(sess, sid, CIFSD_NO_FID);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -7636,7 +7636,7 @@ int smb_closedir(struct cifsd_work *work)
 
 	cifsd_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
 
-	err = close_id(work->sess, req->FileID, 0);
+	err = close_id(work->sess, req->FileID, CIFSD_NO_FID);
 	if (err)
 		goto out;
 
