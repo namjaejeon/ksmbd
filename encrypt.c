@@ -17,23 +17,13 @@
 #include <linux/kernel.h>
 #include <linux/random.h>
 #include <crypto/hash.h>
+#include <linux/scatterlist.h>
+
+#include "glob.h" /* FIXME */
 #include "unicode.h"
-#include "glob.h"
+#include "encrypt.h"
 
-#ifndef false
-#define false 0
-#endif
-#ifndef true
-#define true 1
-#endif
-
-/* following came from the other byteorder.h to avoid include conflicts */
-#define CVAL(buf, pos) (((unsigned char *)(buf))[(pos)])
-#define SSVALX(buf, pos, val)	\
-	(CVAL((buf), (pos)) = (val) & 0xFF, CVAL((buf), (pos)+1) = (val) >> 8)
-#define SSVAL(buf, pos, val) SSVALX((buf), (pos), ((__u16)(val)))
-
-	static void
+static void
 str_to_key(unsigned char *str, unsigned char *key)
 {
 	int i;
@@ -50,7 +40,7 @@ str_to_key(unsigned char *str, unsigned char *key)
 		key[i] = (key[i] << 1);
 }
 
-	static int
+static int
 smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 {
 	int rc;
@@ -84,22 +74,9 @@ smbhash_err:
 	return rc;
 }
 
-	static int
-E_P16(unsigned char *p14, unsigned char *p16)
-{
-	int rc;
-	unsigned char sp8[8] = {
-	0x4b, 0x47, 0x53, 0x21, 0x40, 0x23, 0x24, 0x25 };
-
-	rc = smbhash(p16, sp8, p14);
-	if (rc)
-		return rc;
-	rc = smbhash(p16 + 8, sp8, p14 + 7);
-	return rc;
-}
-
-	int
-E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
+int cifsd_enc_p24(unsigned char *p21,
+		  const unsigned char *c8,
+		  unsigned char *p24)
 {
 	int rc;
 
@@ -114,8 +91,9 @@ E_P24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 }
 
 /* produce a md4 message digest from data of length n bytes */
-int
-smb_mdfour(unsigned char *md4_hash, unsigned char *link_str, int link_len)
+int cifsd_enc_md4(unsigned char *md4_hash,
+		  unsigned char *link_str,
+		  int link_len)
 {
 	int rc;
 	unsigned int size;
@@ -160,8 +138,10 @@ smb_mdfour_err:
 }
 
 /* produce sess key using md5 with client nonce and server chanllenge */
-int update_sess_key(unsigned char *md5_hash, char *nonce,
-	char *server_challenge, int len)
+int cifsd_enc_update_sess_key(unsigned char *md5_hash,
+			      char *nonce,
+			      char *server_challenge,
+			      int len)
 {
 	int rc;
 	unsigned int size;
@@ -214,38 +194,11 @@ err_out:
 }
 
 /*
-   This implements the X/Open SMB password encryption
-   It takes a password, a 8 byte "crypt key" and puts 24 bytes of
-   encrypted password into p24 */
-/* Note that password must be uppercased and null terminated */
-	int
-SMB_encrypt(unsigned char *passwd, const unsigned char *c8, unsigned char *p24)
-{
-	int rc;
-	unsigned char p14[14], p16[16], p21[21];
-
-	memset(p14, '\0', 14);
-	memset(p16, '\0', 16);
-	memset(p21, '\0', 21);
-
-	memcpy(p14, passwd, 14);
-	rc = E_P16(p14, p16);
-	if (rc)
-		return rc;
-
-	memcpy(p21, p16, 16);
-	rc = E_P24(p21, c8, p24);
-
-	return rc;
-}
-
-/*
  * Creates the MD4 Hash of the users password in NT UNICODE.
  */
-
-	int
-smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
-		const struct nls_table *codepage)
+int cifsd_enc_md4hash(const unsigned char *passwd,
+		      unsigned char *p16,
+		      const struct nls_table *codepage)
 {
 	int rc;
 	int len;
@@ -259,30 +212,7 @@ smb_E_md4hash(const unsigned char *passwd, unsigned char *p16,
 		*wpwd = 0; /* Ensure string is null terminated */
 	}
 
-	rc = smb_mdfour(p16, (unsigned char *) wpwd, len * sizeof(__le16));
+	rc = cifsd_enc_md4(p16, (unsigned char *) wpwd, len * sizeof(__le16));
 	memset(wpwd, 0, 129 * sizeof(__le16));
-
-	return rc;
-}
-
-/* Does the NT MD4 hash then des encryption. */
-	int
-SMB_NTencrypt(unsigned char *passwd, unsigned char *c8, unsigned char *p24,
-		const struct nls_table *codepage)
-{
-	int rc;
-	unsigned char p16[16], p21[21];
-
-	memset(p16, '\0', 16);
-	memset(p21, '\0', 21);
-
-	rc = smb_E_md4hash(passwd, p16, codepage);
-	if (rc) {
-		cifsd_debug("%s Can't generate NT hash, error: %d\n",
-				__func__, rc);
-		return rc;
-	}
-	memcpy(p21, p16, 16);
-	rc = E_P24(p21, c8, p24);
 	return rc;
 }

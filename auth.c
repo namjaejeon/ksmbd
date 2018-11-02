@@ -15,6 +15,7 @@
 #include "auth.h"
 #include "glob.h"
 
+#include "encrypt.h"
 #include "server.h"
 #include "smb_common.h"
 #include "transport_tcp.h"
@@ -221,13 +222,13 @@ int cifsd_auth_ntlm(struct cifsd_session *sess, char *pw_buf)
 
 	memset(p21, '\0', 21);
 	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
-	rc = E_P24(p21, sess->ntlmssp.cryptkey, key);
+	rc = cifsd_enc_p24(p21, sess->ntlmssp.cryptkey, key);
 	if (rc) {
 		cifsd_err("password processing failed\n");
 		return rc;
 	}
 
-	smb_mdfour(sess->sess_key,
+	cifsd_enc_md4(sess->sess_key,
 			user_passkey(sess->user),
 			CIFS_SMB1_SESSKEY_SIZE);
 	memcpy(sess->sess_key + CIFS_SMB1_SESSKEY_SIZE, key,
@@ -345,8 +346,9 @@ static int __cifsd_auth_ntlmv2(struct cifsd_session *sess,
 	unsigned char p21[21];
 	char key[CIFS_AUTH_RESP_SIZE];
 
-	rc = update_sess_key(sess_key, client_nonce,
-		(char *)sess->ntlmssp.cryptkey, 8);
+	rc = cifsd_enc_update_sess_key(sess_key,
+				       client_nonce,
+				       (char *)sess->ntlmssp.cryptkey, 8);
 	if (rc) {
 		cifsd_err("password processing failed\n");
 		goto out;
@@ -354,7 +356,7 @@ static int __cifsd_auth_ntlmv2(struct cifsd_session *sess,
 
 	memset(p21, '\0', 21);
 	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
-	rc = E_P24(p21, sess_key, key);
+	rc = cifsd_enc_p24(p21, sess_key, key);
 	if (rc) {
 		cifsd_err("password processing failed\n");
 		goto out;
