@@ -939,14 +939,12 @@ int close_disconnected_handle(struct inode *inode)
 					(S_DEL_ON_CLS | S_DEL_PENDING))
 					unlinked = false;
 				spin_lock(&fp->f_lock);
-				if (fp->f_state == FP_FREEING) {
-					spin_unlock(&fp->f_lock);
-					continue;
+				if (fp->f_state != FP_FREEING) {
+					list_del(&fp->node);
+					list_add(&fp->node, &dispose);
+					fp->f_state = FP_FREEING;
 				}
-				list_del(&fp->node);
-				fp->f_state = FP_FREEING;
 				spin_unlock(&fp->f_lock);
-				list_add(&fp->node, &dispose);
 			}
 		}
 		spin_unlock(&ci->m_lock);
