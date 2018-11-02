@@ -22,7 +22,7 @@
 
 /* Max id limit is 0xFFFF, so create bitmap with only this size*/
 #define CIFSD_BITMAP_SIZE        0xFFFF
-#define CIFSD_START_FID		 1
+#define CIFSD_START_FID		 0
 
 #define cifsd_set_bit			__set_bit_le
 #define cifsd_test_and_set_bit	__test_and_set_bit_le
