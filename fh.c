@@ -242,7 +242,7 @@ int init_fidtable(struct fidtable_desc *ftab_desc)
 		return -ENOMEM;
 	}
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
-	ftab_desc->ftab->start_pos = 0;
+	ftab_desc->ftab->start_pos = CIFSD_START_FID;
 	spin_lock_init(&ftab_desc->fidtable_lock);
 	return 0;
 }
@@ -576,7 +576,7 @@ int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifsd_file *fp;
 
-	if (p_id > 0) {
+	if (p_id != CIFSD_NO_FID) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
 			cifsd_err("Invalid id for close: %llu\n", p_id);
@@ -741,7 +741,7 @@ struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if ((pid < CIFSD_START_FID) || (pid > ftab->max_fids - 1)) {
+	if (pid > ftab->max_fids - 1) {
 		cifsd_err("invalid persistentID (%lld)\n", pid);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;
@@ -939,14 +939,12 @@ int close_disconnected_handle(struct inode *inode)
 					(S_DEL_ON_CLS | S_DEL_PENDING))
 					unlinked = false;
 				spin_lock(&fp->f_lock);
-				if (fp->f_state == FP_FREEING) {
-					spin_unlock(&fp->f_lock);
-					continue;
+				if (fp->f_state != FP_FREEING) {
+					list_del(&fp->node);
+					list_add(&fp->node, &dispose);
+					fp->f_state = FP_FREEING;
 				}
-				list_del(&fp->node);
-				fp->f_state = FP_FREEING;
 				spin_unlock(&fp->f_lock);
-				list_add(&fp->node, &dispose);
 			}
 		}
 		spin_unlock(&ci->m_lock);
