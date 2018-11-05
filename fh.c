@@ -282,6 +282,7 @@ insert_id_in_fidtable(struct cifsd_session *sess,
 	fp->sess = sess;
 	fp->f_state = FP_NEW;
 	fp->volatile_id = id;
+	fp->persistent_id = CIFSD_NO_FID;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
 	init_waitqueue_head(&fp->wq);
@@ -550,7 +551,7 @@ static int close_fp(struct cifsd_file *fp)
 		cifsd_inode_free(ci);
 	}
 
-	if (fp->persistent_id > 0) {
+	if (fp->persistent_id != CIFSD_NO_FID) {
 		err = close_persistent_id(fp->persistent_id);
 		if (err)
 			return -ENOENT;
@@ -622,9 +623,10 @@ void close_opens_from_fibtable(struct cifsd_session *sess,
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file && file->tcon == tcon) {
-			if (!close_id(sess, id, file->persistent_id) &&
-				sess->conn->stats.open_files_count > 0)
+		if (!file || file->tcon != tcon)
+			continue;
+		if (!close_id(sess, id, file->persistent_id)) {
+			if (sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
 		}
 	}
@@ -676,16 +678,18 @@ void destroy_fidtable(struct cifsd_session *sess)
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file) {
-			if (is_reconnectable(file)) {
-				file->conn = NULL;
-				file->sess = NULL;
-				file->tcon = NULL;
-				continue;
-			}
+		if (!file)
+			continue;
 
-			if (!close_id(sess, id, file->persistent_id) &&
-				sess->conn->stats.open_files_count > 0)
+		if (is_reconnectable(file)) {
+			file->conn = NULL;
+			file->sess = NULL;
+			file->tcon = NULL;
+			continue;
+		}
+
+		if (!close_id(sess, id, file->persistent_id)) {
+			if (sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
 		}
 	}
