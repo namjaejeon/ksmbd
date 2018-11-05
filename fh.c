@@ -41,6 +41,9 @@ static void free_fid_mem(void *ptr)
  */
 void free_fidtable(struct fidtable *ftab)
 {
+	if (!ftab)
+		return;
+
 	free_fid_mem(ftab->fileid);
 	free_fid_mem(ftab->cifsd_bitmap);
 	kfree(ftab);
