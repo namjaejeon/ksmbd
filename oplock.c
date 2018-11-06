@@ -1538,31 +1538,26 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 	struct create_context *cc;
 	unsigned int next = 0;
 	char *name;
-	bool found = false;
 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
-	int len;
 
 	data_offset = (char *)req + 4 + le32_to_cpu(req->CreateContextsOffset);
 	cc = (struct create_context *)data_offset;
 	do {
+		int val;
+
 		cc = (struct create_context *)((char *)cc + next);
 		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
-		if (le16_to_cpu(cc->NameLength) < 4)
+		val = le16_to_cpu(cc->NameLength);
+		if (val < 4)
 			return ERR_PTR(-EINVAL);
 
-		len = strlen(str);
-		if (strncmp(name, str, len)) {
-			next = le32_to_cpu(cc->Next);
-			continue;
-		}
-		found = 1;
-		break;
+		val = le32_to_cpu(cc->DataLength);
+		if (val != 0 && strcmp(name, str) == 0)
+			return cc;
+		next = le32_to_cpu(cc->Next);
 	} while (next != 0);
 
-	if (found)
-		return cc;
-	else
-		return ERR_PTR(-ENOENT);
+	return ERR_PTR(-ENOENT);
 }
 
 /**
