@@ -1906,10 +1906,12 @@ int smb_trans(struct cifsd_work *work)
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_NOT_SUPPORTED;
 				cifsd_free(rpc_resp);
-			}
-			if (rpc_resp->flags != CIFSD_RPC_OK) {
+				goto out;
+			} else if (rpc_resp->flags != CIFSD_RPC_OK) {
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_INVALID_PARAMETER;
+				cifsd_free(rpc_resp);
+				goto out;
 			}
 
 			nbytes = rpc_resp->payload_sz;
@@ -1939,9 +1941,7 @@ int smb_trans(struct cifsd_work *work)
 					NT_STATUS_NOT_SUPPORTED;
 				cifsd_free(rpc_resp);
 				goto out;
-			}
-
-			if (rpc_resp->flags != CIFSD_RPC_OK) {
+			} else if (rpc_resp->flags != CIFSD_RPC_OK) {
 				rsp->hdr.Status.CifsError =
 					NT_STATUS_INVALID_PARAMETER;
 				cifsd_free(rpc_resp);
