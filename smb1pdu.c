@@ -386,7 +386,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 		rsp = (TCONX_RSP_EXT *)andx_response_buffer(RESPONSE_BUF(work));
 		extra_byte = 3;
 		if (!req) {
-			status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
+			status.ret = -EINVAL;
 			goto out_err;
 		}
 	} else {
@@ -510,19 +510,11 @@ out_err1:
 	case -ENODEV:
 		rsp_hdr->Status.CifsError = NT_STATUS_BAD_DEVICE_TYPE;
 		break;
-	case -EINVAL:
 	case CIFSD_TREE_CONN_STATUS_ERROR:
-		if (!req)
-			rsp_hdr->Status.CifsError =
-				NT_STATUS_INVALID_PARAMETER;
-		else if (!sess)
-			rsp_hdr->Status.CifsError =
-				NT_STATUS_NO_SUCH_LOGON_SESSION;
-		else if (IS_ERR(treename) || IS_ERR(name))
-			rsp_hdr->Status.CifsError = NT_STATUS_BAD_NETWORK_NAME;
-		else /* default also invalid parameter, repeat of !req*/
-			rsp_hdr->Status.CifsError =
-				NT_STATUS_INVALID_PARAMETER;
+		rsp_hdr->Status.CifsError = NT_STATUS_BAD_NETWORK_NAME;
+		break;
+	case -EINVAL:
+		rsp_hdr->Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		break;
 	default:
 		rsp_hdr->Status.CifsError = NT_STATUS_ACCESS_DENIED;

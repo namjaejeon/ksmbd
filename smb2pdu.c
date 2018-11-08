@@ -1572,12 +1572,11 @@ out_err1:
 	case CIFSD_TREE_CONN_STATUS_TOO_MANY_SESSIONS:
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 		break;
-	case -EINVAL:
 	case CIFSD_TREE_CONN_STATUS_ERROR:
-		if (IS_ERR(treename) || IS_ERR(name))
-			rsp->hdr.Status = NT_STATUS_BAD_NETWORK_NAME;
-		else
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+		rsp->hdr.Status = NT_STATUS_BAD_NETWORK_NAME;
+		break;
+	case -EINVAL:
+		rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
 		break;
 	default:
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
