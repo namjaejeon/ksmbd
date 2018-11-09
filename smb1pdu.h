@@ -11,26 +11,23 @@
 #include "nterr.h"
 
 #define MAX_CIFS_HDR_SIZE 0x58
-#define MAX_CIFS_SMALL_BUFFER_SIZE 448
 
 /* @FIXME rework this code */
 
-#define CIFS_PROT	0
-#define SMB2_PROT	1
-#define SMB21_PROT	2
-#define SMB2X_PROT	3	/* multi-protocol negotiate request */
-#define SMB30_PROT	4
-#define SMB302_PROT	5
-#define SMB311_PROT	6
-#define BAD_PROT	0xFFFF
+#define SMB1_CLIENT_GUID_SIZE		(16)
+#define SMB1_MAX_MPX_COUNT		10
+#define SMB1_MAX_VCS			1
+#define SMB1_MAX_RAW_SIZE		65536
+#define MAX_CIFS_LOOKUP_BUFFER_SIZE	(16*1024)
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
-#define CIFS_NUM_PROT 5
-#else
-#define CIFS_NUM_PROT 1
-#endif
+#define SMB1_SERVER_CAPS 					\
+	(CAP_RAW_MODE | CAP_UNICODE | CAP_LARGE_FILES |		\
+	 CAP_NT_SMBS | CAP_STATUS32 | CAP_LOCK_AND_READ |	\
+	 CAP_NT_FIND | CAP_UNIX | CAP_LARGE_READ_X |		\
+	 CAP_LARGE_WRITE_X | CAP_LEVEL_II_OPLOCKS |		\
+	 CAP_EXTENDED_SECURITY)
 
-#define SMB1_CLIENT_GUID_SIZE (16)
+#define SMB1_SERVER_SECU  (SECMODE_USER | SECMODE_PW_ENCRYPT)
 
 /* Service Type of TreeConnect*/
 #define SERVICE_DISK_SHARE	"A:"
@@ -1931,23 +1928,31 @@ typedef struct smb_com_setattr_rsp {
 	__u16 ByteCount;        /* bct = 0 */
 } __attribute__((packed)) SETATTR_RSP;
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+extern int init_smb1_server(struct cifsd_tcp_conn *conn);
+#else
+static inline int init_smb1_server(struct cifsd_tcp_conn *conn)
+{
+	return -ENOTSUPP;
+}
+#endif
+
 /* function prototypes */
 extern int init_smb_rsp_hdr(struct cifsd_work *swork);
 extern int get_smb_cmd_val(struct cifsd_work *work);
 extern void set_smb_rsp_status(struct cifsd_work *work, unsigned int err);
-extern int init_smb_rsp_hdr(struct cifsd_work *work);
 extern int smb_allocate_rsp_buf(struct cifsd_work *work);
-extern int find_matching_smb1_dialect(int start_index, char *cli_dialects,
-	__le16 byte_count);
 extern int smb1_is_sign_req(struct cifsd_work *work, unsigned int command);
 extern int smb1_check_sign_req(struct cifsd_work *work);
 extern void smb1_set_sign_rsp(struct cifsd_work *work);
 extern int smb_check_user_session(struct cifsd_work *work);
 extern int smb_get_cifsd_tcon(struct cifsd_work *work);
+extern int smb1_check_message(struct cifsd_work *work);
 
 /* smb1 command handlers */
 extern int smb_rename(struct cifsd_work *work);
-extern int smb_negotiate(struct cifsd_work *work);
+extern int smb_negotiate_request(struct cifsd_work *work);
+extern int smb_handle_negotiate(struct cifsd_work *work);
 extern int smb_session_setup_andx(struct cifsd_work *work);
 extern int smb_tree_connect_andx(struct cifsd_work *work);
 extern int smb_trans2(struct cifsd_work *work);

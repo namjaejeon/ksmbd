@@ -11,10 +11,12 @@
 #include <linux/hashtable.h>
 #include <net/net_namespace.h>
 #include <net/genetlink.h>
+#include <linux/socket.h>
 
 #include "transport_ipc.h"
 #include "buffer_pool.h"
 #include "server.h"
+#include "smb_common.h"
 
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
@@ -30,6 +32,7 @@ extern int get_protocol_idx(char *str);
 #define IPC_MSG_HASH_BITS	3
 static DEFINE_HASHTABLE(ipc_msg_table, IPC_MSG_HASH_BITS);
 static DECLARE_RWSEM(ipc_msg_table_lock);
+static DEFINE_MUTEX(startup_lock);
 
 struct cifsd_ida *ida;
 
@@ -42,7 +45,7 @@ static unsigned int cifsd_tools_pid;
 		int ret = 0;						\
 									\
 		if (m->genlhdr->version != CIFSD_GENL_VERSION) {	\
-			pr_err("IPC protocol version mismatch: %d\n",	\
+			cifsd_err("IPC protocol version mismatch: %d\n",\
 				m->genlhdr->version);			\
 			ret = 1;					\
 		}							\
@@ -77,9 +80,6 @@ static const struct nla_policy cifsd_nl_policy[CIFSD_EVENT_MAX] = {
 		.len = 0,
 	},
 	[CIFSD_EVENT_HEARTBEAT_REQUEST] = {
-		.len = sizeof(struct cifsd_heartbeat),
-	},
-	[CIFSD_EVENT_HEARTBEAT_RESPONSE] = {
 		.len = sizeof(struct cifsd_heartbeat),
 	},
 	[CIFSD_EVENT_STARTING_UP] = {
@@ -128,11 +128,6 @@ static const struct genl_ops cifsd_genl_ops[] = {
 		.cmd	= CIFSD_EVENT_HEARTBEAT_REQUEST,
 		.doit	= handle_unsupported_event,
 		.policy	= cifsd_nl_policy,
-	},
-	{
-		.cmd	= CIFSD_EVENT_HEARTBEAT_RESPONSE,
-		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_STARTING_UP,
@@ -207,6 +202,12 @@ struct genl_family cifsd_genl_family = {
 	.n_ops		= ARRAY_SIZE(cifsd_genl_ops),
 };
 
+static void ipc_update_last_active(void)
+{
+	if (server_conf.ipc_timeout)
+		server_conf.ipc_last_active = jiffies;
+}
+
 static struct cifsd_ipc_msg *ipc_msg_alloc(size_t sz)
 {
 	struct cifsd_ipc_msg *msg;
@@ -235,6 +236,7 @@ static int handle_response(int type, void *payload, size_t sz)
 	struct ipc_msg_table_entry *entry;
 	int ret = 0;
 
+	ipc_update_last_active();
 	down_read(&ipc_msg_table_lock);
 	hash_for_each_possible(ipc_msg_table, entry, ipc_table_hlist, handle) {
 		if (handle != entry->handle)
@@ -246,7 +248,7 @@ static int handle_response(int type, void *payload, size_t sz)
 		 * request message type + 1.
 		 */
 		if (entry->type + 1 != type) {
-			pr_err("Waiting for IPC type %d, got %d. Ignore.\n",
+			cifsd_err("Waiting for IPC type %d, got %d. Ignore.\n",
 				entry->type + 1, type);
 		}
 
@@ -266,58 +268,79 @@ static int handle_response(int type, void *payload, size_t sz)
 	return ret;
 }
 
+static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
+{
+	int ret;
+
+	server_conf.signing = req->signing;
+	server_conf.tcp_port = req->tcp_port;
+	server_conf.ipc_timeout = req->ipc_timeout;
+	ret = cifsd_set_netbios_name(req->netbios_name);
+	ret |= cifsd_set_server_string(req->server_string);
+	ret |= cifsd_set_work_group(req->work_group);
+	if (ret)
+		return ret;
+
+	if (req->min_prot[0]) {
+		ret = cifsd_lookup_protocol_idx(req->min_prot);
+		if (ret >= 0)
+			server_conf.min_protocol = ret;
+	}
+	if (req->max_prot[0]) {
+		ret = cifsd_lookup_protocol_idx(req->max_prot);
+		if (ret >= 0)
+			server_conf.max_protocol = ret;
+	}
+
+	return 0;
+}
+
 static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 {
+	int ret = 0;
+
 	if (CIFSD_INVALID_IPC_VERSION(info))
 		return -EINVAL;
 
 	if (!info->attrs[CIFSD_EVENT_STARTING_UP])
 		return -EINVAL;
 
-	if (cifsd_tools_pid) {
-		struct cifsd_heartbeat *beat;
+	mutex_lock(&startup_lock);
+	if (!cifsd_server_configurable()) {
+		mutex_unlock(&startup_lock);
+		cifsd_err("Server reset is in progress, can't start daemon\n");
+		return -EINVAL;
+	}
 
-		beat = cifsd_ipc_heartbeat_request();
-		if (beat) {
-			cifsd_free(beat);
-			return -EINVAL;
+	if (cifsd_tools_pid) {
+		if (cifsd_ipc_heartbeat_request() == 0) {
+			ret = -EINVAL;
+			goto out;
 		}
 
-		pr_err("Reconnect to a new user space daemon");
+		cifsd_err("Reconnect to a new user space daemon\n");
 	} else {
 		struct cifsd_startup_request *req;
-		int ret;
 
 		req = nla_data(info->attrs[info->genlhdr->cmd]);
-
-		server_conf.signing = req->signing;
-		ret = cifsd_set_netbios_name(req->netbios_name);
-		ret |= cifsd_set_server_string(req->server_string);
-		ret |= cifsd_set_work_group(req->work_group);
+		ret = ipc_server_config_on_startup(req);
 		if (ret)
-			return -EINVAL;
-
-		if (req->min_prot[0]) {
-			ret = get_protocol_idx(req->min_prot);
-			if (ret >= 0)
-				server_conf.min_protocol = ret;
-		}
-		if (req->max_prot[0]) {
-			ret = get_protocol_idx(req->max_prot);
-			if (ret >= 0)
-				server_conf.max_protocol = ret;
-		}
+			goto out;
 	}
 
 	cifsd_tools_pid = info->snd_portid;
-	cifsd_server_set_running();
-	return 0;
+	ipc_update_last_active();
+	server_queue_ctrl_init_work();
+
+out:
+	mutex_unlock(&startup_lock);
+	return ret;
 }
 
 static int handle_unsupported_event(struct sk_buff *skb,
 				    struct genl_info *info)
 {
-	pr_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
+	cifsd_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
 	return -EINVAL;
 }
 
@@ -368,6 +391,8 @@ static int ipc_msg_send(struct cifsd_ipc_msg *msg)
 
 	genlmsg_end(skb, nlh);
 	ret = genlmsg_unicast(&init_net, skb, cifsd_tools_pid);
+	if (!ret)
+		ipc_update_last_active();
 	return ret;
 
 out:
@@ -405,6 +430,38 @@ out:
 	hash_del(&entry.ipc_table_hlist);
 	up_write(&ipc_msg_table_lock);
 	return entry.response;
+}
+
+int cifsd_ipc_heartbeat(void)
+{
+	unsigned long delta;
+
+	if (!server_conf.ipc_timeout)
+		return 0;
+
+	if (time_after(jiffies, server_conf.ipc_last_active)) {
+		delta = (jiffies - server_conf.ipc_last_active) / HZ;
+	} else {
+		ipc_update_last_active();
+		return 0;
+	}
+
+	if (delta >= server_conf.ipc_timeout) {
+		mutex_lock(&startup_lock);
+		if (cifsd_ipc_heartbeat_request() == 0) {
+			mutex_unlock(&startup_lock);
+			return 0;
+		}
+
+		server_conf.state = SERVER_STATE_RESETTING;
+		server_conf.ipc_last_active = 0;
+		cifsd_tools_pid = 0;
+		mutex_unlock(&startup_lock);
+
+		cifsd_err("No IPC daemon response for %lus\n", delta);
+		return -EINVAL;
+	}
+	return 0;
 }
 
 struct cifsd_login_response *cifsd_ipc_login_request(const char *account)
@@ -497,30 +554,26 @@ int cifsd_ipc_logout_request(const char *account)
 
 	msg->type = CIFSD_EVENT_LOGOUT_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
-	strcpy(req->account, account);
+	strncpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
 
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
 	return ret;
 }
 
-struct cifsd_heartbeat *cifsd_ipc_heartbeat_request(void)
+int cifsd_ipc_heartbeat_request(void)
 {
 	struct cifsd_ipc_msg *msg;
-	struct cifsd_heartbeat *out, *in;
+	int ret;
 
 	msg = ipc_msg_alloc(sizeof(struct cifsd_heartbeat));
 	if (!msg)
-		return NULL;
+		return -EINVAL;
 
 	msg->type = CIFSD_EVENT_HEARTBEAT_REQUEST;
-	out = CIFSD_IPC_MSG_PAYLOAD(msg);
-	out->handle = cifds_acquire_id(ida);
-
-	in = ipc_msg_send_request(msg, out->handle);
-	ipc_msg_handle_free(out->handle);
+	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
-	return in;
+	return ret;
 }
 
 struct cifsd_share_config_response *
@@ -712,7 +765,8 @@ int cifsd_ipc_init(void)
 	int ret = genl_register_family(&cifsd_genl_family);
 
 	if (ret) {
-		pr_err("Failed to register CIFSD netlink interface %d\n", ret);
+		cifsd_err("Failed to register CIFSD netlink interface %d\n",
+				ret);
 		return ret;
 	}
 

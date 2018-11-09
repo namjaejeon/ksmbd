@@ -41,16 +41,6 @@ static void free_channel_list(struct cifsd_session *sess)
 	}
 }
 
-static void __kill_smb1_session(struct cifsd_session *sess)
-{
-
-}
-
-static void __kill_smb2_session(struct cifsd_session *sess)
-{
-	destroy_fidtable(sess);
-}
-
 static void __session_rpc_close(struct cifsd_session *sess,
 				struct cifsd_session_rpc *entry)
 {
@@ -163,10 +153,7 @@ void cifsd_session_destroy(struct cifsd_session *sess)
 	hash_del(&sess->hlist);
 	up_write(&sessions_table_lock);
 
-	if (test_session_flag(sess, CIFDS_SESSION_FLAG_SMB1))
-		__kill_smb1_session(sess);
-	else if (test_session_flag(sess, CIFDS_SESSION_FLAG_SMB2))
-		__kill_smb2_session(sess);
+	destroy_fidtable(sess);
 	cifsd_ida_free(sess->tree_conn_ida);
 	cifsd_free(sess);
 }
@@ -231,6 +218,7 @@ struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id)
 	return sess;
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 static int __init_smb1_session(struct cifsd_session *sess)
 {
 	int id = cifds_acquire_smb1_uid(session_ida);
@@ -240,6 +228,12 @@ static int __init_smb1_session(struct cifsd_session *sess)
 	sess->id = id;
 	return 0;
 }
+#else
+static int __init_smb1_session(struct cifsd_session *sess)
+{
+	return -EINVAL;
+}
+#endif
 
 static int __init_smb2_session(struct cifsd_session *sess)
 {
@@ -248,7 +242,7 @@ static int __init_smb2_session(struct cifsd_session *sess)
 	if (id < 0)
 		return -EINVAL;
 	sess->id = id;
-	return init_fidtable(&sess->fidtable);
+	return 0;
 }
 
 static struct cifsd_session *__session_create(int protocol)
@@ -280,19 +274,25 @@ static struct cifsd_session *__session_create(int protocol)
 		break;
 	}
 
+	if (ret)
+		goto error;
+
+	ret = init_fidtable(&sess->fidtable);
+	if (ret)
+		goto error;
+
 	sess->tree_conn_ida = cifsd_ida_alloc();
 	if (!sess->tree_conn_ida)
-		ret = -ENOMEM;
-
-	if (ret) {
-		cifsd_session_destroy(sess);
-		return NULL;
-	}
+		goto error;
 
 	down_read(&sessions_table_lock);
 	hash_add(sessions_table, &sess->hlist, sess->id);
 	up_read(&sessions_table_lock);
 	return sess;
+
+error:
+	cifsd_session_destroy(sess);
+	return NULL;
 }
 
 struct cifsd_session *cifsd_smb1_session_create(void)

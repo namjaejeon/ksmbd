@@ -9,6 +9,7 @@
 #include "smb1pdu.h"
 
 #include "transport_tcp.h"
+#include "smb_common.h"
 
 struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,
@@ -59,7 +60,7 @@ struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_TRANSACTION2]		= { .proc = smb_trans2, },
 	[SMB_COM_FIND_CLOSE2]		= { .proc = smb_closedir, },
 	[SMB_COM_TREE_DISCONNECT]	= { .proc = smb_tree_disconnect, },
-	[SMB_COM_NEGOTIATE]		= { .proc = smb_negotiate, },
+	[SMB_COM_NEGOTIATE]		= { .proc = smb_negotiate_request, },
 	[SMB_COM_SESSION_SETUP_ANDX]	= { .proc = smb_session_setup_andx, },
 	[SMB_COM_LOGOFF_ANDX]           = { .proc = smb_session_disconnect, },
 	[SMB_COM_TREE_CONNECT_ANDX]	= { .proc = smb_tree_connect_andx, },
@@ -76,13 +77,14 @@ struct smb_version_cmds smb1_server_cmds[256] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb1_server(struct cifsd_tcp_conn *conn)
+int init_smb1_server(struct cifsd_tcp_conn *conn)
 {
 	if (!conn)
-		return;
+		return -EINVAL;
 
 	conn->vals = &smb1_server_values;
 	conn->ops = &smb1_server_ops;
 	conn->cmds = smb1_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb1_server_cmds);
+	return 0;
 }

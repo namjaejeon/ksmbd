@@ -98,15 +98,15 @@ struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */
 				/* length is only two or three bytes - with
 				 one or two byte type preceding it that MBZ */
-	__u8   ProtocolId[4];	/* 0xFE 'S' 'M' 'B' */
+	__le32 ProtocolId;	/* 0xFE 'S' 'M' 'B' */
 	__le16 StructureSize;	/* 64 */
 	__le16 CreditCharge;	/* MBZ */
 	__le32 Status;		/* Error from server */
 	__le16 Command;
-	__le16 CreditRequest;  /* CreditResponse */
+	__le16 CreditRequest;	/* CreditResponse */
 	__le32 Flags;
 	__le32 NextCommand;
-	__u64  MessageId;	/* opaque - so can stay little endian */
+	__le64 MessageId;
 	union {
 		struct {
 			__le32 ProcessId;
@@ -214,6 +214,15 @@ struct preauth_integrity_info {
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
 	int			CipherId;
 };
+
+/* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
+ * sizeof(struct smb2_negotiate_rsp) - 4 =
+ * header(64) + response(64) + GSS_LENGTH(74) + GSS_PADDING(6)
+ */
+#define OFFSET_OF_NEG_CONTEXT	0xd0
+
+#define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
+#define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
 
 struct smb2_preauth_neg_context {
 	__le16	ContextType; /* 1 */
@@ -730,15 +739,15 @@ struct smb2_ioctl_req {
 	__le32 CntCode;
 	__u64  PersistentFileId; /* opaque endianness */
 	__u64  VolatileFileId; /* opaque endianness */
-	__le32 inputoffset; /* Reserved MBZ */
-	__le32 inputcount;
-	__le32 maxinputresp;
-	__le32 outputoffset;
-	__le32 outputcount;
-	__le32 maxoutputresp;
-	__le32 flags;
+	__le32 InputOffset; /* Reserved MBZ */
+	__le32 InputCount;
+	__le32 MaxInputResponse;
+	__le32 OutputOffset;
+	__le32 OutputCount;
+	__le32 MaxOutputResponse;
+	__le32 Flags;
 	__le32 Reserved2;
-	__u8 Buffer[1];
+	__u8   Buffer[1];
 } __packed;
 
 struct smb2_ioctl_rsp {
@@ -748,13 +757,13 @@ struct smb2_ioctl_rsp {
 	__le32 CntCode;
 	__u64  PersistentFileId; /* opaque endianness */
 	__u64  VolatileFileId; /* opaque endianness */
-	__le32 inputoffset; /* Reserved MBZ */
-	__le32 inputcount;
-	__le32 outputoffset;
-	__le32 outputcount;
-	__le32 flags;
+	__le32 InputOffset; /* Reserved MBZ */
+	__le32 InputCount;
+	__le32 OutputOffset;
+	__le32 OutputCount;
+	__le32 Flags;
 	__le32 Reserved2;
-	__u8 Buffer[1];
+	__u8   Buffer[1];
 } __packed;
 
 struct validate_negotiate_info_req {
@@ -1351,12 +1360,22 @@ struct create_ea_buf_req {
 } __packed;
 
 /* functions */
+
+extern int init_smb2_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb2_1_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_0_server(struct cifsd_tcp_conn *conn);
+extern void init_smb3_02_server(struct cifsd_tcp_conn *conn);
+extern int init_smb3_11_server(struct cifsd_tcp_conn *conn);
+
+extern int is_smb2_neg_cmd(struct cifsd_work *work);
+extern int is_smb2_rsp(struct cifsd_work *work);
+
 extern int get_smb2_cmd_val(struct cifsd_work *work);
 extern void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err);
 extern int init_smb2_rsp_hdr(struct cifsd_work *work);
 extern int smb2_allocate_rsp_buf(struct cifsd_work *work);
 extern bool is_chained_smb2_message(struct cifsd_work *work);
-extern void init_smb2_neg_rsp(struct cifsd_work *work);
+extern int init_smb2_neg_rsp(struct cifsd_work *work);
 extern void smb2_set_rsp_credits(struct cifsd_work *work);
 extern void smb2_set_err_rsp(struct cifsd_work *work);
 extern int smb2_check_user_session(struct cifsd_work *work);
@@ -1373,14 +1392,17 @@ extern int setup_async_work(struct cifsd_work *work, void (*fn)(void **),
 	void **arg);
 extern void smb2_send_interim_resp(struct cifsd_work *work, __le32 status);
 extern struct channel *lookup_chann_list(struct cifsd_session *sess);
+extern void smb3_preauth_hash_rsp(struct cifsd_work *work);
 extern int smb3_is_transform_hdr(void *buf);
 extern int smb3_decrypt_req(struct cifsd_work *work);
 extern int smb3_encrypt_resp(struct cifsd_work *work);
 
+/* smb2 misc functions */
+extern int smb2_check_message(struct cifsd_work *work);
+
 /* smb2 command handlers */
-extern int calc_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
-	char *buf, __u8 *pi_hash);
-extern int smb2_negotiate(struct cifsd_work *work);
+extern int smb2_handle_negotiate(struct cifsd_work *work);
+extern int smb2_negotiate_request(struct cifsd_work *work);
 extern int smb2_sess_setup(struct cifsd_work *work);
 extern int smb2_tree_connect(struct cifsd_work *work);
 extern int smb2_tree_disconnect(struct cifsd_work *work);

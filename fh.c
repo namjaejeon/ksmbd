@@ -8,13 +8,12 @@
 #include <linux/xattr.h>
 
 #include "glob.h"
-#include "export.h"
-#include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "vfs.h"
 #include "mgmt/user_session.h"
+#include "smb_common.h"
 
 /**
  * alloc_fid_mem() - alloc memory for fid management
@@ -42,6 +41,9 @@ static void free_fid_mem(void *ptr)
  */
 void free_fidtable(struct fidtable *ftab)
 {
+	if (!ftab)
+		return;
+
 	free_fid_mem(ftab->fileid);
 	free_fid_mem(ftab->cifsd_bitmap);
 	kfree(ftab);
@@ -237,16 +239,14 @@ int cifsd_close_id(struct fidtable_desc *ftab_desc, int id)
  */
 int init_fidtable(struct fidtable_desc *ftab_desc)
 {
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	ftab_desc->ftab = alloc_fidtable(CIFSD_NR_OPEN_DEFAULT);
 	if (!ftab_desc->ftab) {
 		cifsd_err("Failed to allocate fid table\n");
 		return -ENOMEM;
 	}
 	ftab_desc->ftab->max_fids = CIFSD_NR_OPEN_DEFAULT;
-	ftab_desc->ftab->start_pos = 1;
+	ftab_desc->ftab->start_pos = CIFSD_START_FID;
 	spin_lock_init(&ftab_desc->fidtable_lock);
-#endif
 	return 0;
 }
 
@@ -279,11 +279,10 @@ insert_id_in_fidtable(struct cifsd_session *sess,
 	fp->filp = filp;
 	fp->conn = sess->conn;
 	fp->tcon = tcon;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess = sess;
-#endif
 	fp->f_state = FP_NEW;
 	fp->volatile_id = id;
+	fp->persistent_id = CIFSD_NO_FID;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
 	init_waitqueue_head(&fp->wq);
@@ -552,7 +551,7 @@ static int close_fp(struct cifsd_file *fp)
 		cifsd_inode_free(ci);
 	}
 
-	if (fp->persistent_id > 0) {
+	if (fp->persistent_id != CIFSD_NO_FID) {
 		err = close_persistent_id(fp->persistent_id);
 		if (err)
 			return -ENOENT;
@@ -581,7 +580,7 @@ int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id)
 {
 	struct cifsd_file *fp;
 
-	if (p_id > 0) {
+	if (p_id != CIFSD_NO_FID) {
 		fp = cifsd_get_global_fp(p_id);
 		if (!fp || fp->sess != sess) {
 			cifsd_err("Invalid id for close: %llu\n", p_id);
@@ -624,9 +623,10 @@ void close_opens_from_fibtable(struct cifsd_session *sess,
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file && file->tcon == tcon) {
-			if (!close_id(sess, id, file->persistent_id) &&
-				sess->conn->stats.open_files_count > 0)
+		if (!file || file->tcon != tcon)
+			continue;
+		if (!close_id(sess, id, file->persistent_id)) {
+			if (sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
 		}
 	}
@@ -678,16 +678,18 @@ void destroy_fidtable(struct cifsd_session *sess)
 
 	for (id = 0; id < ftab->max_fids; id++) {
 		file = ftab->fileid[id];
-		if (file) {
-			if (is_reconnectable(file)) {
-				file->conn = NULL;
-				file->sess = NULL;
-				file->tcon = NULL;
-				continue;
-			}
+		if (!file)
+			continue;
 
-			if (!close_id(sess, id, file->persistent_id) &&
-				sess->conn->stats.open_files_count > 0)
+		if (is_reconnectable(file)) {
+			file->conn = NULL;
+			file->sess = NULL;
+			file->tcon = NULL;
+			continue;
+		}
+
+		if (!close_id(sess, id, file->persistent_id)) {
+			if (sess->conn->stats.open_files_count > 0)
 				sess->conn->stats.open_files_count--;
 		}
 	}
@@ -699,7 +701,6 @@ void destroy_fidtable(struct cifsd_session *sess)
 
 /* Persistent-ID operations */
 
-#ifdef CONFIG_CIFS_SMB2_SERVER
 /**
  * cifsd_insert_in_global_table() - insert a fid in global fid table
  *					for persistent id
@@ -747,7 +748,7 @@ struct cifsd_file *cifsd_get_global_fp(uint64_t pid)
 
 	spin_lock(&global_fidtable.fidtable_lock);
 	ftab = global_fidtable.ftab;
-	if ((pid < CIFSD_START_FID) || (pid > ftab->max_fids - 1)) {
+	if (pid > ftab->max_fids - 1) {
 		cifsd_err("invalid persistentID (%lld)\n", pid);
 		spin_unlock(&global_fidtable.fidtable_lock);
 		return NULL;
@@ -812,7 +813,7 @@ int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
 			       struct cifsd_tree_connect *tcon)
 {
 	struct fidtable *ftab;
-	unsigned int volatile_id;
+	int volatile_id;
 	struct cifsd_file *dfp;
 
 	if (!fp->is_durable || fp->conn || fp->sess) {
@@ -836,9 +837,7 @@ int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
 	}
 
 	fp->conn = sess->conn;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	fp->sess = sess;
-#endif
 	fp->tcon = tcon;
 
 	spin_lock(&sess->fidtable.fidtable_lock);
@@ -909,11 +908,6 @@ void destroy_global_fidtable(void)
 	}
 	free_fidtable(ftab);
 }
-#else
-void destroy_global_fidtable(void)
-{
-}
-#endif
 
 /* End of persistent-ID functions */
 
@@ -952,14 +946,12 @@ int close_disconnected_handle(struct inode *inode)
 					(S_DEL_ON_CLS | S_DEL_PENDING))
 					unlinked = false;
 				spin_lock(&fp->f_lock);
-				if (fp->f_state == FP_FREEING) {
-					spin_unlock(&fp->f_lock);
-					continue;
+				if (fp->f_state != FP_FREEING) {
+					list_del(&fp->node);
+					list_add(&fp->node, &dispose);
+					fp->f_state = FP_FREEING;
 				}
-				list_del(&fp->node);
-				fp->f_state = FP_FREEING;
 				spin_unlock(&fp->f_lock);
-				list_add(&fp->node, &dispose);
 			}
 		}
 		spin_unlock(&ci->m_lock);

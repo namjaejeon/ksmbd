@@ -15,6 +15,7 @@ cifsd_ipc_login_request(const char *account);
 struct cifsd_session;
 struct cifsd_share_config;
 struct cifsd_tree_connect;
+struct sockaddr;
 
 struct cifsd_tree_connect_response *
 cifsd_ipc_tree_connect_request(struct cifsd_session *sess,
@@ -25,7 +26,7 @@ cifsd_ipc_tree_connect_request(struct cifsd_session *sess,
 int cifsd_ipc_tree_disconnect_request(unsigned long long session_id,
 				      unsigned long long connect_id);
 int cifsd_ipc_logout_request(const char *account);
-struct cifsd_heartbeat *cifsd_ipc_heartbeat_request(void);
+int cifsd_ipc_heartbeat_request(void);
 
 struct cifsd_share_config_response *
 cifsd_ipc_share_config_request(const char *name);
@@ -52,6 +53,7 @@ struct cifsd_rpc_command *cifsd_rpc_rap(struct cifsd_session *sess,
 					  void *payload,
 					  size_t payload_sz);
 
+int cifsd_ipc_heartbeat(void);
 void cifsd_ipc_release(void);
 int cifsd_ipc_init(void);
 #endif /* __CIFSD_TRANSPORT_IPC_H__ */

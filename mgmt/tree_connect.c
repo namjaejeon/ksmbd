@@ -6,7 +6,6 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 
-#include "../export.h" /* FIXME */
 #include "../cifsd_server.h" /* FIXME */
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"

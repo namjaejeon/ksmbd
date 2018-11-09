@@ -15,10 +15,9 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
-#define CIFSD_SERVER_PORT		445
-#define CIFSD_SOCKET_BACKLOG		16
+#include "glob.h" /* FIXME */
 
-#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
+#define CIFSD_SOCKET_BACKLOG		16
 
 /*
  * WARNING
@@ -51,12 +50,6 @@ struct cifsd_secmech {
 	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
 };
 
-struct cifsd_tcp_conn_ops {
-	int	(*init_fn)(struct cifsd_tcp_conn *conn);
-	int	(*process_fn)(struct cifsd_tcp_conn *conn);
-	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
-};
-
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	struct smb_version_values	*vals;
@@ -87,12 +80,9 @@ struct cifsd_tcp_conn {
 	struct list_head		async_requests;
 	int				max_credits;
 	int				credits_granted;
-	char				peeraddr[MAX_ADDRBUFLEN];
 	int				connection_type;
 	struct cifsd_stats		stats;
-#ifdef CONFIG_CIFS_SMB2_SERVER
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-#endif
 	struct cifsd_secmech		secmech;
 	union {
 		/* pending trans request table */
@@ -132,6 +122,11 @@ struct cifsd_tcp_conn {
 	struct cifsd_ida		*async_ida;
 };
 
+struct cifsd_tcp_conn_ops {
+	int	(*process_fn)(struct cifsd_tcp_conn *conn);
+	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
+};
+
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
 void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
@@ -147,6 +142,7 @@ struct cifsd_work;
 int cifsd_tcp_write(struct cifsd_work *work);
 
 void cifsd_tcp_enqueue_request(struct cifsd_work *work);
+int cifsd_tcp_try_dequeue_request(struct cifsd_work *work);
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
 void cifsd_tcp_destroy(void);

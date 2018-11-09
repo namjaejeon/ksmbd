@@ -6,10 +6,11 @@
 
 #include <linux/slab.h>
 #include "glob.h"
-#include "export.h"
 #include "smb2pdu.h"
 
+#include "auth.h"
 #include "transport_tcp.h"
+#include "smb_common.h"
 
 struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
@@ -146,8 +147,8 @@ struct smb_version_ops smb3_0_server_ops = {
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.generate_signingkey	=	generate_smb30signingkey,
-	.generate_encryptionkey	=	generate_smb30encryptionkey,
+	.generate_signingkey	=	cifsd_gen_smb30_signingkey,
+	.generate_encryptionkey	=	cifsd_gen_smb30_encryptionkey,
 	.is_transform_hdr	=	smb3_is_transform_hdr,
 	.decrypt_req		=	smb3_decrypt_req,
 	.encrypt_resp		=	smb3_encrypt_resp
@@ -164,15 +165,15 @@ struct smb_version_ops smb3_11_server_ops = {
 	.is_sign_req		=	smb2_is_sign_req,
 	.check_sign_req		=	smb3_check_sign_req,
 	.set_sign_rsp		=	smb3_set_sign_rsp,
-	.generate_signingkey	=	generate_smb311signingkey,
-	.generate_encryptionkey	=	generate_smb311encryptionkey,
+	.generate_signingkey	=	cifsd_gen_smb311_signingkey,
+	.generate_encryptionkey	=	cifsd_gen_smb311_encryptionkey,
 	.is_transform_hdr	=	smb3_is_transform_hdr,
 	.decrypt_req		=	smb3_decrypt_req,
 	.encrypt_resp		=	smb3_encrypt_resp
 };
 
 struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
-	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate, },
+	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate_request, },
 	[SMB2_SESSION_SETUP_HE] =	{ .proc = smb2_sess_setup, },
 	[SMB2_TREE_CONNECT_HE]  =	{ .proc = smb2_tree_connect,},
 	[SMB2_TREE_DISCONNECT_HE]  =	{ .proc = smb2_tree_disconnect,},
@@ -193,12 +194,13 @@ struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 	[SMB2_CHANGE_NOTIFY_HE]	=	{ .proc = smb2_notify},
 };
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * init_smb2_0_server() - initialize a smb server connection with smb2.0
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb2_0_server(struct cifsd_tcp_conn *conn)
+int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 {
 	conn->vals = &smb20_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -207,7 +209,14 @@ void init_smb2_0_server(struct cifsd_tcp_conn *conn)
 	conn->max_credits = SMB2_MAX_CREDITS;
 	conn->credits_granted = 0;
 	conn->srv_cap = 0;
+	return 0;
 }
+#else
+int init_smb2_0_server(struct cifsd_tcp_conn *conn)
+{
+	return -ENOTSUPP;
+}
+#endif
 
 /**
  * init_smb2_1_server() - initialize a smb server connection with smb2.1

@@ -13,19 +13,17 @@ config CIFS_SERVER
 	select CRYPTO_SHA256
 	select CRYPTO_CMAC
 	select CRYPTO_SHA512
-	select TEXTSEARCH
-	select TEXTSEARCH_KMP
 	select CRYPTO_AEAD2
 	select CRYPTO_CCM
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
-	
-config CIFS_SMB2_SERVER
-        bool "SMB2 server support"
+
+config CIFS_INSECURE_SERVER
+        bool "Support for insecure SMB1/CIFS and SMB2.0 protocols"
         depends on CIFS_SERVER && INET
         select NLS
+	default n
 
         help
-	  This enables experimental support for the SMB2 (Server Message Block
-	  version 2) protocol.
-
+	  This enables deprecated insecure protocols dialects: SMB1/CIFS
+	  and SMB2.0
