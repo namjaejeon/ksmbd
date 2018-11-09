@@ -2073,9 +2073,8 @@ int smb2_open(struct cifsd_work *work)
 	struct create_ea_buf_req *ea_buf = NULL;
 	umode_t mode = 0;
 	__le32 *next_ptr = NULL;
-	uint64_t persistent_id = 0;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
-	int volatile_id = 0;
+	int volatile_id = 0, persistent_id = 0;
 	int rc = 0, len = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
 	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
