@@ -813,7 +813,7 @@ int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
 			       struct cifsd_tree_connect *tcon)
 {
 	struct fidtable *ftab;
-	unsigned int volatile_id;
+	int volatile_id;
 	struct cifsd_file *dfp;
 
 	if (!fp->is_durable || fp->conn || fp->sess) {
