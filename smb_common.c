@@ -167,40 +167,40 @@ static bool supported_protocol(int idx)
 			idx <= server_conf.max_protocol);
 }
 
-static char *lower_dialect(char *head, char *tail)
+static char *next_dialect(char *dialect, int *next_off)
 {
-	if (tail == head)
-		return NULL;
-
-	tail--;
-	while (tail > head) {
-		tail--;
-		if ((char)(*tail) == '\0')
-			return tail + 1;
-	}
-	return head;
+	dialect = dialect + *next_off;
+	*next_off = strlen(dialect);
+	return dialect;
 }
 
 static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 {
-	int i, bcount = le16_to_cpu(byte_count);
-	char *prot = NULL;
+	int i, seq_num, bcount, next;
+	char *dialect;
 
 	for (i = ARRAY_SIZE(smb_protos) - 1; i >= 0; i--) {
-		prot = lower_dialect(cli_dialects, cli_dialects + bcount);
-
-		while (prot) {
-			cifsd_debug("client requested dialect %s\n", prot);
-			if (!strcmp(prot, smb_protos[i].name)) {
+		seq_num = 0;
+		next = 0;
+		dialect = cli_dialects;
+		bcount = le16_to_cpu(byte_count);
+		do {
+			dialect = next_dialect(dialect, &next);
+			cifsd_debug("client requested dialect %s\n", dialect);
+			if (!strcmp(dialect, smb_protos[i].name)) {
 				if (supported_protocol(smb_protos[i].index)) {
 					cifsd_debug("selected %s dialect\n",
 							smb_protos[i].name);
+					if (smb_protos[i].index == SMB1_PROT)
+						return seq_num;
 					return smb_protos[i].prot_id;
 				}
 			}
-			prot = lower_dialect(cli_dialects, prot);
-		}
+			seq_num++;
+			bcount -= (++next);
+		} while (bcount > 0);
 	}
+
 	return BAD_PROT_ID;
 }
 
