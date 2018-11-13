@@ -58,6 +58,12 @@ static struct smb_protocol smb_protos[] = {
 		SMB21_PROT_ID
 	},
 	{
+		SMB2X_PROT,
+		"\2SMB 2.???",
+		"SMB2_22",
+		SMB2X_PROT_ID
+	},
+	{
 		SMB30_PROT,
 		"\2SMB 3.0",
 		"SMB3_00",
