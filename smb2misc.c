@@ -21,8 +21,8 @@ static int check_smb2_hdr(struct smb2_hdr *hdr)
 }
 
 /*
- *  The following table defines the expected "StructureSize" of SMB2 responses
- *  in order by SMB2 command.  This is similar to "wct" in SMB/CIFS responses.
+ *  The following table defines the expected "StructureSize" of SMB2 requests
+ *  in order by SMB2 command.  This is similar to "wct" in SMB/CIFS requests.
  *
  *  Note that commands are defined in smb2pdu.h in le16 but the array below is
  *  indexed by command in host byte order
@@ -52,7 +52,7 @@ static const __le16 smb2_req_struct_sizes[NUMBER_OF_SMB2_COMMANDS] = {
 
 /*
  * The size of the variable area depends on the offset and length fields
- * located in different fields for various SMB2 responses. SMB2 responses
+ * located in different fields for various SMB2 requests. SMB2 requests
  * with no variable length info, show an offset of zero for the offset field.
  */
 static const bool has_smb2_data_area[NUMBER_OF_SMB2_COMMANDS] = {
@@ -120,7 +120,7 @@ char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 	*off = 0;
 	*len = 0;
 
-	/* error responses do not have data area */
+	/* error reqeusts do not have data area */
 	if (hdr->Status && hdr->Status != NT_STATUS_MORE_PROCESSING_REQUIRED &&
 			(((struct smb2_err_rsp *)hdr)->StructureSize) ==
 			SMB2_ERROR_STRUCTURE_SIZE2)
@@ -343,7 +343,7 @@ int smb2_check_message(struct cifsd_work *work)
 		if (command != SMB2_OPLOCK_BREAK_HE && (hdr->Status == 0 ||
 			pdu->StructureSize2 != SMB2_ERROR_STRUCTURE_SIZE2)) {
 			/* error packets have 9 byte structure size */
-			cifsd_err("Illegal response size %u for command %d\n",
+			cifsd_err("Illegal request size %u for command %d\n",
 				le16_to_cpu(pdu->StructureSize2), command);
 			return 1;
 		} else if (command == SMB2_OPLOCK_BREAK_HE
@@ -351,7 +351,7 @@ int smb2_check_message(struct cifsd_work *work)
 				&& (le16_to_cpu(pdu->StructureSize2) != 44)
 				&& (le16_to_cpu(pdu->StructureSize2) != 36)) {
 			/* special case for SMB2.1 lease break message */
-			cifsd_err("Illegal response size %d for oplock break\n",
+			cifsd_err("Illegal request size %d for oplock break\n",
 				le16_to_cpu(pdu->StructureSize2));
 			return 1;
 		}
@@ -379,12 +379,12 @@ int smb2_check_message(struct cifsd_work *work)
 		 */
 		if (clc_len < len) {
 			cifsd_debug(
-				"srv rsp padded more than expected. Length %d not %d for cmd:%d mid:%llu\n",
+				"cli req padded more than expected. Length %d not %d for cmd:%d mid:%llu\n",
 					len, clc_len, command, mid);
 			return 0;
 		}
 		cifsd_err(
-			"srv rsp too short, len %d not %d. cmd:%d mid:%llu\n",
+			"cli req too short, len %d not %d. cmd:%d mid:%llu\n",
 				len, clc_len, command, mid);
 
 		return 1;
