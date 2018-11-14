@@ -393,8 +393,8 @@ void init_chained_smb2_rsp(struct cifsd_work *work)
 
 	if (!(le32_to_cpu(rcv_hdr->Flags) & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("related flag should be set\n");
-		work->cur_local_fid = -1;
-		work->cur_local_pfid = -1;
+		work->cur_local_fid = CIFSD_NO_FID;
+		work->cur_local_pfid = CIFSD_NO_FID;
 	}
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
@@ -4578,14 +4578,8 @@ int smb2_close(struct cifsd_work *work)
 	}
 
 	if (work->next_smb2_rcv_hdr_off &&
-			le64_to_cpu(req->VolatileFileId) == -1) {
-		if (!work->cur_local_fid) {
-			/* file open failed, return EINVAL */
-			cifsd_debug("file open was failed\n");
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-			err = -EBADF;
-			goto out;
-		} else if (work->cur_local_fid == -1) {
+			le64_to_cpu(req->VolatileFileId) == CIFSD_NO_FID) {
+		if (work->cur_local_fid == CIFSD_NO_FID) {
 			/* file already closed, return FILE_CLOSED */
 			cifsd_debug("file already closed\n");
 			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
@@ -4599,8 +4593,8 @@ int smb2_close(struct cifsd_work *work)
 			persistent_id = work->cur_local_pfid;
 
 			/* file closed, stored id is not valid anymore */
-			work->cur_local_fid = -1;
-			work->cur_local_pfid = -1;
+			work->cur_local_fid = CIFSD_NO_FID;
+			work->cur_local_pfid = CIFSD_NO_FID;
 		}
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
