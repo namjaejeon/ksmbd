@@ -58,8 +58,8 @@ struct cifsd_ipc_msg {
 	unsigned char		____payload[0];
 };
 
-#define CIFSD_IPC_MSG_PAYLOAD(m)	\
-	((void *)(m) + offsetof(struct cifsd_ipc_msg, ____payload))
+#define CIFSD_IPC_MSG_PAYLOAD(m)					\
+	(void *)(((struct cifsd_ipc_msg *)(m))->____payload)
 
 struct ipc_msg_table_entry {
 	unsigned int		handle;
