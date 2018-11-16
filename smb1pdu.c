@@ -4812,6 +4812,10 @@ prepare_rsp:
 		3 /*alignment*/;
 	psx_rsp = (OPEN_PSX_RSP *)(((char *)&pSMB_rsp->hdr.Protocol) +
 			data_offset);
+	if (data_offset + sizeof(OPEN_PSX_RSP) > work->response_sz) {
+		err = -EIO;
+		goto free_path;
+	}
 
 	psx_rsp->OplockFlags = oplock_rsp;
 	psx_rsp->Fid = fp != NULL ? fp->volatile_id : 0;
