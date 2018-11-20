@@ -2774,7 +2774,14 @@ int smb_read_andx(struct cifsd_work *work)
 		pos |= ((loff_t)le32_to_cpu(req->OffsetHigh) << 32);
 
 	count = le16_to_cpu(req->MaxCount);
-	if (conn->srv_cap & CAP_LARGE_READ_X)
+	/*
+	 * It probably seems to be set to 0 or 0xFFFF if MaxCountHigh is
+	 * not supported. If it is 0xFFFF, it is set to a too large value
+	 * and a read fail occurs. If it is 0xFFFF, limit it to not set
+	 * the value.
+	 */
+	if (conn->srv_cap & CAP_LARGE_READ_X &&
+		le32_to_cpu(req->MaxCountHigh) < 0xFFFF)
 		count |= le32_to_cpu(req->MaxCountHigh) << 16;
 
 	if (count > cifsd_default_io_size()) {
