@@ -371,10 +371,9 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	TCONX_REQ *req;
 	TCONX_RSP_EXT *rsp;
 	int extra_byte = 0;
-	char *treename = NULL, *name = NULL;
+	char *treename = NULL, *name = NULL, *dev_type = NULL;
 	struct cifsd_share_config *share;
 	struct cifsd_session *sess = work->sess;
-	char *dev_type;
 	int dev_flags = 0;
 	struct cifsd_tree_conn_status status;
 
@@ -410,16 +409,16 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 			256, false, conn->local_nls);
 	}
 
-	if (IS_ERR(treename)) {
-		cifsd_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
+	if (IS_ERR(treename) || IS_ERR(dev_type)) {
+		cifsd_err("Unable to strdup() treename or devtype uid %d\n",
+				rsp_hdr->Uid);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
-		goto out_err1;
+		goto out_err;
 	}
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
-		kfree(treename);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
-		goto out_err1;
+		goto out_err;
 	}
 
 	cifsd_debug("tree connect request for tree %s, dev_type : %s\n",
@@ -480,12 +479,20 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	}
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
+	kfree(treename);
+	kfree(dev_type);
+	kfree(name);
+
 	return 0;
 
 out_err:
-	kfree(treename);
-	kfree(name);
-out_err1:
+	if (!IS_ERR(treename))
+		kfree(treename);
+	if (!IS_ERR(dev_type))
+		kfree(dev_type);
+	if (!IS_ERR(name))
+		kfree(name);
+
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
