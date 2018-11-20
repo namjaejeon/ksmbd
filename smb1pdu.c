@@ -1097,12 +1097,11 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		}
 
 		cifsd_debug("session setup request for user %s\n", username);
-
 		sess->user = cifsd_alloc_user(username);
+		kfree(username);
+
 		if (!sess->user) {
-			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
-				username);
-			kfree(username);
+			cifsd_debug("Unknown user name or an error\n");
 			err = -EINVAL;
 			goto out_err;
 		}

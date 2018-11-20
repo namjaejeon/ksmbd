@@ -1352,15 +1352,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		cifsd_debug("session setup request for user %s\n", username);
 		sess->user = cifsd_alloc_user(username);
+		kfree(username);
+
 		if (!sess->user) {
-			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
-				username);
-			kfree(username);
+			cifsd_debug("Unknown user name or an error\n");
 			rc = -EINVAL;
 			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
-		kfree(username);
 
 		if (user_guest(sess->user)) {
 			if (conn->sign) {
