@@ -788,12 +788,10 @@ int smb_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
-	NEGOTIATE_REQ *neg_req = (NEGOTIATE_REQ *)REQUEST_BUF(work);
 	__le64 time;
 	struct timespec64 ts64;
 	int rc = 0;
 
-	WARN_ON(neg_req->hdr.WordCount);
 	WARN_ON(cifsd_tcp_good(work));
 
 	if (conn->dialect == BAD_PROT_ID) {
@@ -2859,9 +2857,6 @@ int smb_write(struct cifsd_work *work)
 	ssize_t nbytes = 0;
 	int err = 0;
 
-	if (req->hdr.WordCount != 5)
-		goto out;
-
 	fp = get_fp(work, le16_to_cpu(req->Fid), 0);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n",
@@ -2883,7 +2878,6 @@ int smb_write(struct cifsd_work *work)
 		err = cifsd_vfs_write(work, fp, data_buf,
 				      count, &pos, 0, &nbytes);
 
-out:
 	rsp->hdr.WordCount = 1;
 	rsp->Written = cpu_to_le16(nbytes & 0xFFFF);
 	rsp->ByteCount = 0;
@@ -3877,7 +3871,6 @@ out:
  */
 static int query_path_info(struct cifsd_work *work)
 {
-	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
@@ -3895,13 +3888,6 @@ static int query_path_info(struct cifsd_work *work)
 				   CIFSD_SHARE_FLAG_PIPE)) {
 		rsp_hdr->Status.CifsError = NT_STATUS_UNEXPECTED_IO_ERROR;
 		return 0;
-	}
-
-	if (req_hdr->WordCount != 15) {
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				req_hdr->WordCount);
-		rc = -EINVAL;
-		goto out;
 	}
 
 	req_params = (TRANSACTION2_QPI_REQ_PARAMS *)(REQUEST_BUF(work) +
@@ -4457,13 +4443,6 @@ static int query_fs_info(struct cifsd_work *work)
 	}
 
 	info_level = req_params->InformationLevel;
-
-	/* query_fs_info wct must be 15 */
-	if (req_hdr->WordCount != 0x0F) {
-		cifsd_err("query_fs_info request wct error, received wct = %x\n",
-				req_hdr->WordCount);
-		return -EINVAL;
-	}
 
 	tree_conn = cifsd_tree_conn_lookup(work->sess, req_hdr->Tid);
 	if (!tree_conn)
@@ -5409,13 +5388,6 @@ static int set_path_info(struct cifsd_work *work)
 		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
 		cifsd_err("invalid total parameter for info_level 0x%x\n",
 				total_param);
-		return -EINVAL;
-	}
-
-	if (pSMB_req->hdr.WordCount != 15) {
-		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				pSMB_req->hdr.WordCount);
 		return -EINVAL;
 	}
 
@@ -6421,7 +6393,6 @@ static int query_file_info_pipe(struct cifsd_work *work)
 static int query_file_info(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
@@ -6436,14 +6407,6 @@ static int query_file_info(struct cifsd_work *work)
 
 	req_params = (TRANSACTION2_QFI_REQ_PARAMS *)(REQUEST_BUF(work) +
 			req->ParameterOffset + 4);
-
-	if (req_hdr->WordCount != 15) {
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				req_hdr->WordCount);
-		rsp_hdr->Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		rc = -EINVAL;
-		goto err_out;
-	}
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -7003,13 +6966,6 @@ static int set_file_info(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	if (req->hdr.WordCount != 15) {
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				req->hdr.WordCount);
-		return -EINVAL;
-	}
-
 	switch (info_level) {
 	case SMB_SET_FILE_EA:
 		err = smb_set_ea(work);
@@ -7066,14 +7022,6 @@ static int create_dir(struct cifsd_work *work)
 	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
-
-	/* WordCount should be 15 as per request format */
-	if (req->hdr.WordCount != 15) {
-		rsp->hdr.Status.CifsError = NT_STATUS_INVALID_PARAMETER;
-		cifsd_err("word count mismatch: expected 15 got %d\n",
-				req->hdr.WordCount);
-		return -EINVAL;
-	}
 
 	name = smb_get_name(share, REQUEST_BUF(work) + req->ParameterOffset + 4,
 			PATH_MAX, work, false);
