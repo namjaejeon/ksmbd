@@ -11,6 +11,7 @@
 #include <linux/writeback.h>
 #include <linux/uio.h>
 #include <linux/xattr.h>
+#include <crypto/aead.h>
 
 #include "auth.h"
 #include "glob.h"
@@ -85,6 +86,14 @@ static inline void free_sdescmd5(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdescmd5 = NULL;
 }
 
+static inline void free_ccmaes(struct cifsd_tcp_conn *conn)
+{
+	crypto_free_aead(conn->secmech.ccmaesencrypt);
+	conn->secmech.ccmaesencrypt = NULL;
+	crypto_free_aead(conn->secmech.ccmaesdecrypt);
+	conn->secmech.ccmaesencrypt = NULL;
+}
+
 void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn)
 {
 	free_hmacmd5(conn);
@@ -92,6 +101,7 @@ void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn)
 	free_cmacaes(conn);
 	free_sha512(conn);
 	free_sdescmd5(conn);
+	free_ccmaes(conn);
 }
 
 static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
