@@ -1393,20 +1393,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			if (!sess->sign && ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || server_conf.enforced_signing) ||
-				(conn->dialect >= SMB30_PROT_ID))) {
-				if (conn->ops->generate_signingkey) {
-					rc = conn->ops->generate_signingkey(
-						sess, binding_flags,
-						p_sess->Preauth_HashValue);
-					if (rc) {
-						cifsd_debug("SMB3 signing key generation failed\n");
-						rsp->hdr.Status =
-							NT_STATUS_LOGON_FAILURE;
-						goto out_err;
-					}
-				}
+				(conn->dialect >= SMB30_PROT_ID)))
 				sess->sign = true;
-			}
 
 			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
 					conn->ops->generate_encryptionkey) {
@@ -1427,6 +1415,18 @@ int smb2_sess_setup(struct cifsd_work *work)
 				sess->sign = false;
 			}
 
+		}
+
+		if (conn->ops->generate_signingkey) {
+			rc = conn->ops->generate_signingkey(
+					sess, binding_flags,
+					p_sess->Preauth_HashValue);
+			if (rc) {
+				cifsd_debug("SMB3 signing key generation failed\n");
+				rsp->hdr.Status =
+					NT_STATUS_LOGON_FAILURE;
+				goto out_err;
+			}
 		}
 
 		if (conn->dialect > SMB20_PROT_ID)
