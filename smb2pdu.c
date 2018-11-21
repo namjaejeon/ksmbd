@@ -1371,12 +1371,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
 			sess->is_guest = true;
-			if (test_user_flag(sess->user,
-					   CIFSD_USER_FLAG_ANONYMOUS)) {
-				rsp->SessionFlags = SMB2_SESSION_FLAG_IS_NULL;
-				sess->is_anonymous = true;
-				sess->is_guest	= false;
-			}
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBufferLength),
