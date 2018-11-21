@@ -7129,7 +7129,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	char *buf = RESPONSE_BUF(work);
 	struct smb2_transform_hdr *tr_hdr;
 	struct kvec *iov;
-	struct cifsd_crypt_smb_req rqst = {NULL};
 	int rc = -ENOMEM;
 	int buf_size = 0, rq_nvec = 2 + (HAS_AUX_PAYLOAD(work) ? 1 : 0);
 
@@ -7152,9 +7151,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 
 	iov[1].iov_base = buf + 4;
 	iov[1].iov_len = get_rfc1002_length(buf);
-	rqst.rq_iov = iov;
-	rqst.rq_nvec = rq_nvec;
-
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[1].iov_len = RESP_HDR_SIZE(work);
 
@@ -7165,7 +7161,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	buf_size += iov[1].iov_len;
 	work->resp_hdr_sz = iov[1].iov_len;
 
-	rc = cifsd_crypt_message(work->conn, &rqst, 1);
+	rc = cifsd_crypt_message(work->conn, iov, rq_nvec, 1);
 	if (rc)
 		return rc;
 
@@ -7191,7 +7187,6 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	struct smb2_hdr *hdr;
 	unsigned int pdu_length = get_rfc1002_length(buf);
 	struct kvec iov[2];
-	struct cifsd_crypt_smb_req rqst = {NULL};
 	unsigned int buf_data_size = pdu_length + 4 -
 		sizeof(struct smb2_transform_hdr);
 	struct smb2_transform_hdr *tr_hdr = (struct smb2_transform_hdr *)buf;
@@ -7221,11 +7216,7 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);
 	iov[1].iov_base = buf + sizeof(struct smb2_transform_hdr);
 	iov[1].iov_len = buf_data_size;
-
-	rqst.rq_iov = iov;
-	rqst.rq_nvec = 2;
-
-	rc = cifsd_crypt_message(conn, &rqst, 0);
+	rc = cifsd_crypt_message(conn, iov, 2, 0);
 	if (rc)
 		return rc;
 

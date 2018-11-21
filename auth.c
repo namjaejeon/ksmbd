@@ -1233,41 +1233,41 @@ struct cifsd_crypt_result {
 };
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static struct scatterlist *cifsd_init_sg(struct cifsd_crypt_smb_req *rqst,
+static struct scatterlist *cifsd_init_sg(struct kvec *iov,
+					 unsigned int nvec,
 					 u8 *sign)
 {
 	struct scatterlist *sg;
-	unsigned int i = 0, sg_len = rqst->rq_nvec;
+	unsigned int i = 0;
 
-	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
+	sg = kmalloc_array(nvec, sizeof(struct scatterlist), GFP_KERNEL);
 	if (!sg)
 		return NULL;
 
-	sg_init_table(sg, sg_len);
-	for (i = 0; i < sg_len - 1; i++)
-		sg_set_buf(&sg[i], rqst->rq_iov[i + 1].iov_base,
-			rqst->rq_iov[i + 1].iov_len);
-	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
+	sg_init_table(sg, nvec);
+	for (i = 0; i < nvec - 1; i++)
+		sg_set_buf(&sg[i], iov[i + 1].iov_base, iov[i + 1].iov_len);
+	sg_set_buf(&sg[nvec - 1], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }
 #else
-static struct scatterlist *cifsd_init_sg(struct cifsd_crypt_smb_req *rqst,
+static struct scatterlist *cifsd_init_sg(struct kvec *iov,
+					 unsigned int nvec,
 					 u8 *sign)
 {
 	struct scatterlist *sg;
-	unsigned int i = 0, sg_len = rqst->rq_nvec + 1;
+	unsigned int i = 0;
 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
 
-	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
+	sg = kmalloc_array(nvec + 1, sizeof(struct scatterlist), GFP_KERNEL);
 	if (!sg)
 		return NULL;
 
-	sg_init_table(sg, sg_len);
-	sg_set_buf(&sg[0], rqst->rq_iov[0].iov_base + 24, assoc_data_len);
-	for (i = 1; i < sg_len - 1; i++)
-		sg_set_buf(&sg[i], rqst->rq_iov[i].iov_base,
-			rqst->rq_iov[i].iov_len);
-	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
+	sg_init_table(sg, nvec + 1);
+	sg_set_buf(&sg[0], iov[0].iov_base + 24, assoc_data_len);
+	for (i = 1; i < nvec; i++)
+		sg_set_buf(&sg[i], iov[i].iov_base, iov[i].iov_len);
+	sg_set_buf(&sg[nvec], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }
 #endif
@@ -1284,11 +1284,12 @@ static void cifsd_crypt_complete(struct crypto_async_request *req, int err)
 }
 
 int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
-			struct cifsd_crypt_smb_req *rqst,
+			struct kvec *iov,
+			unsigned int nvec,
 			int enc)
 {
 	struct smb2_transform_hdr *tr_hdr =
-		(struct smb2_transform_hdr *)rqst->rq_iov[0].iov_base;
+		(struct smb2_transform_hdr *)iov[0].iov_base;
 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
 	int rc = 0;
 	struct scatterlist *sg;
@@ -1345,10 +1346,10 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	sg_init_one(&assoc, rqst->rq_iov[0].iov_base + 24, assoc_data_len);
+	sg_init_one(&assoc, iov[0].iov_base + 24, assoc_data_len);
 #endif
 
-	sg = cifsd_init_sg(rqst, sign);
+	sg = cifsd_init_sg(iov, nvec, sign);
 	if (!sg) {
 		cifsd_err("%s: Failed to init sg", __func__);
 		rc = -ENOMEM;
