@@ -45,6 +45,55 @@ void cifsd_copy_gss_neg_header(void *buf)
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
 }
 
+static inline void free_hmacmd5(struct cifsd_tcp_conn *conn)
+{
+	crypto_free_shash(conn->secmech.hmacmd5);
+	conn->secmech.hmacmd5 = NULL;
+	kfree(conn->secmech.sdeschmacmd5);
+	conn->secmech.sdeschmacmd5 = NULL;
+}
+
+static inline void free_hmacsha256(struct cifsd_tcp_conn *conn)
+{
+	crypto_free_shash(conn->secmech.hmacsha256);
+	conn->secmech.hmacsha256 = NULL;
+	kfree(conn->secmech.sdeschmacsha256);
+	conn->secmech.sdeschmacsha256 = NULL;
+}
+
+static inline void free_cmacaes(struct cifsd_tcp_conn *conn)
+{
+	crypto_free_shash(conn->secmech.cmacaes);
+	conn->secmech.cmacaes = NULL;
+	kfree(conn->secmech.sdesccmacaes);
+	conn->secmech.sdesccmacaes = NULL;
+}
+
+static inline void free_sha512(struct cifsd_tcp_conn *conn)
+{
+	crypto_free_shash(conn->secmech.sha512);
+	conn->secmech.sha512 = NULL;
+	kfree(conn->secmech.sdescsha512);
+	conn->secmech.sdescsha512 = NULL;
+}
+
+static inline void free_sdescmd5(struct cifsd_tcp_conn *conn)
+{
+	kfree(conn->secmech.md5);
+	conn->secmech.md5 = NULL;
+	kfree(conn->secmech.sdescmd5);
+	conn->secmech.sdescmd5 = NULL;
+}
+
+void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn)
+{
+	free_hmacmd5(conn);
+	free_hmacsha256(conn);
+	free_cmacaes(conn);
+	free_sha512(conn);
+	free_sdescmd5(conn);
+}
+
 static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 {
 	int rc;
@@ -66,8 +115,7 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 		crypto_shash_descsize(conn->secmech.hmacmd5);
 	conn->secmech.sdeschmacmd5 = kmalloc(size, GFP_KERNEL);
 	if (!conn->secmech.sdeschmacmd5) {
-		crypto_free_shash(conn->secmech.hmacmd5);
-		conn->secmech.hmacmd5 = NULL;
+		free_hmacmd5(conn);
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacmd5->shash.tfm = conn->secmech.hmacmd5;
@@ -563,8 +611,7 @@ static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 		crypto_shash_descsize(conn->secmech.md5);
 	conn->secmech.sdescmd5 = kmalloc(size, GFP_KERNEL);
 	if (!conn->secmech.sdescmd5) {
-		crypto_free_shash(conn->secmech.md5);
-		conn->secmech.md5 = NULL;
+		free_sdescmd5(conn);
 		return -ENOMEM;
 	}
 	conn->secmech.sdescmd5->shash.tfm = conn->secmech.md5;
@@ -656,8 +703,7 @@ static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 		crypto_shash_descsize(conn->secmech.hmacsha256);
 	conn->secmech.sdeschmacsha256 = kmalloc(size, GFP_KERNEL);
 	if (!conn->secmech.sdeschmacsha256) {
-		crypto_free_shash(conn->secmech.hmacsha256);
-		conn->secmech.hmacsha256 = NULL;
+		free_hmacsha256(conn);
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacsha256->shash.tfm = conn->secmech.hmacsha256;
@@ -687,8 +733,7 @@ static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 		crypto_shash_descsize(conn->secmech.cmacaes);
 	conn->secmech.sdesccmacaes = kmalloc(size, GFP_KERNEL);
 	if (!conn->secmech.sdesccmacaes) {
-		crypto_free_shash(conn->secmech.cmacaes);
-		conn->secmech.cmacaes = NULL;
+		free_cmacaes(conn);
 		return -ENOMEM;
 	}
 	conn->secmech.sdesccmacaes->shash.tfm = conn->secmech.cmacaes;
@@ -719,8 +764,7 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 		crypto_shash_descsize(conn->secmech.sha512);
 	conn->secmech.sdescsha512 = kmalloc(size, GFP_KERNEL);
 	if (!conn->secmech.sdescsha512) {
-		crypto_free_shash(conn->secmech.sha512);
-		conn->secmech.sha512 = NULL;
+		free_sha512(conn);
 		return -ENOMEM;
 	}
 	conn->secmech.sdescsha512->shash.tfm = conn->secmech.sha512;

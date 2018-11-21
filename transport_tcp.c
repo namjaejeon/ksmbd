@@ -7,6 +7,7 @@
 #include <linux/mutex.h>
 
 #include "server.h"
+#include "auth.h"
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 #include "mgmt/cifsd_ida.h"
@@ -63,6 +64,7 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	sock_release(conn->sock);
 	conn->sock = NULL;
 
+	cifsd_free_conn_secmech(conn);
 	cifsd_free_request(conn->request_buf);
 	cifsd_ida_free(conn->async_ida);
 	kfree(conn->preauth_info);
