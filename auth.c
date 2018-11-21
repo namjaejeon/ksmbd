@@ -1181,3 +1181,213 @@ int cifsd_gen_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
 out:
 	return rc;
 }
+
+static int cifsd_alloc_aead(struct cifsd_tcp_conn *conn)
+{
+	struct crypto_aead *tfm;
+
+	if (!conn->secmech.ccmaesencrypt) {
+		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
+		if (IS_ERR(tfm)) {
+			cifsd_err("Failed to alloc encrypt aead\n");
+			return PTR_ERR(tfm);
+		}
+		conn->secmech.ccmaesencrypt = tfm;
+	}
+
+	if (!conn->secmech.ccmaesdecrypt) {
+		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
+		if (IS_ERR(tfm)) {
+			cifsd_err("Failed to alloc decrypt aead\n");
+			free_ccmaes(conn);
+			return PTR_ERR(tfm);
+		}
+		conn->secmech.ccmaesdecrypt = tfm;
+	}
+
+	return 0;
+}
+
+static int cifsd_get_encryption_key(struct cifsd_tcp_conn *conn,
+				    __u64 ses_id,
+				    int enc,
+				    u8 *key)
+{
+	struct cifsd_session *sess;
+	u8 *ses_enc_key;
+
+	sess = cifsd_session_lookup(conn, ses_id);
+	if (!sess)
+		return 1;
+
+	ses_enc_key = enc ? sess->smb3encryptionkey :
+		sess->smb3decryptionkey;
+	memcpy(key, ses_enc_key, SMB3_SIGN_KEY_SIZE);
+
+	return 0;
+}
+
+struct cifsd_crypt_result {
+	int			err;
+	struct completion	completion;
+};
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+static struct scatterlist *cifsd_init_sg(struct cifsd_crypt_smb_req *rqst,
+					 u8 *sign)
+{
+	struct scatterlist *sg;
+	unsigned int i = 0, sg_len = rqst->rq_nvec;
+
+	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
+	if (!sg)
+		return NULL;
+
+	sg_init_table(sg, sg_len);
+	for (i = 0; i < sg_len - 1; i++)
+		sg_set_buf(&sg[i], rqst->rq_iov[i + 1].iov_base,
+			rqst->rq_iov[i + 1].iov_len);
+	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
+	return sg;
+}
+#else
+static struct scatterlist *cifsd_init_sg(struct cifsd_crypt_smb_req *rqst,
+					 u8 *sign)
+{
+	struct scatterlist *sg;
+	unsigned int i = 0, sg_len = rqst->rq_nvec + 1;
+	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
+
+	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
+	if (!sg)
+		return NULL;
+
+	sg_init_table(sg, sg_len);
+	sg_set_buf(&sg[0], rqst->rq_iov[0].iov_base + 24, assoc_data_len);
+	for (i = 1; i < sg_len - 1; i++)
+		sg_set_buf(&sg[i], rqst->rq_iov[i].iov_base,
+			rqst->rq_iov[i].iov_len);
+	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
+	return sg;
+}
+#endif
+
+static void cifsd_crypt_complete(struct crypto_async_request *req, int err)
+{
+	struct cifsd_crypt_result *res = req->data;
+
+	if (err == -EINPROGRESS)
+		return;
+
+	res->err = err;
+	complete(&res->completion);
+}
+
+int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
+			struct cifsd_crypt_smb_req *rqst,
+			int enc)
+{
+	struct smb2_transform_hdr *tr_hdr =
+		(struct smb2_transform_hdr *)rqst->rq_iov[0].iov_base;
+	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
+	int rc = 0;
+	struct scatterlist *sg;
+	u8 sign[SMB2_SIGNATURE_SIZE] = {};
+	u8 key[SMB3_SIGN_KEY_SIZE];
+	struct aead_request *req;
+	char *iv;
+	unsigned int iv_len;
+	struct cifsd_crypt_result result = {0, };
+	struct crypto_aead *tfm;
+	unsigned int crypt_len = le32_to_cpu(tr_hdr->OriginalMessageSize);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+	struct scatterlist assoc;
+#endif
+
+	init_completion(&result.completion);
+
+	rc = cifsd_get_encryption_key(conn, tr_hdr->SessionId, enc, key);
+	if (rc) {
+		cifsd_err("%s: Could not get %scryption key\n", __func__,
+				enc ? "en" : "de");
+		return 0;
+	}
+
+	rc = cifsd_alloc_aead(conn);
+	if (rc) {
+		cifsd_err("%s: crypto alloc failed\n", __func__);
+		return rc;
+	}
+
+	tfm = enc ? conn->secmech.ccmaesencrypt :
+		conn->secmech.ccmaesdecrypt;
+	rc = crypto_aead_setkey(tfm, key, SMB3_SIGN_KEY_SIZE);
+	if (rc) {
+		cifsd_err("%s: Failed to set aead key %d\n", __func__, rc);
+		return rc;
+	}
+
+	rc = crypto_aead_setauthsize(tfm, SMB2_SIGNATURE_SIZE);
+	if (rc) {
+		cifsd_err("%s: Failed to set authsize %d\n", __func__, rc);
+		return rc;
+	}
+
+	req = aead_request_alloc(tfm, GFP_KERNEL);
+	if (!req) {
+		cifsd_err("%s: Failed to alloc aead request", __func__);
+		return -ENOMEM;
+	}
+
+	if (!enc) {
+		memcpy(sign, &tr_hdr->Signature, SMB2_SIGNATURE_SIZE);
+		crypt_len += SMB2_SIGNATURE_SIZE;
+	}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+	sg_init_one(&assoc, rqst->rq_iov[0].iov_base + 24, assoc_data_len);
+#endif
+
+	sg = cifsd_init_sg(rqst, sign);
+	if (!sg) {
+		cifsd_err("%s: Failed to init sg", __func__);
+		rc = -ENOMEM;
+		goto free_req;
+	}
+
+	iv_len = crypto_aead_ivsize(tfm);
+	iv = kzalloc(iv_len, GFP_KERNEL);
+	if (!iv) {
+		cifsd_err("%s: Failed to alloc IV", __func__);
+		rc = -ENOMEM;
+		goto free_sg;
+	}
+	iv[0] = 3;
+	memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+	aead_request_set_assoc(req, &assoc, assoc_data_len);
+	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
+#else
+	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
+	aead_request_set_ad(req, assoc_data_len);
+#endif
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
+			cifsd_crypt_complete, &result);
+
+	rc = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
+	if (rc == -EINPROGRESS || rc == -EBUSY) {
+		wait_for_completion(&result.completion);
+		rc = result.err;
+	}
+
+	if (!rc && enc)
+		memcpy(&tr_hdr->Signature, sign, SMB2_SIGNATURE_SIZE);
+
+	kfree(iv);
+free_sg:
+	kfree(sg);
+free_req:
+	kfree(req);
+	return rc;
+}

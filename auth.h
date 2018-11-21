@@ -15,6 +15,15 @@ struct cifsd_session;
 struct cifsd_tcp_conn;
 struct kvec;
 
+struct cifsd_crypt_smb_req {
+	struct kvec	*rq_iov;
+	unsigned int	rq_nvec;
+};
+
+int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
+			struct cifsd_crypt_smb_req *rqst,
+			int enc);
+
 void cifsd_copy_gss_neg_header(void *buf);
 
 void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn);
