@@ -266,6 +266,13 @@ int smb1_check_message(struct cifsd_work *work)
 
 	clc_len = smb1_calc_size(hdr);
 	if (len != clc_len) {
+		/*
+		 * smbclient may return wrong byte count in smb header.
+		 * But allow it to avoid write failure with smbclient.
+		 */
+		if (command == SMB_COM_WRITE_ANDX)
+			return 0;
+
 		cifsd_err("cli req too short, len %d not %d. cmd:%x\n",
 			len, clc_len, command);
 
