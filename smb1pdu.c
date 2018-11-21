@@ -371,10 +371,9 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	TCONX_REQ *req;
 	TCONX_RSP_EXT *rsp;
 	int extra_byte = 0;
-	char *treename = NULL, *name = NULL;
+	char *treename = NULL, *name = NULL, *dev_type = NULL;
 	struct cifsd_share_config *share;
 	struct cifsd_session *sess = work->sess;
-	char *dev_type;
 	int dev_flags = 0;
 	struct cifsd_tree_conn_status status;
 
@@ -410,16 +409,16 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 			256, false, conn->local_nls);
 	}
 
-	if (IS_ERR(treename)) {
-		cifsd_err("treename is NULL for uid %d\n", rsp_hdr->Uid);
+	if (IS_ERR(treename) || IS_ERR(dev_type)) {
+		cifsd_err("Unable to strdup() treename or devtype uid %d\n",
+				rsp_hdr->Uid);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
-		goto out_err1;
+		goto out_err;
 	}
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
-		kfree(treename);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
-		goto out_err1;
+		goto out_err;
 	}
 
 	cifsd_debug("tree connect request for tree %s, dev_type : %s\n",
@@ -480,12 +479,20 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	}
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
+	kfree(treename);
+	kfree(dev_type);
+	kfree(name);
+
 	return 0;
 
 out_err:
-	kfree(treename);
-	kfree(name);
-out_err1:
+	if (!IS_ERR(treename))
+		kfree(treename);
+	if (!IS_ERR(dev_type))
+		kfree(dev_type);
+	if (!IS_ERR(name))
+		kfree(name);
+
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
@@ -1090,12 +1097,11 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		}
 
 		cifsd_debug("session setup request for user %s\n", username);
-
 		sess->user = cifsd_alloc_user(username);
+		kfree(username);
+
 		if (!sess->user) {
-			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
-				username);
-			kfree(username);
+			cifsd_debug("Unknown user name or an error\n");
 			err = -EINVAL;
 			goto out_err;
 		}
@@ -5844,7 +5850,11 @@ static int find_first(struct cifsd_work *work)
 			goto err_out;
 	}
 
+	d_info.name = NULL;
 	do {
+		kfree(d_info.name);
+		d_info.name = NULL;
+
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
@@ -5882,39 +5892,38 @@ static int find_first(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
-			dirpath);
+		d_info.name = cifsd_vfs_readdir_name(work,
+						     &cifsd_kstat,
+						     de,
+						     dirpath);
 		if (IS_ERR(d_info.name)) {
-			rc = PTR_ERR(d_info.name);
-			cifsd_debug("Err while dirent read rc = %d\n", rc);
-			rc = 0;
+			cifsd_debug("Cannot read dirent: %d\n",
+				    (int)PTR_ERR(d_info.name));
 			continue;
 		}
 
 		if (!strncmp(de->name, ".", de->namelen) ||
-			!strncmp(de->name, "..", de->namelen)) {
+			!strncmp(de->name, "..", de->namelen))
 			continue;
-		}
 
 		if (cifsd_share_veto_filename(share, d_info.name)) {
-			cifsd_debug("file(%s) is invisible by setting as veto file\n",
-				d_info.name);
+			cifsd_debug("Veto filename %s\n", d_info.name);
 			continue;
 		}
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
-				req_params->InformationLevel, &d_info,
-				&cifsd_kstat);
+						req_params->InformationLevel,
+						&d_info,
+						&cifsd_kstat);
 			if (rc) {
 				kfree(d_info.name);
 				goto err_out;
 			}
 		}
-
-		kfree(d_info.name);
 	} while (d_info.out_buf_len >= 0);
 
+	kfree(d_info.name);
 	if (!d_info.data_count && *srch_ptr) {
 		cifsd_debug("There is no entry matched with the search pattern\n");
 		rsp->hdr.Status.CifsError = NT_STATUS_NO_SUCH_FILE;

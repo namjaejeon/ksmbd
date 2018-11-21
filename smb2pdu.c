@@ -1352,15 +1352,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		cifsd_debug("session setup request for user %s\n", username);
 		sess->user = cifsd_alloc_user(username);
+		kfree(username);
+
 		if (!sess->user) {
-			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
-				username);
-			kfree(username);
+			cifsd_debug("Unknown user name or an error\n");
 			rc = -EINVAL;
 			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
-		kfree(username);
 
 		if (user_guest(sess->user)) {
 			if (conn->sign) {
@@ -3288,10 +3287,11 @@ int smb2_query_dir(struct cifsd_work *work)
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = min_t(int, (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_length(rsp_org) + 4)),
-		le32_to_cpu(req->OutputBufferLength)) -
-		sizeof(struct smb2_query_directory_rsp);
+	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
+				(get_rfc1002_length(rsp_org) + 4));
+	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
+				le32_to_cpu(req->OutputBufferLength)) -
+				sizeof(struct smb2_query_directory_rsp);
 
 	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY)) {
 		/*
@@ -3308,7 +3308,11 @@ int smb2_query_dir(struct cifsd_work *work)
 			goto err_out;
 	}
 
+	d_info.name = NULL;
 	while (d_info.out_buf_len > 0) {
+		kfree(d_info.name);
+		d_info.name = NULL;
+
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
@@ -3342,46 +3346,43 @@ int smb2_query_dir(struct cifsd_work *work)
 		dir_fp->dirent_offset += reclen;
 
 		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
-			dirpath);
+		d_info.name = cifsd_vfs_readdir_name(work,
+						     &cifsd_kstat,
+						     de,
+						     dirpath);
 		if (IS_ERR(d_info.name)) {
-			rc = PTR_ERR(d_info.name);
-			cifsd_debug("Err while dirent read rc = %d\n", rc);
-			rc = 0;
+			cifsd_debug("Can't read dirent: %d\n",
+				    (int)PTR_ERR(d_info.name));
+			d_info.name = NULL;
 			continue;
 		}
 
 		/* dot and dotdot entries are already reserved */
-		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name)) {
-			kfree(d_info.name);
+		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
 			continue;
-		}
 
 		if (cifsd_share_veto_filename(share, d_info.name)) {
-			cifsd_debug("file(%s) is invisible by setting as veto file\n",
-				d_info.name);
+			cifsd_debug("Veto filename %s\n", d_info.name);
 			continue;
 		}
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &d_info, &cifsd_kstat);
-			if (rc)	{
+						req->FileInformationClass,
+						&d_info,
+						&cifsd_kstat);
+			if (rc) {
 				kfree(d_info.name);
 				goto err_out;
 			}
 
 			/* server MUST only return the first search result */
-			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY) {
-				kfree(d_info.name);
+			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
 				break;
-			}
 		}
-
-		kfree(d_info.name);
-
 	}
 
+	kfree(d_info.name);
 	if (d_info.out_buf_len < 0)
 		dir_fp->dirent_offset -= reclen;
 
