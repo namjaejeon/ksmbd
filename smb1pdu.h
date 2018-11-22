@@ -169,6 +169,9 @@
 #define RFC1002_RETARGET_SESSION_RESPONSE 0x84
 #define RFC1002_SESSION_KEEP_ALIVE 0x85
 
+/* Action bits */
+#define GUEST_LOGIN 1
+
 struct smb_hdr {
 	__be32 smb_buf_length;
 	__u8 Protocol[4];

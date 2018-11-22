@@ -914,8 +914,10 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 		goto out_err;
 	}
 
-	if (user_guest(sess->user))
+	if (user_guest(sess->user)) {
+		rsp->Action = GUEST_LOGIN;
 		goto no_password_check;
+	}
 
 	if (req->CaseSensitivePasswordLength == CIFS_AUTH_RESP_SIZE) {
 		err = cifsd_auth_ntlm(sess, req->CaseInsensitivePassword +
@@ -1105,8 +1107,10 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 			goto out_err;
 		}
 
-		if (user_guest(sess->user))
+		if (user_guest(sess->user)) {
+			rsp->Action = GUEST_LOGIN;
 			goto no_password_check;
+		}
 
 		err = cifsd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBlobLength),
