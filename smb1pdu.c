@@ -871,6 +871,14 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 	int offset, err = 0;
 	char *name;
 
+	/* Build response. We don't use extended security (yet), so wct is 3 */
+	rsp->hdr.WordCount = 3;
+	rsp->Action = 0;
+	/* The names should be unicode */
+	rsp->ByteCount = 0;
+	/* adjust pdu length. data added 6 bytes */
+	inc_rfc1001_len(&rsp->hdr, 6);
+
 	/* check if valid user name is present in request or not */
 	offset = req->CaseInsensitivePasswordLength +
 		req->CaseSensitivePasswordLength;
@@ -947,13 +955,6 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 	}
 
 no_password_check:
-	/* Build response. We don't use extended security (yet), so wct is 3 */
-	rsp->hdr.WordCount = 3;
-	rsp->Action = 0;
-	/* The names should be unicode */
-	rsp->ByteCount = 0;
-	/* adjust pdu length. data added 6 bytes */
-	inc_rfc1001_len(&rsp->hdr, 6);
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
@@ -1222,11 +1223,13 @@ int smb_session_setup_andx(struct cifsd_work *work)
 	return 0;
 
 out_err:
+	rsp->resp.hdr.Status.CifsError = NT_STATUS_LOGON_FAILURE;
+	rsp->resp.hdr.WordCount = 0;
+	rsp->resp.ByteCount = 0;
 	if (rc < 0 && sess) {
 		cifsd_session_destroy(sess);
 		work->sess = NULL;
 	}
-	rsp->resp.hdr.Status.CifsError = NT_STATUS_LOGON_FAILURE;
 	return rc;
 }
 
