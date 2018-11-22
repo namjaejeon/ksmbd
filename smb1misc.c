@@ -87,7 +87,7 @@ static int smb1_req_struct_size(struct smb_hdr *hdr)
 			return -EINVAL;
 		break;
 	case SMB_COM_TRANSACTION:
-		if (wc < 0x10)
+		if (wc < 0xe)
 			return -EINVAL;
 		break;
 	case SMB_COM_SESSION_SETUP_ANDX:
