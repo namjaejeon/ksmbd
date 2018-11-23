@@ -1227,11 +1227,6 @@ static int cifsd_get_encryption_key(struct cifsd_tcp_conn *conn,
 	return 0;
 }
 
-struct cifsd_crypt_result {
-	int			err;
-	struct completion	completion;
-};
-
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 static struct scatterlist *cifsd_init_sg(struct kvec *iov,
 					 unsigned int nvec,
@@ -1272,17 +1267,6 @@ static struct scatterlist *cifsd_init_sg(struct kvec *iov,
 }
 #endif
 
-static void cifsd_crypt_complete(struct crypto_async_request *req, int err)
-{
-	struct cifsd_crypt_result *res = req->data;
-
-	if (err == -EINPROGRESS)
-		return;
-
-	res->err = err;
-	complete(&res->completion);
-}
-
 int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 			struct kvec *iov,
 			unsigned int nvec,
@@ -1298,14 +1282,11 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	struct aead_request *req;
 	char *iv;
 	unsigned int iv_len;
-	struct cifsd_crypt_result result = {0, };
 	struct crypto_aead *tfm;
 	unsigned int crypt_len = le32_to_cpu(tr_hdr->OriginalMessageSize);
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 	struct scatterlist assoc;
 #endif
-
-	init_completion(&result.completion);
 
 	rc = cifsd_get_encryption_key(conn, tr_hdr->SessionId, enc, key);
 	if (rc) {
@@ -1373,15 +1354,12 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
 	aead_request_set_ad(req, assoc_data_len);
 #endif
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
-			cifsd_crypt_complete, &result);
+	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_SLEEP, NULL, NULL);
 
-	rc = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
-	if (rc == -EINPROGRESS || rc == -EBUSY) {
-		wait_for_completion(&result.completion);
-		rc = result.err;
-	}
-
+	if (enc)
+		rc = crypto_aead_encrypt(req);
+	else
+		rc = crypto_aead_decrypt(req);
 	if (!rc && enc)
 		memcpy(&tr_hdr->Signature, sign, SMB2_SIGNATURE_SIZE);
 
