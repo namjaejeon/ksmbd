@@ -202,6 +202,13 @@ struct genl_family cifsd_genl_family = {
 	.n_ops		= ARRAY_SIZE(cifsd_genl_ops),
 };
 
+static int rpc_context_flags(struct cifsd_session *sess)
+{
+	if (user_guest(sess->user))
+		return CIFSD_RPC_RESTRICTED_CONTEXT;
+	return 0;
+}
+
 static void ipc_update_last_active(void)
 {
 	if (server_conf.ipc_timeout)
@@ -661,6 +668,7 @@ struct cifsd_rpc_command *cifsd_rpc_write(struct cifsd_session *sess,
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = handle;
 	req->flags = cifsd_session_rpc_method(sess, handle);
+	req->flags |= rpc_context_flags(sess);
 	req->flags |= CIFSD_RPC_WRITE_METHOD;
 	req->payload_sz = payload_sz;
 	memcpy(req->payload, payload, payload_sz);
@@ -685,6 +693,7 @@ struct cifsd_rpc_command *cifsd_rpc_read(struct cifsd_session *sess,
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = handle;
 	req->flags = cifsd_session_rpc_method(sess, handle);
+	req->flags |= rpc_context_flags(sess);
 	req->flags |= CIFSD_RPC_READ_METHOD;
 	req->payload_sz = 0;
 
@@ -710,6 +719,7 @@ struct cifsd_rpc_command *cifsd_rpc_ioctl(struct cifsd_session *sess,
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = handle;
 	req->flags = cifsd_session_rpc_method(sess, handle);
+	req->flags |= rpc_context_flags(sess);
 	req->flags |= CIFSD_RPC_IOCTL_METHOD;
 	req->payload_sz = payload_sz;
 	memcpy(req->payload, payload, payload_sz);
@@ -734,7 +744,8 @@ struct cifsd_rpc_command *cifsd_rpc_rap(struct cifsd_session *sess,
 	msg->type = CIFSD_EVENT_RPC_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = cifds_acquire_id(ida);
-	req->flags = CIFSD_RPC_RAP_METHOD;
+	req->flags = rpc_context_flags(sess);
+	req->flags |= CIFSD_RPC_RAP_METHOD;
 	req->payload_sz = payload_sz;
 	memcpy(req->payload, payload, payload_sz);
 
