@@ -163,8 +163,7 @@ enum CIFSD_TREE_CONN_STATUS {
 #define CIFSD_USER_FLAG_BAD_PASSWORD	(1 << 1)
 #define CIFSD_USER_FLAG_BAD_UID		(1 << 2)
 #define CIFSD_USER_FLAG_BAD_USER	(1 << 3)
-#define CIFSD_USER_FLAG_ANONYMOUS	(1 << 4)
-#define CIFSD_USER_FLAG_GUEST_ACCOUNT	(1 << 5)
+#define CIFSD_USER_FLAG_GUEST_ACCOUNT	(1 << 4)
 
 /*
  * Share config flags.
