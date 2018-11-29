@@ -1489,6 +1489,7 @@ int smb2_tree_connect(struct cifsd_work *work)
 	char *treename = NULL, *name = NULL;
 	struct cifsd_tree_conn_status status;
 	struct cifsd_share_config *share;
+	int rc = -EINVAL;
 
 	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
@@ -1552,6 +1553,7 @@ out_err1:
 	switch (status.ret) {
 	case CIFSD_TREE_CONN_STATUS_OK:
 		rsp->hdr.Status = NT_STATUS_OK;
+		rc = 0;
 		break;
 	case CIFSD_TREE_CONN_STATUS_NO_SHARE:
 		rsp->hdr.Status = NT_STATUS_BAD_NETWORK_PATH;
@@ -1573,7 +1575,8 @@ out_err1:
 	default:
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 	}
-	return status.ret;
+
+	return rc;
 }
 
 /**
