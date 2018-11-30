@@ -2372,7 +2372,7 @@ int smb2_open(struct cifsd_work *work)
 
 	if (!stream_name && file_present &&
 		(req->CreateDisposition == FILE_CREATE_LE)) {
-		rc = -EBADF;
+		rc = -EEXIST;
 		goto err_out;
 	}
 
@@ -2960,6 +2960,8 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_DUPLICATE_OBJECTID;
 		else if (rc == -ENXIO)
 			rsp->hdr.Status = NT_STATUS_NO_SUCH_DEVICE;
+		else if (rc == -EEXIST)
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
