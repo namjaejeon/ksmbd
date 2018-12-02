@@ -7,7 +7,6 @@
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
 #include <linux/syscalls.h>
-#include <crypto/aead.h>
 
 #include "glob.h"
 #include "smb2pdu.h"
@@ -393,8 +392,8 @@ void init_chained_smb2_rsp(struct cifsd_work *work)
 
 	if (!(le32_to_cpu(rcv_hdr->Flags) & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("related flag should be set\n");
-		work->cur_local_fid = -1;
-		work->cur_local_pfid = -1;
+		work->cur_local_fid = CIFSD_NO_FID;
+		work->cur_local_pfid = CIFSD_NO_FID;
 	}
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
@@ -1352,15 +1351,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		cifsd_debug("session setup request for user %s\n", username);
 		sess->user = cifsd_alloc_user(username);
+		kfree(username);
+
 		if (!sess->user) {
-			cifsd_debug("user (%s) is not present in database or guest account is not set\n",
-				username);
-			kfree(username);
+			cifsd_debug("Unknown user name or an error\n");
 			rc = -EINVAL;
 			rsp->hdr.Status = NT_STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
-		kfree(username);
 
 		if (user_guest(sess->user)) {
 			if (conn->sign) {
@@ -1372,12 +1370,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
 			sess->is_guest = true;
-			if (test_user_flag(sess->user,
-					   CIFSD_USER_FLAG_ANONYMOUS)) {
-				rsp->SessionFlags = SMB2_SESSION_FLAG_IS_NULL;
-				sess->is_anonymous = true;
-				sess->is_guest	= false;
-			}
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBufferLength),
@@ -1394,20 +1386,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			if (!sess->sign && ((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
 				(conn->sign || server_conf.enforced_signing) ||
-				(conn->dialect >= SMB30_PROT_ID))) {
-				if (conn->ops->generate_signingkey) {
-					rc = conn->ops->generate_signingkey(
-						sess, binding_flags,
-						p_sess->Preauth_HashValue);
-					if (rc) {
-						cifsd_debug("SMB3 signing key generation failed\n");
-						rsp->hdr.Status =
-							NT_STATUS_LOGON_FAILURE;
-						goto out_err;
-					}
-				}
+				(conn->dialect >= SMB30_PROT_ID)))
 				sess->sign = true;
-			}
 
 			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
 					conn->ops->generate_encryptionkey) {
@@ -1428,6 +1408,18 @@ int smb2_sess_setup(struct cifsd_work *work)
 				sess->sign = false;
 			}
 
+		}
+
+		if (conn->ops->generate_signingkey) {
+			rc = conn->ops->generate_signingkey(
+					sess, binding_flags,
+					p_sess->Preauth_HashValue);
+			if (rc) {
+				cifsd_debug("SMB3 signing key generation failed\n");
+				rsp->hdr.Status =
+					NT_STATUS_LOGON_FAILURE;
+				goto out_err;
+			}
 		}
 
 		if (conn->dialect > SMB20_PROT_ID)
@@ -1497,6 +1489,7 @@ int smb2_tree_connect(struct cifsd_work *work)
 	char *treename = NULL, *name = NULL;
 	struct cifsd_tree_conn_status status;
 	struct cifsd_share_config *share;
+	int rc = -EINVAL;
 
 	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
@@ -1560,6 +1553,7 @@ out_err1:
 	switch (status.ret) {
 	case CIFSD_TREE_CONN_STATUS_OK:
 		rsp->hdr.Status = NT_STATUS_OK;
+		rc = 0;
 		break;
 	case CIFSD_TREE_CONN_STATUS_NO_SHARE:
 		rsp->hdr.Status = NT_STATUS_BAD_NETWORK_PATH;
@@ -1581,7 +1575,8 @@ out_err1:
 	default:
 		rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
 	}
-	return status.ret;
+
+	return rc;
 }
 
 /**
@@ -2377,7 +2372,7 @@ int smb2_open(struct cifsd_work *work)
 
 	if (!stream_name && file_present &&
 		(req->CreateDisposition == FILE_CREATE_LE)) {
-		rc = -EBADF;
+		rc = -EEXIST;
 		goto err_out;
 	}
 
@@ -2965,6 +2960,8 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_DUPLICATE_OBJECTID;
 		else if (rc == -ENXIO)
 			rsp->hdr.Status = NT_STATUS_NO_SUCH_DEVICE;
+		else if (rc == -EEXIST)
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
@@ -3288,10 +3285,11 @@ int smb2_query_dir(struct cifsd_work *work)
 	r_data.dirent = dir_fp->readdir_data.dirent;
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = min_t(int, (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_length(rsp_org) + 4)),
-		le32_to_cpu(req->OutputBufferLength)) -
-		sizeof(struct smb2_query_directory_rsp);
+	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
+				(get_rfc1002_length(rsp_org) + 4));
+	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
+				le32_to_cpu(req->OutputBufferLength)) -
+				sizeof(struct smb2_query_directory_rsp);
 
 	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY)) {
 		/*
@@ -3308,7 +3306,11 @@ int smb2_query_dir(struct cifsd_work *work)
 			goto err_out;
 	}
 
+	d_info.name = NULL;
 	while (d_info.out_buf_len > 0) {
+		kfree(d_info.name);
+		d_info.name = NULL;
+
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
@@ -3342,46 +3344,43 @@ int smb2_query_dir(struct cifsd_work *work)
 		dir_fp->dirent_offset += reclen;
 
 		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
-			dirpath);
+		d_info.name = cifsd_vfs_readdir_name(work,
+						     &cifsd_kstat,
+						     de,
+						     dirpath);
 		if (IS_ERR(d_info.name)) {
-			rc = PTR_ERR(d_info.name);
-			cifsd_debug("Err while dirent read rc = %d\n", rc);
-			rc = 0;
+			cifsd_debug("Can't read dirent: %d\n",
+				    (int)PTR_ERR(d_info.name));
+			d_info.name = NULL;
 			continue;
 		}
 
 		/* dot and dotdot entries are already reserved */
-		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name)) {
-			kfree(d_info.name);
+		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
 			continue;
-		}
 
 		if (cifsd_share_veto_filename(share, d_info.name)) {
-			cifsd_debug("file(%s) is invisible by setting as veto file\n",
-				d_info.name);
+			cifsd_debug("Veto filename %s\n", d_info.name);
 			continue;
 		}
 
 		if (is_matched(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
-				req->FileInformationClass, &d_info, &cifsd_kstat);
-			if (rc)	{
+						req->FileInformationClass,
+						&d_info,
+						&cifsd_kstat);
+			if (rc) {
 				kfree(d_info.name);
 				goto err_out;
 			}
 
 			/* server MUST only return the first search result */
-			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY) {
-				kfree(d_info.name);
+			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
 				break;
-			}
 		}
-
-		kfree(d_info.name);
-
 	}
 
+	kfree(d_info.name);
 	if (d_info.out_buf_len < 0)
 		dir_fp->dirent_offset -= reclen;
 
@@ -4578,14 +4577,8 @@ int smb2_close(struct cifsd_work *work)
 	}
 
 	if (work->next_smb2_rcv_hdr_off &&
-			le64_to_cpu(req->VolatileFileId) == -1) {
-		if (!work->cur_local_fid) {
-			/* file open failed, return EINVAL */
-			cifsd_debug("file open was failed\n");
-			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
-			err = -EBADF;
-			goto out;
-		} else if (work->cur_local_fid == -1) {
+			le64_to_cpu(req->VolatileFileId) == CIFSD_NO_FID) {
+		if (work->cur_local_fid == CIFSD_NO_FID) {
 			/* file already closed, return FILE_CLOSED */
 			cifsd_debug("file already closed\n");
 			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
@@ -4599,8 +4592,8 @@ int smb2_close(struct cifsd_work *work)
 			persistent_id = work->cur_local_pfid;
 
 			/* file closed, stored id is not valid anymore */
-			work->cur_local_fid = -1;
-			work->cur_local_pfid = -1;
+			work->cur_local_fid = CIFSD_NO_FID;
+			work->cur_local_pfid = CIFSD_NO_FID;
 		}
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
@@ -7121,218 +7114,6 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 }
 
-struct cifs_crypt_result {
-	int err;
-	struct completion completion;
-};
-
-static void cifs_crypt_complete(struct crypto_async_request *req, int err)
-{
-	struct cifs_crypt_result *res = req->data;
-
-	if (err == -EINPROGRESS)
-		return;
-
-	res->err = err;
-	complete(&res->completion);
-}
-
-static int smb2_get_enc_key(struct cifsd_tcp_conn *conn, __u64 ses_id,
-	int enc, u8 *key)
-{
-	struct cifsd_session *sess;
-	u8 *ses_enc_key;
-
-	sess = cifsd_session_lookup(conn, ses_id);
-	if (!sess)
-		return 1;
-
-	ses_enc_key = enc ? sess->smb3encryptionkey :
-		sess->smb3decryptionkey;
-	memcpy(key, ses_enc_key, SMB3_SIGN_KEY_SIZE);
-
-	return 0;
-}
-
-int smb3_crypto_aead_allocate(struct cifsd_tcp_conn *conn)
-{
-	struct crypto_aead *tfm;
-
-	if (!conn->secmech.ccmaesencrypt) {
-		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
-		if (IS_ERR(tfm)) {
-			cifsd_err("%s: Failed to alloc encrypt aead\n",
-					__func__);
-			return PTR_ERR(tfm);
-		}
-		conn->secmech.ccmaesencrypt = tfm;
-	}
-
-	if (!conn->secmech.ccmaesdecrypt) {
-		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
-		if (IS_ERR(tfm)) {
-			crypto_free_aead(conn->secmech.ccmaesencrypt);
-			conn->secmech.ccmaesencrypt = NULL;
-			cifsd_err("%s: Failed to alloc decrypt aead\n",
-					__func__);
-			return PTR_ERR(tfm);
-		}
-		conn->secmech.ccmaesdecrypt = tfm;
-	}
-
-	return 0;
-}
-
-struct smb_rqst {
-	struct kvec	*rq_iov;	/* array of kvecs */
-	unsigned int	rq_nvec;	/* number of kvecs in array */
-};
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static struct scatterlist *init_sg(struct smb_rqst *rqst, u8 *sign)
-{
-	struct scatterlist *sg;
-	unsigned int i = 0, sg_len = rqst->rq_nvec;
-
-	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
-	if (!sg)
-		return NULL;
-
-	sg_init_table(sg, sg_len);
-	for (i = 0; i < sg_len - 1; i++)
-		sg_set_buf(&sg[i], rqst->rq_iov[i + 1].iov_base,
-			rqst->rq_iov[i + 1].iov_len);
-	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
-	return sg;
-}
-#else
-static struct scatterlist *init_sg(struct smb_rqst *rqst, u8 *sign)
-{
-	struct scatterlist *sg;
-	unsigned int i = 0, sg_len = rqst->rq_nvec + 1;
-	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
-
-	sg = kmalloc_array(sg_len, sizeof(struct scatterlist), GFP_KERNEL);
-	if (!sg)
-		return NULL;
-
-	sg_init_table(sg, sg_len);
-	sg_set_buf(&sg[0], rqst->rq_iov[0].iov_base + 24, assoc_data_len);
-	for (i = 1; i < sg_len - 1; i++)
-		sg_set_buf(&sg[i], rqst->rq_iov[i].iov_base,
-			rqst->rq_iov[i].iov_len);
-	sg_set_buf(&sg[sg_len - 1], sign, SMB2_SIGNATURE_SIZE);
-	return sg;
-}
-#endif
-
-int crypt_message(struct cifsd_tcp_conn *conn, struct smb_rqst *rqst, int enc)
-{
-	struct smb2_transform_hdr *tr_hdr =
-		(struct smb2_transform_hdr *)rqst->rq_iov[0].iov_base;
-	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
-	int rc = 0;
-	struct scatterlist *sg;
-	u8 sign[SMB2_SIGNATURE_SIZE] = {};
-	u8 key[SMB3_SIGN_KEY_SIZE];
-	struct aead_request *req;
-	char *iv;
-	unsigned int iv_len;
-	struct cifs_crypt_result result = {0, };
-	struct crypto_aead *tfm;
-	unsigned int crypt_len = le32_to_cpu(tr_hdr->OriginalMessageSize);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	struct scatterlist assoc;
-#endif
-
-	init_completion(&result.completion);
-
-	rc = smb2_get_enc_key(conn, tr_hdr->SessionId, enc, key);
-	if (rc) {
-		cifsd_err("%s: Could not get %scryption key\n", __func__,
-				enc ? "en" : "de");
-		return 0;
-	}
-
-	rc = smb3_crypto_aead_allocate(conn);
-	if (rc) {
-		cifsd_err("%s: crypto alloc failed\n", __func__);
-		return rc;
-	}
-
-	tfm = enc ? conn->secmech.ccmaesencrypt :
-		conn->secmech.ccmaesdecrypt;
-	rc = crypto_aead_setkey(tfm, key, SMB3_SIGN_KEY_SIZE);
-	if (rc) {
-		cifsd_err("%s: Failed to set aead key %d\n", __func__, rc);
-		return rc;
-	}
-
-	rc = crypto_aead_setauthsize(tfm, SMB2_SIGNATURE_SIZE);
-	if (rc) {
-		cifsd_err("%s: Failed to set authsize %d\n", __func__, rc);
-		return rc;
-	}
-
-	req = aead_request_alloc(tfm, GFP_KERNEL);
-	if (!req) {
-		cifsd_err("%s: Failed to alloc aead request", __func__);
-		return -ENOMEM;
-	}
-
-	if (!enc) {
-		memcpy(sign, &tr_hdr->Signature, SMB2_SIGNATURE_SIZE);
-		crypt_len += SMB2_SIGNATURE_SIZE;
-	}
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	sg_init_one(&assoc, rqst->rq_iov[0].iov_base + 24, assoc_data_len);
-#endif
-
-	sg = init_sg(rqst, sign);
-	if (!sg) {
-		cifsd_err("%s: Failed to init sg", __func__);
-		rc = -ENOMEM;
-		goto free_req;
-	}
-
-	iv_len = crypto_aead_ivsize(tfm);
-	iv = kzalloc(iv_len, GFP_KERNEL);
-	if (!iv) {
-		cifsd_err("%s: Failed to alloc IV", __func__);
-		rc = -ENOMEM;
-		goto free_sg;
-	}
-	iv[0] = 3;
-	memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	aead_request_set_assoc(req, &assoc, assoc_data_len);
-	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
-#else
-	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
-	aead_request_set_ad(req, assoc_data_len);
-#endif
-	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
-			cifs_crypt_complete, &result);
-
-	rc = enc ? crypto_aead_encrypt(req) : crypto_aead_decrypt(req);
-	if (rc == -EINPROGRESS || rc == -EBUSY) {
-		wait_for_completion(&result.completion);
-		rc = result.err;
-	}
-
-	if (!rc && enc)
-		memcpy(&tr_hdr->Signature, sign, SMB2_SIGNATURE_SIZE);
-
-	kfree(iv);
-free_sg:
-	kfree(sg);
-free_req:
-	kfree(req);
-	return rc;
-}
-
 static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)old_buf;
@@ -7353,7 +7134,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	char *buf = RESPONSE_BUF(work);
 	struct smb2_transform_hdr *tr_hdr;
 	struct kvec *iov;
-	struct smb_rqst rqst = {NULL};
 	int rc = -ENOMEM;
 	int buf_size = 0, rq_nvec = 2 + (HAS_AUX_PAYLOAD(work) ? 1 : 0);
 
@@ -7376,9 +7156,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 
 	iov[1].iov_base = buf + 4;
 	iov[1].iov_len = get_rfc1002_length(buf);
-	rqst.rq_iov = iov;
-	rqst.rq_nvec = rq_nvec;
-
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[1].iov_len = RESP_HDR_SIZE(work);
 
@@ -7389,7 +7166,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	buf_size += iov[1].iov_len;
 	work->resp_hdr_sz = iov[1].iov_len;
 
-	rc = crypt_message(work->conn, &rqst, 1);
+	rc = cifsd_crypt_message(work->conn, iov, rq_nvec, 1);
 	if (rc)
 		return rc;
 
@@ -7415,7 +7192,6 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	struct smb2_hdr *hdr;
 	unsigned int pdu_length = get_rfc1002_length(buf);
 	struct kvec iov[2];
-	struct smb_rqst rqst = {NULL};
 	unsigned int buf_data_size = pdu_length + 4 -
 		sizeof(struct smb2_transform_hdr);
 	struct smb2_transform_hdr *tr_hdr = (struct smb2_transform_hdr *)buf;
@@ -7445,11 +7221,7 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);
 	iov[1].iov_base = buf + sizeof(struct smb2_transform_hdr);
 	iov[1].iov_len = buf_data_size;
-
-	rqst.rq_iov = iov;
-	rqst.rq_nvec = 2;
-
-	rc = crypt_message(conn, &rqst, 0);
+	rc = cifsd_crypt_message(conn, iov, 2, 0);
 	if (rc)
 		return rc;
 

@@ -316,7 +316,7 @@ get_id_from_fidtable(struct cifsd_session *sess, uint64_t id)
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
-	if ((id < CIFSD_START_FID) || (id > ftab->max_fids - 1)) {
+	if (id > ftab->max_fids - 1) {
 		spin_unlock(&sess->fidtable.fidtable_lock);
 		cifsd_debug("invalid fileid (%llu)\n", id);
 		return NULL;
