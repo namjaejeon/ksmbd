@@ -19,6 +19,9 @@ struct cifsd_ida *cifsd_ida_alloc(void)
 
 void cifsd_ida_free(struct cifsd_ida *ida)
 {
+	if (!ida)
+		return;
+
 	ida_destroy(&ida->map);
 	kfree(ida);
 }
