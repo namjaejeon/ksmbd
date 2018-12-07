@@ -442,6 +442,8 @@ static ssize_t stats_show(struct class *class,
 				server_conf.ipc_last_active);
 	return sz;
 }
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static CLASS_ATTR_RO(stats);
 
 static struct attribute *cifsd_control_class_attrs[] = {
@@ -455,6 +457,18 @@ static struct class cifsd_control_class = {
 	.owner		= THIS_MODULE,
 	.class_groups	= cifsd_control_class_groups,
 };
+#else
+static struct class_attribute cifsd_control_class_attrs[] = {
+	__ATTR_RO(stats),
+	__ATTR_NULL,
+};
+
+static struct class cifsd_control_class = {
+	.name		= "cifsd-control",
+	.owner		= THIS_MODULE,
+	.class_attrs	= cifsd_control_class_attrs,
+};
+#endif
 
 static int cifsd_server_shutdown(void)
 {
