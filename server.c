@@ -11,6 +11,7 @@
 #include <linux/sched/signal.h>
 #endif
 #include <linux/workqueue.h>
+#include <linux/sysfs.h>
 
 #include "server.h"
 #include "smb_common.h"
@@ -423,10 +424,43 @@ int cifsd_server_daemon_heartbeat(void)
 	return 0;
 }
 
+static ssize_t stats_show(struct class *class,
+			  struct class_attribute *attr,
+			  char *buf)
+{
+	/*
+	 * Inc this each time you change stats output format,
+	 * so user space will know what to do.
+	 */
+	int stats_version = 1;
+
+	ssize_t sz = scnprintf(buf,
+				PAGE_SIZE,
+				"%d %d %lu\n",
+				stats_version,
+				server_conf.tcp_port,
+				server_conf.ipc_last_active);
+	return sz;
+}
+static CLASS_ATTR_RO(stats);
+
+static struct attribute *cifsd_control_class_attrs[] = {
+	&class_attr_stats.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(cifsd_control_class);
+
+static struct class cifsd_control_class = {
+	.name		= "cifsd-control",
+	.owner		= THIS_MODULE,
+	.class_groups	= cifsd_control_class_groups,
+};
+
 static int cifsd_server_shutdown(void)
 {
 	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
 
+	class_unregister(&cifsd_control_class);
 	cifsd_ipc_release();
 	cifsd_tcp_destroy();
 	cifsd_free_session_table();
@@ -442,6 +476,12 @@ static int cifsd_server_shutdown(void)
 static int __init cifsd_server_init(void)
 {
 	int ret;
+
+	ret = class_register(&cifsd_control_class);
+	if (ret) {
+		cifsd_err("Unable to register cifsd-control class\n");
+		return ret;
+	}
 
 	cifsd_server_tcp_callbacks_init();
 
