@@ -2923,7 +2923,7 @@ err_out1:
 
 		if (ci && atomic_dec_and_test(&ci->m_count))
 			cifsd_inode_free(ci);
-		if (volatile_id > 0) {
+		if (volatile_id >= 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
 		}
