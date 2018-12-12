@@ -510,11 +510,7 @@ static int close_fp(struct cifsd_file *fp)
 	}
 
 	close_id_del_oplock(fp);
-
-	if (fp->islink)
-		filp = fp->lfilp;
-	else
-		filp = fp->filp;
+	filp = fp->filp;
 
 	spin_lock(&fp->f_lock);
 	list_for_each_entry_safe(cancel_work, ctmp, &fp->blocked_works,

@@ -2055,11 +2055,11 @@ int smb2_open(struct cifsd_work *work)
 	struct cifsd_tree_connect *tcon = work->tcon;
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
-	struct path path, lpath;
+	struct path path;
 	struct cifsd_share_config *share;
 	struct cifsd_inode *ci = NULL, *f_parent_ci;
 	struct cifsd_file *fp = NULL;
-	struct file *filp = NULL, *lfilp = NULL;
+	struct file *filp = NULL;
 	struct kstat stat;
 	struct create_context *context;
 	struct lease_ctx_info *lc = NULL;
@@ -2074,9 +2074,9 @@ int smb2_open(struct cifsd_work *work)
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
 	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
 	int next_off = 0;
-	char *name = NULL, *lname = NULL, *pathname = NULL;
+	char *name = NULL;
 	char *stream_name = NULL, *xattr_stream_name = NULL;
-	bool file_present = false, created = false, islink = false;
+	bool file_present = false, created = false;
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
 	unsigned int tree_id;
@@ -2461,45 +2461,6 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	pathname = kzalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathname) {
-		rc = -ENOMEM;
-		cifsd_err("Failed to allocate memory for linkpath\n");
-		goto err_out;
-	}
-
-	lname = d_path(&(filp->f_path), pathname, PATH_MAX);
-	if (IS_ERR(lname)) {
-		rc = PTR_ERR(lname);
-		kfree(pathname);
-		goto err_out;
-	}
-
-	if (strncmp(name, lname, PATH_MAX)) {
-		islink = true;
-		cifsd_debug("Case for symlink follow, name(%s)->path(%s)\n",
-				name, lname);
-		rc = cifsd_vfs_kern_path(lname, 0, &lpath, 0);
-		if (rc) {
-			cifsd_err("cannot get linux path (%s), err = %d\n",
-				name, rc);
-			kfree(pathname);
-			goto err_out;
-		}
-		lfilp = dentry_open(&lpath, open_flags
-				| O_LARGEFILE, current_cred());
-		if (IS_ERR(lfilp)) {
-			rc = PTR_ERR(lfilp);
-			cifsd_err("dentry open for (%s) failed, rc %d\n",
-				name, rc);
-			kfree(pathname);
-			path_put(&lpath);
-			goto err_out;
-		}
-		path_put(&lpath);
-	}
-	kfree(pathname);
-
 	if (file_present) {
 		if (!(open_flags & O_TRUNC))
 			file_info = FILE_OPENED;
@@ -2647,11 +2608,6 @@ int smb2_open(struct cifsd_work *work)
 			}
 		}
 #endif
-	}
-
-	if (islink) {
-		fp->lfilp = lfilp;
-		fp->islink = islink;
 	}
 
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
