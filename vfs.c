@@ -1735,7 +1735,7 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
 	name[file_pathlen] = '\0';
 
-	rc = cifsd_vfs_kern_path(name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
 	if (rc) {
 		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
 		kfree(name);
