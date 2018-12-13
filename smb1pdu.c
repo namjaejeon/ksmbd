@@ -7532,6 +7532,38 @@ int smb_nt_rename(struct cifsd_work *work)
 	return err;
 }
 
+static int smb_query_info_pipe(struct cifsd_share_config *share,
+			       struct kstat *st)
+{
+	st->mode = S_IFDIR;
+	return 0;
+}
+
+static int smb_query_info_path(struct cifsd_work *work,
+			       struct kstat *st)
+{
+	QUERY_INFORMATION_REQ *req = (QUERY_INFORMATION_REQ *)REQUEST_BUF(work);
+	struct cifsd_share_config *share = work->tcon->share_conf;
+	struct path path;
+	char *name;
+	int err;
+
+	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	if (IS_ERR(name))
+		return NT_STATUS_OBJECT_NAME_INVALID;
+
+	err = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 0);
+	if (err) {
+		cifsd_err("look up failed err %d\n", err);
+		smb_put_name(name);
+		return NT_STATUS_OBJECT_NAME_NOT_FOUND;
+	}
+
+	generic_fillattr(path.dentry->d_inode, st);
+	smb_put_name(name);
+	return 0;
+}
+
 /**
  * smb_query_info() - handler for query information command
  * @work:	smb work containing query info command buffer
@@ -7540,29 +7572,22 @@ int smb_nt_rename(struct cifsd_work *work)
  */
 int smb_query_info(struct cifsd_work *work)
 {
-	QUERY_INFORMATION_REQ *req = (QUERY_INFORMATION_REQ *)REQUEST_BUF(work);
 	QUERY_INFORMATION_RSP *rsp = (QUERY_INFORMATION_RSP *)RESPONSE_BUF(work);
 	struct cifsd_share_config *share = work->tcon->share_conf;
-	struct path path;
-	struct kstat st;
-	char *name;
+	struct kstat st = {0,};
 	__u16 attr = 0;
 	int err, i;
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
-	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			NT_STATUS_OBJECT_NAME_INVALID;
-		return PTR_ERR(name);
-	}
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    CIFSD_SHARE_FLAG_PIPE))
+		err = smb_query_info_path(work, &st);
+	else
+		err = smb_query_info_pipe(share, &st);
 
-	err = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 0);
-	if (err) {
-		cifsd_err("look up failed err %d\n", err);
-		rsp->hdr.Status.CifsError = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-		goto out;
+	if (err != 0) {
+		rsp->hdr.Status.CifsError = err;
+		return -EINVAL;
 	}
-	generic_fillattr(path.dentry->d_inode, &st);
 
 	rsp->hdr.Status.CifsError = NT_STATUS_OK;
 	rsp->hdr.WordCount = 10;
@@ -7581,11 +7606,7 @@ int smb_query_info(struct cifsd_work *work)
 		rsp->reserved[i] = 0;
 
 	rsp->ByteCount = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
-
-out:
-	smb_put_name(name);
+	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 + rsp->ByteCount));
 	return err;
 }
 
