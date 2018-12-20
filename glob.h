@@ -139,14 +139,6 @@ extern struct list_head global_lock_list;
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 
-/* FILE ATTRIBUITE XATTR PREFIX */
-#define FILE_ATTRIBUTE_PREFIX   "file.attribute."
-#define FILE_ATTRIBUTE_PREFIX_LEN   (sizeof(FILE_ATTRIBUTE_PREFIX) - 1)
-#define FILE_ATTRIBUTE_LEN      (sizeof(__u32))
-#define XATTR_NAME_FILE_ATTRIBUTE   (XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX)
-#define XATTR_NAME_FILE_ATTRIBUTE_LEN \
-	(sizeof(XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX) - 1)
-
 /* MAXIMUM KMEM DATA SIZE ORDER */
 #define PAGE_ALLOC_KMEM_ORDER	2
 
