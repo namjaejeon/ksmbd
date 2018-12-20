@@ -128,18 +128,14 @@ struct cifsd_tcp_conn;
 struct cifsd_work {
 	/* Server corresponding to this mid */
 	struct cifsd_tcp_conn		*conn;
-	/* List head at conn->requests */
-	struct list_head		request_entry;
+	struct cifsd_session		*sess;
+	struct cifsd_tree_connect	*tcon;
 
 	/* Pointer to received SMB header */
 	char				*request_buf;
 	/* Response buffer */
 	char				*response_buf;
 	unsigned int			response_sz;
-
-	struct cifsd_session		*sess;
-	struct cifsd_tree_connect	*tcon;
-	__u64				cur_local_sess_id;
 
 	/* Read data buffer */
 	char				*aux_payload_buf;
@@ -148,37 +144,44 @@ struct cifsd_work {
 	/* response smb header size */
 	unsigned int			resp_hdr_sz;
 
-	/* Transform header buffer */
-	void				*tr_buf;
+	/* Next cmd hdr in compound req buf*/
+	int				next_smb2_rcv_hdr_off;
+	/* Next cmd hdr in compound rsp buf*/
+	int				next_smb2_rsp_hdr_off;
 
-	struct work_struct		work;
-
-	int				type;
+	/* List head at conn->requests */
+	struct list_head		request_entry;
 	/* Workers waiting on reply from this connection */
 	struct list_head		qhead;
 
-	int next_smb2_rcv_hdr_off;	/* Next cmd hdr in compound req buf*/
-	int next_smb2_rsp_hdr_off;	/* Next cmd hdr in compound rsp buf*/
+	/* Transform header buffer */
+	void				*tr_buf;
+	int				type;
+
 	/*
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
 	__u64				cur_local_fid;
 	__u64				cur_local_pfid;
+	__u64				cur_local_sess_id;
+
+	int				state;
 
 	/* Multiple responses for one request e.g. SMB ECHO */
-	bool multiRsp:1;
+	bool				multiRsp:1;
 	/* Both received */
 	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
 	/* On the conn->requests list */
 	bool				on_request_list:1;
+	/* Request is encrypted */
+	bool				encrypted:1;
 
 	/* smb command code */
 	__le16				command;
-
-	int				state;
+	struct work_struct		work;
 
 	/* cancel works */
 	uint64_t			async_id;
@@ -186,9 +189,6 @@ struct cifsd_work {
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;
 	struct list_head		interim_entry;
-
-	/* request is encrypted or not */
-	bool				encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
