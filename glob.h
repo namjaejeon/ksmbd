@@ -266,13 +266,6 @@ struct cifsd_pid_info {
 	__u32 cifsd_pid;
 };
 
-struct FileNotifyInformation {
-	__le32 NextEntryOffset;
-	__le32 Action;
-	__le32 FileNameLength;
-	__le16 FileName[];
-};
-
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
