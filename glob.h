@@ -170,10 +170,6 @@ extern struct list_head global_lock_list;
 #define DIR_STREAM	2
 
 /* Security Descriptor XATTR PREFIX */
-#define SD_NTSD_PREFIX	"sd.ntsd"
-#define SD_NTSD_PREFIX_LEN	(sizeof(SD_NTSD_PREFIX) - 1)
-#define XATTR_NAME_SD_NTSD	(XATTR_USER_PREFIX SD_NTSD_PREFIX)
-#define XATTR_NAME_SD_NTSD_LEN	(sizeof(XATTR_NAME_SD_NTSD) - 1)
 
 #define SD_OWNER_PREFIX	"sd.OwnerSid"
 #define SD_OWNER_PREFIX_LEN	(sizeof(SD_OWNER_PREFIX) - 1)
