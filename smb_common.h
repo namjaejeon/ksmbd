@@ -39,13 +39,17 @@
 #define SMB311_PROT_ID		0x0311
 #define BAD_PROT_ID		0xFFFF
 
-#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
-
 struct cifsd_work;
 struct cifsd_tcp_conn;
 struct cifsd_dir_info;
 struct cifsd_file;
 struct dir_context;
+
+#define IS_SMB2(x)		((x)->vals->protocol_id != SMB10_PROT_ID)
+
+#define HEADER_SIZE(conn)		((conn)->vals->header_size)
+#define HEADER_SIZE_NO_BUF_LEN(conn)	((conn)->vals->header_size - 4)
+#define MAX_HEADER_SIZE(conn)		((conn)->vals->max_header_size)
 
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);

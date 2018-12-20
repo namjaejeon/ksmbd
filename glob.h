@@ -88,10 +88,6 @@ extern struct list_head global_lock_list;
 #define CIFS_CLIENT_CHALLENGE_SIZE (8)
 #define CIFS_SERVER_CHALLENGE_SIZE (8)
 
-#define HEADER_SIZE(conn) ((conn)->vals->header_size)
-#define HEADER_SIZE_NO_BUF_LEN(conn) ((conn)->vals->header_size - 4)
-#define MAX_HEADER_SIZE(conn) ((conn)->vals->max_header_size)
-
 /* SMB2 Max Credits */
 #define SMB2_MAX_CREDITS 8192
 
