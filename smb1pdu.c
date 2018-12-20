@@ -3138,13 +3138,13 @@ int smb_flush(struct cifsd_work *work)
 			if (file) {
 				err = cifsd_vfs_fsync(work,
 						      file->volatile_id,
-						      0);
+						      CIFSD_NO_FID);
 				if (err)
 					goto out;
 			}
 		}
 	} else {
-		err = cifsd_vfs_fsync(work, req->FileID, 0);
+		err = cifsd_vfs_fsync(work, req->FileID, CIFSD_NO_FID);
 		if (err)
 			goto out;
 	}
