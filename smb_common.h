@@ -51,6 +51,30 @@ struct dir_context;
 #define HEADER_SIZE_NO_BUF_LEN(conn)	((conn)->vals->header_size - 4)
 #define MAX_HEADER_SIZE(conn)		((conn)->vals->max_header_size)
 
+struct smb_version_values {
+	char		*version_string;
+	__u16		protocol_id;
+	__u32		req_capabilities;
+	__u32		large_lock_type;
+	__u32		exclusive_lock_type;
+	__u32		shared_lock_type;
+	__u32		unlock_lock_type;
+	size_t		header_size;
+	size_t		max_header_size;
+	size_t		read_rsp_size;
+	__le16		lock_cmd;
+	unsigned int	cap_unix;
+	unsigned int	cap_nt_find;
+	unsigned int	cap_large_files;
+	__u16		signing_enabled;
+	__u16		signing_required;
+	size_t		create_lease_size;
+	size_t		create_durable_size;
+	size_t		create_durable_v2_size;
+	size_t		create_mxac_size;
+	size_t		create_disk_id_size;
+};
+
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);
 
