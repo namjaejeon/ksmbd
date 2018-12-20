@@ -149,11 +149,6 @@ struct cifsd_work {
 	/* Next cmd hdr in compound rsp buf*/
 	int				next_smb2_rsp_hdr_off;
 
-	/* List head at conn->requests */
-	struct list_head		request_entry;
-	/* Workers waiting on reply from this connection */
-	struct list_head		qhead;
-
 	/* Transform header buffer */
 	void				*tr_buf;
 	int				type;
@@ -181,6 +176,9 @@ struct cifsd_work {
 
 	/* smb command code */
 	__le16				command;
+
+	/* List head at conn->requests */
+	struct list_head		request_entry;
 	struct work_struct		work;
 
 	/* cancel works */
