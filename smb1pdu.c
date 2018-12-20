@@ -6055,6 +6055,7 @@ static int find_next(struct cifsd_work *work)
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
+	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
 			params_count + data_alignment_offset);
 
