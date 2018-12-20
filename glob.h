@@ -170,11 +170,6 @@ extern struct list_head global_lock_list;
 #define DIR_STREAM	2
 
 /* Security Descriptor XATTR PREFIX */
-#define SD_GROUP_PREFIX	"sd.GroupSid"
-#define SD_GROUP_PREFIX_LEN	(sizeof(SD_GROUP_PREFIX) - 1)
-#define XATTR_NAME_SD_GROUP	(XATTR_USER_PREFIX SD_GROUP_PREFIX)
-#define XATTR_NAME_SD_GROUP_LEN	(sizeof(XATTR_NAME_SD_GROUP) - 1)
-
 #define SD_DACL_PREFIX	"sd.dacl"
 #define SD_DACL_PREFIX_LEN	(sizeof(SD_DACL_PREFIX) - 1)
 #define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
