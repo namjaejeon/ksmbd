@@ -139,12 +139,6 @@ extern struct list_head global_lock_list;
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 
-/* STREAM XATTR PREFIX */
-#define STREAM_PREFIX	"stream."
-#define STREAM_PREFIX_LEN	(sizeof(STREAM_PREFIX) - 1)
-#define XATTR_NAME_STREAM	(XATTR_USER_PREFIX STREAM_PREFIX)
-#define XATTR_NAME_STREAM_LEN	(sizeof(XATTR_NAME_STREAM) - 1)
-
 /* FILE ATTRIBUITE XATTR PREFIX */
 #define FILE_ATTRIBUTE_PREFIX   "file.attribute."
 #define FILE_ATTRIBUTE_PREFIX_LEN   (sizeof(FILE_ATTRIBUTE_PREFIX) - 1)
