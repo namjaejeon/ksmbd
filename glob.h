@@ -169,12 +169,6 @@ extern struct list_head global_lock_list;
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
-/* Security Descriptor XATTR PREFIX */
-#define SD_DACL_PREFIX	"sd.dacl"
-#define SD_DACL_PREFIX_LEN	(sizeof(SD_DACL_PREFIX) - 1)
-#define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
-#define XATTR_NAME_SD_DACL_LEN	(sizeof(XATTR_NAME_SD_DACL) - 1)
-
 struct smb_version_values {
 	char            *version_string;
 	__u16           protocol_id;
