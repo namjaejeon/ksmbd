@@ -87,7 +87,6 @@ extern struct list_head global_lock_list;
 
 #define CIFS_CLIENT_CHALLENGE_SIZE (8)
 #define CIFS_SERVER_CHALLENGE_SIZE (8)
-#define CIFS_HMAC_MD5_HASH_SIZE (16)
 #define CIFS_NTHASH_SIZE (16)
 
 #define HEADER_SIZE(conn) ((conn)->vals->header_size)
