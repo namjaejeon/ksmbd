@@ -96,6 +96,9 @@ int cifsd_vfs_fsetxattr(const char *filename,
 			size_t attr_size,
 			int flags);
 
+int cifsd_vfs_xattr_stream_name(char *stream_name,
+				char **xattr_stream_name);
+
 int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams);
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 

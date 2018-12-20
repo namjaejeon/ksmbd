@@ -348,28 +348,6 @@ out:
 	return rc;
 }
 
-int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name)
-{
-	int stream_name_size;
-	int xattr_stream_name_size;
-	char *xattr_stream_name_buf;
-
-	stream_name_size = strlen(stream_name);
-	xattr_stream_name_size = stream_name_size + XATTR_NAME_STREAM_LEN + 1;
-	xattr_stream_name_buf = kmalloc(xattr_stream_name_size, GFP_KERNEL);
-	memcpy(xattr_stream_name_buf, XATTR_NAME_STREAM,
-		XATTR_NAME_STREAM_LEN);
-
-	if (stream_name_size)
-		memcpy(&xattr_stream_name_buf[XATTR_NAME_STREAM_LEN],
-			stream_name, stream_name_size);
-
-	xattr_stream_name_buf[xattr_stream_name_size - 1] = '\0';
-	*xattr_stream_name = xattr_stream_name_buf;
-
-	return xattr_stream_name_size;
-}
-
 /**
  * convert_to_nt_pathname() - extract and return windows path string
  *      whose share directory prefix was removed from file path
