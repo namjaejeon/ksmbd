@@ -11,6 +11,9 @@
 #define AUTH_GSS_LENGTH		74
 #define AUTH_GSS_PADDING	6
 
+#define CIFS_HMAC_MD5_HASH_SIZE	(16)
+#define CIFS_NTHASH_SIZE	(16)
+
 struct cifsd_session;
 struct cifsd_tcp_conn;
 struct kvec;
