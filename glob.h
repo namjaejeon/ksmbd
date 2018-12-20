@@ -261,11 +261,6 @@ struct cifsd_dir_info {
 	int last_entry_offset;
 };
 
-struct cifsd_pid_info {
-	struct socket *socket;
-	__u32 cifsd_pid;
-};
-
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
