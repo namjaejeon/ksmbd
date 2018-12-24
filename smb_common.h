@@ -75,6 +75,25 @@ struct smb_version_values {
 	size_t		create_disk_id_size;
 };
 
+struct smb_version_ops {
+	int (*get_cmd_val)(struct cifsd_work *swork);
+	int (*init_rsp_hdr)(struct cifsd_work *swork);
+	void (*set_rsp_status)(struct cifsd_work *swork, unsigned int err);
+	int (*allocate_rsp_buf)(struct cifsd_work *work);
+	void (*set_rsp_credits)(struct cifsd_work *swork);
+	int (*check_user_session)(struct cifsd_work *work);
+	int (*get_cifsd_tcon)(struct cifsd_work *work);
+	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
+	int (*check_sign_req)(struct cifsd_work *work);
+	void (*set_sign_rsp)(struct cifsd_work *work);
+	int (*generate_signingkey)(struct cifsd_session *sess, bool binding,
+		char *hash_value);
+	int (*generate_encryptionkey)(struct cifsd_session *sess);
+	int (*is_transform_hdr)(void *buf);
+	int (*decrypt_req)(struct cifsd_work *work);
+	int (*encrypt_resp)(struct cifsd_work *work);
+};
+
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);
 
