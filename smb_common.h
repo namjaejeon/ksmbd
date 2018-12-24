@@ -94,6 +94,10 @@ struct smb_version_ops {
 	int (*encrypt_resp)(struct cifsd_work *work);
 };
 
+struct smb_version_cmds {
+	int (*proc)(struct cifsd_work *swork);
+};
+
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);
 

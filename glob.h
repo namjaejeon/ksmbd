@@ -203,10 +203,6 @@ struct cifsd_work {
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
-struct smb_version_cmds {
-	int (*proc)(struct cifsd_work *swork);
-};
-
 struct cifsd_dir_info {
 	char *name;
 	char *bufptr;
