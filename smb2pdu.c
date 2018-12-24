@@ -5396,7 +5396,7 @@ int smb2_read(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	offset = le32_to_cpu(req->Offset);
+	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
