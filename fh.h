@@ -53,12 +53,6 @@
 struct cifsd_tcp_conn;
 struct cifsd_session;
 
-struct notification {
-	unsigned int mode;
-	struct list_head queuelist;
-	struct cifsd_work *work;
-};
-
 struct cifsd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
