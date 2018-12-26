@@ -4,7 +4,6 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#include <linux/bootmem.h>
 #include <linux/xattr.h>
 
 #include "glob.h"
