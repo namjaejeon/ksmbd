@@ -3311,15 +3311,12 @@ static void unix_to_dos_time(struct timespec ts, __le16 *time, __le16 *date)
 {
 	struct tm t;
 	__u16 val;
-	time_to_tm(ts.tv_sec,
-			(-sys_tz.tz_minuteswest) * 60, &t);
 
-
+	CIFSD_TIME_TO_TM(ts.tv_sec, (-sys_tz.tz_minuteswest) * 60, &t);
 	val = (((unsigned int)(t.tm_mon + 1)) >> 3) | ((t.tm_year - 80) << 1);
 	val = ((val & 0xFF) << 8) | (t.tm_mday |
 			(((t.tm_mon + 1) & 0x7) << 5));
 	*date = cpu_to_le16(val);
-
 
 	val = ((((unsigned int)t.tm_min >> 3) & 0x7) |
 			(((unsigned int)t.tm_hour) << 3));
