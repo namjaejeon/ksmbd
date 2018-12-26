@@ -123,7 +123,6 @@ struct cifsd_file {
 	struct list_head queue;
 	struct list_head blocked_works;
 	spinlock_t f_lock;
-	wait_queue_head_t wq;
 	int f_state;
 	char client_guid[16];
 	char create_guid[16];

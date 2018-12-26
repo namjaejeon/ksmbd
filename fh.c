@@ -284,7 +284,6 @@ insert_id_in_fidtable(struct cifsd_session *sess,
 	fp->persistent_id = CIFSD_NO_FID;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
-	init_waitqueue_head(&fp->wq);
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
