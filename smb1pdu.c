@@ -2404,7 +2404,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	fp->saccess = req->ShareAccess;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
+	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
 		/* Client cannot request levelII oplock directly */
@@ -7820,7 +7820,7 @@ int smb_open_andx(struct cifsd_work *work)
 	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
+	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
 		/* Client cannot request levelII oplock directly */

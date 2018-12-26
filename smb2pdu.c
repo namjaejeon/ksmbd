@@ -2627,7 +2627,7 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
+	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
 		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
 		if (share_ret < 0 && !S_ISDIR(FP_INODE(fp)->i_mode)) {
