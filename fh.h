@@ -86,7 +86,6 @@ struct cifsd_inode {
 	struct list_head m_fp_list;
 	struct list_head m_op_list;
 	struct oplock_info *m_opinfo;
-	bool is_stream;
 	char *stream_name;
 };
 
