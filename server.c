@@ -432,14 +432,21 @@ static ssize_t stats_show(struct class *class,
 	 * Inc this each time you change stats output format,
 	 * so user space will know what to do.
 	 */
-	int stats_version = 1;
+	static int stats_version = 2;
+	static char *state[] = {
+		"startup",
+		"running",
+		"reset",
+		"shutdown"
+	};
 
 	ssize_t sz = scnprintf(buf,
 				PAGE_SIZE,
-				"%d %d %lu\n",
+				"%d %s %d %lu\n",
 				stats_version,
+				state[server_conf.state],
 				server_conf.tcp_port,
-				server_conf.ipc_last_active);
+				server_conf.ipc_last_active / HZ);
 	return sz;
 }
 
