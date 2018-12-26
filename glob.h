@@ -276,6 +276,12 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 #define from_kern_timespec(ts) (ts)
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20, 0)
+#define CIFSD_TIME_TO_TM	time64_to_tm
+#else
+#define CIFSD_TIME_TO_TM	time_to_tm
+#endif
+
 /* @FIXME clean up this code */
 /* @FIXME clean up this code */
 /* @FIXME clean up this code */

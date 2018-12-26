@@ -53,12 +53,6 @@
 struct cifsd_tcp_conn;
 struct cifsd_session;
 
-struct notification {
-	unsigned int mode;
-	struct list_head queuelist;
-	struct cifsd_work *work;
-};
-
 struct cifsd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
@@ -86,8 +80,6 @@ struct cifsd_inode {
 	struct list_head m_fp_list;
 	struct list_head m_op_list;
 	struct oplock_info *m_opinfo;
-	bool has_lease;
-	bool is_stream;
 	char *stream_name;
 };
 
@@ -100,7 +92,6 @@ struct cifsd_file {
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
-	struct timespec open_time;
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
 	int	dot_dotdot[2];
@@ -123,10 +114,8 @@ struct cifsd_file {
 	bool is_stream;
 	struct stream stream;
 	struct list_head node;
-	struct list_head queue;
 	struct list_head blocked_works;
 	spinlock_t f_lock;
-	wait_queue_head_t wq;
 	int f_state;
 	char client_guid[16];
 	char create_guid[16];
