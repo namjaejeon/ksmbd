@@ -120,7 +120,6 @@ struct cifsd_file {
 	bool is_stream;
 	struct stream stream;
 	struct list_head node;
-	struct list_head queue;
 	struct list_head blocked_works;
 	spinlock_t f_lock;
 	int f_state;
