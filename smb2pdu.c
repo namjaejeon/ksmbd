@@ -2511,8 +2511,8 @@ int smb2_open(struct cifsd_work *work)
 	fp->persistent_id = persistent_id;
 
 	if (stream_name) {
-		xattr_stream_size = construct_xattr_stream_name(stream_name,
-			&xattr_stream_name);
+		xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
+							   &xattr_stream_name);
 
 		fp->is_stream = true;
 		fp->stream.name = xattr_stream_name;
@@ -4724,8 +4724,8 @@ static int smb2_rename(struct cifsd_file *fp,
 			goto out;
 		}
 
-		xattr_stream_size = construct_xattr_stream_name(stream_name,
-			&xattr_stream_name);
+		xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
+							&xattr_stream_name);
 
 		rc = cifsd_vfs_setxattr(fp->filp->f_path.dentry,
 					xattr_stream_name,
@@ -5396,7 +5396,7 @@ int smb2_read(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	offset = le32_to_cpu(req->Offset);
+	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 

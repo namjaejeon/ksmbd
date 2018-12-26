@@ -87,48 +87,6 @@ extern struct list_head global_lock_list;
 
 #define CIFS_CLIENT_CHALLENGE_SIZE (8)
 #define CIFS_SERVER_CHALLENGE_SIZE (8)
-#define CIFS_HMAC_MD5_HASH_SIZE (16)
-#define CIFS_NTHASH_SIZE (16)
-
-#define HEADER_SIZE(conn) ((conn)->vals->header_size)
-#define HEADER_SIZE_NO_BUF_LEN(conn) ((conn)->vals->header_size - 4)
-#define MAX_HEADER_SIZE(conn) ((conn)->vals->max_header_size)
-
-/* CreateOptions */
-/* flag is set, it must not be a file , valid for directory only */
-#define FILE_DIRECTORY_FILE_LE	cpu_to_le32(0x00000001)
-#define FILE_WRITE_THROUGH_LE	cpu_to_le32(0x00000002)
-#define FILE_SEQUENTIAL_ONLY_LE	cpu_to_le32(0x00000004)
-/* Should not buffer on server*/
-#define FILE_NO_INTERMEDIATE_BUFFERING_LE	cpu_to_le32(0x00000008)
-#define FILE_SYNCHRONOUS_IO_ALERT_LE	cpu_to_le32(0x00000010)      /* MBZ */
-#define FILE_SYNCHRONOUS_IO_NONALERT_LE	cpu_to_le32(0x00000020)      /* MBZ */
-/* Flaf must not be set for directory */
-#define FILE_NON_DIRECTORY_FILE_LE	cpu_to_le32(0x00000040)
-/* should be zero */
-#define CREATE_TREE_CONNECTION		cpu_to_le32(0x00000080)
-#define FILE_COMPLETE_IF_OPLOCKED_LE	cpu_to_le32(0x00000100)
-#define FILE_NO_EA_KNOWLEDGE_LE		cpu_to_le32(0x00000200)
-#define FILE_OPEN_REMOTE_INSTANCE	cpu_to_le32(0x00000400)
-/* doc says this is obsolete "open for recovery" flag
-	should be zero in any case */
-#define CREATE_OPEN_FOR_RECOVERY	cpu_to_le32(0x00000400)
-#define FILE_RANDOM_ACCESS_LE		cpu_to_le32(0x00000800)
-#define FILE_DELETE_ON_CLOSE_LE		cpu_to_le32(0x00001000)
-#define FILE_OPEN_BY_FILE_ID_LE		cpu_to_le32(0x00002000)
-#define FILE_OPEN_FOR_BACKUP_INTENT_LE	cpu_to_le32(0x00004000)
-#define FILE_NO_COMPRESSION_LE		cpu_to_le32(0x00008000)
-/* should be zero*/
-#define FILE_OPEN_REQUIRING_OPLOCK	cpu_to_le32(0x00010000)
-#define FILE_DISALLOW_EXCLUSIVE		cpu_to_le32(0x00020000)
-#define FILE_RESERVE_OPFILTER_LE	cpu_to_le32(0x00100000)
-#define FILE_OPEN_REPARSE_POINT_LE	cpu_to_le32(0x00200000)
-#define FILE_OPEN_NO_RECALL_LE          cpu_to_le32(0x00400000)
-/* should be zero */
-#define FILE_OPEN_FOR_FREE_SPACE_QUERY_LE   cpu_to_le32(0x00800000)
-#define CREATE_OPTIONS_MASK     0x00FFFFFF
-#define CREATE_OPTION_READONLY  0x10000000
-#define CREATE_OPTION_SPECIAL   0x20000000   /* system. NB not sent over wire */
 
 /* SMB2 Max Credits */
 #define SMB2_MAX_CREDITS 8192
@@ -139,80 +97,11 @@ extern struct list_head global_lock_list;
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 
-/* CREATION TIME XATTR PREFIX */
-#define CREATION_TIME_PREFIX	"creation.time."
-#define CREATION_TIME_PREFIX_LEN	(sizeof(CREATION_TIME_PREFIX) - 1)
-#define CREATIOM_TIME_LEN		(sizeof(__u64))
-#define XATTR_NAME_CREATION_TIME	(XATTR_USER_PREFIX CREATION_TIME_PREFIX)
-#define XATTR_NAME_CREATION_TIME_LEN	(sizeof(XATTR_NAME_CREATION_TIME) - 1)
-
-/* STREAM XATTR PREFIX */
-#define STREAM_PREFIX	"stream."
-#define STREAM_PREFIX_LEN	(sizeof(STREAM_PREFIX) - 1)
-#define XATTR_NAME_STREAM	(XATTR_USER_PREFIX STREAM_PREFIX)
-#define XATTR_NAME_STREAM_LEN	(sizeof(XATTR_NAME_STREAM) - 1)
-
-/* FILE ATTRIBUITE XATTR PREFIX */
-#define FILE_ATTRIBUTE_PREFIX   "file.attribute."
-#define FILE_ATTRIBUTE_PREFIX_LEN   (sizeof(FILE_ATTRIBUTE_PREFIX) - 1)
-#define FILE_ATTRIBUTE_LEN      (sizeof(__u32))
-#define XATTR_NAME_FILE_ATTRIBUTE   (XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX)
-#define XATTR_NAME_FILE_ATTRIBUTE_LEN \
-	(sizeof(XATTR_USER_PREFIX FILE_ATTRIBUTE_PREFIX) - 1)
-
 /* MAXIMUM KMEM DATA SIZE ORDER */
 #define PAGE_ALLOC_KMEM_ORDER	2
 
-#define XATTR_NAME_DEFAULT_DATA_STREAM (XATTR_USER_PREFIX DEF_DATA_STREAM_TYPE)
-#define XATTR_NAME_DEFAULT_DIR_STREAM (XATTR_USER_PREFIX DEF_DIR_STREAM_TYPE)
-
 #define DATA_STREAM	1
 #define DIR_STREAM	2
-
-/* Security Descriptor XATTR PREFIX */
-#define SD_NTSD_PREFIX	"sd.ntsd"
-#define SD_NTSD_PREFIX_LEN	(sizeof(SD_NTSD_PREFIX) - 1)
-#define XATTR_NAME_SD_NTSD	(XATTR_USER_PREFIX SD_NTSD_PREFIX)
-#define XATTR_NAME_SD_NTSD_LEN	(sizeof(XATTR_NAME_SD_NTSD) - 1)
-
-#define SD_OWNER_PREFIX	"sd.OwnerSid"
-#define SD_OWNER_PREFIX_LEN	(sizeof(SD_OWNER_PREFIX) - 1)
-#define XATTR_NAME_SD_OWNER	(XATTR_USER_PREFIX SD_OWNER_PREFIX)
-#define XATTR_NAME_SD_OWNER_LEN	(sizeof(XATTR_NAME_SD_OWNER) - 1)
-
-#define SD_GROUP_PREFIX	"sd.GroupSid"
-#define SD_GROUP_PREFIX_LEN	(sizeof(SD_GROUP_PREFIX) - 1)
-#define XATTR_NAME_SD_GROUP	(XATTR_USER_PREFIX SD_GROUP_PREFIX)
-#define XATTR_NAME_SD_GROUP_LEN	(sizeof(XATTR_NAME_SD_GROUP) - 1)
-
-#define SD_DACL_PREFIX	"sd.dacl"
-#define SD_DACL_PREFIX_LEN	(sizeof(SD_DACL_PREFIX) - 1)
-#define XATTR_NAME_SD_DACL	(XATTR_USER_PREFIX SD_DACL_PREFIX)
-#define XATTR_NAME_SD_DACL_LEN	(sizeof(XATTR_NAME_SD_DACL) - 1)
-
-struct smb_version_values {
-	char            *version_string;
-	__u16           protocol_id;
-	__u32           req_capabilities;
-	__u32           large_lock_type;
-	__u32           exclusive_lock_type;
-	__u32           shared_lock_type;
-	__u32           unlock_lock_type;
-	size_t          header_size;
-	size_t          max_header_size;
-	size_t          read_rsp_size;
-	__le16          lock_cmd;
-	unsigned int    cap_unix;
-	unsigned int    cap_nt_find;
-	unsigned int    cap_large_files;
-	__u16           signing_enabled;
-	__u16           signing_required;
-	size_t          create_lease_size;
-	size_t          create_durable_size;
-	size_t          create_durable_v2_size;
-	size_t          create_mxac_size;
-	size_t          create_disk_id_size;
-};
 
 struct cifsd_stats {
 	int open_files_count;
@@ -239,18 +128,14 @@ struct cifsd_tcp_conn;
 struct cifsd_work {
 	/* Server corresponding to this mid */
 	struct cifsd_tcp_conn		*conn;
-	/* List head at conn->requests */
-	struct list_head		request_entry;
+	struct cifsd_session		*sess;
+	struct cifsd_tree_connect	*tcon;
 
 	/* Pointer to received SMB header */
 	char				*request_buf;
 	/* Response buffer */
 	char				*response_buf;
 	unsigned int			response_sz;
-
-	struct cifsd_session		*sess;
-	struct cifsd_tree_connect	*tcon;
-	__u64				cur_local_sess_id;
 
 	/* Read data buffer */
 	char				*aux_payload_buf;
@@ -259,37 +144,42 @@ struct cifsd_work {
 	/* response smb header size */
 	unsigned int			resp_hdr_sz;
 
+	/* Next cmd hdr in compound req buf*/
+	int				next_smb2_rcv_hdr_off;
+	/* Next cmd hdr in compound rsp buf*/
+	int				next_smb2_rsp_hdr_off;
+
 	/* Transform header buffer */
 	void				*tr_buf;
-
-	struct work_struct		work;
-
 	int				type;
-	/* Workers waiting on reply from this connection */
-	struct list_head		qhead;
 
-	int next_smb2_rcv_hdr_off;	/* Next cmd hdr in compound req buf*/
-	int next_smb2_rsp_hdr_off;	/* Next cmd hdr in compound rsp buf*/
 	/*
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
 	__u64				cur_local_fid;
 	__u64				cur_local_pfid;
+	__u64				cur_local_sess_id;
+
+	int				state;
 
 	/* Multiple responses for one request e.g. SMB ECHO */
-	bool multiRsp:1;
+	bool				multiRsp:1;
 	/* Both received */
 	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
 	/* On the conn->requests list */
 	bool				on_request_list:1;
+	/* Request is encrypted */
+	bool				encrypted:1;
 
 	/* smb command code */
 	__le16				command;
 
-	int				state;
+	/* List head at conn->requests */
+	struct list_head		request_entry;
+	struct work_struct		work;
 
 	/* cancel works */
 	uint64_t			async_id;
@@ -297,9 +187,6 @@ struct cifsd_work {
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;
 	struct list_head		interim_entry;
-
-	/* request is encrypted or not */
-	bool				encrypted;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
@@ -316,29 +203,6 @@ struct cifsd_work {
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
-struct smb_version_ops {
-	int (*get_cmd_val)(struct cifsd_work *swork);
-	int (*init_rsp_hdr)(struct cifsd_work *swork);
-	void (*set_rsp_status)(struct cifsd_work *swork, unsigned int err);
-	int (*allocate_rsp_buf)(struct cifsd_work *work);
-	void (*set_rsp_credits)(struct cifsd_work *swork);
-	int (*check_user_session)(struct cifsd_work *work);
-	int (*get_cifsd_tcon)(struct cifsd_work *work);
-	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
-	int (*check_sign_req)(struct cifsd_work *work);
-	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*generate_signingkey)(struct cifsd_session *sess, bool binding,
-		char *hash_value);
-	int (*generate_encryptionkey)(struct cifsd_session *sess);
-	int (*is_transform_hdr)(void *buf);
-	int (*decrypt_req)(struct cifsd_work *work);
-	int (*encrypt_resp)(struct cifsd_work *work);
-};
-
-struct smb_version_cmds {
-	int (*proc)(struct cifsd_work *swork);
-};
-
 struct cifsd_dir_info {
 	char *name;
 	char *bufptr;
@@ -346,18 +210,6 @@ struct cifsd_dir_info {
 	int num_entry;
 	int data_count;
 	int last_entry_offset;
-};
-
-struct cifsd_pid_info {
-	struct socket *socket;
-	__u32 cifsd_pid;
-};
-
-struct FileNotifyInformation {
-	__le32 NextEntryOffset;
-	__le32 Action;
-	__le32 FileNameLength;
-	__le16 FileName[];
 };
 
 #define cifsd_debug(fmt, ...)					\

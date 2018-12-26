@@ -39,13 +39,64 @@
 #define SMB311_PROT_ID		0x0311
 #define BAD_PROT_ID		0xFFFF
 
-#define IS_SMB2(x) ((x)->vals->protocol_id != SMB10_PROT_ID)
-
 struct cifsd_work;
 struct cifsd_tcp_conn;
 struct cifsd_dir_info;
 struct cifsd_file;
 struct dir_context;
+
+#define IS_SMB2(x)		((x)->vals->protocol_id != SMB10_PROT_ID)
+
+#define HEADER_SIZE(conn)		((conn)->vals->header_size)
+#define HEADER_SIZE_NO_BUF_LEN(conn)	((conn)->vals->header_size - 4)
+#define MAX_HEADER_SIZE(conn)		((conn)->vals->max_header_size)
+
+struct smb_version_values {
+	char		*version_string;
+	__u16		protocol_id;
+	__le16		lock_cmd;
+	__u32		req_capabilities;
+	__u32		large_lock_type;
+	__u32		exclusive_lock_type;
+	__u32		shared_lock_type;
+	__u32		unlock_lock_type;
+	size_t		header_size;
+	size_t		max_header_size;
+	size_t		read_rsp_size;
+	unsigned int	cap_unix;
+	unsigned int	cap_nt_find;
+	unsigned int	cap_large_files;
+	__u16		signing_enabled;
+	__u16		signing_required;
+	size_t		create_lease_size;
+	size_t		create_durable_size;
+	size_t		create_durable_v2_size;
+	size_t		create_mxac_size;
+	size_t		create_disk_id_size;
+};
+
+struct smb_version_ops {
+	int (*get_cmd_val)(struct cifsd_work *swork);
+	int (*init_rsp_hdr)(struct cifsd_work *swork);
+	void (*set_rsp_status)(struct cifsd_work *swork, unsigned int err);
+	int (*allocate_rsp_buf)(struct cifsd_work *work);
+	void (*set_rsp_credits)(struct cifsd_work *swork);
+	int (*check_user_session)(struct cifsd_work *work);
+	int (*get_cifsd_tcon)(struct cifsd_work *work);
+	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
+	int (*check_sign_req)(struct cifsd_work *work);
+	void (*set_sign_rsp)(struct cifsd_work *work);
+	int (*generate_signingkey)(struct cifsd_session *sess, bool binding,
+		char *hash_value);
+	int (*generate_encryptionkey)(struct cifsd_session *sess);
+	int (*is_transform_hdr)(void *buf);
+	int (*decrypt_req)(struct cifsd_work *work);
+	int (*encrypt_resp)(struct cifsd_work *work);
+};
+
+struct smb_version_cmds {
+	int (*proc)(struct cifsd_work *swork);
+};
 
 int cifsd_min_protocol(void);
 int cifsd_max_protocol(void);

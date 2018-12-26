@@ -24,8 +24,6 @@ int check_invalid_char_stream(char *stream_name);
 
 int parse_stream_name(char *filename, char **stream_name, int *s_type);
 
-int construct_xattr_stream_name(char *stream_name, char **xattr_stream_name);
-
 char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 int get_nlink(struct kstat *st);

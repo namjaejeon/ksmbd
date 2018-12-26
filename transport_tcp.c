@@ -363,8 +363,6 @@ static int cifsd_kthread_fn(void *p)
  * on port 445 for new SMB connection requests. It creates per connection
  * server threads(kcifsd/x)
  *
- * @cifsd_pid_info:	struct pointer which has cifsd's pid and
- *	socket pointer members
  * Return:	0 on success or error number
  */
 static int cifsd_tcp_run_kthread(void)
