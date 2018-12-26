@@ -98,7 +98,6 @@ struct cifsd_file {
 	struct oplock_info *f_opinfo;
 	struct file *filp;
 	char *filename;
-	struct timespec open_time;
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
 	int	dot_dotdot[2];
