@@ -4,7 +4,6 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#include <linux/bootmem.h>
 #include <linux/xattr.h>
 
 #include "glob.h"
@@ -285,7 +284,6 @@ insert_id_in_fidtable(struct cifsd_session *sess,
 	fp->persistent_id = CIFSD_NO_FID;
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
-	init_waitqueue_head(&fp->wq);
 
 	spin_lock(&sess->fidtable.fidtable_lock);
 	ftab = sess->fidtable.ftab;
@@ -1024,14 +1022,13 @@ int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	INIT_LIST_HEAD(&ci->m_fp_list);
 	INIT_LIST_HEAD(&ci->m_op_list);
 	spin_lock_init(&ci->m_lock);
-	ci->is_stream = false;
+	ci->stream_name = NULL;
 
 	if (fp->is_stream) {
 		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
 		if (!ci->stream_name)
 			return -ENOMEM;
 		strncpy(ci->stream_name, fp->stream.name, fp->stream.size);
-		ci->is_stream = true;
 	}
 
 	return 0;
@@ -1074,8 +1071,7 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 void cifsd_inode_free(struct cifsd_inode *ci)
 {
 	cifsd_inode_unhash(ci);
-	if (ci->is_stream)
-		kfree(ci->stream_name);
+	kfree(ci->stream_name);
 	kfree(ci);
 }
 

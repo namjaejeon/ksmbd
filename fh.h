@@ -53,12 +53,6 @@
 struct cifsd_tcp_conn;
 struct cifsd_session;
 
-struct notification {
-	unsigned int mode;
-	struct list_head queuelist;
-	struct cifsd_work *work;
-};
-
 struct cifsd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
@@ -86,55 +80,61 @@ struct cifsd_inode {
 	struct list_head m_fp_list;
 	struct list_head m_op_list;
 	struct oplock_info *m_opinfo;
-	bool has_lease;
-	bool is_stream;
 	char *stream_name;
 };
 
 struct cifsd_file {
-	struct cifsd_tcp_conn *conn;
-	struct cifsd_session *sess;
-	struct cifsd_tree_connect *tcon;
-	struct cifsd_inode *f_ci;
-	struct cifsd_inode *f_parent_ci;
-	struct oplock_info *f_opinfo;
-	struct file *filp;
-	char *filename;
-	struct timespec open_time;
+	struct file			*filp;
+	char				*filename;
+	uint64_t			persistent_id;
+	unsigned int			volatile_id;
+
+	spinlock_t			f_lock;
+
+	struct cifsd_inode		*f_ci;
+	struct cifsd_inode		*f_parent_ci;
+	struct oplock_info		*f_opinfo;
+	struct cifsd_tcp_conn		*conn;
+	struct cifsd_session		*sess;
+	struct cifsd_tree_connect	*tcon;
+
+	int				f_state;
+	__le32				daccess;
+	__le32				saccess;
+	__le32				coption;
+	__le32				cdoption;
+	__le32				fattr;
+	__u64				create_time;
+
+	bool				is_durable;
+	bool				is_resilient;
+	bool				is_persistent;
+	bool				is_nt_open;
+	bool				delete_on_close;
+	bool				attrib_only;
+	bool				is_stream;
+
+	char				client_guid[16];
+	char				create_guid[16];
+	char				app_instance_id[16];
+
+	struct stream			stream;
+	struct list_head		node;
+	struct list_head		blocked_works;
+
+	int				durable_timeout;
+	/* for SMB1 */
+	int				pid;
+
+	/* conflict lock fail count for SMB1 */
+	unsigned int			cflock_cnt;
+	/* last lock failure start offset for SMB1 */
+	unsigned long long		llock_fstart;
+
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
-	int	dot_dotdot[2];
-	int	dirent_offset;
-	/* oplock info */
-	unsigned int volatile_id;
-	bool is_durable;
-	bool is_resilient;
-	bool is_persistent;
-	bool is_nt_open;
-	bool delete_on_close;
-	uint64_t persistent_id;
-	__le32 daccess;
-	__le32 saccess;
-	__le32 coption;
-	__le32 cdoption;
-	__le32 fattr;
-	__u64 create_time;
-	bool attrib_only;
-	bool is_stream;
-	struct stream stream;
-	struct list_head node;
-	struct list_head queue;
-	struct list_head blocked_works;
-	spinlock_t f_lock;
-	wait_queue_head_t wq;
-	int f_state;
-	char client_guid[16];
-	char create_guid[16];
-	char app_instance_id[16];
-	int durable_timeout;
-	int pid; /* for SMB1 */
-	unsigned int cflock_cnt; /* conflict lock fail count for SMB1 */
-	unsigned long long llock_fstart; /* last lock failure start offset for SMB1 */
+	int				dot_dotdot[2];
+	int				dirent_offset;
 };
 
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG

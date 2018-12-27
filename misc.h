@@ -13,8 +13,6 @@ struct cifsd_file;
 
 void dump_smb_msg(void *buf, int smb_buf_length);
 
-int smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);
-
 int pattern_cmp(const char *string, const char *pattern);
 
 bool is_matched(const char *fname, const char *exp);

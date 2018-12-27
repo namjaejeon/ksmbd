@@ -2404,7 +2404,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	fp->saccess = req->ShareAccess;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
+	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
 		/* Client cannot request levelII oplock directly */
@@ -3311,15 +3311,12 @@ static void unix_to_dos_time(struct timespec ts, __le16 *time, __le16 *date)
 {
 	struct tm t;
 	__u16 val;
-	time_to_tm(ts.tv_sec,
-			(-sys_tz.tz_minuteswest) * 60, &t);
 
-
+	CIFSD_TIME_TO_TM(ts.tv_sec, (-sys_tz.tz_minuteswest) * 60, &t);
 	val = (((unsigned int)(t.tm_mon + 1)) >> 3) | ((t.tm_year - 80) << 1);
 	val = ((val & 0xFF) << 8) | (t.tm_mday |
 			(((t.tm_mon + 1) & 0x7) << 5));
 	*date = cpu_to_le16(val);
-
 
 	val = ((((unsigned int)t.tm_min >> 3) & 0x7) |
 			(((unsigned int)t.tm_hour) << 3));
@@ -7820,7 +7817,7 @@ int smb_open_andx(struct cifsd_work *work)
 	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
-	share_ret = smb_check_shared_mode(fp->filp, fp);
+	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
 		/* Client cannot request levelII oplock directly */

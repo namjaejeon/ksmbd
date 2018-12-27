@@ -509,3 +509,146 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
 	cifsd_err("Unknown SMB negotiation command: %u\n", command);
 	return -EINVAL;
 }
+
+enum SHARED_MODE_ERRORS {
+	SHARE_DELETE_ERROR,
+	SHARE_READ_ERROR,
+	SHARE_WRITE_ERROR,
+	FILE_READ_ERROR,
+	FILE_WRITE_ERROR,
+	FILE_DELETE_ERROR,
+};
+
+static const char *shared_mode_errors[] = {
+	"Current access mode does not permit SHARE_DELETE",
+	"Current access mode does not permit SHARE_READ",
+	"Current access mode does not permit SHARE_WRITE",
+	"Desired access mode does not permit FILE_READ",
+	"Desired access mode does not permit FILE_WRITE",
+	"Desired access mode does not permit FILE_DELETE",
+};
+
+static void smb_shared_mode_error(int error,
+				  struct cifsd_file *prev_fp,
+				  struct cifsd_file *curr_fp)
+{
+	cifsd_err("%s\n", shared_mode_errors[error]);
+	cifsd_err("Current mode: 0x%x Desired mode: 0x%x\n",
+		  prev_fp->saccess, curr_fp->daccess);
+}
+
+int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
+{
+	int rc = 0;
+	struct cifsd_file *prev_fp;
+	struct list_head *cur;
+
+	/*
+	 * Lookup fp in master fp list, and check desired access and
+	 * shared mode between previous open and current open.
+	 */
+	spin_lock(&curr_fp->f_ci->m_lock);
+	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
+		prev_fp = list_entry(cur, struct cifsd_file, node);
+		if (prev_fp->f_state == FP_FREEING)
+			continue;
+		if (file_inode(filp) != FP_INODE(prev_fp))
+			continue;
+
+		if (prev_fp->is_stream && curr_fp->is_stream)
+			if (strcmp(prev_fp->stream.name, curr_fp->stream.name))
+				continue;
+
+		if (prev_fp->is_durable) {
+			prev_fp->is_durable = 0;
+			continue;
+		}
+
+		if (prev_fp->attrib_only != curr_fp->attrib_only)
+			continue;
+
+		if (!(prev_fp->saccess & (FILE_SHARE_DELETE_LE)) &&
+				curr_fp->daccess & (FILE_DELETE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE)) {
+			smb_shared_mode_error(SHARE_DELETE_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+
+		/*
+		 * Only check FILE_SHARE_DELETE if stream opened and
+		 * normal file opened.
+		 */
+		if (prev_fp->is_stream && !curr_fp->is_stream)
+			continue;
+
+		if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
+				curr_fp->daccess & (FILE_EXECUTE_LE |
+					FILE_READ_DATA_LE |
+					FILE_GENERIC_READ_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE)) {
+			smb_shared_mode_error(SHARE_READ_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+
+		if (!(prev_fp->saccess & (FILE_SHARE_WRITE_LE)) &&
+				curr_fp->daccess & (FILE_WRITE_DATA_LE |
+					FILE_APPEND_DATA_LE |
+					FILE_GENERIC_WRITE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE)) {
+			smb_shared_mode_error(SHARE_WRITE_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+
+		if (prev_fp->daccess & (FILE_EXECUTE_LE |
+					FILE_READ_DATA_LE |
+					FILE_GENERIC_READ_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
+				!(curr_fp->saccess & FILE_SHARE_READ_LE)) {
+			smb_shared_mode_error(FILE_READ_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+
+		if (prev_fp->daccess & (FILE_WRITE_DATA_LE |
+					FILE_APPEND_DATA_LE |
+					FILE_GENERIC_WRITE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
+				!(curr_fp->saccess & FILE_SHARE_WRITE_LE)) {
+			smb_shared_mode_error(FILE_WRITE_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+
+		if (prev_fp->daccess & (FILE_DELETE_LE |
+					FILE_GENERIC_ALL_LE |
+					FILE_MAXIMAL_ACCESS_LE) &&
+				!(curr_fp->saccess & FILE_SHARE_DELETE_LE)) {
+			smb_shared_mode_error(FILE_DELETE_ERROR,
+					      prev_fp,
+					      curr_fp);
+			rc = -EPERM;
+			break;
+		}
+	}
+	spin_unlock(&curr_fp->f_ci->m_lock);
+
+	return rc;
+}

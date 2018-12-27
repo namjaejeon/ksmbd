@@ -138,6 +138,8 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
 
+int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);
+
 unsigned int cifsd_max_msg_size(void);
 unsigned int cifsd_default_io_size(void);
 unsigned int cifsd_small_buffer_size(void);
