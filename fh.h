@@ -178,6 +178,7 @@ void cifsd_inode_unhash(struct cifsd_inode *ci);
 struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
 struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
 struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
+void cifsd_inode_put(struct cifsd_inode *ci);
 
 /* Persistent-ID operations */
 int cifsd_insert_in_global_table(struct cifsd_session *sess,

@@ -1413,8 +1413,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 err_out:
 	list_del(&fp->node);
-	if (ci && atomic_dec_and_test(&ci->m_count))
-		cifsd_inode_free(ci);
+	if (ci)
+		cifsd_inode_put(ci);
 err_out1:
 	delete_id_from_fidtable(sess, id);
 err_out2:
