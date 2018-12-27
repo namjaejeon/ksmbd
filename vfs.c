@@ -1381,8 +1381,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	sess_id = sess == NULL ? 0 : sess->id;
 	id = cifsd_get_unused_id(&sess->fidtable);
-	if (id < 0)
+	if (id < 0) {
+		err = -EBADF;
 		goto err_out3;
+	}
 
 	cifsd_debug("allocate volatile id : %d\n", id);
 	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
@@ -1393,8 +1395,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	}
 
 	fp->f_ci = ci = cifsd_inode_get(fp);
-	if (!ci)
+	if (!ci) {
+		err = -ENOMEM;
 		goto err_out1;
+	}
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
