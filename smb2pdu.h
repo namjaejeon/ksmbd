@@ -427,7 +427,7 @@ struct smb2_tree_disconnect_rsp {
 #define FILE_GENERIC_EXECUTE_LE		cpu_to_le32(0x20000000)
 #define FILE_GENERIC_WRITE_LE		cpu_to_le32(0x40000000)
 #define FILE_GENERIC_READ_LE		cpu_to_le32(0x80000000)
-#define DISIRED_ACCESS_MASK		cpu_to_le32(0xF20F01FF)
+#define DISIRED_ACCESS_MASK		cpu_to_le32(0xF21F01FF)
 
 /* ShareAccess Flags */
 #define FILE_SHARE_READ_LE		cpu_to_le32(0x00000001)
