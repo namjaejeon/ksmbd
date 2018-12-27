@@ -1411,7 +1411,6 @@ extern int smb2_open(struct cifsd_work *work);
 extern int smb2_query_info(struct cifsd_work *work);
 extern int smb2_query_dir(struct cifsd_work *work);
 extern int smb2_close(struct cifsd_work *work);
-extern int smb2_close(struct cifsd_work *work);
 extern int smb2_echo(struct cifsd_work *work);
 extern int smb2_set_info(struct cifsd_work *work);
 extern int smb2_read(struct cifsd_work *work);
