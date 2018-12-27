@@ -1022,6 +1022,7 @@ int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	INIT_LIST_HEAD(&ci->m_fp_list);
 	INIT_LIST_HEAD(&ci->m_op_list);
 	spin_lock_init(&ci->m_lock);
+	ci->stream_name = NULL;
 
 	if (fp->is_stream) {
 		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
