@@ -3798,7 +3798,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		file_info->Pad2 = 0;
 		file_info->IndexNumber = cpu_to_le64(stat.ino);
 		file_info->EASize = 0;
-		file_info->AccessFlags = cpu_to_le32(0x00000080);
+		file_info->AccessFlags = fp->daccess;
 		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
 		file_info->Mode = fp->coption;
 		file_info->AlignmentRequirement = 0;
