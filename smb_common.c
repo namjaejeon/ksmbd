@@ -611,7 +611,8 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			break;
 		}
 
-		if (prev_fp->daccess & (FILE_READ_DATA_LE |
+		if (prev_fp->daccess & (FILE_EXECUTE_LE |
+					FILE_READ_DATA_LE |
 					FILE_GENERIC_READ_LE |
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE) &&
