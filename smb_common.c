@@ -600,6 +600,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 		if (!(prev_fp->saccess & (FILE_SHARE_WRITE_LE)) &&
 				curr_fp->daccess & (FILE_WRITE_DATA_LE |
+					FILE_APPEND_DATA_LE |
 					FILE_GENERIC_WRITE_LE |
 					FILE_GENERIC_ALL_LE |
 					FILE_MAXIMAL_ACCESS_LE)) {
