@@ -288,8 +288,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(1);
-	rsp_hdr->Command = 0;
+	rsp_hdr->CreditRequest = cpu_to_le16(2);
+	rsp_hdr->Command = SMB2_NEGOTIATE;
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = 0;
@@ -329,7 +329,6 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	conn->use_spnego = true;
 
 	cifsd_tcp_set_need_negotiate(work);
-	rsp->hdr.CreditRequest = cpu_to_le16(2);
 	return 0;
 }
 
