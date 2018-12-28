@@ -899,7 +899,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
-	unsigned int limit;
 	int rc = 0, err;
 	struct timespec64 ts64;
 
@@ -977,15 +976,20 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
+
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
-	limit = cifsd_max_msg_size();
+	rsp->MaxTransactSize = cpu_to_le32(cifsd_max_msg_size());
 
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
-		/* With LargeMTU above SMB2.0, default message limit is 1MB */
-		limit = cifsd_default_io_size();
 		conn->cli_sec_mode = req->SecurityMode;
+		/* With LargeMTU above SMB2.0, default message limit is 1MB */
+		rsp->MaxReadSize = cpu_to_le32(cifsd_default_io_size());
+		rsp->MaxWriteSize = cpu_to_le32(cifsd_default_io_size());
+	} else {
+		rsp->MaxReadSize = cpu_to_le32(cifsd_max_msg_size());
+		rsp->MaxWriteSize = cpu_to_le32(cifsd_max_msg_size());
 	}
 
 	rsp->StructureSize = cpu_to_le16(65);
@@ -993,9 +997,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* Not setting conn guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
-	rsp->MaxTransactSize = cifsd_max_msg_size();
-	rsp->MaxReadSize = min(limit, (unsigned int)cifsd_default_io_size());
-	rsp->MaxWriteSize = min(limit, (unsigned int)cifsd_default_io_size());
 
 	getnstimeofday64(&ts64);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
