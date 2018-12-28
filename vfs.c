@@ -227,7 +227,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-		    FILE_GENERIC_ALL_LE))) {
+		    FILE_GENERIC_ALL_LE | FILE_EXECUTE))) {
 			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
 			return -EACCES;
 		}
