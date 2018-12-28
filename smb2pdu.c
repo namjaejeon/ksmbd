@@ -1891,7 +1891,7 @@ static int parse_durable_handle_context(struct cifsd_tcp_conn *conn,
 					SMB2_CLIENT_GUID_SIZE)) {
 					if (!(le32_to_cpu(req->hdr.Flags) &
 						SMB2_FLAGS_REPLAY_OPERATIONS)) {
-						err = -EMFILE;
+						err = -ENOEXEC;
 						goto out;
 					}
 
@@ -2912,12 +2912,14 @@ err_out1:
 			rsp->hdr.Status = NT_STATUS_DELETE_PENDING;
 		else if (rc == -EBADF)
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
-		else if (rc == -EMFILE)
+		else if (rc == -ENOEXEC)
 			rsp->hdr.Status = NT_STATUS_DUPLICATE_OBJECTID;
 		else if (rc == -ENXIO)
 			rsp->hdr.Status = NT_STATUS_NO_SUCH_DEVICE;
 		else if (rc == -EEXIST)
 			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_COLLISION;
+		else if (rc == -EMFILE)
+			rsp->hdr.Status = NT_STATUS_INSUFFICIENT_RESOURCES;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
