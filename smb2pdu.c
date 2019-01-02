@@ -520,8 +520,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 
 	req = (struct smb2_query_info_req *)REQUEST_BUF(work);
 
-	if (cmd == SMB2_READ || cmd == SMB2_IOCTL_HE ||
-			cmd == SMB2_QUERY_DIRECTORY_HE)
+	if (cmd == SMB2_IOCTL_HE || cmd == SMB2_QUERY_DIRECTORY_HE)
 		sz = large_sz;
 
 	if (cmd == SMB2_QUERY_INFO_HE) {
