@@ -1606,7 +1606,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 		oflags |= O_RDONLY;
 
 	if (file_present) {
-		switch (disposition & 0x00000007) {
+		switch (disposition & FILE_CREATE_MASK_LE) {
 		case FILE_OPEN_LE:
 		case FILE_CREATE_LE:
 			break;
@@ -1619,7 +1619,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 			break;
 		}
 	} else {
-		switch (disposition & 0x00000007) {
+		switch (disposition & FILE_CREATE_MASK_LE) {
 		case FILE_SUPERSEDE_LE:
 		case FILE_CREATE_LE:
 		case FILE_OPEN_IF_LE:
@@ -2466,7 +2466,8 @@ int smb2_open(struct cifsd_work *work)
 		else
 			file_info = FILE_OVERWRITTEN;
 
-		if ((req->CreateDisposition & 0x00000007) == FILE_SUPERSEDE_LE)
+		if ((req->CreateDisposition & FILE_CREATE_MASK_LE)
+				== FILE_SUPERSEDE_LE)
 			file_info = FILE_SUPERSEDED;
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
