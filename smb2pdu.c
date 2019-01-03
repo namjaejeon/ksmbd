@@ -7115,7 +7115,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	iov[1].iov_base = buf + 4;
 	iov[1].iov_len = get_rfc1002_length(buf);
 	if (HAS_AUX_PAYLOAD(work)) {
-		iov[1].iov_len = RESP_HDR_SIZE(work);
+		iov[1].iov_len = RESP_HDR_SIZE(work) - 4;
 
 		iov[2].iov_base = AUX_PAYLOAD(work);
 		iov[2].iov_len = AUX_PAYLOAD_SIZE(work);
