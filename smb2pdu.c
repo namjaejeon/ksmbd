@@ -33,7 +33,7 @@
 #include "mgmt/cifsd_ida.h"
 
 bool multi_channel_enable;
-bool encryption_enable;
+bool encryption_enable = true;
 
 struct fs_type_info fs_type[] = {
 	{ "ADFS",	0xadf5},
