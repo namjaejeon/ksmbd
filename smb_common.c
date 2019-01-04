@@ -40,12 +40,6 @@ static struct smb_protocol smb_protos[] = {
 	},
 #endif
 	{
-		SMB311_PROT,
-		"\2SMB 3.1.1",
-		"SMB3_11",
-		SMB311_PROT_ID
-	},
-	{
 		SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
@@ -74,6 +68,12 @@ static struct smb_protocol smb_protos[] = {
 		"\2SMB 3.02",
 		"SMB3_02",
 		SMB302_PROT_ID
+	},
+	{
+		SMB311_PROT,
+		"\2SMB 3.1.1",
+		"SMB3_11",
+		SMB311_PROT_ID
 	},
 };
 
