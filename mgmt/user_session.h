@@ -38,7 +38,6 @@ struct cifsd_session {
 	unsigned int			sequence_number;
 	unsigned int			flags;
 
-	int				valid;
 	bool				sign;
 	bool				enc;
 	bool				is_anonymous;

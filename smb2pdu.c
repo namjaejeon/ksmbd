@@ -1122,13 +1122,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 			req->hdr.Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
 			sess = cifsd_session_lookup_slowpath(
 					le64_to_cpu(req->hdr.SessionId));
-			if (!(sess && sess->valid)) {
-				rc = -ENOENT;
-				rsp->hdr.Status =
-					NT_STATUS_USER_SESSION_DELETED;
-				goto out_err;
-			}
-
 			if (!(req->hdr.Flags & SMB2_FLAGS_SIGNED)) {
 				rc = -EINVAL;
 				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
@@ -1709,7 +1702,6 @@ int smb2_session_logoff(struct cifsd_work *work)
 		return 0;
 	}
 
-	sess->valid = 0;
 	sess->state = SMB2_SESSION_EXPIRED;
 
 	cifsd_free_user(sess->user);
@@ -6825,7 +6817,7 @@ int smb2_is_sign_req(struct cifsd_work *work, unsigned int command)
 
 	/* send session setup auth phase signed response */
 	if (work->sess->sign && command == SMB2_SESSION_SETUP_HE &&
-		work->sess && work->sess->valid)
+		work->sess)
 		return 1;
 
 	return 0;
