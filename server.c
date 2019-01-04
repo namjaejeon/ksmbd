@@ -241,6 +241,7 @@ send:
 			goto send;
 		}
 	} else if (work->sess && (work->sess->sign ||
+		smb3_final_sess_setup_resp(work) ||
 		(conn->ops->is_sign_req &&
 		conn->ops->is_sign_req(work, command))))
 		conn->ops->set_sign_rsp(work);

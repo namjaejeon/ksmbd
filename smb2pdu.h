@@ -1397,6 +1397,7 @@ extern void smb3_preauth_hash_rsp(struct cifsd_work *work);
 extern int smb3_is_transform_hdr(void *buf);
 extern int smb3_decrypt_req(struct cifsd_work *work);
 extern int smb3_encrypt_resp(struct cifsd_work *work);
+extern int smb3_final_sess_setup_resp(struct cifsd_work *work);
 
 /* smb2 misc functions */
 extern int smb2_check_message(struct cifsd_work *work);

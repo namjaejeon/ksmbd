@@ -7181,3 +7181,21 @@ int smb3_decrypt_req(struct cifsd_work *work)
 
 	return rc;
 }
+
+int smb3_final_sess_setup_resp(struct cifsd_work *work)
+{
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
+
+	if (conn->dialect != SMB311_PROT_ID)
+		return 0;
+
+	if (work->next_smb2_rcv_hdr_off)
+		rsp = (struct smb2_hdr *)((char *)rsp +
+				work->next_smb2_rsp_hdr_off);
+
+	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
+		rsp->Status == NT_STATUS_OK)
+		return 1;
+	return 0;
+}
