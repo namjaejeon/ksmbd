@@ -288,8 +288,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(1);
-	rsp_hdr->Command = 0;
+	rsp_hdr->CreditRequest = cpu_to_le16(2);
+	rsp_hdr->Command = SMB2_NEGOTIATE;
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = 0;
@@ -329,7 +329,6 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	conn->use_spnego = true;
 
 	cifsd_tcp_set_need_negotiate(work);
-	rsp->hdr.CreditRequest = cpu_to_le16(2);
 	return 0;
 }
 
@@ -521,8 +520,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 
 	req = (struct smb2_query_info_req *)REQUEST_BUF(work);
 
-	if (cmd == SMB2_READ || cmd == SMB2_IOCTL_HE ||
-			cmd == SMB2_QUERY_DIRECTORY_HE)
+	if (cmd == SMB2_IOCTL_HE || cmd == SMB2_QUERY_DIRECTORY_HE)
 		sz = large_sz;
 
 	if (cmd == SMB2_QUERY_INFO_HE) {
@@ -900,7 +898,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
-	unsigned int limit;
 	int rc = 0, err;
 	struct timespec64 ts64;
 
@@ -978,15 +975,20 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
+
 	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
-	limit = cifsd_max_msg_size();
+	rsp->MaxTransactSize = cpu_to_le32(cifsd_max_msg_size());
 
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
-		/* With LargeMTU above SMB2.0, default message limit is 1MB */
-		limit = cifsd_default_io_size();
 		conn->cli_sec_mode = req->SecurityMode;
+		/* With LargeMTU above SMB2.0, default message limit is 1MB */
+		rsp->MaxReadSize = cpu_to_le32(cifsd_default_io_size());
+		rsp->MaxWriteSize = cpu_to_le32(cifsd_default_io_size());
+	} else {
+		rsp->MaxReadSize = cpu_to_le32(cifsd_max_msg_size());
+		rsp->MaxWriteSize = cpu_to_le32(cifsd_max_msg_size());
 	}
 
 	rsp->StructureSize = cpu_to_le16(65);
@@ -994,9 +996,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* Not setting conn guid rsp->ServerGUID, as it
 	 * not used by client for identifying server*/
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
-	rsp->MaxTransactSize = cifsd_max_msg_size();
-	rsp->MaxReadSize = min(limit, (unsigned int)cifsd_default_io_size());
-	rsp->MaxWriteSize = min(limit, (unsigned int)cifsd_default_io_size());
 
 	getnstimeofday64(&ts64);
 	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
@@ -1607,7 +1606,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 		oflags |= O_RDONLY;
 
 	if (file_present) {
-		switch (disposition & 0x00000007) {
+		switch (disposition & FILE_CREATE_MASK_LE) {
 		case FILE_OPEN_LE:
 		case FILE_CREATE_LE:
 			break;
@@ -1620,7 +1619,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 			break;
 		}
 	} else {
-		switch (disposition & 0x00000007) {
+		switch (disposition & FILE_CREATE_MASK_LE) {
 		case FILE_SUPERSEDE_LE:
 		case FILE_CREATE_LE:
 		case FILE_OPEN_IF_LE:
@@ -2467,7 +2466,8 @@ int smb2_open(struct cifsd_work *work)
 		else
 			file_info = FILE_OVERWRITTEN;
 
-		if ((req->CreateDisposition & 0x00000007) == FILE_SUPERSEDE_LE)
+		if ((req->CreateDisposition & FILE_CREATE_MASK_LE)
+				== FILE_SUPERSEDE_LE)
 			file_info = FILE_SUPERSEDED;
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
@@ -2923,8 +2923,8 @@ err_out1:
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
 
-		if (ci && atomic_dec_and_test(&ci->m_count))
-			cifsd_inode_free(ci);
+		if (ci)
+			cifsd_inode_put(ci);
 		if (volatile_id >= 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);

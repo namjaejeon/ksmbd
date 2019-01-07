@@ -2589,8 +2589,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -4898,8 +4897,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -7934,8 +7932,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
