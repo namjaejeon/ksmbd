@@ -3241,7 +3241,7 @@ int smb2_query_dir(struct cifsd_work *work)
 				le32_to_cpu(req->OutputBufferLength)) -
 				sizeof(struct smb2_query_directory_rsp);
 
-	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY)) {
+	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY) || is_asterik(srch_ptr)) {
 		/*
 		 * reserve dot and dotdot entries in head of buffer
 		 * in first response
@@ -3336,7 +3336,10 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	if (!d_info.data_count) {
 		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
-			rsp->hdr.Status = NT_STATUS_NO_SUCH_FILE;
+			if (is_asterik(srch_ptr))
+				rsp->hdr.Status = STATUS_NO_MORE_FILES;
+			else
+				rsp->hdr.Status = NT_STATUS_NO_SUCH_FILE;
 		else if (rsp->hdr.Status == 0) {
 			dir_fp->dot_dotdot[0] = dir_fp->dot_dotdot[1] = 0;
 			rsp->hdr.Status = STATUS_NO_MORE_FILES;
