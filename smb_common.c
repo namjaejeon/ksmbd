@@ -315,7 +315,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 			else
 				d_info->name = "..";
 
-			if (!is_matched(d_info->name, search_pattern)) {
+			if (!match_pattern(d_info->name, search_pattern)) {
 				dir->dot_dotdot[i] = 1;
 				continue;
 			}

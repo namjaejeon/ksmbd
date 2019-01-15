@@ -64,7 +64,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 }
 
 /**
- * pattern_cmp() - compare a string with a pattern which might include
+ * match_pattern() - compare a string with a pattern which might include
  * wildcard '*' and '?'
  * TODO : implement consideration about DOS_DOT, DOS_QM and DOS_STAR
  *
@@ -73,7 +73,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
  *
  * Return:	0 if pattern matched with the string, otherwise non zero value
  */
-int pattern_cmp(const char *str, const char *pattern)
+int match_pattern(const char *str, const char *pattern)
 {
 	const char *s = str;
 	const char *p = pattern;
@@ -110,20 +110,6 @@ int pattern_cmp(const char *str, const char *pattern)
 	if (*p == '*')
 		++p;
 	return !*p;
-}
-
-/**
- * is_matched() - compare a file name with an expression which might
- * include wildcards
- *
- * @fname:	file name to compare with an expression
- * @exp:	an expression which might include wildcard '*' and '?'
- *
- * Return:	true if fname and exp are matched, otherwise false
- */
-bool is_matched(const char *fname, const char *exp)
-{
-	return pattern_cmp(fname, exp);
 }
 
 /*

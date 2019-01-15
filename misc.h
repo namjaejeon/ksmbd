@@ -13,9 +13,7 @@ struct cifsd_file;
 
 void dump_smb_msg(void *buf, int smb_buf_length);
 
-int pattern_cmp(const char *string, const char *pattern);
-
-bool is_matched(const char *fname, const char *exp);
+int match_pattern(const char *string, const char *pattern);
 
 int check_invalid_char(char *filename);
 int check_invalid_char_stream(char *stream_name);
