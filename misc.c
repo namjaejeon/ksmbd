@@ -73,50 +73,43 @@ void dump_smb_msg(void *buf, int smb_buf_length)
  *
  * Return:	0 if pattern matched with the string, otherwise non zero value
  */
-int pattern_cmp(const char *string, const char *pattern)
+int pattern_cmp(const char *str, const char *pattern)
 {
-	const char *cp = NULL;
-	const char *mp = NULL;
-	int diff;
+	const char *s = str;
+	const char *p = pattern;
+	bool star = false;
 
-	/* handle plain characters and '?' */
-	while ((*string) && (*pattern != '*')) {
-		diff = strncasecmp(pattern, string, 1);
-		if (diff && (*pattern != '?'))
-			return diff;
-
-		pattern++;
-		string++;
-	}
-
-	/* handle '*' wildcard */
-	while (*string) {
-		if (*pattern == '*') {
-			/*
-			 * if the last char of a pattern is '*',
-			 * any string matches with the pattern
-			 */
-			if (!*++pattern)
-				return 0;
-
-			mp = pattern;
-			cp = string + 1;
-		} else if (!strncasecmp(pattern, string, 1)
-				|| (*pattern == '?')) {
-			/* ? is matched with any "one" char */
-			pattern++;
-			string++;
-		} else {
-			pattern = mp;
-			string = cp++;
+	while (*s) {
+		switch (*p) {
+		case '?':
+			s++;
+			p++;
+			break;
+		case '*':
+			star = true;
+			str = s;
+			if (!*++p)
+				return true;
+			pattern = p;
+			break;
+		default:
+			if (tolower(*s) == tolower(*p)) {
+				s++;
+				p++;
+			} else {
+				if (!star)
+					return false;
+				str++;
+				s = str;
+				p = pattern;
+			}
+			break;
 		}
 	}
 
-	/* handle remaining '*' */
-	while (*pattern == '*')
-		pattern++;
-
-	return *pattern;
+	if (*p == '*')
+		++p;
+	return !*p;
 }
 
 /**
@@ -130,20 +123,7 @@ int pattern_cmp(const char *string, const char *pattern)
  */
 bool is_matched(const char *fname, const char *exp)
 {
-	/* optimization to avoid pattern compare */
-	if (!*fname && *exp)
-		return false;
-	else if (*fname && !*exp)
-		return false;
-	else if (!*fname && !*exp)
-		return true;
-	else if (*exp == '*' && strlen(exp) == 1)
-		return true;
-
-	if (pattern_cmp(fname, exp))
-		return false;
-	else
-		return true;
+	return pattern_cmp(fname, exp);
 }
 
 /*
