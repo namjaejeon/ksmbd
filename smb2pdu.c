@@ -3314,7 +3314,7 @@ int smb2_query_dir(struct cifsd_work *work)
 			continue;
 		}
 
-		if (is_matched(d_info.name, srch_ptr)) {
+		if (match_pattern(d_info.name, srch_ptr)) {
 			rc = smb2_populate_readdir_entry(conn,
 						req->FileInformationClass,
 						&d_info,

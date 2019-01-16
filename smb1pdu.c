@@ -5892,7 +5892,7 @@ static int find_first(struct cifsd_work *work)
 			continue;
 		}
 
-		if (is_matched(d_info.name, srch_ptr)) {
+		if (match_pattern(d_info.name, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
 						req_params->InformationLevel,
 						&d_info,
