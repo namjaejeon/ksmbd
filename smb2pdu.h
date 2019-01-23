@@ -827,6 +827,12 @@ struct file_object_buf_type1_ioctl_rsp {
 	__u8 DomainId[16];
 } __packed;
 
+struct resume_key_ioctl_rsp {
+	__le64 ResumeKey[3];
+	__le32 ContextLength;
+	__u8 Context[4]; /* ignored, Windows sets to 4 bytes of zero */
+} __packed;
+
 /* Completion Filter flags for Notify */
 #define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
 #define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002

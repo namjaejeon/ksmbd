@@ -6435,6 +6435,33 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		break;
 	}
+	case FSCTL_REQUEST_RESUME_KEY:
+	{
+		struct resume_key_ioctl_rsp *key_rsp;
+		struct cifsd_file *fp;
+
+		if (out_buf_len < sizeof(*key_rsp)) {
+			req->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		fp = get_fp(work, le64_to_cpu(req->VolatileFileId),
+				le64_to_cpu(req->PersistentFileId));
+		if (!fp) {
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			goto out;
+		}
+
+		nbytes = sizeof(struct resume_key_ioctl_rsp);
+		key_rsp = (struct resume_key_ioctl_rsp *)&rsp->Buffer[0];
+		memset(key_rsp, 0, sizeof(*key_rsp));
+		key_rsp->ResumeKey[0] = req->VolatileFileId;
+		key_rsp->ResumeKey[1] = req->PersistentFileId;
+
+		rsp->PersistentFileId = req->PersistentFileId;
+		rsp->VolatileFileId = req->VolatileFileId;
+		break;
+	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
