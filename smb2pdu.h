@@ -833,6 +833,13 @@ struct resume_key_ioctl_rsp {
 	__u8 Context[4]; /* ignored, Windows sets to 4 bytes of zero */
 } __packed;
 
+struct srv_copychunk {
+	__le64 SourceOffset;
+	__le64 TargetOffset;
+	__le32 Length;
+	__le32 Reserved;
+} __packed;
+
 /* Completion Filter flags for Notify */
 #define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
 #define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002

@@ -14,6 +14,13 @@
 #include <linux/falloc.h>
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
+#include <linux/fsnotify.h>
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#include <linux/sched/xacct.h>
+#else
+#include <linux/sched.h>
+#endif
 
 #include "glob.h"
 #include "oplock.h"
@@ -1808,4 +1815,125 @@ int cifsd_vfs_xattr_stream_name(char *stream_name,
 	*xattr_stream_name = xattr_stream_name_buf;
 
 	return xattr_stream_name_size;
+}
+
+
+static int cifsd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
+				struct file *file_out, loff_t pos_out,
+				size_t len)
+{
+	struct inode *inode_in = file_inode(file_in);
+	struct inode *inode_out = file_inode(file_out);
+	int ret;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+	ret = vfs_copy_file_range(file_in, pos_in, file_out, pos_out, len, 0);
+	/* do splice for the copy between different file systems */
+	if (ret != -EXDEV)
+		return ret;
+#endif
+
+	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
+		return -EISDIR;
+	if (!S_ISREG(inode_in->i_mode) || !S_ISREG(inode_out->i_mode))
+		return -EINVAL;
+
+	if (!(file_in->f_mode & FMODE_READ) ||
+	    !(file_out->f_mode & FMODE_WRITE))
+		return -EBADF;
+
+	if (len == 0)
+		return 0;
+
+	file_start_write(file_out);
+
+	/*
+	 * skip the verification of the range of data. it will be done
+	 * in do_splice_direct */
+	ret = do_splice_direct(file_in, &pos_in, file_out, &pos_out,
+			len > MAX_RW_COUNT? MAX_RW_COUNT : len, 0);
+	if (ret > 0) {
+		fsnotify_access(file_in);
+		add_rchar(current, ret);
+		fsnotify_modify(file_out);
+		add_wchar(current, ret);
+	}
+
+	inc_syscr(current);
+	inc_syscw(current);
+
+	file_end_write(file_out);
+	return ret;
+}
+
+int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
+				struct cifsd_file *src_fp,
+				struct cifsd_file *dst_fp,
+				struct srv_copychunk *chunks,
+				unsigned int chunk_count,
+				unsigned int *chunk_count_written,
+				unsigned int *chunk_size_written,
+				loff_t *total_size_written)
+{
+	unsigned int i;
+	loff_t src_off, dst_off, src_file_size;
+	size_t len;
+	int ret;
+
+	*chunk_count_written = 0;
+	*chunk_size_written = 0;
+	*total_size_written = 0;
+
+	if (!(src_fp->daccess & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
+			FILE_GENERIC_ALL_LE | FILE_MAXIMAL_ACCESS_LE |
+			FILE_EXECUTE_LE))) {
+		cifsd_err("no right to read(%s)\n", FP_FILENAME(src_fp));
+		return -EACCES;
+	}
+	if (!(dst_fp->daccess & (FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
+			FILE_GENERIC_WRITE_LE | FILE_GENERIC_ALL_LE |
+			FILE_MAXIMAL_ACCESS_LE))) {
+		cifsd_err("no right to write(%s)\n", FP_FILENAME(dst_fp));
+		return -EACCES;
+	}
+
+	if (src_fp->is_stream || dst_fp->is_stream)
+		return -EBADF;
+
+	if (oplocks_enable) {
+		smb_break_all_levII_oplock(work->sess->conn, dst_fp, 1);
+	}
+
+	for (i = 0; i < chunk_count; i++) {
+		src_off = le64_to_cpu(chunks[i].SourceOffset);
+		dst_off = le64_to_cpu(chunks[i].TargetOffset);
+		len = le32_to_cpu(chunks[i].Length);
+
+		if (check_lock_range(src_fp->filp, src_off,
+				src_off + len - 1, READ))
+			return -EAGAIN;
+		if (check_lock_range(dst_fp->filp, dst_off,
+				dst_off + len - 1, WRITE))
+			return -EAGAIN;
+	}
+
+	src_file_size = i_size_read(file_inode(src_fp->filp));
+
+	for (i = 0; i < chunk_count; i++) {
+		src_off = le64_to_cpu(chunks[i].SourceOffset);
+		dst_off = le64_to_cpu(chunks[i].TargetOffset);
+		len = le32_to_cpu(chunks[i].Length);
+
+		if (src_off + len > src_file_size)
+			return -E2BIG;
+
+		ret = cifsd_vfs_copy_file_range(src_fp->filp, src_off,
+				dst_fp->filp, dst_off, len);
+		if (ret < 0)
+			return ret;
+
+		*chunk_count_written += 1;
+		*total_size_written += ret;
+	}
+	return 0;
 }
