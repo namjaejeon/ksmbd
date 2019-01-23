@@ -6202,6 +6202,11 @@ int smb2_ioctl(struct cifsd_work *work)
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
 
+	if (req->Flags != cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL)) {
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		goto out;
+	}
+
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
 	out_buf_len = min(NETLINK_CIFSD_MAX_PAYLOAD, out_buf_len);

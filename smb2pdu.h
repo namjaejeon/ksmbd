@@ -733,6 +733,8 @@ struct smb2_write_rsp {
 	__u8   Buffer[1];
 } __packed;
 
+#define SMB2_0_IOCTL_IS_FSCTL 0x00000001
+
 struct smb2_ioctl_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 57 */
