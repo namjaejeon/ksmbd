@@ -172,7 +172,6 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 void cifsd_session_register(struct cifsd_tcp_conn *conn,
 			    struct cifsd_session *sess)
 {
-	sess->valid = 1;
 	sess->conn = conn;
 	list_add(&sess->sessions_entry, &conn->sessions);
 }
@@ -202,7 +201,7 @@ struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
 
 	list_for_each_entry(sess, &conn->sessions, sessions_entry) {
 		if (cifsd_session_id_match(sess, id))
-			return (sess->valid == 1) ? sess : NULL;
+			return sess;
 	}
 	return NULL;
 }
@@ -260,7 +259,6 @@ static struct cifsd_session *__session_create(int protocol)
 	INIT_LIST_HEAD(&sess->cifsd_chann_list);
 	INIT_LIST_HEAD(&sess->rpc_handle_list);
 	sess->sequence_number = 1;
-	sess->valid = 1;
 
 	switch (protocol) {
 	case CIFDS_SESSION_FLAG_SMB1:

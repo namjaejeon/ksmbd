@@ -227,7 +227,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-		    FILE_GENERIC_ALL_LE))) {
+		    FILE_GENERIC_ALL_LE | FILE_EXECUTE))) {
 			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
 			return -EACCES;
 		}
@@ -1381,8 +1381,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	sess_id = sess == NULL ? 0 : sess->id;
 	id = cifsd_get_unused_id(&sess->fidtable);
-	if (id < 0)
+	if (id < 0) {
+		err = -EBADF;
 		goto err_out3;
+	}
 
 	cifsd_debug("allocate volatile id : %d\n", id);
 	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
@@ -1393,8 +1395,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	}
 
 	fp->f_ci = ci = cifsd_inode_get(fp);
-	if (!ci)
+	if (!ci) {
+		err = -ENOMEM;
 		goto err_out1;
+	}
 
 	if (flags & O_TRUNC) {
 		if (oplocks_enable && fexist)
@@ -1409,8 +1413,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 err_out:
 	list_del(&fp->node);
-	if (ci && atomic_dec_and_test(&ci->m_count))
-		cifsd_inode_free(ci);
+	if (ci)
+		cifsd_inode_put(ci);
 err_out1:
 	delete_id_from_fidtable(sess, id);
 err_out2:

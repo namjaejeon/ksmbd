@@ -1068,6 +1068,13 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 	return ci;
 }
 
+void cifsd_inode_put(struct cifsd_inode *ci)
+{
+	if (atomic_dec_and_test(&ci->m_count)) {
+		cifsd_inode_free(ci);
+	}
+}
+
 void cifsd_inode_free(struct cifsd_inode *ci)
 {
 	cifsd_inode_unhash(ci);

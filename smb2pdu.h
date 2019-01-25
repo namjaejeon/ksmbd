@@ -442,6 +442,7 @@ struct smb2_tree_disconnect_rsp {
 #define	FILE_OPEN_IF_LE			cpu_to_le32(0x00000003)
 #define FILE_OVERWRITE_LE		cpu_to_le32(0x00000004)
 #define FILE_OVERWRITE_IF_LE		cpu_to_le32(0x00000005)
+#define FILE_CREATE_MASK_LE		cpu_to_le32(0x00000007)
 
 #define FILE_READ_RIGHTS_LE (FILE_READ_DATA_LE | FILE_READ_EA_LE \
 			| FILE_READ_ATTRIBUTES_LE)
@@ -1396,6 +1397,7 @@ extern void smb3_preauth_hash_rsp(struct cifsd_work *work);
 extern int smb3_is_transform_hdr(void *buf);
 extern int smb3_decrypt_req(struct cifsd_work *work);
 extern int smb3_encrypt_resp(struct cifsd_work *work);
+extern int smb3_final_sess_setup_resp(struct cifsd_work *work);
 
 /* smb2 misc functions */
 extern int smb2_check_message(struct cifsd_work *work);

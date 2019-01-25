@@ -2589,8 +2589,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -4898,8 +4897,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}
@@ -5822,7 +5820,7 @@ static int find_first(struct cifsd_work *work)
 				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
-	if (!*srch_ptr || !strcmp(srch_ptr, "*")) {
+	if (!*srch_ptr || is_asterik(srch_ptr)) {
 		rc = cifsd_populate_dot_dotdot_entries(conn,
 						req_params->InformationLevel,
 						dir_fp,
@@ -5894,7 +5892,7 @@ static int find_first(struct cifsd_work *work)
 			continue;
 		}
 
-		if (is_matched(d_info.name, srch_ptr)) {
+		if (match_pattern(d_info.name, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
 						req_params->InformationLevel,
 						&d_info,
@@ -7934,8 +7932,7 @@ out:
 
 	if (err && fp) {
 		list_del(&fp->node);
-		if (atomic_dec_and_test(&fp->f_ci->m_count))
-			cifsd_inode_free(fp->f_ci);
+		cifsd_inode_put(fp->f_ci);
 		cifsd_close_id(&sess->fidtable, fp->volatile_id);
 		delete_id_from_fidtable(sess, fp->volatile_id);
 	}

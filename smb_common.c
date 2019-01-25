@@ -40,12 +40,6 @@ static struct smb_protocol smb_protos[] = {
 	},
 #endif
 	{
-		SMB311_PROT,
-		"\2SMB 3.1.1",
-		"SMB3_11",
-		SMB311_PROT_ID
-	},
-	{
 		SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
@@ -74,6 +68,12 @@ static struct smb_protocol smb_protos[] = {
 		"\2SMB 3.02",
 		"SMB3_02",
 		SMB302_PROT_ID
+	},
+	{
+		SMB311_PROT,
+		"\2SMB 3.1.1",
+		"SMB3_11",
+		SMB311_PROT_ID
 	},
 };
 
@@ -315,7 +315,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
 			else
 				d_info->name = "..";
 
-			if (!is_matched(d_info->name, search_pattern)) {
+			if (!match_pattern(d_info->name, search_pattern)) {
 				dir->dot_dotdot[i] = 1;
 				continue;
 			}
@@ -651,4 +651,9 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	spin_unlock(&curr_fp->f_ci->m_lock);
 
 	return rc;
+}
+
+bool is_asterik(char *p)
+{
+	return p && !strcmp("*", p);
 }
