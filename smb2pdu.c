@@ -2517,7 +2517,7 @@ int smb2_open(struct cifsd_work *work)
 					     xattr_stream_size);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_err("failed to find stream name in xattr, rc : %d\n",
+				cifsd_debug("failed to find stream name in xattr, rc : %d\n",
 						rc);
 				rc = -EBADF;
 				goto err_out;
@@ -3402,7 +3402,7 @@ static int buffer_check_err(int reqOutputBufferLength,
 						sizeof(struct smb2_hdr) - 4);
 			return -EINVAL;
 		} else {
-			cifsd_err("Buffer Overflow\n");
+			cifsd_debug("Buffer Overflow\n");
 			rsp->hdr.Status = NT_STATUS_BUFFER_OVERFLOW;
 			rsp->hdr.smb2_buf_length = cpu_to_be32(
 						sizeof(struct smb2_hdr) - 4
