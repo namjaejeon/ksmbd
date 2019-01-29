@@ -5710,7 +5710,8 @@ int smb2_cancel(struct cifsd_work *work)
 			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
 					hdr->Id.AsyncId, chdr->Command);
 		} else {
-			if (chdr->MessageId != hdr->MessageId)
+			if (chdr->MessageId != hdr->MessageId ||
+				cancel_work == work)
 				continue;
 			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
 				hdr->MessageId, chdr->Command);
@@ -5722,7 +5723,8 @@ int smb2_cancel(struct cifsd_work *work)
 
 	if (canceled) {
 		cancel_work->state = WORK_STATE_CANCELLED;
-		cancel_work->cancel_fn(cancel_work->cancel_argv);
+		if (cancel_work->cancel_fn)
+			cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
 
 	/* For SMB2_CANCEL command itself send no response*/
