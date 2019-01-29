@@ -143,5 +143,8 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);
 unsigned int cifsd_max_msg_size(void);
 unsigned int cifsd_default_io_size(void);
 unsigned int cifsd_small_buffer_size(void);
+unsigned int cifsd_server_side_copy_max_chunk_count(void);
+unsigned int cifsd_server_side_copy_max_chunk_size(void);
+unsigned int cifsd_server_side_copy_max_total_size(void);
 bool is_asterik(char *p);
 #endif /* __SMB_COMMON_H__ */

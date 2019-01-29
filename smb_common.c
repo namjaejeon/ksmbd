@@ -92,6 +92,21 @@ unsigned int cifsd_small_buffer_size(void)
 	return 448;
 }
 
+unsigned int cifsd_server_side_copy_max_chunk_count(void)
+{
+	return 256;
+}
+
+unsigned int cifsd_server_side_copy_max_chunk_size(void)
+{
+	return (2U << 30) - 1;
+}
+
+unsigned int cifsd_server_side_copy_max_total_size(void)
+{
+	return (2U << 30) - 1;
+}
+
 inline int cifsd_min_protocol(void)
 {
 #ifdef CONFIG_CIFS_INSECURE_SERVER

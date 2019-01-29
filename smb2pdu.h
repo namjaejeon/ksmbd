@@ -733,6 +733,8 @@ struct smb2_write_rsp {
 	__u8   Buffer[1];
 } __packed;
 
+#define SMB2_0_IOCTL_IS_FSCTL 0x00000001
+
 struct smb2_ioctl_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 57 */
@@ -823,6 +825,32 @@ struct file_object_buf_type1_ioctl_rsp {
 	__u8 BirthVolumeId[16];
 	__u8 BirthObjectId[16];
 	__u8 DomainId[16];
+} __packed;
+
+struct resume_key_ioctl_rsp {
+	__le64 ResumeKey[3];
+	__le32 ContextLength;
+	__u8 Context[4]; /* ignored, Windows sets to 4 bytes of zero */
+} __packed;
+
+struct copychunk_ioctl_req {
+	__le64 ResumeKey[3];
+	__le32 ChunkCount;
+	__le32 Reserved;
+	__u8 Chunks[1]; /* array of srv_copychunk */
+} __packed;
+
+struct srv_copychunk {
+	__le64 SourceOffset;
+	__le64 TargetOffset;
+	__le32 Length;
+	__le32 Reserved;
+} __packed;
+
+struct copychunk_ioctl_rsp {
+	__le32 ChunksWritten;
+	__le32 ChunkBytesWritten;
+	__le32 TotalBytesWritten;
 } __packed;
 
 /* Completion Filter flags for Notify */
