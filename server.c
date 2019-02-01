@@ -159,11 +159,14 @@ andx_again:
 		}
 	}
 
+	mutex_unlock(&conn->srv_mutex);
 	ret = cmds->proc(work);
+	mutex_lock(&conn->srv_mutex);
+
 	if (ret < 0)
 		cifsd_debug("Failed to process %u [%d]\n", command, ret);
 	/* AndX commands - chained request can return positive values */
-	if (ret > 0) {
+	else if (ret > 0) {
 		command = ret;
 		*cmd = command;
 		goto andx_again;
