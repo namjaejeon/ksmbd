@@ -1496,7 +1496,6 @@ int smb2_tree_connect(struct cifsd_work *work)
 
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
-		kfree(treename);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
 		goto out_err1;
 	}
@@ -1532,8 +1531,6 @@ int smb2_tree_connect(struct cifsd_work *work)
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
 
-	kfree(treename);
-	kfree(name);
 out_err1:
 	rsp->StructureSize = cpu_to_le16(16);
 	rsp->Capabilities = 0;
@@ -1541,6 +1538,11 @@ out_err1:
 	/* default manual caching */
 	rsp->ShareFlags = SMB2_SHAREFLAG_MANUAL_CACHING;
 	inc_rfc1001_len(rsp, 16);
+
+	if (!IS_ERR(treename))
+		kfree(treename);
+	if (!IS_ERR(name))
+		kfree(name);
 
 	switch (status.ret) {
 	case CIFSD_TREE_CONN_STATUS_OK:
