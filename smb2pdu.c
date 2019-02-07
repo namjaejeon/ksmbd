@@ -5906,9 +5906,9 @@ int smb2_lock(struct cifsd_work *work)
 
 		lock_length = le64_to_cpu(lock_ele[i].Length);
 		if (lock_length > 0) {
-			if ((loff_t)lock_length >
+			if (lock_length >
 					OFFSET_MAX - flock->fl_start) {
-				cifsd_err("Invalid lock range requested\n");
+				cifsd_debug("Invalid lock range requested\n");
 				rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 				goto out;
 			}
@@ -5918,7 +5918,7 @@ int smb2_lock(struct cifsd_work *work)
 		flock->fl_end = flock->fl_start + lock_length;
 
 		if (flock->fl_end < flock->fl_start) {
-			cifsd_err("the end offset(%llx) is smaller than the start offset(%llx)\n",
+			cifsd_debug("the end offset(%llx) is smaller than the start offset(%llx)\n",
 				flock->fl_end, flock->fl_start);
 			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
@@ -6165,7 +6165,7 @@ out:
 		kfree(smb_lock);
 	}
 out2:
-	cifsd_err("failed in taking lock(flags : %x)\n", flags);
+	cifsd_debug("failed in taking lock(flags : %x)\n", flags);
 	smb2_set_err_rsp(work);
 	return 0;
 }
