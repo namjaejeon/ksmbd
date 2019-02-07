@@ -321,7 +321,8 @@ int cifsd_acquire_tree_conn_id(struct cifsd_session *sess)
 
 void cifsd_release_tree_conn_id(struct cifsd_session *sess, int id)
 {
-	cifds_release_id(sess->tree_conn_ida, id);
+	if (id >= 0)
+		cifds_release_id(sess->tree_conn_ida, id);
 }
 
 int cifsd_init_session_table(void)
