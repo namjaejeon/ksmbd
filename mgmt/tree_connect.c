@@ -66,6 +66,8 @@ cifsd_tree_conn_connect(struct cifsd_session *sess, char *share_name)
 	return status;
 
 out_error:
+	if (tree_conn)
+		cifsd_release_tree_conn_id(sess, tree_conn->id);
 	cifsd_share_config_put(sc);
 	cifsd_free(tree_conn);
 	cifsd_free(resp);
