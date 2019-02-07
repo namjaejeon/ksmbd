@@ -69,10 +69,13 @@
 #define FSCTL_PIPE_TRANSCEIVE        0x0011C017 /* BB add struct */
 /* strange that the number for this op is not sequential with previous op */
 #define FSCTL_PIPE_WAIT              0x00110018 /* BB add struct */
+#define FSCTL_REQUEST_RESUME_KEY     0x00140078
 #define FSCTL_LMR_GET_LINK_TRACK_INF 0x001400E8 /* BB add struct */
 #define FSCTL_LMR_SET_LINK_TRACK_INF 0x001400EC /* BB add struct */
 #define FSCTL_VALIDATE_NEGOTIATE_INFO 0x00140204
 #define FSCTL_QUERY_NETWORK_INTERFACE_INFO 0x001401FC
+#define FSCTL_COPYCHUNK              0x001440F2
+#define FSCTL_COPYCHUNK_WRITE        0x001480F2
 
 #define IO_REPARSE_TAG_MOUNT_POINT   0xA0000003
 #define IO_REPARSE_TAG_HSM           0xC0000004

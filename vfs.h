@@ -132,6 +132,17 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname,
 		     struct cifsd_file *fp);
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size);
+
+struct srv_copychunk;
+int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
+				struct cifsd_file *src_fp,
+				struct cifsd_file *dst_fp,
+				struct srv_copychunk *chunks,
+				unsigned int chunk_count,
+				unsigned int *chunk_count_written,
+				unsigned int *chunk_size_written,
+				loff_t  *total_size_written);
+
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 const struct path *path,
 					 int flags,

@@ -2517,7 +2517,7 @@ int smb2_open(struct cifsd_work *work)
 					     xattr_stream_size);
 		if (rc < 0) {
 			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_err("failed to find stream name in xattr, rc : %d\n",
+				cifsd_debug("failed to find stream name in xattr, rc : %d\n",
 						rc);
 				rc = -EBADF;
 				goto err_out;
@@ -3402,7 +3402,7 @@ static int buffer_check_err(int reqOutputBufferLength,
 						sizeof(struct smb2_hdr) - 4);
 			return -EINVAL;
 		} else {
-			cifsd_err("Buffer Overflow\n");
+			cifsd_debug("Buffer Overflow\n");
 			rsp->hdr.Status = NT_STATUS_BUFFER_OVERFLOW;
 			rsp->hdr.smb2_buf_length = cpu_to_be32(
 						sizeof(struct smb2_hdr) - 4
@@ -5710,7 +5710,8 @@ int smb2_cancel(struct cifsd_work *work)
 			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
 					hdr->Id.AsyncId, chdr->Command);
 		} else {
-			if (chdr->MessageId != hdr->MessageId)
+			if (chdr->MessageId != hdr->MessageId ||
+				cancel_work == work)
 				continue;
 			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
 				hdr->MessageId, chdr->Command);
@@ -5722,7 +5723,8 @@ int smb2_cancel(struct cifsd_work *work)
 
 	if (canceled) {
 		cancel_work->state = WORK_STATE_CANCELLED;
-		cancel_work->cancel_fn(cancel_work->cancel_argv);
+		if (cancel_work->cancel_fn)
+			cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
 
 	/* For SMB2_CANCEL command itself send no response*/
@@ -6202,6 +6204,11 @@ int smb2_ioctl(struct cifsd_work *work)
 	if (id == -1)
 		id = le64_to_cpu(req->VolatileFileId);
 
+	if (req->Flags != cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL)) {
+		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
+		goto out;
+	}
+
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
 	out_buf_len = min(NETLINK_CIFSD_MAX_PAYLOAD, out_buf_len);
@@ -6430,12 +6437,157 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		break;
 	}
+	case FSCTL_REQUEST_RESUME_KEY:
+	{
+		struct resume_key_ioctl_rsp *key_rsp;
+		struct cifsd_file *fp;
+
+		if (out_buf_len < sizeof(*key_rsp)) {
+			req->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		fp = get_fp(work, le64_to_cpu(req->VolatileFileId),
+				le64_to_cpu(req->PersistentFileId));
+		if (!fp) {
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			goto out;
+		}
+
+		nbytes = sizeof(struct resume_key_ioctl_rsp);
+		key_rsp = (struct resume_key_ioctl_rsp *)&rsp->Buffer[0];
+		memset(key_rsp, 0, sizeof(*key_rsp));
+		key_rsp->ResumeKey[0] = req->VolatileFileId;
+		key_rsp->ResumeKey[1] = req->PersistentFileId;
+
+		rsp->PersistentFileId = req->PersistentFileId;
+		rsp->VolatileFileId = req->VolatileFileId;
+		break;
+	}
+	case FSCTL_COPYCHUNK:
+	case FSCTL_COPYCHUNK_WRITE:
+	{
+		struct copychunk_ioctl_req *ci_req;
+		struct copychunk_ioctl_rsp *ci_rsp;
+		struct cifsd_file *src_fp, *dst_fp;
+		struct srv_copychunk *chunks;
+		unsigned int i, chunk_count, chunk_count_written;
+		unsigned int chunk_size_written;
+		loff_t total_size_written;
+		int ret;
+
+		ci_req = (struct copychunk_ioctl_req *)&req->Buffer[0];
+		ci_rsp = (struct copychunk_ioctl_rsp *)&rsp->Buffer[0];
+
+		rsp->VolatileFileId = req->VolatileFileId;
+		rsp->PersistentFileId = req->PersistentFileId;
+		ci_rsp->ChunksWritten = cpu_to_le32(
+				cifsd_server_side_copy_max_chunk_count());
+		ci_rsp->ChunkBytesWritten = cpu_to_le32(
+				cifsd_server_side_copy_max_chunk_size());
+		ci_rsp->TotalBytesWritten = cpu_to_le32(
+				cifsd_server_side_copy_max_total_size());
+
+		nbytes = sizeof(struct copychunk_ioctl_rsp);
+		chunks = (struct srv_copychunk *)&ci_req->Chunks[0];
+		chunk_count = le32_to_cpu(ci_req->ChunkCount);
+		total_size_written = 0;
+
+		if (out_buf_len < sizeof(struct copychunk_ioctl_rsp)) {
+			req->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		/* verify the SRV_COPYCHUNK_COPY packet */
+		if (chunk_count > cifsd_server_side_copy_max_chunk_count() ||
+				le32_to_cpu(req->InputCount) <
+				offsetof(struct copychunk_ioctl_req, Chunks) +
+				chunk_count * sizeof(struct srv_copychunk)) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		for (i = 0; i < chunk_count; i++) {
+			if (le32_to_cpu(chunks[i].Length) == 0 ||
+					le32_to_cpu(chunks[i].Length) >
+					cifsd_server_side_copy_max_chunk_size())
+				break;
+			total_size_written += le32_to_cpu(chunks[i].Length);
+		}
+		if (i < chunk_count || total_size_written >
+				cifsd_server_side_copy_max_total_size()) {
+			rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			break;
+		}
+
+		src_fp = get_id_from_fidtable(work->sess,
+				le64_to_cpu(ci_req->ResumeKey[0]));
+		dst_fp = get_fp(work, le64_to_cpu(req->VolatileFileId),
+				le64_to_cpu(req->PersistentFileId));
+
+		if (!src_fp || src_fp->persistent_id !=
+				le64_to_cpu(ci_req->ResumeKey[1])) {
+			rsp->hdr.Status = NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+		if (!dst_fp) {
+			rsp->hdr.Status = NT_STATUS_FILE_CLOSED;
+			goto out;
+		}
+
+		/*
+		 * FILE_READ_DATA should only be included in
+		 * the FSCTL_COPYCHUNK case
+		 * */
+		if (cnt_code == FSCTL_COPYCHUNK && !(dst_fp->daccess &
+				(FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+			goto out;
+		} else if (cnt_code == FSCTL_COPYCHUNK_WRITE &&
+				dst_fp->daccess &
+				 (FILE_READ_DATA_LE |
+				FILE_GENERIC_READ_LE)) {
+			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+			goto out;
+		}
+
+		ret = cifsd_vfs_copy_file_ranges(work, src_fp, dst_fp,
+				chunks, chunk_count,
+				&chunk_count_written, &chunk_size_written,
+				&total_size_written);
+		if (ret < 0) {
+			if (ret == -EACCES) {
+				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
+				goto out;
+			}
+			if (ret == -EAGAIN)
+				rsp->hdr.Status = NT_STATUS_FILE_LOCK_CONFLICT;
+			else if (ret == -EBADF)
+				rsp->hdr.Status = NT_STATUS_INVALID_HANDLE;
+			else if (ret == -EFBIG || ret == -ENOSPC)
+				rsp->hdr.Status = NT_STATUS_DISK_FULL;
+			else if (ret == -EINVAL)
+				rsp->hdr.Status = NT_STATUS_INVALID_PARAMETER;
+			else if (ret == -EISDIR)
+				rsp->hdr.Status = NT_STATUS_FILE_IS_A_DIRECTORY;
+			else if (ret == -E2BIG)
+				rsp->hdr.Status = NT_STATUS_INVALID_VIEW_SIZE;
+			else
+				rsp->hdr.Status = NT_STATUS_UNEXPECTED_IO_ERROR;
+		}
+
+		ci_rsp->ChunksWritten = cpu_to_le32(chunk_count_written);
+		ci_rsp->ChunkBytesWritten = cpu_to_le32(chunk_size_written);
+		ci_rsp->TotalBytesWritten = cpu_to_le32(total_size_written);
+		break;
+	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		goto out;
 	}
+
 	rsp->CntCode = cpu_to_le32(cnt_code);
 	rsp->InputCount = cpu_to_le32(0);
 	rsp->InputOffset = cpu_to_le32(112);
