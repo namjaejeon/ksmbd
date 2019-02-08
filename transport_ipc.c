@@ -285,8 +285,13 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	ret = cifsd_set_netbios_name(req->netbios_name);
 	ret |= cifsd_set_server_string(req->server_string);
 	ret |= cifsd_set_work_group(req->work_group);
-	if (ret)
+	if (ret) {
+		cifsd_err("Server configuration error: %s %s %s\n",
+				req->netbios_name,
+				req->server_string,
+				req->work_group);
 		return ret;
+	}
 
 	if (req->min_prot[0]) {
 		ret = cifsd_lookup_protocol_idx(req->min_prot);

@@ -949,6 +949,7 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 					req->CaseInsensitivePasswordLength),
 				req->CaseSensitivePasswordLength -
 				CIFS_ENCPWD_SIZE, ntdomain);
+		kfree(ntdomain);
 		if (err) {
 			cifsd_err("authentication failed for user %s\n",
 					user_name(sess->user));

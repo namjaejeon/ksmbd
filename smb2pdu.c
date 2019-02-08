@@ -1496,7 +1496,6 @@ int smb2_tree_connect(struct cifsd_work *work)
 
 	name = extract_sharename(treename);
 	if (IS_ERR(name)) {
-		kfree(treename);
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
 		goto out_err1;
 	}
@@ -1532,8 +1531,6 @@ int smb2_tree_connect(struct cifsd_work *work)
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
 
-	kfree(treename);
-	kfree(name);
 out_err1:
 	rsp->StructureSize = cpu_to_le16(16);
 	rsp->Capabilities = 0;
@@ -1541,6 +1538,11 @@ out_err1:
 	/* default manual caching */
 	rsp->ShareFlags = SMB2_SHAREFLAG_MANUAL_CACHING;
 	inc_rfc1001_len(rsp, 16);
+
+	if (!IS_ERR(treename))
+		kfree(treename);
+	if (!IS_ERR(name))
+		kfree(name);
 
 	switch (status.ret) {
 	case CIFSD_TREE_CONN_STATUS_OK:
@@ -5904,9 +5906,9 @@ int smb2_lock(struct cifsd_work *work)
 
 		lock_length = le64_to_cpu(lock_ele[i].Length);
 		if (lock_length > 0) {
-			if ((loff_t)lock_length >
+			if (lock_length >
 					OFFSET_MAX - flock->fl_start) {
-				cifsd_err("Invalid lock range requested\n");
+				cifsd_debug("Invalid lock range requested\n");
 				rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 				goto out;
 			}
@@ -5916,7 +5918,7 @@ int smb2_lock(struct cifsd_work *work)
 		flock->fl_end = flock->fl_start + lock_length;
 
 		if (flock->fl_end < flock->fl_start) {
-			cifsd_err("the end offset(%llx) is smaller than the start offset(%llx)\n",
+			cifsd_debug("the end offset(%llx) is smaller than the start offset(%llx)\n",
 				flock->fl_end, flock->fl_start);
 			rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
 			goto out;
@@ -6163,7 +6165,7 @@ out:
 		kfree(smb_lock);
 	}
 out2:
-	cifsd_err("failed in taking lock(flags : %x)\n", flags);
+	cifsd_debug("failed in taking lock(flags : %x)\n", flags);
 	smb2_set_err_rsp(work);
 	return 0;
 }

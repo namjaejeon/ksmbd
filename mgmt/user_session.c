@@ -9,6 +9,7 @@
 
 #include "cifsd_ida.h"
 #include "user_session.h"
+#include "user_config.h"
 #include "tree_connect.h"
 #include "../transport_ipc.h"
 #include "../transport_tcp.h"
@@ -142,6 +143,9 @@ void cifsd_session_destroy(struct cifsd_session *sess)
 {
 	if (!sess)
 		return;
+
+	if (sess->user)
+		cifsd_free_user(sess->user);
 
 	cifsd_session_rpc_clear_list(sess);
 	free_channel_list(sess);
@@ -317,7 +321,8 @@ int cifsd_acquire_tree_conn_id(struct cifsd_session *sess)
 
 void cifsd_release_tree_conn_id(struct cifsd_session *sess, int id)
 {
-	cifds_release_id(sess->tree_conn_ida, id);
+	if (id >= 0)
+		cifds_release_id(sess->tree_conn_ida, id);
 }
 
 int cifsd_init_session_table(void)
