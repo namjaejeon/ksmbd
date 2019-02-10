@@ -24,7 +24,19 @@ struct cifsd_share_config {
 	atomic_t		refcount;
 	struct hlist_node	hlist;
 	struct work_struct	free_work;
+	int			create_mask;
+	int			directory_mask;
 };
+
+static inline int share_config_create_mask(struct cifsd_share_config *share)
+{
+	return share->create_mask;
+}
+
+static inline int share_config_directory_mask(struct cifsd_share_config *share)
+{
+	return share->directory_mask;
+}
 
 static inline int test_share_config_flag(struct cifsd_share_config *share,
 					 int flag)
