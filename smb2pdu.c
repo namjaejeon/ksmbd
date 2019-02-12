@@ -5830,39 +5830,23 @@ int smb2_lock(struct cifsd_work *work)
 		switch (flags) {
 		case SMB2_LOCKFLAG_SHARED:
 			cifsd_debug("received shared request\n");
-			if (!(filp->f_mode & FMODE_READ)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLKW;
 			flock->fl_type = F_RDLCK;
 			flock->fl_flags |= FL_SLEEP;
 			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE:
 			cifsd_debug("received exclusive request\n");
-			if (!(filp->f_mode & FMODE_WRITE)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLKW;
 			flock->fl_type = F_WRLCK;
 			flock->fl_flags |= FL_SLEEP;
 			break;
 		case SMB2_LOCKFLAG_SHARED|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
 			cifsd_debug("received shared & fail immediately request\n");
-			if (!(filp->f_mode & FMODE_READ)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLK;
 			flock->fl_type = F_RDLCK;
 			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
 			cifsd_debug("received exclusive & fail immediately request\n");
-			if (!(filp->f_mode & FMODE_WRITE)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLK;
 			flock->fl_type = F_WRLCK;
 			break;
