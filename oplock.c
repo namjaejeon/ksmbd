@@ -1551,8 +1551,7 @@ struct create_context *smb2_find_context_vals(void *open_req, char *str)
 		if (val < 4)
 			return ERR_PTR(-EINVAL);
 
-		val = le32_to_cpu(cc->DataLength);
-		if (val != 0 && strcmp(name, str) == 0)
+		if (strcmp(name, str) == 0)
 			return cc;
 		next = le32_to_cpu(cc->Next);
 	} while (next != 0);
