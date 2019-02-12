@@ -2905,6 +2905,8 @@ err_out1:
 		if (volatile_id >= 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
+			if (persistent_id >= 0)
+				close_persistent_id(persistent_id);
 		}
 		if (filp && !IS_ERR(filp))
 			filp_close(filp, (struct files_struct *)filp);
