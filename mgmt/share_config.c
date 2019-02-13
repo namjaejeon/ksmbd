@@ -148,6 +148,8 @@ static struct cifsd_share_config *share_config_request(char *name)
 	if (!test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE)) {
 		share->path = kstrdup(CIFSD_SHARE_CONFIG_PATH(resp),
 				      GFP_KERNEL);
+		share->create_mask = resp->create_mask;
+		share->directory_mask = resp->directory_mask;
 		ret = parse_veto_list(share,
 				      CIFSD_SHARE_CONFIG_VETO_LIST(resp),
 				      resp->veto_list_sz);

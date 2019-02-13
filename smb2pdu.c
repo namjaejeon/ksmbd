@@ -2049,7 +2049,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path;
-	struct cifsd_share_config *share;
+	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct cifsd_inode *ci = NULL, *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL;
@@ -2072,7 +2072,6 @@ int smb2_open(struct cifsd_work *work)
 	bool file_present = false, created = false;
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
-	unsigned int tree_id;
 	u64 time;
 
 	req = (struct smb2_create_req *)REQUEST_BUF(work);
@@ -2096,22 +2095,12 @@ int smb2_open(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	if (test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_PIPE)) {
+	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE)) {
 		cifsd_debug("IPC pipe create request\n");
 		return create_smb2_pipe(work);
 	}
 
-	tree_id = req->hdr.Id.SyncId.TreeId;
 	if (req->NameLength) {
-		struct cifsd_tree_connect *tree_conn;
-
-		tree_conn = cifsd_tree_conn_lookup(sess, tree_id);
-		if (!tree_conn) {
-			rc = -ENOENT;
-			goto err_out1;
-		}
-
 		if ((req->CreateOptions & FILE_DIRECTORY_FILE_LE) &&
 			*(char *)req->Buffer == '\\') {
 			cifsd_err("not allow directory name included leadning slash\n");
@@ -2119,7 +2108,7 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out1;
 		}
 
-		name = smb2_get_name(tree_conn->share_conf,
+		name = smb2_get_name(share,
 				     req->Buffer,
 				     req->NameLength,
 				     work->conn->local_nls);
@@ -2130,13 +2119,6 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out1;
 		}
 	} else {
-		share = tcon->share_conf;
-		if (!share) {
-			rsp->hdr.Status = NT_STATUS_NO_MEMORY;
-			rc = -ENOMEM;
-			goto err_out1;
-		}
-
 		len = strlen(share->path);
 		cifsd_debug("[%s] %d\n", __func__, len);
 		name = kmalloc(len + 1, GFP_KERNEL);
@@ -2161,7 +2143,7 @@ int smb2_open(struct cifsd_work *work)
 	if (rc < 0)
 		goto err_out1;
 
-	if (cifsd_share_veto_filename(tcon->share_conf, name)) {
+	if (cifsd_share_veto_filename(share, name)) {
 		rc = -ENOENT;
 		cifsd_debug("file(%s) open is not allowed by setting as veto file\n",
 			name);
@@ -2384,7 +2366,7 @@ int smb2_open(struct cifsd_work *work)
 			cifsd_debug("file does not exist, so creating\n");
 			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 				cifsd_debug("creating directory\n");
-				mode = 00777 & ~current_umask();
+				mode = share_config_directory_mask(share);
 				rc = cifsd_vfs_mkdir(name, mode);
 				if (rc) {
 					rsp->hdr.Status = cpu_to_le32(
@@ -2396,7 +2378,7 @@ int smb2_open(struct cifsd_work *work)
 				}
 			} else {
 				cifsd_debug("creating regular file\n");
-				mode = 00666 & ~current_umask();
+				mode = share_config_create_mask(share);
 				rc = cifsd_vfs_create(name, mode);
 				if (rc) {
 					rsp->hdr.Status =
@@ -2639,7 +2621,8 @@ int smb2_open(struct cifsd_work *work)
 		}
 
 		rc = smb_grant_oplock(work, req_op_level,
-			persistent_id, fp, tree_id, lc, share_ret);
+			persistent_id, fp, req->hdr.Id.SyncId.TreeId,
+			lc, share_ret);
 		if (rc < 0)
 			goto err_out;
 	}
@@ -2922,6 +2905,8 @@ err_out1:
 		if (volatile_id >= 0) {
 			delete_id_from_fidtable(sess, volatile_id);
 			cifsd_close_id(&sess->fidtable, volatile_id);
+			if (persistent_id >= 0)
+				close_persistent_id(persistent_id);
 		}
 		if (filp && !IS_ERR(filp))
 			filp_close(filp, (struct files_struct *)filp);
@@ -4092,25 +4077,17 @@ static inline int fsTypeSearch(struct fs_type_info fs_type[],
  * TODO: need to implement STATUS_INFO_LENGTH_MISMATCH error handling
  */
 static int smb2_get_info_filesystem(struct cifsd_session *sess,
-	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp,
-	void *rsp_org)
+	struct cifsd_share_config *share, struct smb2_query_info_req *req,
+	struct smb2_query_info_rsp *rsp, void *rsp_org)
 {
 	struct cifsd_tcp_conn *conn = sess->conn;
-	struct cifsd_tree_connect *tree_conn;
 	int fsinfoclass = 0;
 	struct kstatfs stfs;
-	struct cifsd_share_config *share;
 	struct path path;
 	int rc = 0, len;
 	int fs_infoclass_size = 0;
 	int fs_type_idx;
 
-	tree_conn = cifsd_tree_conn_lookup(sess,
-					   req->hdr.Id.SyncId.TreeId);
-	if (!tree_conn)
-		return -ENOENT;
-
-	share = tree_conn->share_conf;
 	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
 		cifsd_err("cannot create vfs path\n");
@@ -4417,7 +4394,8 @@ int smb2_query_info(struct cifsd_work *work)
 		break;
 	case SMB2_O_INFO_FILESYSTEM:
 		cifsd_debug("GOT SMB2_O_INFO_FILESYSTEM\n");
-		rc = smb2_get_info_filesystem(sess, req, rsp, (void *)rsp_org);
+		rc = smb2_get_info_filesystem(sess, work->tcon->share_conf,
+			req, rsp, (void *)rsp_org);
 		break;
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
@@ -5852,39 +5830,23 @@ int smb2_lock(struct cifsd_work *work)
 		switch (flags) {
 		case SMB2_LOCKFLAG_SHARED:
 			cifsd_debug("received shared request\n");
-			if (!(filp->f_mode & FMODE_READ)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLKW;
 			flock->fl_type = F_RDLCK;
 			flock->fl_flags |= FL_SLEEP;
 			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE:
 			cifsd_debug("received exclusive request\n");
-			if (!(filp->f_mode & FMODE_WRITE)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLKW;
 			flock->fl_type = F_WRLCK;
 			flock->fl_flags |= FL_SLEEP;
 			break;
 		case SMB2_LOCKFLAG_SHARED|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
 			cifsd_debug("received shared & fail immediately request\n");
-			if (!(filp->f_mode & FMODE_READ)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLK;
 			flock->fl_type = F_RDLCK;
 			break;
 		case SMB2_LOCKFLAG_EXCLUSIVE|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
 			cifsd_debug("received exclusive & fail immediately request\n");
-			if (!(filp->f_mode & FMODE_WRITE)) {
-				rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
-				goto out;
-			}
 			cmd = F_SETLK;
 			flock->fl_type = F_WRLCK;
 			break;
