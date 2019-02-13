@@ -180,6 +180,7 @@ enum CIFSD_TREE_CONN_STATUS {
 #define CIFSD_SHARE_FLAG_STORE_DOS_ATTRS	(1 << 6)
 #define CIFSD_SHARE_FLAG_OPLOCKS		(1 << 7)
 #define CIFSD_SHARE_FLAG_PIPE			(1 << 8)
+#define CIFSD_SHARE_FLAG_HIDE_DOT_FILES		(1 << 9)
 
 /*
  * Tree connect request flags.
