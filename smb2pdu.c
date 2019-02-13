@@ -3296,6 +3296,16 @@ int smb2_query_dir(struct cifsd_work *work)
 		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
 			continue;
 
+		/*
+		 * Hide dot files if share flags is set to
+		 * CIFSD_SHARE_FLAG_HIDE_DOT_FILES
+		 */
+		if (test_share_config_flag(share,
+				CIFSD_SHARE_FLAG_HIDE_DOT_FILES)) {
+			if (d_info.name[0] == '.')
+				continue;
+		}
+
 		if (cifsd_share_veto_filename(share, d_info.name)) {
 			cifsd_debug("Veto filename %s\n", d_info.name);
 			continue;
