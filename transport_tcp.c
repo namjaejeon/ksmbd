@@ -89,7 +89,9 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	conn->need_neg = true;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
-	conn->local_nls = load_nls_default();
+	conn->local_nls = load_nls("utf8");
+	if (!conn->local_nls)
+		conn->local_nls = load_nls_default();
 	atomic_set(&conn->req_running, 0);
 	atomic_set(&conn->r_count, 0);
 	conn->max_credits = 0;

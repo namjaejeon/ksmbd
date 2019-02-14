@@ -2,6 +2,7 @@ config CIFS_SERVER
 	tristate "CIFS server support"
 	depends on INET
 	select NLS
+	select NLS_UTF8
 	select KEYS
 	select CRYPTO
 	select CRYPTO_MD4
