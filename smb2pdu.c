@@ -33,7 +33,7 @@
 #include "mgmt/cifsd_ida.h"
 
 bool multi_channel_enable;
-bool encryption_enable = true;
+bool encryption_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
