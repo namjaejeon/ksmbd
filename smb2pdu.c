@@ -35,61 +35,6 @@
 bool multi_channel_enable;
 bool encryption_enable = true;
 
-struct fs_type_info fs_type[] = {
-	{ "ADFS",	0xadf5},
-	{ "AFFS",	0xadff},
-	{ "AFS",	0x5346414F},
-	{ "AUTOFS",	0x0187},
-	{ "CODA",	0x73757245},
-
-	{ "CRAMFS",	0x28cd3d45},
-	{ "CRAMFSW",	0x453dcd28},
-	{ "DEBUGFS",	0x64626720},
-	{ "SECURITYFS",	0x73636673},
-	{ "SELINUX",	0xf97cff8c},
-
-	{ "SMACK",	0x43415d53},
-	{ "RAMFS",	0x858458f6},
-	{ "TMPFS",	0x01021994},
-	{ "HUGETLBFS",	0x958458f6},
-	{ "SQUASHFS",	0x73717368},
-
-	{ "ECRYPTFS",	0xf15f},
-	{ "EFS",	0x414A53},
-	{ "EXT2",	0xEF53},
-	{ "EXT3",	0xEF53},
-	{ "XENFS",	0xabba1974},
-
-	{ "EXT4",	0xEF53},
-	{ "BTRFS",	0x9123683E},
-	{ "NILFS",	0x3434},
-	{ "F2FS",	0xF2F52010},
-	{ "HPFS",	0xf995e849},
-
-	{ "ISOFS",	0x9660},
-	{ "JFFS2",	0x72b6},
-	{ "PSTOREFS",	0x6165676C},
-	{ "EFIVARFS",	0xde5e81e4},
-	{ "HOSTFS",	0x00c0ffee},
-
-	{ "MINIX",	0x137F},        /* minix v1 fs, 14 char names */
-	{ "MINIX_2",	0x138F},        /* minix v1 fs, 30 char names */
-	{ "MINIX2",	0x2468},        /* minix v2 fs, 14 char names */
-	{ "MINIX2_2",	0x2478},        /* minix v2 fs, 30 char names */
-	{ "MINIX3",	0x4d5a},        /* minix v3 fs, 60 char names */
-
-	{ "MSDOS",	0x4d44},        /* MD */
-	{ "NCP",	0x564c},
-	{ "NFS",	0x6969},
-	{ "OPENPROM",	0x9fa1},
-	{ "QNX4",	0x002f},        /* qnx4 fs detection */
-
-	{ "QNX6",	0x68191122},    /* qnx6 fs detection */
-	{ "REISERFS",	0x52654973},    /* used by gcc */
-	{ "SMB",	0x517B},
-	{ "CGROUP",	0x27e0eb},
-	};
-
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	TCP server instance of connection
@@ -4060,26 +4005,6 @@ out:
 }
 
 /**
- * fsTypeSearch() - get fs type string from fs magic number
- * @fs_type:		array of fs types
- * @magic_number:	match the magic number for fs type
- * @SIZE:		size of fs type table
- *
- * Return:	index of fs type
- */
-static inline int fsTypeSearch(struct fs_type_info fs_type[],
-					int magic_number, int SIZE)
-{
-	int i;
-	int dfault = 40;	/* setting MSDOS as default files system*/
-	for (i = 0; i < SIZE; i++) {
-		if (fs_type[i].magic_number == magic_number)
-			return i;
-	}
-	return dfault;
-}
-
-/**
  * smb2_get_info_filesystem() - handler for smb2 query info command
  * @work:	smb work containing query info request buffer
  *
@@ -4096,7 +4021,6 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 	struct path path;
 	int rc = 0, len;
 	int fs_infoclass_size = 0;
-	int fs_type_idx;
 
 	rc = cifsd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
@@ -4135,12 +4059,9 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			fs_info->Attributes = cpu_to_le32(0x0001002f);
 			fs_info->MaxPathNameComponentLength =
 				cpu_to_le32(stfs.f_namelen);
-			fs_type_idx = fsTypeSearch(fs_type, stfs.f_type,
-							FS_TYPE_SUPPORT_SIZE);
 			len = smbConvertToUTF16((__le16 *)
-							fs_info->FileSystemName,
-					fs_type[fs_type_idx].fs_name, PATH_MAX,
-							conn->local_nls, 0);
+					fs_info->FileSystemName, "NTFS",
+					PATH_MAX, conn->local_nls, 0);
 			len = len * 2;
 			fs_info->FileSystemNameLen = len;
 			rsp->OutputBufferLength = cpu_to_le32(sizeof
