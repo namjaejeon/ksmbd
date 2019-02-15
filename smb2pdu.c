@@ -5802,8 +5802,7 @@ int smb2_lock(struct cifsd_work *work)
 			if (lock_length >
 					OFFSET_MAX - flock->fl_start) {
 				cifsd_debug("Invalid lock range requested\n");
-				rsp->hdr.Status = NT_STATUS_INVALID_LOCK_RANGE;
-				goto out;
+				lock_length = OFFSET_MAX - flock->fl_start;
 			}
 		} else
 			lock_length = 0;
