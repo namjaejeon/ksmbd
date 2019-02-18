@@ -2918,9 +2918,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
-						d_info->name,
-						&(fbdinfo->ShortName[0]));
+		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
@@ -3003,9 +3001,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
-		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
-						d_info->name,
-						&(fibdinfo->ShortName[0]));
+		fibdinfo->ShortNameLength = 0;
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 
