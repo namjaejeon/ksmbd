@@ -451,6 +451,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	else
 		goto out_err;
 
+	status.ret = 0;
 	share = status.tree_conn->share_conf;
 	rsp->WordCount = 7;
 	rsp->OptionalSupport = 0;
@@ -475,15 +476,17 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
-		return rsp->AndXCommand; /* More processing required */
+		/* More processing required */
+		status.ret = rsp->AndXCommand;
+	} else {
+		rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	}
-	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 	kfree(treename);
 	kfree(dev_type);
 	kfree(name);
 
-	return 0;
+	return status.ret;
 
 out_err:
 	if (!IS_ERR(treename))
