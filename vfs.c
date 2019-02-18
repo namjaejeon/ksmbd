@@ -176,6 +176,8 @@ static int check_lock_range(struct file *filp,
 		return 0;
 
 	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
+		if (filp == flock->fl_owner)
+			continue;
 		/* check conflict locks */
 		if (flock->fl_end >= start && end >= flock->fl_start) {
 			if (flock->fl_type == F_RDLCK) {
