@@ -454,7 +454,7 @@ static ssize_t stats_show(struct class *class,
 	return sz;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static CLASS_ATTR_RO(stats);
 
 static struct attribute *cifsd_control_class_attrs[] = {
