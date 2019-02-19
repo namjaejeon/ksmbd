@@ -1320,10 +1320,10 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			if (!sess->sign && ((req->SecurityMode &
+			if (!sess->sign && sess->is_guest == false &&
+				((req->SecurityMode &
 				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
-				(conn->sign || server_conf.enforced_signing) ||
-				(conn->dialect >= SMB30_PROT_ID)))
+				(conn->sign || server_conf.enforced_signing)))
 				sess->sign = true;
 
 			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
