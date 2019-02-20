@@ -38,13 +38,13 @@ static struct smb_protocol smb_protos[] = {
 		"NT1",
 		SMB10_PROT_ID
 	},
-#endif
 	{
 		SMB2_PROT,
 		"\2SMB 2.002",
 		"SMB2_02",
 		SMB20_PROT_ID
 	},
+#endif
 	{
 		SMB21_PROT,
 		"\2SMB 2.1",
