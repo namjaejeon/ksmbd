@@ -2899,6 +2899,8 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			ffdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(ffdinfo->FileName, utfname, name_len);
 		ffdinfo->NextEntryOffset = next_entry_offset;
@@ -2920,6 +2922,8 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			fbdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = next_entry_offset;
@@ -2939,6 +2943,8 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fdinfo = (FILE_DIRECTORY_INFO *)
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			fdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fdinfo->FileName, utfname, name_len);
 		fdinfo->NextEntryOffset = next_entry_offset;
@@ -2980,6 +2986,8 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
 		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			dinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->NextEntryOffset = next_entry_offset;
@@ -3004,6 +3012,8 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fibdinfo->ShortNameLength = 0;
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			fibdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fibdinfo->FileName, utfname, name_len);
 		fibdinfo->NextEntryOffset = next_entry_offset;
@@ -3184,6 +3194,15 @@ int smb2_query_dir(struct cifsd_work *work)
 			goto err_out;
 	}
 
+	/*
+	 * Hide dot files if share flags is set to
+	 * CIFSD_SHARE_FLAG_HIDE_DOT_FILES
+	 */
+	if (test_share_config_flag(share,
+				CIFSD_SHARE_FLAG_HIDE_DOT_FILES)) {
+		d_info.hide_dot_file = true;
+	}
+
 	d_info.name = NULL;
 	while (d_info.out_buf_len > 0) {
 		kfree(d_info.name);
@@ -3236,16 +3255,6 @@ int smb2_query_dir(struct cifsd_work *work)
 		/* dot and dotdot entries are already reserved */
 		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
 			continue;
-
-		/*
-		 * Hide dot files if share flags is set to
-		 * CIFSD_SHARE_FLAG_HIDE_DOT_FILES
-		 */
-		if (test_share_config_flag(share,
-				CIFSD_SHARE_FLAG_HIDE_DOT_FILES)) {
-			if (d_info.name[0] == '.')
-				continue;
-		}
 
 		if (cifsd_share_veto_filename(share, d_info.name)) {
 			cifsd_debug("Veto filename %s\n", d_info.name);
