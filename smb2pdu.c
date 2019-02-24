@@ -3281,7 +3281,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (d_info.out_buf_len < 0)
 		dir_fp->dirent_offset -= reclen;
 
-	if (!d_info.data_count) {
+	if (!d_info.data_count && d_info.out_buf_len >= 0) {
 		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
 			if (is_asterik(srch_ptr))
 				rsp->hdr.Status = STATUS_NO_MORE_FILES;
