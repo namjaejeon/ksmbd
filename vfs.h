@@ -118,7 +118,7 @@ int cifsd_vfs_mkdir(const char *name, umode_t mode);
 int cifsd_vfs_read(struct cifsd_work *work, struct cifsd_file *fp,
 		 size_t count, loff_t *pos);
 int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
-	char *buf, size_t count, loff_t *pos, bool fsync, ssize_t *written);
+	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written);
 int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		struct kstat *stat);
 int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
@@ -127,7 +127,7 @@ int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id);
 int cifsd_vfs_remove_file(char *name);
 int cifsd_vfs_link(const char *oldname, const char *newname);
 int cifsd_vfs_symlink(const char *name, const char *symname);
-int cifsd_vfs_readlink(struct path *path, char *buf, int len);
+int cifsd_vfs_readlink(struct path *path, char *buf, int lenp);
 int cifsd_vfs_rename(char *abs_oldname, char *abs_newname,
 		     struct cifsd_file *fp);
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
@@ -181,7 +181,7 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
-int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *buf);
+int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata);
 int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len);

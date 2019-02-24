@@ -27,8 +27,8 @@ static int check_smb1_hdr(struct smb_hdr *smb)
 		cifsd_debug("Bad protocol string signature header 0x%x\n",
 				*(unsigned int *)smb->Protocol);
 		return 1;
-	} else
-		cifsd_debug("got SMB\n");
+	}
+	cifsd_debug("got SMB\n");
 
 	/* if it's not a response then accept */
 	/* TODO : check for oplock break */

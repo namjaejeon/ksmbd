@@ -21,7 +21,7 @@ cifsd_tree_conn_connect(struct cifsd_session *sess, char *share_name)
 {
 	struct cifsd_tree_conn_status status = {-EINVAL, NULL};
 	struct cifsd_tree_connect_response *resp = NULL;
-	struct cifsd_share_config *sc = NULL;
+	struct cifsd_share_config *sc;
 	struct cifsd_tree_connect *tree_conn = NULL;
 	struct sockaddr *peer_addr;
 

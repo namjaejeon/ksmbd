@@ -11,7 +11,7 @@ struct cifsd_work;
 void *cifsd_alloc(size_t size);
 void cifsd_free(void *ptr);
 
-void cifsd_free_request(void *buffer);
+void cifsd_free_request(void *addr);
 void *cifsd_alloc_request(size_t size);
 void cifsd_free_response(void *buffer);
 void *cifsd_alloc_response(size_t size);

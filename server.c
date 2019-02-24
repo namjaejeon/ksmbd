@@ -144,7 +144,7 @@ andx_again:
 	}
 
 	cmds = &conn->cmds[command];
-	if (cmds->proc == NULL) {
+	if (!cmds->proc) {
 		cifsd_err("*** not implemented yet cmd = %x\n", command);
 		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
 		return TCP_HANDLER_CONTINUE;
@@ -437,7 +437,7 @@ static ssize_t stats_show(struct class *class,
 	 * so user space will know what to do.
 	 */
 	static int stats_version = 2;
-	static char *state[] = {
+	static const char * const state[] = {
 		"startup",
 		"running",
 		"reset",
