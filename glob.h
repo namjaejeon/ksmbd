@@ -206,6 +206,7 @@ struct cifsd_work {
 struct cifsd_dir_info {
 	char *name;
 	char *bufptr;
+	bool hide_dot_file;
 	int out_buf_len;
 	int num_entry;
 	int data_count;

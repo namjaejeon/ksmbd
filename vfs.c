@@ -50,7 +50,9 @@ int cifsd_vfs_create(const char *name, umode_t mode)
 	dentry = kern_path_create(AT_FDCWD, name, &path, 0);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
-		cifsd_err("path create failed for %s, err %d\n", name, err);
+		if (err != -ENOENT)
+			cifsd_err("path create failed for %s, err %d\n",
+				name, err);
 		return err;
 	}
 
