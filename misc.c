@@ -226,7 +226,7 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && strlen(filename) != len) {
 		strcpy(ab_pathname, &filename[len]);
-		convert_delimiter(ab_pathname, 1);
+		cifsd_conv_path_to_windows(ab_pathname);
 	}
 
 	return ab_pathname;
@@ -243,23 +243,23 @@ int get_nlink(struct kstat *st)
 	return nlink;
 }
 
-/**
- * convert_delimiter() - convert windows path to unix format or unix format
- *			 to windos path
- * @path:	path to be converted
- * @flags:	1 is to convert windows, 2 is to convert unix
- *
- */
-void convert_delimiter(char *path, int flags)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+static void strreplace(char *s, char old, char new)
 {
-	char *pos = path;
+	for (; *s; ++s)
+		if (*s == old)
+			*s = new;
+}
+#endif
 
-	if (flags == 1)
-		while ((pos = strchr(pos, '/')))
-			*pos = '\\';
-	else
-		while ((pos = strchr(pos, '\\')))
-			*pos = '/';
+void cifsd_conv_path_to_unix(char *path)
+{
+	strreplace(path, '\\', '/');
+}
+
+void cifsd_conv_path_to_windows(char *path)
+{
+	strreplace(path, '/', '\\');
 }
 
 /**

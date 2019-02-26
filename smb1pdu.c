@@ -584,7 +584,7 @@ smb_get_name(struct cifsd_share_config *share, const char *src, const int maxlen
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name, 0);
+	cifsd_conv_path_to_unix(name);
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
 
@@ -645,7 +645,7 @@ static char *smb_get_dir_name(struct cifsd_share_config *share, const char *src,
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name, 0);
+	cifsd_conv_path_to_unix(name);
 
 	pattern_pos = strrchr(name, '/');
 
