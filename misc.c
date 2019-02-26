@@ -270,19 +270,17 @@ void convert_delimiter(char *path, int flags)
  */
 char *extract_sharename(char *treename)
 {
-	int len;
+	char *name = treename;
 	char *dst;
+	char *pos = strrchr(name, '\\');
 
-	/* skip double chars at the beginning */
-	while (strchr(treename, '\\'))
-		strsep(&treename, "\\");
-	len = strlen(treename);
+	if (pos)
+		name = (pos + 1);
 
 	/* caller has to free the memory */
-	dst = kstrndup(treename, len, GFP_KERNEL);
+	dst = kstrdup(name, GFP_KERNEL);
 	if (!dst)
 		return ERR_PTR(-ENOMEM);
-
 	return dst;
 }
 
