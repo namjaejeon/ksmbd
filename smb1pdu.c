@@ -2366,11 +2366,11 @@ int smb_nt_create_andx(struct cifsd_work *work)
 
 		if (!create_directory) {
 			mode |= S_IFREG;
-			err = cifsd_vfs_create(conv_name, mode);
+			err = cifsd_vfs_create(work, conv_name, mode);
 			if (err)
 				goto out;
 		} else {
-			err = cifsd_vfs_mkdir(conv_name, mode);
+			err = cifsd_vfs_mkdir(work, conv_name, mode);
 			if (err) {
 				cifsd_err("Can't create directory %s",
 					conv_name);
@@ -4758,7 +4758,7 @@ static int smb_posix_open(struct cifsd_work *work)
 			goto free_path;
 		}
 
-		err = cifsd_vfs_mkdir(name, mode);
+		err = cifsd_vfs_mkdir(work, name, mode);
 		if (err)
 			goto out;
 
@@ -4773,7 +4773,7 @@ static int smb_posix_open(struct cifsd_work *work)
 	}
 
 	if (!file_present && (posix_open_flags & O_CREAT)) {
-		err = cifsd_vfs_create(name, mode);
+		err = cifsd_vfs_create(work, name, mode);
 		if (err)
 			goto out;
 
@@ -7038,7 +7038,7 @@ static int create_dir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = cifsd_vfs_mkdir(name, mode);
+	err = cifsd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
@@ -7189,7 +7189,7 @@ int smb_mkdir(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = cifsd_vfs_mkdir(name, mode);
+	err = cifsd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
@@ -7787,7 +7787,7 @@ int smb_open_andx(struct cifsd_work *work)
 			mode &= ~S_IWUGO;
 
 		mode |= S_IFREG;
-		err = cifsd_vfs_create(name, mode);
+		err = cifsd_vfs_create(work, name, mode);
 		if (err)
 			goto out;
 
