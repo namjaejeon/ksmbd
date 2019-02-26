@@ -113,8 +113,8 @@ struct cifsd_fs_sector_size {
 	unsigned int optimal_io_size;
 };
 
-int cifsd_vfs_create(const char *name, umode_t mode);
-int cifsd_vfs_mkdir(const char *name, umode_t mode);
+int cifsd_vfs_create(struct cifsd_work *work, const char *name, umode_t mode);
+int cifsd_vfs_mkdir(struct cifsd_work *work, const char *name, umode_t mode);
 int cifsd_vfs_read(struct cifsd_work *work, struct cifsd_file *fp,
 		 size_t count, loff_t *pos);
 int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,

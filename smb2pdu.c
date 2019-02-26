@@ -2312,7 +2312,7 @@ int smb2_open(struct cifsd_work *work)
 			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 				cifsd_debug("creating directory\n");
 				mode = share_config_directory_mask(share);
-				rc = cifsd_vfs_mkdir(name, mode);
+				rc = cifsd_vfs_mkdir(work, name, mode);
 				if (rc) {
 					rsp->hdr.Status = cpu_to_le32(
 							NT_STATUS_DATA_ERROR);
@@ -2324,7 +2324,7 @@ int smb2_open(struct cifsd_work *work)
 			} else {
 				cifsd_debug("creating regular file\n");
 				mode = share_config_create_mask(share);
-				rc = cifsd_vfs_create(name, mode);
+				rc = cifsd_vfs_create(work, name, mode);
 				if (rc) {
 					rsp->hdr.Status =
 						NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -2618,11 +2618,6 @@ int smb2_open(struct cifsd_work *work)
 		}
 		file_info = FILE_CREATED;
 		rc = 0;
-	}
-
-	if (created) {
-		i_uid_write(FP_INODE(fp), user_uid(sess->user));
-		i_gid_write(FP_INODE(fp), user_gid(sess->user));
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
