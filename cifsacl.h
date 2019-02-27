@@ -111,7 +111,6 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-int compare_sids(const struct cifs_sid *ctsid, const struct cifs_sid *cwsid);
 int parse_sid(struct cifs_sid *psid, char *end_of_acl);
 void dump_ace(struct cifs_ace *pace, char *end_of_acl);
 int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,

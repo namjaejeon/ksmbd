@@ -165,8 +165,8 @@ sid_to_key_str(struct cifs_sid *sidptr, unsigned int type)
  * if the two SIDs (roughly equivalent to a UUID for a user or group) are
  * the same returns zero, if they do not match returns non-zero.
  */
-int
-compare_sids(const struct cifs_sid *ctsid, const struct cifs_sid *cwsid)
+static int compare_sids(const struct cifs_sid *ctsid,
+			const struct cifs_sid *cwsid)
 {
 	int i;
 	int num_subauth, num_sat, num_saw;
