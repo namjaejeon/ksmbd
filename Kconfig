@@ -3,7 +3,6 @@ config CIFS_SERVER
 	depends on INET
 	select NLS
 	select NLS_UTF8
-	select KEYS
 	select CRYPTO
 	select CRYPTO_MD4
 	select CRYPTO_MD5
@@ -28,3 +27,9 @@ config CIFS_INSECURE_SERVER
         help
 	  This enables deprecated insecure protocols dialects: SMB1/CIFS
 	  and SMB2.0
+
+config CIFSD_ACL
+        bool "Support for ACL"
+        depends on CIFS_SERVER && INET
+	select KEYS
+	default n
