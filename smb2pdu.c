@@ -4536,8 +4536,6 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 			     char *buffer,
 			     int buf_len)
 {
-	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
 	int rc = 0;
 	struct inode *inode;
 	struct cifs_ntsd *pntsd;
