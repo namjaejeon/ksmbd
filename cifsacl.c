@@ -990,7 +990,7 @@ int init_cifsd_idmap(void)
 	struct key *keyring;
 	int ret;
 
-	cifsd_err("Registering the %s key type\n",
+	cifsd_debug("Registering the %s key type\n",
 		cifsd_idmap_key_type.name);
 
 	/* create an override credential set with a special thread keyring in
@@ -1033,7 +1033,7 @@ int init_cifsd_idmap(void)
 	cred->jit_keyring = KEY_REQKEY_DEFL_THREAD_KEYRING;
 	root_cred = cred;
 
-	cifsd_err("cifs idmap keyring: %d\n", key_serial(keyring));
+	cifsd_debug("cifs idmap keyring: %d\n", key_serial(keyring));
 	return 0;
 
 failed_put_key:
@@ -1048,5 +1048,5 @@ void exit_cifsd_idmap(void)
 	key_revoke(root_cred->thread_keyring);
 	unregister_key_type(&cifsd_idmap_key_type);
 	put_cred(root_cred);
-	cifsd_err("Unregistered %s key type\n", cifsd_idmap_key_type.name);
+	cifsd_debug("Unregistered %s key type\n", cifsd_idmap_key_type.name);
 }
