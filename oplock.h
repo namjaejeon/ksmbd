@@ -94,7 +94,7 @@ struct oplock_break_info {
 };
 
 extern int smb_grant_oplock(struct cifsd_work *work, int req_op_level,
-		uint64_t id, struct cifsd_file *fp, __u16 Tid,
+		uint64_t pid, struct cifsd_file *fp, __u16 tid,
 		struct lease_ctx_info *lctx, int share_ret);
 extern void smb1_send_oplock_break_notification(struct work_struct *wk);
 extern void smb2_send_oplock_break_notification(struct work_struct *wk);
@@ -117,7 +117,7 @@ __u8 smb2_map_lease_to_oplock(__le32 lease_state);
 int lease_read_to_write(struct oplock_info *opinfo);
 
 /* Durable related functions */
-void create_durable_rsp_buf(char *buf);
+void create_durable_rsp_buf(char *cc);
 void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
 void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);

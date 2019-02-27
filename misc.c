@@ -60,7 +60,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 		debug_line[1 + (2 * j)] = ' ';
 	}
 	pr_cont(" | %s\n", debug_line);
-	return;
 }
 
 /**
@@ -226,7 +225,7 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && strlen(filename) != len) {
 		strcpy(ab_pathname, &filename[len]);
-		convert_delimiter(ab_pathname, 1);
+		cifsd_conv_path_to_windows(ab_pathname);
 	}
 
 	return ab_pathname;
@@ -243,23 +242,23 @@ int get_nlink(struct kstat *st)
 	return nlink;
 }
 
-/**
- * convert_delimiter() - convert windows path to unix format or unix format
- *			 to windos path
- * @path:	path to be converted
- * @flags:	1 is to convert windows, 2 is to convert unix
- *
- */
-void convert_delimiter(char *path, int flags)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
+static void strreplace(char *s, char old, char new)
 {
-	char *pos = path;
+	for (; *s; ++s)
+		if (*s == old)
+			*s = new;
+}
+#endif
 
-	if (flags == 1)
-		while ((pos = strchr(pos, '/')))
-			*pos = '\\';
-	else
-		while ((pos = strchr(pos, '\\')))
-			*pos = '/';
+void cifsd_conv_path_to_unix(char *path)
+{
+	strreplace(path, '\\', '/');
+}
+
+void cifsd_conv_path_to_windows(char *path)
+{
+	strreplace(path, '/', '\\');
 }
 
 /**
@@ -270,19 +269,17 @@ void convert_delimiter(char *path, int flags)
  */
 char *extract_sharename(char *treename)
 {
-	int len;
+	char *name = treename;
 	char *dst;
+	char *pos = strrchr(name, '\\');
 
-	/* skip double chars at the beginning */
-	while (strchr(treename, '\\'))
-		strsep(&treename, "\\");
-	len = strlen(treename);
+	if (pos)
+		name = (pos + 1);
 
 	/* caller has to free the memory */
-	dst = kstrndup(treename, len, GFP_KERNEL);
+	dst = kstrdup(name, GFP_KERNEL);
 	if (!dst)
 		return ERR_PTR(-ENOMEM);
-
 	return dst;
 }
 
@@ -302,7 +299,8 @@ char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 	len += strlen(name);
 
 	/* for '/' needed for smb2
-	 * as '/' is not present in beginning of name*/
+	 * as '/' is not present in beginning of name
+	 */
 	if (name[0] != '/')
 		len++;
 
@@ -310,10 +308,8 @@ char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 	cifsd_debug("new_name len = %d\n", len);
 	new_name = kmalloc(len + 1, GFP_KERNEL);
 
-	if (new_name == NULL) {
-		cifsd_debug("Failed to allocate memory\n");
+	if (!new_name)
 		return new_name;
-	}
 
 	memcpy(new_name, share->path, strlen(share->path));
 

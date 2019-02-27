@@ -134,13 +134,13 @@ int cifsd_init_buffer_pools(void)
 	work_cache = kmem_cache_create("cifsd_work_cache",
 					sizeof(struct cifsd_work), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
-	if (work_cache == NULL)
+	if (!work_cache)
 		goto out;
 
 	filp_cache = kmem_cache_create("cifsd_file_cache",
 					sizeof(struct cifsd_file), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
-	if (filp_cache == NULL)
+	if (!filp_cache)
 		goto out;
 
 	return 0;

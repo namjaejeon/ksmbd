@@ -534,7 +534,7 @@ enum SHARED_MODE_ERRORS {
 	FILE_DELETE_ERROR,
 };
 
-static const char *shared_mode_errors[] = {
+static const char * const shared_mode_errors[] = {
 	"Current access mode does not permit SHARE_DELETE",
 	"Current access mode does not permit SHARE_READ",
 	"Current access mode does not permit SHARE_WRITE",

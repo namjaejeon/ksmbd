@@ -184,6 +184,7 @@ int is_smb2_rsp(struct cifsd_work *work)
 int get_smb2_cmd_val(struct cifsd_work *work)
 {
 	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+
 	if (work->next_smb2_rcv_hdr_off)
 		rcv_hdr = (struct smb2_hdr *)((char *)rcv_hdr
 					+ work->next_smb2_rcv_hdr_off);
@@ -197,6 +198,7 @@ int get_smb2_cmd_val(struct cifsd_work *work)
 void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
+
 	if (work->next_smb2_rcv_hdr_off)
 		rsp_hdr = (struct smb2_hdr *)((char *)rsp_hdr
 					+ work->next_smb2_rsp_hdr_off);
@@ -251,7 +253,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
 	rsp->DialectRevision = cpu_to_le16(conn->dialect);
 	/* Not setting conn guid rsp->ServerGUID, as it
-	 * not used by client for identifying connection */
+	 * not used by client for identifying connection
+	 */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
 	rsp->MaxTransactSize = cifsd_max_msg_size();
@@ -297,10 +300,12 @@ void init_chained_smb2_rsp(struct cifsd_work *work)
 				  work->next_smb2_rsp_hdr_off);
 
 	/* Len of this response = updated RFC len - offset of previous cmd
-	   in the compound rsp */
+	 * in the compound rsp
+	 */
 
 	/* Storing the current local FID which may be needed by subsequent
-	   command in the compound request */
+	 * command in the compound request
+	 */
 	if (le16_to_cpu(req->Command) == SMB2_CREATE &&
 			le32_to_cpu(rsp->Status) == NT_STATUS_OK) {
 		work->cur_local_fid =
@@ -611,7 +616,7 @@ smb2_get_name(struct cifsd_share_config *share,
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name, 0);
+	cifsd_conv_path_to_unix(name);
 
 	unixname = convert_to_unix_name(share, name);
 	kfree(name);
@@ -939,7 +944,8 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(65);
 	rsp->DialectRevision = cpu_to_le16(conn->dialect);
 	/* Not setting conn guid rsp->ServerGUID, as it
-	 * not used by client for identifying server*/
+	 * not used by client for identifying server
+	 */
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
 
 	getnstimeofday64(&ts64);
@@ -1056,7 +1062,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 					le64_to_cpu(req->PreviousSessionId));
 
 		sess = cifsd_smb2_session_create();
-		if (sess == NULL) {
+		if (!sess) {
 			rc = -ENOMEM;
 			goto out_err;
 		}
@@ -1243,7 +1249,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
 		/* Note: here total size -1 is done as
-		   an adjustment for 0 size blob */
+		 * an adjustment for 0 size blob
+		 */
 		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
@@ -1738,7 +1745,7 @@ static int parse_durable_handle_context(struct cifsd_tcp_conn *conn,
 	int i, err = 0;
 	uint64_t persistent_id = 0;
 	int req_op_level;
-	char *durable_arr[] = {"DH2C", "DHnC", "DH2Q", "DHnQ",
+	static const char * const durable_arr[] = {"DH2C", "DHnC", "DH2Q", "DHnQ",
 		SMB2_CREATE_APP_INSTANCE_ID};
 
 	req_op_level = req->RequestedOplockLevel;
@@ -2231,9 +2238,9 @@ int smb2_open(struct cifsd_work *work)
 		rc = cifsd_vfs_kern_path(name, 0, &path, 1);
 	} else {
 		/*
-		* Use LOOKUP_FOLLOW to follow the path of
-		* symlink in path buildup
-		*/
+		 * Use LOOKUP_FOLLOW to follow the path of
+		 * symlink in path buildup
+		 */
 		rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
 		if (rc) { /* Case for broken link ?*/
 			rc = cifsd_vfs_kern_path(name, 0, &path, 1);
@@ -2267,9 +2274,8 @@ int smb2_open(struct cifsd_work *work)
 			rc = -EIO;
 		}
 
-		if (rc < 0) {
+		if (rc < 0)
 			goto err_out;
-		}
 	}
 
 	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE
@@ -2312,7 +2318,7 @@ int smb2_open(struct cifsd_work *work)
 			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 				cifsd_debug("creating directory\n");
 				mode = share_config_directory_mask(share);
-				rc = cifsd_vfs_mkdir(name, mode);
+				rc = cifsd_vfs_mkdir(work, name, mode);
 				if (rc) {
 					rsp->hdr.Status = cpu_to_le32(
 							NT_STATUS_DATA_ERROR);
@@ -2324,7 +2330,7 @@ int smb2_open(struct cifsd_work *work)
 			} else {
 				cifsd_debug("creating regular file\n");
 				mode = share_config_create_mask(share);
-				rc = cifsd_vfs_create(name, mode);
+				rc = cifsd_vfs_create(work, name, mode);
 				if (rc) {
 					rsp->hdr.Status =
 						NT_STATUS_UNEXPECTED_IO_ERROR;
@@ -2405,7 +2411,7 @@ int smb2_open(struct cifsd_work *work)
 
 	cifsd_debug("volatile_id returned: %d\n", volatile_id);
 	fp = insert_id_in_fidtable(sess, tcon, volatile_id, filp);
-	if (fp == NULL) {
+	if (!fp) {
 		cifsd_err("volatile_id insert failed\n");
 		cifsd_close_id(&sess->fidtable, volatile_id);
 		rc = -ENOMEM;
@@ -2618,11 +2624,6 @@ int smb2_open(struct cifsd_work *work)
 		}
 		file_info = FILE_CREATED;
 		rc = 0;
-	}
-
-	if (created) {
-		i_uid_write(FP_INODE(fp), user_uid(sess->user));
-		i_gid_write(FP_INODE(fp), user_gid(sess->user));
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
@@ -3112,7 +3113,6 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	path = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!path) {
-		cifsd_err("Failed to allocate memory\n");
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		rc = -ENOMEM;
 		kfree(srch_ptr);
@@ -3348,16 +3348,15 @@ static int buffer_check_err(int reqOutputBufferLength,
 			rsp->hdr.smb2_buf_length = cpu_to_be32(
 						sizeof(struct smb2_hdr) - 4);
 			return -EINVAL;
-		} else {
-			cifsd_debug("Buffer Overflow\n");
-			rsp->hdr.Status = NT_STATUS_BUFFER_OVERFLOW;
-			rsp->hdr.smb2_buf_length = cpu_to_be32(
-						sizeof(struct smb2_hdr) - 4
-						+ reqOutputBufferLength);
-			rsp->OutputBufferLength = cpu_to_le32(
-							reqOutputBufferLength);
-			return 0;
 		}
+
+		cifsd_debug("Buffer Overflow\n");
+		rsp->hdr.Status = NT_STATUS_BUFFER_OVERFLOW;
+		rsp->hdr.smb2_buf_length = cpu_to_be32(
+					sizeof(struct smb2_hdr) - 4
+					+ reqOutputBufferLength);
+		rsp->OutputBufferLength = cpu_to_le32(
+						reqOutputBufferLength);
 	}
 	return 0;
 }
@@ -3462,8 +3461,8 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 	else {
 		/* need to send all EAs, if no specific EA is requested*/
 		if (req->Flags & SL_RETURN_SINGLE_ENTRY)
-			cifsd_debug("Ambiguous, all EAs are requested but"
-				"need to send single EA entry in rsp"
+			cifsd_debug("Ambiguous, all EAs are requested but "
+				"need to send single EA entry in rsp "
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
 	}
 
@@ -3916,8 +3915,8 @@ out:
 	case FILE_EA_INFORMATION:
 	{
 		struct smb2_file_ea_info *file_info;
-		file_info = (struct smb2_file_ea_info *)rsp->Buffer;
 
+		file_info = (struct smb2_file_ea_info *)rsp->Buffer;
 		file_info->EASize = 0;
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_ea_info));
@@ -3944,8 +3943,8 @@ out:
 	case FILE_POSITION_INFORMATION:
 	{
 		struct smb2_file_pos_info *file_info;
-		file_info = (struct smb2_file_pos_info *)rsp->Buffer;
 
+		file_info = (struct smb2_file_pos_info *)rsp->Buffer;
 		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
 		rsp->OutputBufferLength =
 			cpu_to_le32(sizeof(struct smb2_file_pos_info));
@@ -4079,6 +4078,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 	case FS_VOLUME_INFORMATION:
 		{
 			FILE_SYSTEM_VOL_INFO *fsvinfo;
+
 			fsvinfo = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
 			fsvinfo->VolumeCreationTime = 0;
 			/* Taking dummy value of serial number*/
@@ -4258,7 +4258,7 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 		return -ENOENT;
 
 	filp = fp->filp;
-	inode = GET_FP_INODE(fp);
+	inode = FP_INODE(fp);
 
 	pntsd = (struct cifs_ntsd *) rsp->Buffer;
 
@@ -4531,25 +4531,23 @@ int smb2_echo(struct cifsd_work *work)
  *
  * Return:      0 on success, otherwise error
  */
-static int smb2_set_info_sec(struct cifsd_file *fp, int addition_info
-	char *buffer, int buf_len)
+static int smb2_set_info_sec(struct cifsd_file *fp,
+			     int addition_info,
+			     char *buffer,
+			     int buf_len)
 {
 	struct smb2_set_info_req *req;
 	struct smb2_set_info_rsp *rsp;
-	struct cifsd_file *fp;
 	uint64_t id, pid;
 	int rc = 0;
 	struct inode *inode;
 	struct cifs_ntsd *pntsd;
 	struct cifsd_fattr fattr;
-	int addition_info;
 
 	inode = fp->filp->f_path.dentry->d_inode;
 
 	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
 	pntsd = (struct cifs_ntsd *) req->Buffer;
-
-	addition_info = le32_to_cpu(req->AdditionalInformation);
 
 	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
 			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
@@ -4564,10 +4562,17 @@ static int smb2_set_info_sec(struct cifsd_file *fp, int addition_info
 	}
 
 	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
-
 	cifsd_fattr_to_inode(inode, &fattr);
 out:
 	return rc;
+}
+#else
+static int smb2_set_info_sec(struct cifsd_file *fp,
+			     int addition_info,
+			     char *buffer,
+			     int buf_len)
+{
+	return 0;
 }
 #endif
 
@@ -4592,9 +4597,8 @@ static int smb2_rename(struct cifsd_file *fp,
 
 	cifsd_debug("setting FILE_RENAME_INFO\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathname) {
+	if (!pathname)
 		return -ENOMEM;
-	}
 
 	abs_oldname = d_path(&fp->filp->f_path, pathname, PATH_MAX);
 	if (IS_ERR(abs_oldname)) {
@@ -5175,14 +5179,12 @@ int smb2_set_info(struct cifsd_work *work)
 		rc = smb2_set_info_file(work, fp, req->FileInfoClass,
 					req->Buffer, work->tcon->share_conf);
 		break;
-#ifdef CONFIG_CIFSD_ACL
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
 		rc = smb2_set_info_sec(fp,
 			le32_to_cpu(req->AdditionalInformation), req->Buffer,
 			le32_to_cpu(req->BufferLength));
 		break;
-#endif
 	default:
 		rc = -EOPNOTSUPP;
 	}
@@ -6437,7 +6439,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		/*
 		 * FILE_READ_DATA should only be included in
 		 * the FSCTL_COPYCHUNK case
-		 * */
+		 */
 		if (cnt_code == FSCTL_COPYCHUNK && !(dst_fp->daccess &
 				(FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
 			rsp->hdr.Status = NT_STATUS_ACCESS_DENIED;
@@ -6540,7 +6542,7 @@ int smb20_oplock_break(struct cifsd_work *work)
 	}
 
 	opinfo = opinfo_get(fp);
-	if (opinfo == NULL) {
+	if (!opinfo) {
 		cifsd_err("unexpected null oplock_info\n");
 		rsp->hdr.Status = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
 		smb2_set_err_rsp(work);
@@ -6666,7 +6668,7 @@ static int smb21_lease_break(struct cifsd_work *work)
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
 			req->LeaseState);
 	opinfo = lookup_lease_in_table(conn, req->LeaseKey);
-	if (opinfo == NULL) {
+	if (!opinfo) {
 		cifsd_debug("file not opened\n");
 		rsp->hdr.Status = NT_STATUS_UNSUCCESSFUL;
 		goto err_out;
@@ -6823,10 +6825,10 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 	rsp_org = rsp;
 
 	if (cifsd_work->next_smb2_rcv_hdr_off) {
-	req = (struct smb2_notify_req *)((char *)req +
-		cifsd_work->next_smb2_rcv_hdr_off);
-	rsp = (struct smb2_notify_rsp *)((char *)rsp +
-		cifsd_work->next_smb2_rsp_hdr_off);
+		req = (struct smb2_notify_req *)((char *)req +
+			cifsd_work->next_smb2_rcv_hdr_off);
+		rsp = (struct smb2_notify_rsp *)((char *)rsp +
+			cifsd_work->next_smb2_rsp_hdr_off);
 	}
 
 	if (cifsd_work->next_smb2_rcv_hdr_off &&

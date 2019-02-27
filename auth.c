@@ -255,9 +255,8 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 
 	ret = crypto_shash_final(&sess->conn->secmech.sdeschmacmd5->shash,
 			ntlmv2_hash);
-	if (ret) {
+	if (ret)
 		cifsd_debug("Could not generate md5 hash\n");
-	}
 
 	kfree(uniname);
 	kfree(domain);
@@ -481,10 +480,10 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 
 /**
  * cifsd_decode_ntlmssp_neg_blob() - helper function to construct
- * 	negotiate blob
- * @negblob:	negotiate blob source pointer
- * @rsp:	response header pointer to be updated
- * @sess:	session of connection
+ * negotiate blob
+ * @negblob: negotiate blob source pointer
+ * @rsp:     response header pointer to be updated
+ * @sess:    session of connection
  *
  */
 int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
@@ -508,10 +507,10 @@ int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
 
 /**
  * cifsd_build_ntlmssp_challenge_blob() - helper function to construct
- * 	challenge blob
- * @chgblob:	challenge blob source pointer to initialize
- * @rsp:	response header pointer to be updated
- * @sess:	session of connection
+ * challenge blob
+ * @chgblob: challenge blob source pointer to initialize
+ * @rsp:     response header pointer to be updated
+ * @sess:    session of connection
  *
  */
 unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
