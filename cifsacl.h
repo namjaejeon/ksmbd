@@ -111,7 +111,6 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid);
 int parse_sec_desc(struct cifs_ntsd *pntsd, int acl_len,
 	struct cifsd_fattr *fattr);
 int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,

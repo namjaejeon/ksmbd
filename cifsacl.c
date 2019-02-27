@@ -515,7 +515,7 @@ out:
 	return rc;
 }
 
-int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
+static int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 {
 	int rc;
 	struct key *sidkey;
