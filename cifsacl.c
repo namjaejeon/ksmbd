@@ -579,7 +579,9 @@ invalidate_key:
 	goto out_key_put;
 }
 
-int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype)
+static int sid_to_id(struct cifs_sid *psid,
+		     struct cifsd_fattr *fattr,
+		     uint sidtype)
 {
 	int rc;
 	struct key *sidkey;
