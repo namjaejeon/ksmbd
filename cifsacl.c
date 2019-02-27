@@ -389,7 +389,7 @@ static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 	return 0;
 }
 
-void dump_ace(struct cifs_ace *pace, char *end_of_acl)
+static void dump_ace(struct cifs_ace *pace, char *end_of_acl)
 {
 	int num_subauth;
 

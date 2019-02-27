@@ -111,7 +111,6 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-void dump_ace(struct cifs_ace *pace, char *end_of_acl);
 int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,
 	struct cifs_sid *pownersid, struct cifs_sid *pgrpsid, __le32 daccess);
 int get_dacl_size(struct cifs_acl *pdacl, char *end_of_acl);
