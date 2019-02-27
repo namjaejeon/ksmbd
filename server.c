@@ -534,11 +534,9 @@ static int __init cifsd_server_init(void)
 
 	cifsd_inode_hash_init();
 
-#ifdef CONFIG_CIFSD_ACL
 	ret = init_cifsd_idmap();
 	if (ret)
 		goto error;
-#endif
 	return 0;
 
 error:
