@@ -424,20 +424,6 @@ static void dump_ace(struct cifs_ace *pace, char *end_of_acl)
 	return;
 }
 
-int get_dacl_size(struct cifs_acl *pdacl, char *end_of_acl)
-{
-	if (!pdacl)
-		return 0;
-
-	/* validate that we do not go past end of acl */
-	if (end_of_acl < (char *)pdacl + le16_to_cpu(pdacl->size)) {
-		cifsd_err("ACL too small to parse DACL\n");
-		return 0;
-	}
-
-	return le16_to_cpu(pdacl->size);
-}
-
 int check_access_flags(__le32 access, __le16 type, __le32 desired_access)
 {
 	int rc;
