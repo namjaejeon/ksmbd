@@ -359,7 +359,7 @@ static int set_chmod_dacl(struct cifs_acl *pndacl, struct cifs_sid *pownersid,
 	return 0;
 }
 
-int parse_sid(struct cifs_sid *psid, char *end_of_acl)
+static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 {
 	/* BB need to add parm so we can store the SID BB */
 
