@@ -119,6 +119,9 @@ int parse_sec_desc(struct cifs_ntsd *pntsd,
 int build_sec_desc(struct cifs_ntsd *pntsd,
 		   int addition_info,
 		   struct inode *inode);
+
+void cifsd_fattr_to_inode(struct inode *inode,
+			  struct cifsd_fattr *fattr);
 #else
 int parse_sec_desc(struct cifs_ntsd *pntsd,
 		   int acl_len,
@@ -133,9 +136,13 @@ int build_sec_desc(struct cifs_ntsd *pntsd,
 {
 	return 0;
 }
+
+void cifsd_fattr_to_inode(struct inode *inode,
+			  struct cifsd_fattr *fattr)
+{
+}
 #endif
 
-void cifsd_fattr_to_inode(struct inode *inode, struct cifsd_fattr *fattr);
 int init_cifsd_idmap(void);
 void exit_cifsd_idmap(void);
 
