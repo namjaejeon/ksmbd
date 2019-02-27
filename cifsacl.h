@@ -111,8 +111,19 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-int parse_sec_desc(struct cifs_ntsd *pntsd, int acl_len,
-	struct cifsd_fattr *fattr);
+#ifdef CONFIG_CIFSD_ACL
+int parse_sec_desc(struct cifs_ntsd *pntsd,
+		   int acl_len,
+		   struct cifsd_fattr *fattr);
+#else
+int parse_sec_desc(struct cifs_ntsd *pntsd,
+		   int acl_len,
+		   struct cifsd_fattr *fattr)
+{
+	return 0;
+}
+#endif
+
 int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 	struct inode *inode);
 void cifsd_fattr_to_inode(struct inode *inode, struct cifsd_fattr *fattr);
