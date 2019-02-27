@@ -71,8 +71,8 @@ int smb_strtoUTF16(__le16 *, const char *, int, const struct nls_table *);
 char *smb_strndup_from_utf16(const char *src, const int maxlen,
 		const bool is_unicode,
 		const struct nls_table *codepage);
-extern int smbConvertToUTF16(__le16 *target, const char *source, int maxlen,
-		const struct nls_table *cp, int mapChars);
+extern int smbConvertToUTF16(__le16 *target, const char *source, int srclen,
+		const struct nls_table *cp, int mapchars);
 extern char *extract_sharename(char *treename);
 #endif
 

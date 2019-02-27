@@ -58,6 +58,7 @@ static struct timespec smb_NTtimeToUnix(__le64 ntutc)
 int get_smb_cmd_val(struct cifsd_work *work)
 {
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)REQUEST_BUF(work);
+
 	return rcv_hdr->Command;
 }
 
@@ -80,6 +81,7 @@ static inline int is_smbreq_unicode(struct smb_hdr *hdr)
 void set_smb_rsp_status(struct cifsd_work *work, unsigned int err)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(work);
+
 	rsp_hdr->Status.CifsError = err;
 }
 
@@ -168,7 +170,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 	work->response_buf = cifsd_alloc_response(sz);
 	work->response_sz = sz;
 
-	if (RESPONSE_BUF(work) == NULL) {
+	if (!RESPONSE_BUF(work)) {
 		cifsd_err("Failed to allocate %zu bytes buffer\n", sz);
 		return -ENOMEM;
 	}
@@ -207,6 +209,7 @@ static char *andx_request_buffer(char *buf, int command)
 static char *andx_response_buffer(char *buf)
 {
 	int pdu_length = get_rfc1002_length(buf);
+
 	return buf + 4 + pdu_length;
 }
 
@@ -343,6 +346,7 @@ static void set_service_type(struct cifsd_tcp_conn *conn,
 		*buf = '\0';
 	} else {
 		int uni_len = 0;
+
 		length = strlen(SERVICE_DISK_SHARE);
 		memcpy(buf, SERVICE_DISK_SHARE, length);
 		buf[length] = '\0';
@@ -467,7 +471,8 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 	set_service_type(conn, share, rsp);
 
 	/* For each extra andx response, we have to add 1 byte,
-		 for wc and 2 bytes for byte count */
+	 * for wc and 2 bytes for byte count
+	 */
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
 
 	/* this is an ANDx command ? */
@@ -557,8 +562,8 @@ static void smb_put_name(void *name)
  * Return:	pointer to filename string on success, otherwise error ptr
  */
 static char *
-smb_get_name(struct cifsd_share_config *share, const char *src, const int maxlen,
-	struct cifsd_work *work, bool converted)
+smb_get_name(struct cifsd_share_config *share, const char *src,
+	     const int maxlen, struct cifsd_work *work, bool converted)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
@@ -649,7 +654,7 @@ static char *smb_get_dir_name(struct cifsd_share_config *share, const char *src,
 
 	pattern_pos = strrchr(name, '/');
 
-	if (pattern_pos == NULL)
+	if (!pattern_pos)
 		pattern_pos = name;
 	else
 		pattern_pos += 1;
@@ -861,7 +866,8 @@ int smb_handle_negotiate(struct cifsd_work *work)
 
 	cifsd_tcp_set_need_negotiate(work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
-	 * We can try sending them later */
+	 * We can try sending them later
+	 */
 err_out:
 	return rc;
 }
@@ -1203,7 +1209,7 @@ int smb_session_setup_andx(struct cifsd_work *work)
 			sess, sess->id, uid);
 	} else {
 		sess = cifsd_smb1_session_create();
-		if (sess == NULL) {
+		if (!sess) {
 			rc = -ENOMEM;
 			goto out_err;
 		}
@@ -1382,14 +1388,15 @@ static __u32 smb_get_dos_attr(struct kstat *stat)
 	__u32 attr = 0;
 
 	/* check whether file has attributes ATTR_READONLY, ATTR_HIDDEN,
-	   ATTR_SYSTEM, ATTR_VOLUME, ATTR_DIRECTORY, ATTR_ARCHIVE,
-	   ATTR_DEVICE, ATTR_NORMAL, ATTR_TEMPORARY, ATTR_SPARSE,
-	   ATTR_REPARSE, ATTR_COMPRESSED, ATTR_OFFLINE */
+	 * ATTR_SYSTEM, ATTR_VOLUME, ATTR_DIRECTORY, ATTR_ARCHIVE,
+	 * ATTR_DEVICE, ATTR_NORMAL, ATTR_TEMPORARY, ATTR_SPARSE,
+	 * ATTR_REPARSE, ATTR_COMPRESSED, ATTR_OFFLINE
+	 */
 
 	if (stat->mode & S_ISVTX)   /* hidden */
 		attr |=  (ATTR_HIDDEN | ATTR_SYSTEM);
 
-	if (!(stat->mode & S_IWUGO))  /* read-only */
+	if (!(stat->mode & 0222))  /* read-only */
 		attr |=  ATTR_READONLY;
 
 	if (S_ISDIR(stat->mode))
@@ -1505,7 +1512,7 @@ int smb_locking_andx(struct cifsd_work *work)
 
 	/* find fid */
 	fp = get_fp(work, le16_to_cpu(req->Fid), 0);
-	if (fp == NULL) {
+	if (!fp) {
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
 	}
@@ -2171,7 +2178,8 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	}
 
 	/* here allocated +2 (UNI '\0') length for both ASCII & UNI
-	   to avoid unnecessary if/else check */
+	 * to avoid unnecessary if/else check
+	 */
 	src = kzalloc(req->NameLength + 2, GFP_KERNEL);
 	if (!src) {
 		rsp->hdr.Status.CifsError =
@@ -2335,9 +2343,9 @@ int smb_nt_create_andx(struct cifsd_work *work)
 			le32_to_cpu(req->DesiredAccess),
 			&open_flags, le32_to_cpu(req->FileAttributes));
 
-	mode |= S_IRWXUGO;
+	mode |= 0777;
 	if (le32_to_cpu(req->FileAttributes) & ATTR_READONLY)
-		mode &= ~S_IWUGO;
+		mode &= ~0222;
 
 	/* TODO:
 	 * - check req->ShareAccess for sharing file among different process
@@ -3100,7 +3108,8 @@ int smb_echo(struct cifsd_work *work)
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2) + data_count);
 
 	/* Send req->EchoCount - 1 number of ECHO response now &
-	   if SMB CANCEL for Echo comes don't send response */
+	 * if SMB CANCEL for Echo comes don't send response
+	 */
 	for (i = 1; i < le16_to_cpu(req->EchoCount) &&
 	     !work->send_no_response; i++) {
 		rsp->SequenceNumber = cpu_to_le16(i);
@@ -3345,7 +3354,6 @@ static void cifs_convert_ace(posix_acl_xattr_entry *ace,
 	ace->e_perm = cpu_to_le16(cifs_ace->cifs_e_perm);
 	ace->e_tag  = cpu_to_le16(cifs_ace->cifs_e_tag);
 	ace->e_id   = cpu_to_le32(le64_to_cpu(cifs_ace->cifs_uid));
-	return;
 }
 
 /**
@@ -3400,7 +3408,7 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	}
 
 	size = posix_acl_xattr_size(count);
-	if ((buflen == 0) || (local_acl == NULL)) {
+	if ((buflen == 0) || !local_acl) {
 		/* used to query ACL EA size */
 	} else if (size > buflen) {
 		return -ERANGE;
@@ -3444,7 +3452,8 @@ static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
 	/* BB is there a better way to handle the large uid? */
 	if (local_ace->e_id == cpu_to_le32(-1)) {
 		/* Probably no need to le convert -1 on any
-		   arch but can not hurt */
+		 * arch but can not hurt
+		 */
 		cifs_ace->cifs_uid = cpu_to_le64(-1);
 	} else
 		cifs_ace->cifs_uid = cpu_to_le64(le32_to_cpu(local_ace->e_id));
@@ -3475,7 +3484,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 	int count;
 	int i, j = 0;
 
-	if ((buflen == 0) || (pACL == NULL) || (cifs_acl == NULL))
+	if ((buflen == 0) || !pACL || !cifs_acl)
 		return 0;
 
 	count = posix_acl_xattr_count((size_t)buflen);
@@ -4211,7 +4220,8 @@ static int query_path_info(struct cifsd_work *work)
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/* 2 for paramater count + 72 data count +
-		   + filename length + 3 pad (1pad1 + 2 pad2) */
+		 * filename length + 3 pad (1pad1 + 2 pad2)
+		 */
 		rsp->ByteCount = 5 + total_count;
 		rsp->Pad = 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
@@ -4242,7 +4252,7 @@ static int query_path_info(struct cifsd_work *work)
 		alt_name_info = (ALT_NAME_INFO *)(ptr + 4);
 
 		base = strrchr(name, '/');
-		if (base == NULL)
+		if (!base)
 			base = name;
 		else
 			base += 1;
@@ -4382,6 +4392,7 @@ static int set_fs_info(struct cifsd_work *work)
 
 	switch (info_level) {
 	int client_cap;
+
 	case SMB_SET_CIFS_UNIX_INFO:
 		cifsd_debug("SMB_SET_CIFS_UNIX_INFO\n");
 		if (req->ClientUnixMajor != CIFS_UNIX_MAJOR_VERSION) {
@@ -4446,7 +4457,8 @@ static int query_fs_info(struct cifsd_work *work)
 
 	if (incomplete) {
 		/* create 1 trans_state structure
-		   and add to connection list */
+		 * and add to connection list
+		 */
 	}
 
 	info_level = req_params->InformationLevel;
@@ -4479,6 +4491,7 @@ static int query_fs_info(struct cifsd_work *work)
 	FILE_SYSTEM_VOL_INFO *vinfo;
 	FILE_SYSTEM_INFO *sinfo;
 	FILE_SYSTEM_POSIX_INFO *pinfo;
+
 	case SMB_INFO_ALLOCATION:
 		cifsd_debug("GOT SMB_INFO_ALLOCATION\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(18);
@@ -5433,7 +5446,7 @@ static int set_path_info(struct cifsd_work *work)
 		cifsd_err("info level = %x not implemented yet\n",
 				info_level);
 		pSMB_rsp->hdr.Status.CifsError = NT_STATUS_NOT_IMPLEMENTED;
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 	}
 
 	if (err < 0)
@@ -6759,7 +6772,7 @@ static int smb_set_dispostion(struct cifsd_work *work)
 			return -EPERM;
 		}
 
-		if (!(fp->filp->f_path.dentry->d_inode->i_mode & S_IWUGO)) {
+		if (!(fp->filp->f_path.dentry->d_inode->i_mode & 0222)) {
 			rsp->hdr.Status.CifsError = NT_STATUS_CANNOT_DELETE;
 			return -EPERM;
 		}
@@ -7006,7 +7019,7 @@ static int set_file_info(struct cifsd_work *work)
 		cifsd_err("info level = %x not implemented yet\n",
 				info_level);
 		rsp->hdr.Status.CifsError = NT_STATUS_NOT_IMPLEMENTED;
-		return -ENOSYS;
+		return -EOPNOTSUPP;
 	}
 
 	if (err < 0)
@@ -7111,7 +7124,8 @@ int smb_trans2(struct cifsd_work *work)
 	u16 sub_command = req->SubCommand;
 
 	/* at least one setup word for TRANS2 command
-			MS-CIFS, SMB COM TRANSACTION */
+	 *		MS-CIFS, SMB COM TRANSACTION
+	 */
 	if (req->SetupCount < 1) {
 		cifsd_err("Wrong setup count in SMB_TRANS2"
 				" - indicates wrong request\n");
@@ -7594,7 +7608,7 @@ int smb_query_info(struct cifsd_work *work)
 
 	if (st.mode & S_ISVTX)
 		attr |=  (ATTR_HIDDEN | ATTR_SYSTEM);
-	if (!(st.mode & S_IWUGO))
+	if (!(st.mode & 0222))
 		attr |=  ATTR_READONLY;
 	if (S_ISDIR(st.mode))
 		attr |= ATTR_DIRECTORY;
@@ -7771,7 +7785,7 @@ int smb_open_andx(struct cifsd_work *work)
 		}
 	}
 
-	if (file_present && !(stat.mode & S_IWUGO)) {
+	if (file_present && !(stat.mode & 0222)) {
 		if ((open_flags & O_ACCMODE) == O_WRONLY ||
 				(open_flags & O_ACCMODE) == O_RDWR) {
 			cifsd_debug("readonly file(%s)\n", name);
@@ -7782,9 +7796,9 @@ int smb_open_andx(struct cifsd_work *work)
 	}
 
 	if (!file_present && (open_flags & O_CREAT)) {
-		mode |= S_IRWXUGO;
+		mode |= 0777;
 		if (le16_to_cpu(req->FileAttributes) & ATTR_READONLY)
-			mode &= ~S_IWUGO;
+			mode &= ~0222;
 
 		mode |= S_IFREG;
 		err = cifsd_vfs_create(name, mode);
@@ -7998,10 +8012,10 @@ int smb_setattr(struct cifsd_work *work)
 
 	dos_attr = le16_to_cpu(req->attr);
 	if (!dos_attr)
-		attrs.ia_mode = stat.mode | S_IWUSR;
+		attrs.ia_mode = stat.mode | 0200;
 
 	if (dos_attr & ATTR_READONLY)
-		attrs.ia_mode = stat.mode & ~S_IWUGO;
+		attrs.ia_mode = stat.mode & ~0222;
 
 	if (attrs.ia_mode)
 		attrs.ia_valid |= ATTR_MODE;

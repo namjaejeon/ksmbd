@@ -14,7 +14,7 @@
 #include "nterr.h"
 
 /*****************************************************************************
-convert a NT status code to a dos class/code
+ * convert a NT status code to a dos class/code
  *****************************************************************************/
 /* NT status -> dos error map */
 static const struct {
@@ -45,8 +45,9 @@ static const struct {
 	ERRHRD, ERRgeneral, NT_STATUS_UNRECOGNIZED_MEDIA}, {
 	ERRDOS, 27, NT_STATUS_NONEXISTENT_SECTOR},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_MORE_PROCESSING_REQUIRED to NT_STATUS_OK
-	 during the session setup } */
+ *	 from NT_STATUS_MORE_PROCESSING_REQUIRED to NT_STATUS_OK
+ *	 during the session setup }
+ */
 	{
 	ERRDOS, ERRnomem, NT_STATUS_NO_MEMORY}, {
 	ERRDOS, 487, NT_STATUS_CONFLICTING_ADDRESSES}, {
@@ -60,8 +61,9 @@ static const struct {
 	ERRDOS, 193, NT_STATUS_INVALID_FILE_FOR_SECTION}, {
 	ERRDOS, ERRnoaccess, NT_STATUS_ALREADY_COMMITTED},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_ACCESS_DENIED to NT_STATUS_TRUSTED_RELATIONSHIP_FAILURE
-	 during the session setup }   */
+ *	 from NT_STATUS_ACCESS_DENIED to NT_STATUS_TRUSTED_RELATIONSHIP_FAILURE
+ *	 during the session setup }
+ */
 	{
 	ERRDOS, ERRnoaccess, NT_STATUS_ACCESS_DENIED}, {
 	ERRDOS, 111, NT_STATUS_BUFFER_TOO_SMALL}, {
@@ -80,7 +82,7 @@ static const struct {
 	ERRDOS, 87, NT_STATUS_INVALID_PARAMETER_MIX}, {
 	ERRHRD, ERRgeneral, NT_STATUS_INVALID_QUOTA_LOWER}, {
 	ERRHRD, ERRgeneral, NT_STATUS_DISK_CORRUPT_ERROR}, {
-	 /* mapping changed since shell does lookup on * expects FileNotFound */
+	/* mapping changed since shell does lookup on * expects FileNotFound */
 	ERRDOS, ERRbadfile, NT_STATUS_OBJECT_NAME_INVALID}, {
 	ERRDOS, ERRbadfile, NT_STATUS_OBJECT_NAME_NOT_FOUND}, {
 	ERRDOS, ERRalreadyexists, NT_STATUS_OBJECT_NAME_COLLISION}, {
@@ -131,8 +133,9 @@ static const struct {
 	ERRHRD, ERRgeneral, NT_STATUS_INVALID_ACCOUNT_NAME}, {
 	ERRHRD, ERRgeneral, NT_STATUS_USER_EXISTS},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_NO_SUCH_USER to NT_STATUS_LOGON_FAILURE
-	 during the session setup } */
+ *	 from NT_STATUS_NO_SUCH_USER to NT_STATUS_LOGON_FAILURE
+ *	 during the session setup }
+ */
 	{
 	ERRDOS, ERRnoaccess, NT_STATUS_NO_SUCH_USER}, { /* could map to 2238 */
 	ERRHRD, ERRgeneral, NT_STATUS_GROUP_EXISTS}, {
@@ -141,8 +144,9 @@ static const struct {
 	ERRHRD, ERRgeneral, NT_STATUS_MEMBER_NOT_IN_GROUP}, {
 	ERRHRD, ERRgeneral, NT_STATUS_LAST_ADMIN},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_WRONG_PASSWORD to NT_STATUS_LOGON_FAILURE
-	 during the session setup } */
+ *	 from NT_STATUS_WRONG_PASSWORD to NT_STATUS_LOGON_FAILURE
+ *	 during the session setup }
+ */
 	{
 	ERRSRV, ERRbadpw, NT_STATUS_WRONG_PASSWORD}, {
 	ERRHRD, ERRgeneral, NT_STATUS_ILL_FORMED_PASSWORD}, {
@@ -193,8 +197,9 @@ static const struct {
 	ERRHRD, ERRgeneral, NT_STATUS_FILE_INVALID}, {
 	ERRHRD, ERRgeneral, NT_STATUS_ALLOTTED_SPACE_EXCEEDED},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_INSUFFICIENT_RESOURCES to
-	 NT_STATUS_INSUFF_SERVER_RESOURCES during the session setup } */
+ *	 from NT_STATUS_INSUFFICIENT_RESOURCES to
+ *	 NT_STATUS_INSUFF_SERVER_RESOURCES during the session setup }
+ */
 	{
 	ERRDOS, ERRnoresource, NT_STATUS_INSUFFICIENT_RESOURCES}, {
 	ERRDOS, ERRbadpath, NT_STATUS_DFS_EXIT_PATH_FOUND}, {
@@ -438,8 +443,9 @@ static const struct {
 	ERRDOS, 19, NT_STATUS_TOO_LATE}, {
 	ERRDOS, ERRnoaccess, NT_STATUS_NO_TRUST_LSA_SECRET},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_NO_TRUST_SAM_ACCOUNT to
-	 NT_STATUS_TRUSTED_RELATIONSHIP_FAILURE during the session setup } */
+ *	 from NT_STATUS_NO_TRUST_SAM_ACCOUNT to
+ *	 NT_STATUS_TRUSTED_RELATIONSHIP_FAILURE during the session setup }
+ */
 	{
 	ERRDOS, ERRnoaccess, NT_STATUS_NO_TRUST_SAM_ACCOUNT}, {
 	ERRDOS, ERRnoaccess, NT_STATUS_TRUSTED_DOMAIN_FAILURE}, {
@@ -458,8 +464,9 @@ static const struct {
 	ERRDOS, ERRnoaccess, NT_STATUS_NOLOGON_WORKSTATION_TRUST_ACCOUNT}, {
 	ERRDOS, ERRnoaccess, NT_STATUS_NOLOGON_SERVER_TRUST_ACCOUNT},
 /*	{ This NT error code was 'sqashed'
-	 from NT_STATUS_DOMAIN_TRUST_INCONSISTENT to NT_STATUS_LOGON_FAILURE
-	 during the session setup }  */
+ *	 from NT_STATUS_DOMAIN_TRUST_INCONSISTENT to NT_STATUS_LOGON_FAILURE
+ *	 during the session setup }
+ */
 	{
 	ERRDOS, ERRnoaccess, NT_STATUS_DOMAIN_TRUST_INCONSISTENT}, {
 	ERRHRD, ERRgeneral, NT_STATUS_FS_DRIVER_REQUIRED}, {
@@ -582,6 +589,7 @@ void
 ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode)
 {
 	int i;
+
 	if (ntstatus == 0) {
 		*eclass = 0;
 		*ecode = 0;

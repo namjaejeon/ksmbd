@@ -285,7 +285,7 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 	struct cifsd_tcp_conn *conn;
 
 	conn = cifsd_tcp_conn_alloc(client_sk);
-	if (conn == NULL)
+	if (!conn)
 		return -ENOMEM;
 
 	csin = CIFSD_TCP_PEER_SOCKADDR(conn);
@@ -480,7 +480,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	int iov_idx = 0;
 
 	cifsd_tcp_try_dequeue_request(work);
-	if (rsp_hdr == NULL) {
+	if (!rsp_hdr) {
 		cifsd_err("NULL response header\n");
 		return -EINVAL;
 	}
