@@ -111,20 +111,48 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-#endif /* _CIFSACL_H */
+#ifdef CONFIG_CIFSD_ACL
+int parse_sec_desc(struct cifs_ntsd *pntsd,
+		   int acl_len,
+		   struct cifsd_fattr *fattr);
 
-int compare_sids(const struct cifs_sid *ctsid, const struct cifs_sid *cwsid);
-int parse_sid(struct cifs_sid *psid, char *end_of_acl);
-void dump_ace(struct cifs_ace *pace, char *end_of_acl);
-int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,
-	struct cifs_sid *pownersid, struct cifs_sid *pgrpsid, __le32 daccess);
-int get_dacl_size(struct cifs_acl *pdacl, char *end_of_acl);
-int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype);
-int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid);
-int parse_sec_desc(struct cifs_ntsd *pntsd, int acl_len,
-	struct cifsd_fattr *fattr);
-int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
-	struct inode *inode);
-void cifsd_fattr_to_inode(struct inode *inode, struct cifsd_fattr *fattr);
-int init_cifsd_idmap(void);
+int build_sec_desc(struct cifs_ntsd *pntsd,
+		   int addition_info,
+		   struct inode *inode);
+
+void cifsd_fattr_to_inode(struct inode *inode,
+			  struct cifsd_fattr *fattr);
+
 void exit_cifsd_idmap(void);
+
+int init_cifsd_idmap(void);
+#else
+static int parse_sec_desc(struct cifs_ntsd *pntsd,
+		   int acl_len,
+		   struct cifsd_fattr *fattr)
+{
+	return 0;
+}
+
+static int build_sec_desc(struct cifs_ntsd *pntsd,
+		   int addition_info,
+		   struct inode *inode)
+{
+	return 0;
+}
+
+static void cifsd_fattr_to_inode(struct inode *inode,
+			  struct cifsd_fattr *fattr)
+{
+}
+
+static void exit_cifsd_idmap(void)
+{
+}
+
+static int init_cifsd_idmap(void)
+{
+	return 0;
+}
+#endif /* CONFIG_CIFSD_ACL */
+#endif /* _CIFSACL_H */

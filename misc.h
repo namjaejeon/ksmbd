@@ -24,7 +24,8 @@ char *convert_to_nt_pathname(char *filename, char *sharepath);
 
 int get_nlink(struct kstat *st);
 
-void convert_delimiter(char *path, int flags);
+void cifsd_conv_path_to_unix(char *path);
+void cifsd_conv_path_to_windows(char *path);
 
 char *extract_sharename(char *treename);
 

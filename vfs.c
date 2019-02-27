@@ -33,15 +33,35 @@
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
+#include "mgmt/user_config.h"
+
+static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
+				    struct inode *inode)
+{
+	struct cifsd_share_config *share = work->tcon->share_conf;
+	unsigned int uid = user_uid(work->sess->user);
+	unsigned int gid = user_gid(work->sess->user);
+
+	if (share->force_uid != 0)
+		uid = share->force_uid;
+	if (share->force_gid != 0)
+		gid = share->force_gid;
+
+	i_uid_write(inode, uid);
+	i_gid_write(inode, gid);
+}
 
 /**
  * cifsd_vfs_create() - vfs helper for smb create file
+ * @work:	work
  * @name:	file name
  * @mode:	file create mode
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_create(const char *name, umode_t mode)
+int cifsd_vfs_create(struct cifsd_work *work,
+		     const char *name,
+		     umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -58,22 +78,26 @@ int cifsd_vfs_create(const char *name, umode_t mode)
 
 	mode |= S_IFREG;
 	err = vfs_create(path.dentry->d_inode, dentry, mode, true);
-	if (err)
+	if (!err)
+		cifsd_vfs_inode_uid_gid(work, dentry->d_inode);
+	else
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);
-
 	return err;
 }
 
 /**
  * cifsd_vfs_mkdir() - vfs helper for smb create directory
+ * @work:	work
  * @name:	directory name
  * @mode:	directory create mode
  *
  * Return:	0 on success, otherwise error
  */
-int cifsd_vfs_mkdir(const char *name, umode_t mode)
+int cifsd_vfs_mkdir(struct cifsd_work *work,
+		    const char *name,
+		    umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -90,11 +114,12 @@ int cifsd_vfs_mkdir(const char *name, umode_t mode)
 
 	mode |= S_IFDIR;
 	err = vfs_mkdir(path.dentry->d_inode, dentry, mode);
-	if (err)
+	if (!err)
+		cifsd_vfs_inode_uid_gid(work, dentry->d_inode);
+	else
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);
-
 	return err;
 }
 

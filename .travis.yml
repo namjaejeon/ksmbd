@@ -29,6 +29,7 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
+ - echo '# CONFIG_CIFSD_ACL is not set' >> .config
  - gcc -v
  - make fs/cifsd/cifsd.ko
 
@@ -39,6 +40,7 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
+ - echo '# CONFIG_CIFSD_ACL is not set' >> .config
  - gcc -v
  - make fs/cifsd/cifsd.ko
 
@@ -49,6 +51,7 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo '# CONFIG_CIFSD_ACL is not set' >> .config
  - gcc -v
  - make fs/cifsd/cifsd.ko
 
@@ -59,5 +62,30 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo '# CONFIG_CIFSD_ACL is not set' >> .config
+ - gcc -v
+ - make fs/cifsd/cifsd.ko
+
+ # Compile secure server build (no smb1.0 & smb2.0) + ACL
+ # with 4.1 kernel
+ - cd ../linux-stable
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo 'CONFIG_CIFSD_ACL=y' >> .config
+ - gcc -v
+ - make fs/cifsd/cifsd.ko
+
+ # Compile secure server build (no smb1.0 & smb2.0) + ACL
+ # with latest Tovalds' kernel
+ - cd ../linux
+ - yes "" | make oldconfig
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo 'CONFIG_CIFSD_ACL=y' >> .config
  - gcc -v
  - make fs/cifsd/cifsd.ko
