@@ -60,7 +60,6 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 		debug_line[1 + (2 * j)] = ' ';
 	}
 	pr_cont(" | %s\n", debug_line);
-	return;
 }
 
 /**
@@ -300,7 +299,8 @@ char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 	len += strlen(name);
 
 	/* for '/' needed for smb2
-	 * as '/' is not present in beginning of name*/
+	 * as '/' is not present in beginning of name
+	 */
 	if (name[0] != '/')
 		len++;
 
@@ -308,10 +308,8 @@ char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 	cifsd_debug("new_name len = %d\n", len);
 	new_name = kmalloc(len + 1, GFP_KERNEL);
 
-	if (new_name == NULL) {
-		cifsd_debug("Failed to allocate memory\n");
+	if (!new_name)
 		return new_name;
-	}
 
 	memcpy(new_name, share->path, strlen(share->path));
 

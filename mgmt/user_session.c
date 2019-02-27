@@ -254,7 +254,7 @@ static struct cifsd_session *__session_create(int protocol)
 	int ret;
 
 	sess = cifsd_alloc(sizeof(struct cifsd_session));
-	if (sess == NULL)
+	if (!sess)
 		return NULL;
 
 	set_session_flag(sess, protocol);

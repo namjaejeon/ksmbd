@@ -219,7 +219,7 @@ is_well_known_sid(const struct cifs_sid *psid, uint32_t *puid, bool is_group)
 	int num_subauth;
 	const struct cifs_sid *pwell_known_sid;
 
-	if (!psid || (puid == NULL))
+	if (!psid || !puid)
 		return false;
 
 	num_subauth = psid->num_subauth;
@@ -283,9 +283,9 @@ cifs_copy_sid(struct cifs_sid *dst, const struct cifs_sid *src)
 }
 
 /*
-   Generate access flags to reflect permissions mode is the existing mode.
-   This function is called for every ACE in the DACL whose SID matches
-   with either owner or group or everyone.
+ * Generate access flags to reflect permissions mode is the existing mode.
+ * This function is called for every ACE in the DACL whose SID matches
+ * with either owner or group or everyone.
  */
 static void mode_to_access_flags(umode_t mode, umode_t bits_to_use,
 		__u32 *pace_flags)
@@ -297,18 +297,18 @@ static void mode_to_access_flags(umode_t mode, umode_t bits_to_use,
 	mode &= bits_to_use;
 
 	/* check for R/W/X UGO since we do not know whose flags
-	   is this but we have cleared all the bits sans RWX for
-	   either user or group or other as per bits_to_use */
-	if (mode & S_IRUGO)
+	 * is this but we have cleared all the bits sans RWX for
+	 * either user or group or other as per bits_to_use
+	 */
+	if (mode & 0444)
 		*pace_flags |= SET_FILE_READ_RIGHTS;
-	if (mode & S_IWUGO)
+	if (mode & 0222)
 		*pace_flags |= SET_FILE_WRITE_RIGHTS;
-	if (mode & S_IXUGO)
+	if (mode & 0111)
 		*pace_flags |= SET_FILE_EXEC_RIGHTS;
 
 	cifsd_err("mode: 0x%x, access flags now 0x%x\n",
 			mode, *pace_flags);
-	return;
 }
 
 static __u16 fill_ace_for_sid(struct cifs_ace *pntace,
@@ -347,11 +347,11 @@ static int set_chmod_dacl(struct cifs_acl *pndacl, struct cifs_sid *pownersid,
 	pnndacl = (struct cifs_acl *)((char *)pndacl + sizeof(struct cifs_acl));
 
 	size += fill_ace_for_sid((struct cifs_ace *) ((char *)pnndacl + size),
-			pownersid, nmode, S_IRWXU);
+			pownersid, nmode, 0700);
 	size += fill_ace_for_sid((struct cifs_ace *)((char *)pnndacl + size),
-			pgrpsid, nmode, S_IRWXG);
+			pgrpsid, nmode, 0070);
 	size += fill_ace_for_sid((struct cifs_ace *)((char *)pnndacl + size),
-			&sid_everyone, nmode, S_IRWXO);
+			&sid_everyone, nmode, 0007);
 
 	pndacl->size = cpu_to_le16(size + sizeof(struct cifs_acl));
 	pndacl->num_aces = cpu_to_le32(3);
@@ -364,7 +364,8 @@ static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 	/* BB need to add parm so we can store the SID BB */
 
 	/* validate that we do not go past end of ACL - sid must be at least 8
-	   bytes long (assuming no sub-auths - e.g. the null SID */
+	 * bytes long (assuming no sub-auths - e.g. the null SID
+	 */
 	if (end_of_acl < (char *)psid + 8) {
 		cifsd_err("ACL too small to parse SID %p\n", psid);
 		return -EINVAL;
@@ -372,6 +373,7 @@ static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 
 	if (psid->num_subauth) {
 		int i;
+
 		cifsd_err("SID revision %d num_auth %d\n",
 				psid->revision, psid->num_subauth);
 
@@ -381,7 +383,8 @@ static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 		}
 
 		/* BB add length check to make sure that we do not have huge
-		   num auths and therefore go off the end */
+		 * num auths and therefore go off the end
+		 */
 		cifsd_err("RID 0x%x\n",
 			le32_to_cpu(psid->sub_auth[psid->num_subauth-1]));
 	}
@@ -418,10 +421,9 @@ static void dump_ace(struct cifs_ace *pace, char *end_of_acl)
 		}
 
 		/* BB add length check to make sure that we do not have huge
-			num auths and therefore go off the end */
+		 * num auths and therefore go off the end
+		 */
 	}
-
-	return;
 }
 
 int check_access_flags(__le32 access, __le16 type, __le32 desired_access)
@@ -683,35 +685,37 @@ void cifsd_fattr_to_inode(struct inode *inode, struct cifsd_fattr *fattr)
 }
 
 /*
-   change posix mode to reflect permissions
-   pmode is the existing mode (we only want to overwrite part of this
-   bits to set can be: S_IRWXU, S_IRWXG or S_IRWXO ie 00700 or 00070 or 00007
+ * change posix mode to reflect permissions
+ * pmode is the existing mode (we only want to overwrite part of this
+ * bits to set can be: S_IRWXU, S_IRWXG or S_IRWXO ie 00700 or 00070 or 00007
  */
 static void access_flags_to_mode(__le32 ace_flags, int type, umode_t *pmode,
 		umode_t *pbits_to_set)
 {
 	__u32 flags = le32_to_cpu(ace_flags);
 	/* the order of ACEs is important.  The canonical order is to begin with
-	   DENY entries followed by ALLOW, otherwise an allow entry could be
-	   encountered first, making the subsequent deny entry like "dead code"
-	   which would be superfluous since Windows stops when a match is made
-	   for the operation you are trying to perform for your user */
+	 * DENY entries followed by ALLOW, otherwise an allow entry could be
+	 * encountered first, making the subsequent deny entry like "dead code"
+	 * which would be superfluous since Windows stops when a match is made
+	 * for the operation you are trying to perform for your user
+	 */
 
 	/* For deny ACEs we change the mask so that subsequent allow access
-	   control entries do not turn on the bits we are denying */
+	 * control entries do not turn on the bits we are denying
+	 */
 	if (type == ACCESS_DENIED) {
 		if (flags & GENERIC_ALL)
-			*pbits_to_set &= ~S_IRWXUGO;
+			*pbits_to_set &= ~0777;
 
 		if ((flags & GENERIC_WRITE) ||
 			((flags & FILE_WRITE_RIGHTS) == FILE_WRITE_RIGHTS))
-			*pbits_to_set &= ~S_IWUGO;
+			*pbits_to_set &= ~0222;
 		if ((flags & GENERIC_READ) ||
 			((flags & FILE_READ_RIGHTS) == FILE_READ_RIGHTS))
-			*pbits_to_set &= ~S_IRUGO;
+			*pbits_to_set &= ~0444;
 		if ((flags & GENERIC_EXECUTE) ||
 			((flags & FILE_EXEC_RIGHTS) == FILE_EXEC_RIGHTS))
-			*pbits_to_set &= ~S_IXUGO;
+			*pbits_to_set &= ~0111;
 		return;
 	} else if (type != ACCESS_ALLOWED) {
 		cifsd_err("unknown access control type %d\n", type);
@@ -720,22 +724,21 @@ static void access_flags_to_mode(__le32 ace_flags, int type, umode_t *pmode,
 	/* else ACCESS_ALLOWED type */
 
 	if (flags & GENERIC_ALL) {
-		*pmode |= (S_IRWXUGO & (*pbits_to_set));
+		*pmode |= (0777 & (*pbits_to_set));
 		cifsd_err("all perms\n");
 		return;
 	}
 	if ((flags & GENERIC_WRITE) ||
 		((flags & FILE_WRITE_RIGHTS) == FILE_WRITE_RIGHTS))
-		*pmode |= (S_IWUGO & (*pbits_to_set));
+		*pmode |= (0222 & (*pbits_to_set));
 	if ((flags & GENERIC_READ) ||
 		((flags & FILE_READ_RIGHTS) == FILE_READ_RIGHTS))
-		*pmode |= (S_IRUGO & (*pbits_to_set));
+		*pmode |= (0444 & (*pbits_to_set));
 	if ((flags & GENERIC_EXECUTE) ||
 		((flags & FILE_EXEC_RIGHTS) == FILE_EXEC_RIGHTS))
-		*pmode |= (S_IXUGO & (*pbits_to_set));
+		*pmode |= (0111 & (*pbits_to_set));
 
 	cifsd_err("access flags 0x%x mode now 0x%x\n", flags, *pmode);
-	return;
 }
 
 static void parse_dacl(struct cifs_acl *pdacl, char *end_of_acl,
@@ -752,8 +755,9 @@ static void parse_dacl(struct cifs_acl *pdacl, char *end_of_acl,
 
 	if (!pdacl) {
 		/* no DACL in the security descriptor, set
-		   all the permissions for user/group/other */
-		fattr->cf_mode |= S_IRWXUGO;
+		 * all the permissions for user/group/other
+		 */
+		fattr->cf_mode |= 0777;
 		return;
 	}
 
@@ -768,18 +772,19 @@ static void parse_dacl(struct cifs_acl *pdacl, char *end_of_acl,
 			le32_to_cpu(pdacl->num_aces));
 
 	/* reset rwx permissions for user/group/other.
-	   Also, if num_aces is 0 i.e. DACL has no ACEs,
-	   user/group/other have no permissions */
-	fattr->cf_mode &= ~(S_IRWXUGO);
+	 * Also, if num_aces is 0 i.e. DACL has no ACEs,
+	 * user/group/other have no permissions
+	 */
+	fattr->cf_mode &= ~(0777);
 
 	acl_base = (char *)pdacl;
 	acl_size = sizeof(struct cifs_acl);
 
 	num_aces = le32_to_cpu(pdacl->num_aces);
 	if (num_aces > 0) {
-		umode_t user_mask = S_IRWXU;
-		umode_t group_mask = S_IRWXG;
-		umode_t other_mask = S_IRWXU | S_IRWXG | S_IRWXO;
+		umode_t user_mask = 0700;
+		umode_t group_mask = 0070;
+		umode_t other_mask = 0777;
 
 		if (num_aces > ULONG_MAX / sizeof(struct cifs_ace *))
 			return;
@@ -814,8 +819,9 @@ static void parse_dacl(struct cifs_acl *pdacl, char *end_of_acl,
 
 
 			/* memcpy((void *)(&(cifscred->aces[i])),
-				(void *)ppace[i],
-				sizeof(struct cifs_ace)); */
+			 *	(void *)ppace[i],
+			 *	sizeof(struct cifs_ace));
+			 */
 
 			acl_base = (char *)ppace[i];
 			acl_size = le16_to_cpu(ppace[i]->size);
@@ -823,15 +829,13 @@ static void parse_dacl(struct cifs_acl *pdacl, char *end_of_acl,
 
 		kfree(ppace);
 	}
-
-	return;
 }
 
 int parse_sec_desc(struct cifs_ntsd *pntsd, int acl_len,
 	struct cifsd_fattr *fattr)
 {
 	struct cifs_sid *owner_sid_ptr, *group_sid_ptr;
-	struct cifs_acl *dacl_ptr = NULL;  /* no need for SACL ptr */
+	struct cifs_acl *dacl_ptr;  /* no need for SACL ptr */
 	__u32 dacloffset;
 	char *end_of_acl;
 	int rc = 0;
@@ -956,8 +960,8 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 	}
 
 	if (addition_info & DACL_SECINFO) {
-		struct cifs_acl *dacl_ptr = NULL;  /* no need for SACL ptr */
-		struct cifs_acl *ndacl_ptr = NULL; /* no need for SACL ptr */
+		struct cifs_acl *dacl_ptr;  /* no need for SACL ptr */
+		struct cifs_acl *ndacl_ptr; /* no need for SACL ptr */
 		__u32 dacloffset;
 		__u32 ndacloffset;
 		umode_t nmode = inode->i_mode;
@@ -1022,7 +1026,8 @@ int init_cifsd_idmap(void)
 		goto failed_put_key;
 
 	/* instruct request_key() to use this special keyring as a cache for
-	 * the results it looks up */
+	 * the results it looks up
+	 */
 	set_bit(KEY_FLAG_ROOT_CAN_CLEAR, &keyring->flags);
 	cred->thread_keyring = keyring;
 	cred->jit_keyring = KEY_REQKEY_DEFL_THREAD_KEYRING;

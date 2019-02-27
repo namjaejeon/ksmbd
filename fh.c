@@ -60,10 +60,8 @@ static struct fidtable *alloc_fidtable(unsigned int num)
 	void *tmp;
 
 	ftab = kmalloc(sizeof(struct fidtable), GFP_KERNEL);
-	if (!ftab) {
-		cifsd_err("kmalloc for fidtable failed!\n");
+	if (!ftab)
 		goto out;
-	}
 
 	ftab->max_fids = num;
 
@@ -170,7 +168,7 @@ static int grow_fidtable(struct fidtable_desc *ftab_desc, int num)
 int cifsd_get_unused_id(struct fidtable_desc *ftab_desc)
 {
 	void *bitmap;
-	int id = -EMFILE;
+	int id;
 	int err;
 	struct fidtable *fidtable;
 
@@ -266,7 +264,7 @@ struct cifsd_file *
 insert_id_in_fidtable(struct cifsd_session *sess,
 	struct cifsd_tree_connect *tcon, unsigned int id, struct file *filp)
 {
-	struct cifsd_file *fp = NULL;
+	struct cifsd_file *fp;
 	struct fidtable *ftab;
 
 	fp = cifsd_alloc_file_struct();
@@ -1070,9 +1068,8 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 
 void cifsd_inode_put(struct cifsd_inode *ci)
 {
-	if (atomic_dec_and_test(&ci->m_count)) {
+	if (atomic_dec_and_test(&ci->m_count))
 		cifsd_inode_free(ci);
-	}
 }
 
 void cifsd_inode_free(struct cifsd_inode *ci)

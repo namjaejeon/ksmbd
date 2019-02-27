@@ -1450,6 +1450,6 @@ extern int smb2_cancel(struct cifsd_work *work);
 extern int smb2_lock(struct cifsd_work *work);
 extern int smb2_ioctl(struct cifsd_work *work);
 extern int smb2_oplock_break(struct cifsd_work *work);
-extern int smb2_notify(struct cifsd_work *work);
+extern int smb2_notify(struct cifsd_work *cifsd_work);
 
 #endif				/* _SMB2PDU_SERVER_H */
