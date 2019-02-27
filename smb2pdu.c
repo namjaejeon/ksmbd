@@ -4253,7 +4253,7 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 		return -ENOENT;
 
 	filp = fp->filp;
-	inode = GET_FP_INODE(fp);
+	inode = FP_INODE(fp);
 
 	pntsd = (struct cifs_ntsd *) rsp->Buffer;
 
@@ -4526,25 +4526,23 @@ int smb2_echo(struct cifsd_work *work)
  *
  * Return:      0 on success, otherwise error
  */
-static int smb2_set_info_sec(struct cifsd_file *fp, int addition_info
-	char *buffer, int buf_len)
+static int smb2_set_info_sec(struct cifsd_file *fp,
+			     int addition_info,
+			     char *buffer,
+			     int buf_len)
 {
 	struct smb2_set_info_req *req;
 	struct smb2_set_info_rsp *rsp;
-	struct cifsd_file *fp;
 	uint64_t id, pid;
 	int rc = 0;
 	struct inode *inode;
 	struct cifs_ntsd *pntsd;
 	struct cifsd_fattr fattr;
-	int addition_info;
 
 	inode = fp->filp->f_path.dentry->d_inode;
 
 	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
 	pntsd = (struct cifs_ntsd *) req->Buffer;
-
-	addition_info = le32_to_cpu(req->AdditionalInformation);
 
 	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
 			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
@@ -4559,10 +4557,17 @@ static int smb2_set_info_sec(struct cifsd_file *fp, int addition_info
 	}
 
 	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
-
 	cifsd_fattr_to_inode(inode, &fattr);
 out:
 	return rc;
+}
+#else
+static int smb2_set_info_sec(struct cifsd_file *fp,
+			     int addition_info,
+			     char *buffer,
+			     int buf_len)
+{
+	return 0;
 }
 #endif
 
@@ -5170,14 +5175,12 @@ int smb2_set_info(struct cifsd_work *work)
 		rc = smb2_set_info_file(work, fp, req->FileInfoClass,
 					req->Buffer, work->tcon->share_conf);
 		break;
-#ifdef CONFIG_CIFSD_ACL
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
 		rc = smb2_set_info_sec(fp,
 			le32_to_cpu(req->AdditionalInformation), req->Buffer,
 			le32_to_cpu(req->BufferLength));
 		break;
-#endif
 	default:
 		rc = -EOPNOTSUPP;
 	}

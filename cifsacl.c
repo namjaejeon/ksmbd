@@ -165,8 +165,8 @@ sid_to_key_str(struct cifs_sid *sidptr, unsigned int type)
  * if the two SIDs (roughly equivalent to a UUID for a user or group) are
  * the same returns zero, if they do not match returns non-zero.
  */
-int
-compare_sids(const struct cifs_sid *ctsid, const struct cifs_sid *cwsid)
+static int compare_sids(const struct cifs_sid *ctsid,
+			const struct cifs_sid *cwsid)
 {
 	int i;
 	int num_subauth, num_sat, num_saw;
@@ -359,7 +359,7 @@ static int set_chmod_dacl(struct cifs_acl *pndacl, struct cifs_sid *pownersid,
 	return 0;
 }
 
-int parse_sid(struct cifs_sid *psid, char *end_of_acl)
+static int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 {
 	/* BB need to add parm so we can store the SID BB */
 
@@ -389,7 +389,7 @@ int parse_sid(struct cifs_sid *psid, char *end_of_acl)
 	return 0;
 }
 
-void dump_ace(struct cifs_ace *pace, char *end_of_acl)
+static void dump_ace(struct cifs_ace *pace, char *end_of_acl)
 {
 	int num_subauth;
 
@@ -422,20 +422,6 @@ void dump_ace(struct cifs_ace *pace, char *end_of_acl)
 	}
 
 	return;
-}
-
-int get_dacl_size(struct cifs_acl *pdacl, char *end_of_acl)
-{
-	if (!pdacl)
-		return 0;
-
-	/* validate that we do not go past end of acl */
-	if (end_of_acl < (char *)pdacl + le16_to_cpu(pdacl->size)) {
-		cifsd_err("ACL too small to parse DACL\n");
-		return 0;
-	}
-
-	return le16_to_cpu(pdacl->size);
 }
 
 int check_access_flags(__le32 access, __le16 type, __le32 desired_access)
@@ -529,55 +515,7 @@ out:
 	return rc;
 }
 
-int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,
-	struct cifs_sid *pownersid, struct cifs_sid *pgrpsid, __le32 daccess)
-{
-	int i, rc;
-	int num_aces = 0;
-	int acl_size;
-	char *acl_base;
-	struct cifs_ace **ppace;
-
-	cifsd_err("DACL revision %d size %d num aces %d\n",
-		 le16_to_cpu(pdacl->revision), le16_to_cpu(pdacl->size),
-		 le32_to_cpu(pdacl->num_aces));
-
-	acl_base = (char *)pdacl;
-	acl_size = sizeof(struct cifs_acl);
-
-	num_aces = le32_to_cpu(pdacl->num_aces);
-	rc = -EPERM;
-	/* empty DACL doen't allow any access if num_aces is 0 */
-	if (num_aces > 0) {
-		if (num_aces > ULONG_MAX / sizeof(struct cifs_ace *))
-			return rc;
-		ppace = kmalloc(num_aces * sizeof(struct cifs_ace *),
-				GFP_KERNEL);
-		if (!ppace)
-			return rc;
-
-		for (i = 0; i < num_aces; ++i) {
-			//dump_ace(ppace[i], end_of_acl);
-
-			ppace[i] = (struct cifs_ace *) (acl_base + acl_size);
-			if (compare_sids(&(ppace[i]->sid), pownersid) == 0) {
-				rc = check_access_flags(ppace[i]->access_req,
-					ppace[i]->type, daccess);
-				if (rc < 0)
-					break;
-			}
-
-			acl_base = (char *)ppace[i];
-			acl_size = le16_to_cpu(ppace[i]->size);
-		}
-
-		kfree(ppace);
-	}
-
-	return rc;
-}
-
-int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
+static int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 {
 	int rc;
 	struct key *sidkey;
@@ -641,7 +579,9 @@ invalidate_key:
 	goto out_key_put;
 }
 
-int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype)
+static int sid_to_id(struct cifs_sid *psid,
+		     struct cifsd_fattr *fattr,
+		     uint sidtype)
 {
 	int rc;
 	struct key *sidkey;
@@ -1040,7 +980,6 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 	return offset;
 }
 
-#ifdef CONFIG_CIFSD_ACL
 int init_cifsd_idmap(void)
 {
 	struct cred *cred;
@@ -1106,13 +1045,3 @@ void exit_cifsd_idmap(void)
 	put_cred(root_cred);
 	cifsd_err("Unregistered %s key type\n", cifsd_idmap_key_type.name);
 }
-#else
-int init_cifsd_idmap(void)
-{
-	return 0;
-}
-
-void exit_cifsd_idmap(void)
-{
-}
-#endif
