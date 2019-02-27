@@ -111,8 +111,6 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,
-	struct cifs_sid *pownersid, struct cifs_sid *pgrpsid, __le32 daccess);
 int get_dacl_size(struct cifs_acl *pdacl, char *end_of_acl);
 int sid_to_id(struct cifs_sid *psid, struct cifsd_fattr *fattr, uint sidtype);
 int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid);

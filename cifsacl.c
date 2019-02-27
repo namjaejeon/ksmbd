@@ -529,54 +529,6 @@ out:
 	return rc;
 }
 
-int check_permission_dacl(struct cifs_acl *pdacl, char *end_of_acl,
-	struct cifs_sid *pownersid, struct cifs_sid *pgrpsid, __le32 daccess)
-{
-	int i, rc;
-	int num_aces = 0;
-	int acl_size;
-	char *acl_base;
-	struct cifs_ace **ppace;
-
-	cifsd_err("DACL revision %d size %d num aces %d\n",
-		 le16_to_cpu(pdacl->revision), le16_to_cpu(pdacl->size),
-		 le32_to_cpu(pdacl->num_aces));
-
-	acl_base = (char *)pdacl;
-	acl_size = sizeof(struct cifs_acl);
-
-	num_aces = le32_to_cpu(pdacl->num_aces);
-	rc = -EPERM;
-	/* empty DACL doen't allow any access if num_aces is 0 */
-	if (num_aces > 0) {
-		if (num_aces > ULONG_MAX / sizeof(struct cifs_ace *))
-			return rc;
-		ppace = kmalloc(num_aces * sizeof(struct cifs_ace *),
-				GFP_KERNEL);
-		if (!ppace)
-			return rc;
-
-		for (i = 0; i < num_aces; ++i) {
-			//dump_ace(ppace[i], end_of_acl);
-
-			ppace[i] = (struct cifs_ace *) (acl_base + acl_size);
-			if (compare_sids(&(ppace[i]->sid), pownersid) == 0) {
-				rc = check_access_flags(ppace[i]->access_req,
-					ppace[i]->type, daccess);
-				if (rc < 0)
-					break;
-			}
-
-			acl_base = (char *)ppace[i];
-			acl_size = le16_to_cpu(ppace[i]->size);
-		}
-
-		kfree(ppace);
-	}
-
-	return rc;
-}
-
 int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 {
 	int rc;
