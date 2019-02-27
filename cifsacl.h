@@ -111,8 +111,6 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-#endif /* _CIFSACL_H */
-
 int compare_sids(const struct cifs_sid *ctsid, const struct cifs_sid *cwsid);
 int parse_sid(struct cifs_sid *psid, char *end_of_acl);
 void dump_ace(struct cifs_ace *pace, char *end_of_acl);
@@ -128,3 +126,5 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 void cifsd_fattr_to_inode(struct inode *inode, struct cifsd_fattr *fattr);
 int init_cifsd_idmap(void);
 void exit_cifsd_idmap(void);
+
+#endif /* _CIFSACL_H */
