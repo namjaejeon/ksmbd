@@ -8,4 +8,4 @@ cifsd-y :=	unicode.o encrypt.o auth.o fh.o vfs.o misc.o \
 
 cifsd-y +=	smb2pdu.o smb2ops.o smb2misc.o asn1.o smb1misc.o
 cifsd-$(CONFIG_CIFS_INSECURE_SERVER) += smb1pdu.o smb1ops.o
-cifsd-$(CONFIG_CIFSD_ACL) += cifscal.o
+cifsd-$(CONFIG_CIFSD_ACL) += cifsacl.o
