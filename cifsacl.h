@@ -127,30 +127,30 @@ void exit_cifsd_idmap(void);
 
 int init_cifsd_idmap(void);
 #else
-int parse_sec_desc(struct cifs_ntsd *pntsd,
+static int parse_sec_desc(struct cifs_ntsd *pntsd,
 		   int acl_len,
 		   struct cifsd_fattr *fattr)
 {
 	return 0;
 }
 
-int build_sec_desc(struct cifs_ntsd *pntsd,
+static int build_sec_desc(struct cifs_ntsd *pntsd,
 		   int addition_info,
 		   struct inode *inode)
 {
 	return 0;
 }
 
-void cifsd_fattr_to_inode(struct inode *inode,
+static void cifsd_fattr_to_inode(struct inode *inode,
 			  struct cifsd_fattr *fattr)
 {
 }
 
-void exit_cifsd_idmap(void)
+static void exit_cifsd_idmap(void)
 {
 }
 
-int init_cifsd_idmap(void)
+static int init_cifsd_idmap(void)
 {
 	return 0;
 }
