@@ -611,7 +611,7 @@ smb2_get_name(struct cifsd_share_config *share,
 	}
 
 	/* change it to absolute unix name */
-	convert_delimiter(name, 0);
+	cifsd_conv_path_to_unix(name);
 
 	unixname = convert_to_unix_name(share, name);
 	kfree(name);
