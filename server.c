@@ -493,9 +493,7 @@ static int cifsd_server_shutdown(void)
 	destroy_global_fidtable();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
-#ifdef CONFIG_CIFSD_ACL
 	exit_cifsd_idmap();
-#endif
 	server_conf_free();
 	return 0;
 }

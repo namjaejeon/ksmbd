@@ -123,6 +123,8 @@ int build_sec_desc(struct cifs_ntsd *pntsd,
 void cifsd_fattr_to_inode(struct inode *inode,
 			  struct cifsd_fattr *fattr);
 
+void exit_cifsd_idmap(void);
+
 int init_cifsd_idmap(void);
 #else
 int parse_sec_desc(struct cifs_ntsd *pntsd,
@@ -144,12 +146,13 @@ void cifsd_fattr_to_inode(struct inode *inode,
 {
 }
 
+void exit_cifsd_idmap(void)
+{
+}
+
 int init_cifsd_idmap(void)
 {
 	return 0;
 }
-#endif
-
-void exit_cifsd_idmap(void);
-
+#endif /* CONFIG_CIFSD_ACL */
 #endif /* _CIFSACL_H */
