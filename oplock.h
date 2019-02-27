@@ -121,7 +121,7 @@ void create_durable_rsp_buf(char *cc);
 void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp);
 void create_mxac_rsp_buf(char *cc, int maximal_access);
 void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id);
-struct create_context *smb2_find_context_vals(void *open_req, char *str);
+struct create_context *smb2_find_context_vals(void *open_req, const char *str);
 int cifsd_durable_verify_and_del_oplock(struct cifsd_session *curr_sess,
 					  struct cifsd_session *prev_sess,
 					  int fid, struct file **filp,
