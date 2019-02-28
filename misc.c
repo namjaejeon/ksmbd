@@ -131,13 +131,12 @@ static inline int is_char_allowed(char ch)
 
 int cifsd_validate_filename(char *filename)
 {
-	/* Check invalid character in stream name */
 	while (*filename) {
 		char c = *filename;
 
 		filename++;
 		if (!is_char_allowed(c)) {
-			cifsd_err("found invalid character : 0x%x\n", c);
+			cifsd_err("File name validation failed: 0x%x\n", c);
 			return -ENOENT;
 		}
 	}
@@ -147,14 +146,12 @@ int cifsd_validate_filename(char *filename)
 
 static int cifsd_validate_stream_name(char *stream_name)
 {
-	/* Check invalid character in stream name */
 	while (*stream_name) {
 		char c = *stream_name;
 
 		stream_name++;
-
 		if (c == '/' || c == ':' || c == '\\') {
-			cifsd_err("found invalid character: %c\n", c);
+			cifsd_err("Stream name validation failed: %c\n", c);
 			return -ENOENT;
 		}
 	}
