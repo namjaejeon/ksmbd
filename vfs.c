@@ -934,7 +934,11 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp
 	}
 
 	spin_lock(&dold->d_lock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
 	list_for_each_entry(child_de, &dold->d_subdirs, d_child) {
+#else
+	list_for_each_entry(child_de, &dold->d_subdirs, d_u.d_child) {
+#endif
 		struct cifsd_file *child_fp;
 
 		if (!child_de->d_inode)
