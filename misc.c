@@ -117,13 +117,13 @@ int match_pattern(const char *str, const char *pattern)
  *
  * Return:	1 if char is allowed, otherwise 0
  */
-static inline int is_char_allowed(char *ch)
+static inline int is_char_allowed(char ch)
 {
 	/* check for control chars, wildcards etc. */
-	if (!(*ch & 0x80) &&
-		(*ch <= 0x1f ||
-		 *ch == '?' || *ch == '"' || *ch == '<' ||
-		 *ch == '>' || *ch == '|' || *ch == '*'))
+	if (!(ch & 0x80) &&
+		(ch <= 0x1f ||
+		 ch == '?' || ch == '"' || ch == '<' ||
+		 ch == '>' || ch == '|' || ch == '*'))
 		return 0;
 
 	return 1;
@@ -131,21 +131,18 @@ static inline int is_char_allowed(char *ch)
 
 int check_invalid_char(char *filename)
 {
-	int len, i, rc = 0;
-
-	len = strlen(filename);
-
 	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (!is_char_allowed(&filename[i])) {
-			cifsd_err("found invalid character : 0x%x\n",
-					filename[i]);
-			rc = -ENOENT;
-			break;
+	while (*filename) {
+		char c = *filename;
+
+		filename++;
+		if (!is_char_allowed(c)) {
+			cifsd_err("found invalid character : 0x%x\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 int check_invalid_char_stream(char *stream_name)
