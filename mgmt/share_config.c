@@ -148,6 +148,8 @@ static struct cifsd_share_config *share_config_request(char *name)
 	if (!test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE)) {
 		share->path = kstrdup(CIFSD_SHARE_CONFIG_PATH(resp),
 				      GFP_KERNEL);
+		if (share->path)
+			share->path_sz = strlen(share->path);
 		share->create_mask = resp->create_mask;
 		share->directory_mask = resp->directory_mask;
 		share->force_uid = resp->force_uid;

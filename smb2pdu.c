@@ -4536,9 +4536,6 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 			     char *buffer,
 			     int buf_len)
 {
-	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
-	uint64_t id, pid;
 	int rc = 0;
 	struct inode *inode;
 	struct cifs_ntsd *pntsd;
@@ -4547,7 +4544,7 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 	inode = fp->filp->f_path.dentry->d_inode;
 
 	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
-	pntsd = (struct cifs_ntsd *) req->Buffer;
+	pntsd = (struct cifs_ntsd *)buffer;
 
 	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
 			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
@@ -4561,7 +4558,7 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 		goto out;
 	}
 
-	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
+	parse_sec_desc(pntsd, buf_len, &fattr);
 	cifsd_fattr_to_inode(inode, &fattr);
 out:
 	return rc;

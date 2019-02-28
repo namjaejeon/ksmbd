@@ -292,35 +292,27 @@ char *extract_sharename(char *treename)
  */
 char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 {
-	int len;
+	int no_slash = 0, name_len, path_len;
 	char *new_name;
 
-	len = strlen(share->path);
-	len += strlen(name);
+	if (name[0] == '/')
+		name++;
 
-	/* for '/' needed for smb2
-	 * as '/' is not present in beginning of name
-	 */
-	if (name[0] != '/')
-		len++;
-
-	/* 1 extra for NULL byte */
-	cifsd_debug("new_name len = %d\n", len);
-	new_name = kmalloc(len + 1, GFP_KERNEL);
-
+	path_len = share->path_sz;
+	name_len = strlen(name);
+	new_name = kmalloc(path_len + name_len + 2, GFP_KERNEL);
 	if (!new_name)
 		return new_name;
 
-	memcpy(new_name, share->path, strlen(share->path));
+	memcpy(new_name, share->path, path_len);
+	if (new_name[path_len - 1] != '/') {
+		new_name[path_len] = '/';
+		no_slash = 1;
+	}
 
-	if (name[0] != '/') {
-		memset(new_name + strlen(share->path), '/', 1);
-		memcpy(new_name + strlen(share->path) + 1, name, strlen(name));
-	} else
-		memcpy(new_name + strlen(share->path), name, strlen(name));
-
-	*(new_name + len) = '\0';
-
+	memcpy(new_name + path_len + no_slash, name, name_len);
+	path_len += name_len + no_slash;
+	new_name[path_len] = 0x00;
 	return new_name;
 }
 
