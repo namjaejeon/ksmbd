@@ -145,7 +145,7 @@ int check_invalid_char(char *filename)
 	return 0;
 }
 
-int check_invalid_char_stream(char *stream_name)
+static int check_invalid_char_stream(char *stream_name)
 {
 	/* Check invalid character in stream name */
 	while (*stream_name) {
