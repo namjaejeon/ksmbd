@@ -2091,7 +2091,7 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out1;
 	}
 
-	rc = check_invalid_char(name);
+	rc = cifsd_validate_filename(name);
 	if (rc < 0)
 		goto err_out1;
 

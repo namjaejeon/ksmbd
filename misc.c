@@ -117,54 +117,46 @@ int match_pattern(const char *str, const char *pattern)
  *
  * Return:	1 if char is allowed, otherwise 0
  */
-static inline int is_char_allowed(char *ch)
+static inline int is_char_allowed(char ch)
 {
 	/* check for control chars, wildcards etc. */
-	if (!(*ch & 0x80) &&
-		(*ch <= 0x1f ||
-		 *ch == '?' || *ch == '"' || *ch == '<' ||
-		 *ch == '>' || *ch == '|' || *ch == '*'))
+	if (!(ch & 0x80) &&
+		(ch <= 0x1f ||
+		 ch == '?' || ch == '"' || ch == '<' ||
+		 ch == '>' || ch == '|' || ch == '*'))
 		return 0;
 
 	return 1;
 }
 
-int check_invalid_char(char *filename)
+int cifsd_validate_filename(char *filename)
 {
-	int len, i, rc = 0;
+	while (*filename) {
+		char c = *filename;
 
-	len = strlen(filename);
-
-	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (!is_char_allowed(&filename[i])) {
-			cifsd_err("found invalid character : 0x%x\n",
-					filename[i]);
-			rc = -ENOENT;
-			break;
+		filename++;
+		if (!is_char_allowed(c)) {
+			cifsd_err("File name validation failed: 0x%x\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
-int check_invalid_char_stream(char *stream_name)
+static int cifsd_validate_stream_name(char *stream_name)
 {
-	int len, i, rc = 0;
+	while (*stream_name) {
+		char c = *stream_name;
 
-	len = strlen(stream_name);
-	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (stream_name[i] == '/' || stream_name[i] == ':' ||
-				stream_name[i] == '\\') {
-			cifsd_err("found invalid character : %c\n",
-					stream_name[i]);
-			rc = -ENOENT;
-			break;
+		stream_name++;
+		if (c == '/' || c == ':' || c == '\\') {
+			cifsd_err("Stream name validation failed: %c\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 int parse_stream_name(char *filename, char **stream_name, int *s_type)
@@ -180,7 +172,7 @@ int parse_stream_name(char *filename, char **stream_name, int *s_type)
 		stream_type = s_name;
 		s_name = strsep(&stream_type, ":");
 
-		rc = check_invalid_char_stream(s_name);
+		rc = cifsd_validate_stream_name(s_name);
 		if (rc < 0) {
 			rc = -ENOENT;
 			goto out;

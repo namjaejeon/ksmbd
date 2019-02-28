@@ -15,8 +15,7 @@ void dump_smb_msg(void *buf, int smb_buf_length);
 
 int match_pattern(const char *str, const char *pattern);
 
-int check_invalid_char(char *filename);
-int check_invalid_char_stream(char *stream_name);
+int cifsd_validate_filename(char *filename);
 
 int parse_stream_name(char *filename, char **stream_name, int *s_type);
 
