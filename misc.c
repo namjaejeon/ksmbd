@@ -129,7 +129,7 @@ static inline int is_char_allowed(char ch)
 	return 1;
 }
 
-int check_invalid_char(char *filename)
+int cifsd_validate_filename(char *filename)
 {
 	/* Check invalid character in stream name */
 	while (*filename) {
@@ -145,7 +145,7 @@ int check_invalid_char(char *filename)
 	return 0;
 }
 
-static int check_invalid_char_stream(char *stream_name)
+static int cifsd_validate_stream_name(char *stream_name)
 {
 	/* Check invalid character in stream name */
 	while (*stream_name) {
@@ -175,7 +175,7 @@ int parse_stream_name(char *filename, char **stream_name, int *s_type)
 		stream_type = s_name;
 		s_name = strsep(&stream_type, ":");
 
-		rc = check_invalid_char_stream(s_name);
+		rc = cifsd_validate_stream_name(s_name);
 		if (rc < 0) {
 			rc = -ENOENT;
 			goto out;
