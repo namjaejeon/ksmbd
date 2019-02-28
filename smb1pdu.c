@@ -797,7 +797,9 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
 	__le64 time;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
 	struct timespec64 ts64;
+#endif
 	int rc = 0;
 
 	WARN_ON(cifsd_tcp_good(work));
@@ -827,9 +829,13 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = conn->srv_cap = SMB1_SERVER_CAPS;
 
+	/* System time is anyway ignored by clients */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 0)
 	getnstimeofday64(&ts64);
 	time = cpu_to_le64(cifs_UnixTimeToNT(timespec64_to_timespec(ts64)));
-
+#else
+	time = cpu_to_le64(cifs_UnixTimeToNT(from_kern_timespec(CURRENT_TIME)));
+#endif
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
