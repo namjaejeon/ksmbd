@@ -147,21 +147,19 @@ int check_invalid_char(char *filename)
 
 int check_invalid_char_stream(char *stream_name)
 {
-	int len, i, rc = 0;
-
-	len = strlen(stream_name);
 	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (stream_name[i] == '/' || stream_name[i] == ':' ||
-				stream_name[i] == '\\') {
-			cifsd_err("found invalid character : %c\n",
-					stream_name[i]);
-			rc = -ENOENT;
-			break;
+	while (*stream_name) {
+		char c = *stream_name;
+
+		stream_name++;
+
+		if (c == '/' || c == ':' || c == '\\') {
+			cifsd_err("found invalid character: %c\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 int parse_stream_name(char *filename, char **stream_name, int *s_type)
