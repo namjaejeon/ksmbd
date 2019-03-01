@@ -196,6 +196,7 @@ static int check_lock_range(struct file *filp,
 			    unsigned char type)
 {
 	struct file_lock *flock;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 	struct file_lock_context *ctx = file_inode(filp)->i_flctx;
 	int error = 0;
 
@@ -223,6 +224,32 @@ static int check_lock_range(struct file *filp,
 			}
 		}
 	}
+#else
+	struct inode *inode = file_inode(filp);
+	int error = 0;
+	spin_lock(&inode->i_lock);
+	for (flock = inode->i_flock; flock; flock = flock->fl_next) {
+		if (flock->fl_end >= start && end >= flock->fl_start) {
+			if (flock->fl_type == F_RDLCK) {
+				if (type == WRITE) {
+					cifsd_err("not allow write by shared lock\n");
+					error = 1;
+					spin_unlock(&inode->i_lock);
+					goto out;
+				}
+			} else if (flock->fl_type == F_WRLCK) {
+				/* check owner in lock */
+				if (flock->fl_file != filp) {
+					error = 1;
+					cifsd_err("not allow rw access by exclusive lock from other opens\n");
+					spin_unlock(&inode->i_lock);
+					goto out;
+				}
+			}
+		}
+	}
+	spin_unlock(&inode->i_lock);
+#endif
 out:
 	return error;
 }
