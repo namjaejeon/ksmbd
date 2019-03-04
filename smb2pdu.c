@@ -918,7 +918,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
-	rsp->Capabilities = conn->srv_cap;
+	rsp->Capabilities = cpu_to_le32(conn->srv_cap);
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
@@ -958,7 +958,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
-	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	rsp->SecurityMode = cpu_to_le16(SMB2_NEGOTIATE_SIGNING_ENABLED);
 	conn->use_spnego = true;
 
 	if ((server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
@@ -967,7 +967,8 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		conn->sign = true;
 	else if (server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		server_conf.enforced_signing = true;
-		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED;
+		rsp->SecurityMode |=
+			cpu_to_le16(SMB2_NEGOTIATE_SIGNING_REQUIRED);
 		conn->sign = true;
 	}
 
