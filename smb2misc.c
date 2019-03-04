@@ -216,7 +216,7 @@ char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 		lock_count = le16_to_cpu(
 			((struct smb2_lock_req *)hdr)->LockCount) - 1;
 		if (lock_count > 0) {
-			*off = SMB2_HEADER_STRUCTURE_SIZE + 48;
+			*off = __SMB2_HEADER_STRUCTURE_SIZE + 48;
 			*len = sizeof(struct smb2_lock_element) * lock_count;
 		}
 		break;
