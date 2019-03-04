@@ -134,7 +134,7 @@ char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 	switch (hdr->Command) {
 	case SMB2_NEGOTIATE:
 		if (!get_neg_context_size((char *)hdr, off, len)) {
-			*off = SMB2_HEADER_STRUCTURE_SIZE + 36;
+			*off = __SMB2_HEADER_STRUCTURE_SIZE + 36;
 			*len = le16_to_cpu(((struct smb2_negotiate_req *)
 				hdr)->DialectCount) * 2;
 		}
