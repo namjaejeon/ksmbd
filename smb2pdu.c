@@ -35,6 +35,7 @@
 
 bool multi_channel_enable;
 bool encryption_enable;
+bool stream_file_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
@@ -2080,6 +2081,10 @@ int smb2_open(struct cifsd_work *work)
 
 	cifsd_debug("converted name = %s\n", name);
 	if (strchr(name, ':')) {
+		if (stream_file_enable == false) {
+			rc = -EBADF;
+			goto err_out1;
+		}
 		rc = parse_stream_name(name, &stream_name, &s_type);
 		if (rc < 0)
 			goto err_out1;
