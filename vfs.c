@@ -29,6 +29,7 @@
 #include "vfs.h"
 #include "fh.h"
 
+#include "time_wrappers.h"
 #include "smb_common.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"

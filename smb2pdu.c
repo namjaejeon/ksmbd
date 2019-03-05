@@ -24,6 +24,7 @@
 #include "fh.h"
 #include "misc.h"
 
+#include "time_wrappers.h"
 #include "server.h"
 #include "smb_common.h"
 #include "mgmt/user_config.h"
@@ -218,7 +219,6 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct timespec64 ts64;
 
 	if (!conn->need_neg)
 		return -EINVAL;
@@ -261,9 +261,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->MaxReadSize = cifsd_max_msg_size();
 	rsp->MaxWriteSize = cifsd_max_msg_size();
 
-	getnstimeofday64(&ts64);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
-						timespec64_to_timespec(ts64)));
+	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
@@ -849,7 +847,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
 	int rc = 0, err;
-	struct timespec64 ts64;
 
 	cifsd_debug("Recieved negotiate request\n");
 
@@ -948,10 +945,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	 */
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
 
-	getnstimeofday64(&ts64);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
-						timespec64_to_timespec(ts64)));
-
+	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
 	cifsd_debug("negotiate context offset %d, count %d\n",
 		le32_to_cpu(rsp->NegotiateContextOffset),
