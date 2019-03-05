@@ -4046,7 +4046,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			fs_info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
 
 			fs_info->DeviceType = cpu_to_le32(stfs.f_type);
-			fs_info->DeviceCharacteristics = (0x00000020);
+			fs_info->DeviceCharacteristics =
+				cpu_to_le32(0x00000020);
 			rsp->OutputBufferLength = cpu_to_le32(8);
 			inc_rfc1001_len(rsp_org, 8);
 			fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
@@ -4064,7 +4065,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 					fs_info->FileSystemName, "NTFS",
 					PATH_MAX, conn->local_nls, 0);
 			len = len * 2;
-			fs_info->FileSystemNameLen = len;
+			fs_info->FileSystemNameLen = cpu_to_le32(len);
 			rsp->OutputBufferLength = cpu_to_le32(sizeof
 					(FILE_SYSTEM_ATTRIBUTE_INFO) -2 + len);
 			inc_rfc1001_len(rsp_org,
@@ -4156,9 +4157,10 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			} else
 				memset(obj_info->objid, 0, 16);
 
-			obj_info->extended_info.magic = EXTENDED_INFO_MAGIC;
-			obj_info->extended_info.version = 1;
-			obj_info->extended_info.release = 1;
+			obj_info->extended_info.magic =
+				cpu_to_le32(EXTENDED_INFO_MAGIC);
+			obj_info->extended_info.version = cpu_to_le32(1);
+			obj_info->extended_info.release = cpu_to_le32(1);
 			obj_info->extended_info.rel_date = 0;
 			strncpy(obj_info->extended_info.version_string,
 					"1.1.0", STRING_LENGTH);
@@ -4210,9 +4212,9 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			 fs_control_info->FreeSpaceThreshold = 0;
 			 fs_control_info->FreeSpaceStopFiltering = 0;
 			 fs_control_info->DefaultQuotaThreshold =
-				0xFFFFFFFFFFFFFFFF;
+				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			 fs_control_info->DefaultQuotaLimit =
-				0xFFFFFFFFFFFFFFFF;
+				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			 fs_control_info->Padding = 0;
 			 rsp->OutputBufferLength = cpu_to_le32(48);
 			 inc_rfc1001_len(rsp_org, 48);
