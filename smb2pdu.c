@@ -4264,7 +4264,7 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 	out_len = build_sec_desc(pntsd, le32_to_cpu(req->AdditionalInformation),
 		inode);
 
-	rsp->OutputBufferLength = out_len;
+	rsp->OutputBufferLength = cpu_to_le32(out_len);
 	inc_rfc1001_len(rsp_org, out_len);
 
 	return rc;
@@ -4282,14 +4282,14 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 	pntsd = (struct cifs_ntsd *) rsp->Buffer;
 	out_len = sizeof(struct cifs_ntsd);
 
-	pntsd->revision = 1;
-	pntsd->type = 0x9000;
+	pntsd->revision = cpu_to_le16(1);
+	pntsd->type = cpu_to_le16(0x9000);
 	pntsd->osidoffset = 0;
 	pntsd->gsidoffset = 0;
 	pntsd->sacloffset = 0;
 	pntsd->dacloffset = 0;
 
-	rsp->OutputBufferLength = out_len;
+	rsp->OutputBufferLength = cpu_to_le32(out_len);
 	inc_rfc1001_len(rsp_org, out_len);
 
 	return rc;
