@@ -92,7 +92,9 @@
  *
  */
 
-#define SMB2_HEADER_STRUCTURE_SIZE __constant_cpu_to_le16(64)
+#define __SMB2_HEADER_STRUCTURE_SIZE	64
+#define SMB2_HEADER_STRUCTURE_SIZE				\
+	__constant_cpu_to_le16(__SMB2_HEADER_STRUCTURE_SIZE)
 
 struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */

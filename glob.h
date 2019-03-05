@@ -225,63 +225,17 @@ struct cifsd_dir_info {
 #define cifsd_err(fmt, ...) pr_err("kcifsd: %s:%d: " fmt,	\
 			__func__, __LINE__, ##__VA_ARGS__)
 
-static inline unsigned int
-get_rfc1002_length(void *buf)
+static inline unsigned int get_rfc1002_length(void *buf)
 {
 	return be32_to_cpu(*((__be32 *)buf)) & 0xffffff;
 }
 
-static inline void
-inc_rfc1001_len(void *buf, int count)
+static inline void inc_rfc1001_len(void *buf, int count)
 {
 	be32_add_cpu((__be32 *)buf, count);
 }
 
-/* misc functions */
-#define NTFS_TIME_OFFSET ((u64)(369*365 + 89) * 24 * 3600 * 10000000)
-#define UNICODE_LEN(x)	((x) * 2)
-
-/* Convert the Unix UTC into NT UTC. */
-static inline u64
-cifs_UnixTimeToNT(struct timespec t)
-{
-	/* Convert to 100ns intervals and then add the NTFS time offset. */
-	return (u64) t.tv_sec * 10000000 + t.tv_nsec/100 + NTFS_TIME_OFFSET;
-}
-
-static inline struct timespec
-cifs_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec ts;
-	/* Subtract the NTFS time offset, then convert to 1s intervals. */
-	u64 t;
-
-	t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
-	ts.tv_nsec = do_div(t, 10000000) * 100;
-	ts.tv_sec = t;
-	return ts;
-}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
-static inline struct timespec64 to_kern_timespec(struct timespec ts)
-{
-	return timespec_to_timespec64(ts);
-}
-
-static inline struct timespec from_kern_timespec(struct timespec64 ts)
-{
-	return timespec64_to_timespec(ts);
-}
-#else
-#define to_kern_timespec(ts) (ts)
-#define from_kern_timespec(ts) (ts)
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20, 0)
-#define CIFSD_TIME_TO_TM	time64_to_tm
-#else
-#define CIFSD_TIME_TO_TM	time_to_tm
-#endif
+#define UNICODE_LEN(x)		((x) * 2)
 
 /* @FIXME clean up this code */
 /* @FIXME clean up this code */

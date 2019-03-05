@@ -22,7 +22,7 @@ if [ "z$VER" = "z" ]; then
 	exit 1
 fi
 
-wget https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-"$VER".tar.gz
+wget https://cdn.kernel.org/pub/linux/kernel/v5.x/linux-"$VER".tar.gz
 if [ $? -ne 0 ]; then
 	echo "Could not download $VER kernel version"
 	exit 1
