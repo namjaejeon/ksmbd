@@ -92,7 +92,9 @@
  *
  */
 
-#define SMB2_HEADER_STRUCTURE_SIZE __constant_cpu_to_le16(64)
+#define __SMB2_HEADER_STRUCTURE_SIZE	64
+#define SMB2_HEADER_STRUCTURE_SIZE				\
+	__constant_cpu_to_le16(__SMB2_HEADER_STRUCTURE_SIZE)
 
 struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */
@@ -187,8 +189,8 @@ struct smb2_negotiate_req {
 } __packed;
 
 /* SecurityMode flags */
-#define	SMB2_NEGOTIATE_SIGNING_ENABLED	0x0001
-#define SMB2_NEGOTIATE_SIGNING_REQUIRED	0x0002
+#define SMB2_NEGOTIATE_SIGNING_ENABLED_LE	cpu_to_le16(0x0001)
+#define SMB2_NEGOTIATE_SIGNING_REQUIRED_LE	cpu_to_le16(0x0002)
 /* Capabilities flags */
 #define SMB2_GLOBAL_CAP_DFS		0x00000001
 #define SMB2_GLOBAL_CAP_LEASING		0x00000002 /* Resp only New to SMB2.1 */
@@ -294,9 +296,9 @@ struct smb2_sess_setup_req {
 #define SMB2_SHAREFLAG_CLUSTER_RECONNECT	0x0001
 
 /* Currently defined SessionFlags */
-#define SMB2_SESSION_FLAG_IS_GUEST	0x0001
-#define SMB2_SESSION_FLAG_IS_NULL	0x0002
-#define SMB2_SESSION_FLAG_ENCRYPT_DATA	0x0004
+#define SMB2_SESSION_FLAG_IS_GUEST_LE		cpu_to_le16(0x0001)
+#define SMB2_SESSION_FLAG_IS_NULL_LE		cpu_to_le16(0x0002)
+#define SMB2_SESSION_FLAG_ENCRYPT_DATA_LE	cpu_to_le16(0x0004)
 struct smb2_sess_setup_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 9 */

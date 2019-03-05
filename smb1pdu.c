@@ -16,6 +16,7 @@
 #include "vfs.h"
 #include "misc.h"
 
+#include "time_wrappers.h"
 #include "auth.h"
 #include "asn1.h"
 #include "server.h"
@@ -606,7 +607,7 @@ smb_get_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	if (check_invalid_char(unixname) < 0) {
+	if (cifsd_validate_filename(unixname) < 0) {
 		smb_put_name(unixname);
 		return ERR_PTR(-ENOENT);
 	}
@@ -687,7 +688,7 @@ static char *smb_get_dir_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (check_invalid_char(unixname) < 0) {
+	if (cifsd_validate_filename(unixname) < 0) {
 		smb_put_name(unixname);
 		return ERR_PTR(-ENOENT);
 	}
@@ -797,7 +798,6 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
 	__le64 time;
-	struct timespec64 ts64;
 	int rc = 0;
 
 	WARN_ON(cifsd_tcp_good(work));
@@ -827,9 +827,7 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = conn->srv_cap = SMB1_SERVER_CAPS;
 
-	getnstimeofday64(&ts64);
-	time = cpu_to_le64(cifs_UnixTimeToNT(timespec64_to_timespec(ts64)));
-
+	time = cpu_to_le64(cifsd_systime());
 	neg_rsp->SystemTimeLow =  (time & 0x00000000FFFFFFFF);
 	neg_rsp->SystemTimeHigh = ((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
@@ -1703,9 +1701,8 @@ retry:
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
 wait:
-			err = wait_event_interruptible_timeout(
-				flock->fl_wait, !flock->fl_next,
-				msecs_to_jiffies(10));
+			err = cifsd_vfs_posix_lock_wait_timeout(flock,
+							msecs_to_jiffies(10));
 			if (err) {
 				list_del(&smb_lock->llist);
 				list_del(&smb_lock->glist);

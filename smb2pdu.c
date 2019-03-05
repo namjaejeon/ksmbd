@@ -24,6 +24,7 @@
 #include "fh.h"
 #include "misc.h"
 
+#include "time_wrappers.h"
 #include "server.h"
 #include "smb_common.h"
 #include "mgmt/user_config.h"
@@ -34,6 +35,7 @@
 
 bool multi_channel_enable;
 bool encryption_enable;
+bool stream_file_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
@@ -218,7 +220,6 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct timespec64 ts64;
 
 	if (!conn->need_neg)
 		return -EINVAL;
@@ -261,9 +262,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->MaxReadSize = cifsd_max_msg_size();
 	rsp->MaxWriteSize = cifsd_max_msg_size();
 
-	getnstimeofday64(&ts64);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
-						timespec64_to_timespec(ts64)));
+	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
 
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
@@ -273,7 +272,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
-	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
 	conn->use_spnego = true;
 
 	cifsd_tcp_set_need_negotiate(work);
@@ -849,7 +848,6 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	struct smb2_negotiate_req *req;
 	struct smb2_negotiate_rsp *rsp;
 	int rc = 0, err;
-	struct timespec64 ts64;
 
 	cifsd_debug("Recieved negotiate request\n");
 
@@ -921,7 +919,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
-	rsp->Capabilities = conn->srv_cap;
+	rsp->Capabilities = cpu_to_le32(conn->srv_cap);
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
@@ -948,10 +946,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	 */
 	memset(rsp->ServerGUID, 0, SMB2_CLIENT_GUID_SIZE);
 
-	getnstimeofday64(&ts64);
-	rsp->SystemTime = cpu_to_le64(cifs_UnixTimeToNT(
-						timespec64_to_timespec(ts64)));
-
+	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
 	cifsd_debug("negotiate context offset %d, count %d\n",
 		le32_to_cpu(rsp->NegotiateContextOffset),
@@ -964,16 +959,16 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
-	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
 	conn->use_spnego = true;
 
 	if ((server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
 			server_conf.signing == CIFSD_CONFIG_OPT_DISABLED) &&
-		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
+		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED_LE)
 		conn->sign = true;
 	else if (server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		server_conf.enforced_signing = true;
-		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED;
+		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED_LE;
 		conn->sign = true;
 	}
 
@@ -1244,7 +1239,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			rsp->SecurityBufferLength = neg_blob_len;
+			rsp->SecurityBufferLength = cpu_to_le16(neg_blob_len);
 		}
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
@@ -1312,7 +1307,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
+			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
 			sess->is_guest = true;
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
@@ -1329,7 +1324,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			if (!sess->sign && sess->is_guest == false &&
 				((req->SecurityMode &
-				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
+				SMB2_NEGOTIATE_SIGNING_REQUIRED_LE) ||
 				(conn->sign || server_conf.enforced_signing)))
 				sess->sign = true;
 
@@ -1344,7 +1339,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				}
 				sess->enc = true;
 				rsp->SessionFlags =
-					SMB2_SESSION_FLAG_ENCRYPT_DATA;
+					SMB2_SESSION_FLAG_ENCRYPT_DATA_LE;
 				/*
 				 * signing is disable if encryption is enable
 				 * on this session
@@ -1698,14 +1693,14 @@ static int create_smb2_pipe(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
 	rsp->Reserved = 0;
-	rsp->CreateAction = FILE_OPENED;
+	rsp->CreateAction = cpu_to_le32(FILE_OPENED);
 
 	rsp->CreationTime = cpu_to_le64(0);
 	rsp->LastAccessTime = cpu_to_le64(0);
 	rsp->ChangeTime = cpu_to_le64(0);
 	rsp->AllocationSize = cpu_to_le64(0);
 	rsp->EndofFile = cpu_to_le64(0);
-	rsp->FileAttributes = ATTR_NORMAL;
+	rsp->FileAttributes = FILE_ATTRIBUTE_NORMAL_LE;
 	rsp->Reserved2 = 0;
 	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->PersistentFileId = 0;
@@ -2086,12 +2081,16 @@ int smb2_open(struct cifsd_work *work)
 
 	cifsd_debug("converted name = %s\n", name);
 	if (strchr(name, ':')) {
+		if (stream_file_enable == false) {
+			rc = -EBADF;
+			goto err_out1;
+		}
 		rc = parse_stream_name(name, &stream_name, &s_type);
 		if (rc < 0)
 			goto err_out1;
 	}
 
-	rc = check_invalid_char(name);
+	rc = cifsd_validate_filename(name);
 	if (rc < 0)
 		goto err_out1;
 
@@ -2719,7 +2718,7 @@ reconnected:
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 	rsp->Reserved = 0;
-	rsp->CreateAction = file_info;
+	rsp->CreateAction = cpu_to_le32(file_info);
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
 	rsp->LastAccessTime = cpu_to_le64(time);
@@ -3677,7 +3676,8 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		sinfo->NumberOfLinks = get_nlink(&stat) - delete_pending;
+		sinfo->NumberOfLinks =
+			cpu_to_le32(get_nlink(&stat) - delete_pending);
 		sinfo->DeletePending = delete_pending;
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		rsp->OutputBufferLength =
@@ -3735,7 +3735,8 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		file_info->NumberOfLinks = get_nlink(&stat) - delete_pending;
+		file_info->NumberOfLinks =
+			cpu_to_le32(get_nlink(&stat) - delete_pending);
 		file_info->DeletePending = delete_pending;
 		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		file_info->Pad2 = 0;
@@ -3861,7 +3862,7 @@ out:
 		if (xattr_list)
 			vfree(xattr_list);
 
-		rsp->OutputBufferLength = nbytes;
+		rsp->OutputBufferLength = cpu_to_le32(nbytes);
 		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
@@ -4049,7 +4050,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			fs_info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
 
 			fs_info->DeviceType = cpu_to_le32(stfs.f_type);
-			fs_info->DeviceCharacteristics = (0x00000020);
+			fs_info->DeviceCharacteristics =
+				cpu_to_le32(0x00000020);
 			rsp->OutputBufferLength = cpu_to_le32(8);
 			inc_rfc1001_len(rsp_org, 8);
 			fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
@@ -4067,7 +4069,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 					fs_info->FileSystemName, "NTFS",
 					PATH_MAX, conn->local_nls, 0);
 			len = len * 2;
-			fs_info->FileSystemNameLen = len;
+			fs_info->FileSystemNameLen = cpu_to_le32(len);
 			rsp->OutputBufferLength = cpu_to_le32(sizeof
 					(FILE_SYSTEM_ATTRIBUTE_INFO) -2 + len);
 			inc_rfc1001_len(rsp_org,
@@ -4159,9 +4161,10 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			} else
 				memset(obj_info->objid, 0, 16);
 
-			obj_info->extended_info.magic = EXTENDED_INFO_MAGIC;
-			obj_info->extended_info.version = 1;
-			obj_info->extended_info.release = 1;
+			obj_info->extended_info.magic =
+				cpu_to_le32(EXTENDED_INFO_MAGIC);
+			obj_info->extended_info.version = cpu_to_le32(1);
+			obj_info->extended_info.release = cpu_to_le32(1);
 			obj_info->extended_info.rel_date = 0;
 			strncpy(obj_info->extended_info.version_string,
 					"1.1.0", STRING_LENGTH);
@@ -4213,9 +4216,9 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			 fs_control_info->FreeSpaceThreshold = 0;
 			 fs_control_info->FreeSpaceStopFiltering = 0;
 			 fs_control_info->DefaultQuotaThreshold =
-				0xFFFFFFFFFFFFFFFF;
+				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			 fs_control_info->DefaultQuotaLimit =
-				0xFFFFFFFFFFFFFFFF;
+				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
 			 fs_control_info->Padding = 0;
 			 rsp->OutputBufferLength = cpu_to_le32(48);
 			 inc_rfc1001_len(rsp_org, 48);
@@ -4265,7 +4268,7 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 	out_len = build_sec_desc(pntsd, le32_to_cpu(req->AdditionalInformation),
 		inode);
 
-	rsp->OutputBufferLength = out_len;
+	rsp->OutputBufferLength = cpu_to_le32(out_len);
 	inc_rfc1001_len(rsp_org, out_len);
 
 	return rc;
@@ -4283,14 +4286,14 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 	pntsd = (struct cifs_ntsd *) rsp->Buffer;
 	out_len = sizeof(struct cifs_ntsd);
 
-	pntsd->revision = 1;
-	pntsd->type = 0x9000;
+	pntsd->revision = cpu_to_le16(1);
+	pntsd->type = cpu_to_le16(0x9000);
 	pntsd->osidoffset = 0;
 	pntsd->gsidoffset = 0;
 	pntsd->sacloffset = 0;
 	pntsd->dacloffset = 0;
 
-	rsp->OutputBufferLength = out_len;
+	rsp->OutputBufferLength = cpu_to_le32(out_len);
 	inc_rfc1001_len(rsp_org, out_len);
 
 	return rc;
@@ -4536,9 +4539,6 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 			     char *buffer,
 			     int buf_len)
 {
-	struct smb2_set_info_req *req;
-	struct smb2_set_info_rsp *rsp;
-	uint64_t id, pid;
 	int rc = 0;
 	struct inode *inode;
 	struct cifs_ntsd *pntsd;
@@ -4547,7 +4547,7 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 	inode = fp->filp->f_path.dentry->d_inode;
 
 	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
-	pntsd = (struct cifs_ntsd *) req->Buffer;
+	pntsd = (struct cifs_ntsd *)buffer;
 
 	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
 			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
@@ -4561,7 +4561,7 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 		goto out;
 	}
 
-	parse_sec_desc(pntsd, le32_to_cpu(req->BufferLength), &fattr);
+	parse_sec_desc(pntsd, buf_len, &fattr);
 	cifsd_fattr_to_inode(inode, &fattr);
 out:
 	return rc;
@@ -5698,7 +5698,7 @@ void smb2_remove_blocked_lock(void **argv)
 {
 	struct file_lock *flock = (struct file_lock *)argv[0];
 
-	posix_unblock_lock(flock);
+	cifsd_vfs_posix_lock_unblock(flock);
 	wake_up(&flock->fl_wait);
 }
 
@@ -5980,8 +5980,7 @@ skip:
 
 				smb2_send_interim_resp(work, NT_STATUS_PENDING);
 
-				err = wait_event_interruptible(flock->fl_wait,
-					!flock->fl_next);
+				err = cifsd_vfs_posix_lock_wait(flock);
 
 				if (work->state == WORK_STATE_CANCELLED ||
 					work->state == WORK_STATE_CLOSED) {

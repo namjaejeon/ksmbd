@@ -1533,7 +1533,7 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
  *
  * Return:      pointer to requested context, NULL if @str context not found
  */
-struct create_context *smb2_find_context_vals(void *open_req, char *str)
+struct create_context *smb2_find_context_vals(void *open_req, const char *str)
 {
 	char *data_offset;
 	struct create_context *cc;
