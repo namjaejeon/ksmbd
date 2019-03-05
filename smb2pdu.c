@@ -1239,7 +1239,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			rsp->SecurityBufferLength = neg_blob_len;
+			rsp->SecurityBufferLength = cpu_to_le16(neg_blob_len);
 		}
 
 		rsp->hdr.Status = NT_STATUS_MORE_PROCESSING_REQUIRED;
@@ -1339,7 +1339,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				}
 				sess->enc = true;
 				rsp->SessionFlags =
-					SMB2_SESSION_FLAG_ENCRYPT_DATA;
+					cpu_to_le16(SMB2_SESSION_FLAG_ENCRYPT_DATA);
 				/*
 				 * signing is disable if encryption is enable
 				 * on this session
