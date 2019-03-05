@@ -2714,7 +2714,7 @@ reconnected:
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = fp->f_opinfo != NULL ? fp->f_opinfo->level : 0;
 	rsp->Reserved = 0;
-	rsp->CreateAction = file_info;
+	rsp->CreateAction = cpu_to_le32(file_info);
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
 	rsp->LastAccessTime = cpu_to_le64(time);
