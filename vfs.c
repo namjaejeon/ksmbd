@@ -29,6 +29,7 @@
 #include "vfs.h"
 #include "fh.h"
 
+#include "time_wrappers.h"
 #include "smb_common.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -465,7 +466,7 @@ void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 		if (attrs->ia_valid & ATTR_MODE) {
 			/* we're setting mode too, just clear the s*id bits */
 			attrs->ia_mode &= ~S_ISUID;
-			if (attrs->ia_mode & S_IXGRP)
+			if (attrs->ia_mode & 0010)
 				attrs->ia_mode &= ~S_ISGID;
 		} else {
 			/* set ATTR_KILL_* bits and let VFS handle it */
@@ -737,8 +738,7 @@ int cifsd_vfs_remove_file(char *name)
 	if (last && last[1] != '\0') {
 		*last = '\0';
 		last++;
-	}
-	else {
+	} else {
 		cifsd_debug("can't get last component in path %s\n", name);
 		return -ENOENT;
 	}
@@ -862,8 +862,7 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp
 		if (oldname && oldname[1] != '\0') {
 			*oldname = '\0';
 			oldname++;
-		}
-		else {
+		} else {
 			cifsd_err("can't get last component in path %s\n",
 					abs_oldname);
 			return -ENOENT;
@@ -882,8 +881,7 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp
 		if (newname && newname[1] != '\0') {
 			*newname = '\0';
 			newname++;
-		}
-		else {
+		} else {
 			cifsd_err("can't get last component in path %s\n",
 					abs_newname);
 			err = -ENOMEM;
@@ -905,8 +903,7 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp
 		if (newname && newname[1] != '\0') {
 			*newname = '\0';
 			newname++;
-		}
-		else {
+		} else {
 			cifsd_err("can't get last component in path %s\n",
 					abs_newname);
 			return -ENOMEM;
@@ -1075,7 +1072,8 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
 	err = vfs_listxattr(dentry, vlist, size);
 	if (err == -ERANGE) {
 		/* The file system tried to returned a list bigger
-		   than XATTR_LIST_MAX bytes. Not possible. */
+		 * than XATTR_LIST_MAX bytes. Not possible.
+		 */
 		err = -E2BIG;
 		cifsd_debug("listxattr failed\n");
 	}
@@ -1225,6 +1223,7 @@ out:
 void cifsd_vfs_set_fadvise(struct file *filp, int option)
 {
 	struct address_space *mapping;
+
 	mapping = filp->f_mapping;
 
 	if (!option || !mapping)
@@ -1342,7 +1341,7 @@ unsigned short cifsd_vfs_logical_sector_size(struct inode *inode)
 	struct request_queue *q;
 	unsigned short ret_val = 512;
 
-	if(!inode->i_sb->s_bdev)
+	if (!inode->i_sb->s_bdev)
 		return ret_val;
 
 	q = inode->i_sb->s_bdev->bd_disk->queue;
@@ -1415,7 +1414,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	cifsd_vfs_set_fadvise(filp, option);
 
-	sess_id = sess == NULL ? 0 : sess->id;
+	sess_id = !sess ? 0 : sess->id;
 	id = cifsd_get_unused_id(&sess->fidtable);
 	if (id < 0) {
 		err = -EBADF;
@@ -1424,7 +1423,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	cifsd_debug("allocate volatile id : %d\n", id);
 	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
-	if (fp == NULL) {
+	if (!fp) {
 		err = -ENOMEM;
 		cifsd_err("id insert failed\n");
 		goto err_out2;
@@ -1618,7 +1617,8 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 	err = kern_path(name, flags, path);
 	if (err && caseless) {
 		char *filename = strrchr((const char *)name, '/');
-		if (filename == NULL)
+
+		if (!filename)
 			return err;
 		*(filename++) = '\0';
 		if (strlen(name) == 0) {
@@ -1878,9 +1878,10 @@ static int cifsd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 
 	/*
 	 * skip the verification of the range of data. it will be done
-	 * in do_splice_direct */
+	 * in do_splice_direct
+	 */
 	ret = do_splice_direct(file_in, &pos_in, file_out, &pos_out,
-			len > MAX_RW_COUNT? MAX_RW_COUNT : len, 0);
+			len > MAX_RW_COUNT ? MAX_RW_COUNT : len, 0);
 	if (ret > 0) {
 		fsnotify_access(file_in);
 		add_rchar(current, ret);
@@ -1929,9 +1930,8 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 	if (src_fp->is_stream || dst_fp->is_stream)
 		return -EBADF;
 
-	if (oplocks_enable) {
+	if (oplocks_enable)
 		smb_break_all_levII_oplock(work->sess->conn, dst_fp, 1);
-	}
 
 	for (i = 0; i < chunk_count; i++) {
 		src_off = le64_to_cpu(chunks[i].SourceOffset);
@@ -1965,4 +1965,35 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 		*total_size_written += ret;
 	}
 	return 0;
+}
+
+int cifsd_vfs_posix_lock_wait(struct file_lock *flock)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	return wait_event_interruptible(flock->fl_wait, !flock->fl_next);
+#else
+	return wait_event_interruptible(flock->fl_wait, !flock->fl_blocker);
+#endif
+}
+
+int cifsd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	return wait_event_interruptible_timeout(flock->fl_wait,
+						!flock->fl_next,
+						timeout);
+#else
+	return wait_event_interruptible_timeout(flock->fl_wait,
+						!flock->fl_blocker,
+						timeout);
+#endif
+}
+
+void cifsd_vfs_posix_lock_unblock(struct file_lock *flock)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	posix_unblock_lock(flock);
+#else
+	locks_delete_block(flock);
+#endif
 }

@@ -78,11 +78,11 @@
 /* BB FIXME - analyze following length BB */
 #define MAX_SMB2_HDR_SIZE 0x78 /* 4 len + 64 hdr + (2*24 wct) + 2 bct + 2 pad */
 
-#define SMB2_PROTO_NUMBER __constant_cpu_to_le32(0x424d53fe) /* 'B''M''S' */
+#define SMB2_PROTO_NUMBER cpu_to_le32(0x424d53fe) /* 'B''M''S' */
 #define SMB2_TRANSFORM_PROTO_NUM cpu_to_le32(0x424d53fd)
 
-#define STATUS_NO_MORE_FILES __constant_cpu_to_le32(0x80000006)
-#define STATUS_OBJECT_NAME_NOT_FOUND __constant_cpu_to_le32(0xC0000034)
+#define STATUS_NO_MORE_FILES cpu_to_le32(0x80000006)
+#define STATUS_OBJECT_NAME_NOT_FOUND cpu_to_le32(0xC0000034)
 /*
  * SMB2 Header Definition
  *
@@ -92,7 +92,9 @@
  *
  */
 
-#define SMB2_HEADER_STRUCTURE_SIZE __constant_cpu_to_le16(64)
+#define __SMB2_HEADER_STRUCTURE_SIZE	64
+#define SMB2_HEADER_STRUCTURE_SIZE				\
+	cpu_to_le16(__SMB2_HEADER_STRUCTURE_SIZE)
 
 struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */
@@ -144,12 +146,12 @@ struct smb2_transform_hdr {
 /*
  *	SMB2 flag definitions
  */
-#define SMB2_FLAGS_SERVER_TO_REDIR	__constant_cpu_to_le32(0x00000001)
-#define SMB2_FLAGS_ASYNC_COMMAND	__constant_cpu_to_le32(0x00000002)
-#define SMB2_FLAGS_RELATED_OPERATIONS	__constant_cpu_to_le32(0x00000004)
-#define SMB2_FLAGS_SIGNED		__constant_cpu_to_le32(0x00000008)
-#define SMB2_FLAGS_DFS_OPERATIONS	__constant_cpu_to_le32(0x10000000)
-#define SMB2_FLAGS_REPLAY_OPERATIONS	__constant_cpu_to_le32(0x20000000)
+#define SMB2_FLAGS_SERVER_TO_REDIR	cpu_to_le32(0x00000001)
+#define SMB2_FLAGS_ASYNC_COMMAND	cpu_to_le32(0x00000002)
+#define SMB2_FLAGS_RELATED_OPERATIONS	cpu_to_le32(0x00000004)
+#define SMB2_FLAGS_SIGNED		cpu_to_le32(0x00000008)
+#define SMB2_FLAGS_DFS_OPERATIONS	cpu_to_le32(0x10000000)
+#define SMB2_FLAGS_REPLAY_OPERATIONS	cpu_to_le32(0x20000000)
 
 /*
  *	Definitions for SMB2 Protocol Data Units (network frames)
@@ -160,7 +162,7 @@ struct smb2_transform_hdr {
  *
  */
 
-#define SMB2_ERROR_STRUCTURE_SIZE2 __constant_cpu_to_le16(9)
+#define SMB2_ERROR_STRUCTURE_SIZE2 cpu_to_le16(9)
 
 struct smb2_err_rsp {
 	struct smb2_hdr hdr;
@@ -187,8 +189,8 @@ struct smb2_negotiate_req {
 } __packed;
 
 /* SecurityMode flags */
-#define	SMB2_NEGOTIATE_SIGNING_ENABLED	0x0001
-#define SMB2_NEGOTIATE_SIGNING_REQUIRED	0x0002
+#define SMB2_NEGOTIATE_SIGNING_ENABLED_LE	cpu_to_le16(0x0001)
+#define SMB2_NEGOTIATE_SIGNING_REQUIRED_LE	cpu_to_le16(0x0002)
 /* Capabilities flags */
 #define SMB2_GLOBAL_CAP_DFS		0x00000001
 #define SMB2_GLOBAL_CAP_LEASING		0x00000002 /* Resp only New to SMB2.1 */
@@ -294,9 +296,9 @@ struct smb2_sess_setup_req {
 #define SMB2_SHAREFLAG_CLUSTER_RECONNECT	0x0001
 
 /* Currently defined SessionFlags */
-#define SMB2_SESSION_FLAG_IS_GUEST	0x0001
-#define SMB2_SESSION_FLAG_IS_NULL	0x0002
-#define SMB2_SESSION_FLAG_ENCRYPT_DATA	0x0004
+#define SMB2_SESSION_FLAG_IS_GUEST_LE		cpu_to_le16(0x0001)
+#define SMB2_SESSION_FLAG_IS_NULL_LE		cpu_to_le16(0x0002)
+#define SMB2_SESSION_FLAG_ENCRYPT_DATA_LE	cpu_to_le16(0x0004)
 struct smb2_sess_setup_rsp {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 9 */
@@ -614,12 +616,12 @@ struct create_disk_id_rsp {
 	__u8  Reserved[16];
 } __packed;
 
-#define SMB2_LEASE_NONE			__constant_cpu_to_le32(0x00)
-#define SMB2_LEASE_READ_CACHING		__constant_cpu_to_le32(0x01)
-#define SMB2_LEASE_HANDLE_CACHING	__constant_cpu_to_le32(0x02)
-#define SMB2_LEASE_WRITE_CACHING	__constant_cpu_to_le32(0x04)
+#define SMB2_LEASE_NONE			cpu_to_le32(0x00)
+#define SMB2_LEASE_READ_CACHING		cpu_to_le32(0x01)
+#define SMB2_LEASE_HANDLE_CACHING	cpu_to_le32(0x02)
+#define SMB2_LEASE_WRITE_CACHING	cpu_to_le32(0x04)
 
-#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS __constant_cpu_to_le32(0x02)
+#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS cpu_to_le32(0x02)
 
 struct lease_context {
 	__le64 LeaseKeyLow;
@@ -1450,6 +1452,6 @@ extern int smb2_cancel(struct cifsd_work *work);
 extern int smb2_lock(struct cifsd_work *work);
 extern int smb2_ioctl(struct cifsd_work *work);
 extern int smb2_oplock_break(struct cifsd_work *work);
-extern int smb2_notify(struct cifsd_work *work);
+extern int smb2_notify(struct cifsd_work *cifsd_work);
 
 #endif				/* _SMB2PDU_SERVER_H */

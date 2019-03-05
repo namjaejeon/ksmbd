@@ -220,7 +220,7 @@ asn1_eoc_decode(struct asn1_ctx *ctx, unsigned char *eoc)
 {
 	unsigned char ch;
 
-	if (eoc == NULL) {
+	if (!eoc) {
 		if (!asn1_octet_decode(ctx, &ch))
 			return 0;
 
@@ -277,7 +277,7 @@ asn1_oid_decode(struct asn1_ctx *ctx,
 		return 0;
 
 	*oid = kmalloc(size * sizeof(unsigned long), GFP_KERNEL);
-	if (*oid == NULL)
+	if (!*oid)
 		return 0;
 
 	optr = *oid;

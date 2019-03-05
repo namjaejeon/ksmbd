@@ -103,8 +103,7 @@ int cifsd_enc_md4(unsigned char *md4_hash,
 	md4 = crypto_alloc_shash("md4", 0, 0);
 	if (IS_ERR(md4)) {
 		rc = PTR_ERR(md4);
-		cifsd_debug("%s: Crypto md4 allocation error %d\n",
-				__func__, rc);
+		cifsd_debug("Crypto md4 allocation error %d\n", rc);
 		return rc;
 	}
 	size = sizeof(struct shash_desc) + crypto_shash_descsize(md4);
@@ -118,17 +117,17 @@ int cifsd_enc_md4(unsigned char *md4_hash,
 
 	rc = crypto_shash_init(&sdescmd4->shash);
 	if (rc) {
-		cifsd_debug("%s: Could not init md4 shash\n", __func__);
+		cifsd_debug("Could not init md4 shash\n");
 		goto smb_mdfour_err;
 	}
 	rc = crypto_shash_update(&sdescmd4->shash, link_str, link_len);
 	if (rc) {
-		cifsd_debug("%s: Could not update with link_str\n", __func__);
+		cifsd_debug("Could not update with link_str\n");
 		goto smb_mdfour_err;
 	}
 	rc = crypto_shash_final(&sdescmd4->shash, md4_hash);
 	if (rc)
-		cifsd_debug("%s: Could not generate md4 hash\n", __func__);
+		cifsd_debug("Could not generate md4 hash\n");
 
 smb_mdfour_err:
 	crypto_free_shash(md4);
@@ -151,8 +150,7 @@ int cifsd_enc_update_sess_key(unsigned char *md5_hash,
 	md5 = crypto_alloc_shash("md5", 0, 0);
 	if (IS_ERR(md5)) {
 		rc = PTR_ERR(md5);
-		cifsd_debug("%s: Crypto md5 allocation error %d\n",
-				__func__, rc);
+		cifsd_debug("Crypto md5 allocation error %d\n", rc);
 		return rc;
 	}
 	size = sizeof(struct shash_desc) + crypto_shash_descsize(md5);
@@ -166,25 +164,25 @@ int cifsd_enc_update_sess_key(unsigned char *md5_hash,
 
 	rc = crypto_shash_init(&sdescmd5->shash);
 	if (rc) {
-		cifsd_debug("%s: Could not init md5 shash\n", __func__);
+		cifsd_debug("Could not init md5 shash\n");
 		goto err_out;
 	}
 
 	rc = crypto_shash_update(&sdescmd5->shash, server_challenge, len);
 	if (rc) {
-		cifsd_debug("%s: Could not update with challenge\n", __func__);
+		cifsd_debug("Could not update with challenge\n");
 		goto err_out;
 	}
 
 	rc = crypto_shash_update(&sdescmd5->shash, nonce, len);
 	if (rc) {
-		cifsd_debug("%s: Could not update with nonce\n", __func__);
+		cifsd_debug("Could not update with nonce\n");
 		goto err_out;
 	}
 
 	rc = crypto_shash_final(&sdescmd5->shash, md5_hash);
 	if (rc)
-		cifsd_debug("%s: Could not generate md5 hash\n", __func__);
+		cifsd_debug("Could not generate md5 hash\n");
 
 err_out:
 	crypto_free_shash(md5);

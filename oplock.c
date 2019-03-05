@@ -465,6 +465,7 @@ static int smb1_oplock_break_notification(struct oplock_info *opinfo,
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	int ret = 0;
 	struct cifsd_work *work = cifsd_alloc_work_struct();
+
 	if (!work)
 		return -ENOMEM;
 
@@ -516,6 +517,7 @@ static int smb2_oplock_break_notification(struct oplock_info *opinfo,
 	struct oplock_break_info *br_info;
 	int ret = 0;
 	struct cifsd_work *work = cifsd_alloc_work_struct();
+
 	if (!work)
 		return -ENOMEM;
 
@@ -601,9 +603,9 @@ static void grant_read_oplock(struct oplock_info *opinfo_new,
 {
 	struct lease *lease = opinfo_new->o_lease;
 
-	if (opinfo_new->is_smb2) {
+	if (opinfo_new->is_smb2)
 		opinfo_new->level = SMB2_OPLOCK_LEVEL_II;
-	} else
+	else
 		opinfo_new->level = OPLOCK_READ;
 
 	if (lctx) {
@@ -627,9 +629,9 @@ static void grant_none_oplock(struct oplock_info *opinfo_new,
 {
 	struct lease *lease = opinfo_new->o_lease;
 
-	if (opinfo_new->is_smb2) {
+	if (opinfo_new->is_smb2)
 		opinfo_new->level = SMB2_OPLOCK_LEVEL_NONE;
-	} else
+	else
 		opinfo_new->level = OPLOCK_NONE;
 
 	if (lctx) {
@@ -1222,9 +1224,8 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
-		if (!atomic_inc_not_zero(&brk_op->refcount)) {
+		if (!atomic_inc_not_zero(&brk_op->refcount))
 			continue;
-		}
 		rcu_read_unlock();
 
 		if (brk_op->is_smb2) {
@@ -1532,7 +1533,7 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
  *
  * Return:      pointer to requested context, NULL if @str context not found
  */
-struct create_context *smb2_find_context_vals(void *open_req, char *str)
+struct create_context *smb2_find_context_vals(void *open_req, const char *str)
 {
 	char *data_offset;
 	struct create_context *cc;

@@ -260,7 +260,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 
 		req = (struct smb2_negotiate_req *)buf;
 		return cifsd_lookup_dialect_by_id(req->Dialects,
-					le16_to_cpu(req->DialectCount));
+						  req->DialectCount);
 	}
 
 	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
@@ -269,7 +269,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 
 		req = (NEGOTIATE_REQ *)buf;
 		return cifsd_lookup_dialect_by_name(req->DialectsArray,
-					le16_to_cpu(req->ByteCount));
+						    req->ByteCount);
 	}
 
 	return BAD_PROT_ID;
@@ -534,7 +534,7 @@ enum SHARED_MODE_ERRORS {
 	FILE_DELETE_ERROR,
 };
 
-static const char *shared_mode_errors[] = {
+static const char * const shared_mode_errors[] = {
 	"Current access mode does not permit SHARE_DELETE",
 	"Current access mode does not permit SHARE_READ",
 	"Current access mode does not permit SHARE_WRITE",
