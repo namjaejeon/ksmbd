@@ -1307,7 +1307,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
+			rsp->SessionFlags =
+				cpu_to_le16(SMB2_SESSION_FLAG_IS_GUEST);
 			sess->is_guest = true;
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
@@ -1693,14 +1694,14 @@ static int create_smb2_pipe(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
 	rsp->Reserved = 0;
-	rsp->CreateAction = FILE_OPENED;
+	rsp->CreateAction = cpu_to_le32(FILE_OPENED);
 
 	rsp->CreationTime = cpu_to_le64(0);
 	rsp->LastAccessTime = cpu_to_le64(0);
 	rsp->ChangeTime = cpu_to_le64(0);
 	rsp->AllocationSize = cpu_to_le64(0);
 	rsp->EndofFile = cpu_to_le64(0);
-	rsp->FileAttributes = ATTR_NORMAL;
+	rsp->FileAttributes = FILE_ATTRIBUTE_NORMAL_LE;
 	rsp->Reserved2 = 0;
 	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->PersistentFileId = 0;
