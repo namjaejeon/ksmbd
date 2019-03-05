@@ -29,6 +29,7 @@
 #include "vfs.h"
 #include "fh.h"
 
+#include "time_wrappers.h"
 #include "smb_common.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -1964,4 +1965,35 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 		*total_size_written += ret;
 	}
 	return 0;
+}
+
+int cifsd_vfs_posix_lock_wait(struct file_lock *flock)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	return wait_event_interruptible(flock->fl_wait, !flock->fl_next);
+#else
+	return wait_event_interruptible(flock->fl_wait, !flock->fl_blocker);
+#endif
+}
+
+int cifsd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	return wait_event_interruptible_timeout(flock->fl_wait,
+						!flock->fl_next,
+						timeout);
+#else
+	return wait_event_interruptible_timeout(flock->fl_wait,
+						!flock->fl_blocker,
+						timeout);
+#endif
+}
+
+void cifsd_vfs_posix_lock_unblock(struct file_lock *flock)
+{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+	posix_unblock_lock(flock);
+#else
+	locks_delete_block(flock);
+#endif
 }
