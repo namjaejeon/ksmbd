@@ -3672,7 +3672,8 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		sinfo->NumberOfLinks = get_nlink(&stat) - delete_pending;
+		sinfo->NumberOfLinks =
+			cpu_to_le32(get_nlink(&stat) - delete_pending);
 		sinfo->DeletePending = delete_pending;
 		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		rsp->OutputBufferLength =
@@ -3730,7 +3731,8 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
 			cpu_to_le64(stat.size);
-		file_info->NumberOfLinks = get_nlink(&stat) - delete_pending;
+		file_info->NumberOfLinks =
+			cpu_to_le32(get_nlink(&stat) - delete_pending);
 		file_info->DeletePending = delete_pending;
 		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
 		file_info->Pad2 = 0;
@@ -3856,7 +3858,7 @@ out:
 		if (xattr_list)
 			vfree(xattr_list);
 
-		rsp->OutputBufferLength = nbytes;
+		rsp->OutputBufferLength = cpu_to_le32(nbytes);
 		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
