@@ -289,6 +289,4 @@ static inline struct timespec from_kern_timespec(struct timespec64 ts)
 
 /* cifsd misc functions */
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
-extern int smb_check_delete_pending(struct file *filp,
-	struct cifsd_file *curr_fp);
 #endif /* __CIFSD_GLOB_H */

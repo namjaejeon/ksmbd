@@ -16,6 +16,7 @@ struct cifsd_share_config {
 	char			*name;
 	char			*path;
 
+	unsigned int		path_sz;
 	unsigned int		flags;
 	struct list_head	veto_list;
 

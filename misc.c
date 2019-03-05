@@ -117,54 +117,46 @@ int match_pattern(const char *str, const char *pattern)
  *
  * Return:	1 if char is allowed, otherwise 0
  */
-static inline int is_char_allowed(char *ch)
+static inline int is_char_allowed(char ch)
 {
 	/* check for control chars, wildcards etc. */
-	if (!(*ch & 0x80) &&
-		(*ch <= 0x1f ||
-		 *ch == '?' || *ch == '"' || *ch == '<' ||
-		 *ch == '>' || *ch == '|' || *ch == '*'))
+	if (!(ch & 0x80) &&
+		(ch <= 0x1f ||
+		 ch == '?' || ch == '"' || ch == '<' ||
+		 ch == '>' || ch == '|' || ch == '*'))
 		return 0;
 
 	return 1;
 }
 
-int check_invalid_char(char *filename)
+int cifsd_validate_filename(char *filename)
 {
-	int len, i, rc = 0;
+	while (*filename) {
+		char c = *filename;
 
-	len = strlen(filename);
-
-	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (!is_char_allowed(&filename[i])) {
-			cifsd_err("found invalid character : 0x%x\n",
-					filename[i]);
-			rc = -ENOENT;
-			break;
+		filename++;
+		if (!is_char_allowed(c)) {
+			cifsd_err("File name validation failed: 0x%x\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
-int check_invalid_char_stream(char *stream_name)
+static int cifsd_validate_stream_name(char *stream_name)
 {
-	int len, i, rc = 0;
+	while (*stream_name) {
+		char c = *stream_name;
 
-	len = strlen(stream_name);
-	/* Check invalid character in stream name */
-	for (i = 0; i < len; i++) {
-		if (stream_name[i] == '/' || stream_name[i] == ':' ||
-				stream_name[i] == '\\') {
-			cifsd_err("found invalid character : %c\n",
-					stream_name[i]);
-			rc = -ENOENT;
-			break;
+		stream_name++;
+		if (c == '/' || c == ':' || c == '\\') {
+			cifsd_err("Stream name validation failed: %c\n", c);
+			return -ENOENT;
 		}
 	}
 
-	return rc;
+	return 0;
 }
 
 int parse_stream_name(char *filename, char **stream_name, int *s_type)
@@ -180,7 +172,7 @@ int parse_stream_name(char *filename, char **stream_name, int *s_type)
 		stream_type = s_name;
 		s_name = strsep(&stream_type, ":");
 
-		rc = check_invalid_char_stream(s_name);
+		rc = cifsd_validate_stream_name(s_name);
 		if (rc < 0) {
 			rc = -ENOENT;
 			goto out;
@@ -292,35 +284,27 @@ char *extract_sharename(char *treename)
  */
 char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 {
-	int len;
+	int no_slash = 0, name_len, path_len;
 	char *new_name;
 
-	len = strlen(share->path);
-	len += strlen(name);
+	if (name[0] == '/')
+		name++;
 
-	/* for '/' needed for smb2
-	 * as '/' is not present in beginning of name
-	 */
-	if (name[0] != '/')
-		len++;
-
-	/* 1 extra for NULL byte */
-	cifsd_debug("new_name len = %d\n", len);
-	new_name = kmalloc(len + 1, GFP_KERNEL);
-
+	path_len = share->path_sz;
+	name_len = strlen(name);
+	new_name = kmalloc(path_len + name_len + 2, GFP_KERNEL);
 	if (!new_name)
 		return new_name;
 
-	memcpy(new_name, share->path, strlen(share->path));
+	memcpy(new_name, share->path, path_len);
+	if (new_name[path_len - 1] != '/') {
+		new_name[path_len] = '/';
+		no_slash = 1;
+	}
 
-	if (name[0] != '/') {
-		memset(new_name + strlen(share->path), '/', 1);
-		memcpy(new_name + strlen(share->path) + 1, name, strlen(name));
-	} else
-		memcpy(new_name + strlen(share->path), name, strlen(name));
-
-	*(new_name + len) = '\0';
-
+	memcpy(new_name + path_len + no_slash, name, name_len);
+	path_len += name_len + no_slash;
+	new_name[path_len] = 0x00;
 	return new_name;
 }
 

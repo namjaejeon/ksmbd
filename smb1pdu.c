@@ -606,7 +606,7 @@ smb_get_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	if (check_invalid_char(unixname) < 0) {
+	if (cifsd_validate_filename(unixname) < 0) {
 		smb_put_name(unixname);
 		return ERR_PTR(-ENOENT);
 	}
@@ -687,7 +687,7 @@ static char *smb_get_dir_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (check_invalid_char(unixname) < 0) {
+	if (cifsd_validate_filename(unixname) < 0) {
 		smb_put_name(unixname);
 		return ERR_PTR(-ENOENT);
 	}
