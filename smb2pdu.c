@@ -271,7 +271,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
-	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED;
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
 	conn->use_spnego = true;
 
 	cifsd_tcp_set_need_negotiate(work);
@@ -958,17 +958,16 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
-	rsp->SecurityMode = cpu_to_le16(SMB2_NEGOTIATE_SIGNING_ENABLED);
+	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
 	conn->use_spnego = true;
 
 	if ((server_conf.signing == CIFSD_CONFIG_OPT_AUTO ||
 			server_conf.signing == CIFSD_CONFIG_OPT_DISABLED) &&
-		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED)
+		req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED_LE)
 		conn->sign = true;
 	else if (server_conf.signing == CIFSD_CONFIG_OPT_MANDATORY) {
 		server_conf.enforced_signing = true;
-		rsp->SecurityMode |=
-			cpu_to_le16(SMB2_NEGOTIATE_SIGNING_REQUIRED);
+		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED_LE;
 		conn->sign = true;
 	}
 
@@ -1307,7 +1306,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST;
+			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
 			sess->is_guest = true;
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
@@ -1324,7 +1323,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 			if (!sess->sign && sess->is_guest == false &&
 				((req->SecurityMode &
-				SMB2_NEGOTIATE_SIGNING_REQUIRED) ||
+				SMB2_NEGOTIATE_SIGNING_REQUIRED_LE) ||
 				(conn->sign || server_conf.enforced_signing)))
 				sess->sign = true;
 
@@ -1339,7 +1338,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 				}
 				sess->enc = true;
 				rsp->SessionFlags =
-					cpu_to_le16(SMB2_SESSION_FLAG_ENCRYPT_DATA);
+					SMB2_SESSION_FLAG_ENCRYPT_DATA_LE;
 				/*
 				 * signing is disable if encryption is enable
 				 * on this session
@@ -1693,14 +1692,14 @@ static int create_smb2_pipe(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(89);
 	rsp->OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
 	rsp->Reserved = 0;
-	rsp->CreateAction = FILE_OPENED;
+	rsp->CreateAction = cpu_to_le32(FILE_OPENED);
 
 	rsp->CreationTime = cpu_to_le64(0);
 	rsp->LastAccessTime = cpu_to_le64(0);
 	rsp->ChangeTime = cpu_to_le64(0);
 	rsp->AllocationSize = cpu_to_le64(0);
 	rsp->EndofFile = cpu_to_le64(0);
-	rsp->FileAttributes = ATTR_NORMAL;
+	rsp->FileAttributes = FILE_ATTRIBUTE_NORMAL_LE;
 	rsp->Reserved2 = 0;
 	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->PersistentFileId = 0;
