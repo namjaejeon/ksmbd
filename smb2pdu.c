@@ -5695,7 +5695,7 @@ void smb2_remove_blocked_lock(void **argv)
 {
 	struct file_lock *flock = (struct file_lock *)argv[0];
 
-	posix_unblock_lock(flock);
+	cifsd_vfs_posix_lock_unblock(flock);
 	wake_up(&flock->fl_wait);
 }
 
@@ -5977,8 +5977,7 @@ skip:
 
 				smb2_send_interim_resp(work, NT_STATUS_PENDING);
 
-				err = wait_event_interruptible(flock->fl_wait,
-					!flock->fl_next);
+				err = cifsd_vfs_posix_lock_wait(flock);
 
 				if (work->state == WORK_STATE_CANCELLED ||
 					work->state == WORK_STATE_CLOSED) {

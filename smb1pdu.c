@@ -1703,9 +1703,8 @@ retry:
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
 wait:
-			err = wait_event_interruptible_timeout(
-				flock->fl_wait, !flock->fl_next,
-				msecs_to_jiffies(10));
+			err = cifsd_vfs_posix_lock_wait_timeout(flock,
+							msecs_to_jiffies(10));
 			if (err) {
 				list_del(&smb_lock->llist);
 				list_del(&smb_lock->glist);
