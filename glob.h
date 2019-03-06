@@ -49,7 +49,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
-extern struct fidtable_desc global_fidtable;
 extern char *netbios_name;
 
 extern struct list_head global_lock_list;
