@@ -49,8 +49,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 extern unsigned int alloc_roundup_size;
-extern struct fidtable_desc global_fidtable;
-extern char *netbios_name;
 
 extern struct list_head global_lock_list;
 
@@ -202,16 +200,6 @@ struct cifsd_work {
 
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
-
-struct cifsd_dir_info {
-	char *name;
-	char *bufptr;
-	bool hide_dot_file;
-	int out_buf_len;
-	int num_entry;
-	int data_count;
-	int last_entry_offset;
-};
 
 #define cifsd_debug(fmt, ...)					\
 	do {							\

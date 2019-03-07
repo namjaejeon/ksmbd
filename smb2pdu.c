@@ -5470,7 +5470,7 @@ static int smb2_write_pipe(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(17);
 	rsp->DataOffset = 0;
 	rsp->Reserved = 0;
-	rsp->DataLength = le32_to_cpu(length);
+	rsp->DataLength = cpu_to_le32(length);
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp, 16);
