@@ -4993,18 +4993,25 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
-		if (newsize != i_size_read(inode)) {
+		if (newsize > i_size_read(inode)) {
+			rc = cifsd_vfs_alloc_size(work, fp,
+				newsize);
+			if (rc) {
+				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
+					rc);
+				goto out;
+			}
+		} else if (newsize != i_size_read(inode)) {
+			cifsd_debug("filename : %s truncated to newsize %lld\n",
+					fp->filename, newsize);
 			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
 			if (rc) {
-				cifsd_err("truncate failed! filename : %s err %d\n",
+				cifsd_debug("truncate failed! filename : %s err %d\n",
 						fp->filename, rc);
 				if (rc != -EAGAIN)
 					rc = -EBADF;
 				goto out;
 			}
-
-			cifsd_debug("filename : %s truncated to newsize %lld\n",
-					fp->filename, newsize);
 		}
 		break;
 	}
