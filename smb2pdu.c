@@ -1940,7 +1940,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 							    attr_name);
 
 				if (rc < 0) {
-					cifsd_err("remove xattr failed(%d)\n",
+					cifsd_debug("remove xattr failed(%d)\n",
 						rc);
 					break;
 				}
@@ -1952,7 +1952,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			rc = cifsd_vfs_setxattr(path->dentry, attr_name, value,
 					le16_to_cpu(eabuf->EaValueLength), 0);
 			if (rc < 0) {
-				cifsd_err("cifsd_vfs_setxattr is failed(%d)\n",
+				cifsd_debug("cifsd_vfs_setxattr is failed(%d)\n",
 					rc);
 				break;
 			}
@@ -2350,7 +2350,9 @@ int smb2_open(struct cifsd_work *work)
 			created = true;
 			if (ea_buf) {
 				rc = smb2_set_ea(&ea_buf->ea, &path);
-				if (rc)
+				if (rc == -EOPNOTSUPP)
+					rc = 0;
+				else if (rc)
 					goto err_out;
 			}
 		} else {
@@ -2596,8 +2598,10 @@ int smb2_open(struct cifsd_work *work)
 
 		/* Don't truncate stream names on stream name */
 		rc = cifsd_vfs_truncate_xattr(path.dentry, stream_name != NULL);
-		if (rc) {
-			cifsd_err("cifsd_vfs_truncate_xattr is failed, rc %d\n",
+		if (rc == -EOPNOTSUPP)
+			rc = 0;
+		else if (rc) {
+			cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n",
 					rc);
 			goto err_out;
 		}
