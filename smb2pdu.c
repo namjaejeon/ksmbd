@@ -3800,6 +3800,25 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
+		if (stream_file_enable == false) {
+			file_info->NextEntryOffset = 0;
+			streamlen  = smbConvertToUTF16(
+					(__le16 *)file_info->StreamName,
+					"::$DATA",
+					7, conn->local_nls, 0);
+
+			streamlen *= 2;
+			file_info->StreamNameLength = cpu_to_le32(streamlen);
+
+			file_info->StreamSize = S_ISDIR(stat.mode) ? 0 :
+				cpu_to_le64(stat.size);
+			file_info->StreamAllocationSize = S_ISDIR(stat.mode) ? 0 :
+				cpu_to_le64(stat.size);
+			nbytes = sizeof(struct smb2_file_stream_info)
+				+ streamlen;
+			goto out;
+		}
+
 		xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
 				XATTR_LIST_MAX);
 		if (xattr_list_len < 0) {
