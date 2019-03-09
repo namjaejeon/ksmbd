@@ -37,7 +37,7 @@
 #define NATIVE_FILE_SYSTEM	"NTFS"
 
 #define SMB_NO_MORE_ANDX_COMMAND 0xFF
-#define SMB1_PROTO_NUMBER __constant_cpu_to_le32(0x424d53ff)
+#define SMB1_PROTO_NUMBER cpu_to_le32(0x424d53ff)
 
 /* Transact2 subcommand codes */
 #define TRANS2_OPEN                   0x00

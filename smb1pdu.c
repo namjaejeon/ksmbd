@@ -5894,6 +5894,7 @@ static int find_first(struct cifsd_work *work)
 		if (IS_ERR(d_info.name)) {
 			cifsd_debug("Cannot read dirent: %d\n",
 				    (int)PTR_ERR(d_info.name));
+			d_info.name = NULL;
 			continue;
 		}
 
@@ -6129,6 +6130,7 @@ static int find_next(struct cifsd_work *work)
 		if (cifsd_share_veto_filename(share, d_info.name)) {
 			cifsd_debug("file(%s) is invisible by setting as veto file\n",
 				d_info.name);
+			kfree(d_info.name);
 			continue;
 		}
 

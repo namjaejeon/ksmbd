@@ -258,9 +258,9 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	 */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
-	rsp->MaxTransactSize = cifsd_max_msg_size();
-	rsp->MaxReadSize = cifsd_max_msg_size();
-	rsp->MaxWriteSize = cifsd_max_msg_size();
+	rsp->MaxTransactSize = cpu_to_le32(cifsd_max_msg_size());
+	rsp->MaxReadSize = cpu_to_le32(cifsd_max_msg_size());
+	rsp->MaxWriteSize = cpu_to_le32(cifsd_max_msg_size());
 
 	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
@@ -1940,7 +1940,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 							    attr_name);
 
 				if (rc < 0) {
-					cifsd_err("remove xattr failed(%d)\n",
+					cifsd_debug("remove xattr failed(%d)\n",
 						rc);
 					break;
 				}
@@ -1952,7 +1952,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			rc = cifsd_vfs_setxattr(path->dentry, attr_name, value,
 					le16_to_cpu(eabuf->EaValueLength), 0);
 			if (rc < 0) {
-				cifsd_err("cifsd_vfs_setxattr is failed(%d)\n",
+				cifsd_debug("cifsd_vfs_setxattr is failed(%d)\n",
 					rc);
 				break;
 			}
@@ -2350,7 +2350,9 @@ int smb2_open(struct cifsd_work *work)
 			created = true;
 			if (ea_buf) {
 				rc = smb2_set_ea(&ea_buf->ea, &path);
-				if (rc)
+				if (rc == -EOPNOTSUPP)
+					rc = 0;
+				else if (rc)
 					goto err_out;
 			}
 		} else {
@@ -2596,8 +2598,10 @@ int smb2_open(struct cifsd_work *work)
 
 		/* Don't truncate stream names on stream name */
 		rc = cifsd_vfs_truncate_xattr(path.dentry, stream_name != NULL);
-		if (rc) {
-			cifsd_err("cifsd_vfs_truncate_xattr is failed, rc %d\n",
+		if (rc == -EOPNOTSUPP)
+			rc = 0;
+		else if (rc) {
+			cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n",
 					rc);
 			goto err_out;
 		}
@@ -3796,6 +3800,25 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
+		if (stream_file_enable == false) {
+			file_info->NextEntryOffset = 0;
+			streamlen  = smbConvertToUTF16(
+					(__le16 *)file_info->StreamName,
+					"::$DATA",
+					7, conn->local_nls, 0);
+
+			streamlen *= 2;
+			file_info->StreamNameLength = cpu_to_le32(streamlen);
+
+			file_info->StreamSize = S_ISDIR(stat.mode) ? 0 :
+				cpu_to_le64(stat.size);
+			file_info->StreamAllocationSize = S_ISDIR(stat.mode) ? 0 :
+				cpu_to_le64(stat.size);
+			nbytes = sizeof(struct smb2_file_stream_info)
+				+ streamlen;
+			goto out;
+		}
+
 		xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
 				XATTR_LIST_MAX);
 		if (xattr_list_len < 0) {
@@ -4989,18 +5012,25 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
-		if (newsize != i_size_read(inode)) {
+		if (newsize > i_size_read(inode)) {
+			rc = cifsd_vfs_alloc_size(work, fp,
+				newsize);
+			if (rc) {
+				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
+					rc);
+				goto out;
+			}
+		} else if (newsize != i_size_read(inode)) {
+			cifsd_debug("filename : %s truncated to newsize %lld\n",
+					fp->filename, newsize);
 			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
 			if (rc) {
-				cifsd_err("truncate failed! filename : %s err %d\n",
+				cifsd_debug("truncate failed! filename : %s err %d\n",
 						fp->filename, rc);
 				if (rc != -EAGAIN)
 					rc = -EBADF;
 				goto out;
 			}
-
-			cifsd_debug("filename : %s truncated to newsize %lld\n",
-					fp->filename, newsize);
 		}
 		break;
 	}
@@ -5440,7 +5470,7 @@ static int smb2_write_pipe(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(17);
 	rsp->DataOffset = 0;
 	rsp->Reserved = 0;
-	rsp->DataLength = le32_to_cpu(length);
+	rsp->DataLength = cpu_to_le32(length);
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp, 16);
@@ -7138,9 +7168,12 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 {
 	char *buf = RESPONSE_BUF(work);
 	struct smb2_transform_hdr *tr_hdr;
-	struct kvec *iov;
+	struct kvec iov[3];
 	int rc = -ENOMEM;
 	int buf_size = 0, rq_nvec = 2 + (HAS_AUX_PAYLOAD(work) ? 1 : 0);
+
+	if (ARRAY_SIZE(iov) < rq_nvec)
+		return -ENOMEM;
 
 	tr_hdr = cifsd_alloc_response(sizeof(struct smb2_transform_hdr));
 	if (!tr_hdr)
@@ -7148,12 +7181,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 
 	/* fill transform header */
 	fill_transform_hdr(tr_hdr, buf);
-
-	iov = kmalloc_array(rq_nvec, sizeof(struct kvec), GFP_KERNEL);
-	if (!iov) {
-		kfree(tr_hdr);
-		return rc;
-	}
 
 	iov[0].iov_base = tr_hdr;
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);

@@ -83,34 +83,44 @@
 struct cifsd_work;
 struct cifsd_file;
 
+struct cifsd_dir_info {
+	char		*name;
+	char		*bufptr;
+	bool		hide_dot_file;
+	int		out_buf_len;
+	int		num_entry;
+	int		data_count;
+	int		last_entry_offset;
+};
+
 struct cifsd_readdir_data {
-	struct dir_context ctx;
-	char           *dirent;
-	unsigned int   used;
-	unsigned int   full;
-	unsigned int   dirent_count;
-	unsigned int   file_attr;
+	struct		dir_context ctx;
+	char		*dirent;
+	unsigned int	used;
+	unsigned int	full;
+	unsigned int	dirent_count;
+	unsigned int	file_attr;
 };
 
 struct cifsd_dirent {
-	__le64         ino;
-	__le64          offset;
-	__le32         namelen;
-	__le32         d_type;
-	char            name[];
+	__le64		ino;
+	__le64		offset;
+	__le32		namelen;
+	__le32		d_type;
+	char		name[];
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
 struct cifsd_kstat {
-	struct kstat *kstat;
-	__u64 create_time;
-	__le32 file_attributes;
+	struct kstat	*kstat;
+	__u64		create_time;
+	__le32		file_attributes;
 };
 
 struct cifsd_fs_sector_size {
-	unsigned short logical_sector_size;
-	unsigned int physical_sector_size;
-	unsigned int optimal_io_size;
+	unsigned short	logical_sector_size;
+	unsigned int	physical_sector_size;
+	unsigned int	optimal_io_size;
 };
 
 int cifsd_vfs_create(struct cifsd_work *work, const char *name, umode_t mode);

@@ -185,6 +185,7 @@ int cifsd_insert_in_global_table(struct cifsd_session *sess,
 	struct cifsd_file *fp);
 int close_persistent_id(uint64_t id);
 void destroy_global_fidtable(void);
+int init_global_fidtable(void);
 
 /* Durable handle functions */
 struct cifsd_file *cifsd_get_global_fp(uint64_t pid);

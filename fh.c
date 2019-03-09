@@ -14,6 +14,8 @@
 #include "mgmt/user_session.h"
 #include "smb_common.h"
 
+static struct fidtable_desc global_fidtable;
+
 /**
  * alloc_fid_mem() - alloc memory for fid management
  * @size:	mem allocation request size
@@ -899,6 +901,11 @@ void destroy_global_fidtable(void)
 		ftab->fileid[i] = NULL;
 	}
 	free_fidtable(ftab);
+}
+
+int init_global_fidtable(void)
+{
+	return init_fidtable(&global_fidtable);
 }
 
 /* End of persistent-ID functions */
