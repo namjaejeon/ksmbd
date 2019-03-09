@@ -61,7 +61,7 @@ static struct oplock_info *alloc_opinfo(struct cifsd_work *work,
 	return opinfo;
 }
 
-void lease_add_list(struct oplock_info *opinfo)
+static void lease_add_list(struct oplock_info *opinfo)
 {
 	struct lease_table *lb = opinfo->o_lease->l_lb;
 
@@ -70,7 +70,7 @@ void lease_add_list(struct oplock_info *opinfo)
 	spin_unlock(&lb->lb_lock);
 }
 
-void lease_del_list(struct oplock_info *opinfo)
+static void lease_del_list(struct oplock_info *opinfo)
 {
 	struct lease_table *lb = opinfo->o_lease->l_lb;
 
@@ -79,7 +79,7 @@ void lease_del_list(struct oplock_info *opinfo)
 	spin_unlock(&lb->lb_lock);
 }
 
-void lb_add(struct lease_table *lb)
+static void lb_add(struct lease_table *lb)
 {
 	write_lock(&lease_list_lock);
 	list_add(&lb->l_entry, &lease_table_list);
@@ -142,7 +142,7 @@ struct oplock_info *opinfo_get(struct cifsd_file *fp)
 	return opinfo;
 }
 
-struct oplock_info *opinfo_get_list(struct cifsd_inode *ci)
+static struct oplock_info *opinfo_get_list(struct cifsd_inode *ci)
 {
 	struct oplock_info *opinfo;
 
@@ -167,7 +167,7 @@ void opinfo_put(struct oplock_info *opinfo)
 	call_rcu(&opinfo->rcu_head, opinfo_free_rcu);
 }
 
-void opinfo_add(struct oplock_info *opinfo)
+static void opinfo_add(struct oplock_info *opinfo)
 {
 	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
@@ -176,7 +176,7 @@ void opinfo_add(struct oplock_info *opinfo)
 	spin_unlock(&ci->m_lock);
 }
 
-void opinfo_del(struct oplock_info *opinfo)
+static void opinfo_del(struct oplock_info *opinfo)
 {
 	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
@@ -333,7 +333,7 @@ int lease_read_to_write(struct oplock_info *opinfo)
  *
  * Return:	0 on success, otherwise -EINVAL
  */
-int lease_none_upgrade(struct oplock_info *opinfo,
+static int lease_none_upgrade(struct oplock_info *opinfo,
 	__le32 new_state)
 {
 	struct lease *lease = opinfo->o_lease;
@@ -672,7 +672,7 @@ static inline int compare_guid_key(struct oplock_info *opinfo,
  *
  * Return:      oplock(lease) object on success, otherwise NULL
  */
-struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
+static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	char *client_guid, struct lease_ctx_info *lctx)
 {
 	int ret;
@@ -727,7 +727,7 @@ struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	return m_opinfo;
 }
 
-void wait_for_lease_break_ack(struct oplock_info *opinfo)
+static void wait_for_lease_break_ack(struct oplock_info *opinfo)
 {
 	int rc = 0;
 
@@ -753,7 +753,7 @@ void wait_for_lease_break_ack(struct oplock_info *opinfo)
  *
  * Return:	0 on success, otherwise error
  */
-int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
+static int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 {
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
@@ -1004,7 +1004,7 @@ static void copy_lease(struct oplock_info *op1, struct oplock_info *op2)
 	lease2->flags = lease1->flags;
 }
 
-void add_lease_global_list(struct oplock_info *opinfo)
+static void add_lease_global_list(struct oplock_info *opinfo)
 {
 	struct lease_table *lb;
 
@@ -1184,7 +1184,7 @@ err_out:
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
-int smb_break_all_write_oplock(struct cifsd_work *work,
+static int smb_break_all_write_oplock(struct cifsd_work *work,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *brk_opinfo;

@@ -40,7 +40,7 @@ static void free_fid_mem(void *ptr)
  * free_fidtable() - free memory allocated for fid table
  * @ftab:	fid table ptr to be freed
  */
-void free_fidtable(struct fidtable *ftab)
+static void free_fidtable(struct fidtable *ftab)
 {
 	if (!ftab)
 		return;
@@ -851,7 +851,7 @@ int cifsd_reconnect_durable_fp(struct cifsd_session *sess,
  *
  * delete a durable id from fid table and free associated cifsd file pointer
  */
-void delete_durable_id_from_fidtable(uint64_t id)
+static void delete_durable_id_from_fidtable(uint64_t id)
 {
 	struct fidtable *ftab;
 
