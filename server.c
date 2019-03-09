@@ -28,8 +28,6 @@ int cifsd_debugging;
  * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
  */
 
-struct fidtable_desc global_fidtable;
-
 LIST_HEAD(global_lock_list);
 
 /* Default: allocation roundup size = 1048576, to disable set 0 in config */
@@ -526,7 +524,7 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	ret = init_fidtable(&global_fidtable);
+	ret = init_global_fidtable();
 	if (ret)
 		goto error;
 

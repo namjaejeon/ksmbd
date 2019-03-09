@@ -1206,7 +1206,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 
 		err = vfs_removexattr(dentry, name);
 		if (err)
-			cifsd_err("remove xattr failed : %s\n", name);
+			cifsd_debug("remove xattr failed : %s\n", name);
 	}
 out:
 	if (xattr_list)
