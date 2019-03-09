@@ -7168,9 +7168,12 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 {
 	char *buf = RESPONSE_BUF(work);
 	struct smb2_transform_hdr *tr_hdr;
-	struct kvec *iov;
+	struct kvec iov[3];
 	int rc = -ENOMEM;
 	int buf_size = 0, rq_nvec = 2 + (HAS_AUX_PAYLOAD(work) ? 1 : 0);
+
+	if (ARRAY_SIZE(iov) < rq_nvec)
+		return -ENOMEM;
 
 	tr_hdr = cifsd_alloc_response(sizeof(struct smb2_transform_hdr));
 	if (!tr_hdr)
@@ -7178,12 +7181,6 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 
 	/* fill transform header */
 	fill_transform_hdr(tr_hdr, buf);
-
-	iov = kmalloc_array(rq_nvec, sizeof(struct kvec), GFP_KERNEL);
-	if (!iov) {
-		kfree(tr_hdr);
-		return rc;
-	}
 
 	iov[0].iov_base = tr_hdr;
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);
