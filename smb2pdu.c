@@ -955,7 +955,8 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
 	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
+		sizeof(rsp->hdr.smb2_buf_length)) +
+		le16_to_cpu(rsp->SecurityBufferOffset));
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
