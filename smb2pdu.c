@@ -1437,8 +1437,8 @@ int smb2_tree_connect(struct cifsd_work *work)
 	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
 
-	treename = smb_strndup_from_utf16(req->Buffer, req->PathLength,
-					  true, conn->local_nls);
+	treename = smb_strndup_from_utf16(req->Buffer,
+			le16_to_cpu(req->PathLength), true, conn->local_nls);
 	if (IS_ERR(treename)) {
 		cifsd_err("treename is NULL\n");
 		status.ret = CIFSD_TREE_CONN_STATUS_ERROR;
