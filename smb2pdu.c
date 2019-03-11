@@ -1247,7 +1247,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 		/* Note: here total size -1 is done as
 		 * an adjustment for 0 size blob
 		 */
-		inc_rfc1001_len(rsp, rsp->SecurityBufferLength - 1);
+		inc_rfc1001_len(rsp, le16_to_cpu(rsp->SecurityBufferLength)
+			- 1);
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
@@ -1386,7 +1387,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			rsp->SecurityBufferLength =
 				cpu_to_le16(spnego_blob_len);
 			kfree(spnego_blob);
-			inc_rfc1001_len(rsp, rsp->SecurityBufferLength);
+			inc_rfc1001_len(rsp,
+				le16_to_cpu(rsp->SecurityBufferLength));
 		}
 
 		cifsd_tcp_set_good(work);
