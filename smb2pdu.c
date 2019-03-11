@@ -570,8 +570,8 @@ int smb2_check_user_session(struct cifsd_work *work)
 	 * require a session id, so no need to validate user session's for these
 	 * commands.
 	 */
-	if (cmd == SMB2_ECHO || cmd == SMB2_NEGOTIATE ||
-			cmd == SMB2_SESSION_SETUP)
+	if (cmd == SMB2_ECHO_HE || cmd == SMB2_NEGOTIATE_HE ||
+			cmd == SMB2_SESSION_SETUP_HE)
 		return 0;
 
 	if (!cifsd_tcp_good(work))
