@@ -438,6 +438,8 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 				   struct cifsd_session *sess)
 {
 	char *domain_name;
+	unsigned int lm_off, nt_off;
+	unsigned short nt_len;
 
 	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -450,32 +452,33 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 		return -EINVAL;
 	}
 
+	lm_off = le32_to_cpu(authblob->LmChallengeResponse.BufferOffset);
+	nt_off = le32_to_cpu(authblob->NtChallengeResponse.BufferOffset);
+	nt_len = le16_to_cpu(authblob->NtChallengeResponse.Length);
+
 	/* process NTLM authentication */
-	if (authblob->NtChallengeResponse.Length == CIFS_AUTH_RESP_SIZE) {
-		if (authblob->NegotiateFlags & NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+	if (nt_len == CIFS_AUTH_RESP_SIZE) {
+		if (le32_to_cpu(authblob->NegotiateFlags)
+			& NTLMSSP_NEGOTIATE_EXTENDED_SEC)
 			return __cifsd_auth_ntlmv2(sess, (char *)authblob +
-				authblob->LmChallengeResponse.BufferOffset,
-				(char *)authblob +
-				authblob->NtChallengeResponse.BufferOffset);
+				lm_off, (char *)authblob + nt_off);
 		else
 			return cifsd_auth_ntlm(sess, (char *)authblob +
-				authblob->NtChallengeResponse.BufferOffset);
+				nt_off);
 	}
 
 	/* TODO : use domain name that imported from configuration file */
 	domain_name = smb_strndup_from_utf16(
 			(const char *)authblob +
-			authblob->DomainName.BufferOffset,
-			authblob->DomainName.Length, true,
+			le32_to_cpu(authblob->DomainName.BufferOffset),
+			le16_to_cpu(authblob->DomainName.Length), true,
 			sess->conn->local_nls);
 
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
 	return cifsd_auth_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
-		authblob->NtChallengeResponse.BufferOffset),
-		authblob->NtChallengeResponse.Length - CIFS_ENCPWD_SIZE,
-		domain_name);
+		nt_off), nt_len - CIFS_ENCPWD_SIZE, domain_name);
 }
 
 /**
@@ -501,7 +504,7 @@ int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
 		return -EINVAL;
 	}
 
-	sess->ntlmssp.client_flags = negblob->NegotiateFlags;
+	sess->ntlmssp.client_flags = le32_to_cpu(negblob->NegotiateFlags);
 	return 0;
 }
 
@@ -519,7 +522,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	TargetInfo *tinfo;
 	wchar_t *name;
 	__u8 *target_name;
-	unsigned int len, flags, blob_len, type;
+	unsigned int len, flags, blob_off, blob_len, type, target_info_len = 0;
 	int cflags = sess->ntlmssp.client_flags;
 
 	memcpy(chgblob->Signature, NTLMSSP_SIGNATURE, 8);
@@ -555,10 +558,13 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	len = smb_strtoUTF16((__le16 *)name, cifsd_netbios_name(), len,
 			sess->conn->local_nls);
 	len = UNICODE_LEN(len);
+
+	blob_off = sizeof(CHALLENGE_MESSAGE);
+	blob_len = blob_off + len;
+
 	chgblob->TargetName.Length = cpu_to_le16(len);
 	chgblob->TargetName.MaximumLength = cpu_to_le16(len);
-	chgblob->TargetName.BufferOffset =
-			cpu_to_le32(sizeof(CHALLENGE_MESSAGE));
+	chgblob->TargetName.BufferOffset = cpu_to_le32(blob_off);
 
 	/* Initialize random conn challenge */
 	get_random_bytes(sess->ntlmssp.cryptkey, sizeof(__u64));
@@ -566,12 +572,10 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		CIFS_CRYPTO_KEY_SIZE);
 
 	/* Add Target Information to security buffer */
-	chgblob->TargetInfoArray.BufferOffset =
-		chgblob->TargetName.BufferOffset + len;
+	chgblob->TargetInfoArray.BufferOffset = cpu_to_le32(blob_len);
 
-	target_name = (__u8 *)chgblob + chgblob->TargetName.BufferOffset;
+	target_name = (__u8 *)chgblob + blob_off;
 	memcpy(target_name, name, len);
-	blob_len = cpu_to_le16(sizeof(CHALLENGE_MESSAGE) + len);
 	tinfo = (TargetInfo *)(target_name + len);
 
 	chgblob->TargetInfoArray.Length = 0;
@@ -582,17 +586,17 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		tinfo->Length = cpu_to_le16(len);
 		memcpy(tinfo->Content, name, len);
 		tinfo = (TargetInfo *)((char *)tinfo + 4 + len);
-		chgblob->TargetInfoArray.Length += cpu_to_le16(4 + len);
+		target_info_len += 4 + len;
 	}
 
 	/* Add terminator subblock */
 	tinfo->Type = 0;
 	tinfo->Length = 0;
-	chgblob->TargetInfoArray.Length += cpu_to_le16(4);
+	target_info_len += 4;
 
-	chgblob->TargetInfoArray.MaximumLength =
-			chgblob->TargetInfoArray.Length;
-	blob_len += chgblob->TargetInfoArray.Length;
+	chgblob->TargetInfoArray.Length = chgblob->TargetInfoArray.MaximumLength =
+			cpu_to_le16(target_info_len);
+	blob_len += target_info_len;
 	kfree(name);
 	cifsd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;

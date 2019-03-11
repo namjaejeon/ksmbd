@@ -268,7 +268,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp->SecurityBufferOffset = cpu_to_le16(128);
 	rsp->SecurityBufferLength = cpu_to_le16(AUTH_GSS_LENGTH);
 	cifsd_copy_gss_neg_header(((char *)(&rsp->hdr) +
-		sizeof(rsp->hdr.smb2_buf_length)) + rsp->SecurityBufferOffset);
+		sizeof(rsp->hdr.smb2_buf_length)) +
+		le16_to_cpu(rsp->SecurityBufferOffset));
 	inc_rfc1001_len(rsp, sizeof(struct smb2_negotiate_rsp) -
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
@@ -1193,7 +1194,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			goto out_err;
 
 		chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId +
-				rsp->SecurityBufferOffset);
+				le16_to_cpu(rsp->SecurityBufferOffset));
 		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
 
 		if (conn->use_spnego) {
@@ -1225,8 +1226,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 
 			memcpy((char *)&rsp->hdr.ProtocolId +
-					rsp->SecurityBufferOffset, spnego_blob,
-					spnego_blob_len);
+					le16_to_cpu(rsp->SecurityBufferOffset),
+					spnego_blob, spnego_blob_len);
 			rsp->SecurityBufferLength =
 				cpu_to_le16(spnego_blob_len);
 			kfree(spnego_blob);
@@ -1276,11 +1277,11 @@ int smb2_sess_setup(struct cifsd_work *work)
 		else
 			authblob = (AUTHENTICATE_MESSAGE *)
 				((char *)&req->hdr.ProtocolId +
-				 req->SecurityBufferOffset);
+				 le16_to_cpu(req->SecurityBufferOffset));
 
 		username = smb_strndup_from_utf16((const char *)authblob +
-				authblob->UserName.BufferOffset,
-				authblob->UserName.Length, true,
+				le32_to_cpu(authblob->UserName.BufferOffset),
+				le16_to_cpu(authblob->UserName.Length), true,
 				conn->local_nls);
 
 		if (IS_ERR(username)) {
@@ -1382,7 +1383,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 
 			memcpy((char *)&rsp->hdr.ProtocolId +
-				rsp->SecurityBufferOffset,
+				le16_to_cpu(rsp->SecurityBufferOffset),
 				spnego_blob, spnego_blob_len);
 			rsp->SecurityBufferLength =
 				cpu_to_le16(spnego_blob_len);
