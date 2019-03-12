@@ -81,8 +81,6 @@
 #define SMB2_PROTO_NUMBER cpu_to_le32(0x424d53fe) /* 'B''M''S' */
 #define SMB2_TRANSFORM_PROTO_NUM cpu_to_le32(0x424d53fd)
 
-#define STATUS_NO_MORE_FILES cpu_to_le32(0x80000006)
-#define STATUS_OBJECT_NAME_NOT_FOUND cpu_to_le32(0xC0000034)
 /*
  * SMB2 Header Definition
  *
