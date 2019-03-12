@@ -306,7 +306,7 @@ void init_chained_smb2_rsp(struct cifsd_work *work)
 	/* Storing the current local FID which may be needed by subsequent
 	 * command in the compound request
 	 */
-	if (le16_to_cpu(req->Command) == SMB2_CREATE &&
+	if (req->Command == SMB2_CREATE &&
 			le32_to_cpu(rsp->Status) == NT_STATUS_OK) {
 		work->cur_local_fid =
 			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
@@ -869,7 +869,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	conn->cli_cap = req->Capabilities;
+	conn->cli_cap = le32_to_cpu(req->Capabilities);
 	switch (conn->dialect) {
 	case SMB311_PROT_ID:
 		conn->preauth_info =
@@ -931,7 +931,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
-		conn->cli_sec_mode = req->SecurityMode;
+		conn->cli_sec_mode = le16_to_cpu(req->SecurityMode);
 		/* With LargeMTU above SMB2.0, default message limit is 1MB */
 		rsp->MaxReadSize = cpu_to_le32(cifsd_default_io_size());
 		rsp->MaxWriteSize = cpu_to_le32(cifsd_default_io_size());
@@ -1682,8 +1682,8 @@ static int create_smb2_pipe(struct cifsd_work *work)
 	rsp = (struct smb2_create_rsp *)RESPONSE_BUF(work);
 	req = (struct smb2_create_req *)REQUEST_BUF(work);
 
-	name = smb_strndup_from_utf16(req->Buffer, req->NameLength, 1,
-				work->conn->local_nls);
+	name = smb_strndup_from_utf16(req->Buffer, le16_to_cpu(req->NameLength),
+			1, work->conn->local_nls);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status = NT_STATUS_NO_MEMORY;
 		err = PTR_ERR(name);
@@ -2061,7 +2061,7 @@ int smb2_open(struct cifsd_work *work)
 
 		name = smb2_get_name(share,
 				     req->Buffer,
-				     req->NameLength,
+				     le16_to_cpu(req->NameLength),
 				     work->conn->local_nls);
 		if (IS_ERR(name)) {
 			rc = PTR_ERR(name);
@@ -3348,7 +3348,7 @@ err_out2:
 static int buffer_check_err(int reqOutputBufferLength,
 	struct smb2_query_info_rsp *rsp, int infoclass_size)
 {
-	if (reqOutputBufferLength < rsp->OutputBufferLength) {
+	if (reqOutputBufferLength < le32_to_cpu(rsp->OutputBufferLength)) {
 		if (reqOutputBufferLength < infoclass_size) {
 			cifsd_err("Invalid Buffer Size Requested\n");
 			rsp->hdr.Status = NT_STATUS_INFO_LENGTH_MISMATCH;
@@ -3411,7 +3411,7 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
 	int rc;
 
 	cifsd_debug("smb2 query info IPC pipe of FileInfoClass %u, FileId 0x%llx\n",
-		req->FileInfoClass, req->VolatileFileId);
+		req->FileInfoClass, le64_to_cpu(req->VolatileFileId));
 
 	/*
 	 * Windows can sometime send query file info request on
@@ -3426,13 +3426,13 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
 	switch (req->FileInfoClass) {
 	case FILE_STANDARD_INFORMATION:
 		get_standard_info_pipe(rsp);
-		rc = buffer_check_err(req->OutputBufferLength, rsp,
-			FILE_STANDARD_INFORMATION_SIZE);
+		rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+			rsp, FILE_STANDARD_INFORMATION_SIZE);
 		break;
 	case FILE_INTERNAL_INFORMATION:
-		get_internal_info_pipe(rsp, req->VolatileFileId);
-		rc = buffer_check_err(req->OutputBufferLength, rsp,
-			FILE_INTERNAL_INFORMATION_SIZE);
+		get_internal_info_pipe(rsp, id);
+		rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+			rsp, FILE_INTERNAL_INFORMATION_SIZE);
 		break;
 	default:
 		cifsd_err("smb2_info_file_pipe for %u not supported\n",
@@ -3467,7 +3467,7 @@ static int smb2_get_ea(struct cifsd_tcp_conn *conn, struct path *path,
 		ea_req = (struct smb2_ea_info_req *)req->Buffer;
 	else {
 		/* need to send all EAs, if no specific EA is requested*/
-		if (req->Flags & SL_RETURN_SINGLE_ENTRY)
+		if (le32_to_cpu(req->Flags) & SL_RETURN_SINGLE_ENTRY)
 			cifsd_debug("Ambiguous, all EAs are requested but "
 				"need to send single EA entry in rsp "
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
@@ -4031,8 +4031,8 @@ out:
 		rsp->hdr.Status = NT_STATUS_NOT_SUPPORTED;
 		return -EOPNOTSUPP;
 	}
-	rc = buffer_check_err(req->OutputBufferLength, rsp,
-					file_infoclass_size);
+	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+		rsp, file_infoclass_size);
 	return rc;
 }
 
@@ -4257,8 +4257,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 		path_put(&path);
 		return -EOPNOTSUPP;
 	}
-	rc = buffer_check_err(req->OutputBufferLength, rsp,
-					fs_infoclass_size);
+	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+		rsp, fs_infoclass_size);
 	path_put(&path);
 	return rc;
 
@@ -5660,13 +5660,15 @@ int smb2_cancel(struct cifsd_work *work)
 					le64_to_cpu(hdr->Id.AsyncId))
 				continue;
 			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
-					hdr->Id.AsyncId, chdr->Command);
+				le64_to_cpu(hdr->Id.AsyncId),
+				le16_to_cpu(chdr->Command));
 		} else {
 			if (chdr->MessageId != hdr->MessageId ||
 				cancel_work == work)
 				continue;
 			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
-				hdr->MessageId, chdr->Command);
+				le64_to_cpu(hdr->MessageId),
+				le16_to_cpu(chdr->Command));
 		}
 		canceled = 1;
 		break;
@@ -6230,10 +6232,10 @@ int smb2_ioctl(struct cifsd_work *work)
 				SMB2_CLIENT_GUID_SIZE))
 			goto out;
 
-		if (neg_req->SecurityMode != conn->cli_sec_mode)
+		if (le16_to_cpu(neg_req->SecurityMode) != conn->cli_sec_mode)
 			goto out;
 
-		if (neg_req->Capabilities != conn->cli_cap)
+		if (le32_to_cpu(neg_req->Capabilities) != conn->cli_cap)
 			goto out;
 
 		nbytes = sizeof(struct validate_negotiate_info_rsp);
@@ -6274,7 +6276,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 			/* TODO: specify the RDMA capabilities */
 			if (netdev->num_tx_queues > 1)
-				nii_rsp->Capability = RSS_CAPABLE;
+				nii_rsp->Capability = cpu_to_le32(RSS_CAPABLE);
 			else
 				nii_rsp->Capability = 0;
 
@@ -6699,7 +6701,7 @@ static int smb21_lease_break(struct cifsd_work *work)
 	rsp = (struct smb2_lease_ack *)RESPONSE_BUF(work);
 
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
-			req->LeaseState);
+			le32_to_cpu(req->LeaseState));
 	opinfo = lookup_lease_in_table(conn, req->LeaseKey);
 	if (!opinfo) {
 		cifsd_debug("file not opened\n");
@@ -6736,13 +6738,15 @@ static int smb21_lease_break(struct cifsd_work *work)
 		else
 			lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
-				lease->state, req->LeaseState);
+			le32_to_cpu(lease->state),
+			le32_to_cpu(req->LeaseState));
 	} else if ((lease->state == SMB2_LEASE_READ_CACHING) &&
 			(req->LeaseState != SMB2_LEASE_NONE)) {
 		err = NT_STATUS_INVALID_OPLOCK_PROTOCOL;
 		lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
-				lease->state, req->LeaseState);
+			le32_to_cpu(lease->state),
+			le32_to_cpu(req->LeaseState));
 	} else {
 		/* valid lease state changes */
 		err = NT_STATUS_INVALID_DEVICE_STATE;
@@ -6775,7 +6779,8 @@ static int smb21_lease_break(struct cifsd_work *work)
 		break;
 	default:
 		cifsd_debug("unknown lease change 0x%x -> 0x%x\n",
-				lease->state, req->LeaseState);
+			le32_to_cpu(lease->state),
+			le32_to_cpu(req->LeaseState));
 	}
 
 	lease_state = lease->state;
@@ -6826,7 +6831,8 @@ int smb2_oplock_break(struct cifsd_work *work)
 		err = smb21_lease_break(work);
 		break;
 	default:
-		cifsd_debug("invalid break cmd %d\n", req->StructureSize);
+		cifsd_debug("invalid break cmd %d\n",
+			le16_to_cpu(req->StructureSize));
 		err = NT_STATUS_INVALID_PARAMETER;
 		goto err_out;
 	}
@@ -7139,7 +7145,8 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 
 		if (multi_channel_enable &&
 				conn->dialect >= SMB311_PROT_ID &&
-				req->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
+				le32_to_cpu(req->Flags) &
+					SMB2_SESSION_REQ_FLAG_BINDING) {
 			struct preauth_session *preauth_sess;
 
 			preauth_sess = get_preauth_session(conn,
