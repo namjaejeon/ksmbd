@@ -121,7 +121,7 @@ char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 	*len = 0;
 
 	/* error reqeusts do not have data area */
-	if (hdr->Status && hdr->Status != NT_STATUS_MORE_PROCESSING_REQUIRED &&
+	if (hdr->Status && hdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&
 			(((struct smb2_err_rsp *)hdr)->StructureSize) ==
 			SMB2_ERROR_STRUCTURE_SIZE2)
 		return NULL;

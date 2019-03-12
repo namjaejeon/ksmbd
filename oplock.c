@@ -785,7 +785,7 @@ int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
 
 			in_work = list_entry(tmp, struct cifsd_work,
 				interim_entry);
-			smb2_send_interim_resp(in_work, NT_STATUS_PENDING);
+			smb2_send_interim_resp(in_work, STATUS_PENDING);
 			list_del(&in_work->interim_entry);
 		}
 		INIT_WORK(&work->work, smb2_send_lease_break_notification);
@@ -1632,7 +1632,7 @@ void create_mxac_rsp_buf(char *cc, int maximal_access)
 	buf->Name[2] = 'A';
 	buf->Name[3] = 'c';
 
-	buf->QueryStatus = NT_STATUS_OK;
+	buf->QueryStatus = STATUS_SUCCESS;
 	buf->MaximalAccess = cpu_to_le32(maximal_access);
 }
 
