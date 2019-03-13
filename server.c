@@ -105,7 +105,7 @@ static inline int check_conn_state(struct cifsd_work *work)
 
 	if (cifsd_tcp_exiting(work) || cifsd_tcp_need_reconnect(work)) {
 		rsp_hdr = RESPONSE_BUF(work);
-		rsp_hdr->Status.CifsError = NT_STATUS_CONNECTION_DISCONNECTED;
+		rsp_hdr->Status.CifsError = STATUS_CONNECTION_DISCONNECTED;
 		return 1;
 	}
 	return 0;
@@ -137,14 +137,14 @@ static int __process_request(struct cifsd_work *work,
 
 andx_again:
 	if (command >= conn->max_cmds) {
-		conn->ops->set_rsp_status(work, NT_STATUS_INVALID_PARAMETER);
+		conn->ops->set_rsp_status(work, STATUS_INVALID_PARAMETER);
 		return TCP_HANDLER_CONTINUE;
 	}
 
 	cmds = &conn->cmds[command];
 	if (!cmds->proc) {
 		cifsd_err("*** not implemented yet cmd = %x\n", command);
-		conn->ops->set_rsp_status(work, NT_STATUS_NOT_IMPLEMENTED);
+		conn->ops->set_rsp_status(work, STATUS_NOT_IMPLEMENTED);
 		return TCP_HANDLER_CONTINUE;
 	}
 
@@ -152,7 +152,7 @@ andx_again:
 		conn->ops->is_sign_req(work, command)) {
 		ret = conn->ops->check_sign_req(work);
 		if (!ret) {
-			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, STATUS_DATA_ERROR);
 			return TCP_HANDLER_CONTINUE;
 		}
 	}
@@ -188,7 +188,7 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 		conn->ops->is_transform_hdr(REQUEST_BUF(work))) {
 		rc = conn->ops->decrypt_req(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, STATUS_DATA_ERROR);
 			goto send;
 		}
 
@@ -198,7 +198,7 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 	rc = conn->ops->init_rsp_hdr(work);
 	if (rc) {
 		/* either uid or tid is not correct */
-		conn->ops->set_rsp_status(work, NT_STATUS_INVALID_HANDLE);
+		conn->ops->set_rsp_status(work, STATUS_INVALID_HANDLE);
 		goto send;
 	}
 
@@ -207,13 +207,13 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 		if (rc < 0) {
 			command = conn->ops->get_cmd_val(work);
 			conn->ops->set_rsp_status(work,
-					NT_STATUS_USER_SESSION_DELETED);
+					STATUS_USER_SESSION_DELETED);
 			goto send;
 		} else if (rc > 0) {
 			rc = conn->ops->get_cifsd_tcon(work);
 			if (rc < 0) {
 				conn->ops->set_rsp_status(work,
-					NT_STATUS_NETWORK_NAME_DELETED);
+					STATUS_NETWORK_NAME_DELETED);
 				goto send;
 			}
 		}
@@ -238,7 +238,7 @@ send:
 		conn->ops->encrypt_resp) {
 		rc = conn->ops->encrypt_resp(work);
 		if (rc < 0) {
-			conn->ops->set_rsp_status(work, NT_STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, STATUS_DATA_ERROR);
 			goto send;
 		}
 	} else if (work->sess && (work->sess->sign ||

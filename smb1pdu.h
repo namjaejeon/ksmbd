@@ -9,6 +9,7 @@
 
 #include "glob.h"
 #include "nterr.h"
+#include "smbstatus.h"
 
 #define MAX_CIFS_HDR_SIZE 0x58
 
