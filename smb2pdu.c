@@ -284,7 +284,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
  * init_chained_smb2_rsp() - initialize smb2 chained response
  * @work:	smb work containing smb response buffer
  */
-void init_chained_smb2_rsp(struct cifsd_work *work)
+static void init_chained_smb2_rsp(struct cifsd_work *work)
 {
 	struct smb2_hdr *req;
 	struct smb2_hdr *rsp;
@@ -599,7 +599,7 @@ static void destroy_previous_session(uint64_t id)
  *
  * Return:      matching converted filename on success, otherwise error ptr
  */
-char *
+static char *
 smb2_get_name(struct cifsd_share_config *share,
 	      const char *src,
 	      const int maxlen,
@@ -5729,7 +5729,7 @@ static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
 	return lock;
 }
 
-void smb2_remove_blocked_lock(void **argv)
+static void smb2_remove_blocked_lock(void **argv)
 {
 	struct file_lock *flock = (struct file_lock *)argv[0];
 
@@ -6549,7 +6549,7 @@ out:
  *
  * Return:	0
  */
-int smb20_oplock_break(struct cifsd_work *work)
+static int smb20_oplock_break(struct cifsd_work *work)
 {
 	struct smb2_oplock_break *req;
 	struct smb2_oplock_break *rsp;

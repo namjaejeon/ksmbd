@@ -182,7 +182,7 @@ static int smb1_get_byte_count(struct smb_hdr *hdr)
 	return bc;
 }
 
-unsigned int smb1_calc_size(struct smb_hdr *hdr)
+static unsigned int smb1_calc_size(struct smb_hdr *hdr)
 {
 	int len = sizeof(struct smb_hdr) - 4 + 2;
 	int bc, struct_size = hdr->WordCount * 2;
