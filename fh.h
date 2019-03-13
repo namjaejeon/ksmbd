@@ -156,7 +156,6 @@ int init_fidtable(struct fidtable_desc *ftab_desc);
 void close_opens_from_fibtable(struct cifsd_session *sess,
 	struct cifsd_tree_connect *tcon);
 void destroy_fidtable(struct cifsd_session *sess);
-void free_fidtable(struct fidtable *ftab);
 struct cifsd_file *
 get_id_from_fidtable(struct cifsd_session *sess, uint64_t id);
 int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id);

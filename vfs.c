@@ -448,7 +448,7 @@ out:
  * @inode:	inode
  * @attrs:	inode attributes
  */
-void smb_check_attrs(struct inode *inode, struct iattr *attrs)
+static void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
 	/* sanitize the mode change */
 	if (attrs->ia_valid & ATTR_MODE) {
@@ -662,7 +662,7 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 	return err;
 }
 #else
-void smb_check_attrs(struct inode *inode, struct iattr *attrs)
+static inline void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
 }
 
