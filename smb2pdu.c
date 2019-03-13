@@ -197,14 +197,14 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 
 	if (work->next_smb2_rcv_hdr_off)
 		rsp_hdr = (struct smb2_hdr *)((char *)rsp_hdr
 					+ work->next_smb2_rsp_hdr_off);
-	rsp_hdr->Status = cpu_to_le32(err);
+	rsp_hdr->Status = err;
 	smb2_set_err_rsp(work);
 }
 
@@ -5055,12 +5055,6 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		if (parent_fp) {
 			if (parent_fp->daccess & FILE_DELETE_LE) {
 				cifsd_err("parent dir is opened with delete access\n");
-				rc = -ESHARE;
-				goto out;
-			}
-
-			if (!(parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
-				cifsd_err("parent dir is opened without share delete\n");
 				rc = -ESHARE;
 				goto out;
 			}
