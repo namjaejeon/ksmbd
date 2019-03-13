@@ -5058,12 +5058,6 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 				rc = -ESHARE;
 				goto out;
 			}
-
-			if (!(parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
-				cifsd_err("parent dir is opened without share delete\n");
-				rc = -ESHARE;
-				goto out;
-			}
 		}
 next:
 		rc = smb2_rename(fp,
