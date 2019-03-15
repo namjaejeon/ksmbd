@@ -7,6 +7,7 @@
 #include "glob.h"
 #include "oplock.h"
 #include "cifsacl.h"
+#include "misc.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
 #endif
@@ -76,6 +77,45 @@ int cifsd_set_server_string(char *v)
 int cifsd_set_work_group(char *v)
 {
 	return ___server_conf_set(SERVER_CONF_WORK_GROUP, v);
+}
+
+int cifsd_set_interfaces(char *v)
+{
+	int ret = 0;
+	char *tmp;
+	struct net_device *netdev;
+
+	INIT_LIST_HEAD(&server_conf.iface_list);
+
+	rtnl_lock();
+	while (v != NULL) {
+		tmp = strsep(&v, " ");
+		for_each_netdev(&init_net, netdev) {
+			if (match_pattern(netdev->name, tmp)) {
+				struct interface *iface;
+
+				iface = kmalloc(sizeof(struct interface),
+						GFP_KERNEL);
+				if (!iface) {
+					ret = -ENOMEM;
+					goto out;
+				}
+
+				iface->name = kstrdup(netdev->name, GFP_KERNEL);
+				if (!iface->name) {
+					kfree(iface);
+					ret = -ENOMEM;
+					goto out;
+				}
+				list_add(&iface->entry,
+					&server_conf.iface_list);
+			}
+		}
+	}
+
+out:
+	rtnl_unlock();
+	return ret;
 }
 
 char *cifsd_netbios_name(void)
@@ -331,11 +371,18 @@ static void cifsd_server_tcp_callbacks_init(void)
 
 static void server_conf_free(void)
 {
+	struct interface *iface, *tmp;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(server_conf.conf); i++) {
 		kfree(server_conf.conf[i]);
 		server_conf.conf[i] = NULL;
+	}
+
+	list_for_each_entry_safe(iface, tmp, &server_conf.iface_list, entry) {
+		list_del(&iface->entry);
+		kfree(iface->name);
+		kfree(iface);
 	}
 }
 
