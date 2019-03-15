@@ -578,6 +578,8 @@ int cifsd_tcp_init(void)
 	int ret;
 	struct sockaddr_in sin;
 	int opt = 1;
+	struct interface *iface;
+	struct list_head *tmp;
 
 	mutex_lock(&init_lock);
 	if (cifsd_socket) {
@@ -607,6 +609,17 @@ int cifsd_tcp_init(void)
 	if (ret < 0) {
 		cifsd_err("Failed to set TCP_NODELAY: %d\n", ret);
 		goto out_error;
+	}
+
+	list_for_each(tmp, &server_conf.iface_list) {
+		iface = list_entry(tmp,  struct interface, entry);
+		ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET,
+			SO_BINDTODEVICE, iface->name, strlen(iface->name));
+		if (ret != -ENODEV && ret < 0) {
+			cifsd_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
+			goto out_error;
+		}
+
 	}
 
 	ret = kernel_bind(cifsd_socket, (struct sockaddr *)&sin, sizeof(sin));
