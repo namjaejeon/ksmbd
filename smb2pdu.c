@@ -197,14 +197,14 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 
 	if (work->next_smb2_rcv_hdr_off)
 		rsp_hdr = (struct smb2_hdr *)((char *)rsp_hdr
 					+ work->next_smb2_rsp_hdr_off);
-	rsp_hdr->Status = cpu_to_le32(err);
+	rsp_hdr->Status = err;
 	smb2_set_err_rsp(work);
 }
 
@@ -284,7 +284,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
  * init_chained_smb2_rsp() - initialize smb2 chained response
  * @work:	smb work containing smb response buffer
  */
-void init_chained_smb2_rsp(struct cifsd_work *work)
+static void init_chained_smb2_rsp(struct cifsd_work *work)
 {
 	struct smb2_hdr *req;
 	struct smb2_hdr *rsp;
@@ -599,7 +599,7 @@ static void destroy_previous_session(uint64_t id)
  *
  * Return:      matching converted filename on success, otherwise error ptr
  */
-char *
+static char *
 smb2_get_name(struct cifsd_share_config *share,
 	      const char *src,
 	      const int maxlen,
@@ -5058,12 +5058,6 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 				rc = -ESHARE;
 				goto out;
 			}
-
-			if (!(parent_fp->saccess & FILE_SHARE_DELETE_LE)) {
-				cifsd_err("parent dir is opened without share delete\n");
-				rc = -ESHARE;
-				goto out;
-			}
 		}
 next:
 		rc = smb2_rename(fp,
@@ -5729,7 +5723,7 @@ static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
 	return lock;
 }
 
-void smb2_remove_blocked_lock(void **argv)
+static void smb2_remove_blocked_lock(void **argv)
 {
 	struct file_lock *flock = (struct file_lock *)argv[0];
 
@@ -6549,7 +6543,7 @@ out:
  *
  * Return:	0
  */
-int smb20_oplock_break(struct cifsd_work *work)
+static int smb20_oplock_break(struct cifsd_work *work)
 {
 	struct smb2_oplock_break *req;
 	struct smb2_oplock_break *rsp;

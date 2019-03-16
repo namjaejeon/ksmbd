@@ -115,7 +115,7 @@ static int get_neg_context_size(char *buf, int *off, int *len)
  * Returns the pointer to the beginning of the data area. Length of the data
  * area and the offset to it (from the beginning of the smb are also returned.
  */
-char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
+static char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 {
 	*off = 0;
 	*len = 0;
@@ -264,7 +264,7 @@ char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
  * Calculate the size of the SMB message based on the fixed header
  * portion, the number of word parameters and the data portion of the message.
  */
-unsigned int smb2_calc_size(void *buf)
+static unsigned int smb2_calc_size(void *buf)
 {
 	struct smb2_pdu *pdu = (struct smb2_pdu *)buf;
 	struct smb2_hdr *hdr = &pdu->hdr;

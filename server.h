@@ -17,17 +17,23 @@
 
 extern int cifsd_debugging;
 
-struct cifsd_server_config {
-	int		state;
-	char		*conf[SERVER_CONF_WORK_GROUP + 1];
+struct interface {
+	struct list_head	entry;
+	char			*name;
+};
 
-	short		signing;
-	short		enforced_signing;
-	short		min_protocol;
-	short		max_protocol;
-	unsigned short	tcp_port;
-	unsigned short	ipc_timeout;
-	unsigned long	ipc_last_active;
+struct cifsd_server_config {
+	int			state;
+	char			*conf[SERVER_CONF_WORK_GROUP + 1];
+
+	short			signing;
+	short			enforced_signing;
+	short			min_protocol;
+	short			max_protocol;
+	unsigned short		tcp_port;
+	unsigned short		ipc_timeout;
+	unsigned long		ipc_last_active;
+	struct list_head	iface_list;
 };
 
 extern struct cifsd_server_config server_conf;
@@ -35,6 +41,7 @@ extern struct cifsd_server_config server_conf;
 int cifsd_set_netbios_name(char *v);
 int cifsd_set_server_string(char *v);
 int cifsd_set_work_group(char *v);
+int cifsd_set_interfaces(char *v);
 
 char *cifsd_netbios_name(void);
 char *cifsd_server_string(void);
