@@ -5453,7 +5453,8 @@ static int smb2_write_pipe(struct cifsd_work *work)
 		if (rpc_resp->flags == CIFSD_RPC_ENOTIMPLEMENTED) {
 			rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 			cifsd_free(rpc_resp);
-			goto out;
+			smb2_set_err_rsp(work);
+			return -EOPNOTSUPP;
 		}
 		if (rpc_resp->flags != CIFSD_RPC_OK) {
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;
