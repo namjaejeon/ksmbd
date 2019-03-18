@@ -45,7 +45,7 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	 * zero.
 	 */
 	if (server_conf.deadtime > 0 &&
-		time_after(jiffies, conn->last_active + server_conf.deadtime))
+		time_after(jiffies, conn->last_active + server_conf.deadtime)) {
 		cifsd_debug("No response from client in %lu minutes\n",
 			server_conf.deadtime);
 		return false;
