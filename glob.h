@@ -36,7 +36,7 @@
 #include <uapi/linux/xattr.h>
 #include <linux/hashtable.h>
 #include "unicode.h"
-#include "fh.h"
+#include "vfs_cache.h"
 #include <crypto/hash.h>
 #include "smberr.h"
 

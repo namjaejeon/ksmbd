@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
- *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
+ *   Copyright (C) 2019 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFSD_FH_H
-#define __CIFSD_FH_H
+#ifndef __VFS_CACHE_H__
+#define __VFS_CACHE_H__
 
 #include <linux/file.h>
-#include <linux/fdtable.h>
 #include <linux/fs.h>
+#include <linux/rwsem.h>
+#include <linux/idr.h>
+#include <linux/workqueue.h>
 
-#include "glob.h"
 #include "vfs.h"
 
 /* Windows style file permissions for extended response */
@@ -23,7 +23,7 @@
 /* Max id limit is 0xFFFF, so create bitmap with only this size*/
 #define CIFSD_BITMAP_SIZE	0xFFFF
 #define CIFSD_START_FID		0
-#define CIFSD_NO_FID		(-1ULL)
+#define CIFSD_NO_FID		(-1U)
 
 #define cifsd_set_bit			__set_bit_le
 #define cifsd_test_and_set_bit	__test_and_set_bit_le
@@ -86,7 +86,7 @@ struct cifsd_inode {
 struct cifsd_file {
 	struct file			*filp;
 	char				*filename;
-	uint64_t			persistent_id;
+	unsigned int			persistent_id;
 	unsigned int			volatile_id;
 
 	spinlock_t			f_lock;
@@ -139,35 +139,52 @@ struct cifsd_file {
 
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 
-/* fidtable structure */
-struct fidtable {
-	unsigned int max_fids;
-	void **fileid;
-	unsigned int start_pos;
-	unsigned long *cifsd_bitmap;
+struct cifsd_file_table {
+	struct rw_semaphore	lock;
+	struct idr		idr;
 };
 
-struct fidtable_desc {
-	spinlock_t fidtable_lock;
-	struct fidtable *ftab;
-};
+int cifsd_init_file_table(struct cifsd_file_table *ft);
+void cifsd_destroy_file_table(struct cifsd_file_table *ft);
 
-int init_fidtable(struct fidtable_desc *ftab_desc);
-void close_opens_from_fibtable(struct cifsd_session *sess,
-	struct cifsd_tree_connect *tcon);
-void destroy_fidtable(struct cifsd_session *sess);
-struct cifsd_file *
-get_id_from_fidtable(struct cifsd_session *sess, uint64_t id);
-int close_id(struct cifsd_session *sess, uint64_t id, uint64_t p_id);
-int cifsd_get_unused_id(struct fidtable_desc *ftab_desc);
-int cifsd_close_id(struct fidtable_desc *ftab_desc, int id);
-struct cifsd_file *
-insert_id_in_fidtable(struct cifsd_session *sess, struct cifsd_tree_connect *tcon,
-	unsigned int id, struct file *filp);
-void delete_id_from_fidtable(struct cifsd_session *sess,
-		unsigned int id);
-struct cifsd_file *get_fp(struct cifsd_work *work, int64_t req_vid,
-	int64_t req_pid);
+void cifsd_close_fd(struct cifsd_session *sess, unsigned int id);
+
+struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
+					unsigned int id);
+struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
+					unsigned int id,
+					unsigned int pid);
+
+struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id);
+struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id);
+struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid);
+struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_session *sess,
+					    char *filename);
+struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode);
+
+unsigned int cifsd_open_durable_fd(struct cifsd_file *fp);
+
+struct cifsd_file *cifsd_open_fd(struct cifsd_session *sess,
+				 struct cifsd_tree_connect *tcon,
+				 struct file *filp);
+
+void cifsd_close_session_fds(struct cifsd_session *sess,
+			     struct cifsd_tree_connect *tcon);
+
+int cifsd_close_inode_fds(struct inode *inode);
+
+int cifsd_reopen_durable_fd(struct cifsd_session *sess,
+			    struct cifsd_file *fp,
+			    struct cifsd_tree_connect *tcon);
+
+void cifsd_init_global_file_table(void);
+void cifsd_free_global_file_table(void);
+
+int cifsd_file_table_flush(struct cifsd_work *work);
+
+/*
+ * INODE hash
+ */
 
 void __init cifsd_inode_hash_init(void);
 int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp);
@@ -179,22 +196,4 @@ struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
 struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
 void cifsd_inode_put(struct cifsd_inode *ci);
 
-/* Persistent-ID operations */
-int cifsd_insert_in_global_table(struct cifsd_session *sess,
-	struct cifsd_file *fp);
-int close_persistent_id(uint64_t id);
-void destroy_global_fidtable(void);
-int init_global_fidtable(void);
-
-/* Durable handle functions */
-struct cifsd_file *cifsd_get_global_fp(uint64_t pid);
-int cifsd_reconnect_durable_fp(struct cifsd_session *sess, struct cifsd_file *fp,
-	struct cifsd_tree_connect *tcon);
-struct cifsd_file *lookup_fp_clguid(char *createguid);
-struct cifsd_file *lookup_fp_app_id(char *app_id);
-struct cifsd_file *find_fp_using_filename(struct cifsd_session *sess,
-	char *filename);
-struct cifsd_file *find_fp_using_inode(struct inode *inode);
-int close_disconnected_handle(struct inode *inode);
-
-#endif /* __CIFSD_FH_H */
+#endif /* __VFS_CACHE_H__ */

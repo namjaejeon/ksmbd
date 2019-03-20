@@ -1379,7 +1379,7 @@ void smb2_send_oplock_break_notification(struct work_struct *wk)
 	struct cifsd_file *fp;
 
 	cifsd_tcp_conn_lock(conn);
-	fp = cifsd_get_global_fp(br_info->fid);
+	fp = cifsd_lookup_durable_fd(br_info->fid);
 	if (!fp) {
 		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(work);

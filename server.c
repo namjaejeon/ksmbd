@@ -535,7 +535,7 @@ static int cifsd_server_shutdown(void)
 	cifsd_tcp_destroy();
 	cifsd_free_session_table();
 
-	destroy_global_fidtable();
+	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
 	exit_cifsd_idmap();
@@ -571,10 +571,7 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	ret = init_global_fidtable();
-	if (ret)
-		goto error;
-
+	cifsd_init_global_file_table();
 	cifsd_inode_hash_init();
 
 	ret = init_cifsd_idmap();

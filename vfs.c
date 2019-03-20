@@ -27,7 +27,7 @@
 #include "transport_tcp.h"
 #include "buffer_pool.h"
 #include "vfs.h"
-#include "fh.h"
+#include "vfs_cache.h"
 
 #include "time_wrappers.h"
 #include "smb_common.h"
@@ -487,7 +487,6 @@ static void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		uint64_t fid, struct iattr *attrs)
 {
-	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	struct dentry *dentry;
 	struct inode *inode;
@@ -507,7 +506,7 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 		inode = dentry->d_inode;
 	} else {
 
-		fp = get_id_from_fidtable(sess, fid);
+		fp = cifsd_lookup_fd_fast(work, fid);
 		if (!fp) {
 			cifsd_err("failed to get filp for fid %llu\n", fid);
 			return -ENOENT;
@@ -579,12 +578,11 @@ out:
 int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 		struct kstat *stat)
 {
-	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	struct cifsd_file *fp;
 	int err;
 
-	fp = get_id_from_fidtable(sess, fid);
+	fp = cifsd_lookup_fd_fast(work, fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
@@ -698,22 +696,14 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
  */
 int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 {
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_file *fp;
 	int err;
 
-	fp = get_id_from_fidtable(sess, fid);
+	fp = cifsd_lookup_fd_slow(work, fid, p_id);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %llu\n", fid);
 		return -ENOENT;
 	}
-
-	if (fp->persistent_id != p_id) {
-		cifsd_err("persistent id mismatch : %llu, %llu\n",
-				fp->persistent_id, p_id);
-		return -ENOENT;
-	}
-
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifsd_err("smb fsync failed, err = %d\n", err);
@@ -941,7 +931,7 @@ int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp
 		if (!child_de->d_inode)
 			continue;
 
-		child_fp = find_fp_using_inode(child_de->d_inode);
+		child_fp = cifsd_lookup_fd_inode(child_de->d_inode);
 		if (child_fp) {
 			cifsd_debug("not allow to rename dir with opening sub file\n");
 			err = -ENOTEMPTY;
@@ -1400,10 +1390,9 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 {
 	struct cifsd_session *sess = work->sess;
 	struct file *filp;
-	int id, err = 0;
+	int err = 0;
 	struct cifsd_file *fp = NULL;
 	uint64_t sess_id;
-	struct cifsd_inode *ci;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -1415,24 +1404,11 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	cifsd_vfs_set_fadvise(filp, option);
 
 	sess_id = !sess ? 0 : sess->id;
-	id = cifsd_get_unused_id(&sess->fidtable);
-	if (id < 0) {
-		err = -EBADF;
-		goto err_out3;
-	}
-
-	cifsd_debug("allocate volatile id : %d\n", id);
-	fp = insert_id_in_fidtable(sess, work->tcon, id, filp);
+	fp = cifsd_open_fd(sess, work->tcon, filp);
 	if (!fp) {
 		err = -ENOMEM;
 		cifsd_err("id insert failed\n");
-		goto err_out2;
-	}
-
-	fp->f_ci = ci = cifsd_inode_get(fp);
-	if (!ci) {
-		err = -ENOMEM;
-		goto err_out1;
+		goto err_out;
 	}
 
 	if (flags & O_TRUNC) {
@@ -1443,18 +1419,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 			goto err_out;
 	}
 	INIT_LIST_HEAD(&fp->blocked_works);
-
 	return fp;
 
 err_out:
-	list_del(&fp->node);
-	if (ci)
-		cifsd_inode_put(ci);
-err_out1:
-	delete_id_from_fidtable(sess, id);
-err_out2:
-	cifsd_close_id(&sess->fidtable, id);
-err_out3:
+	cifsd_close_fd(sess, fp->volatile_id);
 	fput(filp);
 
 	if (err) {

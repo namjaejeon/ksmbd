@@ -300,7 +300,6 @@ int smb_session_disconnect(struct cifsd_work *work)
 	cifsd_tcp_conn_wait_idle(conn);
 
 	cifsd_tree_conn_session_logoff(sess);
-
 	cifsd_session_destroy(sess);
 	work->sess = NULL;
 
@@ -328,7 +327,7 @@ int smb_tree_disconnect(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	close_opens_from_fibtable(sess, tcon);
+	cifsd_close_session_fds(sess, tcon);
 	cifsd_tree_conn_disconnect(sess, tcon);
 	return 0;
 }
@@ -1514,7 +1513,7 @@ int smb_locking_andx(struct cifsd_work *work)
 		      req->Fid, req->LockType, timeout);
 
 	/* find fid */
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
@@ -2169,7 +2168,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		cifsd_debug("path lookup relative to RootDirectoryFid\n");
 
 		is_relative_root = true;
-		fp = get_id_from_fidtable(sess, req->RootDirectoryFid);
+		fp = cifsd_lookup_fd_fast(work, req->RootDirectoryFid);
 		if (fp)
 			root = (char *)fp->filp->f_path.dentry->d_name.name;
 		else {
@@ -2602,10 +2601,7 @@ out:
 	}
 
 	if (err && fp) {
-		list_del(&fp->node);
-		cifsd_inode_put(fp->f_ci);
-		cifsd_close_id(&sess->fidtable, fp->volatile_id);
-		delete_id_from_fidtable(sess, fp->volatile_id);
+		cifsd_close_fd(sess, fp->volatile_id);
 	}
 
 	if (!rsp->hdr.WordCount)
@@ -2667,9 +2663,7 @@ int smb_close(struct cifsd_work *work)
 	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
 		cifsd_info("need to set last modified time before close\n");
 
-	err = close_id(work->sess, req->FileID, CIFSD_NO_FID);
-	if (err)
-		goto out;
+	cifsd_close_fd(work->sess, req->FileID);
 
 IPC_out:
 	/* file close success, return response to server */
@@ -2775,7 +2769,7 @@ int smb_read_andx(struct cifsd_work *work)
 				   CIFSD_SHARE_FLAG_PIPE))
 		return smb_read_andx_pipe(work);
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %d\n",
 			req->Fid);
@@ -2873,7 +2867,7 @@ int smb_write(struct cifsd_work *work)
 	ssize_t nbytes = 0;
 	int err = 0;
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
@@ -2993,7 +2987,7 @@ int smb_write_andx(struct cifsd_work *work)
 		return smb_write_andx_pipe(work);
 	}
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
@@ -3127,28 +3121,14 @@ int smb_flush(struct cifsd_work *work)
 {
 	FLUSH_REQ *req = (FLUSH_REQ *)REQUEST_BUF(work);
 	FLUSH_RSP *rsp = (FLUSH_RSP *)RESPONSE_BUF(work);
-	struct cifsd_session *sess = work->sess;
-	struct cifsd_file *file;
-	struct fidtable *ftab;
-	int err = 0, id;
+	int err = 0;
 
 	cifsd_debug("SMB_COM_FLUSH called for fid %u\n", req->FileID);
 
 	if (req->FileID == 0xFFFF) {
-		spin_lock(&sess->fidtable.fidtable_lock);
-		ftab = sess->fidtable.ftab;
-		spin_unlock(&sess->fidtable.fidtable_lock);
-
-		for (id = 0; id < ftab->max_fids; id++) {
-			file = ftab->fileid[id];
-			if (file) {
-				err = cifsd_vfs_fsync(work,
-						      file->volatile_id,
-						      CIFSD_NO_FID);
-				if (err)
-					goto out;
-			}
-		}
+		err = cifsd_file_table_flush(work);
+		if (err)
+			goto out;
 	} else {
 		err = cifsd_vfs_fsync(work, req->FileID, CIFSD_NO_FID);
 		if (err)
@@ -4912,10 +4892,7 @@ out:
 	}
 
 	if (err && fp) {
-		list_del(&fp->node);
-		cifsd_inode_put(fp->f_ci);
-		cifsd_close_id(&sess->fidtable, fp->volatile_id);
-		delete_id_from_fidtable(sess, fp->volatile_id);
+		cifsd_close_fd(sess, fp->volatile_id);
 	}
 
 	return err;
@@ -5945,7 +5922,7 @@ static int find_first(struct cifsd_work *work)
 		cifsd_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, dir_fp->volatile_id, CIFSD_NO_FID);
+		cifsd_close_fd(sess, dir_fp->volatile_id);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -5979,7 +5956,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, dir_fp->volatile_id, CIFSD_NO_FID);
+		cifsd_close_fd(sess, dir_fp->volatile_id);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -6040,7 +6017,7 @@ static int find_next(struct cifsd_work *work)
 	cifsd_debug("FileName after unicode conversion %s\n", name);
 	kfree(name);
 
-	dir_fp = get_fp(work, sid, 0);
+	dir_fp = cifsd_lookup_fd_fast(work, sid);
 	if (!dir_fp) {
 		cifsd_debug("error invalid sid\n");
 		rc = -EINVAL;
@@ -6160,7 +6137,7 @@ static int find_next(struct cifsd_work *work)
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, CIFSD_NO_FID);
+		cifsd_close_fd(sess, sid);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -6194,7 +6171,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		close_id(sess, sid, CIFSD_NO_FID);
+		cifsd_close_fd(sess, sid);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -6244,7 +6221,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 		newsize *= alloc_roundup_size;
 	}
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
@@ -6306,7 +6283,7 @@ static int smb_set_file_size_finfo(struct cifsd_work *work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
@@ -6433,7 +6410,7 @@ static int query_file_info(struct cifsd_work *work)
 	}
 
 	fid = le16_to_cpu(req_params->Fid);
-	fp = get_fp(work, fid, 0);
+	fp = cifsd_lookup_fd_fast(work, fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", fid);
 		rsp_hdr->Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
@@ -6757,7 +6734,7 @@ static int smb_set_dispostion(struct cifsd_work *work)
 	disp_info =  (char *) (((char *) &req->hdr.Protocol)
 			+ le16_to_cpu(req->DataOffset));
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_debug("Invalid id for close: %d\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
@@ -6905,7 +6882,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 	info =  (struct set_file_rename *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
-	fp = get_fp(work, req->Fid, 0);
+	fp = cifsd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
 		cifsd_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
@@ -7428,7 +7405,7 @@ int smb_unlink(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	fp = find_fp_using_filename(work->sess, name);
+	fp = cifsd_lookup_fd_filename(work->sess, name);
 	if (fp)
 		err = -ESHARE;
 	else
@@ -7632,13 +7609,11 @@ int smb_closedir(struct cifsd_work *work)
 {
 	FINDCLOSE_REQ *req = (FINDCLOSE_REQ *)REQUEST_BUF(work);
 	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(work);
-	int err;
+	int err = 0;
 
 	cifsd_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
 
-	err = close_id(work->sess, req->FileID, CIFSD_NO_FID);
-	if (err)
-		goto out;
+	cifsd_close_fd(work->sess, req->FileID);
 
 	/* dir close success, return response to server */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -7649,7 +7624,6 @@ int smb_closedir(struct cifsd_work *work)
 out:
 	if (err)
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
-
 	return err;
 }
 
@@ -7947,10 +7921,7 @@ out:
 		conn->stats.open_files_count++;
 
 	if (err && fp) {
-		list_del(&fp->node);
-		cifsd_inode_put(fp->f_ci);
-		cifsd_close_id(&sess->fidtable, fp->volatile_id);
-		delete_id_from_fidtable(sess, fp->volatile_id);
+		cifsd_close_fd(sess, fp->volatile_id);
 	}
 
 	if (!rsp->hdr.WordCount)
