@@ -25,14 +25,6 @@
 #define CIFSD_START_FID		0
 #define CIFSD_NO_FID		(-1U)
 
-#define cifsd_set_bit			__set_bit_le
-#define cifsd_test_and_set_bit	__test_and_set_bit_le
-#define cifsd_test_bit		test_bit_le
-#define cifsd_clear_bit		__clear_bit_le
-#define cifsd_test_and_clear_bit	__test_and_clear_bit_le
-#define cifsd_find_next_zero_bit	find_next_zero_bit_le
-#define cifsd_find_next_bit		find_next_bit_le
-
 #define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
 #define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
 #define PARENT_INODE(fp)	fp->filp->f_path.dentry->d_parent->d_inode
