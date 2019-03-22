@@ -5973,7 +5973,7 @@ static int find_first(struct cifsd_work *work)
 	return 0;
 
 err_out:
-	if (dir_fp && dir_fp->readdir_data.dirent) {
+	if (dir_fp) {
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
 			dir_fp->readdir_data.dirent = NULL;
@@ -6188,7 +6188,7 @@ static int find_next(struct cifsd_work *work)
 	return 0;
 
 err_out:
-	if (dir_fp && dir_fp->readdir_data.dirent) {
+	if (dir_fp) {
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
 			dir_fp->readdir_data.dirent = NULL;
