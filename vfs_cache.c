@@ -120,9 +120,7 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 	if (fp->persistent_id == CIFSD_NO_FID)
 		return;
 
-	down_write(&global_ft.lock);
 	idr_remove(&global_ft.idr, fp->persistent_id);
-	up_write(&global_ft.lock);
 }
 
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
@@ -130,15 +128,12 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 {
 	WARN_ON(fp->volatile_id == CIFSD_NO_FID);
 
-	down_write(&ft->lock);
-
 	spin_lock(&fp->f_lock);
 	fp->f_state = FP_FREEING;
 	list_del(&fp->node);
 	spin_unlock(&fp->f_lock);
 
 	idr_remove(&ft->idr, fp->volatile_id);
-	up_write(&ft->lock);
 }
 
 /* copy-pasted from old fh */
@@ -332,7 +327,6 @@ static void __open_id(struct cifsd_file_table *ft,
 	unsigned int		id = 0;
 	int			ret;
 
-	down_write(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 	ret = idr_alloc_u32(&ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
 #else
@@ -349,7 +343,6 @@ static void __open_id(struct cifsd_file_table *ft,
 		fp->volatile_id = id;
 	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
 		fp->persistent_id = id;
-	up_write(&ft->lock);
 }
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
@@ -430,6 +423,7 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 	unsigned int			id;
 	struct cifsd_file		*fp;
 
+	rcu_read_lock();
 	idr_for_each_entry(&sess->file_table.idr, fp, id) {
 		if (fp->tcon != tcon)
 			continue;
@@ -446,6 +440,7 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 
 		__cifsd_close_fd(&sess->file_table, fp, id);
 	}
+	rcu_read_unlock();
 }
 
 void cifsd_init_global_file_table(void)
