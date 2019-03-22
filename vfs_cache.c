@@ -604,7 +604,9 @@ void cifsd_inode_hash(struct cifsd_inode *ci)
 
 void cifsd_inode_unhash(struct cifsd_inode *ci)
 {
+	spin_lock(&inode_hash_lock);
 	hlist_del_init(&ci->m_hash);
+	spin_unlock(&inode_hash_lock);
 }
 
 int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
