@@ -20,7 +20,7 @@
 static unsigned int inode_hash_mask __read_mostly;
 static unsigned int inode_hash_shift __read_mostly;
 static struct hlist_head *inode_hashtable __read_mostly;
-static __cacheline_aligned_in_smp DEFINE_SPINLOCK(inode_hash_lock);
+static DEFINE_RWLOCK(inode_hash_lock);
 
 static struct cifsd_file_table global_ft;
 
@@ -587,10 +587,9 @@ struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 {
 	struct cifsd_inode *ci;
 
-	spin_lock(&inode_hash_lock);
+	read_lock(&inode_hash_lock);
 	ci = __cifsd_inode_lookup(inode);
-	spin_unlock(&inode_hash_lock);
-
+	read_unlock(&inode_hash_lock);
 	return ci;
 }
 
@@ -604,9 +603,9 @@ void cifsd_inode_hash(struct cifsd_inode *ci)
 
 void cifsd_inode_unhash(struct cifsd_inode *ci)
 {
-	spin_lock(&inode_hash_lock);
+	write_lock(&inode_hash_lock);
 	hlist_del_init(&ci->m_hash);
-	spin_unlock(&inode_hash_lock);
+	write_unlock(&inode_hash_lock);
 }
 
 int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
@@ -635,9 +634,9 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 	struct cifsd_inode *ci, *tmpci;
 	int rc;
 
-	spin_lock(&inode_hash_lock);
+	read_lock(&inode_hash_lock);
 	ci = cifsd_inode_lookup(fp);
-	spin_unlock(&inode_hash_lock);
+	read_unlock(&inode_hash_lock);
 	if (ci)
 		return ci;
 
@@ -652,7 +651,7 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 		return NULL;
 	}
 
-	spin_lock(&inode_hash_lock);
+	write_lock(&inode_hash_lock);
 	tmpci = cifsd_inode_lookup(fp);
 	if (!tmpci) {
 		cifsd_inode_hash(ci);
@@ -660,7 +659,7 @@ struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
 		kfree(ci);
 		ci = tmpci;
 	}
-	spin_unlock(&inode_hash_lock);
+	write_unlock(&inode_hash_lock);
 	return ci;
 }
 
