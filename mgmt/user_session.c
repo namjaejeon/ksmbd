@@ -157,7 +157,6 @@ void cifsd_session_destroy(struct cifsd_session *sess)
 	hash_del(&sess->hlist);
 	up_write(&sessions_table_lock);
 
-	cifsd_destroy_file_table(&sess->file_table);
 	cifsd_ida_free(sess->tree_conn_ida);
 	cifsd_free(sess);
 }
@@ -279,7 +278,6 @@ static struct cifsd_session *__session_create(int protocol)
 	if (ret)
 		goto error;
 
-	cifsd_init_file_table(&sess->file_table);
 	sess->tree_conn_ida = cifsd_ida_alloc();
 	if (!sess->tree_conn_ida)
 		goto error;

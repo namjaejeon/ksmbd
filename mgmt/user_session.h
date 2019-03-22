@@ -55,8 +55,6 @@ struct cifsd_session {
 	struct cifsd_ida		*tree_conn_ida;
 	struct list_head		rpc_handle_list;
 
-	struct cifsd_file_table		file_table;
-
 	__u8				smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3signingkey[SMB3_SIGN_KEY_SIZE];

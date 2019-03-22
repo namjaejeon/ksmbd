@@ -87,7 +87,6 @@ struct cifsd_file {
 	struct cifsd_inode		*f_parent_ci;
 	struct oplock_info		*f_opinfo;
 	struct cifsd_tcp_conn		*conn;
-	struct cifsd_session		*sess;
 	struct cifsd_tree_connect	*tcon;
 
 	int				f_state;
@@ -139,7 +138,7 @@ struct cifsd_file_table {
 int cifsd_init_file_table(struct cifsd_file_table *ft);
 void cifsd_destroy_file_table(struct cifsd_file_table *ft);
 
-void cifsd_close_fd(struct cifsd_session *sess, unsigned int id);
+void cifsd_close_fd(struct cifsd_work *work, unsigned int id);
 
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id);
@@ -150,24 +149,21 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id);
 struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id);
 struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid);
-struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_session *sess,
+struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 					    char *filename);
 struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode);
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp);
 
-struct cifsd_file *cifsd_open_fd(struct cifsd_session *sess,
-				 struct cifsd_tree_connect *tcon,
+struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 				 struct file *filp);
 
-void cifsd_close_session_fds(struct cifsd_session *sess,
-			     struct cifsd_tree_connect *tcon);
+void cifsd_close_tree_conn_fds(struct cifsd_tree_connect *tcon);
 
 int cifsd_close_inode_fds(struct inode *inode);
 
-int cifsd_reopen_durable_fd(struct cifsd_session *sess,
-			    struct cifsd_file *fp,
-			    struct cifsd_tree_connect *tcon);
+int cifsd_reopen_durable_fd(struct cifsd_work *work,
+			    struct cifsd_file *fp);
 
 void cifsd_init_global_file_table(void);
 void cifsd_free_global_file_table(void);

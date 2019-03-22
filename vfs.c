@@ -1388,11 +1388,9 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	const struct path *path, int flags, int option, int fexist)
 {
-	struct cifsd_session *sess = work->sess;
 	struct file *filp;
 	int err = 0;
 	struct cifsd_file *fp = NULL;
-	uint64_t sess_id;
 
 	filp = dentry_open(path, flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
@@ -1403,8 +1401,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	cifsd_vfs_set_fadvise(filp, option);
 
-	sess_id = !sess ? 0 : sess->id;
-	fp = cifsd_open_fd(sess, work->tcon, filp);
+	fp = cifsd_open_fd(work, filp);
 	if (!fp) {
 		err = -ENOMEM;
 		cifsd_err("id insert failed\n");
@@ -1422,7 +1419,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	return fp;
 
 err_out:
-	cifsd_close_fd(sess, fp->volatile_id);
+	cifsd_close_fd(work, fp->volatile_id);
 	fput(filp);
 
 	if (err) {

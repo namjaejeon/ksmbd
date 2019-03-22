@@ -1610,7 +1610,6 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 		return 0;
 	}
 
-	cifsd_close_session_fds(sess, tcon);
 	cifsd_tree_conn_disconnect(sess, tcon);
 	return 0;
 }
@@ -1643,7 +1642,6 @@ int smb2_session_logoff(struct cifsd_work *work)
 	/* setting CifsExiting here may race with start_tcp_sess */
 	cifsd_tcp_set_need_reconnect(work);
 
-	cifsd_destroy_file_table(&sess->file_table);
 	cifsd_tcp_conn_wait_idle(conn);
 
 	if (cifsd_tree_conn_session_logoff(sess)) {
@@ -1734,10 +1732,11 @@ struct durable_info {
 	char *app_id;
 };
 
-static int parse_durable_handle_context(struct cifsd_tcp_conn *conn,
+static int parse_durable_handle_context(struct cifsd_work *work,
 	struct smb2_create_req *req, struct lease_ctx_info *lc,
 	struct durable_info *d_info)
 {
+	struct cifsd_tcp_conn *conn = work->conn;
 	struct create_context *context;
 	int i, err = 0;
 	uint64_t persistent_id = 0;
@@ -1879,7 +1878,7 @@ static int parse_durable_handle_context(struct cifsd_tcp_conn *conn,
 			inst_id = (struct create_app_inst_id *)context;
 			fp = cifsd_lookup_fd_app_id(inst_id->AppInstanceId);
 			if (fp)
-				cifsd_close_fd(fp->sess, fp->volatile_id);
+				cifsd_close_fd(work, fp->volatile_id);
 			d_info->app_id = inst_id->AppInstanceId;
 			break;
 		}
@@ -2105,7 +2104,7 @@ int smb2_open(struct cifsd_work *work)
 	memset(&d_info, 0, sizeof(struct durable_info));
 	if (durable_enable && req->CreateContextsOffset) {
 		lc = parse_lease_state(req);
-		rc = parse_durable_handle_context(conn, req, lc, &d_info);
+		rc = parse_durable_handle_context(work, req, lc, &d_info);
 		if (rc) {
 			cifsd_err("error parsing durable handle context\n");
 			goto err_out1;
@@ -2116,7 +2115,7 @@ int smb2_open(struct cifsd_work *work)
 			rc = smb2_check_durable_oplock(d_info.fp, lc, name);
 			if (rc)
 				goto err_out;
-			rc = cifsd_reopen_durable_fd(sess, d_info.fp, tcon);
+			rc = cifsd_reopen_durable_fd(work, d_info.fp);
 			if (rc)
 				goto err_out;
 			file_info = FILE_OPENED;
@@ -2403,7 +2402,7 @@ int smb2_open(struct cifsd_work *work)
 	cifsd_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
 
 	/* Obtain Volatile-ID */
-	fp = cifsd_open_fd(sess, tcon, filp);
+	fp = cifsd_open_fd(work, filp);
 	if (!fp) {
 		rc = -ENOMEM;
 		goto err_out;
@@ -2828,7 +2827,7 @@ err_out1:
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
 		if (fp)
-			cifsd_close_fd(sess, fp->volatile_id);
+			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
 	} else
 		conn->stats.open_files_count++;
@@ -4468,7 +4467,7 @@ int smb2_close(struct cifsd_work *work)
 	cifsd_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
 
-	cifsd_close_fd(work->sess, volatile_id);
+	cifsd_close_fd(work, volatile_id);
 
 	rsp->StructureSize = cpu_to_le16(60);
 	rsp->Flags = 0;

@@ -10,6 +10,7 @@
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
 #include "../transport_tcp.h"
+#include "../vfs_cache.h"
 
 #include "tree_connect.h"
 #include "user_config.h"
@@ -61,6 +62,7 @@ cifsd_tree_conn_connect(struct cifsd_session *sess, char *share_name)
 	status.tree_conn = tree_conn;
 
 	list_add(&tree_conn->list, &sess->tree_conn_list);
+	cifsd_init_file_table(&tree_conn->tree_fds);
 
 	cifsd_free(resp);
 	return status;
@@ -80,6 +82,8 @@ int cifsd_tree_conn_disconnect(struct cifsd_session *sess,
 	int ret;
 
 	ret = cifsd_ipc_tree_disconnect_request(sess->id, tree_conn->id);
+	cifsd_close_tree_conn_fds(tree_conn);
+	cifsd_destroy_file_table(&tree_conn->tree_fds);
 	cifsd_release_tree_conn_id(sess, tree_conn->id);
 	list_del(&tree_conn->list);
 	cifsd_share_config_put(tree_conn->share_conf);

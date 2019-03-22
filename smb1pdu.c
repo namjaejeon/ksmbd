@@ -327,7 +327,6 @@ int smb_tree_disconnect(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
-	cifsd_close_session_fds(sess, tcon);
 	cifsd_tree_conn_disconnect(sess, tcon);
 	return 0;
 }
@@ -2600,9 +2599,8 @@ out:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err && fp) {
-		cifsd_close_fd(sess, fp->volatile_id);
-	}
+	if (err && fp)
+		cifsd_close_fd(work, fp->volatile_id);
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -2663,7 +2661,7 @@ int smb_close(struct cifsd_work *work)
 	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
 		cifsd_info("need to set last modified time before close\n");
 
-	cifsd_close_fd(work->sess, req->FileID);
+	cifsd_close_fd(work, req->FileID);
 
 IPC_out:
 	/* file close success, return response to server */
@@ -4665,7 +4663,6 @@ static int smb_posix_open(struct cifsd_work *work)
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 		(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	OPEN_PSX_REQ *psx_req;
 	OPEN_PSX_RSP *psx_rsp;
@@ -4891,10 +4888,8 @@ out:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err && fp) {
-		cifsd_close_fd(sess, fp->volatile_id);
-	}
-
+	if (err && fp)
+		cifsd_close_fd(work, fp->volatile_id);
 	return err;
 }
 
@@ -5729,7 +5724,6 @@ static int find_first(struct cifsd_work *work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
@@ -5922,7 +5916,7 @@ static int find_first(struct cifsd_work *work)
 		cifsd_debug("%s end of search\n", __func__);
 		params->EndofSearch = cpu_to_le16(1);
 		path_put(&(dir_fp->filp->f_path));
-		cifsd_close_fd(sess, dir_fp->volatile_id);
+		cifsd_close_fd(work, dir_fp->volatile_id);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -5956,7 +5950,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		cifsd_close_fd(sess, dir_fp->volatile_id);
+		cifsd_close_fd(work, dir_fp->volatile_id);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -5980,7 +5974,6 @@ static int find_next(struct cifsd_work *work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct smb_trans2_req *req = (struct smb_trans2_req *)REQUEST_BUF(work);
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
@@ -6137,7 +6130,7 @@ static int find_next(struct cifsd_work *work)
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
-		cifsd_close_fd(sess, sid);
+		cifsd_close_fd(work, sid);
 	}
 	params->EAErrorOffset = cpu_to_le16(0);
 
@@ -6171,7 +6164,7 @@ err_out:
 			dir_fp->readdir_data.dirent = NULL;
 		}
 		path_put(&(dir_fp->filp->f_path));
-		cifsd_close_fd(sess, sid);
+		cifsd_close_fd(work, sid);
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
@@ -7405,7 +7398,7 @@ int smb_unlink(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	fp = cifsd_lookup_fd_filename(work->sess, name);
+	fp = cifsd_lookup_fd_filename(work, name);
 	if (fp)
 		err = -ESHARE;
 	else
@@ -7613,7 +7606,7 @@ int smb_closedir(struct cifsd_work *work)
 
 	cifsd_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
 
-	cifsd_close_fd(work->sess, req->FileID);
+	cifsd_close_fd(work, req->FileID);
 
 	/* dir close success, return response to server */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -7697,7 +7690,6 @@ int smb_open_andx(struct cifsd_work *work)
 	OPENX_REQ *req = (OPENX_REQ *)REQUEST_BUF(work);
 	OPENX_RSP *rsp = (OPENX_RSP *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
@@ -7920,9 +7912,8 @@ out:
 	} else
 		conn->stats.open_files_count++;
 
-	if (err && fp) {
-		cifsd_close_fd(sess, fp->volatile_id);
-	}
+	if (err && fp)
+		cifsd_close_fd(work, fp->volatile_id);
 
 	if (!rsp->hdr.WordCount)
 		return err;
