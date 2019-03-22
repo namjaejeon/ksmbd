@@ -7821,7 +7821,7 @@ int smb_open_andx(struct cifsd_work *work)
 		atomic_dec(&f_parent_ci->m_count);
 	}
 
-	cifsd_err("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
+	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */
 	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
