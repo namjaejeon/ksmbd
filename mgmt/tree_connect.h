@@ -12,7 +12,6 @@
 
 struct cifsd_share_config;
 struct cifsd_user;
-struct cifsd_file_table;
 
 struct cifsd_tree_connect {
 	int				id;
@@ -21,7 +20,6 @@ struct cifsd_tree_connect {
 	struct cifsd_share_config	*share_conf;
 	struct cifsd_user		*user;
 
-	struct cifsd_file_table		tree_fds;
 	struct list_head		list;
 
 	int				maximal_access;

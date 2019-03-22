@@ -158,9 +158,9 @@ unsigned int cifsd_open_durable_fd(struct cifsd_file *fp);
 struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 				 struct file *filp);
 
-void cifsd_close_tree_conn_fds(struct cifsd_tree_connect *tcon);
+void cifsd_close_tree_conn_fds(struct cifsd_work *work);
 
-int cifsd_close_inode_fds(struct inode *inode);
+int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode);
 
 int cifsd_reopen_durable_fd(struct cifsd_work *work,
 			    struct cifsd_file *fp);

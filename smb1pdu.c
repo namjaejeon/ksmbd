@@ -327,6 +327,7 @@ int smb_tree_disconnect(struct cifsd_work *work)
 		return -EINVAL;
 	}
 
+	cifsd_close_tree_conn_fds(work);
 	cifsd_tree_conn_disconnect(sess, tcon);
 	return 0;
 }

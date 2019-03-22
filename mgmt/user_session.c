@@ -15,6 +15,7 @@
 #include "../transport_tcp.h"
 #include "../buffer_pool.h"
 #include "../cifsd_server.h" /* FIXME */
+#include "../vfs_cache.h"
 
 static struct cifsd_ida *session_ida;
 
@@ -147,6 +148,7 @@ void cifsd_session_destroy(struct cifsd_session *sess)
 	if (sess->user)
 		cifsd_free_user(sess->user);
 
+	cifsd_destroy_file_table(&sess->file_table);
 	cifsd_session_rpc_clear_list(sess);
 	free_channel_list(sess);
 	kfree(sess->Preauth_HashValue);
@@ -256,6 +258,7 @@ static struct cifsd_session *__session_create(int protocol)
 	if (!sess)
 		return NULL;
 
+	cifsd_init_file_table(&sess->file_table);
 	set_session_flag(sess, protocol);
 	INIT_LIST_HEAD(&sess->sessions_entry);
 	INIT_LIST_HEAD(&sess->tree_conn_list);

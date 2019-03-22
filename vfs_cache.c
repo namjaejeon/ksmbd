@@ -197,10 +197,10 @@ void cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 	if (id == CIFSD_NO_FID)
 		return;
 
-	fp = __cifsd_lookup_fd(&work->tcon->tree_fds, id);
+	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 	if (!fp)
 		return;
-	__cifsd_close_fd(&work->tcon->tree_fds, fp, id);
+	__cifsd_close_fd(&work->sess->file_table, fp, id);
 }
 
 static bool __sanity_check(struct cifsd_tree_connect *tcon,
@@ -216,7 +216,7 @@ static bool __sanity_check(struct cifsd_tree_connect *tcon,
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id)
 {
-	struct cifsd_file *fp = __cifsd_lookup_fd(&work->tcon->tree_fds, id);
+	struct cifsd_file *fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 
 	if (__sanity_check(work->tcon, fp))
 		return fp;
@@ -234,7 +234,7 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 		pid = work->cur_local_pfid;
 	}
 
-	fp = __cifsd_lookup_fd(&work->tcon->tree_fds, id);
+	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 	if (!__sanity_check(work->tcon, fp))
 		return NULL;
 	if (fp->persistent_id != pid)
@@ -288,7 +288,7 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 	unsigned int		id;
 
 	rcu_read_lock();
-	idr_for_each_entry(&work->tcon->tree_fds.idr, fp, id) {
+	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
@@ -385,7 +385,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 		return NULL;
 	}
 
-	__open_id(&work->tcon->tree_fds, fp, OPEN_ID_TYPE_VOLATILE_ID);
+	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
 	if (fp->volatile_id == CIFSD_NO_FID) {
 		cifsd_inode_put(fp->f_ci);
 		cifsd_free_file_struct(fp);
@@ -423,12 +423,14 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	return reconn;
 }
 
-void cifsd_close_tree_conn_fds(struct cifsd_tree_connect *tcon)
+void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 {
-	unsigned int		id;
-	struct cifsd_file	*fp;
+	struct cifsd_session		*sess = work->sess;
+	struct cifsd_tree_connect	*tcon = work->tcon;
+	unsigned int			id;
+	struct cifsd_file		*fp;
 
-	idr_for_each_entry(&tcon->tree_fds.idr, fp, id) {
+	idr_for_each_entry(&sess->file_table.idr, fp, id) {
 		if (fp->tcon != tcon)
 			continue;
 
@@ -439,10 +441,10 @@ void cifsd_close_tree_conn_fds(struct cifsd_tree_connect *tcon)
 			continue;
 		}
 
-		if (fp->conn && fp->conn->stats.open_files_count > 0)
-			fp->conn->stats.open_files_count--;
+		if (work->conn->stats.open_files_count > 0)
+			work->conn->stats.open_files_count--;
 
-		__cifsd_close_fd(&tcon->tree_fds, fp, id);
+		__cifsd_close_fd(&sess->file_table, fp, id);
 	}
 }
 
@@ -481,7 +483,7 @@ int cifsd_reopen_durable_fd(struct cifsd_work *work,
 	fp->conn = work->sess->conn;
 	fp->tcon = work->tcon;
 
-	__open_id(&work->tcon->tree_fds, fp, OPEN_ID_TYPE_VOLATILE_ID);
+	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
 	if (fp->volatile_id == CIFSD_NO_FID) {
 		fp->conn = NULL;
 		fp->tcon = NULL;
@@ -490,7 +492,7 @@ int cifsd_reopen_durable_fd(struct cifsd_work *work,
 	return 0;
 }
 
-static void close_fd_list(struct list_head *head)
+static void close_fd_list(struct cifsd_work *work, struct list_head *head)
 {
 	while (!list_empty(head)) {
 		struct cifsd_file *fp;
@@ -498,11 +500,11 @@ static void close_fd_list(struct list_head *head)
 		fp = list_first_entry(head, struct cifsd_file, node);
 		list_del_init(&fp->node);
 
-		__cifsd_close_fd(&fp->tcon->tree_fds, fp, fp->volatile_id);
+		__cifsd_close_fd(&work->sess->file_table, fp, fp->volatile_id);
 	}
 }
 
-int cifsd_close_inode_fds(struct inode *inode)
+int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 {
 	struct cifsd_inode *ci;
 	bool unlinked = true;
@@ -530,7 +532,7 @@ int cifsd_close_inode_fds(struct inode *inode)
 	spin_unlock(&ci->m_lock);
 	atomic_dec(&ci->m_count);
 
-	close_fd_list(&dispose);
+	close_fd_list(work, &dispose);
 	return unlinked;
 }
 
@@ -541,7 +543,7 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	int			ret;
 
 	rcu_read_lock();
-	idr_for_each_entry(&work->tcon->tree_fds.idr, fp, id) {
+	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
 		ret = cifsd_vfs_fsync(work, fp->volatile_id, CIFSD_NO_FID);
 		if (ret)
 			break;

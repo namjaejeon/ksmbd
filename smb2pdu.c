@@ -1610,6 +1610,7 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 		return 0;
 	}
 
+	cifsd_close_tree_conn_fds(work);
 	cifsd_tree_conn_disconnect(sess, tcon);
 	return 0;
 }
@@ -1651,6 +1652,7 @@ int smb2_session_logoff(struct cifsd_work *work)
 		return 0;
 	}
 
+	cifsd_destroy_file_table(&sess->file_table);
 	sess->state = SMB2_SESSION_EXPIRED;
 
 	cifsd_free_user(sess->user);
@@ -2301,7 +2303,8 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (durable_enable && file_present)
-		file_present = cifsd_close_inode_fds(path.dentry->d_inode);
+		file_present = cifsd_close_inode_fds(work,
+						     path.dentry->d_inode);
 
 	if (test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE))
 		open_flags = smb2_create_open_flags(file_present,
