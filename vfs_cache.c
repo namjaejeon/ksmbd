@@ -569,8 +569,8 @@ static struct cifsd_inode *__cifsd_inode_lookup(struct inode *inode)
 
 	hlist_for_each_entry(ci, head, m_hash) {
 		if (ci->m_inode == inode) {
-			atomic_inc(&ci->m_count);
-			ret_ci = ci;
+			if (atomic_inc_not_zero(&ci->m_count))
+				ret_ci = ci;
 			break;
 		}
 	}
