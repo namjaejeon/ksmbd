@@ -120,7 +120,9 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 	if (fp->persistent_id == CIFSD_NO_FID)
 		return;
 
+	down_write(&global_ft.lock);
 	idr_remove(&global_ft.idr, fp->persistent_id);
+	up_write(&global_ft.lock);
 }
 
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
@@ -247,14 +249,14 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	rcu_read_lock();
+	down_read(&global_ft.lock);
 	idr_for_each_entry(&global_ft.idr, fp, id) {
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	rcu_read_unlock();
+	up_read(&global_ft.lock);
 
 	return fp;
 }
@@ -264,14 +266,14 @@ struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	rcu_read_lock();
+	down_read(&global_ft.lock);
 	idr_for_each_entry(&global_ft.idr, fp, id) {
 		if (!memcmp(fp->create_guid,
 			    cguid,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	rcu_read_unlock();
+	up_read(&global_ft.lock);
 
 	return fp;
 }
@@ -347,7 +349,9 @@ static void __open_id(struct cifsd_file_table *ft,
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
 {
+	down_write(&global_ft.lock);
 	__open_id(&global_ft, fp, OPEN_ID_TYPE_PERSISTENT_ID);
+	up_write(&global_ft.lock);
 	return fp->persistent_id;
 }
 
