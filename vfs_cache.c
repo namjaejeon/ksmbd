@@ -173,14 +173,14 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	bool unclaimed = true;
 	struct cifsd_file *fp;
 
-	rcu_read_lock();
+	down_read(&ft->lock);
 	fp = idr_find(&ft->idr, id);
 	if (fp) {
 		spin_lock(&fp->f_lock);
 		unclaimed = (fp->f_state == FP_FREEING);
 		spin_unlock(&fp->f_lock);
 	}
-	rcu_read_unlock();
+	up_read(&ft->lock);
 
 	if (unclaimed)
 		return NULL;
@@ -289,12 +289,12 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	rcu_read_lock();
+	down_read(&work->sess->file_table.lock);
 	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
-	rcu_read_unlock();
+	down_read(&work->sess->file_table.lock);
 
 	return fp;
 }
@@ -542,13 +542,13 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	unsigned int		id;
 	int			ret;
 
-	rcu_read_lock();
+	down_read(&work->sess->file_table.lock);
 	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
 		ret = cifsd_vfs_fsync(work, fp->volatile_id, CIFSD_NO_FID);
 		if (ret)
 			break;
 	}
-	rcu_read_unlock();
+	up_read(&work->sess->file_table.lock);
 	return ret;
 }
 
