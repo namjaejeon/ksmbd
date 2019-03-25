@@ -91,25 +91,25 @@ int cifsd_set_interfaces(char *v)
 	while (v != NULL) {
 		tmp = strsep(&v, " ");
 		for_each_netdev(&init_net, netdev) {
-			if (match_pattern(netdev->name, tmp)) {
-				struct interface *iface;
+			struct interface *iface;
 
-				iface = kmalloc(sizeof(struct interface),
-						GFP_KERNEL);
-				if (!iface) {
-					ret = -ENOMEM;
-					goto out;
-				}
+			if (!match_pattern(netdev->name, tmp))
+				continue;
 
-				iface->name = kstrdup(netdev->name, GFP_KERNEL);
-				if (!iface->name) {
-					kfree(iface);
-					ret = -ENOMEM;
-					goto out;
-				}
-				list_add(&iface->entry,
-					&server_conf.iface_list);
+			iface = kmalloc(sizeof(struct interface),
+					GFP_KERNEL);
+			if (!iface) {
+				ret = -ENOMEM;
+				goto out;
 			}
+
+			iface->name = kstrdup(netdev->name, GFP_KERNEL);
+			if (!iface->name) {
+				kfree(iface);
+				ret = -ENOMEM;
+				goto out;
+			}
+			list_add(&iface->entry, &server_conf.iface_list);
 		}
 	}
 
