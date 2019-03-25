@@ -2662,7 +2662,7 @@ int smb_close(struct cifsd_work *work)
 	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
 		cifsd_info("need to set last modified time before close\n");
 
-	cifsd_close_fd(work, req->FileID);
+	err = cifsd_close_fd(work, req->FileID);
 
 IPC_out:
 	/* file close success, return response to server */
@@ -7603,20 +7603,17 @@ int smb_closedir(struct cifsd_work *work)
 {
 	FINDCLOSE_REQ *req = (FINDCLOSE_REQ *)REQUEST_BUF(work);
 	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(work);
-	int err = 0;
+	int err;
 
 	cifsd_debug("SMB_COM_FIND_CLOSE2 called for fid %u\n", req->FileID);
 
-	cifsd_close_fd(work, req->FileID);
-
-	/* dir close success, return response to server */
-	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 0;
 	rsp->ByteCount = 0;
-	return err;
 
-out:
-	if (err)
+	err = cifsd_close_fd(work, req->FileID);
+	if (!err)
+		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
+	else
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
 	return err;
 }
