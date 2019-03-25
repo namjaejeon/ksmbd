@@ -427,7 +427,6 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 	unsigned int			id;
 	struct cifsd_file		*fp;
 
-	rcu_read_lock();
 	idr_for_each_entry(&sess->file_table.idr, fp, id) {
 		if (fp->tcon != tcon)
 			continue;
@@ -444,7 +443,6 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 
 		__cifsd_close_fd(&sess->file_table, fp, id);
 	}
-	rcu_read_unlock();
 }
 
 void cifsd_init_global_file_table(void)
@@ -457,10 +455,8 @@ void cifsd_free_global_file_table(void)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	rcu_read_lock();
 	idr_for_each_entry(&global_ft.idr, fp, id)
 		cifsd_free_file_struct(fp);
-	rcu_read_unlock();
 
 	cifsd_destroy_file_table(&global_ft);
 }
