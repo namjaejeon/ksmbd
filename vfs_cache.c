@@ -130,9 +130,12 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 {
 	WARN_ON(fp->volatile_id == CIFSD_NO_FID);
 
+	spin_lock(&fp->f_ci->m_lock);
+	list_del_init(&fp->node);
+	spin_unlock(&fp->f_ci->m_lock);
+
 	spin_lock(&fp->f_lock);
 	fp->f_state = FP_FREEING;
-	list_del(&fp->node);
 	spin_unlock(&fp->f_lock);
 
 	idr_remove(&ft->idr, fp->volatile_id);
