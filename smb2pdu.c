@@ -4470,7 +4470,9 @@ int smb2_close(struct cifsd_work *work)
 	cifsd_debug("volatile_id = %llu persistent_id = %llu\n",
 			volatile_id, persistent_id);
 
-	cifsd_close_fd(work, volatile_id);
+	err = cifsd_close_fd(work, volatile_id);
+	if (err)
+		goto out;
 
 	rsp->StructureSize = cpu_to_le16(60);
 	rsp->Flags = 0;
