@@ -187,17 +187,19 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	return fp;
 }
 
-void cifsd_close_fd(struct cifsd_work *work, unsigned int id)
+int cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 {
 	struct cifsd_file	*fp;
 
 	if (id == CIFSD_NO_FID)
-		return;
+		return -EINVAL;
 
 	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 	if (!fp)
-		return;
+		return -EINVAL;
+
 	__cifsd_close_fd(&work->sess->file_table, fp, id);
+	return 0;
 }
 
 static bool __sanity_check(struct cifsd_tree_connect *tcon,

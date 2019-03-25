@@ -136,7 +136,7 @@ struct cifsd_file_table {
 int cifsd_init_file_table(struct cifsd_file_table *ft);
 void cifsd_destroy_file_table(struct cifsd_file_table *ft);
 
-void cifsd_close_fd(struct cifsd_work *work, unsigned int id);
+int cifsd_close_fd(struct cifsd_work *work, unsigned int id);
 
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id);
