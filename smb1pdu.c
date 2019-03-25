@@ -2521,9 +2521,6 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		}
 	}
 
-	/* Add fp to master fp list. */
-	list_add(&fp->node, &fp->f_ci->m_fp_list);
-
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
 	rsp->LastAccessTime = cpu_to_le64(time);
@@ -7856,9 +7853,6 @@ int smb_open_andx(struct cifsd_work *work)
 			err = 0;
 		}
 	}
-
-	/* Add fp to master fp list. */
-	list_add(&fp->node, &fp->f_ci->m_fp_list);
 
 	/* prepare response buffer */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
