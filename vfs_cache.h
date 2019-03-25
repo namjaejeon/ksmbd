@@ -20,8 +20,6 @@
 #define	FILE_GENERIC_WRITE	0x120116
 #define	FILE_GENERIC_EXECUTE	0X1200a0
 
-/* Max id limit is 0xFFFF, so create bitmap with only this size*/
-#define CIFSD_BITMAP_SIZE	0xFFFF
 #define CIFSD_START_FID		0
 #define CIFSD_NO_FID		(-1U)
 
