@@ -228,10 +228,13 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 {
 	struct cifsd_file *fp;
 
-	if (id == CIFSD_NO_FID || (int)id < 0) {
+	if (id == CIFSD_NO_FID) {
 		id = work->cur_local_fid;
 		pid = work->cur_local_pfid;
 	}
+
+	if (id == CIFSD_NO_FID)
+		return NULL;
 
 	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 	if (!__sanity_check(work->tcon, fp))
