@@ -4404,7 +4404,8 @@ static int smb2_close_pipe(struct cifsd_work *work)
  */
 int smb2_close(struct cifsd_work *work)
 {
-	uint64_t volatile_id = -1, persistent_id = -1, sess_id;
+	unsigned int volatile_id = CIFSD_NO_FID, persistent_id = CIFSD_NO_FID;
+	uint64_t sess_id;
 	struct smb2_close_req *req =
 		(struct smb2_close_req *)REQUEST_BUF(work);
 	struct smb2_close_rsp *rsp =
@@ -4445,8 +4446,8 @@ int smb2_close(struct cifsd_work *work)
 	}
 
 	if (work->next_smb2_rcv_hdr_off &&
-			le64_to_cpu(req->VolatileFileId) == CIFSD_NO_FID) {
-		if (work->cur_local_fid == CIFSD_NO_FID) {
+			HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+		if (!HAS_FILE_ID(work->cur_local_fid)) {
 			/* file already closed, return FILE_CLOSED */
 			cifsd_debug("file already closed\n");
 			rsp->hdr.Status = STATUS_FILE_CLOSED;
@@ -4467,7 +4468,7 @@ int smb2_close(struct cifsd_work *work)
 		volatile_id = le64_to_cpu(req->VolatileFileId);
 		persistent_id = le64_to_cpu(req->PersistentFileId);
 	}
-	cifsd_debug("volatile_id = %llu persistent_id = %llu\n",
+	cifsd_debug("volatile_id = %u persistent_id = %u\n",
 			volatile_id, persistent_id);
 
 	err = cifsd_close_fd(work, volatile_id);

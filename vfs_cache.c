@@ -192,7 +192,7 @@ int cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 	struct cifsd_file	*fp;
 
 	if (id == CIFSD_NO_FID)
-		return -EINVAL;
+		return 0;
 
 	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
 	if (!fp)
