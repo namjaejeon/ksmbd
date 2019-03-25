@@ -668,7 +668,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	return rc;
 }
 
-bool is_asterik(char *p)
+bool is_asterisk(char *p)
 {
 	return p && !strcmp("*", p);
 }
