@@ -4454,7 +4454,7 @@ int smb2_close(struct cifsd_work *work)
 			err = -EBADF;
 			goto out;
 		} else {
-			cifsd_debug("Compound request assigning stored FID = %llu: %llu\n",
+			cifsd_debug("Compound request set FID = %u:%u\n",
 					work->cur_local_fid,
 					work->cur_local_pfid);
 			volatile_id = work->cur_local_fid;
@@ -6092,7 +6092,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		rsp = (struct smb2_ioctl_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
 		if (le64_to_cpu(req->VolatileFileId) == -1) {
-			cifsd_debug("Compound request assigning stored FID = %llu\n",
+			cifsd_debug("Compound request set FID = %u\n",
 					work->cur_local_fid);
 			id = work->cur_local_fid;
 		}
