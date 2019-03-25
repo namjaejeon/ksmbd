@@ -4212,9 +4212,9 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			 fs_control_info->FreeSpaceThreshold = 0;
 			 fs_control_info->FreeSpaceStopFiltering = 0;
 			 fs_control_info->DefaultQuotaThreshold =
-				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+				cpu_to_le64(SMB2_NO_FID);
 			 fs_control_info->DefaultQuotaLimit =
-				cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+				cpu_to_le64(SMB2_NO_FID);
 			 fs_control_info->Padding = 0;
 			 rsp->OutputBufferLength = cpu_to_le32(48);
 			 inc_rfc1001_len(rsp_org, 48);
@@ -6206,8 +6206,8 @@ int smb2_ioctl(struct cifsd_work *work)
 		neg_rsp->SecurityMode = cpu_to_le16(conn->srv_sec_mode);
 		neg_rsp->Dialect = cpu_to_le16(conn->dialect);
 
-		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
-		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+		rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
+		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
 		break;
 	}
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
@@ -6329,8 +6329,8 @@ int smb2_ioctl(struct cifsd_work *work)
 			goto out;
 		}
 
-		rsp->PersistentFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
-		rsp->VolatileFileId = cpu_to_le64(0xFFFFFFFFFFFFFFFF);
+		rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
+		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
 
 		break;
 	}

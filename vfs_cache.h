@@ -22,6 +22,7 @@
 
 #define CIFSD_START_FID		0
 #define CIFSD_NO_FID		(UINT_MAX)
+#define SMB2_NO_FID		(0xFFFFFFFFFFFFFFFFULL)
 
 #define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
 #define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
