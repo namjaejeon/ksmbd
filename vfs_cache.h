@@ -21,7 +21,7 @@
 #define	FILE_GENERIC_EXECUTE	0X1200a0
 
 #define CIFSD_START_FID		0
-#define CIFSD_NO_FID		(-1U)
+#define CIFSD_NO_FID		(UINT_MAX)
 
 #define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
 #define FP_INODE(fp)		fp->filp->f_path.dentry->d_inode
