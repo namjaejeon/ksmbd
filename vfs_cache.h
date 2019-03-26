@@ -9,6 +9,7 @@
 #include <linux/file.h>
 #include <linux/fs.h>
 #include <linux/rwsem.h>
+#include <linux/spinlock.h>
 #include <linux/idr.h>
 #include <linux/workqueue.h>
 
@@ -62,16 +63,16 @@ struct stream {
 };
 
 struct cifsd_inode {
-	spinlock_t m_lock;
-	atomic_t m_count;
-	atomic_t op_count;
-	struct inode *m_inode;
-	unsigned int m_flags;
-	struct hlist_node m_hash;
-	struct list_head m_fp_list;
-	struct list_head m_op_list;
-	struct oplock_info *m_opinfo;
-	char *stream_name;
+	rwlock_t			m_lock;
+	atomic_t			m_count;
+	atomic_t			op_count;
+	struct inode			*m_inode;
+	unsigned int			m_flags;
+	struct hlist_node		m_hash;
+	struct list_head		m_fp_list;
+	struct list_head		m_op_list;
+	struct oplock_info		*m_opinfo;
+	char				*stream_name;
 };
 
 struct cifsd_file {

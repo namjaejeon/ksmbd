@@ -45,14 +45,14 @@ static void inherit_delete_pending(struct cifsd_file *fp)
 
 	fp->delete_on_close = 0;
 
-	spin_lock(&ci->m_lock);
+	write_lock(&ci->m_lock);
 	list_for_each_prev(cur, &ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (fp != prev_fp && (fp->tcon == prev_fp->tcon ||
 				ci->m_flags & S_DEL_ON_CLS))
 			ci->m_flags |= S_DEL_PENDING;
 	}
-	spin_unlock(&ci->m_lock);
+	write_unlock(&ci->m_lock);
 }
 
 /* copy-pasted from old fh */
@@ -62,7 +62,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 	struct cifsd_file *prev_fp;
 	struct cifsd_inode *ci = fp->f_ci;
 
-	spin_lock(&ci->m_lock);
+	read_lock(&ci->m_lock);
 	list_for_each_prev(cur, &ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (fp == prev_fp)
@@ -70,7 +70,7 @@ static void invalidate_delete_on_close(struct cifsd_file *fp)
 		if (fp->tcon == prev_fp->tcon)
 			prev_fp->delete_on_close = 0;
 	}
-	spin_unlock(&ci->m_lock);
+	read_unlock(&ci->m_lock);
 }
 
 /* copy-pasted from old fh */
@@ -99,17 +99,17 @@ static void __cifsd_inode_close(struct cifsd_file *fp)
 	}
 
 	if (atomic_dec_and_test(&ci->m_count)) {
-		spin_lock(&ci->m_lock);
+		write_lock(&ci->m_lock);
 		if ((ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) ||
 				fp->delete_on_close) {
 			dentry = filp->f_path.dentry;
 			dir = dentry->d_parent;
 			ci->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
-			spin_unlock(&ci->m_lock);
+			write_unlock(&ci->m_lock);
 			cifsd_vfs_unlink(dir, dentry);
-			spin_lock(&ci->m_lock);
+			write_lock(&ci->m_lock);
 		}
-		spin_unlock(&ci->m_lock);
+		write_unlock(&ci->m_lock);
 
 		cifsd_inode_free(ci);
 	}
@@ -130,9 +130,9 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 {
 	WARN_ON(fp->volatile_id == CIFSD_NO_FID);
 
-	spin_lock(&fp->f_ci->m_lock);
+	write_lock(&fp->f_ci->m_lock);
 	list_del_init(&fp->node);
-	spin_unlock(&fp->f_ci->m_lock);
+	write_unlock(&fp->f_ci->m_lock);
 
 	spin_lock(&fp->f_lock);
 	fp->f_state = FP_FREEING;
@@ -313,17 +313,17 @@ struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode)
 	if (!ci)
 		return NULL;
 
-	spin_lock(&ci->m_lock);
+	read_lock(&ci->m_lock);
 	list_for_each(cur, &ci->m_fp_list) {
 		lfp = list_entry(cur, struct cifsd_file, node);
 		if (inode == FP_INODE(lfp)) {
 			atomic_dec(&ci->m_count);
-			spin_unlock(&ci->m_lock);
+			read_unlock(&ci->m_lock);
 			return lfp;
 		}
 	}
 	atomic_dec(&ci->m_count);
-	spin_unlock(&ci->m_lock);
+	read_unlock(&ci->m_lock);
 	return NULL;
 }
 
@@ -397,9 +397,9 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 		return NULL;
 	}
 
-	spin_lock(&fp->f_ci->m_lock);
+	write_lock(&fp->f_ci->m_lock);
 	list_add(&fp->node, &fp->f_ci->m_fp_list);
-	spin_unlock(&fp->f_ci->m_lock);
+	write_unlock(&fp->f_ci->m_lock);
 
 	return fp;
 }
@@ -518,7 +518,7 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 	if (!ci)
 		return false;
 
-	spin_lock(&ci->m_lock);
+	write_lock(&ci->m_lock);
 	list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
 		if (!fp->conn) {
 			if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
@@ -532,7 +532,7 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 			spin_unlock(&fp->f_lock);
 		}
 	}
-	spin_unlock(&ci->m_lock);
+	write_unlock(&ci->m_lock);
 	atomic_dec(&ci->m_count);
 
 	close_fd_list(work, &dispose);
@@ -624,7 +624,7 @@ int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	ci->m_flags = 0;
 	INIT_LIST_HEAD(&ci->m_fp_list);
 	INIT_LIST_HEAD(&ci->m_op_list);
-	spin_lock_init(&ci->m_lock);
+	rwlock_init(&ci->m_lock);
 	ci->stream_name = NULL;
 
 	if (fp->is_stream) {

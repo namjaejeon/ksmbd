@@ -171,9 +171,9 @@ static void opinfo_add(struct oplock_info *opinfo)
 {
 	struct cifsd_inode *ci = opinfo->o_fp->f_ci;
 
-	spin_lock(&ci->m_lock);
+	write_lock(&ci->m_lock);
 	list_add_rcu(&opinfo->op_entry, &ci->m_op_list);
-	spin_unlock(&ci->m_lock);
+	write_unlock(&ci->m_lock);
 }
 
 static void opinfo_del(struct oplock_info *opinfo)
@@ -182,9 +182,9 @@ static void opinfo_del(struct oplock_info *opinfo)
 
 	if (opinfo->is_lease)
 		lease_del_list(opinfo);
-	spin_lock(&ci->m_lock);
+	write_lock(&ci->m_lock);
 	list_del_rcu(&opinfo->op_entry);
-	spin_unlock(&ci->m_lock);
+	write_unlock(&ci->m_lock);
 }
 
 /**
@@ -687,11 +687,11 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	 * Compare lease key and client_guid to know request from same owner
 	 * of same client
 	 */
-	spin_lock(&ci->m_lock);
+	read_lock(&ci->m_lock);
 	list_for_each_entry(opinfo, &ci->m_op_list, op_entry) {
 		if (!opinfo->is_lease)
 			continue;
-		spin_unlock(&ci->m_lock);
+		read_unlock(&ci->m_lock);
 		lease = opinfo->o_lease;
 
 		ret = compare_guid_key(opinfo, client_guid, lctx->lease_key);
@@ -699,7 +699,7 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 			m_opinfo = opinfo;
 			/* skip upgrading lease about breaking lease */
 			if (atomic_read(&opinfo->breaking_cnt)) {
-				spin_lock(&ci->m_lock);
+				read_lock(&ci->m_lock);
 				continue;
 			}
 
@@ -720,9 +720,9 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 			if (lctx->req_state && lease->state == SMB2_LEASE_NONE)
 				lease_none_upgrade(opinfo, lctx->req_state);
 		}
-		spin_lock(&ci->m_lock);
+		read_lock(&ci->m_lock);
 	}
-	spin_unlock(&ci->m_lock);
+	read_unlock(&ci->m_lock);
 
 	return m_opinfo;
 }

@@ -562,7 +562,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
-	spin_lock(&curr_fp->f_ci->m_lock);
+	read_lock(&curr_fp->f_ci->m_lock);
 	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
 		if (prev_fp->f_state == FP_FREEING)
@@ -663,7 +663,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			break;
 		}
 	}
-	spin_unlock(&curr_fp->f_ci->m_lock);
+	read_unlock(&curr_fp->f_ci->m_lock);
 
 	return rc;
 }
