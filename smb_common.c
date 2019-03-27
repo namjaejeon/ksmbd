@@ -151,10 +151,10 @@ int cifsd_verify_smb_message(struct cifsd_work *work)
 
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		cifsd_debug("got SMB2 command\n");
-		return smb2_check_message(work);
+		return cifsd_smb2_check_message(work);
 	}
 
-	return smb1_check_message(work);
+	return cifsd_smb1_check_message(work);
 }
 
 /**

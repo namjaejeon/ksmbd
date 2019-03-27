@@ -235,7 +235,7 @@ static int smb1_get_data_len(struct smb_hdr *hdr)
 	return data_len;
 }
 
-int smb1_check_message(struct cifsd_work *work)
+int cifsd_smb1_check_message(struct cifsd_work *work)
 {
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	char *buf = REQUEST_BUF(work);
