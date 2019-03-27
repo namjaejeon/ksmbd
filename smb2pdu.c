@@ -1920,10 +1920,8 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			return -EINVAL;
 
 		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
-		if (!attr_name) {
-			rc = -ENOMEM;
-			goto out;
-		}
+		if (!attr_name)
+			return -ENOMEM;
 
 		memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
 		memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->name,
@@ -1945,6 +1943,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 				if (rc < 0) {
 					cifsd_debug("remove xattr failed(%d)\n",
 						rc);
+					kfree(attr_name);
 					break;
 				}
 			}
@@ -1957,16 +1956,16 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			if (rc < 0) {
 				cifsd_debug("cifsd_vfs_setxattr is failed(%d)\n",
 					rc);
+				kfree(attr_name);
 				break;
 			}
 		}
 
+		kfree(attr_name);
 		next = le32_to_cpu(eabuf->NextEntryOffset);
 		eabuf = (struct smb2_ea_info *)((char *)eabuf + next);
 	} while (next != 0);
 
-out:
-	kfree(attr_name);
 	return rc;
 }
 
