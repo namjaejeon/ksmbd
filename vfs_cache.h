@@ -38,10 +38,6 @@
 #define S_DEL_ON_CLS			2
 #define S_DEL_ON_CLS_STREAM		8
 
-/* FP STATE */
-#define FP_NEW		0
-#define FP_FREEING	1
-
 struct cifsd_tcp_conn;
 struct cifsd_session;
 
@@ -89,7 +85,6 @@ struct cifsd_file {
 	struct cifsd_tcp_conn		*conn;
 	struct cifsd_tree_connect	*tcon;
 
-	int				f_state;
 	__le32				daccess;
 	__le32				saccess;
 	__le32				coption;

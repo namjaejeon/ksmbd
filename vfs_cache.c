@@ -286,10 +286,6 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
 
-	spin_lock(&fp->f_lock);
-	fp->f_state = FP_FREEING;
-	spin_unlock(&fp->f_lock);
-
 	idr_remove(&ft->idr, fp->volatile_id);
 }
 
@@ -330,10 +326,10 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 
 	down_read(&ft->lock);
 	fp = idr_find(&ft->idr, id);
-	if (fp) {
-		spin_lock(&fp->f_lock);
-		unclaimed = (fp->f_state == FP_FREEING);
-		spin_unlock(&fp->f_lock);
+	if (fp && fp->f_ci) {
+		read_lock(&fp->f_ci->m_lock);
+		unclaimed = list_empty(&fp->node);
+		read_unlock(&fp->f_ci->m_lock);
 	}
 	up_read(&ft->lock);
 
@@ -532,7 +528,6 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 	fp->filp		= filp;
 	fp->conn		= work->sess->conn;
 	fp->tcon		= work->tcon;
-	fp->f_state		= FP_NEW;
 	fp->volatile_id		= CIFSD_NO_FID;
 	fp->persistent_id	= CIFSD_NO_FID;
 	fp->f_ci		= cifsd_inode_get(fp);
@@ -675,13 +670,8 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 		if (!fp->conn) {
 			if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
 				unlinked = false;
-			spin_lock(&fp->f_lock);
-			if (fp->f_state != FP_FREEING) {
-				list_del(&fp->node);
-				list_add(&fp->node, &dispose);
-				fp->f_state = FP_FREEING;
-			}
-			spin_unlock(&fp->f_lock);
+			list_del(&fp->node);
+			list_add(&fp->node, &dispose);
 		}
 	}
 	write_unlock(&ci->m_lock);

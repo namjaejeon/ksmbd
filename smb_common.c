@@ -565,8 +565,6 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	read_lock(&curr_fp->f_ci->m_lock);
 	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
-		if (prev_fp->f_state == FP_FREEING)
-			continue;
 		if (file_inode(filp) != FP_INODE(prev_fp))
 			continue;
 
