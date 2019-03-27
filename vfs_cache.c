@@ -663,7 +663,7 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 
 	ci = cifsd_inode_lookup_by_vfsinode(inode);
 	if (!ci)
-		return false;
+		return true;
 
 	write_lock(&ci->m_lock);
 	list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
