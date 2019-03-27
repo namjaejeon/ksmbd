@@ -24,6 +24,158 @@ static DEFINE_RWLOCK(inode_hash_lock);
 
 static struct cifsd_file_table global_ft;
 
+/*
+ * INODE hash
+ */
+
+static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
+{
+	unsigned long tmp;
+
+	tmp = (hashval * (unsigned long)sb) ^ (GOLDEN_RATIO_PRIME + hashval) /
+		L1_CACHE_BYTES;
+	tmp = tmp ^ ((tmp ^ GOLDEN_RATIO_PRIME) >> inode_hash_shift);
+	return tmp & inode_hash_mask;
+}
+
+static struct cifsd_inode *__cifsd_inode_lookup(struct inode *inode)
+{
+	struct hlist_head *head = inode_hashtable +
+		inode_hash(inode->i_sb, inode->i_ino);
+	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
+
+	hlist_for_each_entry(ci, head, m_hash) {
+		if (ci->m_inode == inode) {
+			if (atomic_inc_not_zero(&ci->m_count))
+				ret_ci = ci;
+			break;
+		}
+	}
+
+	return ret_ci;
+}
+
+static struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
+{
+	return __cifsd_inode_lookup(FP_INODE(fp));
+}
+
+struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
+{
+	struct cifsd_inode *ci;
+
+	read_lock(&inode_hash_lock);
+	ci = __cifsd_inode_lookup(inode);
+	read_unlock(&inode_hash_lock);
+	return ci;
+}
+
+static void cifsd_inode_hash(struct cifsd_inode *ci)
+{
+	struct hlist_head *b = inode_hashtable +
+		inode_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
+
+	hlist_add_head(&ci->m_hash, b);
+}
+
+static void cifsd_inode_unhash(struct cifsd_inode *ci)
+{
+	write_lock(&inode_hash_lock);
+	hlist_del_init(&ci->m_hash);
+	write_unlock(&inode_hash_lock);
+}
+
+static int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
+{
+	ci->m_inode = FP_INODE(fp);
+	atomic_set(&ci->m_count, 1);
+	atomic_set(&ci->op_count, 0);
+	ci->m_flags = 0;
+	INIT_LIST_HEAD(&ci->m_fp_list);
+	INIT_LIST_HEAD(&ci->m_op_list);
+	rwlock_init(&ci->m_lock);
+	ci->stream_name = NULL;
+
+	if (fp->is_stream) {
+		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
+		if (!ci->stream_name)
+			return -ENOMEM;
+		strncpy(ci->stream_name, fp->stream.name, fp->stream.size);
+	}
+
+	return 0;
+}
+
+static struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
+{
+	struct cifsd_inode *ci, *tmpci;
+	int rc;
+
+	read_lock(&inode_hash_lock);
+	ci = cifsd_inode_lookup(fp);
+	read_unlock(&inode_hash_lock);
+	if (ci)
+		return ci;
+
+	ci = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
+	if (!ci)
+		return NULL;
+
+	rc = cifsd_inode_init(ci, fp);
+	if (rc) {
+		cifsd_err("inode initialized failed\n");
+		kfree(ci);
+		return NULL;
+	}
+
+	write_lock(&inode_hash_lock);
+	tmpci = cifsd_inode_lookup(fp);
+	if (!tmpci) {
+		cifsd_inode_hash(ci);
+	} else {
+		kfree(ci);
+		ci = tmpci;
+	}
+	write_unlock(&inode_hash_lock);
+	return ci;
+}
+
+static void cifsd_inode_free(struct cifsd_inode *ci)
+{
+	cifsd_inode_unhash(ci);
+	kfree(ci->stream_name);
+	kfree(ci);
+}
+
+static void cifsd_inode_put(struct cifsd_inode *ci)
+{
+	if (atomic_dec_and_test(&ci->m_count))
+		cifsd_inode_free(ci);
+}
+
+void __init cifsd_inode_hash_init(void)
+{
+	unsigned int loop;
+	unsigned long numentries = 16384;
+	unsigned long bucketsize = sizeof(struct hlist_head);
+	unsigned long size;
+
+	inode_hash_shift = ilog2(numentries);
+	inode_hash_mask = (1 << inode_hash_shift) - 1;
+
+	size = bucketsize << inode_hash_shift;
+
+	/* init master fp hash table */
+	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
+
+	for (loop = 0; loop < (1U << inode_hash_shift); loop++)
+		INIT_HLIST_HEAD(&inode_hashtable[loop]);
+}
+
+/*
+ * CIFSD FP cache
+ */
+
 int cifsd_init_file_table(struct cifsd_file_table *ft)
 {
 	idr_init(&ft->idr);
@@ -553,152 +705,4 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	}
 	up_read(&work->sess->file_table.lock);
 	return ret;
-}
-
-/*
- * INODE hash
- */
-
-static unsigned long inode_hash(struct super_block *sb, unsigned long hashval)
-{
-	unsigned long tmp;
-
-	tmp = (hashval * (unsigned long)sb) ^ (GOLDEN_RATIO_PRIME + hashval) /
-		L1_CACHE_BYTES;
-	tmp = tmp ^ ((tmp ^ GOLDEN_RATIO_PRIME) >> inode_hash_shift);
-	return tmp & inode_hash_mask;
-}
-
-static struct cifsd_inode *__cifsd_inode_lookup(struct inode *inode)
-{
-	struct hlist_head *head = inode_hashtable +
-		inode_hash(inode->i_sb, inode->i_ino);
-	struct cifsd_inode *ci = NULL, *ret_ci = NULL;
-
-	hlist_for_each_entry(ci, head, m_hash) {
-		if (ci->m_inode == inode) {
-			if (atomic_inc_not_zero(&ci->m_count))
-				ret_ci = ci;
-			break;
-		}
-	}
-
-	return ret_ci;
-}
-
-struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
-{
-	return __cifsd_inode_lookup(FP_INODE(fp));
-}
-
-struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
-{
-	struct cifsd_inode *ci;
-
-	read_lock(&inode_hash_lock);
-	ci = __cifsd_inode_lookup(inode);
-	read_unlock(&inode_hash_lock);
-	return ci;
-}
-
-void cifsd_inode_hash(struct cifsd_inode *ci)
-{
-	struct hlist_head *b = inode_hashtable +
-		inode_hash(ci->m_inode->i_sb, ci->m_inode->i_ino);
-
-	hlist_add_head(&ci->m_hash, b);
-}
-
-void cifsd_inode_unhash(struct cifsd_inode *ci)
-{
-	write_lock(&inode_hash_lock);
-	hlist_del_init(&ci->m_hash);
-	write_unlock(&inode_hash_lock);
-}
-
-int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
-{
-	ci->m_inode = FP_INODE(fp);
-	atomic_set(&ci->m_count, 1);
-	atomic_set(&ci->op_count, 0);
-	ci->m_flags = 0;
-	INIT_LIST_HEAD(&ci->m_fp_list);
-	INIT_LIST_HEAD(&ci->m_op_list);
-	rwlock_init(&ci->m_lock);
-	ci->stream_name = NULL;
-
-	if (fp->is_stream) {
-		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
-		if (!ci->stream_name)
-			return -ENOMEM;
-		strncpy(ci->stream_name, fp->stream.name, fp->stream.size);
-	}
-
-	return 0;
-}
-
-struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp)
-{
-	struct cifsd_inode *ci, *tmpci;
-	int rc;
-
-	read_lock(&inode_hash_lock);
-	ci = cifsd_inode_lookup(fp);
-	read_unlock(&inode_hash_lock);
-	if (ci)
-		return ci;
-
-	ci = kmalloc(sizeof(struct cifsd_inode), GFP_KERNEL);
-	if (!ci)
-		return NULL;
-
-	rc = cifsd_inode_init(ci, fp);
-	if (rc) {
-		cifsd_err("inode initialized failed\n");
-		kfree(ci);
-		return NULL;
-	}
-
-	write_lock(&inode_hash_lock);
-	tmpci = cifsd_inode_lookup(fp);
-	if (!tmpci) {
-		cifsd_inode_hash(ci);
-	} else {
-		kfree(ci);
-		ci = tmpci;
-	}
-	write_unlock(&inode_hash_lock);
-	return ci;
-}
-
-void cifsd_inode_put(struct cifsd_inode *ci)
-{
-	if (atomic_dec_and_test(&ci->m_count))
-		cifsd_inode_free(ci);
-}
-
-void cifsd_inode_free(struct cifsd_inode *ci)
-{
-	cifsd_inode_unhash(ci);
-	kfree(ci->stream_name);
-	kfree(ci);
-}
-
-void __init cifsd_inode_hash_init(void)
-{
-	unsigned int loop;
-	unsigned long numentries = 16384;
-	unsigned long bucketsize = sizeof(struct hlist_head);
-	unsigned long size;
-
-	inode_hash_shift = ilog2(numentries);
-	inode_hash_mask = (1 << inode_hash_shift) - 1;
-
-	size = bucketsize << inode_hash_shift;
-
-	/* init master fp hash table */
-	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
-
-	for (loop = 0; loop < (1U << inode_hash_shift); loop++)
-		INIT_HLIST_HEAD(&inode_hashtable[loop]);
 }

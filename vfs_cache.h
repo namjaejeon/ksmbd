@@ -182,13 +182,6 @@ int cifsd_file_table_flush(struct cifsd_work *work);
  */
 
 void __init cifsd_inode_hash_init(void);
-int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp);
-void cifsd_inode_free(struct cifsd_inode *ci);
-void cifsd_inode_hash(struct cifsd_inode *ci);
-void cifsd_inode_unhash(struct cifsd_inode *ci);
-struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp);
 struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
-struct cifsd_inode *cifsd_inode_get(struct cifsd_file *fp);
-void cifsd_inode_put(struct cifsd_inode *ci);
 
 #endif /* __VFS_CACHE_H__ */
