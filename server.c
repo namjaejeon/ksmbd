@@ -85,8 +85,6 @@ int cifsd_set_interfaces(char *v)
 	char *tmp;
 	struct net_device *netdev;
 
-	INIT_LIST_HEAD(&server_conf.iface_list);
-
 	rtnl_lock();
 	while (v != NULL) {
 		tmp = strsep(&v, " ");
@@ -388,6 +386,8 @@ static void server_conf_free(void)
 
 static int server_conf_init(void)
 {
+	INIT_LIST_HEAD(&server_conf.iface_list);
+
 	server_conf.state = SERVER_STATE_STARTING_UP;
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
