@@ -5153,6 +5153,9 @@ static int smb_set_ea(struct cifsd_work *work)
 	ea = (struct fea *)eabuf->list;
 
 	for (i = 0; list_len >= 0 && ea->name_len != 0; i++, list_len -= next) {
+		if (ea->name_len > (XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN))
+			return -EINVAL;
+
 		next = ea->name_len + le16_to_cpu(ea->value_len) + 4;
 
 		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
