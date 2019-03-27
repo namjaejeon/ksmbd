@@ -2106,7 +2106,6 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	OPEN_RSP *rsp = (OPEN_RSP *)RESPONSE_BUF(work);
 	OPEN_EXT_RSP *ext_rsp = (OPEN_EXT_RSP *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
-	struct cifsd_session *sess = work->sess;
 	struct cifsd_tree_connect *tcon = work->tcon;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct path path;
