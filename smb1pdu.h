@@ -1950,7 +1950,7 @@ extern int smb1_check_sign_req(struct cifsd_work *work);
 extern void smb1_set_sign_rsp(struct cifsd_work *work);
 extern int smb_check_user_session(struct cifsd_work *work);
 extern int smb_get_cifsd_tcon(struct cifsd_work *work);
-extern int smb1_check_message(struct cifsd_work *work);
+extern int cifsd_smb1_check_message(struct cifsd_work *work);
 
 /* smb1 command handlers */
 extern int smb_rename(struct cifsd_work *work);

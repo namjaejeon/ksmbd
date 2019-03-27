@@ -303,7 +303,7 @@ calc_size_exit:
 	return len;
 }
 
-int smb2_check_message(struct cifsd_work *work)
+int cifsd_smb2_check_message(struct cifsd_work *work)
 {
 	char *buf = REQUEST_BUF(work);
 	struct smb2_pdu *pdu = (struct smb2_pdu *)buf;

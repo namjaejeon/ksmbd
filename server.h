@@ -33,6 +33,7 @@ struct cifsd_server_config {
 	unsigned short		tcp_port;
 	unsigned short		ipc_timeout;
 	unsigned long		ipc_last_active;
+	unsigned long		deadtime;
 	struct list_head	iface_list;
 };
 
