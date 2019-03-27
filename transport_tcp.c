@@ -39,8 +39,15 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	if (conn->stats.open_files_count > 0)
 		return true;
 
-	if (time_after(jiffies, conn->last_active + 2 * SMB_ECHO_INTERVAL)) {
-		cifsd_debug("No response from client in 120 secs\n");
+	/*
+	 * Stop current session if the time that get last request from client
+	 * is bigger than deadtime user configured and openning file count is
+	 * zero.
+	 */
+	if (server_conf.deadtime > 0 &&
+		time_after(jiffies, conn->last_active + server_conf.deadtime)) {
+		cifsd_debug("No response from client in %lu minutes\n",
+			server_conf.deadtime);
 		return false;
 	}
 	return true;

@@ -36,6 +36,7 @@ struct cifsd_startup_request {
 	__s8	server_string[64];
 	__u16	tcp_port;
 	__u16	ipc_timeout;
+	__u32	deadtime;
 	__s8    ____payload[0];
 } __align;
 

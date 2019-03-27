@@ -5225,7 +5225,7 @@ int smb2_set_info(struct cifsd_work *work)
 	return 0;
 
 err_out:
-	if (rc == -EACCES || rc == -ENOTEMPTY || rc == -EPERM)
+	if (rc == -EACCES || rc == -EPERM)
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 	else if (rc == -EINVAL)
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
@@ -5233,7 +5233,7 @@ err_out:
 		rsp->hdr.Status = STATUS_SHARING_VIOLATION;
 	else if (rc == -ENOENT)
 		rsp->hdr.Status = STATUS_OBJECT_NAME_INVALID;
-	else if (rc == -EBUSY)
+	else if (rc == -EBUSY || rc == -ENOTEMPTY)
 		rsp->hdr.Status = STATUS_DIRECTORY_NOT_EMPTY;
 	else if (rc == -EAGAIN)
 		rsp->hdr.Status = STATUS_FILE_LOCK_CONFLICT;
@@ -5453,7 +5453,8 @@ static int smb2_write_pipe(struct cifsd_work *work)
 		if (rpc_resp->flags == CIFSD_RPC_ENOTIMPLEMENTED) {
 			rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 			cifsd_free(rpc_resp);
-			goto out;
+			smb2_set_err_rsp(work);
+			return -EOPNOTSUPP;
 		}
 		if (rpc_resp->flags != CIFSD_RPC_OK) {
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;

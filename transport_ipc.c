@@ -282,6 +282,7 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	server_conf.signing = req->signing;
 	server_conf.tcp_port = req->tcp_port;
 	server_conf.ipc_timeout = req->ipc_timeout;
+	server_conf.deadtime = req->deadtime * SMB_ECHO_INTERVAL;
 	ret = cifsd_set_netbios_name(req->netbios_name);
 	ret |= cifsd_set_server_string(req->server_string);
 	ret |= cifsd_set_work_group(req->work_group);

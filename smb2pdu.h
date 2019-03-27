@@ -1428,7 +1428,7 @@ extern int smb3_encrypt_resp(struct cifsd_work *work);
 extern int smb3_final_sess_setup_resp(struct cifsd_work *work);
 
 /* smb2 misc functions */
-extern int smb2_check_message(struct cifsd_work *work);
+extern int cifsd_smb2_check_message(struct cifsd_work *work);
 
 /* smb2 command handlers */
 extern int smb2_handle_negotiate(struct cifsd_work *work);
