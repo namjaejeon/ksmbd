@@ -137,7 +137,7 @@ static inline bool HAS_FILE_ID(unsigned long long req)
 {
 	unsigned int id = (unsigned int)req;
 
-	return id != CIFSD_NO_FID;
+	return id < CIFSD_NO_FID;
 }
 
 int cifsd_init_file_table(struct cifsd_file_table *ft);
