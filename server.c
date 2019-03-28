@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -595,7 +595,7 @@ static void __exit cifsd_server_exit(void)
 module_param(cifsd_debugging, int, 0644);
 MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 
-MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
+MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 module_init(cifsd_server_init)
