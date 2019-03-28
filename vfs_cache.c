@@ -381,8 +381,8 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 	struct cifsd_file *fp;
 
 	if (id == CIFSD_NO_FID) {
-		id = work->cur_local_fid;
-		pid = work->cur_local_pfid;
+		id = work->compound_fid;
+		pid = work->compound_pfid;
 	}
 
 	if (id == CIFSD_NO_FID)

@@ -155,9 +155,9 @@ struct cifsd_work {
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
-	unsigned int			cur_local_fid;
-	unsigned int			cur_local_pfid;
-	__u64				cur_local_sess_id;
+	unsigned int			compound_fid;
+	unsigned int			compound_pfid;
+	__u64				compound_sid;
 
 	int				state;
 

@@ -307,13 +307,13 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 	 * command in the compound request
 	 */
 	if (req->Command == SMB2_CREATE && rsp->Status == STATUS_SUCCESS) {
-		work->cur_local_fid =
+		work->compound_fid =
 			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
 				VolatileFileId);
-		work->cur_local_pfid =
+		work->compound_pfid =
 			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
 				PersistentFileId);
-		work->cur_local_sess_id = rsp->SessionId;
+		work->compound_sid = rsp->SessionId;
 	}
 
 	len = get_rfc1002_length(RESPONSE_BUF(work)) -
@@ -340,8 +340,8 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 
 	if (!(le32_to_cpu(rcv_hdr->Flags) & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("related flag should be set\n");
-		work->cur_local_fid = CIFSD_NO_FID;
-		work->cur_local_pfid = CIFSD_NO_FID;
+		work->compound_fid = CIFSD_NO_FID;
+		work->compound_pfid = CIFSD_NO_FID;
 	}
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
@@ -4431,11 +4431,11 @@ int smb2_close(struct cifsd_work *work)
 	sess_id = le64_to_cpu(req->hdr.SessionId);
 	if (le32_to_cpu(req->hdr.Flags) &
 			SMB2_FLAGS_RELATED_OPERATIONS)
-		sess_id = work->cur_local_sess_id;
+		sess_id = work->compound_sid;
 
-	work->cur_local_sess_id = 0;
+	work->compound_sid = 0;
 	if (check_session_id(conn, sess_id))
-		work->cur_local_sess_id = sess_id;
+		work->compound_sid = sess_id;
 	else {
 		rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
 		if (le32_to_cpu(req->hdr.Flags) &
@@ -4447,7 +4447,7 @@ int smb2_close(struct cifsd_work *work)
 
 	if (work->next_smb2_rcv_hdr_off &&
 			!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-		if (!HAS_FILE_ID(work->cur_local_fid)) {
+		if (!HAS_FILE_ID(work->compound_fid)) {
 			/* file already closed, return FILE_CLOSED */
 			cifsd_debug("file already closed\n");
 			rsp->hdr.Status = STATUS_FILE_CLOSED;
@@ -4455,14 +4455,14 @@ int smb2_close(struct cifsd_work *work)
 			goto out;
 		} else {
 			cifsd_debug("Compound request set FID = %u:%u\n",
-					work->cur_local_fid,
-					work->cur_local_pfid);
-			volatile_id = work->cur_local_fid;
-			persistent_id = work->cur_local_pfid;
+					work->compound_fid,
+					work->compound_pfid);
+			volatile_id = work->compound_fid;
+			persistent_id = work->compound_pfid;
 
 			/* file closed, stored id is not valid anymore */
-			work->cur_local_fid = CIFSD_NO_FID;
-			work->cur_local_pfid = CIFSD_NO_FID;
+			work->compound_fid = CIFSD_NO_FID;
+			work->compound_pfid = CIFSD_NO_FID;
 		}
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
@@ -6093,8 +6093,8 @@ int smb2_ioctl(struct cifsd_work *work)
 				work->next_smb2_rsp_hdr_off);
 		if (le64_to_cpu(req->VolatileFileId) == -1) {
 			cifsd_debug("Compound request set FID = %u\n",
-					work->cur_local_fid);
-			id = work->cur_local_fid;
+					work->compound_fid);
+			id = work->compound_fid;
 		}
 	}
 
