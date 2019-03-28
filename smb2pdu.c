@@ -4446,7 +4446,7 @@ int smb2_close(struct cifsd_work *work)
 	}
 
 	if (work->next_smb2_rcv_hdr_off &&
-			HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
 		if (!HAS_FILE_ID(work->cur_local_fid)) {
 			/* file already closed, return FILE_CLOSED */
 			cifsd_debug("file already closed\n");
