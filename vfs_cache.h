@@ -109,6 +109,8 @@ struct cifsd_file {
 	struct list_head		blocked_works;
 
 	int				durable_timeout;
+
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	/* for SMB1 */
 	int				pid;
 
@@ -116,6 +118,7 @@ struct cifsd_file {
 	unsigned int			cflock_cnt;
 	/* last lock failure start offset for SMB1 */
 	unsigned long long		llock_fstart;
+#endif
 
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
