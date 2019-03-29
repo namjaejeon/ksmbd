@@ -4404,7 +4404,7 @@ static int smb2_close_pipe(struct cifsd_work *work)
  */
 int smb2_close(struct cifsd_work *work)
 {
-	unsigned int volatile_id = CIFSD_NO_FID, persistent_id = CIFSD_NO_FID;
+	unsigned int volatile_id = CIFSD_NO_FID;
 	uint64_t sess_id;
 	struct smb2_close_req *req =
 		(struct smb2_close_req *)REQUEST_BUF(work);
@@ -4458,7 +4458,6 @@ int smb2_close(struct cifsd_work *work)
 					work->compound_fid,
 					work->compound_pfid);
 			volatile_id = work->compound_fid;
-			persistent_id = work->compound_pfid;
 
 			/* file closed, stored id is not valid anymore */
 			work->compound_fid = CIFSD_NO_FID;
@@ -4466,10 +4465,8 @@ int smb2_close(struct cifsd_work *work)
 		}
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
-		persistent_id = le64_to_cpu(req->PersistentFileId);
 	}
-	cifsd_debug("volatile_id = %u persistent_id = %u\n",
-			volatile_id, persistent_id);
+	cifsd_debug("volatile_id = %u \n", volatile_id);
 
 	err = cifsd_close_fd(work, volatile_id);
 	if (err)
