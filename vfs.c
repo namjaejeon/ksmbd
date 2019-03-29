@@ -1293,9 +1293,9 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 
 	dget(dentry);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_lock(dir->d_inode);
+	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
 #else
-	mutex_lock(&dir->d_inode->i_mutex);
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
 #endif
 	if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
 		err = -ENOENT;
