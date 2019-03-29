@@ -2419,7 +2419,6 @@ int smb2_open(struct cifsd_work *work)
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
 	fp->coption = req->CreateOptions;
-	INIT_LIST_HEAD(&fp->blocked_works);
 
 	/* Get Persistent-ID */
 	cifsd_open_durable_fd(fp);

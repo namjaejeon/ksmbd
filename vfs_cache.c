@@ -523,6 +523,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 		return NULL;
 	}
 
+	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
 
