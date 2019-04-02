@@ -190,27 +190,3 @@ err_out:
 
 	return rc;
 }
-
-/*
- * Creates the MD4 Hash of the users password in NT UNICODE.
- */
-int cifsd_enc_md4hash(const unsigned char *passwd,
-		      unsigned char *p16,
-		      const struct nls_table *codepage)
-{
-	int rc;
-	int len;
-	__le16 wpwd[129];
-
-	/* Password cannot be longer than 128 characters */
-	if (passwd) /* Password must be converted to NT unicode */
-		len = smb_strtoUTF16(wpwd, passwd, 128, codepage);
-	else {
-		len = 0;
-		*wpwd = 0; /* Ensure string is null terminated */
-	}
-
-	rc = cifsd_enc_md4(p16, (unsigned char *) wpwd, len * sizeof(__le16));
-	memset(wpwd, 0, 129 * sizeof(__le16));
-	return rc;
-}
