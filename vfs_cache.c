@@ -52,7 +52,6 @@ static struct cifsd_inode *__cifsd_inode_lookup(struct inode *inode)
 			break;
 		}
 	}
-
 	return ret_ci;
 }
 
@@ -287,7 +286,9 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
 
+	down_write(&ft->lock);
 	idr_remove(&ft->idr, fp->volatile_id);
+	up_write(&ft->lock);
 }
 
 /* copy-pasted from old fh */
@@ -486,6 +487,7 @@ static void __open_id(struct cifsd_file_table *ft,
 	unsigned int		id = 0;
 	int			ret;
 
+	down_write(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 	ret = idr_alloc_u32(&ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
 #else
@@ -495,6 +497,8 @@ static void __open_id(struct cifsd_file_table *ft,
 		ret = 0;
 	}
 #endif
+	up_write(&ft->lock);
+
 	if (ret)
 		id = CIFSD_NO_FID;
 
@@ -506,9 +510,7 @@ static void __open_id(struct cifsd_file_table *ft,
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
 {
-	down_write(&global_ft.lock);
 	__open_id(&global_ft, fp, OPEN_ID_TYPE_PERSISTENT_ID);
-	up_write(&global_ft.lock);
 	return fp->persistent_id;
 }
 
