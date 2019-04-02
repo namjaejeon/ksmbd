@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -36,7 +36,7 @@
 #include <uapi/linux/xattr.h>
 #include <linux/hashtable.h>
 #include "unicode.h"
-#include "fh.h"
+#include "vfs_cache.h"
 #include <crypto/hash.h>
 #include "smberr.h"
 
@@ -155,9 +155,9 @@ struct cifsd_work {
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
-	__u64				cur_local_fid;
-	__u64				cur_local_pfid;
-	__u64				cur_local_sess_id;
+	unsigned int			compound_fid;
+	unsigned int			compound_pfid;
+	__u64				compound_sid;
 
 	int				state;
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -85,31 +85,29 @@ int cifsd_set_interfaces(char *v)
 	char *tmp;
 	struct net_device *netdev;
 
-	INIT_LIST_HEAD(&server_conf.iface_list);
-
 	rtnl_lock();
 	while (v != NULL) {
 		tmp = strsep(&v, " ");
 		for_each_netdev(&init_net, netdev) {
-			if (match_pattern(netdev->name, tmp)) {
-				struct interface *iface;
+			struct interface *iface;
 
-				iface = kmalloc(sizeof(struct interface),
-						GFP_KERNEL);
-				if (!iface) {
-					ret = -ENOMEM;
-					goto out;
-				}
+			if (!match_pattern(netdev->name, tmp))
+				continue;
 
-				iface->name = kstrdup(netdev->name, GFP_KERNEL);
-				if (!iface->name) {
-					kfree(iface);
-					ret = -ENOMEM;
-					goto out;
-				}
-				list_add(&iface->entry,
-					&server_conf.iface_list);
+			iface = kmalloc(sizeof(struct interface),
+					GFP_KERNEL);
+			if (!iface) {
+				ret = -ENOMEM;
+				goto out;
 			}
+
+			iface->name = kstrdup(netdev->name, GFP_KERNEL);
+			if (!iface->name) {
+				kfree(iface);
+				ret = -ENOMEM;
+				goto out;
+			}
+			list_add(&iface->entry, &server_conf.iface_list);
 		}
 	}
 
@@ -388,6 +386,8 @@ static void server_conf_free(void)
 
 static int server_conf_init(void)
 {
+	INIT_LIST_HEAD(&server_conf.iface_list);
+
 	server_conf.state = SERVER_STATE_STARTING_UP;
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
@@ -535,7 +535,7 @@ static int cifsd_server_shutdown(void)
 	cifsd_tcp_destroy();
 	cifsd_free_session_table();
 
-	destroy_global_fidtable();
+	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
 	exit_cifsd_idmap();
@@ -571,10 +571,7 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	ret = init_global_fidtable();
-	if (ret)
-		goto error;
-
+	cifsd_init_global_file_table();
 	cifsd_inode_hash_init();
 
 	ret = init_cifsd_idmap();
@@ -598,7 +595,7 @@ static void __exit cifsd_server_exit(void)
 module_param(cifsd_debugging, int, 0644);
 MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 
-MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
+MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 module_init(cifsd_server_init)

@@ -2,7 +2,7 @@
 /*
  *   Copyright (C) International Business Machines  Corp., 2007,2008
  *   Author(s): Steve French (sfrench@us.ibm.com)
- *   Modified by Namjae Jeon (namjae.jeon@protocolfreedom.org)
+ *   Modified by Namjae Jeon (linkinjeon@gmail.com)
  *
  *   Contains the routines for mapping CIFS/NTFS ACLs
  */
