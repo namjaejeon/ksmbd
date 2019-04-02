@@ -447,7 +447,7 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
-	down_read(&work->sess->file_table.lock);
+	up_read(&work->sess->file_table.lock);
 
 	return fp;
 }
