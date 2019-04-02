@@ -4142,16 +4142,13 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 		}
 	case FS_OBJECT_ID_INFORMATION:
 		{
-			unsigned char objid[16];
 			struct object_id_info *obj_info;
 
 			obj_info = (struct object_id_info *)(rsp->Buffer);
 
 			if (!user_guest(sess->user)) {
-				cifsd_enc_md4hash(user_passkey(sess->user),
-						  objid,
-						  conn->local_nls);
-				memcpy(obj_info->objid, objid, 16);
+				memcpy(obj_info->objid,
+					user_passkey(sess->user), 16);
 			} else
 				memset(obj_info->objid, 0, 16);
 
@@ -4974,15 +4971,15 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		newsize = le64_to_cpu(file_eof_info->EndOfFile);
 
-		if (newsize > i_size_read(inode)) {
-			rc = cifsd_vfs_alloc_size(work, fp,
-				newsize);
-			if (rc) {
-				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
-					rc);
-				goto out;
-			}
-		} else if (newsize != i_size_read(inode)) {
+		/*
+		 * If FILE_END_OF_FILE_INFORMATION of set_info_file is called
+		 * on FAT32 shared device, truncate execution time is too long
+		 * and network error could cause from windows client. because
+		 * truncate of some filesystem like FAT32 fill zero data in
+		 * truncated range.
+		 */
+		if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC &&
+			newsize != i_size_read(inode)) {
 			cifsd_debug("filename : %s truncated to newsize %lld\n",
 					fp->filename, newsize);
 			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
