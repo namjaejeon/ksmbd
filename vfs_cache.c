@@ -497,8 +497,6 @@ static void __open_id(struct cifsd_file_table *ft,
 		ret = 0;
 	}
 #endif
-	up_write(&ft->lock);
-
 	if (ret)
 		id = CIFSD_NO_FID;
 
@@ -506,6 +504,7 @@ static void __open_id(struct cifsd_file_table *ft,
 		fp->volatile_id = id;
 	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
 		fp->persistent_id = id;
+	up_write(&ft->lock);
 }
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
