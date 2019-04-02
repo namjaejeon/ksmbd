@@ -2562,7 +2562,7 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 		if (fp->is_stream)
 			fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
 		else {
