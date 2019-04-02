@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2018 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2018 Namjae Jeon <linkinjeon@gmail.com>
  */
 
 #include "smb_common.h"
@@ -562,11 +562,9 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
-	spin_lock(&curr_fp->f_ci->m_lock);
+	read_lock(&curr_fp->f_ci->m_lock);
 	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
-		if (prev_fp->f_state == FP_FREEING)
-			continue;
 		if (file_inode(filp) != FP_INODE(prev_fp))
 			continue;
 
@@ -663,12 +661,12 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			break;
 		}
 	}
-	spin_unlock(&curr_fp->f_ci->m_lock);
+	read_unlock(&curr_fp->f_ci->m_lock);
 
 	return rc;
 }
 
-bool is_asterik(char *p)
+bool is_asterisk(char *p)
 {
 	return p && !strcmp("*", p);
 }

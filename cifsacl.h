@@ -2,7 +2,7 @@
 /*
  *   Copyright (c) International Business Machines  Corp., 2007
  *   Author(s): Steve French (sfrench@us.ibm.com)
- *   Modified by Namjae Jeon (namjae.jeon@protocolfreedom.org)
+ *   Modified by Namjae Jeon (linkinjeon@gmail.com)
  */
 
 #ifndef _CIFSACL_H
