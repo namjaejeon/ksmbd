@@ -5212,7 +5212,7 @@ err_out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_read_pipe(struct cifsd_work *work)
+static noinline int smb2_read_pipe(struct cifsd_work *work)
 {
 	int nbytes = 0;
 	char *data_buf;
