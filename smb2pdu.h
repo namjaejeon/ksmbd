@@ -853,6 +853,11 @@ struct copychunk_ioctl_rsp {
 	__le32 TotalBytesWritten;
 } __packed;
 
+struct file_zero_data_information {
+	__le64	FileOffset;
+	__le64	BeyondFinalZero;
+} __packed;
+
 /* Completion Filter flags for Notify */
 #define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
 #define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002

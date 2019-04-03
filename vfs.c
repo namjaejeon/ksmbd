@@ -1282,6 +1282,19 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
+int cifsd_vfs_zero_data(struct cifsd_work *work,
+			 struct cifsd_file *fp,
+			 loff_t off,
+			 loff_t len)
+{
+	struct cifsd_tcp_conn *conn = work->sess->conn;
+
+	if (oplocks_enable)
+		smb_break_all_levII_oplock(conn, fp, 1);
+	return vfs_fallocate(fp->filp,
+		FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, off, len);
+}
+
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 {
 	return vfs_removexattr(dentry, attr_name);

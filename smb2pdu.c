@@ -6482,6 +6482,34 @@ int smb2_ioctl(struct cifsd_work *work)
 		ci_rsp->TotalBytesWritten = cpu_to_le32(total_size_written);
 		break;
 	}
+	case FSCTL_SET_SPARSE:
+		break;
+	case FSCTL_SET_ZERO_DATA:
+	{
+		struct file_zero_data_information *zero_data;
+		struct cifsd_file *fp;
+		loff_t off, len;
+		int ret;
+
+		zero_data =
+			(struct file_zero_data_information *)&req->Buffer[0];
+
+		fp = cifsd_lookup_fd_fast(work, id);
+		if (!fp) {
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+
+		off = le64_to_cpu(zero_data->FileOffset);
+		len = le64_to_cpu(zero_data->BeyondFinalZero) - off;
+
+		ret = cifsd_vfs_zero_data(work, fp, off, len);
+		if (ret == -EACCES)
+			rsp->hdr.Status = STATUS_ACCESS_DENIED;
+		else if (ret < 0)
+			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		break;
+	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
