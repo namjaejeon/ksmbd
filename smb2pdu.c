@@ -6420,7 +6420,7 @@ int smb2_ioctl(struct cifsd_work *work)
 			break;
 		}
 
-		src_fp = cifsd_lookup_fd_fast(work,
+		src_fp = cifsd_lookup_foreign_fd(work,
 				le64_to_cpu(ci_req->ResumeKey[0]));
 		dst_fp = cifsd_lookup_fd_slow(work,
 					 le64_to_cpu(req->VolatileFileId),
