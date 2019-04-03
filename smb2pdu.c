@@ -1669,7 +1669,7 @@ int smb2_session_logoff(struct cifsd_work *work)
  *
  * Return:      0 on success, otherwise error
  */
-static int create_smb2_pipe(struct cifsd_work *work)
+static noinline int create_smb2_pipe(struct cifsd_work *work)
 {
 	struct smb2_create_rsp *rsp;
 	struct smb2_create_req *req;
