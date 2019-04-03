@@ -1669,7 +1669,7 @@ int smb2_session_logoff(struct cifsd_work *work)
  *
  * Return:      0 on success, otherwise error
  */
-static int create_smb2_pipe(struct cifsd_work *work)
+static noinline int create_smb2_pipe(struct cifsd_work *work)
 {
 	struct smb2_create_rsp *rsp;
 	struct smb2_create_req *req;
@@ -1981,6 +1981,56 @@ static inline int check_context_err(void *ctx, char *str)
 	}
 
 	return 0;
+}
+
+static int smb2_create_truncate(struct path *path, bool is_stream)
+{
+	int rc = vfs_truncate(path, 0);
+	if (rc) {
+		cifsd_err("vfs_truncate failed, rc %d\n", rc);
+		return rc;
+	}
+
+	/* Don't truncate stream names on stream name */
+	rc = cifsd_vfs_truncate_xattr(path->dentry, is_stream);
+	if (rc == -EOPNOTSUPP)
+		rc = 0;
+	else if (rc)
+		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
+	return rc;
+}
+
+static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
+				 struct path *path,
+				 struct cifsd_file *fp,
+				 bool new_file)
+{
+	int rc;
+
+	if (!test_share_config_flag(tcon->share_conf,
+				    CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
+		return;
+
+	if (!new_file) {
+		char *create_time = NULL;
+
+		rc = cifsd_vfs_getxattr(path->dentry,
+					XATTR_NAME_CREATION_TIME,
+					&create_time);
+
+		if (rc > 0)
+			fp->create_time = *((__u64 *)create_time);
+
+		cifsd_free(create_time);
+	} else {
+		rc = cifsd_vfs_setxattr(path->dentry,
+					XATTR_NAME_CREATION_TIME,
+					(void *)&fp->create_time,
+					CREATIOM_TIME_LEN,
+					0);
+		if (rc)
+			cifsd_debug("failed to store creation time in EA\n");
+	}
 }
 
 /**
@@ -2572,21 +2622,9 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (need_truncate) {
-		rc = vfs_truncate(&path, 0);
-		if (rc) {
-			cifsd_err("vfs_truncate failed, rc %d\n", rc);
+		rc = smb2_create_truncate(&path, stream_name != NULL);
+		if (rc)
 			goto err_out;
-		}
-
-		/* Don't truncate stream names on stream name */
-		rc = cifsd_vfs_truncate_xattr(path.dentry, stream_name != NULL);
-		if (rc == -EOPNOTSUPP)
-			rc = 0;
-		else if (rc) {
-			cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n",
-					rc);
-			goto err_out;
-		}
 	}
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
@@ -2607,37 +2645,10 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-	if (!created) {
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			char *create_time = NULL;
-
-			rc = cifsd_vfs_getxattr(path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						&create_time);
-
-			if (rc > 0)
-				fp->create_time = *((__u64 *)create_time);
-
-			cifsd_free(create_time);
-			rc = 0;
-		}
-	} else {
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			rc = cifsd_vfs_setxattr(path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						(void *)&fp->create_time,
-						CREATIOM_TIME_LEN,
-						0);
-			if (rc)
-				cifsd_debug("failed to store creation time in EA\n");
-			rc = 0;
-		}
-	}
-
 	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
+
+	smb2_set_ctime_xattr(tcon, &path, fp, created);
 
 	if (!created) {
 		fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
@@ -2830,6 +2841,7 @@ err_out1:
 		if (fp)
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
+		cifsd_err("Error response: %x\n", rsp->hdr.Status);
 	} else
 		conn->stats.open_files_count++;
 
@@ -3376,18 +3388,16 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
 	uint64_t id;
 	int rc;
 
-	cifsd_debug("smb2 query info IPC pipe of FileInfoClass %u, FileId 0x%llx\n",
-		req->FileInfoClass, le64_to_cpu(req->VolatileFileId));
-
 	/*
 	 * Windows can sometime send query file info request on
 	 * pipe without opening it, checking error condition here
 	 */
 	id = le64_to_cpu(req->VolatileFileId);
-	if (!cifsd_session_rpc_method(sess, id)) {
-		cifsd_debug("Unknown RPC pipe id: %llu\n", id);
+	if (!cifsd_session_rpc_method(sess, id))
 		return -ENOENT;
-	}
+
+	cifsd_debug("FileInfoClass %u, FileId 0x%llx\n",
+		     req->FileInfoClass, le64_to_cpu(req->VolatileFileId));
 
 	switch (req->FileInfoClass) {
 	case FILE_STANDARD_INFORMATION:
@@ -4365,7 +4375,7 @@ int smb2_query_info(struct cifsd_work *work)
  *
  * Return:	0
  */
-static int smb2_close_pipe(struct cifsd_work *work)
+static noinline int smb2_close_pipe(struct cifsd_work *work)
 {
 	uint64_t id;
 
@@ -5212,7 +5222,7 @@ err_out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_read_pipe(struct cifsd_work *work)
+static noinline int smb2_read_pipe(struct cifsd_work *work)
 {
 	int nbytes = 0;
 	char *data_buf;
@@ -5371,7 +5381,7 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_write_pipe(struct cifsd_work *work)
+static noinline int smb2_write_pipe(struct cifsd_work *work)
 {
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp;
@@ -6070,7 +6080,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	int cnt_code, nbytes = 0;
 	int out_buf_len;
 	char *data_buf;
-	uint64_t id = -1;
+	uint64_t id = CIFSD_NO_FID;
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_rpc_command *rpc_resp;
 
@@ -6083,14 +6093,14 @@ int smb2_ioctl(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_ioctl_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId) == -1) {
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
 			cifsd_debug("Compound request set FID = %u\n",
 					work->compound_fid);
 			id = work->compound_fid;
 		}
 	}
 
-	if (id == -1)
+	if (!HAS_FILE_ID(id))
 		id = le64_to_cpu(req->VolatileFileId);
 
 	if (req->Flags != cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL)) {
