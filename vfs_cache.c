@@ -584,7 +584,10 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	return reconn;
 }
 
-void cifsd_close_tree_conn_fds(struct cifsd_work *work)
+static void
+__close_file_table_ids(struct cifsd_work *work,
+		       bool (*check)(struct cifsd_tree_connect *tcon,
+				     struct cifsd_file *fp))
 {
 	struct cifsd_session		*sess = work->sess;
 	struct cifsd_tree_connect	*tcon = work->tcon;
@@ -592,21 +595,42 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 	struct cifsd_file		*fp;
 
 	idr_for_each_entry(&sess->file_table.idr, fp, id) {
-		if (fp->tcon != tcon)
+		if (!check(tcon, fp))
 			continue;
-
-		if (is_reconnectable(fp)) {
-			fp->conn = NULL;
-			fp->tcon = NULL;
-			fp->volatile_id = CIFSD_NO_FID;
-			continue;
-		}
 
 		if (work->conn->stats.open_files_count > 0)
 			work->conn->stats.open_files_count--;
 
 		__cifsd_close_fd(&sess->file_table, fp, id);
 	}
+}
+
+static bool tree_conn_fd_check(struct cifsd_tree_connect *tcon,
+			       struct cifsd_file *fp)
+{
+	return fp->tcon != tcon;
+}
+
+static bool session_fd_check(struct cifsd_tree_connect *tcon,
+			     struct cifsd_file *fp)
+{
+	if (!is_reconnectable(fp))
+		return true;
+
+	fp->conn = NULL;
+	fp->tcon = NULL;
+	fp->volatile_id = CIFSD_NO_FID;
+	return false;
+}
+
+void cifsd_close_tree_conn_fds(struct cifsd_work *work)
+{
+	__close_file_table_ids(work, tree_conn_fd_check);
+}
+
+void cifsd_close_session_fds(struct cifsd_work *work)
+{
+	__close_file_table_ids(work, session_fd_check);
 }
 
 void cifsd_init_global_file_table(void)

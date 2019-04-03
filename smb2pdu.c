@@ -1623,7 +1623,6 @@ int smb2_tree_disconnect(struct cifsd_work *work)
  */
 int smb2_session_logoff(struct cifsd_work *work)
 {
-
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_logoff_req *req;
 	struct smb2_logoff_rsp *rsp;
@@ -1642,7 +1641,7 @@ int smb2_session_logoff(struct cifsd_work *work)
 
 	/* setting CifsExiting here may race with start_tcp_sess */
 	cifsd_tcp_set_need_reconnect(work);
-
+	cifsd_close_session_fds(work);
 	cifsd_tcp_conn_wait_idle(conn);
 
 	if (cifsd_tree_conn_session_logoff(sess)) {
