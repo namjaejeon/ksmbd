@@ -5371,7 +5371,7 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_write_pipe(struct cifsd_work *work)
+static noinline int smb2_write_pipe(struct cifsd_work *work)
 {
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp;
