@@ -147,6 +147,8 @@ int cifsd_close_fd(struct cifsd_work *work, unsigned int id);
 
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id);
+struct cifsd_file *cifsd_lookup_foreign_fd(struct cifsd_work *work,
+					   unsigned int id);
 struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 					unsigned int id,
 					unsigned int pid);
@@ -164,6 +166,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 				 struct file *filp);
 
 void cifsd_close_tree_conn_fds(struct cifsd_work *work);
+void cifsd_close_session_fds(struct cifsd_work *work);
 
 int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode);
 
