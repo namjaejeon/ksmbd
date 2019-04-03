@@ -2830,6 +2830,7 @@ err_out1:
 		if (fp)
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
+		cifsd_err("Error response: %x\n", rsp->hdr.Status);
 	} else
 		conn->stats.open_files_count++;
 
