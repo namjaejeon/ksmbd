@@ -4365,7 +4365,7 @@ int smb2_query_info(struct cifsd_work *work)
  *
  * Return:	0
  */
-static int smb2_close_pipe(struct cifsd_work *work)
+static noinline int smb2_close_pipe(struct cifsd_work *work)
 {
 	uint64_t id;
 
