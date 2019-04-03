@@ -6070,7 +6070,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	int cnt_code, nbytes = 0;
 	int out_buf_len;
 	char *data_buf;
-	uint64_t id = -1;
+	uint64_t id = CIFSD_NO_FID;
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_rpc_command *rpc_resp;
 
@@ -6083,14 +6083,14 @@ int smb2_ioctl(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_ioctl_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
-		if (le64_to_cpu(req->VolatileFileId) == -1) {
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
 			cifsd_debug("Compound request set FID = %u\n",
 					work->compound_fid);
 			id = work->compound_fid;
 		}
 	}
 
-	if (id == -1)
+	if (!HAS_FILE_ID(id))
 		id = le64_to_cpu(req->VolatileFileId);
 
 	if (req->Flags != cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL)) {
