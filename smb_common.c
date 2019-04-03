@@ -568,6 +568,9 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		if (file_inode(filp) != FP_INODE(prev_fp))
 			continue;
 
+		if (filp == prev_fp->filp)
+			continue;
+
 		if (prev_fp->is_stream && curr_fp->is_stream)
 			if (strcmp(prev_fp->stream.name, curr_fp->stream.name))
 				continue;
