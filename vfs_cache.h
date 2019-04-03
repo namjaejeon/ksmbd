@@ -147,6 +147,8 @@ int cifsd_close_fd(struct cifsd_work *work, unsigned int id);
 
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id);
+struct cifsd_file *cifsd_lookup_foreign_fd(struct cifsd_work *work,
+					   unsigned int id);
 struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 					unsigned int id,
 					unsigned int pid);

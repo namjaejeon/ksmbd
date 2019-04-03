@@ -365,6 +365,12 @@ static bool __sanity_check(struct cifsd_tree_connect *tcon,
 	return true;
 }
 
+struct cifsd_file *cifsd_lookup_foreign_fd(struct cifsd_work *work,
+					   unsigned int id)
+{
+	return __cifsd_lookup_fd(&work->sess->file_table, id);
+}
+
 struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
 					unsigned int id)
 {

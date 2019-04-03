@@ -2841,7 +2841,7 @@ err_out1:
 		if (fp)
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
-		cifsd_err("Error response: %x\n", rsp->hdr.Status);
+		cifsd_debug("Error response: %x\n", rsp->hdr.Status);
 	} else
 		conn->stats.open_files_count++;
 
@@ -6420,7 +6420,7 @@ int smb2_ioctl(struct cifsd_work *work)
 			break;
 		}
 
-		src_fp = cifsd_lookup_fd_fast(work,
+		src_fp = cifsd_lookup_foreign_fd(work,
 				le64_to_cpu(ci_req->ResumeKey[0]));
 		dst_fp = cifsd_lookup_fd_slow(work,
 					 le64_to_cpu(req->VolatileFileId),
