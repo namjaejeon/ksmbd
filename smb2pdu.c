@@ -3376,18 +3376,16 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
 	uint64_t id;
 	int rc;
 
-	cifsd_debug("smb2 query info IPC pipe of FileInfoClass %u, FileId 0x%llx\n",
-		req->FileInfoClass, le64_to_cpu(req->VolatileFileId));
-
 	/*
 	 * Windows can sometime send query file info request on
 	 * pipe without opening it, checking error condition here
 	 */
 	id = le64_to_cpu(req->VolatileFileId);
-	if (!cifsd_session_rpc_method(sess, id)) {
-		cifsd_debug("Unknown RPC pipe id: %llu\n", id);
+	if (!cifsd_session_rpc_method(sess, id))
 		return -ENOENT;
-	}
+
+	cifsd_debug("FileInfoClass %u, FileId 0x%llx\n",
+		     req->FileInfoClass, le64_to_cpu(req->VolatileFileId));
 
 	switch (req->FileInfoClass) {
 	case FILE_STANDARD_INFORMATION:
