@@ -1983,6 +1983,23 @@ static inline int check_context_err(void *ctx, char *str)
 	return 0;
 }
 
+static int smb2_create_truncate(struct path *path, bool is_stream)
+{
+	int rc = vfs_truncate(path, 0);
+	if (rc) {
+		cifsd_err("vfs_truncate failed, rc %d\n", rc);
+		return rc;
+	}
+
+	/* Don't truncate stream names on stream name */
+	rc = cifsd_vfs_truncate_xattr(path->dentry, is_stream);
+	if (rc == -EOPNOTSUPP)
+		rc = 0;
+	else if (rc)
+		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
+	return rc;
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @work:	smb work containing request buffer
@@ -2572,21 +2589,9 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (need_truncate) {
-		rc = vfs_truncate(&path, 0);
-		if (rc) {
-			cifsd_err("vfs_truncate failed, rc %d\n", rc);
+		rc = smb2_create_truncate(&path, stream_name != NULL);
+		if (rc)
 			goto err_out;
-		}
-
-		/* Don't truncate stream names on stream name */
-		rc = cifsd_vfs_truncate_xattr(path.dentry, stream_name != NULL);
-		if (rc == -EOPNOTSUPP)
-			rc = 0;
-		else if (rc) {
-			cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n",
-					rc);
-			goto err_out;
-		}
 	}
 
 	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
