@@ -2000,6 +2000,39 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	return rc;
 }
 
+static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
+				 struct path *path,
+				 struct cifsd_file *fp,
+				 bool new_file)
+{
+	int rc;
+
+	if (!test_share_config_flag(tcon->share_conf,
+				    CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
+		return;
+
+	if (!new_file) {
+		char *create_time = NULL;
+
+		rc = cifsd_vfs_getxattr(path->dentry,
+					XATTR_NAME_CREATION_TIME,
+					&create_time);
+
+		if (rc > 0)
+			fp->create_time = *((__u64 *)create_time);
+
+		cifsd_free(create_time);
+	} else {
+		rc = cifsd_vfs_setxattr(path->dentry,
+					XATTR_NAME_CREATION_TIME,
+					(void *)&fp->create_time,
+					CREATIOM_TIME_LEN,
+					0);
+		if (rc)
+			cifsd_debug("failed to store creation time in EA\n");
+	}
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @work:	smb work containing request buffer
@@ -2612,37 +2645,10 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-	if (!created) {
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			char *create_time = NULL;
-
-			rc = cifsd_vfs_getxattr(path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						&create_time);
-
-			if (rc > 0)
-				fp->create_time = *((__u64 *)create_time);
-
-			cifsd_free(create_time);
-			rc = 0;
-		}
-	} else {
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			rc = cifsd_vfs_setxattr(path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						(void *)&fp->create_time,
-						CREATIOM_TIME_LEN,
-						0);
-			if (rc)
-				cifsd_debug("failed to store creation time in EA\n");
-			rc = 0;
-		}
-	}
-
 	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
+
+	smb2_set_ctime_xattr(tcon, &path, fp, created);
 
 	if (!created) {
 		fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
