@@ -1428,7 +1428,6 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 		if (err)
 			goto err_out;
 	}
-	INIT_LIST_HEAD(&fp->blocked_works);
 	return fp;
 
 err_out:
