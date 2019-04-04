@@ -584,8 +584,8 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 
 static void
 __close_file_table_ids(struct cifsd_work *work,
-		       bool (*check)(struct cifsd_tree_connect *tcon,
-				     struct cifsd_file *fp))
+		       bool (*skip)(struct cifsd_tree_connect *tcon,
+				    struct cifsd_file *fp))
 {
 	struct cifsd_session		*sess = work->sess;
 	struct cifsd_tree_connect	*tcon = work->tcon;
@@ -593,7 +593,7 @@ __close_file_table_ids(struct cifsd_work *work,
 	struct cifsd_file		*fp;
 
 	idr_for_each_entry(&sess->file_table.idr, fp, id) {
-		if (!check(tcon, fp))
+		if (skip(tcon, fp))
 			continue;
 
 		if (work->conn->stats.open_files_count > 0)
@@ -612,7 +612,7 @@ static bool tree_conn_fd_check(struct cifsd_tree_connect *tcon,
 static bool session_fd_check(struct cifsd_tree_connect *tcon,
 			     struct cifsd_file *fp)
 {
-	if (!is_reconnectable(fp))
+	if (is_reconnectable(fp))
 		return true;
 
 	fp->conn = NULL;
