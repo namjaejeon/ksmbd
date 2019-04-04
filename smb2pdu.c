@@ -2058,6 +2058,62 @@ static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
 	cifsd_free(attr);
 }
 
+static int smb2_creat(struct cifsd_work *work,
+		      struct path *path,
+		      char *name,
+		      int open_flags,
+		      struct smb2_create_req *req,
+		      struct smb2_create_rsp *rsp)
+{
+	struct cifsd_tree_connect *tcon = work->tcon;
+	struct cifsd_share_config *share = tcon->share_conf;
+	umode_t mode;
+	int rc;
+
+	if (!(open_flags & O_CREAT)) {
+		if (test_tree_conn_flag(tcon,
+					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+			cifsd_debug("File does not exist\n");
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+		} else {
+			cifsd_debug("User does not have write permission\n");
+			rsp->hdr.Status = STATUS_ACCESS_DENIED;
+		}
+		smb2_set_err_rsp(work);
+		return -ENOENT;
+	}
+
+	cifsd_debug("file does not exist, so creating\n");
+	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+		cifsd_debug("creating directory\n");
+
+		mode = share_config_directory_mask(share);
+		rc = cifsd_vfs_mkdir(work, name, mode);
+		if (rc) {
+			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+			return rc;
+		}
+	} else {
+		cifsd_debug("creating regular file\n");
+
+		mode = share_config_create_mask(share);
+		rc = cifsd_vfs_create(work, name, mode);
+		if (rc) {
+			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+			return rc;
+		}
+	}
+
+	rc = cifsd_vfs_kern_path(name, 0, path, 0);
+	if (rc) {
+		cifsd_err("cannot get linux path (%s), err = %d\n",
+				name, rc);
+		rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+		return rc;
+	}
+	return 0;
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @work:	smb work containing request buffer
@@ -2072,7 +2128,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path;
-	struct cifsd_share_config *share = work->tcon->share_conf;
+	struct cifsd_share_config *share = tcon->share_conf;
 	struct cifsd_inode *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL;
@@ -2082,7 +2138,6 @@ int smb2_open(struct cifsd_work *work)
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
 	struct create_ea_buf_req *ea_buf = NULL;
-	umode_t mode = 0;
 	__le32 *next_ptr = NULL;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
@@ -2388,62 +2443,19 @@ int smb2_open(struct cifsd_work *work)
 
 	/*create file if not present */
 	if (!file_present) {
-		if (open_flags & O_CREAT) {
-			cifsd_debug("file does not exist, so creating\n");
-			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
-				cifsd_debug("creating directory\n");
-				mode = share_config_directory_mask(share);
-				rc = cifsd_vfs_mkdir(work, name, mode);
-				if (rc) {
-					rsp->hdr.Status = cpu_to_le32(
-							STATUS_DATA_ERROR);
-					rsp->hdr.Status =
-						STATUS_UNEXPECTED_IO_ERROR;
-					kfree(name);
-					return rc;
-				}
-			} else {
-				cifsd_debug("creating regular file\n");
-				mode = share_config_create_mask(share);
-				rc = cifsd_vfs_create(work, name, mode);
-				if (rc) {
-					rsp->hdr.Status =
-						STATUS_UNEXPECTED_IO_ERROR;
-					kfree(name);
-					return rc;
-				}
-			}
-
-			rc = cifsd_vfs_kern_path(name, 0, &path, 0);
-			if (rc) {
-				cifsd_err("cannot get linux path (%s), err = %d\n",
-						name, rc);
-				rsp->hdr.Status =
-					STATUS_UNEXPECTED_IO_ERROR;
-				kfree(name);
-				return rc;
-			}
-			created = true;
-			if (ea_buf) {
-				rc = smb2_set_ea(&ea_buf->ea, &path);
-				if (rc == -EOPNOTSUPP)
-					rc = 0;
-				else if (rc)
-					goto err_out;
-			}
-		} else {
+		rc = smb2_creat(work, &path, name, open_flags, req, rsp);
+		if (rc != 0) {
 			kfree(name);
-			if (test_tree_conn_flag(tcon,
-					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
-				cifsd_debug("returning as file does not exist\n");
-				rsp->hdr.Status =
-					STATUS_OBJECT_NAME_NOT_FOUND;
-			} else {
-				cifsd_debug("returning as user does not have permission to write\n");
-				rsp->hdr.Status = STATUS_ACCESS_DENIED;
-			}
-			smb2_set_err_rsp(work);
-			return 0;
+			return (rc == -ENOENT) ? 0 : rc;
+		}
+
+		created = true;
+		if (ea_buf) {
+			rc = smb2_set_ea(&ea_buf->ea, &path);
+			if (rc == -EOPNOTSUPP)
+				rc = 0;
+			else if (rc)
+				goto err_out;
 		}
 	}
 
