@@ -1994,9 +1994,43 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	rc = cifsd_vfs_truncate_xattr(path->dentry, is_stream);
 	if (rc == -EOPNOTSUPP)
 		rc = 0;
-	else if (rc)
+	if (rc)
 		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
 	return rc;
+}
+
+static noinline int smb2_set_stream_name_xattr(struct path *path,
+					       struct cifsd_file *fp,
+					       char *stream_name,
+					       int s_type)
+{
+	int xattr_stream_size;
+	char *xattr_stream_name;
+	int rc;
+
+	xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
+							&xattr_stream_name);
+
+	fp->stream.name = xattr_stream_name;
+	fp->stream.type = s_type;
+	fp->stream.size = xattr_stream_size;
+
+	/* Check if there is stream prefix in xattr space */
+	rc = cifsd_vfs_casexattr_len(path->dentry,
+				     xattr_stream_name,
+				     xattr_stream_size);
+	if (rc > 0)
+		return 0;
+
+	if (fp->cdoption == FILE_OPEN_LE) {
+		cifsd_debug("XATTR stream name lookup failed: %d\n", rc);
+		return -EBADF;
+	}
+
+	rc = cifsd_vfs_setxattr(path->dentry, xattr_stream_name, NULL, 0, 0);
+	if (rc < 0)
+		cifsd_err("Failed to store XATTR stream name :%d\n", rc);
+	return 0;
 }
 
 static void smb2_new_xattrs(struct cifsd_tree_connect *tcon,
@@ -2142,10 +2176,10 @@ int smb2_open(struct cifsd_work *work)
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
-	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
+	int s_type = 0, store_stream = 0;
 	int next_off = 0;
 	char *name = NULL;
-	char *stream_name = NULL, *xattr_stream_name = NULL;
+	char *stream_name = NULL;
 	bool file_present = false, created = false;
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
@@ -2514,28 +2548,13 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (stream_name) {
-		xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
-							   &xattr_stream_name);
-
-		fp->stream.name = xattr_stream_name;
-		fp->stream.type = s_type;
-		fp->stream.size = xattr_stream_size;
-
-		/* Check if there is stream prefix in xattr space */
-		rc = cifsd_vfs_casexattr_len(path.dentry,
-					     xattr_stream_name,
-					     xattr_stream_size);
-		if (rc < 0) {
-			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_debug("failed to find stream name in xattr, rc : %d\n",
-						rc);
-				rc = -EBADF;
-				goto err_out;
-			}
-
-			store_stream = 1;
-		}
-		rc = 0;
+		rc = smb2_set_stream_name_xattr(&path,
+						fp,
+						stream_name,
+						s_type);
+		if (rc)
+			goto err_out;
+		file_info = FILE_CREATED;
 	}
 
 	if (req->CreateContextsOffset) {
@@ -2667,17 +2686,6 @@ int smb2_open(struct cifsd_work *work)
 		/* Create default data stream in xattr */
 		cifsd_vfs_setxattr(path.dentry, XATTR_NAME_STREAM,
 				   NULL, 0, 0);
-	}
-
-	if (store_stream) {
-		rc = cifsd_vfs_setxattr(path.dentry, xattr_stream_name,
-					NULL, 0, 0);
-		if (rc < 0) {
-			cifsd_err("failed to store stream name in xattr, rc :%d\n",
-					rc);
-		}
-		file_info = FILE_CREATED;
-		rc = 0;
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
