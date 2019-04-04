@@ -2479,7 +2479,6 @@ int smb2_open(struct cifsd_work *work)
 		xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
 							   &xattr_stream_name);
 
-		fp->is_stream = true;
 		fp->stream.name = xattr_stream_name;
 		fp->stream.type = s_type;
 		fp->stream.size = xattr_stream_size;
@@ -2611,7 +2610,7 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (fp->is_stream)
+		if (cifsd_stream_fd(fp))
 			fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
 		else {
 			fp->delete_on_close = 1;
@@ -5013,7 +5012,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			goto out;
 		}
 
-		if (fp->is_stream)
+		if (cifsd_stream_fd(fp))
 			goto next;
 
 		parent_fp = cifsd_lookup_fd_inode(PARENT_INODE(fp));

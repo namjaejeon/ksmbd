@@ -96,7 +96,7 @@ static int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	rwlock_init(&ci->m_lock);
 	ci->stream_name = NULL;
 
-	if (fp->is_stream) {
+	if (cifsd_stream_fd(fp)) {
 		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
 		if (!ci->stream_name)
 			return -ENOMEM;
@@ -241,7 +241,7 @@ static void __cifsd_inode_close(struct cifsd_file *fp)
 			invalidate_delete_on_close(fp);
 	}
 
-	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
+	if (cifsd_stream_fd(fp) && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
 		err = cifsd_vfs_remove_xattr(filp->f_path.dentry,
 					     fp->stream.name);

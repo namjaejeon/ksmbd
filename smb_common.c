@@ -571,7 +571,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		if (filp == prev_fp->filp)
 			continue;
 
-		if (prev_fp->is_stream && curr_fp->is_stream)
+		if (cifsd_stream_fd(prev_fp) && cifsd_stream_fd(curr_fp))
 			if (strcmp(prev_fp->stream.name, curr_fp->stream.name))
 				continue;
 
@@ -598,7 +598,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		 * Only check FILE_SHARE_DELETE if stream opened and
 		 * normal file opened.
 		 */
-		if (prev_fp->is_stream && !curr_fp->is_stream)
+		if (cifsd_stream_fd(prev_fp) && !cifsd_stream_fd(curr_fp))
 			continue;
 
 		if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
