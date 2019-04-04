@@ -1999,10 +1999,9 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	return rc;
 }
 
-static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
-				 struct path *path,
-				 struct cifsd_file *fp,
-				 bool new_file)
+static void smb2_new_xattrs(struct cifsd_tree_connect *tcon,
+			    struct path *path,
+			    struct cifsd_file *fp)
 {
 	int rc;
 
@@ -2010,26 +2009,53 @@ static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
 				    CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
 		return;
 
-	if (!new_file) {
-		char *create_time = NULL;
+	rc = cifsd_vfs_setxattr(path->dentry,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				(void *)&fp->fattr,
+				FILE_ATTRIBUTE_LEN,
+				0);
+	if (rc)
+		cifsd_debug("failed to store file attribute in EA\n");
 
-		rc = cifsd_vfs_getxattr(path->dentry,
-					XATTR_NAME_CREATION_TIME,
-					&create_time);
+	rc = cifsd_vfs_setxattr(path->dentry,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time,
+				CREATIOM_TIME_LEN,
+				0);
+	if (rc)
+		cifsd_debug("failed to store creation time in EA\n");
+}
 
-		if (rc > 0)
-			fp->create_time = *((__u64 *)create_time);
+static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
+			       struct path *path,
+			       struct cifsd_file *fp)
+{
+	char *attr = NULL;
+	int rc;
 
-		cifsd_free(create_time);
-	} else {
-		rc = cifsd_vfs_setxattr(path->dentry,
-					XATTR_NAME_CREATION_TIME,
-					(void *)&fp->create_time,
-					CREATIOM_TIME_LEN,
-					0);
-		if (rc)
-			cifsd_debug("failed to store creation time in EA\n");
-	}
+	fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+
+	/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
+	if (!test_share_config_flag(tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
+		return;
+
+	rc = cifsd_vfs_getxattr(path->dentry,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				&attr);
+	if (rc > 0)
+		fp->fattr = *((__le32 *)attr);
+
+	cifsd_free(attr);
+
+	rc = cifsd_vfs_getxattr(path->dentry,
+				XATTR_NAME_CREATION_TIME,
+				&attr);
+
+	if (rc > 0)
+		fp->create_time = *((__u64 *)attr);
+
+	cifsd_free(attr);
 }
 
 /**
@@ -2646,39 +2672,10 @@ int smb2_open(struct cifsd_work *work)
 	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
 
-	smb2_set_ctime_xattr(tcon, &path, fp, created);
-
-	if (!created) {
-		fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
-
-		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			char *file_attribute = NULL;
-
-			rc = cifsd_vfs_getxattr(path.dentry,
-						XATTR_NAME_FILE_ATTRIBUTE,
-						&file_attribute);
-			if (rc > 0)
-				fp->fattr = *((__le32 *)file_attribute);
-
-			cifsd_free(file_attribute);
-			rc = 0;
-		}
-	} else {
-		/* set XATTR_NAME_FILE_ATTRIBUTE with req->FileAttributes */
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			rc = cifsd_vfs_setxattr(path.dentry,
-						XATTR_NAME_FILE_ATTRIBUTE,
-						(void *)&fp->fattr,
-						FILE_ATTRIBUTE_LEN,
-						0);
-			if (rc)
-				cifsd_debug("failed to store file attribute in EA\n");
-			rc = 0;
-		}
-	}
+	if (!created)
+		smb2_update_xattrs(tcon, &path, fp);
+	else
+		smb2_new_xattrs(tcon, &path, fp);
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
