@@ -2496,7 +2496,7 @@ int smb2_open(struct cifsd_work *work)
 
 	/* Get Persistent-ID */
 	cifsd_open_durable_fd(fp);
-	if (fp->persistent_id == CIFSD_NO_FID) {
+	if (!HAS_FILE_ID(fp->persistent_id)) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
