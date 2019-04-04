@@ -97,7 +97,7 @@ static int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	rwlock_init(&ci->m_lock);
 	ci->stream_name = NULL;
 
-	if (fp->is_stream) {
+	if (cifsd_stream_fd(fp)) {
 		ci->stream_name = kmalloc(fp->stream.size + 1, GFP_KERNEL);
 		if (!ci->stream_name)
 			return -ENOMEM;
@@ -242,7 +242,7 @@ static void __cifsd_inode_close(struct cifsd_file *fp)
 			invalidate_delete_on_close(fp);
 	}
 
-	if (fp->is_stream && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
+	if (cifsd_stream_fd(fp) && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
 		err = cifsd_vfs_remove_xattr(filp->f_path.dentry,
 					     fp->stream.name);
@@ -270,7 +270,7 @@ static void __cifsd_inode_close(struct cifsd_file *fp)
 
 static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 {
-	if (fp->persistent_id == CIFSD_NO_FID)
+	if (!HAS_FILE_ID(fp->persistent_id))
 		return;
 
 	down_write(&global_ft.lock);
@@ -281,8 +281,6 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 			      struct cifsd_file *fp)
 {
-	WARN_ON(fp->volatile_id == CIFSD_NO_FID);
-
 	write_lock(&fp->f_ci->m_lock);
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
@@ -345,7 +343,7 @@ int cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 {
 	struct cifsd_file	*fp;
 
-	if (id == CIFSD_NO_FID)
+	if (!HAS_FILE_ID(id))
 		return 0;
 
 	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
@@ -388,12 +386,12 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 {
 	struct cifsd_file *fp;
 
-	if (id == CIFSD_NO_FID) {
+	if (!HAS_FILE_ID(id)) {
 		id = work->compound_fid;
 		pid = work->compound_pfid;
 	}
 
-	if (id == CIFSD_NO_FID)
+	if (!HAS_FILE_ID(id))
 		return NULL;
 
 	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
@@ -548,7 +546,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 	}
 
 	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
-	if (fp->volatile_id == CIFSD_NO_FID) {
+	if (!HAS_FILE_ID(fp->volatile_id)) {
 		cifsd_inode_put(fp->f_ci);
 		cifsd_free_file_struct(fp);
 		return NULL;
@@ -659,7 +657,7 @@ int cifsd_reopen_durable_fd(struct cifsd_work *work,
 		return -EBADF;
 	}
 
-	if (fp->volatile_id != CIFSD_NO_FID) {
+	if (HAS_FILE_ID(fp->volatile_id)) {
 		cifsd_err("Still in use durable fd: %u\n", fp->volatile_id);
 		return -EBADF;
 	}
@@ -668,7 +666,7 @@ int cifsd_reopen_durable_fd(struct cifsd_work *work,
 	fp->tcon = work->tcon;
 
 	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
-	if (fp->volatile_id == CIFSD_NO_FID) {
+	if (!HAS_FILE_ID(fp->volatile_id)) {
 		fp->conn = NULL;
 		fp->tcon = NULL;
 		return -EBADF;
