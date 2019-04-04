@@ -853,6 +853,10 @@ struct copychunk_ioctl_rsp {
 	__le32 TotalBytesWritten;
 } __packed;
 
+struct file_sparse {
+	__u8	SetSparse;
+} __packed;
+
 struct file_zero_data_information {
 	__le64	FileOffset;
 	__le64	BeyondFinalZero;
