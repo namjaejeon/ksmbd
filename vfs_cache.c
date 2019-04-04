@@ -583,21 +583,20 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 }
 
 static int
-__close_file_table_ids(struct cifsd_work *work,
+__close_file_table_ids(struct cifsd_file_table *ft,
+		       struct cifsd_tree_connect *tcon,
 		       bool (*skip)(struct cifsd_tree_connect *tcon,
 				    struct cifsd_file *fp))
 {
-	struct cifsd_session		*sess = work->sess;
-	struct cifsd_tree_connect	*tcon = work->tcon;
 	unsigned int			id;
 	struct cifsd_file		*fp;
 	int				num = 0;
 
-	idr_for_each_entry(&sess->file_table.idr, fp, id) {
+	idr_for_each_entry(&ft->idr, fp, id) {
 		if (skip(tcon, fp))
 			continue;
 
-		__cifsd_close_fd(&sess->file_table, fp, id);
+		__cifsd_close_fd(ft, fp, id);
 		num++;
 	}
 	return num;
@@ -623,7 +622,9 @@ static bool session_fd_check(struct cifsd_tree_connect *tcon,
 
 void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 {
-	int num = __close_file_table_ids(work, tree_conn_fd_check);
+	int num = __close_file_table_ids(&work->sess->file_table,
+					 work->tcon,
+					 tree_conn_fd_check);
 
 	work->conn->stats.open_files_count -= num;
 	if (work->conn->stats.open_files_count < 0)
@@ -632,7 +633,9 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 
 void cifsd_close_session_fds(struct cifsd_work *work)
 {
-	int num = __close_file_table_ids(work, session_fd_check);
+	int num = __close_file_table_ids(&work->sess->file_table,
+					 work->tcon,
+					 session_fd_check);
 
 	work->conn->stats.open_files_count -= num;
 	if (work->conn->stats.open_files_count < 0)
