@@ -5003,8 +5003,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		 * truncate of some filesystem like FAT32 fill zero data in
 		 * truncated range.
 		 */
-		if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC &&
-			newsize != i_size_read(inode)) {
+		if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC) {
 			cifsd_debug("filename : %s truncated to newsize %lld\n",
 					fp->filename, newsize);
 			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
