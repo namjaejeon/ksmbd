@@ -176,18 +176,6 @@ void __init cifsd_inode_hash_init(void)
  * CIFSD FP cache
  */
 
-int cifsd_init_file_table(struct cifsd_file_table *ft)
-{
-	idr_init(&ft->idr);
-	init_rwsem(&ft->lock);
-	return 0;
-}
-
-void cifsd_destroy_file_table(struct cifsd_file_table *ft)
-{
-	idr_destroy(&ft->idr);
-}
-
 /* copy-pasted from old fh */
 static void inherit_delete_pending(struct cifsd_file *fp)
 {
@@ -737,4 +725,17 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	}
 	up_read(&work->sess->file_table.lock);
 	return ret;
+}
+
+int cifsd_init_file_table(struct cifsd_file_table *ft)
+{
+	idr_init(&ft->idr);
+	init_rwsem(&ft->lock);
+	return 0;
+}
+
+void cifsd_destroy_file_table(struct cifsd_file_table *ft)
+{
+	__close_file_table_ids(ft, NULL, session_fd_check);
+	idr_destroy(&ft->idr);
 }
