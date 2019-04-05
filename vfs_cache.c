@@ -745,14 +745,16 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 	if (!ci)
 		return true;
 
+	if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
+		unlinked = false;
+
 	write_lock(&ci->m_lock);
 	list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
-		if (!fp->conn) {
-			if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
-				unlinked = false;
-			list_del(&fp->node);
-			list_add(&fp->node, &dispose);
-		}
+		if (fp->conn)
+			continue;
+
+		list_del(&fp->node);
+		list_add(&fp->node, &dispose);
 	}
 	write_unlock(&ci->m_lock);
 	atomic_dec(&ci->m_count);
