@@ -2632,7 +2632,7 @@ int smb2_open(struct cifsd_work *work)
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	/* Check delete pending among previous fp before oplock break */
-	if (fp->f_ci->m_flags & S_DEL_PENDING) {
+	if (cifsd_inode_pending_delete(fp)) {
 		rc = -EBUSY;
 		goto err_out;
 	}
@@ -3666,7 +3666,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		unsigned int delete_pending;
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -3715,7 +3715,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		if (!filename)
 			return -ENOMEM;
 		cifsd_debug("filename = %s\n", filename);
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -5063,9 +5063,10 @@ next:
 			if (S_ISDIR(inode->i_mode) && !cifsd_vfs_empty_dir(fp))
 				rc = -EBUSY;
 			else
-				fp->f_ci->m_flags |= S_DEL_PENDING;
-		} else
-			fp->f_ci->m_flags &= ~S_DEL_PENDING;
+				cifsd_set_inode_pending_delete(fp);
+		} else {
+			cifsd_clear_inode_pending_delete(fp);
+		}
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:
