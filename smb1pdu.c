@@ -7697,7 +7697,6 @@ int smb_open_andx(struct cifsd_work *work)
 	int err;
 	struct cifsd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE, share_ret;
-	struct cifsd_inode *f_parent_ci;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 
@@ -7774,14 +7773,10 @@ int smb_open_andx(struct cifsd_work *work)
 		generic_fillattr(path.dentry->d_inode, &stat);
 	}
 
-	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
-	if (f_parent_ci) {
-		if (f_parent_ci->m_flags & S_DEL_PENDING) {
-			err = -EBUSY;
-			atomic_dec(&f_parent_ci->m_count);
-			goto free_path;
-		}
-		atomic_dec(&f_parent_ci->m_count);
+	err = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	if (err == CIFSD_INODE_STATUS_PENDING_DELETE) {
+		err = -EBUSY;
+		goto free_path;
 	}
 
 	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
