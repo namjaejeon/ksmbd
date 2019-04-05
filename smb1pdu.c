@@ -2444,11 +2444,8 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	if (le32_to_cpu(req->DesiredAccess) & (DELETE | GENERIC_ALL))
 		fp->is_nt_open = 1;
 	if ((le32_to_cpu(req->DesiredAccess) & DELETE) &&
-			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
-		fp->delete_on_close = 1;
-		if (file_info == F_CREATED)
-			fp->f_ci->m_flags |= S_DEL_ON_CLS;
-	}
+			(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE))
+		cifsd_fd_set_delete_on_close(fp, file_info);
 
 	/* open success, send back response */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
