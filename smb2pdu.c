@@ -2163,7 +2163,6 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path;
 	struct cifsd_share_config *share = tcon->share_conf;
-	struct cifsd_inode *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL;
 	struct kstat stat;
@@ -2493,14 +2492,10 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
-	if (f_parent_ci) {
-		if (f_parent_ci->m_flags & S_DEL_PENDING) {
-			atomic_dec(&f_parent_ci->m_count);
-			rc = -EBUSY;
-			goto err_out;
-		}
-		atomic_dec(&f_parent_ci->m_count);
+	rc = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	if (rc == CIFSD_INODE_STATUS_PENDING_DELETE) {
+		rc = -EBUSY;
+		goto err_out;
 	}
 
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
