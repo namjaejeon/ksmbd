@@ -26,6 +26,9 @@
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 
+/* Default: allocation roundup size = 1048576 */
+static unsigned int alloc_roundup_size = 1048576;
+
 /**
  * smb_NTtimeToUnix() - convert NTFS time to unix style time format
  * @ntutc:	NTFS style time
