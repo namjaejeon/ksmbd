@@ -196,4 +196,8 @@ enum CIFSD_INODE_STATUS {
 };
 
 int cifsd_query_inode_status(struct inode *inode);
+
+bool cifsd_inode_pending_delete(struct cifsd_file *fp);
+void cifsd_set_inode_pending_delete(struct cifsd_file *fp);
+void cifsd_clear_inode_pending_delete(struct cifsd_file *fp);
 #endif /* __VFS_CACHE_H__ */

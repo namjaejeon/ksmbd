@@ -87,6 +87,21 @@ int cifsd_query_inode_status(struct inode *inode)
 	return ret;
 }
 
+bool cifsd_inode_pending_delete(struct cifsd_file *fp)
+{
+	return (fp->f_ci->m_flags & S_DEL_PENDING);
+}
+
+void cifsd_set_inode_pending_delete(struct cifsd_file *fp)
+{
+	fp->f_ci->m_flags |= S_DEL_PENDING;
+}
+
+void cifsd_clear_inode_pending_delete(struct cifsd_file *fp)
+{
+	fp->f_ci->m_flags &= ~S_DEL_PENDING;
+}
+
 static void cifsd_inode_hash(struct cifsd_inode *ci)
 {
 	struct hlist_head *b = inode_hashtable +
