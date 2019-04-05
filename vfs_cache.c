@@ -70,6 +70,23 @@ struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 	return ci;
 }
 
+int cifsd_query_inode_status(struct inode *inode)
+{
+	struct cifsd_inode *ci;
+	int ret = CIFSD_INODE_STATUS_UNKNOWN;
+
+	read_lock(&inode_hash_lock);
+	ci = __cifsd_inode_lookup(inode);
+	if (ci) {
+		ret = CIFSD_INODE_STATUS_OK;
+		if (ci->m_flags & S_DEL_PENDING)
+			ret = CIFSD_INODE_STATUS_PENDING_DELETE;
+		atomic_dec(&ci->m_count);
+	}
+	read_unlock(&inode_hash_lock);
+	return ret;
+}
+
 static void cifsd_inode_hash(struct cifsd_inode *ci)
 {
 	struct hlist_head *b = inode_hashtable +

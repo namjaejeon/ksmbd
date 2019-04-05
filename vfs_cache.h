@@ -188,6 +188,14 @@ int cifsd_file_table_flush(struct cifsd_work *work);
  */
 
 void __init cifsd_inode_hash_init(void);
+
+enum CIFSD_INODE_STATUS {
+	CIFSD_INODE_STATUS_OK,
+	CIFSD_INODE_STATUS_UNKNOWN,
+	CIFSD_INODE_STATUS_PENDING_DELETE,
+};
+
+int cifsd_query_inode_status(struct inode *inode);
 struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
 
 #endif /* __VFS_CACHE_H__ */
