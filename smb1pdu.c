@@ -3962,15 +3962,15 @@ static int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
-		struct cifsd_inode *ci;
-		unsigned int delete_pending = 0;
+		unsigned int del_pending = 0;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
-		if (ci) {
-			delete_pending = ci->m_flags & S_DEL_PENDING;
-			atomic_dec(&ci->m_count);
-		}
+		del_pending = cifsd_query_inode_status(path.dentry->d_inode);
+		if (del_pending == CIFSD_INODE_STATUS_PENDING_DELETE)
+			del_pending = 1;
+		else
+			del_pending = 0;
+
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -3993,8 +3993,8 @@ static int query_path_info(struct cifsd_work *work)
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
 		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			delete_pending;
-		standard_info->DeletePending = delete_pending;
+			del_pending;
+		standard_info->DeletePending = del_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
 		break;
