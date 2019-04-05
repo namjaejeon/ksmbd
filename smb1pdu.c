@@ -2420,7 +2420,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		if (err)
 			goto free_path;
 	} else {
-		if (fp->f_ci->m_flags & S_DEL_PENDING) {
+		if (cifsd_inode_pending_delete(fp)) {
 			err = -EBUSY;
 			goto out;
 		}
@@ -6413,7 +6413,7 @@ static int query_file_info(struct cifsd_work *work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_STANDARD_INFO);
@@ -6585,7 +6585,7 @@ static int query_file_info(struct cifsd_work *work)
 		unsigned int delete_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 2;
 		rsp->t2.TotalDataCount = sizeof(FILE_ALL_INFO);
@@ -6743,9 +6743,10 @@ static int smb_set_dispostion(struct cifsd_work *work)
 			return -ENOTEMPTY;
 		}
 
-		fp->f_ci->m_flags |= S_DEL_PENDING;
-	} else
-		fp->f_ci->m_flags &= ~S_DEL_PENDING;
+		cifsd_set_inode_pending_delete(fp);
+	} else {
+		cifsd_clear_inode_pending_delete(fp);
+	}
 
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 10;
@@ -7789,7 +7790,7 @@ int smb_open_andx(struct cifsd_work *work)
 		if (err)
 			goto free_path;
 	} else {
-		if (fp->f_ci->m_flags & S_DEL_PENDING) {
+		if (cifsd_inode_pending_delete(fp)) {
 			err = -EBUSY;
 			goto free_path;
 		}
