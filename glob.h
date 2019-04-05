@@ -154,7 +154,7 @@ struct cifsd_work {
 	 */
 	unsigned int			compound_fid;
 	unsigned int			compound_pfid;
-	__u64				compound_sid;
+	unsigned int			compound_sid;
 
 	int				state;
 
