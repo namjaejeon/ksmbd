@@ -2123,7 +2123,6 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct cifsd_file *fp = NULL;
-	struct cifsd_inode *f_parent_ci;
 	int oplock_rsp = OPLOCK_NONE;
 	int share_ret;
 
@@ -2393,14 +2392,10 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		}
 	}
 
-	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
-	if (f_parent_ci) {
-		if (f_parent_ci->m_flags & S_DEL_PENDING) {
-			err = -EBUSY;
-			atomic_dec(&f_parent_ci->m_count);
-			goto free_path;
-		}
-		atomic_dec(&f_parent_ci->m_count);
+	err = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	if (err == CIFSD_INODE_STATUS_PENDING_DELETE) {
+		err = -EBUSY;
+		goto free_path;
 	}
 
 	/* open  file and get FID */
