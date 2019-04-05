@@ -49,8 +49,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 
-extern struct list_head global_lock_list;
-
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
 /* cifsd's Specific ERRNO */

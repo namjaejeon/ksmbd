@@ -23,12 +23,6 @@
 
 int cifsd_debugging;
 
-/* @FIXME clean up this code */
-
-LIST_HEAD(global_lock_list);
-
-/* @FIXME end clean up */
-
 struct cifsd_server_config server_conf;
 
 enum SERVER_CTRL_TYPE {

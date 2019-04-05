@@ -23,6 +23,8 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
 #define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
 #endif
 
+LIST_HEAD(global_lock_list);
+
 struct smb_protocol {
 	int		index;
 	char		*name;
