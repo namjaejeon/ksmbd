@@ -756,8 +756,8 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 		list_del(&fp->node);
 		list_add(&fp->node, &dispose);
 	}
-	write_unlock(&ci->m_lock);
 	atomic_dec(&ci->m_count);
+	write_unlock(&ci->m_lock);
 
 	close_fd_list(work, &dispose);
 	return unlinked;
