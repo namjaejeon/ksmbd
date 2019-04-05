@@ -60,7 +60,7 @@ static struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 	return __cifsd_inode_lookup(FP_INODE(fp));
 }
 
-struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
+static struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 {
 	struct cifsd_inode *ci;
 

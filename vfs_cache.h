@@ -196,6 +196,4 @@ enum CIFSD_INODE_STATUS {
 };
 
 int cifsd_query_inode_status(struct inode *inode);
-struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
-
 #endif /* __VFS_CACHE_H__ */
