@@ -270,7 +270,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 		}
 	}
 
-	if (fp->is_stream)
+	if (cifsd_stream_fd(fp))
 		return cifsd_vfs_stream_read(fp, rbuf, pos, count);
 
 	ret = check_lock_range(filp, *pos, *pos + count - 1,
@@ -393,7 +393,7 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 
 	filp = fp->filp;
 
-	if (fp->is_stream) {
+	if (cifsd_stream_fd(fp)) {
 		err = cifsd_vfs_stream_write(fp, buf, pos, count);
 		if (!err)
 			*written = count;
@@ -1911,7 +1911,7 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 		return -EACCES;
 	}
 
-	if (src_fp->is_stream || dst_fp->is_stream)
+	if (cifsd_stream_fd(src_fp) || cifsd_stream_fd(dst_fp))
 		return -EBADF;
 
 	if (oplocks_enable)

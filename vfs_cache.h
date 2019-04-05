@@ -99,7 +99,6 @@ struct cifsd_file {
 	bool				is_nt_open;
 	bool				delete_on_close;
 	bool				attrib_only;
-	bool				is_stream;
 
 	char				client_guid[16];
 	char				create_guid[16];
@@ -139,6 +138,11 @@ static inline bool HAS_FILE_ID(unsigned long long req)
 	unsigned int id = (unsigned int)req;
 
 	return id < CIFSD_NO_FID;
+}
+
+static inline bool cifsd_stream_fd(struct cifsd_file *fp)
+{
+	return fp->stream.name != NULL;
 }
 
 int cifsd_init_file_table(struct cifsd_file_table *ft);

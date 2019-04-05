@@ -1994,15 +1994,48 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	rc = cifsd_vfs_truncate_xattr(path->dentry, is_stream);
 	if (rc == -EOPNOTSUPP)
 		rc = 0;
-	else if (rc)
+	if (rc)
 		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
 	return rc;
 }
 
-static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
-				 struct path *path,
-				 struct cifsd_file *fp,
-				 bool new_file)
+static noinline int smb2_set_stream_name_xattr(struct path *path,
+					       struct cifsd_file *fp,
+					       char *stream_name,
+					       int s_type)
+{
+	int xattr_stream_size;
+	char *xattr_stream_name;
+	int rc;
+
+	xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
+							&xattr_stream_name);
+
+	fp->stream.name = xattr_stream_name;
+	fp->stream.type = s_type;
+	fp->stream.size = xattr_stream_size;
+
+	/* Check if there is stream prefix in xattr space */
+	rc = cifsd_vfs_casexattr_len(path->dentry,
+				     xattr_stream_name,
+				     xattr_stream_size);
+	if (rc > 0)
+		return 0;
+
+	if (fp->cdoption == FILE_OPEN_LE) {
+		cifsd_debug("XATTR stream name lookup failed: %d\n", rc);
+		return -EBADF;
+	}
+
+	rc = cifsd_vfs_setxattr(path->dentry, xattr_stream_name, NULL, 0, 0);
+	if (rc < 0)
+		cifsd_err("Failed to store XATTR stream name :%d\n", rc);
+	return 0;
+}
+
+static void smb2_new_xattrs(struct cifsd_tree_connect *tcon,
+			    struct path *path,
+			    struct cifsd_file *fp)
 {
 	int rc;
 
@@ -2010,26 +2043,109 @@ static void smb2_set_ctime_xattr(struct cifsd_tree_connect *tcon,
 				    CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
 		return;
 
-	if (!new_file) {
-		char *create_time = NULL;
+	rc = cifsd_vfs_setxattr(path->dentry,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				(void *)&fp->fattr,
+				FILE_ATTRIBUTE_LEN,
+				0);
+	if (rc)
+		cifsd_debug("failed to store file attribute in EA\n");
 
-		rc = cifsd_vfs_getxattr(path->dentry,
-					XATTR_NAME_CREATION_TIME,
-					&create_time);
+	rc = cifsd_vfs_setxattr(path->dentry,
+				XATTR_NAME_CREATION_TIME,
+				(void *)&fp->create_time,
+				CREATIOM_TIME_LEN,
+				0);
+	if (rc)
+		cifsd_debug("failed to store creation time in EA\n");
+}
 
-		if (rc > 0)
-			fp->create_time = *((__u64 *)create_time);
+static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
+			       struct path *path,
+			       struct cifsd_file *fp)
+{
+	char *attr = NULL;
+	int rc;
 
-		cifsd_free(create_time);
-	} else {
-		rc = cifsd_vfs_setxattr(path->dentry,
-					XATTR_NAME_CREATION_TIME,
-					(void *)&fp->create_time,
-					CREATIOM_TIME_LEN,
-					0);
-		if (rc)
-			cifsd_debug("failed to store creation time in EA\n");
+	fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+
+	/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
+	if (!test_share_config_flag(tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS))
+		return;
+
+	rc = cifsd_vfs_getxattr(path->dentry,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				&attr);
+	if (rc > 0)
+		fp->fattr = *((__le32 *)attr);
+
+	cifsd_free(attr);
+
+	rc = cifsd_vfs_getxattr(path->dentry,
+				XATTR_NAME_CREATION_TIME,
+				&attr);
+
+	if (rc > 0)
+		fp->create_time = *((__u64 *)attr);
+
+	cifsd_free(attr);
+}
+
+static int smb2_creat(struct cifsd_work *work,
+		      struct path *path,
+		      char *name,
+		      int open_flags,
+		      struct smb2_create_req *req,
+		      struct smb2_create_rsp *rsp)
+{
+	struct cifsd_tree_connect *tcon = work->tcon;
+	struct cifsd_share_config *share = tcon->share_conf;
+	umode_t mode;
+	int rc;
+
+	if (!(open_flags & O_CREAT)) {
+		if (test_tree_conn_flag(tcon,
+					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+			cifsd_debug("File does not exist\n");
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+		} else {
+			cifsd_debug("User does not have write permission\n");
+			rsp->hdr.Status = STATUS_ACCESS_DENIED;
+		}
+		smb2_set_err_rsp(work);
+		return -ENOENT;
 	}
+
+	cifsd_debug("file does not exist, so creating\n");
+	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+		cifsd_debug("creating directory\n");
+
+		mode = share_config_directory_mask(share);
+		rc = cifsd_vfs_mkdir(work, name, mode);
+		if (rc) {
+			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+			return rc;
+		}
+	} else {
+		cifsd_debug("creating regular file\n");
+
+		mode = share_config_create_mask(share);
+		rc = cifsd_vfs_create(work, name, mode);
+		if (rc) {
+			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+			return rc;
+		}
+	}
+
+	rc = cifsd_vfs_kern_path(name, 0, path, 0);
+	if (rc) {
+		cifsd_err("cannot get linux path (%s), err = %d\n",
+				name, rc);
+		rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+		return rc;
+	}
+	return 0;
 }
 
 /**
@@ -2046,7 +2162,7 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path;
-	struct cifsd_share_config *share = work->tcon->share_conf;
+	struct cifsd_share_config *share = tcon->share_conf;
 	struct cifsd_inode *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL;
@@ -2056,15 +2172,14 @@ int smb2_open(struct cifsd_work *work)
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
 		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
 	struct create_ea_buf_req *ea_buf = NULL;
-	umode_t mode = 0;
 	__le32 *next_ptr = NULL;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
-	int xattr_stream_size = 0, s_type = 0, store_stream = 0;
+	int s_type = 0, store_stream = 0;
 	int next_off = 0;
 	char *name = NULL;
-	char *stream_name = NULL, *xattr_stream_name = NULL;
+	char *stream_name = NULL;
 	bool file_present = false, created = false;
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
@@ -2362,62 +2477,19 @@ int smb2_open(struct cifsd_work *work)
 
 	/*create file if not present */
 	if (!file_present) {
-		if (open_flags & O_CREAT) {
-			cifsd_debug("file does not exist, so creating\n");
-			if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
-				cifsd_debug("creating directory\n");
-				mode = share_config_directory_mask(share);
-				rc = cifsd_vfs_mkdir(work, name, mode);
-				if (rc) {
-					rsp->hdr.Status = cpu_to_le32(
-							STATUS_DATA_ERROR);
-					rsp->hdr.Status =
-						STATUS_UNEXPECTED_IO_ERROR;
-					kfree(name);
-					return rc;
-				}
-			} else {
-				cifsd_debug("creating regular file\n");
-				mode = share_config_create_mask(share);
-				rc = cifsd_vfs_create(work, name, mode);
-				if (rc) {
-					rsp->hdr.Status =
-						STATUS_UNEXPECTED_IO_ERROR;
-					kfree(name);
-					return rc;
-				}
-			}
-
-			rc = cifsd_vfs_kern_path(name, 0, &path, 0);
-			if (rc) {
-				cifsd_err("cannot get linux path (%s), err = %d\n",
-						name, rc);
-				rsp->hdr.Status =
-					STATUS_UNEXPECTED_IO_ERROR;
-				kfree(name);
-				return rc;
-			}
-			created = true;
-			if (ea_buf) {
-				rc = smb2_set_ea(&ea_buf->ea, &path);
-				if (rc == -EOPNOTSUPP)
-					rc = 0;
-				else if (rc)
-					goto err_out;
-			}
-		} else {
+		rc = smb2_creat(work, &path, name, open_flags, req, rsp);
+		if (rc != 0) {
 			kfree(name);
-			if (test_tree_conn_flag(tcon,
-					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
-				cifsd_debug("returning as file does not exist\n");
-				rsp->hdr.Status =
-					STATUS_OBJECT_NAME_NOT_FOUND;
-			} else {
-				cifsd_debug("returning as user does not have permission to write\n");
-				rsp->hdr.Status = STATUS_ACCESS_DENIED;
-			}
-			smb2_set_err_rsp(work);
-			return 0;
+			return (rc == -ENOENT) ? 0 : rc;
+		}
+
+		created = true;
+		if (ea_buf) {
+			rc = smb2_set_ea(&ea_buf->ea, &path);
+			if (rc == -EOPNOTSUPP)
+				rc = 0;
+			else if (rc)
+				goto err_out;
 		}
 	}
 
@@ -2470,35 +2542,19 @@ int smb2_open(struct cifsd_work *work)
 
 	/* Get Persistent-ID */
 	cifsd_open_durable_fd(fp);
-	if (fp->persistent_id == CIFSD_NO_FID) {
+	if (!HAS_FILE_ID(fp->persistent_id)) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
 
 	if (stream_name) {
-		xattr_stream_size = cifsd_vfs_xattr_stream_name(stream_name,
-							   &xattr_stream_name);
-
-		fp->is_stream = true;
-		fp->stream.name = xattr_stream_name;
-		fp->stream.type = s_type;
-		fp->stream.size = xattr_stream_size;
-
-		/* Check if there is stream prefix in xattr space */
-		rc = cifsd_vfs_casexattr_len(path.dentry,
-					     xattr_stream_name,
-					     xattr_stream_size);
-		if (rc < 0) {
-			if (fp->cdoption == FILE_OPEN_LE) {
-				cifsd_debug("failed to find stream name in xattr, rc : %d\n",
-						rc);
-				rc = -EBADF;
-				goto err_out;
-			}
-
-			store_stream = 1;
-		}
-		rc = 0;
+		rc = smb2_set_stream_name_xattr(&path,
+						fp,
+						stream_name,
+						s_type);
+		if (rc)
+			goto err_out;
+		file_info = FILE_CREATED;
 	}
 
 	if (req->CreateContextsOffset) {
@@ -2611,7 +2667,7 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (fp->is_stream)
+		if (cifsd_stream_fd(fp))
 			fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
 		else {
 			fp->delete_on_close = 1;
@@ -2632,54 +2688,14 @@ int smb2_open(struct cifsd_work *work)
 				   NULL, 0, 0);
 	}
 
-	if (store_stream) {
-		rc = cifsd_vfs_setxattr(path.dentry, xattr_stream_name,
-					NULL, 0, 0);
-		if (rc < 0) {
-			cifsd_err("failed to store stream name in xattr, rc :%d\n",
-					rc);
-		}
-		file_info = FILE_CREATED;
-		rc = 0;
-	}
-
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
 
-	smb2_set_ctime_xattr(tcon, &path, fp, created);
-
-	if (!created) {
-		fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
-
-		/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			char *file_attribute = NULL;
-
-			rc = cifsd_vfs_getxattr(path.dentry,
-						XATTR_NAME_FILE_ATTRIBUTE,
-						&file_attribute);
-			if (rc > 0)
-				fp->fattr = *((__le32 *)file_attribute);
-
-			cifsd_free(file_attribute);
-			rc = 0;
-		}
-	} else {
-		/* set XATTR_NAME_FILE_ATTRIBUTE with req->FileAttributes */
-		if (test_share_config_flag(tcon->share_conf,
-					   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-			rc = cifsd_vfs_setxattr(path.dentry,
-						XATTR_NAME_FILE_ATTRIBUTE,
-						(void *)&fp->fattr,
-						FILE_ATTRIBUTE_LEN,
-						0);
-			if (rc)
-				cifsd_debug("failed to store file attribute in EA\n");
-			rc = 0;
-		}
-	}
+	if (!created)
+		smb2_update_xattrs(tcon, &path, fp);
+	else
+		smb2_new_xattrs(tcon, &path, fp);
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
@@ -5013,7 +5029,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			goto out;
 		}
 
-		if (fp->is_stream)
+		if (cifsd_stream_fd(fp))
 			goto next;
 
 		parent_fp = cifsd_lookup_fd_inode(PARENT_INODE(fp));
