@@ -2661,15 +2661,8 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (cifsd_stream_fd(fp))
-			fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
-		else {
-			fp->delete_on_close = 1;
-			if (file_info == F_CREATED)
-				fp->f_ci->m_flags |= S_DEL_ON_CLS;
-		}
-	}
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)
+		cifsd_fd_set_delete_on_close(fp, file_info);
 
 	if (need_truncate) {
 		rc = smb2_create_truncate(&path, stream_name != NULL);
