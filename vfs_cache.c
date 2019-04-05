@@ -18,6 +18,10 @@
 /* @FIXME */
 #include "smb_common.h"
 
+#define S_DEL_PENDING			1
+#define S_DEL_ON_CLS			2
+#define S_DEL_ON_CLS_STREAM		8
+
 static unsigned int inode_hash_mask __read_mostly;
 static unsigned int inode_hash_shift __read_mostly;
 static struct hlist_head *inode_hashtable __read_mostly;
