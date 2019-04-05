@@ -177,7 +177,7 @@ struct cifsd_work {
 	struct work_struct		work;
 
 	/* cancel works */
-	uint64_t			async_id;
+	int				async_id;
 	void				**cancel_argv;
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;

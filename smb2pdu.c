@@ -655,7 +655,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 	work->type = ASYNC;
 	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
 
-	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
+	cifsd_debug("Send interim Response to inform async request id : %d\n",
 			work->async_id);
 
 	work->cancel_fn = fn;
