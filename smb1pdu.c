@@ -2398,6 +2398,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		goto free_path;
 	}
 
+	err = 0;
 	/* open  file and get FID */
 	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
 		le32_to_cpu(req->CreateOptions),
@@ -7768,6 +7769,7 @@ int smb_open_andx(struct cifsd_work *work)
 		goto free_path;
 	}
 
+	err = 0;
 	cifsd_debug("(%s) open_flags = 0x%x, oplock_flags 0x%x\n",
 			name, open_flags, oplock_flags);
 	/* open  file and get FID */

@@ -2498,6 +2498,7 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
+	rc = 0;
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		rc = PTR_ERR(filp);
