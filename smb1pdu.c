@@ -3916,19 +3916,15 @@ static int query_path_info(struct cifsd_work *work)
 	case SMB_INFO_STANDARD:
 	{
 		FILE_INFO_STANDARD *infos;
-		struct cifsd_inode *ci;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
-		if (ci) {
-			if (ci->m_flags & S_DEL_PENDING) {
-				rc = -EBUSY;
-				atomic_dec(&ci->m_count);
-				goto err_out;
-			}
-			atomic_dec(&ci->m_count);
+		rc = cifsd_query_inode_status(path.dentry->d_inode);
+		if (rc == CIFSD_INODE_STATUS_PENDING_DELETE) {
+			rc = -EBUSY;
+			goto err_out;
 		}
 
+		rc = 0;
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		infos = (FILE_INFO_STANDARD *)(ptr + 4);
