@@ -3962,7 +3962,7 @@ static int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
 		FILE_STANDARD_INFO *standard_info;
-		unsigned int del_pending = 0;
+		unsigned int del_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		del_pending = cifsd_query_inode_status(path.dentry->d_inode);
@@ -4110,17 +4110,17 @@ static int query_path_info(struct cifsd_work *work)
 	case SMB_QUERY_FILE_ALL_INFO:
 	{
 		FILE_ALL_INFO *ainfo;
-		struct cifsd_inode *ci;
-		unsigned int delete_pending = 0;
+		unsigned int del_pending;
 		char *filename;
 		int uni_filename_len, total_count = 72;
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
-		ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_inode);
-		if (ci) {
-			delete_pending = ci->m_flags & S_DEL_PENDING;
-			atomic_dec(&ci->m_count);
-		}
+
+		del_pending = cifsd_query_inode_status(path.dentry->d_inode);
+		if (del_pending == CIFSD_INODE_STATUS_PENDING_DELETE)
+			del_pending = 1;
+		else
+			del_pending = 0;
 
 		filename = convert_to_nt_pathname(name,
 				work->tcon->share_conf->path);
@@ -4152,8 +4152,8 @@ static int query_path_info(struct cifsd_work *work)
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
 		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			delete_pending;
-		ainfo->DeletePending = delete_pending;
+			del_pending;
+		ainfo->DeletePending = del_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
