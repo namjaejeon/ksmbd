@@ -102,6 +102,19 @@ void cifsd_clear_inode_pending_delete(struct cifsd_file *fp)
 	fp->f_ci->m_flags &= ~S_DEL_PENDING;
 }
 
+void cifsd_fd_set_delete_on_close(struct cifsd_file *fp,
+				  int file_info)
+{
+	if (cifsd_stream_fd(fp)) {
+		fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
+		return;
+	}
+
+	fp->delete_on_close = 1;
+	if (file_info == F_CREATED)
+		fp->f_ci->m_flags |= S_DEL_ON_CLS;
+}
+
 static void cifsd_inode_hash(struct cifsd_inode *ci)
 {
 	struct hlist_head *b = inode_hashtable +
