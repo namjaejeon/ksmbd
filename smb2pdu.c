@@ -2176,7 +2176,7 @@ int smb2_open(struct cifsd_work *work)
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
 	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
-	int s_type = 0, store_stream = 0;
+	int s_type = 0;
 	int next_off = 0;
 	char *name = NULL;
 	char *stream_name = NULL;
