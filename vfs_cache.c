@@ -203,7 +203,7 @@ static void cifsd_inode_put(struct cifsd_inode *ci)
 		cifsd_inode_free(ci);
 }
 
-void __init cifsd_inode_hash_init(void)
+int __init cifsd_inode_hash_init(void)
 {
 	unsigned int loop;
 	unsigned long numentries = 16384;
@@ -217,9 +217,12 @@ void __init cifsd_inode_hash_init(void)
 
 	/* init master fp hash table */
 	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
+	if (!inode_hashtable)
+		return -ENOMEM;
 
 	for (loop = 0; loop < (1U << inode_hash_shift); loop++)
 		INIT_HLIST_HEAD(&inode_hashtable[loop]);
+	return 0;
 }
 
 /*

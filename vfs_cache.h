@@ -183,7 +183,7 @@ int cifsd_file_table_flush(struct cifsd_work *work);
  * INODE hash
  */
 
-void __init cifsd_inode_hash_init(void);
+int __init cifsd_inode_hash_init(void);
 
 enum CIFSD_INODE_STATUS {
 	CIFSD_INODE_STATUS_OK,

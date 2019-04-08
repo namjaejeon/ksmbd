@@ -563,7 +563,9 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	cifsd_inode_hash_init();
+	ret = cifsd_inode_hash_init();
+	if (ret)
+		goto error;
 
 	ret = init_cifsd_idmap();
 	if (ret)
