@@ -326,6 +326,9 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 			      struct cifsd_file *fp)
 {
+	if (!HAS_FILE_ID(fp->volatile_id))
+		return;
+
 	write_lock(&fp->f_ci->m_lock);
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
