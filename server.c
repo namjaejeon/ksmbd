@@ -559,7 +559,10 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	cifsd_init_global_file_table();
+	ret = cifsd_init_global_file_table();
+	if (ret)
+		goto error;
+
 	cifsd_inode_hash_init();
 
 	ret = init_cifsd_idmap();
