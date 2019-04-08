@@ -583,6 +583,7 @@ error:
 static void __exit cifsd_server_exit(void)
 {
 	cifsd_server_shutdown();
+	cifsd_release_inode_hash();
 }
 
 module_param(cifsd_debugging, int, 0644);

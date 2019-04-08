@@ -225,6 +225,11 @@ int __init cifsd_inode_hash_init(void)
 	return 0;
 }
 
+void __exit cifsd_release_inode_hash(void)
+{
+	vfree(inode_hashtable);
+}
+
 /*
  * CIFSD FP cache
  */
