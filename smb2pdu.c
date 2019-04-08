@@ -655,7 +655,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 	work->type = ASYNC;
 	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
 
-	cifsd_debug("Send interim Response to inform asynchronous request id : %lld\n",
+	cifsd_debug("Send interim Response to inform async request id : %d\n",
 			work->async_id);
 
 	work->cancel_fn = fn;
@@ -2163,7 +2163,6 @@ int smb2_open(struct cifsd_work *work)
 	struct smb2_create_rsp *rsp, *rsp_org;
 	struct path path;
 	struct cifsd_share_config *share = tcon->share_conf;
-	struct cifsd_inode *f_parent_ci;
 	struct cifsd_file *fp = NULL;
 	struct file *filp = NULL;
 	struct kstat stat;
@@ -2493,16 +2492,13 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	f_parent_ci = cifsd_inode_lookup_by_vfsinode(path.dentry->d_parent->d_inode);
-	if (f_parent_ci) {
-		if (f_parent_ci->m_flags & S_DEL_PENDING) {
-			atomic_dec(&f_parent_ci->m_count);
-			rc = -EBUSY;
-			goto err_out;
-		}
-		atomic_dec(&f_parent_ci->m_count);
+	rc = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	if (rc == CIFSD_INODE_STATUS_PENDING_DELETE) {
+		rc = -EBUSY;
+		goto err_out;
 	}
 
+	rc = 0;
 	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
 	if (IS_ERR(filp)) {
 		rc = PTR_ERR(filp);
@@ -2637,7 +2633,7 @@ int smb2_open(struct cifsd_work *work)
 	generic_fillattr(path.dentry->d_inode, &stat);
 
 	/* Check delete pending among previous fp before oplock break */
-	if (fp->f_ci->m_flags & S_DEL_PENDING) {
+	if (cifsd_inode_pending_delete(fp)) {
 		rc = -EBUSY;
 		goto err_out;
 	}
@@ -2666,15 +2662,8 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (cifsd_stream_fd(fp))
-			fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
-		else {
-			fp->delete_on_close = 1;
-			if (file_info == F_CREATED)
-				fp->f_ci->m_flags |= S_DEL_ON_CLS;
-		}
-	}
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)
+		cifsd_fd_set_delete_on_close(fp, file_info);
 
 	if (need_truncate) {
 		rc = smb2_create_truncate(&path, stream_name != NULL);
@@ -3671,7 +3660,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		unsigned int delete_pending;
 
 		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 
 		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
@@ -3720,7 +3709,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		if (!filename)
 			return -ENOMEM;
 		cifsd_debug("filename = %s\n", filename);
-		delete_pending = fp->f_ci->m_flags & S_DEL_PENDING;
+		delete_pending = cifsd_inode_pending_delete(fp);
 		file_info = (struct smb2_file_all_info *)rsp->Buffer;
 
 		file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -5067,9 +5056,10 @@ next:
 			if (S_ISDIR(inode->i_mode) && !cifsd_vfs_empty_dir(fp))
 				rc = -EBUSY;
 			else
-				fp->f_ci->m_flags |= S_DEL_PENDING;
-		} else
-			fp->f_ci->m_flags &= ~S_DEL_PENDING;
+				cifsd_set_inode_pending_delete(fp);
+		} else {
+			cifsd_clear_inode_pending_delete(fp);
+		}
 		break;
 	}
 	case FILE_FULL_EA_INFORMATION:

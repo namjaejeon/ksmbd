@@ -23,18 +23,6 @@
 
 int cifsd_debugging;
 
-/* @FIXME clean up this code */
-/*
- * keep MaxBufSize Default: 65536
- * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
- */
-
-LIST_HEAD(global_lock_list);
-
-/* Default: allocation roundup size = 1048576, to disable set 0 in config */
-unsigned int alloc_roundup_size = 1048576;
-/* @FIXME end clean up */
-
 struct cifsd_server_config server_conf;
 
 enum SERVER_CTRL_TYPE {

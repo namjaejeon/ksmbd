@@ -34,10 +34,6 @@
 		fp->cdoption != FILE_OVERWRITE_LE && \
 		fp->cdoption != FILE_SUPERSEDE_LE))
 
-#define S_DEL_PENDING			1
-#define S_DEL_ON_CLS			2
-#define S_DEL_ON_CLS_STREAM		8
-
 struct cifsd_tcp_conn;
 struct cifsd_session;
 
@@ -188,6 +184,19 @@ int cifsd_file_table_flush(struct cifsd_work *work);
  */
 
 void __init cifsd_inode_hash_init(void);
-struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode);
 
+enum CIFSD_INODE_STATUS {
+	CIFSD_INODE_STATUS_OK,
+	CIFSD_INODE_STATUS_UNKNOWN,
+	CIFSD_INODE_STATUS_PENDING_DELETE,
+};
+
+int cifsd_query_inode_status(struct inode *inode);
+
+bool cifsd_inode_pending_delete(struct cifsd_file *fp);
+void cifsd_set_inode_pending_delete(struct cifsd_file *fp);
+void cifsd_clear_inode_pending_delete(struct cifsd_file *fp);
+
+void cifsd_fd_set_delete_on_close(struct cifsd_file *fp,
+				  int file_info);
 #endif /* __VFS_CACHE_H__ */
