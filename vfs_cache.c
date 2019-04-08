@@ -660,13 +660,13 @@ static bool tree_conn_fd_check(struct cifsd_tree_connect *tcon,
 static bool session_fd_check(struct cifsd_tree_connect *tcon,
 			     struct cifsd_file *fp)
 {
-	if (is_reconnectable(fp))
-		return true;
+	if (!is_reconnectable(fp))
+		return false;
 
 	fp->conn = NULL;
 	fp->tcon = NULL;
 	fp->volatile_id = CIFSD_NO_FID;
-	return false;
+	return true;
 }
 
 void cifsd_close_tree_conn_fds(struct cifsd_work *work)
