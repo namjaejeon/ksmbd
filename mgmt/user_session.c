@@ -258,7 +258,9 @@ static struct cifsd_session *__session_create(int protocol)
 	if (!sess)
 		return NULL;
 
-	cifsd_init_file_table(&sess->file_table);
+	if (cifsd_init_file_table(&sess->file_table))
+		goto error;
+
 	set_session_flag(sess, protocol);
 	INIT_LIST_HEAD(&sess->sessions_entry);
 	INIT_LIST_HEAD(&sess->tree_conn_list);
