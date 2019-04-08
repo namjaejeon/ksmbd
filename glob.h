@@ -48,9 +48,6 @@ extern bool oplocks_enable;
 extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
-extern unsigned int alloc_roundup_size;
-
-extern struct list_head global_lock_list;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
@@ -157,7 +154,7 @@ struct cifsd_work {
 	 */
 	unsigned int			compound_fid;
 	unsigned int			compound_pfid;
-	__u64				compound_sid;
+	unsigned int			compound_sid;
 
 	int				state;
 
@@ -180,7 +177,7 @@ struct cifsd_work {
 	struct work_struct		work;
 
 	/* cancel works */
-	uint64_t			async_id;
+	int				async_id;
 	void				**cancel_argv;
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;

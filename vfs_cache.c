@@ -18,6 +18,10 @@
 /* @FIXME */
 #include "smb_common.h"
 
+#define S_DEL_PENDING			1
+#define S_DEL_ON_CLS			2
+#define S_DEL_ON_CLS_STREAM		8
+
 static unsigned int inode_hash_mask __read_mostly;
 static unsigned int inode_hash_shift __read_mostly;
 static struct hlist_head *inode_hashtable __read_mostly;
@@ -60,7 +64,7 @@ static struct cifsd_inode *cifsd_inode_lookup(struct cifsd_file *fp)
 	return __cifsd_inode_lookup(FP_INODE(fp));
 }
 
-struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
+static struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 {
 	struct cifsd_inode *ci;
 
@@ -68,6 +72,51 @@ struct cifsd_inode *cifsd_inode_lookup_by_vfsinode(struct inode *inode)
 	ci = __cifsd_inode_lookup(inode);
 	read_unlock(&inode_hash_lock);
 	return ci;
+}
+
+int cifsd_query_inode_status(struct inode *inode)
+{
+	struct cifsd_inode *ci;
+	int ret = CIFSD_INODE_STATUS_UNKNOWN;
+
+	read_lock(&inode_hash_lock);
+	ci = __cifsd_inode_lookup(inode);
+	if (ci) {
+		ret = CIFSD_INODE_STATUS_OK;
+		if (ci->m_flags & S_DEL_PENDING)
+			ret = CIFSD_INODE_STATUS_PENDING_DELETE;
+		atomic_dec(&ci->m_count);
+	}
+	read_unlock(&inode_hash_lock);
+	return ret;
+}
+
+bool cifsd_inode_pending_delete(struct cifsd_file *fp)
+{
+	return (fp->f_ci->m_flags & S_DEL_PENDING);
+}
+
+void cifsd_set_inode_pending_delete(struct cifsd_file *fp)
+{
+	fp->f_ci->m_flags |= S_DEL_PENDING;
+}
+
+void cifsd_clear_inode_pending_delete(struct cifsd_file *fp)
+{
+	fp->f_ci->m_flags &= ~S_DEL_PENDING;
+}
+
+void cifsd_fd_set_delete_on_close(struct cifsd_file *fp,
+				  int file_info)
+{
+	if (cifsd_stream_fd(fp)) {
+		fp->f_ci->m_flags |= S_DEL_ON_CLS_STREAM;
+		return;
+	}
+
+	fp->delete_on_close = 1;
+	if (file_info == F_CREATED)
+		fp->f_ci->m_flags |= S_DEL_ON_CLS;
 }
 
 static void cifsd_inode_hash(struct cifsd_inode *ci)
@@ -696,17 +745,19 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode)
 	if (!ci)
 		return true;
 
+	if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
+		unlinked = false;
+
 	write_lock(&ci->m_lock);
 	list_for_each_entry_safe(fp, fptmp, &ci->m_fp_list, node) {
-		if (!fp->conn) {
-			if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING))
-				unlinked = false;
-			list_del(&fp->node);
-			list_add(&fp->node, &dispose);
-		}
+		if (fp->conn)
+			continue;
+
+		list_del(&fp->node);
+		list_add(&fp->node, &dispose);
 	}
-	write_unlock(&ci->m_lock);
 	atomic_dec(&ci->m_count);
+	write_unlock(&ci->m_lock);
 
 	close_fd_list(work, &dispose);
 	return unlinked;
