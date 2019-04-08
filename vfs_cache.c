@@ -698,8 +698,10 @@ void cifsd_free_global_file_table(void)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	idr_for_each_entry(global_ft.idr, fp, id)
+	idr_for_each_entry(global_ft.idr, fp, id) {
+		__cifsd_remove_durable_fd(fp);
 		cifsd_free_file_struct(fp);
+	}
 
 	cifsd_destroy_file_table(&global_ft);
 }
