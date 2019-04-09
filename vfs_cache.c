@@ -203,7 +203,7 @@ static void cifsd_inode_put(struct cifsd_inode *ci)
 		cifsd_inode_free(ci);
 }
 
-void __init cifsd_inode_hash_init(void)
+int __init cifsd_inode_hash_init(void)
 {
 	unsigned int loop;
 	unsigned long numentries = 16384;
@@ -217,9 +217,17 @@ void __init cifsd_inode_hash_init(void)
 
 	/* init master fp hash table */
 	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
+	if (!inode_hashtable)
+		return -ENOMEM;
 
 	for (loop = 0; loop < (1U << inode_hash_shift); loop++)
 		INIT_HLIST_HEAD(&inode_hashtable[loop]);
+	return 0;
+}
+
+void __exit cifsd_release_inode_hash(void)
+{
+	vfree(inode_hashtable);
 }
 
 /*
@@ -311,19 +319,22 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 		return;
 
 	down_write(&global_ft.lock);
-	idr_remove(&global_ft.idr, fp->persistent_id);
+	idr_remove(global_ft.idr, fp->persistent_id);
 	up_write(&global_ft.lock);
 }
 
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 			      struct cifsd_file *fp)
 {
+	if (!HAS_FILE_ID(fp->volatile_id))
+		return;
+
 	write_lock(&fp->f_ci->m_lock);
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
 
 	down_write(&ft->lock);
-	idr_remove(&ft->idr, fp->volatile_id);
+	idr_remove(ft->idr, fp->volatile_id);
 	up_write(&ft->lock);
 }
 
@@ -363,7 +374,7 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	struct cifsd_file *fp;
 
 	down_read(&ft->lock);
-	fp = idr_find(&ft->idr, id);
+	fp = idr_find(ft->idr, id);
 	if (fp && fp->f_ci) {
 		read_lock(&fp->f_ci->m_lock);
 		unclaimed = list_empty(&fp->node);
@@ -450,7 +461,7 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 	unsigned int		id;
 
 	down_read(&global_ft.lock);
-	idr_for_each_entry(&global_ft.idr, fp, id) {
+	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
 			    SMB2_CREATE_GUID_SIZE))
@@ -467,7 +478,7 @@ struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
 	unsigned int		id;
 
 	down_read(&global_ft.lock);
-	idr_for_each_entry(&global_ft.idr, fp, id) {
+	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->create_guid,
 			    cguid,
 			    SMB2_CREATE_GUID_SIZE))
@@ -485,7 +496,7 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 	unsigned int		id;
 
 	down_read(&work->sess->file_table.lock);
-	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
+	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
@@ -531,9 +542,9 @@ static void __open_id(struct cifsd_file_table *ft,
 
 	down_write(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	ret = idr_alloc_u32(&ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
+	ret = idr_alloc_u32(ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
 #else
-	ret = idr_alloc(&ft->idr, fp, 0, INT_MAX, GFP_KERNEL);
+	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_KERNEL);
 	if (ret >= 0) {
 		id = ret;
 		ret = 0;
@@ -630,7 +641,7 @@ __close_file_table_ids(struct cifsd_file_table *ft,
 	struct cifsd_file		*fp;
 	int				num = 0;
 
-	idr_for_each_entry(&ft->idr, fp, id) {
+	idr_for_each_entry(ft->idr, fp, id) {
 		if (skip(tcon, fp))
 			continue;
 
@@ -649,13 +660,13 @@ static bool tree_conn_fd_check(struct cifsd_tree_connect *tcon,
 static bool session_fd_check(struct cifsd_tree_connect *tcon,
 			     struct cifsd_file *fp)
 {
-	if (is_reconnectable(fp))
-		return true;
+	if (!is_reconnectable(fp))
+		return false;
 
 	fp->conn = NULL;
 	fp->tcon = NULL;
 	fp->volatile_id = CIFSD_NO_FID;
-	return false;
+	return true;
 }
 
 void cifsd_close_tree_conn_fds(struct cifsd_work *work)
@@ -680,9 +691,9 @@ void cifsd_close_session_fds(struct cifsd_work *work)
 		work->conn->stats.open_files_count = 0;
 }
 
-void cifsd_init_global_file_table(void)
+int cifsd_init_global_file_table(void)
 {
-	cifsd_init_file_table(&global_ft);
+	return cifsd_init_file_table(&global_ft);
 }
 
 void cifsd_free_global_file_table(void)
@@ -690,8 +701,10 @@ void cifsd_free_global_file_table(void)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	idr_for_each_entry(&global_ft.idr, fp, id)
+	idr_for_each_entry(global_ft.idr, fp, id) {
+		__cifsd_remove_durable_fd(fp);
 		cifsd_free_file_struct(fp);
+	}
 
 	cifsd_destroy_file_table(&global_ft);
 }
@@ -770,7 +783,7 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	int			ret;
 
 	down_read(&work->sess->file_table.lock);
-	idr_for_each_entry(&work->sess->file_table.idr, fp, id) {
+	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		ret = cifsd_vfs_fsync(work, fp->volatile_id, CIFSD_NO_FID);
 		if (ret)
 			break;
@@ -781,13 +794,22 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 
 int cifsd_init_file_table(struct cifsd_file_table *ft)
 {
-	idr_init(&ft->idr);
+	ft->idr = cifsd_alloc(sizeof(struct idr));
+	if (!ft->idr)
+		return -ENOMEM;
+
+	idr_init(ft->idr);
 	init_rwsem(&ft->lock);
 	return 0;
 }
 
 void cifsd_destroy_file_table(struct cifsd_file_table *ft)
 {
+	if (!ft->idr)
+		return;
+
 	__close_file_table_ids(ft, NULL, session_fd_check);
-	idr_destroy(&ft->idr);
+	idr_destroy(ft->idr);
+	cifsd_free(ft->idr);
+	ft->idr = NULL;
 }

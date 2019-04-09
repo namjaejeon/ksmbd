@@ -559,8 +559,13 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	cifsd_init_global_file_table();
-	cifsd_inode_hash_init();
+	ret = cifsd_init_global_file_table();
+	if (ret)
+		goto error;
+
+	ret = cifsd_inode_hash_init();
+	if (ret)
+		goto error;
 
 	ret = init_cifsd_idmap();
 	if (ret)
@@ -578,6 +583,7 @@ error:
 static void __exit cifsd_server_exit(void)
 {
 	cifsd_server_shutdown();
+	cifsd_release_inode_hash();
 }
 
 module_param(cifsd_debugging, int, 0644);

@@ -126,7 +126,7 @@ struct cifsd_file {
 
 struct cifsd_file_table {
 	struct rw_semaphore	lock;
-	struct idr		idr;
+	struct idr		*idr;
 };
 
 static inline bool HAS_FILE_ID(unsigned long long req)
@@ -174,7 +174,7 @@ int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode);
 int cifsd_reopen_durable_fd(struct cifsd_work *work,
 			    struct cifsd_file *fp);
 
-void cifsd_init_global_file_table(void);
+int cifsd_init_global_file_table(void);
 void cifsd_free_global_file_table(void);
 
 int cifsd_file_table_flush(struct cifsd_work *work);
@@ -183,7 +183,8 @@ int cifsd_file_table_flush(struct cifsd_work *work);
  * INODE hash
  */
 
-void __init cifsd_inode_hash_init(void);
+int __init cifsd_inode_hash_init(void);
+void __exit cifsd_release_inode_hash(void);
 
 enum CIFSD_INODE_STATUS {
 	CIFSD_INODE_STATUS_OK,
