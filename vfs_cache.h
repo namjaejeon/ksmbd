@@ -125,7 +125,7 @@ struct cifsd_file {
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 
 struct cifsd_file_table {
-	struct rw_semaphore	lock;
+	rwlock_t		lock;
 	struct idr		*idr;
 };
 
@@ -178,6 +178,8 @@ int cifsd_init_global_file_table(void);
 void cifsd_free_global_file_table(void);
 
 int cifsd_file_table_flush(struct cifsd_work *work);
+
+void cifsd_set_fd_limit(unsigned long limit);
 
 /*
  * INODE hash

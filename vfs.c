@@ -1422,8 +1422,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	cifsd_vfs_set_fadvise(filp, option);
 
 	fp = cifsd_open_fd(work, filp);
-	if (!fp) {
-		err = -ENOMEM;
+	if (IS_ERR(fp)) {
+		err = PTR_ERR(fp);
 		cifsd_err("id insert failed\n");
 		goto err_out;
 	}
@@ -1438,7 +1438,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	return fp;
 
 err_out:
-	cifsd_close_fd(work, fp->volatile_id);
+	if (!IS_ERR(fp))
+		cifsd_close_fd(work, fp->volatile_id);
 	fput(filp);
 
 	if (err) {
