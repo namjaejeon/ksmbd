@@ -40,7 +40,12 @@ void cifsd_set_fd_limit(unsigned long limit)
 
 static bool fd_limit_depleted(void)
 {
-	return atomic_long_dec_if_positive(&fd_limit) < 0;
+	long v = atomic_long_dec_return(&fd_limit);
+
+	if (v >= 0)
+		return false;
+	atomic_long_inc(&fd_limit);
+	return true;
 }
 
 static void fd_limit_close(void)
