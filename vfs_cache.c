@@ -561,22 +561,22 @@ static void __open_id_set(struct cifsd_file *fp, unsigned int id, int type)
 		fp->persistent_id = id;
 }
 
-static void __open_id(struct cifsd_file_table *ft,
-		      struct cifsd_file *fp,
-		      int type)
+static int __open_id(struct cifsd_file_table *ft,
+		     struct cifsd_file *fp,
+		     int type)
 {
 	unsigned int		id = 0;
 	int			ret;
 
-	if (fd_limit_depleted()) {
+	if (type == OPEN_ID_TYPE_VOLATILE_ID && fd_limit_depleted()) {
 		__open_id_set(fp, CIFSD_NO_FID, type);
-		return;
+		return -EMFILE;
 	}
 
 	idr_preload(GFP_KERNEL);
 	write_lock(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	ret = idr_alloc_u32(ft->idr, fp, &id, UINT_MAX, GFP_NOWAIT);
+	ret = idr_alloc_u32(ft->idr, fp, &id, INT_MAX, GFP_NOWAIT);
 #else
 	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
 	if (ret >= 0) {
@@ -592,6 +592,7 @@ static void __open_id(struct cifsd_file_table *ft,
 	__open_id_set(fp, id, type);
 	write_unlock(&ft->lock);
 	idr_preload_end();
+	return ret;
 }
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
@@ -604,11 +605,12 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 				 struct file *filp)
 {
 	struct cifsd_file	*fp;
+	int ret;
 
 	fp = cifsd_alloc_file_struct();
 	if (!fp) {
 		cifsd_err("Failed to allocate memory\n");
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	INIT_LIST_HEAD(&fp->blocked_works);
@@ -624,14 +626,14 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 
 	if (!fp->f_ci) {
 		cifsd_free_file_struct(fp);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
-	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
-	if (!HAS_FILE_ID(fp->volatile_id)) {
+	ret = __open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
+	if (ret) {
 		cifsd_inode_put(fp->f_ci);
 		cifsd_free_file_struct(fp);
-		return NULL;
+		return ERR_PTR(ret);
 	}
 
 	write_lock(&fp->f_ci->m_lock);

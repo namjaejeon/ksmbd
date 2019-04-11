@@ -2523,8 +2523,9 @@ int smb2_open(struct cifsd_work *work)
 
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
-	if (!fp) {
-		rc = -ENOMEM;
+	if (IS_ERR(fp)) {
+		rc = PTR_ERR(fp);
+		fp = NULL;
 		goto err_out;
 	}
 
