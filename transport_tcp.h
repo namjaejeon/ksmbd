@@ -193,4 +193,32 @@ static inline void cifsd_tcp_set_exiting(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_EXITING;
 }
+
+static inline void cifsd_tcp_cork(struct socket *sock)
+{
+	int val = 1;
+	(void) kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+			(char*)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_uncork(struct socket *sock)
+{
+	int val = 0;
+	(void) kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+			(char*)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_nodelay(struct socket *sock)
+{
+	int val = 1;
+	(void) kernel_setsockopt(sock, SOL_TCP, TCP_NODELAY,
+			(char*)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_reuseaddr(struct socket *sock)
+{
+	int val = 1;
+	(void) kernel_setsockopt(sock, SOL_TCP, SO_REUSEADDR,
+			(char*)&val, sizeof(val));
+}
 #endif /* __CIFSD_TRANSPORT_TCP_H__ */

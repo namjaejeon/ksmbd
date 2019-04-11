@@ -504,6 +504,8 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		iov[iov_idx] = (struct kvec) { AUX_PAYLOAD(work),
 			AUX_PAYLOAD_SIZE(work) };
 		len += iov[iov_idx++].iov_len;
+
+		cifsd_tcp_cork(conn->sock);
 	} else {
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
@@ -515,6 +517,8 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
+	if (HAS_AUX_PAYLOAD(work))
+		cifsd_tcp_uncork(conn->sock);
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
 		return sent;
@@ -584,7 +588,6 @@ int cifsd_tcp_init(void)
 {
 	int ret;
 	struct sockaddr_in sin;
-	int opt = 1;
 	struct interface *iface;
 	struct list_head *tmp;
 
@@ -604,19 +607,8 @@ int cifsd_tcp_init(void)
 	sin.sin_family = PF_INET;
 	sin.sin_port = htons(server_conf.tcp_port);
 
-	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
-				(char *)&opt, sizeof(opt));
-	if (ret < 0) {
-		cifsd_err("Failed to set socket options: %d\n", ret);
-		goto out_error;
-	}
-
-	ret = kernel_setsockopt(cifsd_socket, SOL_TCP, TCP_NODELAY,
-				(char *)&opt, sizeof(opt));
-	if (ret < 0) {
-		cifsd_err("Failed to set TCP_NODELAY: %d\n", ret);
-		goto out_error;
-	}
+	cifsd_tcp_nodelay(cifsd_socket);
+	cifsd_tcp_reuseaddr(cifsd_socket);
 
 	list_for_each(tmp, &server_conf.iface_list) {
 		iface = list_entry(tmp,  struct interface, entry);
