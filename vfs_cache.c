@@ -4,6 +4,8 @@
  * Copyright (C) 2019 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/fs.h>
+
 /* @FIXME */
 #include "glob.h"
 #include "vfs_cache.h"
@@ -28,6 +30,23 @@ static struct hlist_head *inode_hashtable __read_mostly;
 static DEFINE_RWLOCK(inode_hash_lock);
 
 static struct cifsd_file_table global_ft;
+static atomic_long_t fd_limit;
+
+void cifsd_set_fd_limit(unsigned long limit)
+{
+	limit = min(limit, get_max_files());
+	atomic_long_set(&fd_limit, limit);
+}
+
+static bool fd_limit_depleted(void)
+{
+	return atomic_long_dec_if_positive(&fd_limit) < 0;
+}
+
+static void fd_limit_close(void)
+{
+	atomic_long_inc(&fd_limit);
+}
 
 /*
  * INODE hash
@@ -346,6 +365,7 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	struct file *filp;
 	struct cifsd_work *cancel_work, *ctmp;
 
+	fd_limit_close();
 	__cifsd_remove_durable_fd(fp);
 	__cifsd_remove_fd(ft, fp);
 
@@ -533,12 +553,25 @@ struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode)
 #define OPEN_ID_TYPE_VOLATILE_ID	(0)
 #define OPEN_ID_TYPE_PERSISTENT_ID	(1)
 
+static void __open_id_set(struct cifsd_file *fp, unsigned int id, int type)
+{
+	if (type == OPEN_ID_TYPE_VOLATILE_ID)
+		fp->volatile_id = id;
+	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
+		fp->persistent_id = id;
+}
+
 static void __open_id(struct cifsd_file_table *ft,
 		      struct cifsd_file *fp,
 		      int type)
 {
 	unsigned int		id = 0;
 	int			ret;
+
+	if (fd_limit_depleted()) {
+		__open_id_set(fp, CIFSD_NO_FID, type);
+		return;
+	}
 
 	idr_preload(GFP_KERNEL);
 	write_lock(&ft->lock);
@@ -551,13 +584,12 @@ static void __open_id(struct cifsd_file_table *ft,
 		ret = 0;
 	}
 #endif
-	if (ret)
+	if (ret) {
 		id = CIFSD_NO_FID;
+		fd_limit_close();
+	}
 
-	if (type == OPEN_ID_TYPE_VOLATILE_ID)
-		fp->volatile_id = id;
-	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
-		fp->persistent_id = id;
+	__open_id_set(fp, id, type);
 	write_unlock(&ft->lock);
 	idr_preload_end();
 }

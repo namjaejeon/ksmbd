@@ -179,6 +179,8 @@ void cifsd_free_global_file_table(void);
 
 int cifsd_file_table_flush(struct cifsd_work *work);
 
+void cifsd_set_fd_limit(unsigned long limit);
+
 /*
  * INODE hash
  */
