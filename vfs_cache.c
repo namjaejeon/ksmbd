@@ -4,6 +4,8 @@
  * Copyright (C) 2019 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/fs.h>
+
 /* @FIXME */
 #include "glob.h"
 #include "vfs_cache.h"
@@ -28,6 +30,28 @@ static struct hlist_head *inode_hashtable __read_mostly;
 static DEFINE_RWLOCK(inode_hash_lock);
 
 static struct cifsd_file_table global_ft;
+static atomic_long_t fd_limit;
+
+void cifsd_set_fd_limit(unsigned long limit)
+{
+	limit = min(limit, get_max_files());
+	atomic_long_set(&fd_limit, limit);
+}
+
+static bool fd_limit_depleted(void)
+{
+	long v = atomic_long_dec_return(&fd_limit);
+
+	if (v >= 0)
+		return false;
+	atomic_long_inc(&fd_limit);
+	return true;
+}
+
+static void fd_limit_close(void)
+{
+	atomic_long_inc(&fd_limit);
+}
 
 /*
  * INODE hash
@@ -318,9 +342,9 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 	if (!HAS_FILE_ID(fp->persistent_id))
 		return;
 
-	down_write(&global_ft.lock);
+	write_lock(&global_ft.lock);
 	idr_remove(global_ft.idr, fp->persistent_id);
-	up_write(&global_ft.lock);
+	write_unlock(&global_ft.lock);
 }
 
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
@@ -333,9 +357,9 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
 
-	down_write(&ft->lock);
+	write_lock(&ft->lock);
 	idr_remove(ft->idr, fp->volatile_id);
-	up_write(&ft->lock);
+	write_unlock(&ft->lock);
 }
 
 /* copy-pasted from old fh */
@@ -346,6 +370,7 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	struct file *filp;
 	struct cifsd_work *cancel_work, *ctmp;
 
+	fd_limit_close();
 	__cifsd_remove_durable_fd(fp);
 	__cifsd_remove_fd(ft, fp);
 
@@ -373,14 +398,14 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	bool unclaimed = true;
 	struct cifsd_file *fp;
 
-	down_read(&ft->lock);
+	read_lock(&ft->lock);
 	fp = idr_find(ft->idr, id);
 	if (fp && fp->f_ci) {
 		read_lock(&fp->f_ci->m_lock);
 		unclaimed = list_empty(&fp->node);
 		read_unlock(&fp->f_ci->m_lock);
 	}
-	up_read(&ft->lock);
+	read_unlock(&ft->lock);
 
 	if (unclaimed)
 		return NULL;
@@ -460,14 +485,14 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&global_ft.lock);
+	read_lock(&global_ft.lock);
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	up_read(&global_ft.lock);
+	read_unlock(&global_ft.lock);
 
 	return fp;
 }
@@ -477,14 +502,14 @@ struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&global_ft.lock);
+	read_lock(&global_ft.lock);
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->create_guid,
 			    cguid,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	up_read(&global_ft.lock);
+	read_unlock(&global_ft.lock);
 
 	return fp;
 }
@@ -495,12 +520,12 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&work->sess->file_table.lock);
+	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
-	up_read(&work->sess->file_table.lock);
+	read_unlock(&work->sess->file_table.lock);
 
 	return fp;
 }
@@ -533,31 +558,46 @@ struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode)
 #define OPEN_ID_TYPE_VOLATILE_ID	(0)
 #define OPEN_ID_TYPE_PERSISTENT_ID	(1)
 
-static void __open_id(struct cifsd_file_table *ft,
-		      struct cifsd_file *fp,
-		      int type)
+static void __open_id_set(struct cifsd_file *fp, unsigned int id, int type)
+{
+	if (type == OPEN_ID_TYPE_VOLATILE_ID)
+		fp->volatile_id = id;
+	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
+		fp->persistent_id = id;
+}
+
+static int __open_id(struct cifsd_file_table *ft,
+		     struct cifsd_file *fp,
+		     int type)
 {
 	unsigned int		id = 0;
 	int			ret;
 
-	down_write(&ft->lock);
+	if (type == OPEN_ID_TYPE_VOLATILE_ID && fd_limit_depleted()) {
+		__open_id_set(fp, CIFSD_NO_FID, type);
+		return -EMFILE;
+	}
+
+	idr_preload(GFP_KERNEL);
+	write_lock(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	ret = idr_alloc_u32(ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
+	ret = idr_alloc_u32(ft->idr, fp, &id, INT_MAX, GFP_NOWAIT);
 #else
-	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_KERNEL);
+	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
 	if (ret >= 0) {
 		id = ret;
 		ret = 0;
 	}
 #endif
-	if (ret)
+	if (ret) {
 		id = CIFSD_NO_FID;
+		fd_limit_close();
+	}
 
-	if (type == OPEN_ID_TYPE_VOLATILE_ID)
-		fp->volatile_id = id;
-	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
-		fp->persistent_id = id;
-	up_write(&ft->lock);
+	__open_id_set(fp, id, type);
+	write_unlock(&ft->lock);
+	idr_preload_end();
+	return ret;
 }
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
@@ -570,11 +610,12 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 				 struct file *filp)
 {
 	struct cifsd_file	*fp;
+	int ret;
 
 	fp = cifsd_alloc_file_struct();
 	if (!fp) {
 		cifsd_err("Failed to allocate memory\n");
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
 	INIT_LIST_HEAD(&fp->blocked_works);
@@ -590,14 +631,14 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 
 	if (!fp->f_ci) {
 		cifsd_free_file_struct(fp);
-		return NULL;
+		return ERR_PTR(-ENOMEM);
 	}
 
-	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
-	if (!HAS_FILE_ID(fp->volatile_id)) {
+	ret = __open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
+	if (ret) {
 		cifsd_inode_put(fp->f_ci);
 		cifsd_free_file_struct(fp);
-		return NULL;
+		return ERR_PTR(ret);
 	}
 
 	write_lock(&fp->f_ci->m_lock);
@@ -782,13 +823,13 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	unsigned int		id;
 	int			ret;
 
-	down_read(&work->sess->file_table.lock);
+	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		ret = cifsd_vfs_fsync(work, fp->volatile_id, CIFSD_NO_FID);
 		if (ret)
 			break;
 	}
-	up_read(&work->sess->file_table.lock);
+	read_unlock(&work->sess->file_table.lock);
 	return ret;
 }
 
@@ -799,7 +840,7 @@ int cifsd_init_file_table(struct cifsd_file_table *ft)
 		return -ENOMEM;
 
 	idr_init(ft->idr);
-	init_rwsem(&ft->lock);
+	rwlock_init(&ft->lock);
 	return 0;
 }
 

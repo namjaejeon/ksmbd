@@ -258,6 +258,7 @@ int smb_check_user_session(struct cifsd_work *work)
 int smb_get_cifsd_tcon(struct cifsd_work *work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)REQUEST_BUF(work);
+	int tree_id;
 
 	if (list_empty(&work->sess->tree_conn_list)) {
 		cifsd_debug("NO tree connected\n");
@@ -270,10 +271,10 @@ int smb_get_cifsd_tcon(struct cifsd_work *work)
 		return 0;
 	}
 
-	work->tcon = cifsd_tree_conn_lookup(work->sess,
-					    le16_to_cpu(req_hdr->Tid));
+	tree_id = le16_to_cpu(req_hdr->Tid);
+	work->tcon = cifsd_tree_conn_lookup(work->sess, tree_id);
 	if (!work->tcon) {
-		cifsd_err("Invalid tid %d\n", req_hdr->Tid);
+		cifsd_err("Invalid tid %d\n", tree_id);
 		return -1;
 	}
 
@@ -455,7 +456,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 
 	status = cifsd_tree_conn_connect(sess, name);
 	if (status.ret == CIFSD_TREE_CONN_STATUS_OK)
-		rsp_hdr->Tid = status.tree_conn->id;
+		rsp_hdr->Tid = cpu_to_le16(status.tree_conn->id);
 	else
 		goto out_err;
 
@@ -4429,7 +4430,8 @@ static int query_fs_info(struct cifsd_work *work)
 
 	info_level = req_params->InformationLevel;
 
-	tree_conn = cifsd_tree_conn_lookup(work->sess, req_hdr->Tid);
+	tree_conn = cifsd_tree_conn_lookup(work->sess,
+					   le16_to_cpu(req_hdr->Tid));
 	if (!tree_conn)
 		return -ENOENT;
 	share = tree_conn->share_conf;

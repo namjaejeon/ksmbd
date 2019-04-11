@@ -82,6 +82,7 @@ struct channel *lookup_chann_list(struct cifsd_session *sess)
 int smb2_get_cifsd_tcon(struct cifsd_work *work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	int tree_id;
 
 	work->tcon = NULL;
 	if ((work->conn->ops->get_cmd_val(work) == SMB2_TREE_CONNECT_HE) ||
@@ -96,10 +97,10 @@ int smb2_get_cifsd_tcon(struct cifsd_work *work)
 		return -1;
 	}
 
-	work->tcon = cifsd_tree_conn_lookup(work->sess,
-				le32_to_cpu(req_hdr->Id.SyncId.TreeId));
+	tree_id = le32_to_cpu(req_hdr->Id.SyncId.TreeId);
+	work->tcon = cifsd_tree_conn_lookup(work->sess, tree_id);
 	if (!work->tcon) {
-		cifsd_err("Invalid tid %d\n", req_hdr->Id.SyncId.TreeId);
+		cifsd_err("Invalid tid %d\n", tree_id);
 		return -1;
 	}
 
@@ -1455,7 +1456,7 @@ int smb2_tree_connect(struct cifsd_work *work)
 
 	status = cifsd_tree_conn_connect(sess, name);
 	if (status.ret == CIFSD_TREE_CONN_STATUS_OK)
-		rsp->hdr.Id.SyncId.TreeId = status.tree_conn->id;
+		rsp->hdr.Id.SyncId.TreeId = cpu_to_le32(status.tree_conn->id);
 	else
 		goto out_err1;
 
@@ -2522,8 +2523,9 @@ int smb2_open(struct cifsd_work *work)
 
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
-	if (!fp) {
-		rc = -ENOMEM;
+	if (IS_ERR(fp)) {
+		rc = PTR_ERR(fp);
+		fp = NULL;
 		goto err_out;
 	}
 
@@ -2656,8 +2658,9 @@ int smb2_open(struct cifsd_work *work)
 		}
 
 		rc = smb_grant_oplock(work, req_op_level,
-			fp->persistent_id, fp, req->hdr.Id.SyncId.TreeId,
-			lc, share_ret);
+				      fp->persistent_id, fp,
+				      le32_to_cpu(req->hdr.Id.SyncId.TreeId),
+				      lc, share_ret);
 		if (rc < 0)
 			goto err_out;
 	}
