@@ -480,7 +480,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
-	struct msghdr smb_msg = {};
+	struct msghdr smb_msg = {.msg_flags = MSG_DONTWAIT | MSG_NOSIGNAL};
 	size_t len = 0;
 	int sent;
 	struct kvec iov[3];
