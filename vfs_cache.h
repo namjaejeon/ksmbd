@@ -125,7 +125,7 @@ struct cifsd_file {
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 
 struct cifsd_file_table {
-	struct rw_semaphore	lock;
+	rwlock_t		lock;
 	struct idr		*idr;
 };
 

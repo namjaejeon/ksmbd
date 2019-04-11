@@ -318,9 +318,9 @@ static void __cifsd_remove_durable_fd(struct cifsd_file *fp)
 	if (!HAS_FILE_ID(fp->persistent_id))
 		return;
 
-	down_write(&global_ft.lock);
+	write_lock(&global_ft.lock);
 	idr_remove(global_ft.idr, fp->persistent_id);
-	up_write(&global_ft.lock);
+	write_unlock(&global_ft.lock);
 }
 
 static void __cifsd_remove_fd(struct cifsd_file_table *ft,
@@ -333,9 +333,9 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 	list_del_init(&fp->node);
 	write_unlock(&fp->f_ci->m_lock);
 
-	down_write(&ft->lock);
+	write_lock(&ft->lock);
 	idr_remove(ft->idr, fp->volatile_id);
-	up_write(&ft->lock);
+	write_unlock(&ft->lock);
 }
 
 /* copy-pasted from old fh */
@@ -373,14 +373,14 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	bool unclaimed = true;
 	struct cifsd_file *fp;
 
-	down_read(&ft->lock);
+	read_lock(&ft->lock);
 	fp = idr_find(ft->idr, id);
 	if (fp && fp->f_ci) {
 		read_lock(&fp->f_ci->m_lock);
 		unclaimed = list_empty(&fp->node);
 		read_unlock(&fp->f_ci->m_lock);
 	}
-	up_read(&ft->lock);
+	read_unlock(&ft->lock);
 
 	if (unclaimed)
 		return NULL;
@@ -460,14 +460,14 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&global_ft.lock);
+	read_lock(&global_ft.lock);
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	up_read(&global_ft.lock);
+	read_unlock(&global_ft.lock);
 
 	return fp;
 }
@@ -477,14 +477,14 @@ struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&global_ft.lock);
+	read_lock(&global_ft.lock);
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->create_guid,
 			    cguid,
 			    SMB2_CREATE_GUID_SIZE))
 			break;
 	}
-	up_read(&global_ft.lock);
+	read_unlock(&global_ft.lock);
 
 	return fp;
 }
@@ -495,12 +495,12 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
 
-	down_read(&work->sess->file_table.lock);
+	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		if (!strcmp(fp->filename, filename))
 			break;
 	}
-	up_read(&work->sess->file_table.lock);
+	read_unlock(&work->sess->file_table.lock);
 
 	return fp;
 }
@@ -540,11 +540,12 @@ static void __open_id(struct cifsd_file_table *ft,
 	unsigned int		id = 0;
 	int			ret;
 
-	down_write(&ft->lock);
+	idr_preload(GFP_KERNEL);
+	write_lock(&ft->lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	ret = idr_alloc_u32(ft->idr, fp, &id, UINT_MAX, GFP_KERNEL);
+	ret = idr_alloc_u32(ft->idr, fp, &id, UINT_MAX, GFP_NOWAIT);
 #else
-	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_KERNEL);
+	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
 	if (ret >= 0) {
 		id = ret;
 		ret = 0;
@@ -557,7 +558,8 @@ static void __open_id(struct cifsd_file_table *ft,
 		fp->volatile_id = id;
 	if (type == OPEN_ID_TYPE_PERSISTENT_ID)
 		fp->persistent_id = id;
-	up_write(&ft->lock);
+	write_unlock(&ft->lock);
+	idr_preload_end();
 }
 
 unsigned int cifsd_open_durable_fd(struct cifsd_file *fp)
@@ -782,13 +784,13 @@ int cifsd_file_table_flush(struct cifsd_work *work)
 	unsigned int		id;
 	int			ret;
 
-	down_read(&work->sess->file_table.lock);
+	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
 		ret = cifsd_vfs_fsync(work, fp->volatile_id, CIFSD_NO_FID);
 		if (ret)
 			break;
 	}
-	up_read(&work->sess->file_table.lock);
+	read_unlock(&work->sess->file_table.lock);
 	return ret;
 }
 
@@ -799,7 +801,7 @@ int cifsd_init_file_table(struct cifsd_file_table *ft)
 		return -ENOMEM;
 
 	idr_init(ft->idr);
-	init_rwsem(&ft->lock);
+	rwlock_init(&ft->lock);
 	return 0;
 }
 
