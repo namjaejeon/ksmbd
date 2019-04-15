@@ -339,7 +339,7 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 	rcv_hdr = (struct smb2_hdr *)(((char *)REQUEST_BUF(work) +
 					work->next_smb2_rcv_hdr_off));
 
-	if (!(le32_to_cpu(rcv_hdr->Flags) & SMB2_FLAGS_RELATED_OPERATIONS)) {
+	if (!(rcv_hdr->Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("related flag should be set\n");
 		work->compound_fid = CIFSD_NO_FID;
 		work->compound_pfid = CIFSD_NO_FID;
@@ -504,7 +504,7 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	struct cifsd_tcp_conn *conn = work->conn;
 	unsigned int status = le32_to_cpu(hdr->Status);
-	unsigned int flags = le32_to_cpu(hdr->Flags);
+	unsigned int flags = hdr->Flags;
 	unsigned short credits_requested = le16_to_cpu(hdr->CreditRequest);
 	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
@@ -2198,8 +2198,7 @@ int smb2_open(struct cifsd_work *work)
 
 	if (le32_to_cpu(req->hdr.NextCommand) &&
 			!work->next_smb2_rcv_hdr_off &&
-			(le32_to_cpu(req->hdr.Flags) &
-			 SMB2_FLAGS_RELATED_OPERATIONS)) {
+			(req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("invalid flag in chained command\n");
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		smb2_set_err_rsp(work);
@@ -2895,7 +2894,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			ffdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(ffdinfo->FileName, utfname, name_len);
-		ffdinfo->NextEntryOffset = next_entry_offset;
+		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
@@ -2918,7 +2917,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			fbdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
-		fbdinfo->NextEntryOffset = next_entry_offset;
+		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	case FILE_DIRECTORY_INFORMATION:
@@ -2939,7 +2938,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			fdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fdinfo->FileName, utfname, name_len);
-		fdinfo->NextEntryOffset = next_entry_offset;
+		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	case FILE_NAMES_INFORMATION:
@@ -2958,7 +2957,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
-		fninfo->NextEntryOffset = next_entry_offset;
+		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
@@ -2982,7 +2981,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			dinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(dinfo->FileName, utfname, name_len);
-		dinfo->NextEntryOffset = next_entry_offset;
+		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
@@ -3008,7 +3007,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 			fibdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fibdinfo->FileName, utfname, name_len);
-		fibdinfo->NextEntryOffset = next_entry_offset;
+		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	default:
@@ -3190,10 +3189,8 @@ int smb2_query_dir(struct cifsd_work *work)
 	 * Hide dot files if share flags is set to
 	 * CIFSD_SHARE_FLAG_HIDE_DOT_FILES
 	 */
-	if (test_share_config_flag(share,
-				CIFSD_SHARE_FLAG_HIDE_DOT_FILES)) {
+	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_HIDE_DOT_FILES))
 		d_info.hide_dot_file = true;
-	}
 
 	d_info.name = NULL;
 	while (d_info.out_buf_len > 0) {
@@ -4441,8 +4438,7 @@ int smb2_close(struct cifsd_work *work)
 	}
 
 	sess_id = le64_to_cpu(req->hdr.SessionId);
-	if (le32_to_cpu(req->hdr.Flags) &
-			SMB2_FLAGS_RELATED_OPERATIONS)
+	if (req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)
 		sess_id = work->compound_sid;
 
 	work->compound_sid = 0;
@@ -4450,8 +4446,7 @@ int smb2_close(struct cifsd_work *work)
 		work->compound_sid = sess_id;
 	else {
 		rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
-		if (le32_to_cpu(req->hdr.Flags) &
-				SMB2_FLAGS_RELATED_OPERATIONS)
+		if (req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		err = -EBADF;
 		goto out;
