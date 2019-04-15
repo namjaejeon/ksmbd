@@ -75,7 +75,7 @@
 
 /* Should be zero */
 #define FILE_OPEN_FOR_FREE_SPACE_QUERY_LE	cpu_to_le32(0x00800000)
-#define CREATE_OPTIONS_MASK			0x00FFFFFF
+#define CREATE_OPTIONS_MASK			cpu_to_le32(0x00FFFFFF)
 #define CREATE_OPTION_READONLY			0x10000000
 /* system. NB not sent over wire */
 #define CREATE_OPTION_SPECIAL			0x20000000
