@@ -314,7 +314,7 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 		work->compound_pfid =
 			le64_to_cpu(((struct smb2_create_rsp *)rsp)->
 				PersistentFileId);
-		work->compound_sid = rsp->SessionId;
+		work->compound_sid = le64_to_cpu(rsp->SessionId);
 	}
 
 	len = get_rfc1002_length(RESPONSE_BUF(work)) -
