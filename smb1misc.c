@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -44,7 +44,7 @@ static int smb1_req_struct_size(struct smb_hdr *hdr)
 {
 	int wc = hdr->WordCount;
 
-	switch (le16_to_cpu(hdr->Command)) {
+	switch (hdr->Command) {
 	case SMB_COM_CREATE_DIRECTORY:
 	case SMB_COM_DELETE_DIRECTORY:
 	case SMB_COM_QUERY_INFORMATION:

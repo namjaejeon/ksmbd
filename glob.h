@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -36,7 +36,7 @@
 #include <uapi/linux/xattr.h>
 #include <linux/hashtable.h>
 #include "unicode.h"
-#include "fh.h"
+#include "vfs_cache.h"
 #include <crypto/hash.h>
 #include "smberr.h"
 
@@ -48,9 +48,6 @@ extern bool oplocks_enable;
 extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
-extern unsigned int alloc_roundup_size;
-
-extern struct list_head global_lock_list;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
@@ -155,9 +152,9 @@ struct cifsd_work {
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
-	__u64				cur_local_fid;
-	__u64				cur_local_pfid;
-	__u64				cur_local_sess_id;
+	unsigned int			compound_fid;
+	unsigned int			compound_pfid;
+	unsigned int			compound_sid;
 
 	int				state;
 
@@ -180,7 +177,7 @@ struct cifsd_work {
 	struct work_struct		work;
 
 	/* cancel works */
-	uint64_t			async_id;
+	int				async_id;
 	void				**cancel_argv;
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;

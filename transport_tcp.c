@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -24,6 +24,38 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
 
 #define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
 #define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
+
+static inline void cifsd_tcp_cork(struct socket *sock)
+{
+	int val = 1;
+
+	kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+		(char *)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_uncork(struct socket *sock)
+{
+	int val = 0;
+
+	kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
+		(char *)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_nodelay(struct socket *sock)
+{
+	int val = 1;
+
+	kernel_setsockopt(sock, SOL_TCP, TCP_NODELAY,
+		(char *)&val, sizeof(val));
+}
+
+static inline void cifsd_tcp_reuseaddr(struct socket *sock)
+{
+	int val = 1;
+
+	kernel_setsockopt(sock, SOL_TCP, SO_REUSEADDR,
+		(char *)&val, sizeof(val));
+}
 
 static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 {
@@ -480,7 +512,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
-	struct msghdr smb_msg = {};
+	struct msghdr smb_msg = {.msg_flags = MSG_NOSIGNAL};
 	size_t len = 0;
 	int sent;
 	struct kvec iov[3];
@@ -504,6 +536,8 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		iov[iov_idx] = (struct kvec) { AUX_PAYLOAD(work),
 			AUX_PAYLOAD_SIZE(work) };
 		len += iov[iov_idx++].iov_len;
+
+		cifsd_tcp_cork(conn->sock);
 	} else {
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
@@ -515,6 +549,8 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
+	if (HAS_AUX_PAYLOAD(work))
+		cifsd_tcp_uncork(conn->sock);
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
 		return sent;
@@ -584,7 +620,6 @@ int cifsd_tcp_init(void)
 {
 	int ret;
 	struct sockaddr_in sin;
-	int opt = 1;
 	struct interface *iface;
 	struct list_head *tmp;
 
@@ -604,19 +639,8 @@ int cifsd_tcp_init(void)
 	sin.sin_family = PF_INET;
 	sin.sin_port = htons(server_conf.tcp_port);
 
-	ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET, SO_REUSEADDR,
-				(char *)&opt, sizeof(opt));
-	if (ret < 0) {
-		cifsd_err("Failed to set socket options: %d\n", ret);
-		goto out_error;
-	}
-
-	ret = kernel_setsockopt(cifsd_socket, SOL_TCP, TCP_NODELAY,
-				(char *)&opt, sizeof(opt));
-	if (ret < 0) {
-		cifsd_err("Failed to set TCP_NODELAY: %d\n", ret);
-		goto out_error;
-	}
+	cifsd_tcp_nodelay(cifsd_socket);
+	cifsd_tcp_reuseaddr(cifsd_socket);
 
 	list_for_each(tmp, &server_conf.iface_list) {
 		iface = list_entry(tmp,  struct interface, entry);

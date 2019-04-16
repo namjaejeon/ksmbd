@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -22,18 +22,6 @@
 #include "mgmt/user_session.h"
 
 int cifsd_debugging;
-
-/* @FIXME clean up this code */
-/*
- * keep MaxBufSize Default: 65536
- * CIFSMaxBufSize can have it in Range: 8192 to 130048(default 16384)
- */
-
-LIST_HEAD(global_lock_list);
-
-/* Default: allocation roundup size = 1048576, to disable set 0 in config */
-unsigned int alloc_roundup_size = 1048576;
-/* @FIXME end clean up */
 
 struct cifsd_server_config server_conf;
 
@@ -79,43 +67,48 @@ int cifsd_set_work_group(char *v)
 	return ___server_conf_set(SERVER_CONF_WORK_GROUP, v);
 }
 
-int cifsd_set_interfaces(char *v)
+static bool iface_exists(const char *ifname)
 {
-	int ret = 0;
-	char *tmp;
 	struct net_device *netdev;
-
-	INIT_LIST_HEAD(&server_conf.iface_list);
+	bool ret = false;
 
 	rtnl_lock();
-	while (v != NULL) {
-		tmp = strsep(&v, " ");
-		for_each_netdev(&init_net, netdev) {
-			if (match_pattern(netdev->name, tmp)) {
-				struct interface *iface;
-
-				iface = kmalloc(sizeof(struct interface),
-						GFP_KERNEL);
-				if (!iface) {
-					ret = -ENOMEM;
-					goto out;
-				}
-
-				iface->name = kstrdup(netdev->name, GFP_KERNEL);
-				if (!iface->name) {
-					kfree(iface);
-					ret = -ENOMEM;
-					goto out;
-				}
-				list_add(&iface->entry,
-					&server_conf.iface_list);
-			}
+	for_each_netdev(&init_net, netdev) {
+		if (match_pattern(netdev->name, ifname)) {
+			ret = true;
+			break;
 		}
 	}
-
-out:
 	rtnl_unlock();
 	return ret;
+}
+
+int cifsd_set_interfaces(char *v)
+{
+	char *tmp;
+
+	while (v != NULL) {
+		struct interface *iface;
+
+		tmp = strsep(&v, " ");
+		if (!iface_exists(tmp)) {
+			cifsd_err("Unknown interface name: %s\n", tmp);
+			continue;
+		}
+
+		iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
+		if (!iface)
+			return -ENOMEM;
+
+		iface->name = kstrdup(tmp, GFP_KERNEL);
+		if (!iface->name) {
+			kfree(iface);
+			return -ENOMEM;
+		}
+		list_add(&iface->entry, &server_conf.iface_list);
+	}
+
+	return 0;
 }
 
 char *cifsd_netbios_name(void)
@@ -388,6 +381,8 @@ static void server_conf_free(void)
 
 static int server_conf_init(void)
 {
+	INIT_LIST_HEAD(&server_conf.iface_list);
+
 	server_conf.state = SERVER_STATE_STARTING_UP;
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
@@ -535,7 +530,7 @@ static int cifsd_server_shutdown(void)
 	cifsd_tcp_destroy();
 	cifsd_free_session_table();
 
-	destroy_global_fidtable();
+	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
 	exit_cifsd_idmap();
@@ -571,11 +566,13 @@ static int __init cifsd_server_init(void)
 	if (ret)
 		goto error;
 
-	ret = init_global_fidtable();
+	ret = cifsd_init_global_file_table();
 	if (ret)
 		goto error;
 
-	cifsd_inode_hash_init();
+	ret = cifsd_inode_hash_init();
+	if (ret)
+		goto error;
 
 	ret = init_cifsd_idmap();
 	if (ret)
@@ -593,12 +590,13 @@ error:
 static void __exit cifsd_server_exit(void)
 {
 	cifsd_server_shutdown();
+	cifsd_release_inode_hash();
 }
 
 module_param(cifsd_debugging, int, 0644);
 MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 
-MODULE_AUTHOR("Namjae Jeon <namjae.jeon@protocolfreedom.org>");
+MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 module_init(cifsd_server_init)
