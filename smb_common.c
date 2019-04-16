@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
- *   Copyright (C) 2018 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2018 Namjae Jeon <linkinjeon@gmail.com>
  */
 
 #include "smb_common.h"
@@ -22,6 +22,8 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
 #else
 #define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
 #endif
+
+LIST_HEAD(global_lock_list);
 
 struct smb_protocol {
 	int		index;
@@ -562,15 +564,16 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
-	spin_lock(&curr_fp->f_ci->m_lock);
+	read_lock(&curr_fp->f_ci->m_lock);
 	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
 		prev_fp = list_entry(cur, struct cifsd_file, node);
-		if (prev_fp->f_state == FP_FREEING)
-			continue;
 		if (file_inode(filp) != FP_INODE(prev_fp))
 			continue;
 
-		if (prev_fp->is_stream && curr_fp->is_stream)
+		if (filp == prev_fp->filp)
+			continue;
+
+		if (cifsd_stream_fd(prev_fp) && cifsd_stream_fd(curr_fp))
 			if (strcmp(prev_fp->stream.name, curr_fp->stream.name))
 				continue;
 
@@ -597,7 +600,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		 * Only check FILE_SHARE_DELETE if stream opened and
 		 * normal file opened.
 		 */
-		if (prev_fp->is_stream && !curr_fp->is_stream)
+		if (cifsd_stream_fd(prev_fp) && !cifsd_stream_fd(curr_fp))
 			continue;
 
 		if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
@@ -663,12 +666,12 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 			break;
 		}
 	}
-	spin_unlock(&curr_fp->f_ci->m_lock);
+	read_unlock(&curr_fp->f_ci->m_lock);
 
 	return rc;
 }
 
-bool is_asterik(char *p)
+bool is_asterisk(char *p)
 {
 	return p && !strcmp("*", p);
 }

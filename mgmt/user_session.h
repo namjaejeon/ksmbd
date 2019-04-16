@@ -17,6 +17,7 @@
 #define PREAUTH_HASHVALUE_SIZE		64
 
 struct cifsd_ida;
+struct cifsd_file_table;
 
 struct channel {
 	__u8			smb3signingkey[SMB3_SIGN_KEY_SIZE];
@@ -55,12 +56,12 @@ struct cifsd_session {
 	struct cifsd_ida		*tree_conn_ida;
 	struct list_head		rpc_handle_list;
 
-	struct fidtable_desc		fidtable;
 	__u8				smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3signingkey[SMB3_SIGN_KEY_SIZE];
 
 	struct list_head		sessions_entry;
+	struct cifsd_file_table		file_table;
 };
 
 static inline int test_session_flag(struct cifsd_session *sess, int bit)

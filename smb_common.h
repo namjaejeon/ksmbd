@@ -39,6 +39,8 @@
 #define SMB311_PROT_ID		0x0311
 #define BAD_PROT_ID		0xFFFF
 
+extern struct list_head global_lock_list;
+
 struct cifsd_work;
 struct cifsd_tcp_conn;
 struct cifsd_dir_info;
@@ -146,5 +148,5 @@ unsigned int cifsd_small_buffer_size(void);
 unsigned int cifsd_server_side_copy_max_chunk_count(void);
 unsigned int cifsd_server_side_copy_max_chunk_size(void);
 unsigned int cifsd_server_side_copy_max_total_size(void);
-bool is_asterik(char *p);
+bool is_asterisk(char *p);
 #endif /* __SMB_COMMON_H__ */

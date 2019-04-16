@@ -1,7 +1,7 @@
 obj-$(CONFIG_CIFS_SERVER) += cifsd.o
 
-cifsd-y :=	unicode.o encrypt.o auth.o fh.o vfs.o misc.o \
-		oplock.o netmisc.o \
+cifsd-y :=	unicode.o encrypt.o auth.o vfs.o vfs_cache.o \
+		misc.o oplock.o netmisc.o \
 		mgmt/cifsd_ida.o mgmt/user_config.o mgmt/share_config.o \
 		mgmt/tree_connect.o mgmt/user_session.o smb_common.o \
 		buffer_pool.o transport_tcp.o transport_ipc.o server.o

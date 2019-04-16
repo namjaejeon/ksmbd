@@ -21,8 +21,6 @@
 #define CIFSD_REQ_MAX_HASH_SZ		18
 #define CIFSD_REQ_MAX_SHARE_NAME	64
 
-#define CIFSD_STARTUP_CONFIG_INTERFACES(s)      ((s)->____payload)
-
 struct cifsd_heartbeat {
 	__u32	handle;
 } __align;
@@ -37,8 +35,11 @@ struct cifsd_startup_request {
 	__u16	tcp_port;
 	__u16	ipc_timeout;
 	__u32	deadtime;
-	__s8    ____payload[0];
+	__u32	file_max;
+	__s8	____payload[0];
 } __align;
+
+#define CIFSD_STARTUP_CONFIG_INTERFACES(s)	((s)->____payload)
 
 struct cifsd_shutdown_request {
 	__s32	reserved;

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <namjae.jeon@protocolfreedom.org>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -209,10 +209,10 @@ struct smb2_negotiate_req {
 
 struct preauth_integrity_info {
 	/* PreAuth integrity Hash ID */
-	int			Preauth_HashId;
+	__le16			Preauth_HashId;
 	/* PreAuth integrity Hash Value */
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	int			CipherId;
+	__le16			CipherId;
 };
 
 /* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
@@ -851,6 +851,15 @@ struct copychunk_ioctl_rsp {
 	__le32 ChunksWritten;
 	__le32 ChunkBytesWritten;
 	__le32 TotalBytesWritten;
+} __packed;
+
+struct file_sparse {
+	__u8	SetSparse;
+} __packed;
+
+struct file_zero_data_information {
+	__le64	FileOffset;
+	__le64	BeyondFinalZero;
 } __packed;
 
 /* Completion Filter flags for Notify */
