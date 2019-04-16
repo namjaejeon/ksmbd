@@ -705,7 +705,7 @@ static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
 }
 
 static void
-build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, int hash_id)
+build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
 {
 	pneg_ctxt->ContextType = SMB2_PREAUTH_INTEGRITY_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(38);
@@ -713,17 +713,18 @@ build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, int hash_id)
 	pneg_ctxt->Reserved = cpu_to_le32(0);
 	pneg_ctxt->SaltLength = cpu_to_le16(SMB311_SALT_SIZE);
 	get_random_bytes(pneg_ctxt->Salt, SMB311_SALT_SIZE);
-	pneg_ctxt->HashAlgorithms = cpu_to_le16(hash_id);
+	pneg_ctxt->HashAlgorithms = hash_id;
 }
 
 static void
-build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt, int cipher_id)
+build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
+	__le16 cipher_id)
 {
 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(4);
 	pneg_ctxt->Reserved = cpu_to_le32(0);
 	pneg_ctxt->CipherCount = cpu_to_le16(1);
-	pneg_ctxt->Ciphers[0] = cpu_to_le16(cipher_id);
+	pneg_ctxt->Ciphers[0] = cipher_id;
 }
 
 static void

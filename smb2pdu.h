@@ -209,10 +209,10 @@ struct smb2_negotiate_req {
 
 struct preauth_integrity_info {
 	/* PreAuth integrity Hash ID */
-	int			Preauth_HashId;
+	__le16			Preauth_HashId;
 	/* PreAuth integrity Hash Value */
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	int			CipherId;
+	__le16			CipherId;
 };
 
 /* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
