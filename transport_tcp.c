@@ -68,7 +68,7 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	if (kthread_should_stop())
 		return false;
 
-	if (conn->stats.open_files_count > 0)
+	if (atomic_read(&conn->stats.open_files_count) > 0)
 		return true;
 
 	/*
@@ -420,6 +420,16 @@ static int cifsd_tcp_run_kthread(void)
 	return 0;
 }
 
+static void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
+{
+	mutex_lock(&conn->srv_mutex);
+}
+
+static void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
+{
+	mutex_unlock(&conn->srv_mutex);
+}
+
 /**
  * cifsd_tcp_readv() - read data from socket in given iovec
  * @conn:     TCP server instance of connection
@@ -537,7 +547,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 			AUX_PAYLOAD_SIZE(work) };
 		len += iov[iov_idx++].iov_len;
 
-		cifsd_tcp_cork(conn->sock);
 	} else {
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
@@ -548,29 +557,22 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		len += iov[iov_idx++].iov_len;
 	}
 
+	cifsd_tcp_conn_lock(conn);
+	if (HAS_AUX_PAYLOAD(work))
+		cifsd_tcp_cork(conn->sock);
+
 	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
+
 	if (HAS_AUX_PAYLOAD(work))
 		cifsd_tcp_uncork(conn->sock);
+	cifsd_tcp_conn_unlock(conn);
+
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
 		return sent;
 	}
 
 	return 0;
-}
-
-void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
-{
-	mutex_lock(&conn->srv_mutex);
-	atomic_inc(&conn->req_running);
-}
-
-void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
-{
-	atomic_dec(&conn->req_running);
-	mutex_unlock(&conn->srv_mutex);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 }
 
 void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
@@ -745,6 +747,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	}
 
 	if (requests_queue) {
+		atomic_inc(&conn->req_running);
 		spin_lock(&conn->request_lock);
 		list_add_tail(&work->request_entry, requests_queue);
 		work->on_request_list = 1;
@@ -760,6 +763,7 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	if (!work->on_request_list)
 		return 0;
 
+	atomic_dec(&conn->req_running);
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
@@ -767,6 +771,9 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 		ret = 0;
 	}
 	spin_unlock(&conn->request_lock);
+
+	if (waitqueue_active(&conn->req_running_q))
+		wake_up_all(&conn->req_running_q);
 	return ret;
 }
 
