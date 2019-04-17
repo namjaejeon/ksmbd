@@ -68,7 +68,7 @@ static bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 	if (kthread_should_stop())
 		return false;
 
-	if (conn->stats.open_files_count > 0)
+	if (atomic_read(&conn->stats.open_files_count) > 0)
 		return true;
 
 	/*

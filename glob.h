@@ -99,8 +99,8 @@ extern bool multi_channel_enable;
 #define DIR_STREAM	2
 
 struct cifsd_stats {
-	int open_files_count;
-	int request_served;
+	atomic_t open_files_count;
+	atomic64_t request_served;
 };
 
 enum asyncEnum {

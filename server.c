@@ -292,7 +292,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	conn->stats.request_served++;
+	atomic64_inc(&conn->stats.request_served);
 
 	__handle_cifsd_work(work, conn);
 

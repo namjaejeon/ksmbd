@@ -424,6 +424,7 @@ int cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 		return -EINVAL;
 
 	__cifsd_close_fd(&work->sess->file_table, fp, id);
+	atomic_dec(&work->conn->stats.open_files_count);
 	return 0;
 }
 
@@ -645,6 +646,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 	list_add(&fp->node, &fp->f_ci->m_fp_list);
 	write_unlock(&fp->f_ci->m_lock);
 
+	atomic_inc(&work->conn->stats.open_files_count);
 	return fp;
 }
 
@@ -716,9 +718,7 @@ void cifsd_close_tree_conn_fds(struct cifsd_work *work)
 					 work->tcon,
 					 tree_conn_fd_check);
 
-	work->conn->stats.open_files_count -= num;
-	if (work->conn->stats.open_files_count < 0)
-		work->conn->stats.open_files_count = 0;
+	atomic_sub(num, &work->conn->stats.open_files_count);
 }
 
 void cifsd_close_session_fds(struct cifsd_work *work)
@@ -727,9 +727,7 @@ void cifsd_close_session_fds(struct cifsd_work *work)
 					 work->tcon,
 					 session_fd_check);
 
-	work->conn->stats.open_files_count -= num;
-	if (work->conn->stats.open_files_count < 0)
-		work->conn->stats.open_files_count = 0;
+	atomic_sub(num, &work->conn->stats.open_files_count);
 }
 
 int cifsd_init_global_file_table(void)

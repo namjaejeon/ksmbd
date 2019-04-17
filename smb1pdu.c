@@ -2564,7 +2564,6 @@ free_path:
 out:
 	switch (err) {
 	case 0:
-		conn->stats.open_files_count++;
 		break;
 	case -ENOSPC:
 		rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
@@ -2666,9 +2665,6 @@ IPC_out:
 out:
 	if (err)
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
-	else
-		conn->stats.open_files_count--;
-
 	return err;
 }
 
@@ -4856,7 +4852,6 @@ free_path:
 out:
 	switch (err) {
 	case 0:
-		conn->stats.open_files_count++;
 		break;
 	case -ENOSPC:
 		pSMB_rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
@@ -7894,8 +7889,7 @@ out:
 		else
 			rsp->hdr.Status.CifsError =
 				STATUS_UNEXPECTED_IO_ERROR;
-	} else
-		conn->stats.open_files_count++;
+	}
 
 	if (err && fp)
 		cifsd_close_fd(work, fp->volatile_id);
