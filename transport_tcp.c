@@ -423,15 +423,11 @@ static int cifsd_tcp_run_kthread(void)
 static void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
 {
 	mutex_lock(&conn->srv_mutex);
-	atomic_inc(&conn->req_running);
 }
 
 static void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
 {
-	atomic_dec(&conn->req_running);
 	mutex_unlock(&conn->srv_mutex);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 }
 
 /**
@@ -751,6 +747,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	}
 
 	if (requests_queue) {
+		atomic_inc(&conn->req_running);
 		spin_lock(&conn->request_lock);
 		list_add_tail(&work->request_entry, requests_queue);
 		work->on_request_list = 1;
@@ -766,6 +763,7 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	if (!work->on_request_list)
 		return 0;
 
+	atomic_dec(&conn->req_running);
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
@@ -773,6 +771,9 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 		ret = 0;
 	}
 	spin_unlock(&conn->request_lock);
+
+	if (waitqueue_active(&conn->req_running_q))
+		wake_up_all(&conn->req_running_q);
 	return ret;
 }
 
