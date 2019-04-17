@@ -551,7 +551,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 			AUX_PAYLOAD_SIZE(work) };
 		len += iov[iov_idx++].iov_len;
 
-		cifsd_tcp_cork(conn->sock);
 	} else {
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
@@ -563,11 +562,15 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	cifsd_tcp_conn_lock(conn);
+	if (HAS_AUX_PAYLOAD(work))
+		cifsd_tcp_cork(conn->sock);
+
 	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
-	cifsd_tcp_conn_unlock(conn);
 
 	if (HAS_AUX_PAYLOAD(work))
 		cifsd_tcp_uncork(conn->sock);
+	cifsd_tcp_conn_unlock(conn);
+
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
 		return sent;
