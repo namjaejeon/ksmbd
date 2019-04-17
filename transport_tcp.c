@@ -420,6 +420,20 @@ static int cifsd_tcp_run_kthread(void)
 	return 0;
 }
 
+static void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
+{
+	mutex_lock(&conn->srv_mutex);
+	atomic_inc(&conn->req_running);
+}
+
+static void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
+{
+	atomic_dec(&conn->req_running);
+	mutex_unlock(&conn->srv_mutex);
+	if (waitqueue_active(&conn->req_running_q))
+		wake_up_all(&conn->req_running_q);
+}
+
 /**
  * cifsd_tcp_readv() - read data from socket in given iovec
  * @conn:     TCP server instance of connection
@@ -560,20 +574,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	return 0;
-}
-
-void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
-{
-	mutex_lock(&conn->srv_mutex);
-	atomic_inc(&conn->req_running);
-}
-
-void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
-{
-	atomic_dec(&conn->req_running);
-	mutex_unlock(&conn->srv_mutex);
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
 }
 
 void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
