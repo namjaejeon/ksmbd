@@ -50,6 +50,11 @@ struct cifsd_secmech {
 	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
 };
 
+struct cifsd_stats {
+	atomic_t			open_files_count;
+	atomic64_t			request_served;
+};
+
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	struct smb_version_values	*vals;
