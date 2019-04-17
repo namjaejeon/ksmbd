@@ -2636,7 +2636,6 @@ int smb_close(struct cifsd_work *work)
 {
 	CLOSE_REQ *req = (CLOSE_REQ *)REQUEST_BUF(work);
 	CLOSE_RSP *rsp = (CLOSE_RSP *)RESPONSE_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
 	int err = 0;
 
 	cifsd_debug("SMB_COM_CLOSE called for fid %u\n", req->FileID);
@@ -4649,7 +4648,6 @@ static int smb_posix_open(struct cifsd_work *work)
 	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)REQUEST_BUF(work);
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 		(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	OPEN_PSX_REQ *psx_req;
 	OPEN_PSX_RSP *psx_rsp;
@@ -7676,7 +7674,6 @@ int smb_open_andx(struct cifsd_work *work)
 {
 	OPENX_REQ *req = (OPENX_REQ *)REQUEST_BUF(work);
 	OPENX_RSP *rsp = (OPENX_RSP *)RESPONSE_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
