@@ -581,16 +581,11 @@ static int __open_id(struct cifsd_file_table *ft,
 
 	idr_preload(GFP_KERNEL);
 	write_lock(&ft->lock);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
-	ret = idr_alloc_u32(ft->idr, fp, &id, INT_MAX, GFP_NOWAIT);
-#else
 	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
 	if (ret >= 0) {
 		id = ret;
 		ret = 0;
-	}
-#endif
-	if (ret) {
+	} else {
 		id = CIFSD_NO_FID;
 		fd_limit_close();
 	}
