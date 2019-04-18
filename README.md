@@ -29,8 +29,8 @@ for more details.
 ## Git
 
 The development git tree is available at
-* https://github.com/namjaejeon/cifsd
-* https://github.com/namjaejeon/cifsd-tools
+* https://github.com/cifsd-team/cifsd
+* https://github.com/cifsd-team/cifsd-tools
 
 
 ## Maintainers
