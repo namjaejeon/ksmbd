@@ -87,6 +87,9 @@ int cifsd_set_interfaces(char *v)
 {
 	char *tmp;
 
+	if (*v == 0x00)
+		return 0;
+
 	while (v != NULL) {
 		struct interface *iface;
 
