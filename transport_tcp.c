@@ -387,8 +387,8 @@ static int cifsd_kthread_fn(void *p)
 		}
 
 		cifsd_debug("connect success: accepted new connection\n");
-		client_sk->sk->sk_rcvtimeo = 7 * HZ;
-		client_sk->sk->sk_sndtimeo = 5 * HZ;
+		client_sk->sk->sk_rcvtimeo = CIFSD_TCP_RECV_TIMEOUT;
+		client_sk->sk->sk_sndtimeo = CIFSD_TCP_SEND_TIMEOUT;
 
 		cifsd_tcp_new_connection(client_sk);
 	}
