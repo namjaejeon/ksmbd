@@ -50,6 +50,11 @@ struct cifsd_secmech {
 	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
 };
 
+struct cifsd_stats {
+	atomic_t			open_files_count;
+	atomic64_t			request_served;
+};
+
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	struct smb_version_values	*vals;
@@ -129,8 +134,6 @@ struct cifsd_tcp_conn_ops {
 
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
-void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn);
-void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn);
 void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
 
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),

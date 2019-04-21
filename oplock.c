@@ -406,10 +406,8 @@ static void smb2_send_lease_break_notification(struct work_struct *wk)
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_hdr *rsp_hdr;
 
-	cifsd_tcp_conn_lock(conn);
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_debug("smb2_allocate_rsp_buf failed! ");
-		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(work);
 		return;
 	}
@@ -446,8 +444,8 @@ static void smb2_send_lease_break_notification(struct work_struct *wk)
 	rsp->ShareMaskHint = 0;
 
 	inc_rfc1001_len(rsp, 44);
+
 	cifsd_tcp_write(work);
-	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(work);
 }
 
@@ -1305,10 +1303,8 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 	LOCK_REQ *req;
 	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
 
-	cifsd_tcp_conn_lock(conn);
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
-		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(work);
 		return;
 	}
@@ -1353,8 +1349,8 @@ void smb1_send_oplock_break_notification(struct work_struct *wk)
 	req->ByteCount = 0;
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
+
 	cifsd_tcp_write(work);
-	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(work);
 }
 
@@ -1378,17 +1374,14 @@ void smb2_send_oplock_break_notification(struct work_struct *wk)
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 
-	cifsd_tcp_conn_lock(conn);
 	fp = cifsd_lookup_durable_fd(br_info->fid);
 	if (!fp) {
-		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(work);
 		return;
 	}
 
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
-		cifsd_tcp_conn_unlock(conn);
 		cifsd_free_work_struct(work);
 		return;
 	}
@@ -1427,8 +1420,8 @@ void smb2_send_oplock_break_notification(struct work_struct *wk)
 
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
+
 	cifsd_tcp_write(work);
-	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(work);
 }
 

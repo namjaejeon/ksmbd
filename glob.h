@@ -98,11 +98,6 @@ extern bool multi_channel_enable;
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
-struct cifsd_stats {
-	int open_files_count;
-	int request_served;
-};
-
 enum asyncEnum {
 	ASYNC_PROG = 1,
 	ASYNC_CANCEL,
