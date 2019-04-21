@@ -87,6 +87,9 @@ int cifsd_set_interfaces(char *v)
 {
 	char *tmp;
 
+	if (*v == 0x00)
+		return 0;
+
 	while (v != NULL) {
 		struct interface *iface;
 
@@ -190,9 +193,7 @@ andx_again:
 		}
 	}
 
-	mutex_unlock(&conn->srv_mutex);
 	ret = cmds->proc(work);
-	mutex_lock(&conn->srv_mutex);
 
 	if (ret < 0)
 		cifsd_debug("Failed to process %u [%d]\n", command, ret);
@@ -294,13 +295,11 @@ static void handle_cifsd_work(struct work_struct *wk)
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	cifsd_tcp_conn_lock(conn);
-	conn->stats.request_served++;
+	atomic64_inc(&conn->stats.request_served);
 
 	__handle_cifsd_work(work, conn);
 
 	cifsd_tcp_try_dequeue_request(work);
-	cifsd_tcp_conn_unlock(conn);
 	cifsd_free_work_struct(work);
 	atomic_dec(&conn->r_count);
 }

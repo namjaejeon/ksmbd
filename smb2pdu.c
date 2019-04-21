@@ -2849,8 +2849,7 @@ err_out1:
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
 		cifsd_debug("Error response: %x\n", rsp->hdr.Status);
-	} else
-		conn->stats.open_files_count++;
+	}
 
 	return 0;
 }
@@ -4497,7 +4496,6 @@ out:
 			rsp->hdr.Status = STATUS_FILE_CLOSED;
 		smb2_set_err_rsp(work);
 	} else {
-		conn->stats.open_files_count--;
 		inc_rfc1001_len(rsp_org, 60);
 	}
 
