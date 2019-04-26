@@ -25,22 +25,6 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
 #define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
 #define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
 
-static inline void cifsd_tcp_cork(struct socket *sock)
-{
-	int val = 1;
-
-	kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
-		(char *)&val, sizeof(val));
-}
-
-static inline void cifsd_tcp_uncork(struct socket *sock)
-{
-	int val = 0;
-
-	kernel_setsockopt(sock, SOL_TCP, TCP_CORK,
-		(char *)&val, sizeof(val));
-}
-
 static inline void cifsd_tcp_nodelay(struct socket *sock)
 {
 	int val = 1;
@@ -558,13 +542,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	cifsd_tcp_conn_lock(conn);
-	if (HAS_AUX_PAYLOAD(work))
-		cifsd_tcp_cork(conn->sock);
-
 	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
-
-	if (HAS_AUX_PAYLOAD(work))
-		cifsd_tcp_uncork(conn->sock);
 	cifsd_tcp_conn_unlock(conn);
 
 	if (sent < 0) {
