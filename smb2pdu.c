@@ -2891,7 +2891,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			ffdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
+			ffdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(ffdinfo->FileName, utfname, name_len);
 		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -2914,7 +2914,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fbdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
+			fbdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fbdinfo->FileName, utfname, name_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -2935,7 +2935,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
+			fdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fdinfo->FileName, utfname, name_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -2978,7 +2978,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		dinfo->Reserved = 0;
 		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			dinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
+			dinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(dinfo->FileName, utfname, name_len);
 		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -3004,7 +3004,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fibdinfo->ExtFileAttributes = FILE_ATTRIBUTE_HIDDEN_LE;
+			fibdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
 
 		memcpy(fibdinfo->FileName, utfname, name_len);
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
