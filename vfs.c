@@ -203,6 +203,7 @@ static int check_lock_range(struct file *filp,
 	if (!ctx || list_empty_careful(&ctx->flc_posix))
 		return 0;
 
+	spin_lock(&ctx->flc_lock);
 	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
 		if (filp == flock->fl_owner)
 			continue;
@@ -225,6 +226,7 @@ static int check_lock_range(struct file *filp,
 		}
 	}
 out:
+	spin_unlock(&ctx->flc_lock);
 	return error;
 }
 
