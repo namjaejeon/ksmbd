@@ -6555,12 +6555,12 @@ out:
 }
 
 /**
- * smb20_oplock_break() - handler for smb2.0 oplock break command
+ * smb20_oplock_break_ack() - handler for smb2.0 oplock break command
  * @work:	smb work containing oplock break command buffer
  *
  * Return:	0
  */
-static int smb20_oplock_break(struct cifsd_work *work)
+static int smb20_oplock_break_ack(struct cifsd_work *work)
 {
 	struct smb2_oplock_break *req;
 	struct smb2_oplock_break *rsp;
@@ -6692,12 +6692,12 @@ static int check_lease_state(struct lease *lease, __le32 req_state)
 }
 
 /**
- * smb21_lease_break() - handler for smb2.1 lease break command
+ * smb21_lease_break_ack() - handler for smb2.1 lease break command
  * @work:	smb work containing lease break command buffer
  *
  * Return:	0
  */
-static int smb21_lease_break(struct cifsd_work *work)
+static int smb21_lease_break_ack(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_lease_ack *req, *rsp;
@@ -6835,10 +6835,10 @@ int smb2_oplock_break(struct cifsd_work *work)
 
 	switch (le16_to_cpu(req->StructureSize)) {
 	case OP_BREAK_STRUCT_SIZE_20:
-		err = smb20_oplock_break(work);
+		err = smb20_oplock_break_ack(work);
 		break;
 	case OP_BREAK_STRUCT_SIZE_21:
-		err = smb21_lease_break(work);
+		err = smb21_lease_break_ack(work);
 		break;
 	default:
 		cifsd_debug("invalid break cmd %d\n",
