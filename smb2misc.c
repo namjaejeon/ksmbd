@@ -348,8 +348,10 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 			return 1;
 		} else if (command == SMB2_OPLOCK_BREAK_HE
 				&& (hdr->Status == 0)
-				&& (le16_to_cpu(pdu->StructureSize2) != 44)
-				&& (le16_to_cpu(pdu->StructureSize2) != 36)) {
+				&& (le16_to_cpu(pdu->StructureSize2) !=
+					OP_BREAK_STRUCT_SIZE_20)
+				&& (le16_to_cpu(pdu->StructureSize2) !=
+					OP_BREAK_STRUCT_SIZE_21)) {
 			/* special case for SMB2.1 lease break message */
 			cifsd_err("Illegal request size %d for oplock break\n",
 				le16_to_cpu(pdu->StructureSize2));
