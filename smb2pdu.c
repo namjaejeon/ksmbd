@@ -5157,7 +5157,6 @@ int smb2_set_info(struct cifsd_work *work)
 	}
 
 	cifsd_debug("%s: Received set info request\n", __func__);
-	rsp->StructureSize = cpu_to_le16(33);
 
 	id = le64_to_cpu(req->VolatileFileId);
 	pid = le64_to_cpu(req->PersistentFileId);
