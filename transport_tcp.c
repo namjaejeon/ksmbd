@@ -109,7 +109,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	if (!conn)
 		return NULL;
 
-	conn->need_neg = true;
+	atomic_set(&conn->need_neg, 1);
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls("utf8");
@@ -118,7 +118,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	atomic_set(&conn->req_running, 0);
 	atomic_set(&conn->r_count, 0);
 	conn->max_credits = 0;
-	conn->credits_granted = 0;
+	atomic_set(&conn->total_credits, 0);
 	init_waitqueue_head(&conn->req_running_q);
 	INIT_LIST_HEAD(&conn->tcp_conns);
 	INIT_LIST_HEAD(&conn->sessions);

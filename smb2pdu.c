@@ -222,7 +222,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	if (!conn->need_neg)
+	if (!atomic_read(&conn->need_neg))
 		return -EINVAL;
 	if (!(conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID))
@@ -436,12 +436,12 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
-	if (conn->credits_granted) {
+	if (atomic_read(&conn->total_credits)) {
 		if (le16_to_cpu(rcv_hdr->CreditCharge))
-			conn->credits_granted -=
-				le16_to_cpu(rcv_hdr->CreditCharge);
+			atomic_sub(le16_to_cpu(rcv_hdr->CreditCharge),
+				&conn->total_credits);
 		else
-			conn->credits_granted -= 1;
+			atomic_sub(1, &conn->total_credits);
 	}
 
 	work->type = SYNC;
@@ -509,8 +509,9 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
+	int total_credits = atomic_read(&conn->total_credits);
 
-	BUG_ON(conn->credits_granted >= conn->max_credits);
+	BUG_ON(total_credits >= conn->max_credits);
 
 	/* get default minimum credits by shifting maximum credits by 4 */
 	min_credits = conn->max_credits >> 4;
@@ -536,17 +537,17 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 		/* if credits granted per client is getting bigger than default
 		 * minimum credits then we should wrap it up within the limits.
 		 */
-		if ((conn->credits_granted + credits_granted) > min_credits)
-			credits_granted = min_credits -	conn->credits_granted;
+		if ((total_credits + credits_granted) > min_credits)
+			credits_granted = min_credits -	total_credits;
 
-	} else if (conn->credits_granted == 0) {
+	} else if (total_credits == 0) {
 		credits_granted = 1;
 	}
 
-	conn->credits_granted += credits_granted;
+	atomic_add(credits_granted, &conn->total_credits);
 	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,
-			conn->credits_granted);
+			atomic_read(&conn->total_credits));
 	/* set number of credits granted in SMB2 hdr */
 	hdr->CreditRequest = cpu_to_le16(credits_granted);
 
@@ -856,7 +857,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
 
-	conn->need_neg = false;
+	atomic_set(&conn->need_neg, 0);
 	if (cifsd_tcp_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
