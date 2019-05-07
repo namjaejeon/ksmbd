@@ -3593,16 +3593,29 @@ static int smb2_get_info_file(struct cifsd_work *work,
 	int file_infoclass_size;
 	struct inode *inode;
 	u64 time;
+	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
 
 	if (test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_PIPE)) {
+				CIFSD_SHARE_FLAG_PIPE)) {
 		/* smb2 info file called for pipe */
 		return smb2_get_info_file_pipe(work->sess, req, rsp);
 	}
 
-	fp = cifsd_lookup_fd_slow(work,
-			le64_to_cpu(req->VolatileFileId),
-			le64_to_cpu(req->PersistentFileId));
+	if (work->next_smb2_rcv_hdr_off) {
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			cifsd_debug("Compound request set FID = %u\n",
+					work->compound_fid);
+			id = work->compound_fid;
+			pid = work->compound_pfid;
+		}
+	}
+
+	if (!HAS_FILE_ID(id)) {
+		id = le64_to_cpu(req->VolatileFileId);
+		pid = le64_to_cpu(req->PersistentFileId);
+	}
+
+	fp = cifsd_lookup_fd_slow(work, id, pid);
 	if (!fp)
 		return -ENOENT;
 
@@ -5142,8 +5155,10 @@ int smb2_set_info(struct cifsd_work *work)
 	struct smb2_set_info_req *req;
 	struct smb2_set_info_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
-	uint64_t id, pid;
 	int rc = 0;
+	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
+
+	cifsd_debug("%s: Received set info request\n", __func__);
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(work);
@@ -5154,16 +5169,22 @@ int smb2_set_info(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			cifsd_debug("Compound request set FID = %u\n",
+					work->compound_fid);
+			id = work->compound_fid;
+			pid = work->compound_pfid;
+		}
 	}
 
-	cifsd_debug("%s: Received set info request\n", __func__);
-	rsp->StructureSize = cpu_to_le16(33);
+	if (!HAS_FILE_ID(id)) {
+		id = le64_to_cpu(req->VolatileFileId);
+		pid = le64_to_cpu(req->PersistentFileId);
+	}
 
-	id = le64_to_cpu(req->VolatileFileId);
-	pid = le64_to_cpu(req->PersistentFileId);
 	fp = cifsd_lookup_fd_slow(work, id, pid);
 	if (!fp) {
-		cifsd_debug("Invalid id for close: %llu\n", id);
+		cifsd_debug("Invalid id for close: %u\n", id);
 		rc = -ENOENT;
 		goto err_out;
 	}
