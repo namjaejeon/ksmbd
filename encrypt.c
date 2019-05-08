@@ -113,7 +113,6 @@ int cifsd_enc_md4(unsigned char *md4_hash,
 		goto smb_mdfour_err;
 	}
 	sdescmd4->shash.tfm = md4;
-	sdescmd4->shash.flags = 0x0;
 
 	rc = crypto_shash_init(&sdescmd4->shash);
 	if (rc) {
@@ -160,7 +159,6 @@ int cifsd_enc_update_sess_key(unsigned char *md5_hash,
 		goto err_out;
 	}
 	sdescmd5->shash.tfm = md5;
-	sdescmd5->shash.flags = 0x0;
 
 	rc = crypto_shash_init(&sdescmd5->shash);
 	if (rc) {
