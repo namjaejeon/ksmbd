@@ -389,6 +389,9 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	__cifsd_inode_close(fp);
 	if (!IS_ERR_OR_NULL(filp))
 		filp_close(filp, (struct files_struct *)filp);
+	kfree(fp->filename);
+	if (cifsd_stream_fd(fp))
+		kfree(fp->stream.name);
 	cifsd_free_file_struct(fp);
 }
 
