@@ -222,7 +222,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	if (!conn->need_neg)
+	if (!atomic_read(&conn->need_neg))
 		return -EINVAL;
 	if (!(conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID))
@@ -436,12 +436,12 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
-	if (conn->credits_granted) {
+	if (atomic_read(&conn->total_credits)) {
 		if (le16_to_cpu(rcv_hdr->CreditCharge))
-			conn->credits_granted -=
-				le16_to_cpu(rcv_hdr->CreditCharge);
+			atomic_sub(le16_to_cpu(rcv_hdr->CreditCharge),
+				&conn->total_credits);
 		else
-			conn->credits_granted -= 1;
+			atomic_sub(1, &conn->total_credits);
 	}
 
 	work->type = SYNC;
@@ -509,8 +509,9 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
+	int total_credits = atomic_read(&conn->total_credits);
 
-	BUG_ON(conn->credits_granted >= conn->max_credits);
+	BUG_ON(total_credits >= conn->max_credits);
 
 	/* get default minimum credits by shifting maximum credits by 4 */
 	min_credits = conn->max_credits >> 4;
@@ -536,17 +537,17 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 		/* if credits granted per client is getting bigger than default
 		 * minimum credits then we should wrap it up within the limits.
 		 */
-		if ((conn->credits_granted + credits_granted) > min_credits)
-			credits_granted = min_credits -	conn->credits_granted;
+		if ((total_credits + credits_granted) > min_credits)
+			credits_granted = min_credits -	total_credits;
 
-	} else if (conn->credits_granted == 0) {
+	} else if (total_credits == 0) {
 		credits_granted = 1;
 	}
 
-	conn->credits_granted += credits_granted;
+	atomic_add(credits_granted, &conn->total_credits);
 	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,
-			conn->credits_granted);
+			atomic_read(&conn->total_credits));
 	/* set number of credits granted in SMB2 hdr */
 	hdr->CreditRequest = cpu_to_le16(credits_granted);
 
@@ -856,7 +857,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
 
-	conn->need_neg = false;
+	atomic_set(&conn->need_neg, 0);
 	if (cifsd_tcp_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
@@ -3592,16 +3593,29 @@ static int smb2_get_info_file(struct cifsd_work *work,
 	int file_infoclass_size;
 	struct inode *inode;
 	u64 time;
+	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
 
 	if (test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_PIPE)) {
+				CIFSD_SHARE_FLAG_PIPE)) {
 		/* smb2 info file called for pipe */
 		return smb2_get_info_file_pipe(work->sess, req, rsp);
 	}
 
-	fp = cifsd_lookup_fd_slow(work,
-			le64_to_cpu(req->VolatileFileId),
-			le64_to_cpu(req->PersistentFileId));
+	if (work->next_smb2_rcv_hdr_off) {
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			cifsd_debug("Compound request set FID = %u\n",
+					work->compound_fid);
+			id = work->compound_fid;
+			pid = work->compound_pfid;
+		}
+	}
+
+	if (!HAS_FILE_ID(id)) {
+		id = le64_to_cpu(req->VolatileFileId);
+		pid = le64_to_cpu(req->PersistentFileId);
+	}
+
+	fp = cifsd_lookup_fd_slow(work, id, pid);
 	if (!fp)
 		return -ENOENT;
 
@@ -5141,8 +5155,10 @@ int smb2_set_info(struct cifsd_work *work)
 	struct smb2_set_info_req *req;
 	struct smb2_set_info_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
-	uint64_t id, pid;
 	int rc = 0;
+	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
+
+	cifsd_debug("%s: Received set info request\n", __func__);
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(work);
@@ -5153,16 +5169,22 @@ int smb2_set_info(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			cifsd_debug("Compound request set FID = %u\n",
+					work->compound_fid);
+			id = work->compound_fid;
+			pid = work->compound_pfid;
+		}
 	}
 
-	cifsd_debug("%s: Received set info request\n", __func__);
-	rsp->StructureSize = cpu_to_le16(33);
+	if (!HAS_FILE_ID(id)) {
+		id = le64_to_cpu(req->VolatileFileId);
+		pid = le64_to_cpu(req->PersistentFileId);
+	}
 
-	id = le64_to_cpu(req->VolatileFileId);
-	pid = le64_to_cpu(req->PersistentFileId);
 	fp = cifsd_lookup_fd_slow(work, id, pid);
 	if (!fp) {
-		cifsd_debug("Invalid id for close: %llu\n", id);
+		cifsd_debug("Invalid id for close: %u\n", id);
 		rc = -ENOENT;
 		goto err_out;
 	}
@@ -6555,12 +6577,12 @@ out:
 }
 
 /**
- * smb20_oplock_break() - handler for smb2.0 oplock break command
+ * smb20_oplock_break_ack() - handler for smb2.0 oplock break command
  * @work:	smb work containing oplock break command buffer
  *
  * Return:	0
  */
-static int smb20_oplock_break(struct cifsd_work *work)
+static int smb20_oplock_break_ack(struct cifsd_work *work)
 {
 	struct smb2_oplock_break *req;
 	struct smb2_oplock_break *rsp;
@@ -6692,12 +6714,12 @@ static int check_lease_state(struct lease *lease, __le32 req_state)
 }
 
 /**
- * smb21_lease_break() - handler for smb2.1 lease break command
+ * smb21_lease_break_ack() - handler for smb2.1 lease break command
  * @work:	smb work containing lease break command buffer
  *
  * Return:	0
  */
-static int smb21_lease_break(struct cifsd_work *work)
+static int smb21_lease_break_ack(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	struct smb2_lease_ack *req, *rsp;
@@ -6835,10 +6857,10 @@ int smb2_oplock_break(struct cifsd_work *work)
 
 	switch (le16_to_cpu(req->StructureSize)) {
 	case OP_BREAK_STRUCT_SIZE_20:
-		err = smb20_oplock_break(work);
+		err = smb20_oplock_break_ack(work);
 		break;
 	case OP_BREAK_STRUCT_SIZE_21:
-		err = smb21_lease_break(work);
+		err = smb21_lease_break_ack(work);
 		break;
 	default:
 		cifsd_debug("invalid break cmd %d\n",

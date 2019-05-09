@@ -96,8 +96,6 @@ struct oplock_break_info {
 extern int smb_grant_oplock(struct cifsd_work *work, int req_op_level,
 		uint64_t pid, struct cifsd_file *fp, __u16 tid,
 		struct lease_ctx_info *lctx, int share_ret);
-extern void smb1_send_oplock_break_notification(struct work_struct *wk);
-extern void smb2_send_oplock_break_notification(struct work_struct *wk);
 extern void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_file *fp, int is_trunc);
 
