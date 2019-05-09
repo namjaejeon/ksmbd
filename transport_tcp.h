@@ -78,13 +78,14 @@ struct cifsd_tcp_conn {
 	atomic_t			req_running;
 	/* References which are made for this Server object*/
 	atomic_t			r_count;
+	atomic_t			need_neg;
+	atomic_t			total_credits;
 	wait_queue_head_t		req_running_q;
 	/* Lock to protect requests list*/
 	spinlock_t			request_lock;
 	struct list_head		requests;
 	struct list_head		async_requests;
 	int				max_credits;
-	int				credits_granted;
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
@@ -107,7 +108,6 @@ struct cifsd_tcp_conn {
 	/* Supports legacy MS Kerberos */
 	bool				sec_mskerberos;
 	bool				sign;
-	bool				need_neg;
 	bool				use_spnego:1;
 	__u16				cli_sec_mode;
 	__u16				srv_sec_mode;

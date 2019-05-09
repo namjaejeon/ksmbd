@@ -393,171 +393,6 @@ void close_id_del_oplock(struct cifsd_file *fp)
 }
 
 /**
- * smb2_send_lease_break_notification() - send lease break command from server
- * to client
- * @work:     smb work object
- */
-static void smb2_send_lease_break_notification(struct work_struct *wk)
-{
-	struct smb2_lease_break *rsp = NULL;
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct lease_break_info *br_info =
-		(struct lease_break_info *)REQUEST_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
-	struct smb2_hdr *rsp_hdr;
-
-	if (conn->ops->allocate_rsp_buf(work)) {
-		cifsd_debug("smb2_allocate_rsp_buf failed! ");
-		cifsd_free_work_struct(work);
-		return;
-	}
-
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
-	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
-	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
-	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(0);
-	rsp_hdr->Command = cpu_to_le16(0x12);
-	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
-	rsp_hdr->NextCommand = 0;
-	rsp_hdr->MessageId = cpu_to_le64(-1);
-	rsp_hdr->Id.SyncId.ProcessId = 0;
-	rsp_hdr->Id.SyncId.TreeId = 0;
-	rsp_hdr->SessionId = 0;
-	memset(rsp_hdr->Signature, 0, 16);
-
-	rsp = (struct smb2_lease_break *)RESPONSE_BUF(work);
-	rsp->StructureSize = cpu_to_le16(44);
-	rsp->Reserved = 0;
-	rsp->Flags = 0;
-
-	if (br_info->curr_state & (SMB2_LEASE_WRITE_CACHING |
-			SMB2_LEASE_HANDLE_CACHING))
-		rsp->Flags = SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED;
-
-	memcpy(rsp->LeaseKey, br_info->lease_key, SMB2_LEASE_KEY_SIZE);
-	rsp->CurrentLeaseState = br_info->curr_state;
-	rsp->NewLeaseState = br_info->new_state;
-	rsp->BreakReason = 0;
-	rsp->AccessMaskHint = 0;
-	rsp->ShareMaskHint = 0;
-
-	inc_rfc1001_len(rsp, 44);
-
-	cifsd_tcp_write(work);
-	cifsd_free_work_struct(work);
-}
-
-/**
- * smb1_oplock_break_notification() - send smb1 exclusive/batch to level2 oplock
- *		break command from server to client
- * @opinfo:		oplock info object
- * @ack_required	if requiring ack
- *
- * Return:      0 on success, otherwise error
- */
-static int smb1_oplock_break_notification(struct oplock_info *opinfo,
-	int ack_required)
-{
-	struct cifsd_tcp_conn *conn = opinfo->conn;
-	int ret = 0;
-	struct cifsd_work *work = cifsd_alloc_work_struct();
-
-	if (!work)
-		return -ENOMEM;
-
-	work->request_buf = (char *)opinfo;
-	work->conn = conn;
-
-	if (ack_required) {
-		int rc;
-
-		INIT_WORK(&work->work, smb1_send_oplock_break_notification);
-		schedule_work(&work->work);
-
-		/*
-		 * TODO: change to wait_event_interruptible_timeout once oplock
-		 * break notification timeout is decided. In case of oplock
-		 * break from levelII to none, we don't need to wait for client
-		 * response.
-		 */
-		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
-				opinfo->op_state == OPLOCK_STATE_NONE ||
-				opinfo->op_state == OPLOCK_CLOSING,
-				OPLOCK_WAIT_TIME);
-
-		/* is this a timeout ? */
-		if (!rc) {
-			opinfo->level = OPLOCK_NONE;
-			opinfo->op_state = OPLOCK_STATE_NONE;
-		}
-	} else {
-		smb1_send_oplock_break_notification(&work->work);
-		if (opinfo->level == OPLOCK_READ)
-			opinfo->level = OPLOCK_NONE;
-	}
-	return ret;
-}
-
-/**
- * smb2_oplock_break_notification() - send smb2 exclusive/batch to level2 oplock
- *		break command from server to client
- * @opinfo:		oplock info object
- * @ack_required	if requiring ack
- *
- * Return:      0 on success, otherwise error
- */
-static int smb2_oplock_break_notification(struct oplock_info *opinfo,
-	int ack_required)
-{
-	struct cifsd_tcp_conn *conn = opinfo->conn;
-	struct oplock_break_info *br_info;
-	int ret = 0;
-	struct cifsd_work *work = cifsd_alloc_work_struct();
-
-	if (!work)
-		return -ENOMEM;
-
-	br_info = kmalloc(sizeof(struct oplock_break_info), GFP_KERNEL);
-	if (!br_info) {
-		cifsd_free_work_struct(work);
-		return -ENOMEM;
-	}
-
-	br_info->level = opinfo->level;
-	br_info->fid = opinfo->fid;
-	br_info->open_trunc = opinfo->open_trunc;
-
-	work->request_buf = (char *)br_info;
-	work->conn = conn;
-	work->sess = opinfo->sess;
-
-	if (ack_required) {
-		int rc;
-
-		INIT_WORK(&work->work, smb2_send_oplock_break_notification);
-		schedule_work(&work->work);
-
-		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
-			opinfo->op_state == OPLOCK_STATE_NONE ||
-			opinfo->op_state == OPLOCK_CLOSING,
-			OPLOCK_WAIT_TIME);
-
-		/* is this a timeout ? */
-		if (!rc) {
-			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
-			opinfo->op_state = OPLOCK_STATE_NONE;
-		}
-	} else {
-		smb2_send_oplock_break_notification(&work->work);
-		if (opinfo->level == SMB2_OPLOCK_LEVEL_II)
-			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
-	}
-	return ret;
-}
-
-/**
  * grant_write_oplock() - grant exclusive/batch oplock or write lease
  * @opinfo_new:	new oplock info object
  * @req_oplock: request oplock
@@ -725,6 +560,252 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 	return m_opinfo;
 }
 
+/**
+ * smb1_oplock_break_noti() - send smb1 oplock break cmd from conn
+ * to client
+ * @work:     smb work object
+ *
+ * There are two ways this function can be called. 1- while file open we break
+ * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
+ * we break from levelII oplock no oplock.
+ * REQUEST_BUF(work) contains oplock_info.
+ */
+static void __smb1_oplock_break_noti(struct work_struct *wk)
+{
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb_hdr *rsp_hdr;
+	LOCK_REQ *req;
+	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
+
+	if (conn->ops->allocate_rsp_buf(work)) {
+		cifsd_err("smb_allocate_rsp_buf failed! ");
+		cifsd_free_work_struct(work);
+		return;
+	}
+
+	/* Init response header */
+	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
+	/* wct is 8 for locking andx(18) */
+	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
+	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn)
+		+ 18);
+	rsp_hdr->Protocol[0] = 0xFF;
+	rsp_hdr->Protocol[1] = 'S';
+	rsp_hdr->Protocol[2] = 'M';
+	rsp_hdr->Protocol[3] = 'B';
+
+	rsp_hdr->Command = SMB_COM_LOCKING_ANDX;
+	/* we know unicode, long file name and use nt error codes */
+	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
+		SMBFLG2_ERR_STATUS;
+	rsp_hdr->Uid = work->sess->id;
+	rsp_hdr->Pid = 0xFFFF;
+	rsp_hdr->Mid = 0xFFFF;
+	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);
+	rsp_hdr->WordCount = 8;
+
+	/* Init locking request */
+	req = (LOCK_REQ *)RESPONSE_BUF(work);
+
+	req->AndXCommand = 0xFF;
+	req->AndXReserved = 0;
+	req->AndXOffset = 0;
+	req->Fid = opinfo->fid;
+	req->LockType = LOCKING_ANDX_OPLOCK_RELEASE;
+	if (!opinfo->open_trunc && (opinfo->level == OPLOCK_BATCH ||
+			opinfo->level == OPLOCK_EXCLUSIVE))
+		req->OplockLevel = 1;
+	else {
+		req->OplockLevel = 0;
+	}
+	req->Timeout = 0;
+	req->NumberOfUnlocks = 0;
+	req->ByteCount = 0;
+	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
+			req->Fid, req->OplockLevel);
+
+	cifsd_tcp_write(work);
+	cifsd_free_work_struct(work);
+}
+
+/**
+ * smb1_oplock_break() - send smb1 exclusive/batch to level2 oplock
+ *		break command from server to client
+ * @opinfo:		oplock info object
+ * @ack_required	if requiring ack
+ *
+ * Return:      0 on success, otherwise error
+ */
+static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
+{
+	struct cifsd_tcp_conn *conn = opinfo->conn;
+	int ret = 0;
+	struct cifsd_work *work = cifsd_alloc_work_struct();
+
+	if (!work)
+		return -ENOMEM;
+
+	work->request_buf = (char *)opinfo;
+	work->conn = conn;
+
+	if (ack_required) {
+		int rc;
+
+		INIT_WORK(&work->work, __smb1_oplock_break_noti);
+		schedule_work(&work->work);
+
+		/*
+		 * TODO: change to wait_event_interruptible_timeout once oplock
+		 * break notification timeout is decided. In case of oplock
+		 * break from levelII to none, we don't need to wait for client
+		 * response.
+		 */
+		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
+				opinfo->op_state == OPLOCK_STATE_NONE ||
+				opinfo->op_state == OPLOCK_CLOSING,
+				OPLOCK_WAIT_TIME);
+
+		/* is this a timeout ? */
+		if (!rc) {
+			opinfo->level = OPLOCK_NONE;
+			opinfo->op_state = OPLOCK_STATE_NONE;
+		}
+	} else {
+		__smb1_oplock_break_noti(&work->work);
+		if (opinfo->level == OPLOCK_READ)
+			opinfo->level = OPLOCK_NONE;
+	}
+	return ret;
+}
+
+/**
+ * smb2_oplock_break_noti() - send smb1 oplock break cmd from conn
+ * to client
+ * @work:     smb work object
+ *
+ * There are two ways this function can be called. 1- while file open we break
+ * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
+ * we break from levelII oplock no oplock.
+ * REQUEST_BUF(work) contains oplock_info.
+ */
+static void __smb2_oplock_break_noti(struct work_struct *wk)
+{
+	struct smb2_oplock_break *rsp = NULL;
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct oplock_break_info *br_info =
+		(struct oplock_break_info *)REQUEST_BUF(work);
+	struct smb2_hdr *rsp_hdr;
+	struct cifsd_file *fp;
+
+	fp = cifsd_lookup_durable_fd(br_info->fid);
+	if (!fp) {
+		cifsd_free_work_struct(work);
+		return;
+	}
+
+	if (conn->ops->allocate_rsp_buf(work)) {
+		cifsd_err("smb2_allocate_rsp_buf failed! ");
+		cifsd_free_work_struct(work);
+		return;
+	}
+
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
+	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
+	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = cpu_to_le16(0);
+	rsp_hdr->Command = cpu_to_le16(0x12);
+	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
+	rsp_hdr->NextCommand = 0;
+	rsp_hdr->MessageId = cpu_to_le64(-1);
+	rsp_hdr->Id.SyncId.ProcessId = 0;
+	rsp_hdr->Id.SyncId.TreeId = 0;
+	rsp_hdr->SessionId = 0;
+	memset(rsp_hdr->Signature, 0, 16);
+
+
+	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
+
+	rsp->StructureSize = cpu_to_le16(24);
+	if (!br_info->open_trunc &&
+			(br_info->level == SMB2_OPLOCK_LEVEL_BATCH ||
+			br_info->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
+		rsp->OplockLevel = 1;
+	else
+		rsp->OplockLevel = 0;
+	rsp->Reserved = 0;
+	rsp->Reserved2 = 0;
+	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
+	rsp->VolatileFid = cpu_to_le64(fp->volatile_id);
+
+	inc_rfc1001_len(rsp, 24);
+
+	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
+			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
+
+	cifsd_tcp_write(work);
+	cifsd_free_work_struct(work);
+}
+
+/**
+ * smb2_oplock_break() - send smb2 exclusive/batch to level2 oplock
+ *		break command from server to client
+ * @opinfo:		oplock info object
+ * @ack_required	if requiring ack
+ *
+ * Return:      0 on success, otherwise error
+ */
+static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
+{
+	struct cifsd_tcp_conn *conn = opinfo->conn;
+	struct oplock_break_info *br_info;
+	int ret = 0;
+	struct cifsd_work *work = cifsd_alloc_work_struct();
+
+	if (!work)
+		return -ENOMEM;
+
+	br_info = kmalloc(sizeof(struct oplock_break_info), GFP_KERNEL);
+	if (!br_info) {
+		cifsd_free_work_struct(work);
+		return -ENOMEM;
+	}
+
+	br_info->level = opinfo->level;
+	br_info->fid = opinfo->fid;
+	br_info->open_trunc = opinfo->open_trunc;
+
+	work->request_buf = (char *)br_info;
+	work->conn = conn;
+	work->sess = opinfo->sess;
+
+	if (ack_required) {
+		int rc;
+
+		INIT_WORK(&work->work, __smb2_oplock_break_noti);
+		schedule_work(&work->work);
+
+		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
+			opinfo->op_state == OPLOCK_STATE_NONE ||
+			opinfo->op_state == OPLOCK_CLOSING,
+			OPLOCK_WAIT_TIME);
+
+		/* is this a timeout ? */
+		if (!rc) {
+			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
+			opinfo->op_state = OPLOCK_STATE_NONE;
+		}
+	} else {
+		__smb2_oplock_break_noti(&work->work);
+		if (opinfo->level == SMB2_OPLOCK_LEVEL_II)
+			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
+	}
+	return ret;
+}
+
 static void wait_for_lease_break_ack(struct oplock_info *opinfo)
 {
 	int rc = 0;
@@ -744,14 +825,71 @@ static void wait_for_lease_break_ack(struct oplock_info *opinfo)
 }
 
 /**
- * smb2_break_lease_notification() - break lease when a new client request
+ * smb2_lease_break_noti() - send lease break command from server
+ * to client
+ * @work:     smb work object
+ */
+static void __smb2_lease_break_noti(struct work_struct *wk)
+{
+	struct smb2_lease_break *rsp = NULL;
+	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
+	struct lease_break_info *br_info =
+		(struct lease_break_info *)REQUEST_BUF(work);
+	struct cifsd_tcp_conn *conn = work->conn;
+	struct smb2_hdr *rsp_hdr;
+
+	if (conn->ops->allocate_rsp_buf(work)) {
+		cifsd_debug("smb2_allocate_rsp_buf failed! ");
+		cifsd_free_work_struct(work);
+		return;
+	}
+
+	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
+	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
+	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = cpu_to_le16(0);
+	rsp_hdr->Command = cpu_to_le16(0x12);
+	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
+	rsp_hdr->NextCommand = 0;
+	rsp_hdr->MessageId = cpu_to_le64(-1);
+	rsp_hdr->Id.SyncId.ProcessId = 0;
+	rsp_hdr->Id.SyncId.TreeId = 0;
+	rsp_hdr->SessionId = 0;
+	memset(rsp_hdr->Signature, 0, 16);
+
+	rsp = (struct smb2_lease_break *)RESPONSE_BUF(work);
+	rsp->StructureSize = cpu_to_le16(44);
+	rsp->Reserved = 0;
+	rsp->Flags = 0;
+
+	if (br_info->curr_state & (SMB2_LEASE_WRITE_CACHING |
+			SMB2_LEASE_HANDLE_CACHING))
+		rsp->Flags = SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED;
+
+	memcpy(rsp->LeaseKey, br_info->lease_key, SMB2_LEASE_KEY_SIZE);
+	rsp->CurrentLeaseState = br_info->curr_state;
+	rsp->NewLeaseState = br_info->new_state;
+	rsp->BreakReason = 0;
+	rsp->AccessMaskHint = 0;
+	rsp->ShareMaskHint = 0;
+
+	inc_rfc1001_len(rsp, 44);
+
+	cifsd_tcp_write(work);
+	cifsd_free_work_struct(work);
+}
+
+/**
+ * smb2_break_lease() - break lease when a new client request
  *			write lease
  * @opinfo:		conains lease state information
  * @ack_required:	if requring ack
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_required)
+static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 {
 	struct cifsd_tcp_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
@@ -786,7 +924,7 @@ static int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_req
 			smb2_send_interim_resp(in_work, STATUS_PENDING);
 			list_del(&in_work->interim_entry);
 		}
-		INIT_WORK(&work->work, smb2_send_lease_break_notification);
+		INIT_WORK(&work->work, __smb2_lease_break_noti);
 		schedule_work(&work->work);
 		wait_for_lease_break_ack(opinfo);
 
@@ -803,7 +941,7 @@ static int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_req
 				atomic_set(&opinfo->breaking_cnt, 0);
 		}
 	} else {
-		smb2_send_lease_break_notification(&work->work);
+		__smb2_lease_break_noti(&work->work);
 		if (opinfo->o_lease->state == SMB2_LEASE_READ_CACHING) {
 			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
 			opinfo->o_lease->state = SMB2_LEASE_NONE;
@@ -812,7 +950,7 @@ static int smb2_break_lease_notification(struct oplock_info *opinfo, int ack_req
 	return 0;
 }
 
-static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
+static int oplock_break(struct oplock_info *brk_opinfo)
 {
 	int err = 0;
 	int ack_required = 0;
@@ -877,23 +1015,20 @@ static int smb_send_oplock_break_notification(struct oplock_info *brk_opinfo)
 			else
 				ack_required = 1;
 
-			err = smb2_break_lease_notification(brk_opinfo,
-				ack_required);
+			err = smb2_break_lease_noti(brk_opinfo, ack_required);
 		} else {
 			/* break oplock */
 			if (brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
 				brk_opinfo->level ==
 				SMB2_OPLOCK_LEVEL_EXCLUSIVE)
 				ack_required = 1;
-			err = smb2_oplock_break_notification(brk_opinfo,
-				ack_required);
+			err = smb2_oplock_break_noti(brk_opinfo, ack_required);
 		}
 	} else {
 		if ((brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH) ||
 			(brk_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
 			ack_required = 1;
-		err = smb1_oplock_break_notification(brk_opinfo,
-			ack_required);
+		err = smb1_oplock_break_noti(brk_opinfo, ack_required);
 	}
 
 	cifsd_debug("oplock granted = %d\n", brk_opinfo->level);
@@ -1132,7 +1267,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
-	err = smb_send_oplock_break_notification(prev_opinfo);
+	err = oplock_break(prev_opinfo);
 	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
 		goto set_lev;
@@ -1198,7 +1333,7 @@ static int smb_break_all_write_oplock(struct cifsd_work *work,
 
 	brk_opinfo->open_trunc = is_trunc;
 	list_add(&work->interim_entry, &brk_opinfo->interim_list);
-	smb_send_oplock_break_notification(brk_opinfo);
+	oplock_break(brk_opinfo);
 	opinfo_put(brk_opinfo);
 
 	return 1;
@@ -1262,7 +1397,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 				SMB2_LEASE_KEY_SIZE))
 			goto next;
 		brk_op->open_trunc = is_trunc;
-		smb_send_oplock_break_notification(brk_op);
+		oplock_break(brk_op);
 next:
 		opinfo_put(brk_op);
 		rcu_read_lock();
@@ -1283,146 +1418,6 @@ void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
 	ret = smb_break_all_write_oplock(work, fp, 1);
 	if (!ret)
 		smb_break_all_levII_oplock(work->conn, fp, 1);
-}
-
-/**
- * smb1_send_oplock_break_notification() - send smb1 oplock break cmd from conn
- * to client
- * @work:     smb work object
- *
- * There are two ways this function can be called. 1- while file open we break
- * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
- * we break from levelII oplock no oplock.
- * REQUEST_BUF(work) contains oplock_info.
- */
-void smb1_send_oplock_break_notification(struct work_struct *wk)
-{
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
-	struct smb_hdr *rsp_hdr;
-	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
-
-	if (conn->ops->allocate_rsp_buf(work)) {
-		cifsd_err("smb_allocate_rsp_buf failed! ");
-		cifsd_free_work_struct(work);
-		return;
-	}
-
-	/* Init response header */
-	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
-	/* wct is 8 for locking andx(18) */
-	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
-	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn)
-		+ 18);
-	rsp_hdr->Protocol[0] = 0xFF;
-	rsp_hdr->Protocol[1] = 'S';
-	rsp_hdr->Protocol[2] = 'M';
-	rsp_hdr->Protocol[3] = 'B';
-
-	rsp_hdr->Command = SMB_COM_LOCKING_ANDX;
-	/* we know unicode, long file name and use nt error codes */
-	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
-		SMBFLG2_ERR_STATUS;
-	rsp_hdr->Uid = work->sess->id;
-	rsp_hdr->Pid = 0xFFFF;
-	rsp_hdr->Mid = 0xFFFF;
-	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);
-	rsp_hdr->WordCount = 8;
-
-	/* Init locking request */
-	req = (LOCK_REQ *)RESPONSE_BUF(work);
-
-	req->AndXCommand = 0xFF;
-	req->AndXReserved = 0;
-	req->AndXOffset = 0;
-	req->Fid = opinfo->fid;
-	req->LockType = LOCKING_ANDX_OPLOCK_RELEASE;
-	if (!opinfo->open_trunc && (opinfo->level == OPLOCK_BATCH ||
-			opinfo->level == OPLOCK_EXCLUSIVE))
-		req->OplockLevel = 1;
-	else {
-		req->OplockLevel = 0;
-	}
-	req->Timeout = 0;
-	req->NumberOfUnlocks = 0;
-	req->ByteCount = 0;
-	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
-			req->Fid, req->OplockLevel);
-
-	cifsd_tcp_write(work);
-	cifsd_free_work_struct(work);
-}
-
-/**
- * smb2_send_oplock_break_notification() - send smb1 oplock break cmd from conn
- * to client
- * @work:     smb work object
- *
- * There are two ways this function can be called. 1- while file open we break
- * from exclusive/batch lock to levelII oplock and 2- while file write/truncate
- * we break from levelII oplock no oplock.
- * REQUEST_BUF(work) contains oplock_info.
- */
-void smb2_send_oplock_break_notification(struct work_struct *wk)
-{
-	struct smb2_oplock_break *rsp = NULL;
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
-	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)REQUEST_BUF(work);
-	struct smb2_hdr *rsp_hdr;
-	struct cifsd_file *fp;
-
-	fp = cifsd_lookup_durable_fd(br_info->fid);
-	if (!fp) {
-		cifsd_free_work_struct(work);
-		return;
-	}
-
-	if (conn->ops->allocate_rsp_buf(work)) {
-		cifsd_err("smb2_allocate_rsp_buf failed! ");
-		cifsd_free_work_struct(work);
-		return;
-	}
-
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
-	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
-	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
-	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = cpu_to_le16(0);
-	rsp_hdr->Command = cpu_to_le16(0x12);
-	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
-	rsp_hdr->NextCommand = 0;
-	rsp_hdr->MessageId = cpu_to_le64(-1);
-	rsp_hdr->Id.SyncId.ProcessId = 0;
-	rsp_hdr->Id.SyncId.TreeId = 0;
-	rsp_hdr->SessionId = 0;
-	memset(rsp_hdr->Signature, 0, 16);
-
-
-	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
-
-	rsp->StructureSize = cpu_to_le16(24);
-	if (!br_info->open_trunc &&
-			(br_info->level == SMB2_OPLOCK_LEVEL_BATCH ||
-			br_info->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
-		rsp->OplockLevel = 1;
-	else
-		rsp->OplockLevel = 0;
-	rsp->Reserved = 0;
-	rsp->Reserved2 = 0;
-	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
-	rsp->VolatileFid = cpu_to_le64(fp->volatile_id);
-
-	inc_rfc1001_len(rsp, 24);
-
-	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
-			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
-
-	cifsd_tcp_write(work);
-	cifsd_free_work_struct(work);
 }
 
 /**
