@@ -169,6 +169,8 @@ struct cifsd_work {
 
 	/* List head at conn->requests */
 	struct list_head		request_entry;
+	/* List head at conn->async_requests */
+	struct list_head		async_request_entry;
 	struct work_struct		work;
 
 	/* cancel works */
