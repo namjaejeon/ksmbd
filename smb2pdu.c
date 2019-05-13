@@ -2533,6 +2533,7 @@ int smb2_open(struct cifsd_work *work)
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
+		filp_close(filp, (struct files_struct *)filp);
 		rc = PTR_ERR(fp);
 		fp = NULL;
 		goto err_out;
