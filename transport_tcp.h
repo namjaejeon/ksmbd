@@ -78,13 +78,13 @@ struct cifsd_tcp_conn {
 	atomic_t			req_running;
 	/* References which are made for this Server object*/
 	atomic_t			r_count;
-	atomic_t			total_credits;
+	unsigned short			total_credits;
+	unsigned short			max_credits;
 	wait_queue_head_t		req_running_q;
 	/* Lock to protect requests list*/
 	spinlock_t			request_lock;
 	struct list_head		requests;
 	struct list_head		async_requests;
-	int				max_credits;
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
