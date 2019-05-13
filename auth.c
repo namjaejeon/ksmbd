@@ -188,8 +188,8 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret, len;
-	wchar_t *domain;
-	__le16 *uniname;
+	wchar_t *domain = NULL;
+	__le16 *uniname = NULL;
 
 	if (!sess->conn->secmech.sdeschmacmd5) {
 		cifsd_debug("can't generate ntlmv2 hash\n");
@@ -214,7 +214,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!uniname) {
 		ret = -ENOMEM;
-		return ret;
+		goto out;
 	}
 
 	if (len) {
@@ -227,8 +227,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with user\n");
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	/* Convert domain name or conn name to unicode and uppercase */
@@ -237,8 +236,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	if (!domain) {
 		cifsd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	len = smb_strtoUTF16((__le16 *)domain, dname, len,
@@ -248,16 +246,14 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with domain\n");
-		kfree(uniname);
-		kfree(domain);
-		return ret;
+		goto out;
 	}
 
 	ret = crypto_shash_final(&sess->conn->secmech.sdeschmacmd5->shash,
 			ntlmv2_hash);
+out:
 	if (ret)
 		cifsd_debug("Could not generate md5 hash\n");
-
 	kfree(uniname);
 	kfree(domain);
 	return ret;
