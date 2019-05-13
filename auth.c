@@ -317,7 +317,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
-	char *construct;
+	char *construct = NULL;
 	int rc, len;
 
 	rc = crypto_hmacmd5_alloc(sess->conn);
@@ -383,6 +383,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 
 	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 out:
+	kfree(construct);
 	return rc;
 }
 
