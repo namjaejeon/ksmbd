@@ -440,6 +440,7 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	char *domain_name;
 	unsigned int lm_off, nt_off;
 	unsigned short nt_len;
+	int ret;
 
 	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -477,8 +478,12 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
-	return cifsd_auth_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
-		nt_off), nt_len - CIFS_ENCPWD_SIZE, domain_name);
+	ret = cifsd_auth_ntlmv2(sess,
+			(struct ntlmv2_resp *)((char *)authblob + nt_off),
+			nt_len - CIFS_ENCPWD_SIZE,
+			domain_name);
+	kfree(domain_name);
+	return ret;
 }
 
 /**
