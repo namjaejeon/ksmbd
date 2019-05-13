@@ -2533,7 +2533,7 @@ int smb2_open(struct cifsd_work *work)
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
-		filp_close(filp, (struct files_struct *)filp);
+		fput(filp);
 		rc = PTR_ERR(fp);
 		fp = NULL;
 		goto err_out;
@@ -3145,7 +3145,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	if (srch_flag & SMB2_REOPEN) {
 		cifsd_debug("Reopen the directory\n");
-		filp_close(dir_fp->filp, NULL);
+		fput(dir_fp->filp);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
 		if (!dir_fp->filp) {
 			cifsd_debug("Reopening dir failed\n");
