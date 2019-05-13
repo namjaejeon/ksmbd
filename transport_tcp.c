@@ -109,7 +109,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	if (!conn)
 		return NULL;
 
-	atomic_set(&conn->need_neg, 1);
+	conn->need_neg = true;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls("utf8");

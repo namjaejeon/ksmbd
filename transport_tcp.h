@@ -78,7 +78,6 @@ struct cifsd_tcp_conn {
 	atomic_t			req_running;
 	/* References which are made for this Server object*/
 	atomic_t			r_count;
-	atomic_t			need_neg;
 	atomic_t			total_credits;
 	wait_queue_head_t		req_running_q;
 	/* Lock to protect requests list*/
@@ -99,6 +98,7 @@ struct cifsd_tcp_conn {
 
 	struct preauth_integrity_info	*preauth_info;
 
+	bool				need_neg;
 	/* Supports NTLMSSP */
 	bool				sec_ntlmssp;
 	/* Supports U2U Kerberos */

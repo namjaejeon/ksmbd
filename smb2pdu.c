@@ -222,7 +222,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	if (!atomic_read(&conn->need_neg))
+	if (conn->need_neg == false)
 		return -EINVAL;
 	if (!(conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID))
@@ -857,7 +857,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
 
-	atomic_set(&conn->need_neg, 0);
+	conn->need_neg = false;
 	if (cifsd_tcp_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
