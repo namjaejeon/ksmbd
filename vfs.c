@@ -1425,6 +1425,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
+		filp_close(filp, (struct files_struct *)filp);
 		err = PTR_ERR(fp);
 		cifsd_err("id insert failed\n");
 		goto err_out;
@@ -1442,8 +1443,6 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 err_out:
 	if (!IS_ERR(fp))
 		cifsd_close_fd(work, fp->volatile_id);
-	fput(filp);
-
 	if (err) {
 		fp = ERR_PTR(err);
 		cifsd_err("err : %d\n", err);
