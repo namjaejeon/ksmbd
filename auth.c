@@ -188,8 +188,8 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret, len;
-	wchar_t *domain;
-	__le16 *uniname;
+	wchar_t *domain = NULL;
+	__le16 *uniname = NULL;
 
 	if (!sess->conn->secmech.sdeschmacmd5) {
 		cifsd_debug("can't generate ntlmv2 hash\n");
@@ -214,7 +214,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!uniname) {
 		ret = -ENOMEM;
-		return ret;
+		goto out;
 	}
 
 	if (len) {
@@ -227,8 +227,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with user\n");
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	/* Convert domain name or conn name to unicode and uppercase */
@@ -237,8 +236,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	if (!domain) {
 		cifsd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	len = smb_strtoUTF16((__le16 *)domain, dname, len,
@@ -248,16 +246,14 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with domain\n");
-		kfree(uniname);
-		kfree(domain);
-		return ret;
+		goto out;
 	}
 
 	ret = crypto_shash_final(&sess->conn->secmech.sdeschmacmd5->shash,
 			ntlmv2_hash);
+out:
 	if (ret)
 		cifsd_debug("Could not generate md5 hash\n");
-
 	kfree(uniname);
 	kfree(domain);
 	return ret;
@@ -317,7 +313,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
-	char *construct;
+	char *construct = NULL;
 	int rc, len;
 
 	rc = crypto_hmacmd5_alloc(sess->conn);
@@ -383,6 +379,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 
 	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 out:
+	kfree(construct);
 	return rc;
 }
 
@@ -440,6 +437,7 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	char *domain_name;
 	unsigned int lm_off, nt_off;
 	unsigned short nt_len;
+	int ret;
 
 	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -477,8 +475,12 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
-	return cifsd_auth_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
-		nt_off), nt_len - CIFS_ENCPWD_SIZE, domain_name);
+	ret = cifsd_auth_ntlmv2(sess,
+			(struct ntlmv2_resp *)((char *)authblob + nt_off),
+			nt_len - CIFS_ENCPWD_SIZE,
+			domain_name);
+	kfree(domain_name);
+	return ret;
 }
 
 /**

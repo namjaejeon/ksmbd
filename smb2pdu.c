@@ -222,7 +222,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	if (!atomic_read(&conn->need_neg))
+	if (conn->need_neg == false)
 		return -EINVAL;
 	if (!(conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID))
@@ -436,13 +436,15 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
-	if (atomic_read(&conn->total_credits)) {
+	spin_lock(&conn->credits_lock);
+	if (conn->total_credits) {
 		if (le16_to_cpu(rcv_hdr->CreditCharge))
-			atomic_sub(le16_to_cpu(rcv_hdr->CreditCharge),
-				&conn->total_credits);
+			conn->total_credits -=
+				le16_to_cpu(rcv_hdr->CreditCharge);
 		else
-			atomic_sub(1, &conn->total_credits);
+			conn->total_credits -= 1;
 	}
+	spin_unlock(&conn->credits_lock);
 
 	work->type = SYNC;
 	if (work->async_id) {
@@ -509,9 +511,14 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
-	int total_credits = atomic_read(&conn->total_credits);
+	int total_credits;
 
-	BUG_ON(total_credits >= conn->max_credits);
+	spin_lock(&conn->credits_lock);
+	total_credits = conn->total_credits;
+	if (total_credits >= conn->max_credits) {
+		cifsd_err("Total credits overflow: %d\n", total_credits);
+		total_credits = conn->max_credits;
+	}
 
 	/* get default minimum credits by shifting maximum credits by 4 */
 	min_credits = conn->max_credits >> 4;
@@ -544,13 +551,14 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 		credits_granted = 1;
 	}
 
-	atomic_add(credits_granted, &conn->total_credits);
+	conn->total_credits += credits_granted;
+	spin_unlock(&conn->credits_lock);
+
 	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,
-			atomic_read(&conn->total_credits));
+			conn->total_credits);
 	/* set number of credits granted in SMB2 hdr */
 	hdr->CreditRequest = cpu_to_le16(credits_granted);
-
 }
 
 /**
@@ -857,7 +865,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
 
-	atomic_set(&conn->need_neg, 0);
+	conn->need_neg = false;
 	if (cifsd_tcp_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
@@ -2525,6 +2533,7 @@ int smb2_open(struct cifsd_work *work)
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
+		fput(filp);
 		rc = PTR_ERR(fp);
 		fp = NULL;
 		goto err_out;
@@ -2846,6 +2855,8 @@ err_out1:
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
+		if (!fp || !fp->filename)
+			kfree(name);
 		if (fp)
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
@@ -3136,7 +3147,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	if (srch_flag & SMB2_REOPEN) {
 		cifsd_debug("Reopen the directory\n");
-		filp_close(dir_fp->filp, NULL);
+		fput(dir_fp->filp);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
 		if (!dir_fp->filp) {
 			cifsd_debug("Reopening dir failed\n");
