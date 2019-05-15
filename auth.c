@@ -322,11 +322,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 		goto out;
 	}
 
-	if (!strcmp(domain_name, cifsd_netbios_name()))
-		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, cifsd_netbios_name());
-	else
-		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
-
+	rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
 	if (rc) {
 		cifsd_debug("could not get v2 hash rc %d\n", rc);
 		goto out;
