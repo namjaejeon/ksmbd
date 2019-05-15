@@ -436,7 +436,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
-	spin_lock(&conn->request_lock);
+	spin_lock(&conn->credits_lock);
 	if (conn->total_credits) {
 		if (le16_to_cpu(rcv_hdr->CreditCharge))
 			conn->total_credits -=
@@ -444,7 +444,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 		else
 			conn->total_credits -= 1;
 	}
-	spin_unlock(&conn->request_lock);
+	spin_unlock(&conn->credits_lock);
 
 	work->type = SYNC;
 	if (work->async_id) {
@@ -513,7 +513,7 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned short aux_max, aux_credits, min_credits;
 	int total_credits;
 
-	spin_lock(&conn->request_lock);
+	spin_lock(&conn->credits_lock);
 	total_credits = conn->total_credits;
 	if (total_credits >= conn->max_credits) {
 		cifsd_err("Total credits overflow: %d\n", total_credits);
@@ -552,7 +552,7 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	}
 
 	conn->total_credits += credits_granted;
-	spin_unlock(&conn->request_lock);
+	spin_unlock(&conn->credits_lock);
 
 	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,

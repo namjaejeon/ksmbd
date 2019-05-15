@@ -80,6 +80,7 @@ struct cifsd_tcp_conn {
 	atomic_t			r_count;
 	unsigned short			total_credits;
 	unsigned short			max_credits;
+	spinlock_t			credits_lock;
 	wait_queue_head_t		req_running_q;
 	/* Lock to protect requests list*/
 	spinlock_t			request_lock;

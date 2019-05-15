@@ -123,6 +123,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
+	spin_lock_init(&conn->credits_lock);
 	conn->async_ida = cifsd_ida_alloc();
 
 	write_lock(&tcp_conn_list_lock);
