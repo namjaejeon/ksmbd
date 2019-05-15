@@ -51,15 +51,6 @@ extern bool multi_channel_enable;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
-/* cifsd's Specific ERRNO */
-#define ESHARE 50000
-
-#define LOCKING_ANDX_SHARED_LOCK     0x01
-#define LOCKING_ANDX_OPLOCK_RELEASE  0x02
-#define LOCKING_ANDX_CHANGE_LOCKTYPE 0x04
-#define LOCKING_ANDX_CANCEL_LOCK     0x08
-#define LOCKING_ANDX_LARGE_FILES     0x10
-
 /*
  *  * Size of the ntlm client response
  *   */
@@ -92,18 +83,8 @@ extern bool multi_channel_enable;
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 
-/* MAXIMUM KMEM DATA SIZE ORDER */
-#define PAGE_ALLOC_KMEM_ORDER	2
-
 #define DATA_STREAM	1
 #define DIR_STREAM	2
-
-enum asyncEnum {
-	ASYNC_PROG = 1,
-	ASYNC_CANCEL,
-	ASYNC_CLOSE,
-	ASYNC_EXITING,
-};
 
 #define SYNC 1
 #define ASYNC 2

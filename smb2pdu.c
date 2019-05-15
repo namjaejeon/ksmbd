@@ -1406,7 +1406,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		kfree(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
 	} else {
-		cifsd_err("%s Invalid phase\n", __func__);
+		cifsd_err("Invalid phase\n");
 		rc = -EINVAL;
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	}
@@ -1610,7 +1610,7 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifsd_debug("%s : request\n", __func__);
+	cifsd_debug("request\n");
 
 	if (!tcon) {
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
@@ -1643,7 +1643,7 @@ int smb2_session_logoff(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifsd_debug("%s : request\n", __func__);
+	cifsd_debug("request\n");
 
 	/* Got a valid session, set connection state */
 	WARN_ON(sess->conn != conn);
@@ -2238,7 +2238,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	} else {
 		len = strlen(share->path);
-		cifsd_debug("[%s] %d\n", __func__, len);
+		cifsd_debug("share path len %d\n", len);
 		name = kmalloc(len + 1, GFP_KERNEL);
 		if (!name) {
 			rsp->hdr.Status = STATUS_NO_MEMORY;
@@ -3021,7 +3021,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		break;
 	}
 	default:
-		cifsd_err("%s: failed\n", __func__);
+		cifsd_err("failed\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -5167,7 +5167,7 @@ int smb2_set_info(struct cifsd_work *work)
 	int rc = 0;
 	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
 
-	cifsd_debug("%s: Received set info request\n", __func__);
+	cifsd_debug("Received set info request\n");
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(work);
