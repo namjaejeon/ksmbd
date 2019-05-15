@@ -672,9 +672,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 	work->cancel_argv = arg;
 
 	spin_lock(&conn->request_lock);
-	list_del_init(&work->request_entry);
-	list_add_tail(&work->request_entry,
-		&conn->async_requests);
+	list_add_tail(&work->async_request_entry, &conn->async_requests);
 	spin_unlock(&conn->request_lock);
 
 	return 0;
@@ -5639,37 +5637,50 @@ int smb2_cancel(struct cifsd_work *work)
 	int canceled = 0;
 	struct list_head *command_list;
 
-	cifsd_debug("smb2 cancel called on mid %llu\n", hdr->MessageId);
+	cifsd_debug("smb2 cancel called on mid %llu, async flags 0x%x\n",
+		hdr->MessageId, hdr->Flags);
 
-	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND)
+	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND) {
 		command_list = &conn->async_requests;
-	else
-		command_list = &conn->requests;
 
-	spin_lock(&conn->request_lock);
-	list_for_each(tmp, command_list) {
-		cancel_work = list_entry(tmp, struct cifsd_work,
-				request_entry);
-		chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
-		if (cancel_work->type == ASYNC) {
+		spin_lock(&conn->request_lock);
+		list_for_each(tmp, command_list) {
+			cancel_work = list_entry(tmp, struct cifsd_work,
+					async_request_entry);
+			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+
 			if (cancel_work->async_id !=
 					le64_to_cpu(hdr->Id.AsyncId))
 				continue;
+
 			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
 				le64_to_cpu(hdr->Id.AsyncId),
 				le16_to_cpu(chdr->Command));
-		} else {
+			canceled = 1;
+			break;
+		}
+		spin_unlock(&conn->request_lock);
+	} else {
+		command_list = &conn->requests;
+
+		spin_lock(&conn->request_lock);
+		list_for_each(tmp, command_list) {
+			cancel_work = list_entry(tmp, struct cifsd_work,
+					request_entry);
+			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+
 			if (chdr->MessageId != hdr->MessageId ||
 				cancel_work == work)
 				continue;
+
 			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
 				le64_to_cpu(hdr->MessageId),
 				le16_to_cpu(chdr->Command));
+			canceled = 1;
+			break;
 		}
-		canceled = 1;
-		break;
+		spin_unlock(&conn->request_lock);
 	}
-	spin_unlock(&conn->request_lock);
 
 	if (canceled) {
 		cancel_work->state = WORK_STATE_CANCELLED;

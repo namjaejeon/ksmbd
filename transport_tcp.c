@@ -743,6 +743,9 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
+		if (work->type == ASYNC)
+			list_del_init(&work->async_request_entry);
+
 		work->on_request_list = 0;
 		ret = 0;
 	}
