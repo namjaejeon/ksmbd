@@ -51,9 +51,6 @@ extern bool multi_channel_enable;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
-/* cifsd's Specific ERRNO */
-#define ESHARE 50000
-
 /*
  *  * Size of the ntlm client response
  *   */
