@@ -467,6 +467,8 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 			le32_to_cpu(authblob->DomainName.BufferOffset),
 			le16_to_cpu(authblob->DomainName.Length), true,
 			sess->conn->local_nls);
+	if (IS_ERR(domain_name))
+		return PTR_ERR(domain_name);
 
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
