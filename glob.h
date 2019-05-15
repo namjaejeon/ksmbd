@@ -83,9 +83,6 @@ extern bool multi_channel_enable;
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 
-/* MAXIMUM KMEM DATA SIZE ORDER */
-#define PAGE_ALLOC_KMEM_ORDER	2
-
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
