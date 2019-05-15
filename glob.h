@@ -89,13 +89,6 @@ extern bool multi_channel_enable;
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
-enum asyncEnum {
-	ASYNC_PROG = 1,
-	ASYNC_CANCEL,
-	ASYNC_CLOSE,
-	ASYNC_EXITING,
-};
-
 #define SYNC 1
 #define ASYNC 2
 
