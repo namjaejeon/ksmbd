@@ -54,12 +54,6 @@ extern bool multi_channel_enable;
 /* cifsd's Specific ERRNO */
 #define ESHARE 50000
 
-#define LOCKING_ANDX_SHARED_LOCK     0x01
-#define LOCKING_ANDX_OPLOCK_RELEASE  0x02
-#define LOCKING_ANDX_CHANGE_LOCKTYPE 0x04
-#define LOCKING_ANDX_CANCEL_LOCK     0x08
-#define LOCKING_ANDX_LARGE_FILES     0x10
-
 /*
  *  * Size of the ntlm client response
  *   */
