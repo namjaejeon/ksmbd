@@ -369,7 +369,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 
 	rc = cifsd_gen_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
 	if (rc) {
-		cifsd_debug("%s: Could not generate sess key\n", __func__);
+		cifsd_debug("Could not generate sess key\n");
 		goto out;
 	}
 
@@ -1008,7 +1008,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	if (!(sess->conn->dialect >= SMB30_PROT_ID && signing->binding))
 		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
-	cifsd_debug("%s: dumping generated AES signing keys\n", __func__);
+	cifsd_debug("dumping generated AES signing keys\n");
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
@@ -1077,7 +1077,7 @@ static int generate_smb3encryptionkey(struct cifsd_session *sess,
 	if (rc)
 		return rc;
 
-	cifsd_debug("%s: dumping generated AES encryption keys\n", __func__);
+	cifsd_debug("dumping generated AES encryption keys\n");
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
@@ -1293,14 +1293,13 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 
 	rc = cifsd_get_encryption_key(conn, tr_hdr->SessionId, enc, key);
 	if (rc) {
-		cifsd_err("%s: Could not get %scryption key\n", __func__,
-				enc ? "en" : "de");
+		cifsd_err("Could not get %scryption key\n", enc ? "en" : "de");
 		return 0;
 	}
 
 	rc = cifsd_alloc_aead(conn);
 	if (rc) {
-		cifsd_err("%s: crypto alloc failed\n", __func__);
+		cifsd_err("crypto alloc failed\n");
 		return rc;
 	}
 
@@ -1308,19 +1307,19 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 		conn->secmech.ccmaesdecrypt;
 	rc = crypto_aead_setkey(tfm, key, SMB3_SIGN_KEY_SIZE);
 	if (rc) {
-		cifsd_err("%s: Failed to set aead key %d\n", __func__, rc);
+		cifsd_err("Failed to set aead key %d\n", rc);
 		return rc;
 	}
 
 	rc = crypto_aead_setauthsize(tfm, SMB2_SIGNATURE_SIZE);
 	if (rc) {
-		cifsd_err("%s: Failed to set authsize %d\n", __func__, rc);
+		cifsd_err("Failed to set authsize %d\n", rc);
 		return rc;
 	}
 
 	req = aead_request_alloc(tfm, GFP_KERNEL);
 	if (!req) {
-		cifsd_err("%s: Failed to alloc aead request", __func__);
+		cifsd_err("Failed to alloc aead request\n");
 		return -ENOMEM;
 	}
 
@@ -1335,7 +1334,7 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 
 	sg = cifsd_init_sg(iov, nvec, sign);
 	if (!sg) {
-		cifsd_err("%s: Failed to init sg", __func__);
+		cifsd_err("Failed to init sg\n");
 		rc = -ENOMEM;
 		goto free_req;
 	}
@@ -1343,7 +1342,7 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	iv_len = crypto_aead_ivsize(tfm);
 	iv = kzalloc(iv_len, GFP_KERNEL);
 	if (!iv) {
-		cifsd_err("%s: Failed to alloc IV", __func__);
+		cifsd_err("Failed to alloc IV\n");
 		rc = -ENOMEM;
 		goto free_sg;
 	}
