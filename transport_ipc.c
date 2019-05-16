@@ -119,80 +119,66 @@ static const struct nla_policy cifsd_nl_policy[CIFSD_EVENT_MAX] = {
 	},
 };
 
-static const struct genl_ops cifsd_genl_ops[] = {
+static struct genl_ops cifsd_genl_ops[] = {
 	{
 		.cmd	= CIFSD_EVENT_UNSPEC,
 		.doit	= handle_unsupported_event,
-		.policy	= cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_HEARTBEAT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy	= cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_STARTING_UP,
 		.doit	= handle_startup_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHUTTING_DOWN,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGIN_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGIN_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHARE_CONFIG_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHARE_CONFIG_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_CONNECT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_CONNECT_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_DISCONNECT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGOUT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_RPC_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_RPC_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 };
 
-struct genl_family cifsd_genl_family = {
+static struct genl_family cifsd_genl_family = {
 	.name		= CIFSD_GENL_NAME,
 	.version	= CIFSD_GENL_VERSION,
 	.hdrsize	= 0,
@@ -202,6 +188,22 @@ struct genl_family cifsd_genl_family = {
 	.ops		= cifsd_genl_ops,
 	.n_ops		= ARRAY_SIZE(cifsd_genl_ops),
 };
+
+static void cifsd_nl_init_fixup(void)
+{
+	int i;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
+	for (i = 0; i < ARRAY_SIZE(cifsd_genl_ops); i++)
+		cifsd_genl_ops[i].validate = GENL_DONT_VALIDATE_STRICT |
+						GENL_DONT_VALIDATE_DUMP;
+
+	cifsd_genl_family.policy = cifsd_nl_policy;
+#else
+	for (i = 0; i < ARRAY_SIZE(cifsd_genl_ops); i++)
+		cifsd_genl_ops[i].policy = cifsd_nl_policy;
+#endif
+}
 
 static int rpc_context_flags(struct cifsd_session *sess)
 {
@@ -783,8 +785,10 @@ void cifsd_ipc_release(void)
 
 int cifsd_ipc_init(void)
 {
-	int ret = genl_register_family(&cifsd_genl_family);
+	int ret;
 
+	cifsd_nl_init_fixup();
+	ret = genl_register_family(&cifsd_genl_family);
 	if (ret) {
 		cifsd_err("Failed to register CIFSD netlink interface %d\n",
 				ret);

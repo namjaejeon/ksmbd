@@ -129,8 +129,6 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacmd5->shash.tfm = conn->secmech.hmacmd5;
-	conn->secmech.sdeschmacmd5->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -188,8 +186,8 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret, len;
-	wchar_t *domain;
-	__le16 *uniname;
+	wchar_t *domain = NULL;
+	__le16 *uniname = NULL;
 
 	if (!sess->conn->secmech.sdeschmacmd5) {
 		cifsd_debug("can't generate ntlmv2 hash\n");
@@ -214,7 +212,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	uniname = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!uniname) {
 		ret = -ENOMEM;
-		return ret;
+		goto out;
 	}
 
 	if (len) {
@@ -227,8 +225,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 			(char *)uniname, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with user\n");
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	/* Convert domain name or conn name to unicode and uppercase */
@@ -237,8 +234,7 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 	if (!domain) {
 		cifsd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
-		kfree(uniname);
-		return ret;
+		goto out;
 	}
 
 	len = smb_strtoUTF16((__le16 *)domain, dname, len,
@@ -248,16 +244,14 @@ static int calc_ntlmv2_hash(struct cifsd_session *sess, char *ntlmv2_hash,
 					(char *)domain, UNICODE_LEN(len));
 	if (ret) {
 		cifsd_debug("Could not update with domain\n");
-		kfree(uniname);
-		kfree(domain);
-		return ret;
+		goto out;
 	}
 
 	ret = crypto_shash_final(&sess->conn->secmech.sdeschmacmd5->shash,
 			ntlmv2_hash);
+out:
 	if (ret)
 		cifsd_debug("Could not generate md5 hash\n");
-
 	kfree(uniname);
 	kfree(domain);
 	return ret;
@@ -317,7 +311,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
-	char *construct;
+	char *construct = NULL;
 	int rc, len;
 
 	rc = crypto_hmacmd5_alloc(sess->conn);
@@ -326,11 +320,7 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 		goto out;
 	}
 
-	if (!strcmp(domain_name, cifsd_netbios_name()))
-		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, cifsd_netbios_name());
-	else
-		rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
-
+	rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
 	if (rc) {
 		cifsd_debug("could not get v2 hash rc %d\n", rc);
 		goto out;
@@ -377,12 +367,13 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 
 	rc = cifsd_gen_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
 	if (rc) {
-		cifsd_debug("%s: Could not generate sess key\n", __func__);
+		cifsd_debug("Could not generate sess key\n");
 		goto out;
 	}
 
 	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 out:
+	kfree(construct);
 	return rc;
 }
 
@@ -440,6 +431,7 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	char *domain_name;
 	unsigned int lm_off, nt_off;
 	unsigned short nt_len;
+	int ret;
 
 	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
@@ -473,12 +465,18 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 			le32_to_cpu(authblob->DomainName.BufferOffset),
 			le16_to_cpu(authblob->DomainName.Length), true,
 			sess->conn->local_nls);
+	if (IS_ERR(domain_name))
+		return PTR_ERR(domain_name);
 
 	/* process NTLMv2 authentication */
 	cifsd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
-	return cifsd_auth_ntlmv2(sess, (struct ntlmv2_resp *)((char *)authblob +
-		nt_off), nt_len - CIFS_ENCPWD_SIZE, domain_name);
+	ret = cifsd_auth_ntlmv2(sess,
+			(struct ntlmv2_resp *)((char *)authblob + nt_off),
+			nt_len - CIFS_ENCPWD_SIZE,
+			domain_name);
+	kfree(domain_name);
+	return ret;
 }
 
 /**
@@ -628,8 +626,6 @@ static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdescmd5->shash.tfm = conn->secmech.md5;
-	conn->secmech.sdescmd5->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -720,8 +716,6 @@ static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacsha256->shash.tfm = conn->secmech.hmacsha256;
-	conn->secmech.sdeschmacsha256->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -750,8 +744,6 @@ static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdesccmacaes->shash.tfm = conn->secmech.cmacaes;
-	conn->secmech.sdesccmacaes->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -781,8 +773,6 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdescsha512->shash.tfm = conn->secmech.sha512;
-	conn->secmech.sdescsha512->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -1008,7 +998,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	if (!(sess->conn->dialect >= SMB30_PROT_ID && signing->binding))
 		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
-	cifsd_debug("%s: dumping generated AES signing keys\n", __func__);
+	cifsd_debug("dumping generated AES signing keys\n");
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
@@ -1077,7 +1067,7 @@ static int generate_smb3encryptionkey(struct cifsd_session *sess,
 	if (rc)
 		return rc;
 
-	cifsd_debug("%s: dumping generated AES encryption keys\n", __func__);
+	cifsd_debug("dumping generated AES encryption keys\n");
 	/*
 	 * The session id is opaque in terms of endianness, so we can't
 	 * print it as a long long. we dump it as we got it on the wire
@@ -1293,14 +1283,13 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 
 	rc = cifsd_get_encryption_key(conn, tr_hdr->SessionId, enc, key);
 	if (rc) {
-		cifsd_err("%s: Could not get %scryption key\n", __func__,
-				enc ? "en" : "de");
+		cifsd_err("Could not get %scryption key\n", enc ? "en" : "de");
 		return 0;
 	}
 
 	rc = cifsd_alloc_aead(conn);
 	if (rc) {
-		cifsd_err("%s: crypto alloc failed\n", __func__);
+		cifsd_err("crypto alloc failed\n");
 		return rc;
 	}
 
@@ -1308,19 +1297,19 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 		conn->secmech.ccmaesdecrypt;
 	rc = crypto_aead_setkey(tfm, key, SMB3_SIGN_KEY_SIZE);
 	if (rc) {
-		cifsd_err("%s: Failed to set aead key %d\n", __func__, rc);
+		cifsd_err("Failed to set aead key %d\n", rc);
 		return rc;
 	}
 
 	rc = crypto_aead_setauthsize(tfm, SMB2_SIGNATURE_SIZE);
 	if (rc) {
-		cifsd_err("%s: Failed to set authsize %d\n", __func__, rc);
+		cifsd_err("Failed to set authsize %d\n", rc);
 		return rc;
 	}
 
 	req = aead_request_alloc(tfm, GFP_KERNEL);
 	if (!req) {
-		cifsd_err("%s: Failed to alloc aead request", __func__);
+		cifsd_err("Failed to alloc aead request\n");
 		return -ENOMEM;
 	}
 
@@ -1335,7 +1324,7 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 
 	sg = cifsd_init_sg(iov, nvec, sign);
 	if (!sg) {
-		cifsd_err("%s: Failed to init sg", __func__);
+		cifsd_err("Failed to init sg\n");
 		rc = -ENOMEM;
 		goto free_req;
 	}
@@ -1343,7 +1332,7 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	iv_len = crypto_aead_ivsize(tfm);
 	iv = kzalloc(iv_len, GFP_KERNEL);
 	if (!iv) {
-		cifsd_err("%s: Failed to alloc IV", __func__);
+		cifsd_err("Failed to alloc IV\n");
 		rc = -ENOMEM;
 		goto free_sg;
 	}

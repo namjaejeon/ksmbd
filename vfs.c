@@ -278,8 +278,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 	ret = check_lock_range(filp, *pos, *pos + count - 1,
 			READ);
 	if (ret) {
-		cifsd_err("%s: unable to read due to lock\n",
-				__func__);
+		cifsd_err("unable to read due to lock\n");
 		return -EAGAIN;
 	}
 
@@ -402,11 +401,9 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 		goto out;
 	}
 
-	err = check_lock_range(filp, *pos, *pos + count - 1,
-			WRITE);
+	err = check_lock_range(filp, *pos, *pos + count - 1, WRITE);
 	if (err) {
-		cifsd_err("%s: unable to write due to lock\n",
-				__func__);
+		cifsd_err("unable to write due to lock\n");
 		err = -EAGAIN;
 		goto out;
 	}
@@ -1264,7 +1261,7 @@ void cifsd_vfs_set_fadvise(struct file *filp, int option)
 int cifsd_vfs_lock(struct file *filp, int cmd,
 			struct file_lock *flock)
 {
-	cifsd_debug("%s: calling vfs_lock_file\n", __func__);
+	cifsd_debug("calling vfs_lock_file\n");
 	return vfs_lock_file(filp, cmd, flock, NULL);
 }
 
@@ -1425,6 +1422,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
+		fput(filp);
 		err = PTR_ERR(fp);
 		cifsd_err("id insert failed\n");
 		goto err_out;
@@ -1442,8 +1440,6 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 err_out:
 	if (!IS_ERR(fp))
 		cifsd_close_fd(work, fp->volatile_id);
-	fput(filp);
-
 	if (err) {
 		fp = ERR_PTR(err);
 		cifsd_err("err : %d\n", err);
