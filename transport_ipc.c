@@ -123,72 +123,58 @@ static struct genl_ops cifsd_genl_ops[] = {
 	{
 		.cmd	= CIFSD_EVENT_UNSPEC,
 		.doit	= handle_unsupported_event,
-		.policy	= cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_HEARTBEAT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy	= cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_STARTING_UP,
 		.doit	= handle_startup_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHUTTING_DOWN,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGIN_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGIN_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHARE_CONFIG_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_SHARE_CONFIG_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_CONNECT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_CONNECT_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_TREE_DISCONNECT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_LOGOUT_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_RPC_REQUEST,
 		.doit	= handle_unsupported_event,
-		.policy = cifsd_nl_policy,
 	},
 	{
 		.cmd	= CIFSD_EVENT_RPC_RESPONSE,
 		.doit	= handle_generic_event,
-		.policy = cifsd_nl_policy,
 	},
 };
 
@@ -205,12 +191,17 @@ static struct genl_family cifsd_genl_family = {
 
 static void cifsd_nl_init_fixup(void)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	int i;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	for (i = 0; i < ARRAY_SIZE(cifsd_genl_ops); i++)
 		cifsd_genl_ops[i].validate = GENL_DONT_VALIDATE_STRICT |
 						GENL_DONT_VALIDATE_DUMP;
+
+	cifsd_genl_family.policy = cifsd_nl_policy;
+#else
+	for (i = 0; i < ARRAY_SIZE(cifsd_genl_ops); i++)
+		cifsd_genl_ops[i].policy = cifsd_nl_policy;
 #endif
 }
 
