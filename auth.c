@@ -129,8 +129,6 @@ static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacmd5->shash.tfm = conn->secmech.hmacmd5;
-	conn->secmech.sdeschmacmd5->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -628,8 +626,6 @@ static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdescmd5->shash.tfm = conn->secmech.md5;
-	conn->secmech.sdescmd5->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -720,8 +716,6 @@ static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacsha256->shash.tfm = conn->secmech.hmacsha256;
-	conn->secmech.sdeschmacsha256->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -750,8 +744,6 @@ static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdesccmacaes->shash.tfm = conn->secmech.cmacaes;
-	conn->secmech.sdesccmacaes->shash.flags = 0x0;
-
 	return 0;
 }
 
@@ -781,8 +773,6 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdescsha512->shash.tfm = conn->secmech.sha512;
-	conn->secmech.sdescsha512->shash.flags = 0x0;
-
 	return 0;
 }
 
