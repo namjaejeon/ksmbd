@@ -90,6 +90,7 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	cifsd_free_conn_secmech(conn);
 	cifsd_free_request(conn->request_buf);
 	cifsd_ida_free(conn->async_ida);
+	kfree(conn->iov);
 	kfree(conn->preauth_info);
 	kfree(conn);
 }
