@@ -193,7 +193,7 @@ static void cifsd_nl_init_fixup(void)
 {
 	int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
 	for (i = 0; i < ARRAY_SIZE(cifsd_genl_ops); i++)
 		cifsd_genl_ops[i].validate = GENL_DONT_VALIDATE_STRICT |
 						GENL_DONT_VALIDATE_DUMP;
