@@ -516,7 +516,7 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	spin_lock(&conn->credits_lock);
 	total_credits = conn->total_credits;
 	if (total_credits >= conn->max_credits) {
-		cifsd_err("Total credits overflow: %d\n", total_credits);
+		cifsd_debug("Total credits overflow: %d\n", total_credits);
 		total_credits = conn->max_credits;
 	}
 
