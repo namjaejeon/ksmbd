@@ -90,6 +90,7 @@ static void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 	cifsd_free_conn_secmech(conn);
 	cifsd_free_request(conn->request_buf);
 	cifsd_ida_free(conn->async_ida);
+	kfree(conn->iov);
 	kfree(conn->preauth_info);
 	kfree(conn);
 }
@@ -109,7 +110,7 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 	if (!conn)
 		return NULL;
 
-	atomic_set(&conn->need_neg, 1);
+	conn->need_neg = true;
 	conn->tcp_status = CIFSD_SESS_NEW;
 	conn->sock = sock;
 	conn->local_nls = load_nls("utf8");
@@ -117,15 +118,13 @@ static struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(struct socket *sock)
 		conn->local_nls = load_nls_default();
 	atomic_set(&conn->req_running, 0);
 	atomic_set(&conn->r_count, 0);
-	conn->max_credits = 0;
-	atomic_set(&conn->total_credits, 0);
 	init_waitqueue_head(&conn->req_running_q);
 	INIT_LIST_HEAD(&conn->tcp_conns);
 	INIT_LIST_HEAD(&conn->sessions);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
-	conn->srv_cap = 0;
+	spin_lock_init(&conn->credits_lock);
 	conn->async_ida = cifsd_ida_alloc();
 
 	write_lock(&tcp_conn_list_lock);
@@ -745,6 +744,9 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
+		if (work->type == ASYNC)
+			list_del_init(&work->async_request_entry);
+
 		work->on_request_list = 0;
 		ret = 0;
 	}

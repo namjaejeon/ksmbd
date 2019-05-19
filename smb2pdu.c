@@ -222,7 +222,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	struct cifsd_tcp_conn *conn = work->conn;
 
-	if (!atomic_read(&conn->need_neg))
+	if (conn->need_neg == false)
 		return -EINVAL;
 	if (!(conn->dialect >= SMB20_PROT_ID &&
 		conn->dialect <= SMB311_PROT_ID))
@@ -436,13 +436,15 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
-	if (atomic_read(&conn->total_credits)) {
+	spin_lock(&conn->credits_lock);
+	if (conn->total_credits) {
 		if (le16_to_cpu(rcv_hdr->CreditCharge))
-			atomic_sub(le16_to_cpu(rcv_hdr->CreditCharge),
-				&conn->total_credits);
+			conn->total_credits -=
+				le16_to_cpu(rcv_hdr->CreditCharge);
 		else
-			atomic_sub(1, &conn->total_credits);
+			conn->total_credits -= 1;
 	}
+	spin_unlock(&conn->credits_lock);
 
 	work->type = SYNC;
 	if (work->async_id) {
@@ -509,9 +511,14 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
-	int total_credits = atomic_read(&conn->total_credits);
+	int total_credits;
 
-	BUG_ON(total_credits >= conn->max_credits);
+	spin_lock(&conn->credits_lock);
+	total_credits = conn->total_credits;
+	if (total_credits >= conn->max_credits) {
+		cifsd_debug("Total credits overflow: %d\n", total_credits);
+		total_credits = conn->max_credits;
+	}
 
 	/* get default minimum credits by shifting maximum credits by 4 */
 	min_credits = conn->max_credits >> 4;
@@ -544,13 +551,14 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 		credits_granted = 1;
 	}
 
-	atomic_add(credits_granted, &conn->total_credits);
+	conn->total_credits += credits_granted;
+	spin_unlock(&conn->credits_lock);
+
 	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,
-			atomic_read(&conn->total_credits));
+			conn->total_credits);
 	/* set number of credits granted in SMB2 hdr */
 	hdr->CreditRequest = cpu_to_le16(credits_granted);
-
 }
 
 /**
@@ -664,9 +672,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 	work->cancel_argv = arg;
 
 	spin_lock(&conn->request_lock);
-	list_del_init(&work->request_entry);
-	list_add_tail(&work->request_entry,
-		&conn->async_requests);
+	list_add_tail(&work->async_request_entry, &conn->async_requests);
 	spin_unlock(&conn->request_lock);
 
 	return 0;
@@ -857,7 +863,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
 
-	atomic_set(&conn->need_neg, 0);
+	conn->need_neg = false;
 	if (cifsd_tcp_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
@@ -1400,7 +1406,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		kfree(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
 	} else {
-		cifsd_err("%s Invalid phase\n", __func__);
+		cifsd_err("Invalid phase\n");
 		rc = -EINVAL;
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	}
@@ -1604,7 +1610,7 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifsd_debug("%s : request\n", __func__);
+	cifsd_debug("request\n");
 
 	if (!tcon) {
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
@@ -1637,7 +1643,7 @@ int smb2_session_logoff(struct cifsd_work *work)
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
 
-	cifsd_debug("%s : request\n", __func__);
+	cifsd_debug("request\n");
 
 	/* Got a valid session, set connection state */
 	WARN_ON(sess->conn != conn);
@@ -2232,7 +2238,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	} else {
 		len = strlen(share->path);
-		cifsd_debug("[%s] %d\n", __func__, len);
+		cifsd_debug("share path len %d\n", len);
 		name = kmalloc(len + 1, GFP_KERNEL);
 		if (!name) {
 			rsp->hdr.Status = STATUS_NO_MEMORY;
@@ -2525,6 +2531,7 @@ int smb2_open(struct cifsd_work *work)
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
 	if (IS_ERR(fp)) {
+		fput(filp);
 		rc = PTR_ERR(fp);
 		fp = NULL;
 		goto err_out;
@@ -2846,6 +2853,8 @@ err_out1:
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
+		if (!fp || !fp->filename)
+			kfree(name);
 		if (fp)
 			cifsd_close_fd(work, fp->volatile_id);
 		smb2_set_err_rsp(work);
@@ -3012,7 +3021,7 @@ static int smb2_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		break;
 	}
 	default:
-		cifsd_err("%s: failed\n", __func__);
+		cifsd_err("failed\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -3136,7 +3145,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	if (srch_flag & SMB2_REOPEN) {
 		cifsd_debug("Reopen the directory\n");
-		filp_close(dir_fp->filp, NULL);
+		fput(dir_fp->filp);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
 		if (!dir_fp->filp) {
 			cifsd_debug("Reopening dir failed\n");
@@ -5158,7 +5167,7 @@ int smb2_set_info(struct cifsd_work *work)
 	int rc = 0;
 	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
 
-	cifsd_debug("%s: Received set info request\n", __func__);
+	cifsd_debug("Received set info request\n");
 
 	req = (struct smb2_set_info_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(work);
@@ -5628,37 +5637,50 @@ int smb2_cancel(struct cifsd_work *work)
 	int canceled = 0;
 	struct list_head *command_list;
 
-	cifsd_debug("smb2 cancel called on mid %llu\n", hdr->MessageId);
+	cifsd_debug("smb2 cancel called on mid %llu, async flags 0x%x\n",
+		hdr->MessageId, hdr->Flags);
 
-	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND)
+	if (hdr->Flags & SMB2_FLAGS_ASYNC_COMMAND) {
 		command_list = &conn->async_requests;
-	else
-		command_list = &conn->requests;
 
-	spin_lock(&conn->request_lock);
-	list_for_each(tmp, command_list) {
-		cancel_work = list_entry(tmp, struct cifsd_work,
-				request_entry);
-		chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
-		if (cancel_work->type == ASYNC) {
+		spin_lock(&conn->request_lock);
+		list_for_each(tmp, command_list) {
+			cancel_work = list_entry(tmp, struct cifsd_work,
+					async_request_entry);
+			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+
 			if (cancel_work->async_id !=
 					le64_to_cpu(hdr->Id.AsyncId))
 				continue;
+
 			cifsd_debug("smb2 with AsyncId %llu cancelled command = 0x%x\n",
 				le64_to_cpu(hdr->Id.AsyncId),
 				le16_to_cpu(chdr->Command));
-		} else {
+			canceled = 1;
+			break;
+		}
+		spin_unlock(&conn->request_lock);
+	} else {
+		command_list = &conn->requests;
+
+		spin_lock(&conn->request_lock);
+		list_for_each(tmp, command_list) {
+			cancel_work = list_entry(tmp, struct cifsd_work,
+					request_entry);
+			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+
 			if (chdr->MessageId != hdr->MessageId ||
 				cancel_work == work)
 				continue;
+
 			cifsd_debug("smb2 with mid %llu cancelled command = 0x%x\n",
 				le64_to_cpu(hdr->MessageId),
 				le16_to_cpu(chdr->Command));
+			canceled = 1;
+			break;
 		}
-		canceled = 1;
-		break;
+		spin_unlock(&conn->request_lock);
 	}
-	spin_unlock(&conn->request_lock);
 
 	if (canceled) {
 		cancel_work->state = WORK_STATE_CANCELLED;

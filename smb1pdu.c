@@ -1154,7 +1154,7 @@ no_password_check:
 			rsp->ByteCount = rsp->SecurityBlobLength;
 		}
 	} else {
-		cifsd_err("%s Invalid phase\n", __func__);
+		cifsd_err("Invalid phase\n");
 		err = -EINVAL;
 	}
 
@@ -5681,7 +5681,7 @@ static int smb_populate_readdir_entry(struct cifsd_tcp_conn *conn,
 		break;
 	}
 	default:
-		cifsd_err("%s: failed\n", __func__);
+		cifsd_err("failed\n");
 		return -EOPNOTSUPP;
 	}
 
@@ -5897,10 +5897,10 @@ static int find_first(struct cifsd_work *work)
 	params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 
 	if (d_info.out_buf_len < 0) {
-		cifsd_debug("%s continue search\n", __func__);
+		cifsd_debug("continue search\n");
 		params->EndofSearch = cpu_to_le16(0);
 	} else {
-		cifsd_debug("%s end of search\n", __func__);
+		cifsd_debug("end of search\n");
 		params->EndofSearch = cpu_to_le16(1);
 		path_put(&(dir_fp->filp->f_path));
 		cifsd_close_fd(work, dir_fp->volatile_id);
@@ -6109,11 +6109,11 @@ static int find_next(struct cifsd_work *work)
 	params->SearchCount = cpu_to_le16(d_info.num_entry);
 
 	if (d_info.out_buf_len < 0) {
-		cifsd_debug("%s continue search\n", __func__);
+		cifsd_debug("continue search\n");
 		params->EndofSearch = cpu_to_le16(0);
 		params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 	} else {
-		cifsd_debug("%s end of search\n", __func__);
+		cifsd_debug("end of search\n");
 		params->EndofSearch = cpu_to_le16(1);
 		params->LastNameOffset = cpu_to_le16(0);
 		path_put(&(dir_fp->filp->f_path));
