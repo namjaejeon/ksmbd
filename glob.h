@@ -179,7 +179,7 @@ struct cifsd_work {
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
-			pr_err("kcifsd: %s:%d: " fmt,		\
+			pr_info("kcifsd: %s:%d: " fmt,		\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
