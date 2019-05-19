@@ -11,6 +11,9 @@
 #include "smb1pdu.h"
 #include "smb2pdu.h"
 
+/* cifsd's Specific ERRNO */
+#define ESHARE			50000
+
 #define SMB1_PROT		0
 #define SMB2_PROT		1
 #define SMB21_PROT		2

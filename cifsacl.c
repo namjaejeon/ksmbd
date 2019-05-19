@@ -536,13 +536,13 @@ static int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 	sidkey = request_key(&cifsd_idmap_key_type, desc, "");
 	if (IS_ERR(sidkey)) {
 		rc = -EINVAL;
-		cifsd_err("%s: Can't map %cid %u to a SID\n",
-				__func__, sidtype == SIDOWNER ? 'u' : 'g', cid);
+		cifsd_err("Can't map %cid %u to a SID\n",
+			  sidtype == SIDOWNER ? 'u' : 'g', cid);
 		goto out_revert_creds;
 	} else if (sidkey->datalen < CIFS_SID_BASE_SIZE) {
 		rc = -EIO;
-		cifsd_err("%s: Downcall contained malformed key (datalen=%hu)\n",
-				__func__, sidkey->datalen);
+		cifsd_err("Downcall contained malformed key (datalen=%hu)\n",
+			  sidkey->datalen);
 		goto invalidate_key;
 	}
 
@@ -564,8 +564,8 @@ static int id_to_sid(unsigned int cid, uint sidtype, struct cifs_sid *ssid)
 	ksid_size = CIFS_SID_BASE_SIZE + (ksid->num_subauth * sizeof(__le32));
 	if (ksid_size > sidkey->datalen) {
 		rc = -EIO;
-		cifsd_err("%s: Downcall contained malformed key (datalen=%hu, ksid_size=%u)\n",
-				__func__, sidkey->datalen, ksid_size);
+		cifsd_err("Downcall contained malformed key (datalen=%hu, ksid_size=%u)\n",
+			  sidkey->datalen, ksid_size);
 		goto invalidate_key;
 	}
 
@@ -597,8 +597,8 @@ static int sid_to_id(struct cifs_sid *psid,
 	 * Just return an error.
 	 */
 	if (unlikely(psid->num_subauth > SID_MAX_SUB_AUTHORITIES)) {
-		cifsd_err("%s: %u subauthorities is too many!\n",
-				__func__, psid->num_subauth);
+		cifsd_err("%u subauthorities is too many!\n",
+			  psid->num_subauth);
 		return -EIO;
 	}
 
@@ -610,8 +610,8 @@ static int sid_to_id(struct cifs_sid *psid,
 	sidkey = request_key(&cifsd_idmap_key_type, sidstr, "");
 	if (IS_ERR(sidkey)) {
 		rc = -EINVAL;
-		cifsd_err("%s: Can't map SID %s to a %cid\n",
-			__func__, sidstr, sidtype == SIDOWNER ? 'u' : 'g');
+		cifsd_err("Can't map SID %s to a %cid\n",
+			  sidstr, sidtype == SIDOWNER ? 'u' : 'g');
 		goto out_revert_creds;
 	}
 
@@ -623,8 +623,8 @@ static int sid_to_id(struct cifs_sid *psid,
 	BUILD_BUG_ON(sizeof(uid_t) != sizeof(gid_t));
 	if (sidkey->datalen != sizeof(uid_t)) {
 		rc = -EIO;
-		cifsd_err("%s: Downcall contained malformed key (datalen=%hu)\n",
-				__func__, sidkey->datalen);
+		cifsd_err("Downcall contained malformed key (datalen=%hu)\n",
+			  sidkey->datalen);
 		key_invalidate(sidkey);
 		goto out_key_put;
 	}
@@ -854,29 +854,25 @@ int parse_sec_desc(struct cifs_ntsd *pntsd, int acl_len,
 
 	rc = parse_sid(owner_sid_ptr, end_of_acl);
 	if (rc) {
-		cifsd_err("%s: Error %d parsing Owner SID\n", __func__,
-				rc);
+		cifsd_err("Error %d parsing Owner SID\n", rc);
 		return rc;
 	}
 
 	rc = sid_to_id(owner_sid_ptr, fattr, SIDOWNER);
 	if (rc) {
-		cifsd_err("%s: Error %d mapping Owner SID to uid\n",
-				__func__, rc);
+		cifsd_err("Error %d mapping Owner SID to uid\n", rc);
 		return rc;
 	}
 
 	rc = parse_sid(group_sid_ptr, end_of_acl);
 	if (rc) {
-		cifsd_err("%s: Error %d mapping Owner SID to gid\n",
-				__func__, rc);
+		cifsd_err("Error %d mapping Owner SID to gid\n", rc);
 		return rc;
 	}
 
 	rc = sid_to_id(group_sid_ptr, fattr, SIDGROUP);
 	if (rc) {
-		cifsd_err("%s: Error %d mapping Group SID to gid\n",
-				__func__, rc);
+		cifsd_err("Error %d mapping Group SID to gid\n", rc);
 		return rc;
 	}
 
@@ -917,8 +913,8 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 			id = from_kuid(&init_user_ns, uid);
 			rc = id_to_sid(id, SIDOWNER, nowner_sid_ptr);
 			if (rc) {
-				cifsd_err("%s: Mapping error %d for owner id %d\n",
-					__func__, rc, id);
+				cifsd_err("Mapping error %d for owner id %d\n",
+					  rc, id);
 				kfree(nowner_sid_ptr);
 				return rc;
 			}
@@ -947,8 +943,8 @@ int build_sec_desc(struct cifs_ntsd *pntsd, int addition_info,
 			id = from_kgid(&init_user_ns, gid);
 			rc = id_to_sid(id, SIDGROUP, ngroup_sid_ptr);
 			if (rc) {
-				cifsd_err("%s: Mapping error %d for group id %d\n",
-						__func__, rc, id);
+				cifsd_err("Mapping error %d for group id %d\n",
+					  rc, id);
 				kfree(ngroup_sid_ptr);
 				return rc;
 			}

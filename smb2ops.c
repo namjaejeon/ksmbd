@@ -207,7 +207,7 @@ int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
-	atomic_set(&conn->total_credits, 0);
+	conn->total_credits = 0;
 	conn->srv_cap = 0;
 	return 0;
 }
