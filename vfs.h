@@ -138,8 +138,10 @@ int cifsd_vfs_remove_file(char *name);
 int cifsd_vfs_link(const char *oldname, const char *newname);
 int cifsd_vfs_symlink(const char *name, const char *symname);
 int cifsd_vfs_readlink(struct path *path, char *buf, int lenp);
-int cifsd_vfs_rename(char *abs_oldname, char *abs_newname,
-		     struct cifsd_file *fp);
+
+int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname);
+int cifsd_vfs_rename_slowpath(char *oldname, char *newname);
+
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size);
 

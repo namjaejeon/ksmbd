@@ -777,7 +777,7 @@ int smb_rename(struct cifsd_work *work)
 	}
 
 	cifsd_debug("rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = cifsd_vfs_rename(abs_oldname, abs_newname, NULL);
+	rc = cifsd_vfs_rename_slowpath(abs_oldname, abs_newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -6887,7 +6887,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 
 	cifsd_debug("rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = cifsd_vfs_rename(NULL, newname, fp);
+	rc = cifsd_vfs_fp_rename(fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;

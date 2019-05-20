@@ -15,6 +15,7 @@
 #include <linux/genhd.h>
 #include <linux/blkdev.h>
 #include <linux/fsnotify.h>
+#include <linux/dcache.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 #include <linux/sched/xacct.h>
@@ -829,150 +830,163 @@ out1:
 	return err;
 }
 
-/**
- * cifsd_vfs_rename() - vfs helper for smb rename
- * @sess:		session
- * @abs_oldname:	old filename
- * @abs_newname:	new filename
- * @oldfid:		file id of old file
- *
- * Return:	0 on success, otherwise error
- */
-int cifsd_vfs_rename(char *abs_oldname, char *abs_newname, struct cifsd_file *fp)
+static char *extract_last_component(char *path)
 {
-	struct path oldpath_p, newpath_p;
-	struct dentry *dold, *dnew, *dold_p, *dnew_p, *trap, *child_de;
-	char *oldname = NULL, *newname = NULL;
+	char *p = strrchr(path, '/');
+
+	if (p && p[1] != '\0') {
+		*p = '\0';
+		p++;
+	} else {
+		cifsd_err("Invalid path %s\n", path);
+	}
+	return p;
+}
+
+static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
+			      struct dentry *src_dent,
+			      struct dentry *dst_dent_parent,
+			      struct dentry *trap_dent,
+			      char *dst_name)
+{
+	struct dentry *dst_dent;
 	int err;
 
-	if (abs_oldname) {
-		/* normal case: rename with source filename */
-		oldname = strrchr(abs_oldname, '/');
-		if (oldname && oldname[1] != '\0') {
-			*oldname = '\0';
-			oldname++;
-		} else {
-			cifsd_err("can't get last component in path %s\n",
-					abs_oldname);
-			return -ENOENT;
-		}
+	if (d_really_is_negative(src_dent_parent))
+		return -ENOENT;
+	if (d_really_is_negative(dst_dent_parent))
+		return -ENOENT;
+	if (d_really_is_negative(src_dent))
+		return -ENOENT;
+	if (src_dent == trap_dent)
+		return -EINVAL;
 
-		err = kern_path(abs_oldname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-				&oldpath_p);
-		if (err) {
-			cifsd_err("cannot get linux path for %s, err %d\n",
-					abs_oldname, err);
-			return -ENOENT;
-		}
-		dold_p = oldpath_p.dentry;
-
-		newname = strrchr(abs_newname, '/');
-		if (newname && newname[1] != '\0') {
-			*newname = '\0';
-			newname++;
-		} else {
-			cifsd_err("can't get last component in path %s\n",
-					abs_newname);
-			err = -ENOMEM;
-			goto out1;
-		}
-
-		err = kern_path(abs_newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-				&newpath_p);
-		if (err) {
-			cifsd_err("cannot get linux path for %s, err = %d\n",
-					abs_newname, err);
-			goto out1;
-		}
-		dnew_p = newpath_p.dentry;
-	} else {
-		dold_p = fp->filp->f_path.dentry->d_parent;
-
-		newname = strrchr(abs_newname, '/');
-		if (newname && newname[1] != '\0') {
-			*newname = '\0';
-			newname++;
-		} else {
-			cifsd_err("can't get last component in path %s\n",
-					abs_newname);
-			return -ENOMEM;
-		}
-
-		err = kern_path(abs_newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-				&newpath_p);
-		if (err) {
-			cifsd_err("cannot get linux path for %s, err = %d\n",
-					abs_newname, err);
-			return err;
-		}
-		dnew_p = newpath_p.dentry;
-	}
-
-	cifsd_debug("oldname %s, newname %s\n", oldname, newname);
-	trap = lock_rename(dold_p, dnew_p);
-	if (abs_oldname) {
-		dold = lookup_one_len(oldname, dold_p, strlen(oldname));
-		err = PTR_ERR(dold);
-		if (IS_ERR(dold)) {
-			cifsd_err("%s lookup failed with error = %d\n",
-					oldname, err);
-			goto out2;
-		}
-	} else {
-		dold = fp->filp->f_path.dentry;
-		dget(dold);
-	}
-
-	spin_lock(&dold->d_lock);
-	list_for_each_entry(child_de, &dold->d_subdirs, d_child) {
-		struct cifsd_file *child_fp;
-
-		if (!child_de->d_inode)
-			continue;
-
-		child_fp = cifsd_lookup_fd_inode(child_de->d_inode);
-		if (child_fp) {
-			cifsd_debug("not allow to rename dir with opening sub file\n");
-			err = -ENOTEMPTY;
-			spin_unlock(&dold->d_lock);
-			goto out3;
-		}
-	}
-	spin_unlock(&dold->d_lock);
-
-	err = -ENOENT;
-	if (!dold->d_inode)
-		goto out3;
-	err = -EINVAL;
-	if (dold == trap)
-		goto out3;
-
-	dnew = lookup_one_len(newname, dnew_p, strlen(newname));
-	err = PTR_ERR(dnew);
-	if (IS_ERR(dnew)) {
-		cifsd_err("%s lookup failed with error = %d\n",
-				newname, err);
-		goto out3;
+	dst_dent = lookup_one_len(dst_name, dst_dent_parent, strlen(dst_name));
+	err = PTR_ERR(dst_dent);
+	if (IS_ERR(dst_dent)) {
+		cifsd_err("lookup failed %s [%d]\n", dst_name, err);
+		return err;
 	}
 
 	err = -ENOTEMPTY;
-	if (dnew == trap)
-		goto out4;
-
-	err = vfs_rename(dold_p->d_inode, dold, dnew_p->d_inode, dnew, NULL, 0);
+	if (dst_dent != trap_dent && !d_really_is_positive(dst_dent)) {
+		err = vfs_rename(d_inode(src_dent_parent),
+				 src_dent,
+				 d_inode(dst_dent_parent),
+				 dst_dent,
+				 NULL,
+				 0);
+	}
 	if (err)
 		cifsd_err("vfs_rename failed err %d\n", err);
-out4:
-	dput(dnew);
-out3:
-	dput(dold);
-out2:
-	unlock_rename(dold_p, dnew_p);
-	path_put(&newpath_p);
-out1:
-	if (abs_oldname)
-		path_put(&oldpath_p);
+	if (dst_dent)
+		dput(dst_dent);
+	return err;
+}
 
+int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname)
+{
+	struct path dst_path;
+	struct dentry *src_dent_parent, *dst_dent_parent;
+	struct dentry *src_dent, *trap_dent;
+	char *dst_name;
+	int err;
+
+	dst_name = extract_last_component(newname);
+	if (!dst_name)
+		return -EINVAL;
+
+	src_dent_parent = dget_parent(fp->filp->f_path.dentry);
+	if (!src_dent_parent)
+		return -EINVAL;
+
+	src_dent = fp->filp->f_path.dentry;
+	dget(src_dent);
+
+	err = kern_path(newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dst_path);
+	if (err) {
+		cifsd_err("Cannot get path for %s [%d]\n", newname, err);
+		goto out;
+	}
+	dst_dent_parent = dst_path.dentry;
+	dget(dst_dent_parent);
+
+	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
+
+	if (d_unhashed(src_dent_parent) || d_count(src_dent_parent) < 2)
+		cifsd_err("Source dentry error [%d:%d]\n",
+			d_count(src_dent_parent),
+			d_unhashed(src_dent_parent));
+
+	err = __cifsd_vfs_rename(src_dent_parent,
+				 src_dent,
+				 dst_dent_parent,
+				 trap_dent,
+				 dst_name);
+	unlock_rename(src_dent_parent, dst_dent_parent);
+	dput(dst_dent_parent);
+out:
+	dput(src_dent);
+	dput(src_dent_parent);
+	path_put(&dst_path);
+	return err;
+}
+
+int cifsd_vfs_rename_slowpath(char *oldname, char *newname)
+{
+	struct path dst_path, src_path;
+	struct dentry *src_dent_parent, *dst_dent_parent;
+	struct dentry *src_dent = NULL, *trap_dent;
+	char *src_name, *dst_name;
+	int err;
+
+	src_name = extract_last_component(oldname);
+	if (!src_name)
+		return -EINVAL;
+	dst_name = extract_last_component(newname);
+	if (!dst_name)
+		return -EINVAL;
+
+	err = kern_path(oldname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &src_path);
+	if (err) {
+		cifsd_err("Cannot get path for %s [%d]\n", oldname, err);
+		return err;
+	}
+	src_dent_parent = src_path.dentry;
+	dget(src_dent_parent);
+
+	err = kern_path(newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dst_path);
+	if (err) {
+		cifsd_err("Cannot get path for %s [%d]\n", newname, err);
+		dput(src_dent_parent);
+		path_put(&src_path);
+		return err;
+	}
+	dst_dent_parent = dst_path.dentry;
+	dget(dst_dent_parent);
+
+	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
+	src_dent = lookup_one_len(src_name, src_dent_parent, strlen(src_name));
+	err = PTR_ERR(src_dent);
+	if (IS_ERR(src_dent)) {
+		src_dent = NULL;
+		cifsd_err("%s lookup failed with error = %d\n", src_name, err);
+		goto out;
+	}
+
+	err = __cifsd_vfs_rename(src_dent_parent,
+				 src_dent,
+				 dst_dent_parent,
+				 trap_dent,
+				 dst_name);
+out:
+	if (src_dent)
+		dput(src_dent);
+	dput(dst_dent_parent);
+	dput(src_dent_parent);
+	unlock_rename(src_dent_parent, dst_dent_parent);
+	path_put(&src_path);
+	path_put(&dst_path);
 	return err;
 }
 
