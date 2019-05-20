@@ -932,6 +932,7 @@ out:
 	return err;
 }
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 int cifsd_vfs_rename_slowpath(char *oldname, char *newname)
 {
 	struct path dst_path, src_path;
@@ -989,6 +990,12 @@ out:
 	path_put(&dst_path);
 	return err;
 }
+#else
+int cifsd_vfs_rename_slowpath(char *oldname, char *newname)
+{
+	return 0;
+}
+#endif
 
 /**
  * cifsd_vfs_truncate() - vfs helper for smb file truncate
