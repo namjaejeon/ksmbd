@@ -4715,7 +4715,7 @@ static int smb2_rename(struct cifsd_file *fp,
 		}
 	}
 
-	rc = cifsd_vfs_rename(NULL, new_name, fp);
+	rc = cifsd_vfs_fp_rename(fp, new_name);
 out:
 	kfree(pathname);
 	kfree(tmp_name);

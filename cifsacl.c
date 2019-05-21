@@ -1041,6 +1041,9 @@ failed_put_cred:
 
 void exit_cifsd_idmap(void)
 {
+	if (!root_cred)
+		return;
+
 	key_revoke(root_cred->thread_keyring);
 	unregister_key_type(&cifsd_idmap_key_type);
 	put_cred(root_cred);
