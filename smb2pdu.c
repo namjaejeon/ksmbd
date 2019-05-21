@@ -2597,38 +2597,6 @@ int smb2_open(struct cifsd_work *work)
 			cifsd_debug("get query on disk id context\n");
 			query_disk_id = 1;
 		}
-
-#ifdef CONFIG_CIFSD_ACL
-		context = smb2_find_context_vals(req, SMB2_CREATE_SD_BUFFER);
-		if (IS_ERR(context)) {
-			rc = check_context_err(context, SMB2_CREATE_SD_BUFFER);
-			if (rc < 0)
-				goto err_out1;
-		} else {
-			cifsd_err("Create SMB2_CREATE_SD_BUFFER\n");
-
-			if (!(req->DesiredAccess & FILE_WRITE_DAC_LE)) {
-				rc = -EACCES;
-				goto err_out1;
-			}
-
-			if (open_flags & O_CREAT) {
-				struct cifs_ntsd *pntsd;
-				struct cifsd_fattr fattr;
-
-				pntsd = (struct cifs_ntsd *)
-					(((char *) context) +
-					 context->DataOffset);
-
-				parse_sec_desc(pntsd,
-					le32_to_cpu(context->DataLength),
-					&fattr);
-
-				cifsd_fattr_to_inode(path.dentry->d_inode,
-					&fattr);
-			}
-		}
-#endif
 	}
 
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
@@ -4265,45 +4233,6 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 
 }
 
-#ifdef CONFIG_CIFSD_ACL
-/**
- * smb2_get_info_sec() - handler for smb2 query info command
- * @work:   smb work containing query info request buffer
- *
- * Return:      0 on success, otherwise error
- */
-static int smb2_get_info_sec(struct cifsd_work *work,
-	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp,
-	void *rsp_org)
-{
-	struct cifsd_file *fp;
-	struct file *filp;
-	int rc = 0;
-	struct cifs_ntsd *pntsd;
-	struct inode *inode;
-	int out_len;
-
-	fp = cifsd_lookup_fd_slow(work,
-				le64_to_cpu(req->VolatileFileId),
-				le64_to_cpu(req->PersistentFileId));
-	if (!fp)
-		return -ENOENT;
-
-	filp = fp->filp;
-	inode = FP_INODE(fp);
-
-	pntsd = (struct cifs_ntsd *) rsp->Buffer;
-
-	out_len = build_sec_desc(pntsd, le32_to_cpu(req->AdditionalInformation),
-		inode);
-
-	rsp->OutputBufferLength = cpu_to_le32(out_len);
-	inc_rfc1001_len(rsp_org, out_len);
-
-	return rc;
-}
-#else
-
 static int smb2_get_info_sec(struct cifsd_work *work,
 	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp,
 	void *rsp_org)
@@ -4327,7 +4256,6 @@ static int smb2_get_info_sec(struct cifsd_work *work,
 
 	return rc;
 }
-#endif
 
 /**
  * smb2_query_info() - handler for smb2 query info command
@@ -4543,46 +4471,6 @@ int smb2_echo(struct cifsd_work *work)
 	return 0;
 }
 
-#ifdef CONFIG_CIFSD_ACL
-/**
- * smb2_set_info_sec() - handler for smb2 set info command
- * @work:   smb work containing set info command buffer
- *
- * Return:      0 on success, otherwise error
- */
-static int smb2_set_info_sec(struct cifsd_file *fp,
-			     int addition_info,
-			     char *buffer,
-			     int buf_len)
-{
-	int rc = 0;
-	struct inode *inode;
-	struct cifs_ntsd *pntsd;
-	struct cifsd_fattr fattr;
-
-	inode = fp->filp->f_path.dentry->d_inode;
-
-	cifsd_err("Update SMB2_CREATE_SD_BUFFER\n");
-	pntsd = (struct cifs_ntsd *)buffer;
-
-	if ((addition_info & (OWNER_SECINFO | GROUP_SECINFO)) &&
-			(!(fp->daccess & FILE_WRITE_OWNER_LE))) {
-		rc = -EPERM;
-		goto out;
-	}
-
-	if ((addition_info & DACL_SECINFO) &&
-			(!(fp->daccess & FILE_WRITE_DAC_LE))) {
-		rc = -EPERM;
-		goto out;
-	}
-
-	parse_sec_desc(pntsd, buf_len, &fattr);
-	cifsd_fattr_to_inode(inode, &fattr);
-out:
-	return rc;
-}
-#else
 static int smb2_set_info_sec(struct cifsd_file *fp,
 			     int addition_info,
 			     char *buffer,
@@ -4590,7 +4478,6 @@ static int smb2_set_info_sec(struct cifsd_file *fp,
 {
 	return 0;
 }
-#endif
 
 /**
  * smb2_rename() - handler for rename using smb2 setinfo command
