@@ -6,7 +6,6 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "cifsacl.h"
 #include "misc.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
@@ -532,7 +531,6 @@ static int cifsd_server_shutdown(void)
 	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
-	exit_cifsd_idmap();
 	server_conf_free();
 	return 0;
 }
@@ -570,10 +568,6 @@ static int __init cifsd_server_init(void)
 		goto error;
 
 	ret = cifsd_inode_hash_init();
-	if (ret)
-		goto error;
-
-	ret = init_cifsd_idmap();
 	if (ret)
 		goto error;
 	return 0;
