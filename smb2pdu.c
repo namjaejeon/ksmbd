@@ -4960,7 +4960,8 @@ next:
 
 		file_info = (struct smb2_file_disposition_info *)buffer;
 		if (file_info->DeletePending) {
-			if (S_ISDIR(inode->i_mode) && !cifsd_vfs_empty_dir(fp))
+			if (S_ISDIR(inode->i_mode) &&
+					cifsd_vfs_empty_dir(fp) == -ENOTEMPTY)
 				rc = -EBUSY;
 			else
 				cifsd_set_inode_pending_delete(fp);

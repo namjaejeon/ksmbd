@@ -1478,10 +1478,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
  *
  * Return:	true if directory empty, otherwise false
  */
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
+int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
-	struct path dir_path;
-	struct file *filp;
 	struct cifsd_readdir_data r_data = {
 		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
@@ -1490,36 +1488,19 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	int err;
 
 	if (!r_data.dirent)
-		return false;
-
-	err = cifsd_vfs_kern_path(fp->filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-			&dir_path, 0);
-	if (err < 0)
-		return false;
-
-	filp = dentry_open(&dir_path, O_RDONLY | O_LARGEFILE, current_cred());
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
-		fput(filp);
-		cifsd_err("dentry open failed, err %d\n", err);
-		return false;
-	}
+		return -ENOMEM;
 
 	r_data.used = 0;
 	r_data.full = 0;
 
-	err = cifsd_vfs_readdir(filp, &r_data);
-	if (r_data.dirent_count > 2) {
-		fput(filp);
-		path_put(&dir_path);
-		free_page((unsigned long)(r_data.dirent));
-		return false;
-	}
+	err = cifsd_vfs_readdir(fp->filp, &r_data);
+	if (r_data.dirent_count > 2)
+		err = -ENOTEMPTY;
+	else
+		err = 0;
 
 	free_page((unsigned long)(r_data.dirent));
-	fput(filp);
-	path_put(&dir_path);
-	return true;
+	return err;
 }
 
 /**

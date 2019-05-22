@@ -6733,9 +6733,8 @@ static int smb_set_dispostion(struct cifsd_work *work)
 		}
 
 		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
-				!cifsd_vfs_empty_dir(fp)) {
-			rsp->hdr.Status.CifsError =
-				STATUS_DIRECTORY_NOT_EMPTY;
+				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY) {
+			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
 		}
 

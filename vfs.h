@@ -190,7 +190,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
+int cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
 int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata);
@@ -206,7 +206,6 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
 				struct cifsd_fs_sector_size *fs_ss);
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     struct cifsd_kstat *cifsd_kstat,
 			     struct cifsd_dirent *de,
