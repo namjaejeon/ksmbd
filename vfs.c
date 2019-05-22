@@ -912,12 +912,6 @@ int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname)
 	dget(dst_dent_parent);
 
 	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
-
-	if (d_unhashed(src_dent_parent) || d_count(src_dent_parent) < 2)
-		cifsd_err("Source dentry error [%d:%d]\n",
-			d_count(src_dent_parent),
-			d_unhashed(src_dent_parent));
-
 	err = __cifsd_vfs_rename(src_dent_parent,
 				 src_dent,
 				 dst_dent_parent,
