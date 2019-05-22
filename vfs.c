@@ -859,7 +859,7 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 		} else {
 			spin_unlock(&src_dent->d_lock);
 			cifsd_debug("Forbid rename, dir is in use\n");
-			return -ENOTEMPTY;
+			return -EACCES;
 		}
 	}
 	spin_unlock(&src_dent->d_lock);
