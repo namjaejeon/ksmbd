@@ -852,6 +852,18 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 	struct dentry *dst_dent;
 	int err;
 
+	spin_lock(&src_dent->d_lock);
+	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
+		if (d_really_is_negative(dst_dent)) {
+			continue;
+		} else {
+			spin_unlock(&src_dent->d_lock);
+			cifsd_debug("Forbid rename, dir is in use\n");
+			return -ENOTEMPTY;
+		}
+	}
+	spin_unlock(&src_dent->d_lock);
+
 	if (d_really_is_negative(src_dent_parent))
 		return -ENOENT;
 	if (d_really_is_negative(dst_dent_parent))
