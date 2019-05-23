@@ -1839,7 +1839,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 				if (!memcmp(conn->ClientGUID,
 					d_info->fp->client_guid,
 					SMB2_CLIENT_GUID_SIZE)) {
-					if (!(le32_to_cpu(req->hdr.Flags) &
+					if (!(req->hdr.Flags &
 						SMB2_FLAGS_REPLAY_OPERATIONS)) {
 						err = -ENOEXEC;
 						goto out;
