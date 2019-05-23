@@ -122,9 +122,8 @@ void smb2_set_err_rsp(struct cifsd_work *work)
 	else
 		err_rsp = (struct smb2_err_rsp *)rsp;
 
-	if (err_rsp->hdr.Status != cpu_to_le32(STATUS_STOPPED_ON_SYMLINK)) {
-		err_rsp->StructureSize =
-			cpu_to_le16(SMB2_ERROR_STRUCTURE_SIZE2);
+	if (err_rsp->hdr.Status != STATUS_STOPPED_ON_SYMLINK) {
+		err_rsp->StructureSize = SMB2_ERROR_STRUCTURE_SIZE2;
 		err_rsp->ErrorContextCount = 0;
 		err_rsp->Reserved = 0;
 		err_rsp->ByteCount = 0;
