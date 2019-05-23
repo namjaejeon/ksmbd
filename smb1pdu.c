@@ -7434,7 +7434,6 @@ int smb_nt_cancel(struct cifsd_work *work)
 			       hdr->Mid, work_hdr->Command);
 			new_work->send_no_response = 1;
 			list_del_init(&new_work->request_entry);
-			new_work->on_request_list = 0;
 			new_work->sess->sequence_number--;
 			break;
 		}

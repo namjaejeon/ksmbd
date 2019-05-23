@@ -138,8 +138,6 @@ struct cifsd_work {
 	bool				multiRsp:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
-	/* On the conn->requests list */
-	bool				on_request_list:1;
 	/* Request is encrypted */
 	bool				encrypted:1;
 
