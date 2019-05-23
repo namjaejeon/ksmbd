@@ -37,6 +37,19 @@
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
+static char *extract_last_component(char *path)
+{
+	char *p = strrchr(path, '/');
+
+	if (p && p[1] != '\0') {
+		*p = '\0';
+		p++;
+	} else {
+		cifsd_err("Invalid path %s\n", path);
+	}
+	return p;
+}
+
 static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 				    struct inode *inode)
 {
@@ -724,14 +737,9 @@ int cifsd_vfs_remove_file(char *name)
 	char *last;
 	int err = -ENOENT;
 
-	last = strrchr(name, '/');
-	if (last && last[1] != '\0') {
-		*last = '\0';
-		last++;
-	} else {
-		cifsd_debug("can't get last component in path %s\n", name);
+	last = extract_last_component(name);
+	if (!last)
 		return -ENOENT;
-	}
 
 	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
@@ -828,19 +836,6 @@ out2:
 
 out1:
 	return err;
-}
-
-static char *extract_last_component(char *path)
-{
-	char *p = strrchr(path, '/');
-
-	if (p && p[1] != '\0') {
-		*p = '\0';
-		p++;
-	} else {
-		cifsd_err("Invalid path %s\n", path);
-	}
-	return p;
 }
 
 static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
@@ -1607,11 +1602,10 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 
 	err = kern_path(name, flags, path);
 	if (err && caseless) {
-		char *filename = strrchr((const char *)name, '/');
+		char *filename = extract_last_component(name);
 
 		if (!filename)
 			return err;
-		*(filename++) = '\0';
 		if (strlen(name) == 0) {
 			/* root reached */
 			filename--;
