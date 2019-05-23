@@ -136,8 +136,6 @@ struct cifsd_work {
 
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool				multiRsp:1;
-	/* Both received */
-	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
 	/* On the conn->requests list */
