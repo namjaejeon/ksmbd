@@ -145,9 +145,6 @@ struct cifsd_work {
 	/* Request is encrypted */
 	bool				encrypted:1;
 
-	/* smb command code */
-	__le16				command;
-
 	/* List head at conn->requests */
 	struct list_head		request_entry;
 	/* List head at conn->async_requests */
