@@ -2144,7 +2144,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (le32_to_cpu(req->DesiredAccess) &&
+		if (req->DesiredAccess &&
 				!(le32_to_cpu(req->DesiredAccess) & DELETE)) {
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 			return -EPERM;
@@ -3461,7 +3461,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 		j = 0;
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
 		cifs_acl->default_entry_count = cpu_to_le16(count);
-		if (le16_to_cpu(cifs_acl->access_entry_count))
+		if (cifs_acl->access_entry_count)
 			j = le16_to_cpu(cifs_acl->access_entry_count);
 	} else {
 		cifsd_debug("unknown ACL type %d\n", acl_type);
@@ -6869,7 +6869,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	if (le32_to_cpu(info->overwrite)) {
+	if (info->overwrite) {
 		rc = cifsd_vfs_truncate(work, NULL, fp, 0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
