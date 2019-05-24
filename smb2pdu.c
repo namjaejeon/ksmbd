@@ -437,7 +437,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 
 	spin_lock(&conn->credits_lock);
 	if (conn->total_credits) {
-		if (le16_to_cpu(rcv_hdr->CreditCharge))
+		if (rcv_hdr->CreditCharge)
 			conn->total_credits -=
 				le16_to_cpu(rcv_hdr->CreditCharge);
 		else
@@ -2203,8 +2203,7 @@ int smb2_open(struct cifsd_work *work)
 					work->next_smb2_rsp_hdr_off);
 	}
 
-	if (le32_to_cpu(req->hdr.NextCommand) &&
-			!work->next_smb2_rcv_hdr_off &&
+	if (req->hdr.NextCommand && !work->next_smb2_rcv_hdr_off &&
 			(req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("invalid flag in chained command\n");
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
@@ -3130,7 +3129,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		dir_fp->dirent_offset = 0;
 	}
 
-	if (srch_flag & SMB2_INDEX_SPECIFIED && le32_to_cpu(req->FileIndex)) {
+	if ((srch_flag & SMB2_INDEX_SPECIFIED) && req->FileIndex) {
 		cifsd_debug("specified index\n");
 		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
 			SEEK_SET);
@@ -4759,7 +4758,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 		}
 
-		if (le32_to_cpu(file_info->Attributes)) {
+		if (file_info->Attributes) {
 			struct kstat stat;
 
 			if (!S_ISDIR(inode->i_mode)
@@ -6811,8 +6810,7 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 			cifsd_work->next_smb2_rsp_hdr_off);
 	}
 
-	if (cifsd_work->next_smb2_rcv_hdr_off &&
-		le32_to_cpu(req->hdr.NextCommand)) {
+	if (cifsd_work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
 		rsp->hdr.Status = STATUS_INTERNAL_ERROR;
 		smb2_set_err_rsp(cifsd_work);
 		return 0;
@@ -6932,10 +6930,9 @@ int smb3_check_sign_req(struct cifsd_work *work)
 		hdr = (struct smb2_hdr *)((char *)hdr_org +
 				work->next_smb2_rcv_hdr_off);
 
-	if (!le32_to_cpu(hdr->NextCommand) &&
-			!work->next_smb2_rcv_hdr_off)
+	if (!hdr->NextCommand && !work->next_smb2_rcv_hdr_off)
 		len = be32_to_cpu(hdr_org->smb2_buf_length);
-	else if (le32_to_cpu(hdr->NextCommand))
+	else if (hdr->NextCommand)
 		len = le32_to_cpu(hdr->NextCommand);
 	else
 		len = be32_to_cpu(hdr_org->smb2_buf_length) -
@@ -7000,7 +6997,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 
 	if (!work->next_smb2_rsp_hdr_off) {
 		len = get_rfc1002_length(hdr_org);
-		if (le32_to_cpu(req_hdr->NextCommand)) {
+		if (req_hdr->NextCommand) {
 			/* Align the length to 8Byte  */
 			len = ((len + 7) & ~7);
 		}
@@ -7025,7 +7022,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 	if (!signing_key)
 		return;
 
-	if (le32_to_cpu(req_hdr->NextCommand))
+	if (req_hdr->NextCommand)
 		hdr->NextCommand = cpu_to_le32(len);
 
 	hdr->Flags |= SMB2_FLAGS_SIGNED;
