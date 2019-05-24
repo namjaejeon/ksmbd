@@ -472,7 +472,7 @@ int cifsd_ipc_heartbeat(void)
 			return 0;
 		}
 
-		server_conf.state = SERVER_STATE_RESETTING;
+		WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
 		server_conf.ipc_last_active = 0;
 		cifsd_tools_pid = 0;
 		mutex_unlock(&startup_lock);

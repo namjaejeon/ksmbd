@@ -381,7 +381,7 @@ static int server_conf_init(void)
 {
 	INIT_LIST_HEAD(&server_conf.iface_list);
 
-	server_conf.state = SERVER_STATE_STARTING_UP;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
 	server_conf.max_protocol = cifsd_max_protocol();
@@ -399,13 +399,13 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 		return;
 	}
 
-	server_conf.state = SERVER_STATE_RUNNING;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_RUNNING);
 }
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
 	cifsd_tcp_destroy();
-	server_conf.state = SERVER_STATE_STARTING_UP;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
 
 static void server_ctrl_handle_work(struct work_struct *work)
@@ -521,7 +521,7 @@ static struct class cifsd_control_class = {
 
 static int cifsd_server_shutdown(void)
 {
-	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_SHUTTING_DOWN);
 
 	class_unregister(&cifsd_control_class);
 	cifsd_ipc_release();
