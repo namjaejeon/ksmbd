@@ -454,33 +454,39 @@ out:
 int cifsd_ipc_heartbeat(void)
 {
 	unsigned long delta;
+	int ret = 0;
 
 	if (!server_conf.ipc_timeout)
-		return 0;
+		return ret;
 
 	if (time_after(jiffies, server_conf.ipc_last_active)) {
 		delta = (jiffies - server_conf.ipc_last_active) / HZ;
 	} else {
 		ipc_update_last_active();
-		return 0;
+		return ret;
+	}
+
+	if (delta < server_conf.ipc_timeout / 2)
+		return ret;
+
+	mutex_lock(&startup_lock);
+	if (delta >= server_conf.ipc_timeout / 2) {
+		if (cifsd_ipc_heartbeat_request() == 0) {
+			mutex_unlock(&startup_lock);
+			return ret;
+		}
 	}
 
 	if (delta >= server_conf.ipc_timeout) {
-		mutex_lock(&startup_lock);
-		if (cifsd_ipc_heartbeat_request() == 0) {
-			mutex_unlock(&startup_lock);
-			return 0;
-		}
-
 		WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
 		server_conf.ipc_last_active = 0;
 		cifsd_tools_pid = 0;
-		mutex_unlock(&startup_lock);
 
 		cifsd_err("No IPC daemon response for %lus\n", delta);
-		return -EINVAL;
+		ret = -EINVAL;
 	}
-	return 0;
+	mutex_unlock(&startup_lock);
+	return ret;
 }
 
 struct cifsd_login_response *cifsd_ipc_login_request(const char *account)
