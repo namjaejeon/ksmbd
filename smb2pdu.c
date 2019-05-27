@@ -2524,7 +2524,7 @@ int smb2_open(struct cifsd_work *work)
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
 
-	cifsd_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
+	cifsd_vfs_set_fadvise(filp, req->CreateOptions);
 
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
