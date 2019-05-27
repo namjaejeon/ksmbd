@@ -35,7 +35,7 @@ static DEFINE_HASHTABLE(ipc_msg_table, IPC_MSG_HASH_BITS);
 static DECLARE_RWSEM(ipc_msg_table_lock);
 static DEFINE_MUTEX(startup_lock);
 
-struct cifsd_ida *ida;
+static struct cifsd_ida *ida;
 
 static unsigned int cifsd_tools_pid;
 
