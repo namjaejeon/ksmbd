@@ -16,7 +16,7 @@ bool oplocks_enable;
 bool lease_enable;
 bool durable_enable;
 
-LIST_HEAD(lease_table_list);
+static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
 
 module_param(oplocks_enable, bool, 0644);
