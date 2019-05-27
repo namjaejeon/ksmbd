@@ -3860,7 +3860,7 @@ out:
 			vfree(xattr_list);
 
 		rsp->OutputBufferLength = cpu_to_le32(nbytes);
-		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
+		inc_rfc1001_len(rsp_org, nbytes);
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
 	}
