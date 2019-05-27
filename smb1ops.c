@@ -38,7 +38,6 @@ static struct smb_version_ops smb1_server_ops = {
 	.is_sign_req = smb1_is_sign_req,
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
-	.check_user_session = smb_check_user_session,
 	.get_cifsd_tcon = smb_get_cifsd_tcon,
 };
 
