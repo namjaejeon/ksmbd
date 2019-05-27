@@ -2404,9 +2404,11 @@ int smb_nt_create_andx(struct cifsd_work *work)
 
 	err = 0;
 	/* open  file and get FID */
-	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
-		le32_to_cpu(req->CreateOptions),
-		file_present);
+	fp = cifsd_vfs_dentry_open(work,
+				   &path,
+				   open_flags,
+				   req->CreateOptions,
+				   file_present);
 	if (IS_ERR(fp)) {
 		err = PTR_ERR(fp);
 		goto free_path;
