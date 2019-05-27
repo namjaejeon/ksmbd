@@ -1717,8 +1717,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 					XATTR_NAME_FILE_ATTRIBUTE,
 					&file_attribute);
 		if (rc > 0)
-			cifsd_kstat->file_attributes =
-				*((__le32 *)file_attribute);
+			cifsd_kstat->file_attributes = *file_attribute;
 		else
 			cifsd_debug("fail to fill file attributes.\n");
 
