@@ -5025,7 +5025,7 @@ next:
 		 * TODO : need to implement consideration for
 		 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
 		 */
-		cifsd_vfs_set_fadvise(fp->filp, le32_to_cpu(mode));
+		cifsd_vfs_set_fadvise(fp->filp, mode);
 		fp->coption = mode;
 
 		break;
