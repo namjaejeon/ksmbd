@@ -103,18 +103,18 @@ struct cifsd_readdir_data {
 };
 
 struct cifsd_dirent {
-	__le64		ino;
-	__le64		offset;
-	__le32		namelen;
-	__le32		d_type;
-	char		name[];
+	unsigned long long	ino;
+	unsigned long long	offset;
+	unsigned int		namelen;
+	unsigned int		d_type;
+	char			name[];
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
 struct cifsd_kstat {
-	struct kstat	*kstat;
-	__u64		create_time;
-	__le32		file_attributes;
+	struct kstat		*kstat;
+	unsigned long long	create_time;
+	int			file_attributes;
 };
 
 struct cifsd_fs_sector_size {
