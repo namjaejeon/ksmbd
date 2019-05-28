@@ -696,9 +696,9 @@ void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
  *
  * Return:      converted dos mode
  */
-static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
+static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 {
-	__le32 attr = 0;
+	int attr = 0;
 
 	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 
