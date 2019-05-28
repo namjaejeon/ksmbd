@@ -2722,8 +2722,8 @@ reconnected:
 		lease_ccontext = (struct create_context *)rsp->Buffer;
 		contxt_cnt++;
 		create_lease_buf(rsp->Buffer, fp->f_opinfo->o_lease);
-		rsp->CreateContextsLength =
-			cpu_to_le32(conn->vals->create_lease_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_lease_size);
 		next_ptr = &lease_ccontext->Next;
 		next_off = conn->vals->create_lease_size;
@@ -2736,15 +2736,15 @@ reconnected:
 		if (d_info.type == DURABLE_REQ) {
 			create_durable_rsp_buf(rsp->Buffer +
 				rsp->CreateContextsLength);
-			rsp->CreateContextsLength +=
-				cpu_to_le32(conn->vals->create_durable_size);
+			le32_add_cpu(&rsp->CreateContextsLength,
+				     conn->vals->create_durable_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_size);
 		} else {
 			create_durable_v2_rsp_buf(rsp->Buffer +
 				rsp->CreateContextsLength, fp);
-			rsp->CreateContextsLength +=
-				cpu_to_le32(conn->vals->create_durable_v2_size);
+			le32_add_cpu(&rsp->CreateContextsLength,
+				     conn->vals->create_durable_v2_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_v2_size);
 		}
@@ -2761,8 +2761,8 @@ reconnected:
 		contxt_cnt++;
 		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
 			maximal_access);
-		rsp->CreateContextsLength +=
-			cpu_to_le32(conn->vals->create_mxac_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
@@ -2776,8 +2776,8 @@ reconnected:
 		contxt_cnt++;
 		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
 			stat.ino, tcon->id);
-		rsp->CreateContextsLength +=
-			cpu_to_le32(conn->vals->create_disk_id_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
