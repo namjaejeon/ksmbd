@@ -157,7 +157,8 @@ struct smb2_transform_hdr {
  *
  */
 
-#define SMB2_ERROR_STRUCTURE_SIZE2 cpu_to_le16(9)
+#define SMB2_ERROR_STRUCTURE_SIZE2	9
+#define SMB2_ERROR_STRUCTURE_SIZE2_LE	cpu_to_le16(SMB2_ERROR_STRUCTURE_SIZE2)
 
 struct smb2_err_rsp {
 	struct smb2_hdr hdr;

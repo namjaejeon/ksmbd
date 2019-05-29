@@ -123,7 +123,7 @@ static char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 	/* error reqeusts do not have data area */
 	if (hdr->Status && hdr->Status != STATUS_MORE_PROCESSING_REQUIRED &&
 			(((struct smb2_err_rsp *)hdr)->StructureSize) ==
-			SMB2_ERROR_STRUCTURE_SIZE2)
+			SMB2_ERROR_STRUCTURE_SIZE2_LE)
 		return NULL;
 
 	/*
@@ -341,7 +341,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 
 	if (smb2_req_struct_sizes[command] != pdu->StructureSize2) {
 		if (command != SMB2_OPLOCK_BREAK_HE && (hdr->Status == 0 ||
-			pdu->StructureSize2 != SMB2_ERROR_STRUCTURE_SIZE2)) {
+		    pdu->StructureSize2 != SMB2_ERROR_STRUCTURE_SIZE2_LE)) {
 			/* error packets have 9 byte structure size */
 			cifsd_err("Illegal request size %u for command %d\n",
 				le16_to_cpu(pdu->StructureSize2), command);
