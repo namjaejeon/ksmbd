@@ -12,6 +12,7 @@
 #include "transport_tcp.h"
 #include "smb_common.h"
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 static struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
 	.protocol_id = SMB20_PROT_ID,
@@ -32,6 +33,7 @@ static struct smb_version_values smb20_server_values = {
 	.create_mxac_size = sizeof(struct create_mxac_rsp),
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
+#endif
 
 static struct smb_version_values smb21_server_values = {
 	.version_string = SMB21_VERSION_STRING,
