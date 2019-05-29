@@ -136,17 +136,10 @@ struct cifsd_work {
 
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool				multiRsp:1;
-	/* Both received */
-	bool				multiEnd:1;
 	/* No response for cancelled request */
 	bool				send_no_response:1;
-	/* On the conn->requests list */
-	bool				on_request_list:1;
 	/* Request is encrypted */
 	bool				encrypted:1;
-
-	/* smb command code */
-	__le16				command;
 
 	/* List head at conn->requests */
 	struct list_head		request_entry;

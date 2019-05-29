@@ -122,9 +122,8 @@ void smb2_set_err_rsp(struct cifsd_work *work)
 	else
 		err_rsp = (struct smb2_err_rsp *)rsp;
 
-	if (err_rsp->hdr.Status != cpu_to_le32(STATUS_STOPPED_ON_SYMLINK)) {
-		err_rsp->StructureSize =
-			cpu_to_le16(SMB2_ERROR_STRUCTURE_SIZE2);
+	if (err_rsp->hdr.Status != STATUS_STOPPED_ON_SYMLINK) {
+		err_rsp->StructureSize = SMB2_ERROR_STRUCTURE_SIZE2_LE;
 		err_rsp->ErrorContextCount = 0;
 		err_rsp->Reserved = 0;
 		err_rsp->ByteCount = 0;
@@ -198,7 +197,7 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
+void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 
@@ -438,7 +437,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 
 	spin_lock(&conn->credits_lock);
 	if (conn->total_credits) {
-		if (le16_to_cpu(rcv_hdr->CreditCharge))
+		if (rcv_hdr->CreditCharge)
 			conn->total_credits -=
 				le16_to_cpu(rcv_hdr->CreditCharge);
 		else
@@ -697,9 +696,9 @@ void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
  *
  * Return:      converted dos mode
  */
-static __le32 smb2_get_dos_mode(struct kstat *stat, __le32 attribute)
+static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 {
-	__le32 attr = 0;
+	int attr = 0;
 
 	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 
@@ -1840,7 +1839,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 				if (!memcmp(conn->ClientGUID,
 					d_info->fp->client_guid,
 					SMB2_CLIENT_GUID_SIZE)) {
-					if (!(le32_to_cpu(req->hdr.Flags) &
+					if (!(req->hdr.Flags &
 						SMB2_FLAGS_REPLAY_OPERATIONS)) {
 						err = -ENOEXEC;
 						goto out;
@@ -2204,8 +2203,7 @@ int smb2_open(struct cifsd_work *work)
 					work->next_smb2_rsp_hdr_off);
 	}
 
-	if (le32_to_cpu(req->hdr.NextCommand) &&
-			!work->next_smb2_rcv_hdr_off &&
+	if (req->hdr.NextCommand && !work->next_smb2_rcv_hdr_off &&
 			(req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("invalid flag in chained command\n");
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
@@ -2526,7 +2524,7 @@ int smb2_open(struct cifsd_work *work)
 	} else if (open_flags & O_CREAT)
 		file_info = FILE_CREATED;
 
-	cifsd_vfs_set_fadvise(filp, le32_to_cpu(req->CreateOptions));
+	cifsd_vfs_set_fadvise(filp, req->CreateOptions);
 
 	/* Obtain Volatile-ID */
 	fp = cifsd_open_fd(work, filp);
@@ -2724,8 +2722,8 @@ reconnected:
 		lease_ccontext = (struct create_context *)rsp->Buffer;
 		contxt_cnt++;
 		create_lease_buf(rsp->Buffer, fp->f_opinfo->o_lease);
-		rsp->CreateContextsLength =
-			cpu_to_le32(conn->vals->create_lease_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_lease_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_lease_size);
 		next_ptr = &lease_ccontext->Next;
 		next_off = conn->vals->create_lease_size;
@@ -2738,15 +2736,15 @@ reconnected:
 		if (d_info.type == DURABLE_REQ) {
 			create_durable_rsp_buf(rsp->Buffer +
 				rsp->CreateContextsLength);
-			rsp->CreateContextsLength +=
-				cpu_to_le32(conn->vals->create_durable_size);
+			le32_add_cpu(&rsp->CreateContextsLength,
+				     conn->vals->create_durable_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_size);
 		} else {
 			create_durable_v2_rsp_buf(rsp->Buffer +
 				rsp->CreateContextsLength, fp);
-			rsp->CreateContextsLength +=
-				cpu_to_le32(conn->vals->create_durable_v2_size);
+			le32_add_cpu(&rsp->CreateContextsLength,
+				     conn->vals->create_durable_v2_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_v2_size);
 		}
@@ -2763,8 +2761,8 @@ reconnected:
 		contxt_cnt++;
 		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
 			maximal_access);
-		rsp->CreateContextsLength +=
-			cpu_to_le32(conn->vals->create_mxac_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
@@ -2778,8 +2776,8 @@ reconnected:
 		contxt_cnt++;
 		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
 			stat.ino, tcon->id);
-		rsp->CreateContextsLength +=
-			cpu_to_le32(conn->vals->create_disk_id_size);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
@@ -3131,7 +3129,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		dir_fp->dirent_offset = 0;
 	}
 
-	if (srch_flag & SMB2_INDEX_SPECIFIED && le32_to_cpu(req->FileIndex)) {
+	if ((srch_flag & SMB2_INDEX_SPECIFIED) && req->FileIndex) {
 		cifsd_debug("specified index\n");
 		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
 			SEEK_SET);
@@ -3862,7 +3860,7 @@ out:
 			vfree(xattr_list);
 
 		rsp->OutputBufferLength = cpu_to_le32(nbytes);
-		inc_rfc1001_len(rsp_org, cpu_to_le32(rsp->OutputBufferLength));
+		inc_rfc1001_len(rsp_org, nbytes);
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
 	}
@@ -4760,7 +4758,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 		}
 
-		if (le32_to_cpu(file_info->Attributes)) {
+		if (file_info->Attributes) {
 			struct kstat stat;
 
 			if (!S_ISDIR(inode->i_mode)
@@ -4960,7 +4958,8 @@ next:
 
 		file_info = (struct smb2_file_disposition_info *)buffer;
 		if (file_info->DeletePending) {
-			if (S_ISDIR(inode->i_mode) && !cifsd_vfs_empty_dir(fp))
+			if (S_ISDIR(inode->i_mode) &&
+					cifsd_vfs_empty_dir(fp) == -ENOTEMPTY)
 				rc = -EBUSY;
 			else
 				cifsd_set_inode_pending_delete(fp);
@@ -5026,7 +5025,7 @@ next:
 		 * TODO : need to implement consideration for
 		 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
 		 */
-		cifsd_vfs_set_fadvise(fp->filp, le32_to_cpu(mode));
+		cifsd_vfs_set_fadvise(fp->filp, mode);
 		fp->coption = mode;
 
 		break;
@@ -6811,8 +6810,7 @@ int smb2_notify(struct cifsd_work *cifsd_work)
 			cifsd_work->next_smb2_rsp_hdr_off);
 	}
 
-	if (cifsd_work->next_smb2_rcv_hdr_off &&
-		le32_to_cpu(req->hdr.NextCommand)) {
+	if (cifsd_work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
 		rsp->hdr.Status = STATUS_INTERNAL_ERROR;
 		smb2_set_err_rsp(cifsd_work);
 		return 0;
@@ -6932,10 +6930,9 @@ int smb3_check_sign_req(struct cifsd_work *work)
 		hdr = (struct smb2_hdr *)((char *)hdr_org +
 				work->next_smb2_rcv_hdr_off);
 
-	if (!le32_to_cpu(hdr->NextCommand) &&
-			!work->next_smb2_rcv_hdr_off)
+	if (!hdr->NextCommand && !work->next_smb2_rcv_hdr_off)
 		len = be32_to_cpu(hdr_org->smb2_buf_length);
-	else if (le32_to_cpu(hdr->NextCommand))
+	else if (hdr->NextCommand)
 		len = le32_to_cpu(hdr->NextCommand);
 	else
 		len = be32_to_cpu(hdr_org->smb2_buf_length) -
@@ -7000,7 +6997,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 
 	if (!work->next_smb2_rsp_hdr_off) {
 		len = get_rfc1002_length(hdr_org);
-		if (le32_to_cpu(req_hdr->NextCommand)) {
+		if (req_hdr->NextCommand) {
 			/* Align the length to 8Byte  */
 			len = ((len + 7) & ~7);
 		}
@@ -7025,7 +7022,7 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 	if (!signing_key)
 		return;
 
-	if (le32_to_cpu(req_hdr->NextCommand))
+	if (req_hdr->NextCommand)
 		hdr->NextCommand = cpu_to_le32(len);
 
 	hdr->Flags |= SMB2_FLAGS_SIGNED;

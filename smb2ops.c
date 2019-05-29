@@ -12,7 +12,8 @@
 #include "transport_tcp.h"
 #include "smb_common.h"
 
-struct smb_version_values smb20_server_values = {
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+static struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
 	.protocol_id = SMB20_PROT_ID,
 	.req_capabilities = 0, /* MBZ */
@@ -32,8 +33,9 @@ struct smb_version_values smb20_server_values = {
 	.create_mxac_size = sizeof(struct create_mxac_rsp),
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
+#endif
 
-struct smb_version_values smb21_server_values = {
+static struct smb_version_values smb21_server_values = {
 	.version_string = SMB21_VERSION_STRING,
 	.protocol_id = SMB21_PROT_ID,
 	.req_capabilities = 0, /* MBZ */
@@ -54,7 +56,7 @@ struct smb_version_values smb21_server_values = {
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
 
-struct smb_version_values smb30_server_values = {
+static struct smb_version_values smb30_server_values = {
 	.version_string = SMB30_VERSION_STRING,
 	.protocol_id = SMB30_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
@@ -77,7 +79,7 @@ struct smb_version_values smb30_server_values = {
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
 
-struct smb_version_values smb302_server_values = {
+static struct smb_version_values smb302_server_values = {
 	.version_string = SMB302_VERSION_STRING,
 	.protocol_id = SMB302_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
@@ -100,7 +102,7 @@ struct smb_version_values smb302_server_values = {
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
 
-struct smb_version_values smb311_server_values = {
+static struct smb_version_values smb311_server_values = {
 	.version_string = SMB311_VERSION_STRING,
 	.protocol_id = SMB311_PROT_ID,
 	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
@@ -123,7 +125,7 @@ struct smb_version_values smb311_server_values = {
 	.create_disk_id_size = sizeof(struct create_disk_id_rsp),
 };
 
-struct smb_version_ops smb2_0_server_ops = {
+static struct smb_version_ops smb2_0_server_ops = {
 	.get_cmd_val		=	get_smb2_cmd_val,
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
@@ -136,7 +138,7 @@ struct smb_version_ops smb2_0_server_ops = {
 	.set_sign_rsp		=	smb2_set_sign_rsp
 };
 
-struct smb_version_ops smb3_0_server_ops = {
+static struct smb_version_ops smb3_0_server_ops = {
 	.get_cmd_val		=	get_smb2_cmd_val,
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
@@ -154,7 +156,7 @@ struct smb_version_ops smb3_0_server_ops = {
 	.encrypt_resp		=	smb3_encrypt_resp
 };
 
-struct smb_version_ops smb3_11_server_ops = {
+static struct smb_version_ops smb3_11_server_ops = {
 	.get_cmd_val		=	get_smb2_cmd_val,
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
@@ -172,7 +174,7 @@ struct smb_version_ops smb3_11_server_ops = {
 	.encrypt_resp		=	smb3_encrypt_resp
 };
 
-struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
+static struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 	[SMB2_NEGOTIATE_HE]	=	{ .proc = smb2_negotiate_request, },
 	[SMB2_SESSION_SETUP_HE] =	{ .proc = smb2_sess_setup, },
 	[SMB2_TREE_CONNECT_HE]  =	{ .proc = smb2_tree_connect,},

@@ -37,6 +37,19 @@
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
+static char *extract_last_component(char *path)
+{
+	char *p = strrchr(path, '/');
+
+	if (p && p[1] != '\0') {
+		*p = '\0';
+		p++;
+	} else {
+		cifsd_err("Invalid path %s\n", path);
+	}
+	return p;
+}
+
 static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 				    struct inode *inode)
 {
@@ -724,14 +737,9 @@ int cifsd_vfs_remove_file(char *name)
 	char *last;
 	int err = -ENOENT;
 
-	last = strrchr(name, '/');
-	if (last && last[1] != '\0') {
-		*last = '\0';
-		last++;
-	} else {
-		cifsd_debug("can't get last component in path %s\n", name);
+	last = extract_last_component(name);
+	if (!last)
 		return -ENOENT;
-	}
 
 	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
@@ -830,19 +838,6 @@ out1:
 	return err;
 }
 
-static char *extract_last_component(char *path)
-{
-	char *p = strrchr(path, '/');
-
-	if (p && p[1] != '\0') {
-		*p = '\0';
-		p++;
-	} else {
-		cifsd_err("Invalid path %s\n", path);
-	}
-	return p;
-}
-
 static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 			      struct dentry *src_dent,
 			      struct dentry *dst_dent_parent,
@@ -851,6 +846,18 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 {
 	struct dentry *dst_dent;
 	int err;
+
+	spin_lock(&src_dent->d_lock);
+	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
+		if (d_really_is_negative(dst_dent)) {
+			continue;
+		} else {
+			spin_unlock(&src_dent->d_lock);
+			cifsd_debug("Forbid rename, dir is in use\n");
+			return -EACCES;
+		}
+	}
+	spin_unlock(&src_dent->d_lock);
 
 	if (d_really_is_negative(src_dent_parent))
 		return -ENOENT;
@@ -912,12 +919,6 @@ int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname)
 	dget(dst_dent_parent);
 
 	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
-
-	if (d_unhashed(src_dent_parent) || d_count(src_dent_parent) < 2)
-		cifsd_err("Source dentry error [%d:%d]\n",
-			d_count(src_dent_parent),
-			d_unhashed(src_dent_parent));
-
 	err = __cifsd_vfs_rename(src_dent_parent,
 				 src_dent,
 				 dst_dent_parent,
@@ -1484,10 +1485,8 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
  *
  * Return:	true if directory empty, otherwise false
  */
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
+int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
-	struct path dir_path;
-	struct file *filp;
 	struct cifsd_readdir_data r_data = {
 		.ctx.actor = cifsd_fill_dirent,
 		.dirent = (void *)__get_free_page(GFP_KERNEL),
@@ -1496,36 +1495,19 @@ bool cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	int err;
 
 	if (!r_data.dirent)
-		return false;
-
-	err = cifsd_vfs_kern_path(fp->filename, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
-			&dir_path, 0);
-	if (err < 0)
-		return false;
-
-	filp = dentry_open(&dir_path, O_RDONLY | O_LARGEFILE, current_cred());
-	if (IS_ERR(filp)) {
-		err = PTR_ERR(filp);
-		fput(filp);
-		cifsd_err("dentry open failed, err %d\n", err);
-		return false;
-	}
+		return -ENOMEM;
 
 	r_data.used = 0;
 	r_data.full = 0;
 
-	err = cifsd_vfs_readdir(filp, &r_data);
-	if (r_data.dirent_count > 2) {
-		fput(filp);
-		path_put(&dir_path);
-		free_page((unsigned long)(r_data.dirent));
-		return false;
-	}
+	err = cifsd_vfs_readdir(fp->filp, &r_data);
+	if (r_data.dirent_count > 2)
+		err = -ENOTEMPTY;
+	else
+		err = 0;
 
 	free_page((unsigned long)(r_data.dirent));
-	fput(filp);
-	path_put(&dir_path);
-	return true;
+	return err;
 }
 
 /**
@@ -1620,11 +1602,10 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 
 	err = kern_path(name, flags, path);
 	if (err && caseless) {
-		char *filename = strrchr((const char *)name, '/');
+		char *filename = extract_last_component(name);
 
 		if (!filename)
 			return err;
-		*(filename++) = '\0';
 		if (strlen(name) == 0) {
 			/* root reached */
 			filename--;
@@ -1736,8 +1717,7 @@ static void fill_file_attributes(struct cifsd_work *work,
 					XATTR_NAME_FILE_ATTRIBUTE,
 					&file_attribute);
 		if (rc > 0)
-			cifsd_kstat->file_attributes =
-				*((__le32 *)file_attribute);
+			cifsd_kstat->file_attributes = *file_attribute;
 		else
 			cifsd_debug("fail to fill file attributes.\n");
 

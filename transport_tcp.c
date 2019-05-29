@@ -727,7 +727,6 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 		atomic_inc(&conn->req_running);
 		spin_lock(&conn->request_lock);
 		list_add_tail(&work->request_entry, requests_queue);
-		work->on_request_list = 1;
 		spin_unlock(&conn->request_lock);
 	}
 }
@@ -737,7 +736,8 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	struct cifsd_tcp_conn *conn = work->conn;
 	int ret = 1;
 
-	if (!work->on_request_list)
+	if (list_empty(&work->request_entry) &&
+		list_empty(&work->async_request_entry))
 		return 0;
 
 	atomic_dec(&conn->req_running);
@@ -746,8 +746,6 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 		list_del_init(&work->request_entry);
 		if (work->type == ASYNC)
 			list_del_init(&work->async_request_entry);
-
-		work->on_request_list = 0;
 		ret = 0;
 	}
 	spin_unlock(&conn->request_lock);
