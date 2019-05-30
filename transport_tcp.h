@@ -146,10 +146,15 @@ struct cifsd_transport {
 	struct task_struct		*handler;
 };
 
+#define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
+#define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
+bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn);
 void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
 
+struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(void);
+void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn);
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
 	void *arg);
 struct cifsd_work;
@@ -159,6 +164,9 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work);
 int cifsd_tcp_try_dequeue_request(struct cifsd_work *work);
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
+int cifsd_conn_handler_loop(void *p);
+
+void stop_sessions(void);
 void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(void);
 
