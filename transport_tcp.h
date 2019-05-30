@@ -58,7 +58,6 @@ struct cifsd_stats {
 struct cifsd_transport;
 
 struct cifsd_tcp_conn {
-	struct socket			*sock;
 	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
@@ -67,8 +66,6 @@ struct cifsd_tcp_conn {
 	int				tcp_status;
 	unsigned int			cli_cap;
 	unsigned int			srv_cap;
-	struct kvec			*iov;
-	unsigned int			nr_iov;
 	void 				*request_buf;
 	struct cifsd_transport		*transport;
 	struct nls_table		*local_nls;
@@ -155,9 +152,6 @@ void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
 
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
 	void *arg);
-int cifsd_tcp_read(struct cifsd_tcp_conn *conn,
-		   char *buf,
-		   unsigned int to_read);
 struct cifsd_work;
 int cifsd_tcp_write(struct cifsd_work *work);
 
