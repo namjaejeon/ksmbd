@@ -208,14 +208,18 @@ static struct kvec *get_conn_iovec(struct cifsd_tcp_conn *conn,
 static int cifsd_tcp_conn_handler_loop(void *p)
 {
 	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
+	struct cifsd_transport *t = conn->transport;
 	unsigned int pdu_size;
 	char hdr_buf[4] = {0,};
 	int size;
 
 	mutex_init(&conn->srv_mutex);
 	__module_get(THIS_MODULE);
-	conn->last_active = jiffies;
 
+	if (t->ops->prepare && t->ops->prepare(t))
+		goto out;
+
+	conn->last_active = jiffies;
 	while (cifsd_tcp_conn_alive(conn)) {
 		if (try_to_freeze())
 			continue;
@@ -223,7 +227,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		cifsd_free_request(conn->request_buf);
 		conn->request_buf = NULL;
 
-		size = cifsd_tcp_read(conn, hdr_buf, sizeof(hdr_buf));
+		size = t->ops->read(t, hdr_buf, sizeof(hdr_buf));
 		if (size != sizeof(hdr_buf))
 			break;
 
@@ -251,7 +255,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		 * We already read 4 bytes to find out PDU size, now
 		 * read in PDU
 		 */
-		size = cifsd_tcp_read(conn, conn->request_buf + 4, pdu_size);
+		size = t->ops->read(t, conn->request_buf + 4, pdu_size);
 		if (size < 0) {
 			cifsd_err("sock_read failed: %d\n", size);
 			break;
@@ -275,6 +279,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 		}
 	}
 
+out:
 	/* Wait till all reference dropped to the Server object*/
 	while (atomic_read(&conn->r_count) > 0)
 		schedule_timeout(HZ);
@@ -282,7 +287,7 @@ static int cifsd_tcp_conn_handler_loop(void *p)
 	unload_nls(conn->local_nls);
 	if (conn->conn_ops->terminate_fn)
 		conn->conn_ops->terminate_fn(conn);
-	cifsd_tcp_conn_free(conn);
+	t->ops->disconnect(t);
 	module_put(THIS_MODULE);
 	return 0;
 }
@@ -548,7 +553,8 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	}
 
 	cifsd_tcp_conn_lock(conn);
-	sent = kernel_sendmsg(conn->sock, &smb_msg, iov, iov_idx, len);
+	sent = conn->transport->ops->writev(conn->transport, &iov[0],
+					iov_idx, len);
 	cifsd_tcp_conn_unlock(conn);
 
 	if (sent < 0) {

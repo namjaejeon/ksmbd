@@ -55,6 +55,8 @@ struct cifsd_stats {
 	atomic64_t			request_served;
 };
 
+struct cifsd_transport;
+
 struct cifsd_tcp_conn {
 	struct socket			*sock;
 	struct smb_version_values	*vals;
@@ -68,6 +70,7 @@ struct cifsd_tcp_conn {
 	struct kvec			*iov;
 	unsigned int			nr_iov;
 	void 				*request_buf;
+	struct cifsd_transport		*transport;
 	struct nls_table		*local_nls;
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
@@ -133,6 +136,20 @@ struct cifsd_tcp_conn {
 struct cifsd_tcp_conn_ops {
 	int	(*process_fn)(struct cifsd_tcp_conn *conn);
 	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
+};
+
+struct cifsd_transport_ops {
+	int (*prepare)(struct cifsd_transport *t);
+	int (*read)(struct cifsd_transport *t, char *buf, unsigned int size);
+	int (*writev)(struct cifsd_transport *t, struct kvec *iovs, int nvecs,
+			int size);
+	void (*disconnect)(struct cifsd_transport *t);
+};
+
+struct cifsd_transport {
+	struct cifsd_tcp_conn		*conn;
+	struct cifsd_transport_ops	*ops;
+	struct task_struct		*handler;
 };
 
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
