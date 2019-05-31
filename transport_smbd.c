@@ -976,6 +976,131 @@ dma_mapping_failure:
 	return rc;
 }
 
+static int smbd_writev(struct cifsd_transport *t, struct kvec *iov,
+			int niovs, int buflen)
+{
+	struct smbd_transport *st = SMBD_TRANS(t);
+	int remaining_data_length;
+	int start, i, j;
+	int max_iov_size = st->max_send_size -
+			sizeof(struct smbd_data_transfer);
+	int rc;
+	struct kvec vec;
+	int nvecs;
+
+	st->smbd_send_pending++;
+	if (st->status != SMBD_CS_CONNECTED) {
+		rc = -ENODEV;
+		goto done;
+	}
+
+	// FIXME: SMBD headers are appended per max_iov_size.
+	if (buflen + sizeof(struct smbd_data_transfer) >
+		st->max_fragmented_send_size) {
+		cifsd_err("payload size %d > max size %d\n",
+			buflen, st->max_fragmented_send_size);
+		rc = -EINVAL;
+		goto done;
+	}
+
+	//FIXME: skip RFC1002 header..
+	buflen -= 4;
+	iov[0].iov_base += 4;
+	iov[0].iov_len -= 4;
+
+	remaining_data_length = buflen;
+	cifsd_debug("Sending smb (RDMA): smb_len=%u\n", buflen);
+
+	start = i = 0;
+	buflen = 0;
+	while (true) {
+		buflen += iov[i].iov_len;
+		if (buflen > max_iov_size) {
+			if (i > start) {
+				remaining_data_length -=
+					(buflen-iov[i].iov_len);
+				cifsd_debug("sending iov[] from start=%d "
+					"i=%d nvecs=%d "
+					"remaining_data_length=%d\n",
+					start, i, i-start,
+					remaining_data_length);
+				rc = smbd_post_send_data(
+					st, &iov[start], i-start,
+					remaining_data_length);
+				if (rc)
+					goto done;
+			} else {
+				/* iov[start] is too big, break it */
+				nvecs = (buflen+max_iov_size-1)/max_iov_size;
+				cifsd_debug("iov[%d] iov_base=%p size=%d"
+					" break to %d vectors\n",
+					start, iov[start].iov_base,
+					buflen, nvecs);
+				for (j = 0; j < nvecs; j++) {
+					vec.iov_base =
+						(char *)iov[start].iov_base +
+						j*max_iov_size;
+					vec.iov_len = max_iov_size;
+					if (j == nvecs-1)
+						vec.iov_len =
+							buflen -
+							max_iov_size*(nvecs-1);
+					remaining_data_length -= vec.iov_len;
+					cifsd_debug(
+						"sending vec j=%d iov_base=%p"
+						" iov_len=%zu "
+						"remaining_data_length=%d\n",
+						j, vec.iov_base, vec.iov_len,
+						remaining_data_length);
+					rc = smbd_post_send_data(
+						st, &vec, 1,
+						remaining_data_length);
+					if (rc)
+						goto done;
+				}
+				i++;
+				if (i == niovs)
+					break;
+			}
+			start = i;
+			buflen = 0;
+		} else {
+			i++;
+			if (i == niovs) {
+				/* send out all remaining vecs */
+				remaining_data_length -= buflen;
+				cifsd_debug(
+					"sending iov[] from start=%d i=%d "
+					"nvecs=%d remaining_data_length=%d\n",
+					start, i, i-start,
+					remaining_data_length);
+				rc = smbd_post_send_data(st, &iov[start],
+					i-start, remaining_data_length);
+				if (rc)
+					goto done;
+				break;
+			}
+		}
+		cifsd_debug("looping i=%d buflen=%d\n", i, buflen);
+	}
+
+done:
+	/*
+	 * As an optimization, we don't wait for individual I/O to finish
+	 * before sending the next one.
+	 * Send them all and wait for pending send count to get to 0
+	 * that means all the I/Os have been out and we are good to return
+	 */
+
+	wait_event(st->wait_send_payload_pending,
+		atomic_read(&st->send_payload_pending) == 0);
+
+	st->smbd_send_pending--;
+	wake_up(&st->wait_smbd_send_pending);
+	return rc;
+
+}
+
 static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 				struct rdma_cm_event *event)
 {
@@ -1556,5 +1681,6 @@ int cifsd_smbd_destroy(void)
 
 struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
+	.writev		= smbd_writev,
 	.read		= smbd_read,
 };
