@@ -9,7 +9,7 @@
 #include "smb2pdu.h"
 
 #include "auth.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "smb_common.h"
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER

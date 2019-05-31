@@ -9,7 +9,7 @@
 
 #include "smb_common.h"
 #include "buffer_pool.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/user_session.h"
 
 bool oplocks_enable;

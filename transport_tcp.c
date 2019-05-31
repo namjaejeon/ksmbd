@@ -8,7 +8,7 @@
 #include "server.h"
 #include "auth.h"
 #include "buffer_pool.h"
-#include "transport_tcp.h"
+#include "connection.h"
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket;

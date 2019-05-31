@@ -11,7 +11,7 @@
 #include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "transport_ipc.h"
 #include "vfs.h"
 #include "misc.h"

@@ -12,7 +12,7 @@
 #include "user_config.h"
 #include "tree_connect.h"
 #include "../transport_ipc.h"
-#include "../transport_tcp.h"
+#include "../connection.h"
 #include "../buffer_pool.h"
 #include "../cifsd_server.h" /* FIXME */
 #include "../vfs_cache.h"

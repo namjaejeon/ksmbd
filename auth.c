@@ -19,7 +19,7 @@
 #include "encrypt.h"
 #include "server.h"
 #include "smb_common.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 

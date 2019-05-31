@@ -11,6 +11,7 @@
 #include "buffer_pool.h"
 #include "smb_common.h"
 #include "mgmt/cifsd_ida.h"
+#include "connection.h"
 #include "transport_tcp.h"
 
 static DEFINE_MUTEX(init_lock);

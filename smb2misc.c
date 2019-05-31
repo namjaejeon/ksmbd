@@ -9,7 +9,7 @@
 #include "smb2pdu.h"
 #include "smb_common.h"
 #include "mgmt/user_session.h"
-#include "transport_tcp.h"
+#include "connection.h"
 
 static int check_smb2_hdr(struct smb2_hdr *hdr)
 {

@@ -15,7 +15,7 @@
 #include "glob.h"
 
 #include "asn1.h"
-#include "transport_tcp.h"
+#include "connection.h"
 
 /*****************************************************************************
  *
