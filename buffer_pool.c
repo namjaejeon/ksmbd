@@ -9,7 +9,7 @@
 
 #include "glob.h"
 #include "buffer_pool.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/cifsd_ida.h"
 
 static struct kmem_cache *work_cache;

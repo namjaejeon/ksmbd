@@ -16,7 +16,7 @@
 #include "server.h"
 #include "smb_common.h"
 #include "buffer_pool.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "transport_ipc.h"
 #include "mgmt/user_session.h"
 

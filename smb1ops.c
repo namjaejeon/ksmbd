@@ -8,7 +8,7 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
-#include "transport_tcp.h"
+#include "connection.h"
 #include "smb_common.h"
 
 static struct smb_version_values smb1_server_values = {
