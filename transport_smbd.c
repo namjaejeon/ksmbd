@@ -151,6 +151,7 @@ struct smbd_transport {
 	struct workqueue_struct	*workqueue;
 	struct work_struct	post_recv_credits_work;
 	struct work_struct	send_immediate_work;
+	struct work_struct	disconnect_work;
 };
 
 #define CIFSD_TRANS(t)	((struct cifsd_transport *)&((t)->transport))
@@ -294,6 +295,23 @@ static struct smbd_recvmsg *get_first_reassembly(
 		return NULL;
 }
 
+static void smbd_disconnect_rdma_work(struct work_struct *work)
+{
+	struct smbd_transport *t =
+		container_of(work, struct smbd_transport, disconnect_work);
+
+	if (t->status >= SMBD_CS_CLIENT_ACCEPTED
+			&& t->status <= SMBD_CS_CONNECTED) {
+		t->status = SMBD_CS_DISCONNECTING;
+		rdma_disconnect(t->cm_id);
+	}
+}
+
+static void smbd_disconnect_rdma_connection(struct smbd_transport *t)
+{
+	queue_work(t->workqueue, &t->disconnect_work);
+}
+
 static void smbd_send_immediate_work(struct work_struct *work)
 {
 	struct smbd_transport *t = container_of(work, struct smbd_transport,
@@ -348,6 +366,7 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 
 	INIT_WORK(&t->post_recv_credits_work, smbd_post_recv_credits);
 	INIT_WORK(&t->send_immediate_work, smbd_send_immediate_work);
+	INIT_WORK(&t->disconnect_work, smbd_disconnect_rdma_work);
 
 	snprintf(name, sizeof(name), "smbd_%p", t);
 	t->workqueue = create_workqueue(name);
@@ -493,6 +512,7 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 		cifsd_err("Recv error. status='%s (%d)' opcode=%d\n",
 			ib_wc_status_msg(wc->status), wc->status,
 			wc->opcode);
+		smbd_disconnect_rdma_connection(t);
 		__put_empty_recvmsg(t, recvmsg);
 		return;
 	}
@@ -574,6 +594,7 @@ static int smbd_post_recv(struct smbd_transport *t,
 		ib_dma_unmap_single(t->cm_id->device,
 			recvmsg->sge.addr, recvmsg->sge.length,
 			DMA_FROM_DEVICE);
+		smbd_disconnect_rdma_connection(t);
 		return ret;
 	}
 	return ret;
@@ -771,6 +792,7 @@ static void send_done(struct ib_cq *cq, struct ib_wc *wc)
 		cifsd_err("Send error. status='%s (%d)', opcode=%d\n",
 			ib_wc_status_msg(wc->status), wc->status,
 			wc->opcode);
+		smbd_disconnect_rdma_connection(t);
 	}
 
 	for (i = 0; i < sendmsg->num_sge; i++)
@@ -914,6 +936,7 @@ static int smbd_post_send(struct smbd_transport *t,
 			if (atomic_dec_and_test(&t->send_pending))
 				wake_up(&t->wait_send_pending);
 		}
+		smbd_disconnect_rdma_connection(t);
 	}
 	return ret;
 }
@@ -1097,6 +1120,18 @@ done:
 
 }
 
+static void smbd_disconnect(struct cifsd_transport *t)
+{
+	struct smbd_transport *st = SMBD_TRANS(t);
+
+	cifsd_debug("Disconnecting cm_id=%p\n", st->cm_id);
+
+	smbd_disconnect_rdma_connection(st);
+	wait_event_interruptible(st->wait_status,
+			st->status == SMBD_CS_DISCONNECTED);
+	free_transport(st);
+}
+
 static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 				struct rdma_cm_event *event)
 {
@@ -1138,6 +1173,7 @@ static void smbd_qpair_handler(struct ib_event *event, void *context)
 	switch (event->event) {
 	case IB_EVENT_CQ_ERR:
 	case IB_EVENT_QP_FATAL:
+		smbd_disconnect_rdma_connection(t);
 		break;
 	default:
 		break;
@@ -1669,4 +1705,5 @@ struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
 	.writev		= smbd_writev,
 	.read		= smbd_read,
+	.disconnect	= smbd_disconnect,
 };
