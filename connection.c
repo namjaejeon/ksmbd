@@ -13,6 +13,7 @@
 #include "mgmt/cifsd_ida.h"
 #include "connection.h"
 #include "transport_tcp.h"
+#include "transport_smbd.h"
 
 static DEFINE_MUTEX(init_lock);
 
@@ -360,6 +361,11 @@ int cifsd_conn_transport_init(void)
 		return ret;
 	}
 
+	ret = cifsd_smbd_init();
+	if (ret) {
+		pr_err("Failed to init SMBD subsystem: %d\n", ret);
+		return ret;
+	}
 	mutex_unlock(&init_lock);
 	return ret;
 }
@@ -388,6 +394,7 @@ void cifsd_conn_transport_destroy(void)
 {
 	mutex_lock(&init_lock);
 	cifsd_tcp_destroy();
+	cifsd_smbd_destroy();
 	stop_sessions();
 	mutex_unlock(&init_lock);
 }
