@@ -392,9 +392,8 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 {
 	int ret;
 
-	ret = cifsd_tcp_init();
+	ret = cifsd_conn_transport_init();
 	if (ret) {
-		pr_err("Failed to init TCP subsystem: %d\n", ret);
 		server_queue_ctrl_reset_work();
 		return;
 	}
@@ -404,7 +403,7 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
-	cifsd_tcp_destroy();
+	cifsd_conn_transport_destroy();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
 
@@ -525,7 +524,7 @@ static int cifsd_server_shutdown(void)
 
 	class_unregister(&cifsd_control_class);
 	cifsd_ipc_release();
-	cifsd_tcp_destroy();
+	cifsd_conn_transport_destroy();
 	cifsd_free_session_table();
 
 	cifsd_free_global_file_table();

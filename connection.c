@@ -352,6 +352,22 @@ void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 	default_conn_ops.terminate_fn = ops->terminate_fn;
 }
 
+int cifsd_conn_transport_init(void)
+{
+        int ret;
+
+        mutex_lock(&init_lock);
+
+        ret = cifsd_tcp_init();
+        if (ret) {
+                pr_err("Failed to init TCP subsystem: %d\n", ret);
+                return ret;
+        }
+
+        mutex_unlock(&init_lock);
+        return ret;
+}
+
 void stop_sessions(void)
 {
 	struct cifsd_tcp_conn *conn;
@@ -370,4 +386,12 @@ again:
 		schedule_timeout_interruptible(CIFSD_TCP_RECV_TIMEOUT / 2);
 		goto again;
 	}
+}
+
+void cifsd_conn_transport_destroy(void)
+{
+        mutex_lock(&init_lock);
+        cifsd_tcp_destroy();
+        stop_sessions();
+        mutex_unlock(&init_lock);
 }
