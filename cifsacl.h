@@ -8,7 +8,6 @@
 #ifndef _CIFSACL_H
 #define _CIFSACL_H
 
-
 #define NUM_AUTHS (6)	/* number of authority fields */
 #define SID_MAX_SUB_AUTHORITIES (15) /* max number of sub authority fields */
 
@@ -111,48 +110,4 @@ struct cifsd_fattr {
 	umode_t	cf_mode;
 };
 
-#ifdef CONFIG_CIFSD_ACL
-int parse_sec_desc(struct cifs_ntsd *pntsd,
-		   int acl_len,
-		   struct cifsd_fattr *fattr);
-
-int build_sec_desc(struct cifs_ntsd *pntsd,
-		   int addition_info,
-		   struct inode *inode);
-
-void cifsd_fattr_to_inode(struct inode *inode,
-			  struct cifsd_fattr *fattr);
-
-void exit_cifsd_idmap(void);
-
-int init_cifsd_idmap(void);
-#else
-static inline int parse_sec_desc(struct cifs_ntsd *pntsd,
-		   int acl_len,
-		   struct cifsd_fattr *fattr)
-{
-	return 0;
-}
-
-static inline int build_sec_desc(struct cifs_ntsd *pntsd,
-		   int addition_info,
-		   struct inode *inode)
-{
-	return 0;
-}
-
-static inline void cifsd_fattr_to_inode(struct inode *inode,
-			  struct cifsd_fattr *fattr)
-{
-}
-
-static inline void exit_cifsd_idmap(void)
-{
-}
-
-static inline int init_cifsd_idmap(void)
-{
-	return 0;
-}
-#endif /* CONFIG_CIFSD_ACL */
 #endif /* _CIFSACL_H */

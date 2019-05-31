@@ -11,7 +11,7 @@
 #include "transport_tcp.h"
 #include "smb_common.h"
 
-struct smb_version_values smb1_server_values = {
+static struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,
 	.protocol_id = SMB10_PROT_ID,
 	.large_lock_type = LOCKING_ANDX_LARGE_FILES,
@@ -29,7 +29,7 @@ struct smb_version_values smb1_server_values = {
 	.signing_required = SECMODE_SIGN_REQUIRED,
 };
 
-struct smb_version_ops smb1_server_ops = {
+static struct smb_version_ops smb1_server_ops = {
 	.get_cmd_val = get_smb_cmd_val,
 	.init_rsp_hdr = init_smb_rsp_hdr,
 	.set_rsp_status = set_smb_rsp_status,
@@ -38,11 +38,10 @@ struct smb_version_ops smb1_server_ops = {
 	.is_sign_req = smb1_is_sign_req,
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
-	.check_user_session = smb_check_user_session,
 	.get_cifsd_tcon = smb_get_cifsd_tcon,
 };
 
-struct smb_version_cmds smb1_server_cmds[256] = {
+static struct smb_version_cmds smb1_server_cmds[256] = {
 	[SMB_COM_CREATE_DIRECTORY]	= { .proc = smb_mkdir, },
 	[SMB_COM_DELETE_DIRECTORY]	= { .proc = smb_rmdir, },
 	[SMB_COM_CLOSE]			= { .proc = smb_close, },

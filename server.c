@@ -6,7 +6,6 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "cifsacl.h"
 #include "misc.h"
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
@@ -382,7 +381,7 @@ static int server_conf_init(void)
 {
 	INIT_LIST_HEAD(&server_conf.iface_list);
 
-	server_conf.state = SERVER_STATE_STARTING_UP;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
 	server_conf.max_protocol = cifsd_max_protocol();
@@ -400,13 +399,13 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 		return;
 	}
 
-	server_conf.state = SERVER_STATE_RUNNING;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_RUNNING);
 }
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
 	cifsd_tcp_destroy();
-	server_conf.state = SERVER_STATE_STARTING_UP;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
 
 static void server_ctrl_handle_work(struct work_struct *work)
@@ -522,7 +521,7 @@ static struct class cifsd_control_class = {
 
 static int cifsd_server_shutdown(void)
 {
-	server_conf.state = SERVER_STATE_SHUTTING_DOWN;
+	WRITE_ONCE(server_conf.state, SERVER_STATE_SHUTTING_DOWN);
 
 	class_unregister(&cifsd_control_class);
 	cifsd_ipc_release();
@@ -532,7 +531,6 @@ static int cifsd_server_shutdown(void)
 	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
-	exit_cifsd_idmap();
 	server_conf_free();
 	return 0;
 }
@@ -570,10 +568,6 @@ static int __init cifsd_server_init(void)
 		goto error;
 
 	ret = cifsd_inode_hash_init();
-	if (ret)
-		goto error;
-
-	ret = init_cifsd_idmap();
 	if (ret)
 		goto error;
 	return 0;

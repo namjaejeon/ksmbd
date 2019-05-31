@@ -81,6 +81,8 @@ static int __rpc_method(char *rpc_name)
 
 	if (!strcmp(rpc_name, "LANMAN") || !strcmp(rpc_name, "lanman"))
 		return CIFSD_RPC_RAP_METHOD;
+
+	cifsd_err("Unsupported RPC: %s\n", rpc_name);
 	return 0;
 }
 
