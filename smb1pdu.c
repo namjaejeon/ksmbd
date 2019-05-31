@@ -82,7 +82,7 @@ static inline int is_smbreq_unicode(struct smb_hdr *hdr)
  * @work:	smb work containing smb response header
  * @err:	error code to set in response
  */
-void set_smb_rsp_status(struct cifsd_work *work, __le32 err)
+void set_smb_rsp_status(struct cifsd_work *work, unsigned int err)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(work);
 
@@ -777,7 +777,7 @@ int smb_rename(struct cifsd_work *work)
 	}
 
 	cifsd_debug("rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = cifsd_vfs_rename(abs_oldname, abs_newname, NULL);
+	rc = cifsd_vfs_rename_slowpath(abs_oldname, abs_newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -2144,7 +2144,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
-		if (le32_to_cpu(req->DesiredAccess) &&
+		if (req->DesiredAccess &&
 				!(le32_to_cpu(req->DesiredAccess) & DELETE)) {
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 			return -EPERM;
@@ -2404,9 +2404,11 @@ int smb_nt_create_andx(struct cifsd_work *work)
 
 	err = 0;
 	/* open  file and get FID */
-	fp = cifsd_vfs_dentry_open(work, &path, open_flags,
-		le32_to_cpu(req->CreateOptions),
-		file_present);
+	fp = cifsd_vfs_dentry_open(work,
+				   &path,
+				   open_flags,
+				   req->CreateOptions,
+				   file_present);
 	if (IS_ERR(fp)) {
 		err = PTR_ERR(fp);
 		goto free_path;
@@ -3461,7 +3463,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 		j = 0;
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
 		cifs_acl->default_entry_count = cpu_to_le16(count);
-		if (le16_to_cpu(cifs_acl->access_entry_count))
+		if (cifs_acl->access_entry_count)
 			j = le16_to_cpu(cifs_acl->access_entry_count);
 	} else {
 		cifsd_debug("unknown ACL type %d\n", acl_type);
@@ -6733,9 +6735,8 @@ static int smb_set_dispostion(struct cifsd_work *work)
 		}
 
 		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
-				!cifsd_vfs_empty_dir(fp)) {
-			rsp->hdr.Status.CifsError =
-				STATUS_DIRECTORY_NOT_EMPTY;
+				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY) {
+			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
 		}
 
@@ -6870,7 +6871,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 		return -ENOENT;
 	}
 
-	if (le32_to_cpu(info->overwrite)) {
+	if (info->overwrite) {
 		rc = cifsd_vfs_truncate(work, NULL, fp, 0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
@@ -6887,7 +6888,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 
 	cifsd_debug("rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = cifsd_vfs_rename(NULL, newname, fp);
+	rc = cifsd_vfs_fp_rename(fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
@@ -7435,7 +7436,6 @@ int smb_nt_cancel(struct cifsd_work *work)
 			       hdr->Mid, work_hdr->Command);
 			new_work->send_no_response = 1;
 			list_del_init(&new_work->request_entry);
-			new_work->on_request_list = 0;
 			new_work->sess->sequence_number--;
 			break;
 		}

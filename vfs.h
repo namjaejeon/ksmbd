@@ -103,18 +103,18 @@ struct cifsd_readdir_data {
 };
 
 struct cifsd_dirent {
-	__le64		ino;
-	__le64		offset;
-	__le32		namelen;
-	__le32		d_type;
-	char		name[];
+	unsigned long long	ino;
+	unsigned long long	offset;
+	unsigned int		namelen;
+	unsigned int		d_type;
+	char			name[];
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
 struct cifsd_kstat {
-	struct kstat	*kstat;
-	__u64		create_time;
-	__le32		file_attributes;
+	struct kstat		*kstat;
+	unsigned long long	create_time;
+	int			file_attributes;
 };
 
 struct cifsd_fs_sector_size {
@@ -138,8 +138,10 @@ int cifsd_vfs_remove_file(char *name);
 int cifsd_vfs_link(const char *oldname, const char *newname);
 int cifsd_vfs_symlink(const char *name, const char *symname);
 int cifsd_vfs_readlink(struct path *path, char *buf, int lenp);
-int cifsd_vfs_rename(char *abs_oldname, char *abs_newname,
-		     struct cifsd_file *fp);
+
+int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname);
+int cifsd_vfs_rename_slowpath(char *oldname, char *newname);
+
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size);
 
@@ -188,7 +190,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
+int cifsd_vfs_empty_dir(struct cifsd_file *fp);
 void cifsd_vfs_set_fadvise(struct file *filp, int option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
 int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata);
@@ -204,7 +206,6 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
 				struct cifsd_fs_sector_size *fs_ss);
-bool cifsd_vfs_empty_dir(struct cifsd_file *fp);
 char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 			     struct cifsd_kstat *cifsd_kstat,
 			     struct cifsd_dirent *de,

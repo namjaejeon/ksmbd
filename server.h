@@ -23,9 +23,7 @@ struct interface {
 };
 
 struct cifsd_server_config {
-	int			state;
-	char			*conf[SERVER_CONF_WORK_GROUP + 1];
-
+	unsigned int		state;
 	short			signing;
 	short			enforced_signing;
 	short			min_protocol;
@@ -34,6 +32,8 @@ struct cifsd_server_config {
 	unsigned short		ipc_timeout;
 	unsigned long		ipc_last_active;
 	unsigned long		deadtime;
+
+	char			*conf[SERVER_CONF_WORK_GROUP + 1];
 	struct list_head	iface_list;
 };
 
@@ -50,12 +50,12 @@ char *cifsd_work_group(void);
 
 static inline int cifsd_server_running(void)
 {
-	return server_conf.state == SERVER_STATE_RUNNING;
+	return READ_ONCE(server_conf.state) == SERVER_STATE_RUNNING;
 }
 
 static inline int cifsd_server_configurable(void)
 {
-	return server_conf.state < SERVER_STATE_RESETTING;
+	return READ_ONCE(server_conf.state) < SERVER_STATE_RESETTING;
 }
 
 int server_queue_ctrl_init_work(void);

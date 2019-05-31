@@ -99,7 +99,15 @@ void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 
 struct cifsd_work *cifsd_alloc_work_struct(void)
 {
-	return kmem_cache_zalloc(work_cache, GFP_KERNEL);
+	struct cifsd_work *work = kmem_cache_zalloc(work_cache, GFP_KERNEL);
+
+	if (work) {
+		INIT_LIST_HEAD(&work->request_entry);
+		INIT_LIST_HEAD(&work->async_request_entry);
+		INIT_LIST_HEAD(&work->fp_entry);
+		INIT_LIST_HEAD(&work->interim_entry);
+	}
+	return work;
 }
 
 void cifsd_free_work_struct(struct cifsd_work *work)
