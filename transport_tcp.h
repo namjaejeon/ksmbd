@@ -169,10 +169,11 @@ void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
 
 int cifsd_conn_handler_loop(void *p);
 
-void stop_sessions(void);
 int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz);
-void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(void);
+void cifsd_tcp_destroy(void);
+int cifsd_conn_transport_init(void);
+void cifsd_conn_transport_destroy(void);
 
 /*
  * WARNING

@@ -10,8 +10,6 @@
 #include "buffer_pool.h"
 #include "transport_tcp.h"
 
-static DEFINE_MUTEX(init_lock);
-
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket;
 
@@ -383,9 +381,7 @@ int cifsd_tcp_init(void)
 	struct interface *iface;
 	struct list_head *tmp;
 
-	mutex_lock(&init_lock);
 	if (cifsd_socket) {
-		mutex_unlock(&init_lock);
 		return 0;
 	}
 
@@ -438,12 +434,10 @@ int cifsd_tcp_init(void)
 		goto out_error;
 	}
 
-	mutex_unlock(&init_lock);
 	return 0;
 
 out_error:
 	tcp_destroy_socket();
-	mutex_unlock(&init_lock);
 	return ret;
 }
 
@@ -474,12 +468,9 @@ static void destroy_iface_list(void)
 
 void cifsd_tcp_destroy(void)
 {
-	mutex_lock(&init_lock);
 	tcp_destroy_socket();
 	tcp_stop_kthread();
-	stop_sessions();
 	destroy_iface_list();
-	mutex_unlock(&init_lock);
 }
 
 static bool iface_exists(const char *ifname)
