@@ -186,6 +186,11 @@ static void smbd_post_recv_credits(struct work_struct *work);
 static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
 			int nvecs, int remaining_data_length);
 
+static inline void *smbd_recvmsg_payload(struct smbd_recvmsg *recvmsg)
+{
+	return (void *)recvmsg->packet;
+}
+
 static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 {
 	struct smbd_recvmsg *recvmsg = NULL;
@@ -279,6 +284,16 @@ static void enqueue_reassembly(struct smbd_transport *t,
 
 }
 
+static struct smbd_recvmsg *get_first_reassembly(
+				struct smbd_transport *t)
+{
+	if (!list_empty(&t->reassembly_queue))
+		return list_first_entry(&t->reassembly_queue,
+				struct smbd_recvmsg, list);
+	else
+		return NULL;
+}
+
 static void smbd_send_immediate_work(struct work_struct *work)
 {
 	struct smbd_transport *t = container_of(work, struct smbd_transport,
@@ -355,6 +370,9 @@ err:
 
 static void free_transport(struct smbd_transport *t)
 {
+	struct smbd_recvmsg *recvmsg;
+	unsigned long flags;
+
 	if (t->qp) {
 		ib_drain_qp(t->qp);
 		ib_destroy_qp(t->qp);
@@ -371,6 +389,18 @@ static void free_transport(struct smbd_transport *t)
 	wait_event(t->wait_send_pending,
 		atomic_read(&t->send_pending) == 0);
 
+	cifsd_debug("drain the reassembly queue\n");
+	do {
+		spin_lock_irqsave(&t->reassembly_queue_lock, flags);
+		recvmsg = get_first_reassembly(t);
+		if (recvmsg) {
+			list_del(&recvmsg->list);
+			spin_unlock_irqrestore(
+				&t->reassembly_queue_lock, flags);
+			put_recvmsg(t, recvmsg);
+		} else
+			spin_unlock_irqrestore(&t->reassembly_queue_lock, flags);
+	} while (recvmsg);
 	t->reassembly_data_length = 0;
 
 	if (t->send_cq)
@@ -547,6 +577,134 @@ static int smbd_post_recv(struct smbd_transport *t,
 		return ret;
 	}
 	return ret;
+}
+
+static int smbd_read(struct cifsd_transport *t, char *buf, unsigned int size)
+{
+	struct smbd_recvmsg *recvmsg;
+	struct smbd_data_transfer *data_transfer;
+	int to_copy, to_read, data_read, offset;
+	u32 data_length, remaining_data_length, data_offset;
+	int rc;
+	struct smbd_transport *st = SMBD_TRANS(t);
+
+again:
+	if (st->status != SMBD_CS_CONNECTED) {
+		cifsd_err("disconnected\n");
+		return -ENOTCONN;
+	}
+
+	/*
+	 * No need to hold the reassembly queue lock all the time as we are
+	 * the only one reading from the front of the queue. The transport
+	 * may add more entries to the back of the queue at the same time
+	 */
+	cifsd_debug("size=%d st->reassembly_data_length=%d\n", size,
+		st->reassembly_data_length);
+	if (st->reassembly_data_length >= size) {
+		int queue_length;
+		int queue_removed = 0;
+
+		/*
+		 * Need to make sure reassembly_data_length is read before
+		 * reading reassembly_queue_length and calling
+		 * get_first_reassembly. This call is lock free
+		 * as we never read at the end of the queue which are being
+		 * updated in SOFTIRQ as more data is received
+		 */
+		virt_rmb();
+		queue_length = st->reassembly_queue_length;
+		data_read = 0;
+		to_read = size;
+		offset = st->first_entry_offset;
+		while (data_read < size) {
+			recvmsg = get_first_reassembly(st);
+			data_transfer = smbd_recvmsg_payload(recvmsg);
+			data_length = le32_to_cpu(data_transfer->data_length);
+			remaining_data_length =
+				le32_to_cpu(data_transfer->remaining_data_length);
+			data_offset = le32_to_cpu(data_transfer->data_offset);
+
+			/*
+			 * The upper layer expects RFC1002 length at the
+			 * beginning of the payload. Return it to indicate
+			 * the total length of the packet. This minimize the
+			 * change to upper layer packet processing logic. This
+			 * will be eventually remove when an intermediate
+			 * transport layer is added
+			 */
+			if (recvmsg->first_segment && size == 4) {
+				unsigned int rfc1002_len =
+					data_length + remaining_data_length;
+				*((__be32 *)buf) = cpu_to_be32(rfc1002_len);
+				data_read = 4;
+				recvmsg->first_segment = false;
+				cifsd_debug("returning rfc1002 length %d\n",
+					rfc1002_len);
+				goto read_rfc1002_done;
+			}
+
+			to_copy = min_t(int, data_length - offset, to_read);
+			memcpy(
+				buf + data_read,
+				(char *)data_transfer + data_offset + offset,
+				to_copy);
+
+			/* move on to the next buffer? */
+			if (to_copy == data_length - offset) {
+				queue_length--;
+				/*
+				 * No need to lock if we are not at the
+				 * end of the queue
+				 */
+				if (queue_length)
+					list_del(&recvmsg->list);
+				else {
+					spin_lock_irq(
+						&st->reassembly_queue_lock);
+					list_del(&recvmsg->list);
+					spin_unlock_irq(
+						&st->reassembly_queue_lock);
+				}
+				queue_removed++;
+				put_recvmsg(st, recvmsg);
+				offset = 0;
+			} else
+				offset += to_copy;
+
+			to_read -= to_copy;
+			data_read += to_copy;
+
+			cifsd_debug("_get_first_reassembly memcpy %d bytes "
+				"data_transfer_length-offset=%d after that "
+				"to_read=%d data_read=%d offset=%d\n",
+				to_copy, data_length - offset,
+				to_read, data_read, offset);
+		}
+
+		spin_lock_irq(&st->reassembly_queue_lock);
+		st->reassembly_data_length -= data_read;
+		st->reassembly_queue_length -= queue_removed;
+		spin_unlock_irq(&st->reassembly_queue_lock);
+
+		st->first_entry_offset = offset;
+		cifsd_debug("returning to thread data_read=%d "
+			"reassembly_data_length=%d first_entry_offset=%d\n",
+			data_read, st->reassembly_data_length,
+			st->first_entry_offset);
+read_rfc1002_done:
+		return data_read;
+	}
+
+	cifsd_debug("wait_event on more data\n");
+	rc = wait_event_interruptible(
+		st->wait_reassembly_queue,
+		st->reassembly_data_length >= size ||
+		st->status != SMBD_CS_CONNECTED);
+	if (rc)
+		return -EINTR;
+
+	goto again;
 }
 
 static void smbd_post_recv_credits(struct work_struct *work)
@@ -1384,4 +1542,5 @@ int cifsd_smbd_destroy(void)
 
 struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
+	.read		= smbd_read,
 };
