@@ -22,6 +22,8 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
 
 extern int cifsd_tcp_init(void);
 extern void cifsd_tcp_destroy(void);
+extern int cifsd_smbd_init(void);
+extern int cifsd_smbd_destroy(void);
 
 /**
  * cifsd_conn_free() - shutdown/release the socket and free server
@@ -364,6 +366,13 @@ int cifsd_conn_transport_init(void)
                 return ret;
         }
 
+#ifdef CONFIG_CIFSD_SMBDIRECT
+	ret = cifsd_smbd_init();
+	if (ret) {
+		pr_err("Failed to init SMBD subsystem: %d\n", ret);
+		return ret;
+	}
+#endif
         mutex_unlock(&init_lock);
         return ret;
 }
@@ -392,6 +401,9 @@ void cifsd_conn_transport_destroy(void)
 {
         mutex_lock(&init_lock);
         cifsd_tcp_destroy();
+#ifdef CONFIG_CIFSD_SMBDIRECT
+	cifsd_smbd_destroy();
+#endif
         stop_sessions();
         mutex_unlock(&init_lock);
 }

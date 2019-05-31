@@ -9,3 +9,4 @@ cifsd-y :=	unicode.o encrypt.o auth.o vfs.o vfs_cache.o \
 
 cifsd-y +=	smb2pdu.o smb2ops.o smb2misc.o asn1.o smb1misc.o
 cifsd-$(CONFIG_CIFS_INSECURE_SERVER) += smb1pdu.o smb1ops.o
+cifsd-$(CONFIG_CIFSD_SMBDIRECT) += transport_smbd.o
