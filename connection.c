@@ -15,7 +15,7 @@
 
 static DEFINE_MUTEX(init_lock);
 
-static struct cifsd_tcp_conn_ops default_conn_ops;
+static struct cifsd_conn_ops default_conn_ops;
 
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
@@ -24,14 +24,14 @@ extern int cifsd_tcp_init(void);
 extern void cifsd_tcp_destroy(void);
 
 /**
- * cifsd_tcp_conn_free() - shutdown/release the socket and free server
+ * cifsd_conn_free() - shutdown/release the socket and free server
  *                         resources
  * @conn: - server instance for which socket is to be cleaned
  *
  * During the thread termination, the corresponding conn instance
  * resources(sock/memory) are released and finally the conn object is freed.
  */
-void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
+void cifsd_conn_free(struct cifsd_conn *conn)
 {
 	write_lock(&tcp_conn_list_lock);
 	list_del(&conn->tcp_conns);
@@ -45,17 +45,17 @@ void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn)
 }
 
 /**
- * cifsd_tcp_conn_alloc() - initialize tcp server thread for a new connection
+ * cifsd_conn_alloc() - initialize tcp server thread for a new connection
  * @conn:     TCP server instance of connection
  * @sock:	socket associated with new connection
  *
  * Return:	0 on success, otherwise -ENOMEM
  */
-struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(void)
+struct cifsd_conn *cifsd_conn_alloc(void)
 {
-	struct cifsd_tcp_conn *conn;
+	struct cifsd_conn *conn;
 
-	conn = kzalloc(sizeof(struct cifsd_tcp_conn), GFP_KERNEL);
+	conn = kzalloc(sizeof(struct cifsd_conn), GFP_KERNEL);
 	if (!conn)
 		return NULL;
 
@@ -81,10 +81,10 @@ struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(void)
 	return conn;
 }
 
-int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
+int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	void *arg)
 {
-	struct cifsd_tcp_conn *t;
+	struct cifsd_conn *t;
 	int ret = 0;
 
 	read_lock(&tcp_conn_list_lock);
@@ -100,7 +100,7 @@ int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
 
 void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
@@ -126,7 +126,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 
 int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	int ret = 1;
 
 	if (list_empty(&work->request_entry) &&
@@ -148,17 +148,17 @@ int cifsd_tcp_try_dequeue_request(struct cifsd_work *work)
 	return ret;
 }
 
-static void cifsd_tcp_conn_lock(struct cifsd_tcp_conn *conn)
+static void cifsd_conn_lock(struct cifsd_conn *conn)
 {
 	mutex_lock(&conn->srv_mutex);
 }
 
-static void cifsd_tcp_conn_unlock(struct cifsd_tcp_conn *conn)
+static void cifsd_conn_unlock(struct cifsd_conn *conn)
 {
 	mutex_unlock(&conn->srv_mutex);
 }
 
-void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
+void cifsd_conn_wait_idle(struct cifsd_conn *conn)
 {
 	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
 }
@@ -174,7 +174,7 @@ void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn)
  */
 int cifsd_tcp_write(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
 	size_t len = 0;
 	int sent;
@@ -210,10 +210,10 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		len += iov[iov_idx++].iov_len;
 	}
 
-	cifsd_tcp_conn_lock(conn);
+	cifsd_conn_lock(conn);
 	sent = conn->transport->ops->writev(conn->transport, &iov[0],
 					iov_idx, len);
-	cifsd_tcp_conn_unlock(conn);
+	cifsd_conn_unlock(conn);
 
 	if (sent < 0) {
 		cifsd_err("Failed to send message: %d\n", sent);
@@ -223,7 +223,7 @@ int cifsd_tcp_write(struct cifsd_work *work)
 	return 0;
 }
 
-bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
+bool cifsd_conn_alive(struct cifsd_conn *conn)
 {
 	if (!cifsd_server_running())
 		return false;
@@ -252,7 +252,7 @@ bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
 }
 
 /**
- * cifsd_tcp_conn_handler_loop() - session thread to listen on new smb requests
+ * cifsd_conn_handler_loop() - session thread to listen on new smb requests
  * @p:     TCP conn instance of connection
  *
  * One thread each per connection
@@ -261,7 +261,7 @@ bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn)
  */
 int cifsd_conn_handler_loop(void *p)
 {
-	struct cifsd_tcp_conn *conn = (struct cifsd_tcp_conn *)p;
+	struct cifsd_conn *conn = (struct cifsd_conn *)p;
 	struct cifsd_transport *t = conn->transport;
 	unsigned int pdu_size;
 	char hdr_buf[4] = {0,};
@@ -274,7 +274,7 @@ int cifsd_conn_handler_loop(void *p)
 		goto out;
 
 	conn->last_active = jiffies;
-	while (cifsd_tcp_conn_alive(conn)) {
+	while (cifsd_conn_alive(conn)) {
 		if (try_to_freeze())
 			continue;
 
@@ -346,7 +346,7 @@ out:
 	return 0;
 }
 
-void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
+void cifsd_tcp_init_server_callbacks(struct cifsd_conn_ops *ops)
 {
 	default_conn_ops.process_fn = ops->process_fn;
 	default_conn_ops.terminate_fn = ops->terminate_fn;
@@ -370,7 +370,7 @@ int cifsd_conn_transport_init(void)
 
 void stop_sessions(void)
 {
-	struct cifsd_tcp_conn *conn;
+	struct cifsd_conn *conn;
 
 again:
 	read_lock(&tcp_conn_list_lock);

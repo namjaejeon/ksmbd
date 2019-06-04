@@ -59,7 +59,7 @@ struct lease {
 };
 
 struct oplock_info {
-	struct cifsd_tcp_conn	*conn;
+	struct cifsd_conn	*conn;
 	struct cifsd_session	*sess;
 	struct cifsd_work	*work;
 	bool			is_smb2;
@@ -96,7 +96,7 @@ struct oplock_break_info {
 extern int smb_grant_oplock(struct cifsd_work *work, int req_op_level,
 		uint64_t pid, struct cifsd_file *fp, __u16 tid,
 		struct lease_ctx_info *lctx, int share_ret);
-extern void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
+extern void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 	struct cifsd_file *fp, int is_trunc);
 
 int opinfo_write_to_read(struct oplock_info *opinfo);
@@ -124,11 +124,11 @@ int cifsd_durable_verify_and_del_oplock(struct cifsd_session *curr_sess,
 					  struct cifsd_session *prev_sess,
 					  int fid, struct file **filp,
 					  uint64_t sess_id);
-struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
+struct oplock_info *lookup_lease_in_table(struct cifsd_conn *conn,
 	char *lease_key);
 int find_same_lease_key(struct cifsd_session *sess, struct cifsd_inode *ci,
 	struct lease_ctx_info *lctx);
-void destroy_lease_table(struct cifsd_tcp_conn *conn);
+void destroy_lease_table(struct cifsd_conn *conn);
 int smb2_check_durable_oplock(struct cifsd_file *fp,
 	struct lease_ctx_info *lctx, char *name);
 

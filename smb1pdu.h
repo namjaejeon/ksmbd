@@ -1932,9 +1932,9 @@ typedef struct smb_com_setattr_rsp {
 } __attribute__((packed)) SETATTR_RSP;
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
-extern int init_smb1_server(struct cifsd_tcp_conn *conn);
+extern int init_smb1_server(struct cifsd_conn *conn);
 #else
-static inline int init_smb1_server(struct cifsd_tcp_conn *conn)
+static inline int init_smb1_server(struct cifsd_conn *conn)
 {
 	return -ENOTSUPP;
 }

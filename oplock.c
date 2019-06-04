@@ -573,7 +573,7 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 static void __smb1_oplock_break_noti(struct work_struct *wk)
 {
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
 	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
@@ -639,7 +639,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
  */
 static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 {
-	struct cifsd_tcp_conn *conn = opinfo->conn;
+	struct cifsd_conn *conn = opinfo->conn;
 	int ret = 0;
 	struct cifsd_work *work = cifsd_alloc_work_struct();
 
@@ -693,7 +693,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 {
 	struct smb2_oplock_break *rsp = NULL;
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	struct oplock_break_info *br_info =
 		(struct oplock_break_info *)REQUEST_BUF(work);
 	struct smb2_hdr *rsp_hdr;
@@ -760,7 +760,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
  */
 static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 {
-	struct cifsd_tcp_conn *conn = opinfo->conn;
+	struct cifsd_conn *conn = opinfo->conn;
 	struct oplock_break_info *br_info;
 	int ret = 0;
 	struct cifsd_work *work = cifsd_alloc_work_struct();
@@ -835,7 +835,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct lease_break_info *br_info =
 		(struct lease_break_info *)REQUEST_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	struct smb2_hdr *rsp_hdr;
 
 	if (conn->ops->allocate_rsp_buf(work)) {
@@ -891,7 +891,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
  */
 static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 {
-	struct cifsd_tcp_conn *conn = opinfo->conn;
+	struct cifsd_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
 	struct cifsd_work *work;
 	struct lease_break_info *br_info;
@@ -1040,7 +1040,7 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 	return err;
 }
 
-void destroy_lease_table(struct cifsd_tcp_conn *conn)
+void destroy_lease_table(struct cifsd_conn *conn)
 {
 	struct lease_table *lb, *lbtmp;
 	struct oplock_info *opinfo;
@@ -1346,7 +1346,7 @@ static int smb_break_all_write_oplock(struct cifsd_work *work,
  * @fp:		cifsd file pointer
  * @openfile:	open file information
  */
-void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
+void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
@@ -1661,7 +1661,7 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL
  */
-struct oplock_info *lookup_lease_in_table(struct cifsd_tcp_conn *conn,
+struct oplock_info *lookup_lease_in_table(struct cifsd_conn *conn,
 	char *lease_key)
 {
 	struct oplock_info *opinfo = NULL, *ret_op = NULL;
