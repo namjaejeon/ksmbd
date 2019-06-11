@@ -48,6 +48,16 @@ function kcifsd_module_make
 function kcifsd_module_install
 {
 	echo "Running cifsd install"
+
+	local ok=$(lsmod | grep -c cifsd)
+	if [ "z$ok" == "z1" ]; then
+		sudo rmmod cifsd
+		if [ $? -ne 0 ]; then
+			echo "ERROR: unable to rmmod cifsd"
+			exit 1
+		fi
+	fi
+
 	sudo mkdir -p /lib/modules/$(uname -r)/modules/fs/cifsd
 	sudo cp cifsd.ko /lib/modules/$(uname -r)/modules/fs/cifsd
 }
