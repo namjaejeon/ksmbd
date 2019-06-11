@@ -71,14 +71,15 @@ static bool iface_exists(const char *ifname)
 	struct net_device *netdev;
 	bool ret = false;
 
-	rtnl_lock();
-	for_each_netdev(&init_net, netdev) {
-		if (match_pattern(netdev->name, ifname)) {
+	rcu_read_lock();
+	netdev = dev_get_by_name_rcu(&init_net, ifname);
+	if (netdev) {
+		if (!(netdev->flags & IFF_UP))
+			cifsd_err("Device %s is down\n", ifname);
+		else
 			ret = true;
-			break;
-		}
 	}
-	rtnl_unlock();
+	rcu_read_unlock();
 	return ret;
 }
 
