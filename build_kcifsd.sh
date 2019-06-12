@@ -84,7 +84,7 @@ function kcifsd_module_install
 	fi
 
 	cd "$KERNEL_SRC"
-	if [ -f /lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko* ]; then
+	if [ -f "/lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko*" ]; then
 		sudo rm /lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko*
 		sudo cp "$KERNEL_SRC"/fs/cifsd/cifsd.ko \
 			/lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko
