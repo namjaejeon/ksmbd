@@ -5,6 +5,8 @@
 
 #!/bin/sh
 
+KERNEL_SRC=''
+
 function patch_fs_config
 {
 	local ok=$(pwd |  grep -c "fs/cifsd")
@@ -13,32 +15,37 @@ function patch_fs_config
 		exit 1
 	fi
 
-	if [ ! -f ../Kconfig ]; then
+	KERNEL_SRC=$(pwd | sed -e 's/fs\/cifsd//')
+	if [ ! -f "$KERNEL_SRC"/fs/Kconfig ]; then
 		echo "ERROR: please ``cd`` to fs/cifsd"
 		exit 1
 	fi
 
-	ok=$(cat ../Makefile | grep cifsd)
+	ok=$(cat "$KERNEL_SRC"/fs/Makefile | grep cifsd)
 	if [ "z$ok" == "z" ]; then
-		echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> ../Makefile
+		echo 'obj-$(CONFIG_CIFS_SERVER)	+= cifsd/' \
+			>> "$KERNEL_SRC"/fs/Makefile
 	fi
 
-	ok=$(cat ../Kconfig | grep cifsd)
+	ok=$(cat "$KERNEL_SRC"/fs/Kconfig | grep cifsd)
 	if [ "z$ok" == "z" ]; then
-		ok=$(cat ../Kconfig | sed -e 's/fs\/cifs\/Kconfig/fs\/cifs\/Kconfig\"\nsource \"fs\/cifsd\/Kconfig/' > ../Kconfig.new)
+		ok=$(cat "$KERNEL_SRC"/fs/Kconfig \
+			| sed -e 's/fs\/cifs\/Kconfig/fs\/cifs\/Kconfig\"\nsource \"fs\/cifsd\/Kconfig/' \
+			> "$KERNEL_SRC"/fs/Kconfig.new)
 		if [ $? != 0 ]; then
 			exit 1
 		fi
-		mv ../Kconfig.new ../Kconfig
+		mv "$KERNEL_SRC"/fs/Kconfig.new "$KERNEL_SRC"/fs/Kconfig
 	fi
 }
 
 function kcifsd_module_make
 {
 	echo "Running cifsd make"
-	cd ../../
+
+	cd "$KERNEL_SRC"
 	make fs/cifsd/cifsd.ko
-	cd fs/cifsd
+	cd "$KERNEL_SRC"/fs/cifsd
 
 	if [ $? != 0 ]; then
 		exit 1
@@ -59,15 +66,16 @@ function kcifsd_module_install
 	fi
 
 	sudo mkdir -p /lib/modules/$(uname -r)/modules/fs/cifsd
-	sudo cp cifsd.ko /lib/modules/$(uname -r)/modules/fs/cifsd
+	sudo cp ./cifsd.ko /lib/modules/$(uname -r)/modules/fs/cifsd
 }
 
 function kcifsd_module_clean
 {
 	echo "Running cifsd clean"
-	cd ../../
+
+	cd "$KERNEL_SRC"
 	make M=fs/cifsd/ clean
-	cd fs/cifsd
+	cd "$KERNEL_SRC"/fs/cifsd
 }
 
 patch_fs_config
