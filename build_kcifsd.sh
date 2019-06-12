@@ -53,8 +53,9 @@ function kcifsd_module_make
 {
 	echo "Running cifsd make"
 
+	rm cifsd.ko
 	cd "$KERNEL_SRC"
-	make fs/cifsd/cifsd.ko
+	make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/
 	cd "$KERNEL_SRC"/fs/cifsd
 
 	if [ $? != 0 ]; then
@@ -82,9 +83,21 @@ function kcifsd_module_install
 		exit 1
 	fi
 
-	sudo mkdir -p /lib/modules/$(uname -r)/modules/fs/cifsd
-	sudo cp "$KERNEL_SRC"/fs/cifsd/cifsd.ko \
-		/lib/modules/$(uname -r)/modules/fs/cifsd
+	cd "$KERNEL_SRC"
+	if [ -f /lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko ]; then
+		sudo rm /lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko*
+		sudo cp "$KERNEL_SRC"/fs/cifsd/cifsd.ko \
+			/lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko
+
+		local VER=$(make kernelrelease)
+		sudo depmod -A $VER
+	else
+		sudo make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/ \
+			modules_install
+		local VER=$(make kernelrelease)
+		sudo depmod -A $VER
+	fi
+	cd "$KERNEL_SRC"/fs/cifsd
 }
 
 function kcifsd_module_clean
@@ -92,7 +105,7 @@ function kcifsd_module_clean
 	echo "Running cifsd clean"
 
 	cd "$KERNEL_SRC"
-	make M=fs/cifsd/ clean
+	make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/ clean
 	cd "$KERNEL_SRC"/fs/cifsd
 }
 
