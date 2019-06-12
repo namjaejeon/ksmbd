@@ -65,8 +65,14 @@ function kcifsd_module_install
 		fi
 	fi
 
+	if [ ! -f "$KERNEL_SRC"/fs/cifsd/cifsd.ko ]; then
+		echo "ERROR: cifsd.ko was not found"
+		exit 1
+	fi
+
 	sudo mkdir -p /lib/modules/$(uname -r)/modules/fs/cifsd
-	sudo cp ./cifsd.ko /lib/modules/$(uname -r)/modules/fs/cifsd
+	sudo cp "$KERNEL_SRC"/fs/cifsd/cifsd.ko \
+		/lib/modules/$(uname -r)/modules/fs/cifsd
 }
 
 function kcifsd_module_clean
