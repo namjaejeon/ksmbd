@@ -121,8 +121,12 @@ case $1 in
 		kcifsd_module_install
 		exit 0
 		;;
-	modules)
+	make)
 		kcifsd_module_make
+		exit 0
+		;;
+	help)
+		echo "Usage: build_kcifsd.sh [clean | make | install]"
 		exit 0
 		;;
 	*)
