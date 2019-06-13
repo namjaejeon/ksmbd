@@ -312,7 +312,7 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 
 	csin = CIFSD_TCP_PEER_SOCKADDR(conn);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0)
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
 	if (kernel_getpeername(client_sk, csin, &rc) < 0) {
 		cifsd_err("client ip resolution failed\n");
 		rc = -EINVAL;
