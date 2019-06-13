@@ -6,6 +6,7 @@
 #!/bin/sh
 
 KERNEL_SRC=''
+COMP_FLAGS=''
 
 function is_module
 {
@@ -53,9 +54,12 @@ function kcifsd_module_make
 {
 	echo "Running cifsd make"
 
+	local c="make "$COMP_FLAGS" -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/"
+
 	rm cifsd.ko
+
 	cd "$KERNEL_SRC"
-	make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/
+	$c
 	cd "$KERNEL_SRC"/fs/cifsd
 
 	if [ $? != 0 ]; then
@@ -109,28 +113,35 @@ function kcifsd_module_clean
 	cd "$KERNEL_SRC"/fs/cifsd
 }
 
-patch_fs_config
+function main
+{
+	patch_fs_config
 
-case $1 in
-	clean)
-		kcifsd_module_clean
-		exit 0
-		;;
-	install)
-		kcifsd_module_make
-		kcifsd_module_install
-		exit 0
-		;;
-	make)
-		kcifsd_module_make
-		exit 0
-		;;
-	help)
-		echo "Usage: build_kcifsd.sh [clean | make | install]"
-		exit 0
-		;;
-	*)
-		kcifsd_module_make
-		exit 0
-		;;
-esac
+	COMP_FLAGS="$FLAGS"
+
+	case $1 in
+		clean)
+			kcifsd_module_clean
+			exit 0
+			;;
+		install)
+			kcifsd_module_make
+			kcifsd_module_install
+			exit 0
+			;;
+		make)
+			kcifsd_module_make
+			exit 0
+			;;
+		help)
+			echo "Usage: build_kcifsd.sh [clean | make | install]"
+			exit 0
+			;;
+		*)
+			kcifsd_module_make
+			exit 0
+			;;
+	esac
+}
+
+main $1
