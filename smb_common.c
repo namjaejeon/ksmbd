@@ -673,5 +673,5 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 
 bool is_asterisk(char *p)
 {
-	return p && !strcmp("*", p);
+	return p && p[0] == '*';
 }
