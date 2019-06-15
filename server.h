@@ -42,7 +42,7 @@ extern struct cifsd_server_config server_conf;
 int cifsd_set_netbios_name(char *v);
 int cifsd_set_server_string(char *v);
 int cifsd_set_work_group(char *v);
-int cifsd_set_interfaces(char *v);
+int cifsd_set_interfaces(char *ifc_list, int ifc_list_sz);
 
 char *cifsd_netbios_name(void);
 char *cifsd_server_string(void);
