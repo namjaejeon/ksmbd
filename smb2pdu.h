@@ -107,7 +107,7 @@ struct smb2_hdr {
 	union {
 		struct {
 			__le32 ProcessId;
-			__u32  TreeId;
+			__le32  TreeId;
 		} __packed SyncId;
 		__u64  AsyncId;
 	} __packed Id;
