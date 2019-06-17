@@ -111,7 +111,7 @@ struct smb2_hdr {
 		} __packed SyncId;
 		__u64  AsyncId;
 	} __packed Id;
-	__u64  SessionId;	/* opaque - so do not make little endian */
+	__le64  SessionId;	/* opaque - so do not make little endian */
 	__u8   Signature[16];
 } __packed;
 
@@ -135,7 +135,7 @@ struct smb2_transform_hdr {
 	__le32 OriginalMessageSize;
 	__u16  Reserved1;
 	__le16 Flags; /* EncryptionAlgorithm */
-	__u64  SessionId;
+	__le64  SessionId;
 } __packed;
 
 /*
