@@ -3068,7 +3068,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	srch_flag = req->Flags;
 	srch_ptr = smb_strndup_from_utf16(req->Buffer,
-			le32_to_cpu(req->FileNameLength), 1,
+			le16_to_cpu(req->FileNameLength), 1,
 			conn->local_nls);
 	if (IS_ERR(srch_ptr)) {
 		cifsd_debug("Search Pattern not found\n");
