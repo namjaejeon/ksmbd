@@ -1103,8 +1103,8 @@ struct smb2_oplock_break {
 	__u8   OplockLevel;
 	__u8   Reserved;
 	__le32 Reserved2;
-	__u64  PersistentFid;
-	__u64  VolatileFid;
+	__le64  PersistentFid;
+	__le64  VolatileFid;
 } __packed;
 
 #define SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED cpu_to_le32(0x01)
