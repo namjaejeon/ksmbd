@@ -372,13 +372,13 @@ void close_id_del_oplock(struct cifsd_file *fp)
 	if (!oplocks_enable || S_ISDIR(file_inode(fp->filp)->i_mode))
 		return;
 
-	opinfo = fp->f_opinfo;
+	opinfo = opinfo_get(fp);
 	if (!opinfo)
 		return;
 
 	opinfo_del(opinfo);
 
-	fp->f_opinfo = NULL;
+	rcu_assign_pointer(fp->f_opinfo, NULL);
 	if (opinfo->op_state == OPLOCK_ACK_WAIT) {
 		opinfo->op_state = OPLOCK_CLOSING;
 		wake_up_interruptible(&opinfo->oplock_q);
@@ -1300,7 +1300,7 @@ set_lev:
 	set_oplock_level(opinfo, req_op_level, lctx);
 
 out:
-	fp->f_opinfo = opinfo;
+	rcu_assign_pointer(fp->f_opinfo, opinfo);
 	opinfo->o_fp = fp;
 	atomic_inc(&ci->op_count);
 	opinfo_add(opinfo);
@@ -1355,7 +1355,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 	struct cifsd_inode *ci;
 
 	ci = fp->f_ci;
-	op = fp->f_opinfo;
+	op = opinfo_get(fp);
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
@@ -1405,6 +1405,8 @@ next:
 		rcu_read_lock();
 	}
 	rcu_read_unlock();
+
+	opinfo_put(op);
 }
 
 /**
@@ -1714,23 +1716,28 @@ out:
 int smb2_check_durable_oplock(struct cifsd_file *fp,
 	struct lease_ctx_info *lctx, char *name)
 {
-	struct oplock_info *opinfo = fp->f_opinfo;
+	struct oplock_info *opinfo = opinfo_get(fp);
+	int ret = 0;
 
 	if (opinfo && opinfo->is_lease) {
 		if (!lctx) {
 			cifsd_err("open does not include lease\n");
-			return -EBADF;
+			ret = -EBADF;
+			goto out;
 		}
 		if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
 					SMB2_LEASE_KEY_SIZE)) {
 			cifsd_err("invalid lease key\n");
-			return -EBADF;
+			ret = -EBADF;
+			goto out;
 		}
 		if (name && strcmp(fp->filename, name)) {
 			cifsd_err("invalid name reconnect %s\n", name);
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 	}
-
-	return 0;
+out:
+	opinfo_put(opinfo);
+	return ret;
 }
