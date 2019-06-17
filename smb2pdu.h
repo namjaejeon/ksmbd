@@ -1295,7 +1295,7 @@ struct smb2_file_all_info { /* data block encoding of response to level 18 */
 } __packed; /* level 18 Query */
 
 struct smb2_file_alt_name_info {
-	__u32 FileNameLength;
+	__le32 FileNameLength;
 	char FileName[0];
 } __packed;
 
