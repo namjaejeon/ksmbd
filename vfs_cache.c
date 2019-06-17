@@ -641,14 +641,16 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 /* copy-pasted from old fh */
 static inline bool is_reconnectable(struct cifsd_file *fp)
 {
-	struct oplock_info *opinfo = fp->f_opinfo;
+	struct oplock_info *opinfo = opinfo_get(fp);
 	int reconn = 0;
 
 	if (!opinfo)
 		return 0;
 
-	if (opinfo->op_state != OPLOCK_STATE_NONE)
+	if (opinfo->op_state != OPLOCK_STATE_NONE) {
+		opinfo_put(opinfo);
 		return 0;
+	}
 
 	if (fp->is_resilient || fp->is_persistent)
 		reconn = 1;
@@ -659,6 +661,7 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	else if (fp->is_durable && opinfo->level == SMB2_OPLOCK_LEVEL_BATCH)
 		reconn = 1;
 
+	opinfo_put(opinfo);
 	return reconn;
 }
 
