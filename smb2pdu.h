@@ -109,7 +109,7 @@ struct smb2_hdr {
 			__le32 ProcessId;
 			__le32  TreeId;
 		} __packed SyncId;
-		__u64  AsyncId;
+		__le64  AsyncId;
 	} __packed Id;
 	__le64  SessionId;	/* opaque - so do not make little endian */
 	__u8   Signature[16];
