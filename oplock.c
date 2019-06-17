@@ -546,7 +546,9 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 						lease_read_to_write(opinfo);
 				}
 			} else if (atomic_read(&ci->op_count) > 1) {
-				if (lctx->req_state == 0x3)
+				if (lctx->req_state ==
+					(SMB2_LEASE_READ_CACHING |
+					 SMB2_LEASE_HANDLE_CACHING))
 					lease->state = lctx->req_state;
 			}
 
