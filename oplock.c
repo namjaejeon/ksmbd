@@ -602,8 +602,8 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	rsp_hdr->Flags2 = SMBFLG2_UNICODE | SMBFLG2_KNOWS_LONG_NAMES |
 		SMBFLG2_ERR_STATUS;
 	rsp_hdr->Uid = work->sess->id;
-	rsp_hdr->Pid = 0xFFFF;
-	rsp_hdr->Mid = 0xFFFF;
+	rsp_hdr->Pid = cpu_to_le16(0xFFFF);
+	rsp_hdr->Mid = cpu_to_le16(0xFFFF);
 	rsp_hdr->Tid = cpu_to_le16(opinfo->Tid);
 	rsp_hdr->WordCount = 8;
 
