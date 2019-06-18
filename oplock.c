@@ -1597,7 +1597,7 @@ void create_durable_v2_rsp_buf(char *cc, struct cifsd_file *fp)
 	buf->Name[2] = '2';
 	buf->Name[3] = 'Q';
 
-	buf->Timeout = fp->durable_timeout;
+	buf->Timeout = cpu_to_le32(fp->durable_timeout);
 	if (fp->is_persistent)
 		buf->Flags = SMB2_FLAGS_REPLAY_OPERATIONS;
 }
