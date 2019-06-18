@@ -196,7 +196,7 @@ struct smb_hdr {
 		__u8 SecuritySignature[8];      /* le */
 	} __attribute__((packed)) Signature;
 	__u8 pad[2];
-	__u16 Tid;
+	__le16 Tid;
 	__le16 Pid;
 	__le16 Uid;
 	__le16 Mid;
