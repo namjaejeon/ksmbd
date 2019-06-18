@@ -1851,7 +1851,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 				}
 			}
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
+				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				d_info->CreateGuid =
 					durable_v2_blob->CreateGuid;
@@ -1873,7 +1873,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 			}
 
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
+				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				cifsd_debug("Request for durable open\n");
 				d_info->type = i;
@@ -6612,8 +6612,8 @@ err_out:
 static int check_lease_state(struct lease *lease, __le32 req_state)
 {
 	if ((lease->new_state ==
-		(SMB2_LEASE_READ_CACHING | SMB2_LEASE_HANDLE_CACHING))
-		&& !(req_state & SMB2_LEASE_WRITE_CACHING)) {
+		(SMB2_LEASE_READ_CACHING_LE | SMB2_LEASE_HANDLE_CACHING_LE))
+		&& !(req_state & SMB2_LEASE_WRITE_CACHING_LE)) {
 		lease->new_state = req_state;
 		return 0;
 	}
@@ -6673,18 +6673,18 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 	}
 
 	/* check for bad lease state */
-	if (req->LeaseState & (~(SMB2_LEASE_READ_CACHING |
-					SMB2_LEASE_HANDLE_CACHING))) {
+	if (req->LeaseState & (~(SMB2_LEASE_READ_CACHING_LE |
+					SMB2_LEASE_HANDLE_CACHING_LE))) {
 		err = STATUS_INVALID_OPLOCK_PROTOCOL;
-		if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 			lease_change_type = OPLOCK_WRITE_TO_NONE;
 		else
 			lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
 			le32_to_cpu(lease->state),
 			le32_to_cpu(req->LeaseState));
-	} else if ((lease->state == SMB2_LEASE_READ_CACHING) &&
-			(req->LeaseState != SMB2_LEASE_NONE)) {
+	} else if ((lease->state == SMB2_LEASE_READ_CACHING_LE) &&
+			(req->LeaseState != SMB2_LEASE_NONE_LE)) {
 		err = STATUS_INVALID_OPLOCK_PROTOCOL;
 		lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
@@ -6693,13 +6693,13 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 	} else {
 		/* valid lease state changes */
 		err = STATUS_INVALID_DEVICE_STATE;
-		if (req->LeaseState == SMB2_LEASE_NONE) {
-			if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		if (req->LeaseState == SMB2_LEASE_NONE_LE) {
+			if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 				lease_change_type = OPLOCK_WRITE_TO_NONE;
 			else
 				lease_change_type = OPLOCK_READ_TO_NONE;
-		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING) {
-			if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING_LE) {
+			if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 				lease_change_type = OPLOCK_WRITE_TO_READ;
 			else
 				lease_change_type = OPLOCK_READ_HANDLE_TO_READ;
