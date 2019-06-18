@@ -24,6 +24,7 @@
 #include "mgmt/user_session.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/cifsd_ida.h"
+#include "transport_tcp.h"
 
 /* @FIXME fix this code */
 extern int get_protocol_idx(char *str);
@@ -291,8 +292,8 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	ret = cifsd_set_netbios_name(req->netbios_name);
 	ret |= cifsd_set_server_string(req->server_string);
 	ret |= cifsd_set_work_group(req->work_group);
-	ret |= cifsd_set_interfaces(CIFSD_STARTUP_CONFIG_INTERFACES(req),
-				    req->ifc_list_sz);
+	ret |= cifsd_tcp_set_interfaces(CIFSD_STARTUP_CONFIG_INTERFACES(req),
+					req->ifc_list_sz);
 	if (ret) {
 		cifsd_err("Server configuration error: %s %s %s\n",
 				req->netbios_name,
