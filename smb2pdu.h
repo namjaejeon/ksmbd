@@ -612,12 +612,12 @@ struct create_disk_id_rsp {
 	__u8  Reserved[16];
 } __packed;
 
-#define SMB2_LEASE_NONE			cpu_to_le32(0x00)
-#define SMB2_LEASE_READ_CACHING		cpu_to_le32(0x01)
-#define SMB2_LEASE_HANDLE_CACHING	cpu_to_le32(0x02)
-#define SMB2_LEASE_WRITE_CACHING	cpu_to_le32(0x04)
+#define SMB2_LEASE_NONE_LE			cpu_to_le32(0x00)
+#define SMB2_LEASE_READ_CACHING_LE		cpu_to_le32(0x01)
+#define SMB2_LEASE_HANDLE_CACHING_LE		cpu_to_le32(0x02)
+#define SMB2_LEASE_WRITE_CACHING_LE		cpu_to_le32(0x04)
 
-#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS cpu_to_le32(0x02)
+#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS_LE	cpu_to_le32(0x02)
 
 struct lease_context {
 	__le64 LeaseKeyLow;

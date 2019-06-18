@@ -311,15 +311,15 @@ int lease_read_to_write(struct oplock_info *opinfo)
 {
 	struct lease *lease = opinfo->o_lease;
 
-	if (!(lease->state & SMB2_LEASE_READ_CACHING)) {
+	if (!(lease->state & SMB2_LEASE_READ_CACHING_LE)) {
 		cifsd_debug("bad lease state(0x%x)\n",
 				lease->state);
 		return -EINVAL;
 	}
 
-	lease->new_state = SMB2_LEASE_NONE;
-	lease->state |= SMB2_LEASE_WRITE_CACHING;
-	if (lease->state & SMB2_LEASE_HANDLE_CACHING)
+	lease->new_state = SMB2_LEASE_NONE_LE;
+	lease->state |= SMB2_LEASE_WRITE_CACHING_LE;
+	if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
 		opinfo->level = SMB2_OPLOCK_LEVEL_BATCH;
 	else
 		opinfo->level = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
@@ -338,22 +338,22 @@ static int lease_none_upgrade(struct oplock_info *opinfo,
 {
 	struct lease *lease = opinfo->o_lease;
 
-	if (!(lease->state == SMB2_LEASE_NONE)) {
+	if (!(lease->state == SMB2_LEASE_NONE_LE)) {
 		cifsd_debug("bad lease state(0x%x)\n",
 				lease->state);
 		return -EINVAL;
 	}
 
-	lease->new_state = SMB2_LEASE_NONE;
+	lease->new_state = SMB2_LEASE_NONE_LE;
 	lease->state = new_state;
-	if (lease->state & SMB2_LEASE_HANDLE_CACHING)
-		if (lease->state & SMB2_LEASE_WRITE_CACHING)
+	if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
+		if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 			opinfo->level = SMB2_OPLOCK_LEVEL_BATCH;
 		else
 			opinfo->level = SMB2_OPLOCK_LEVEL_II;
-	else if (lease->state & SMB2_LEASE_WRITE_CACHING)
+	else if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 		opinfo->level = SMB2_OPLOCK_LEVEL_EXCLUSIVE;
-	else if (lease->state & SMB2_LEASE_READ_CACHING)
+	else if (lease->state & SMB2_LEASE_READ_CACHING_LE)
 		opinfo->level = SMB2_OPLOCK_LEVEL_II;
 
 	return 0;
@@ -442,9 +442,9 @@ static void grant_read_oplock(struct oplock_info *opinfo_new,
 		opinfo_new->level = OPLOCK_READ;
 
 	if (lctx) {
-		lease->state = SMB2_LEASE_READ_CACHING;
-		if (lctx->req_state & SMB2_LEASE_HANDLE_CACHING)
-			lease->state |= SMB2_LEASE_HANDLE_CACHING;
+		lease->state = SMB2_LEASE_READ_CACHING_LE;
+		if (lctx->req_state & SMB2_LEASE_HANDLE_CACHING_LE)
+			lease->state |= SMB2_LEASE_HANDLE_CACHING_LE;
 		memcpy(lease->lease_key, lctx->lease_key,
 				SMB2_LEASE_KEY_SIZE);
 	}
@@ -542,17 +542,17 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 					(lctx->req_state & lease->state)) {
 					lease->state |= lctx->req_state;
 					if (lctx->req_state &
-						SMB2_LEASE_WRITE_CACHING)
+						SMB2_LEASE_WRITE_CACHING_LE)
 						lease_read_to_write(opinfo);
 				}
 			} else if (atomic_read(&ci->op_count) > 1) {
 				if (lctx->req_state ==
-					(SMB2_LEASE_READ_CACHING |
-					 SMB2_LEASE_HANDLE_CACHING))
+					(SMB2_LEASE_READ_CACHING_LE |
+					 SMB2_LEASE_HANDLE_CACHING_LE))
 					lease->state = lctx->req_state;
 			}
 
-			if (lctx->req_state && lease->state == SMB2_LEASE_NONE)
+			if (lctx->req_state && lease->state == SMB2_LEASE_NONE_LE)
 				lease_none_upgrade(opinfo, lctx->req_state);
 		}
 		read_lock(&ci->m_lock);
@@ -820,7 +820,7 @@ static void wait_for_lease_break_ack(struct oplock_info *opinfo)
 	/* is this a timeout ? */
 	if (!rc) {
 		if (opinfo->is_lease)
-			opinfo->o_lease->state = SMB2_LEASE_NONE;
+			opinfo->o_lease->state = SMB2_LEASE_NONE_LE;
 		opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
 		opinfo->op_state = OPLOCK_STATE_NONE;
 	}
@@ -866,8 +866,8 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
 
-	if (br_info->curr_state & (SMB2_LEASE_WRITE_CACHING |
-			SMB2_LEASE_HANDLE_CACHING))
+	if (br_info->curr_state & (SMB2_LEASE_WRITE_CACHING_LE |
+			SMB2_LEASE_HANDLE_CACHING_LE))
 		rsp->Flags = SMB2_NOTIFY_BREAK_LEASE_FLAG_ACK_REQUIRED;
 
 	memcpy(rsp->LeaseKey, br_info->lease_key, SMB2_LEASE_KEY_SIZE);
@@ -944,9 +944,9 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 		}
 	} else {
 		__smb2_lease_break_noti(&work->work);
-		if (opinfo->o_lease->state == SMB2_LEASE_READ_CACHING) {
+		if (opinfo->o_lease->state == SMB2_LEASE_READ_CACHING_LE) {
 			opinfo->level = SMB2_OPLOCK_LEVEL_NONE;
-			opinfo->o_lease->state = SMB2_LEASE_NONE;
+			opinfo->o_lease->state = SMB2_LEASE_NONE_LE;
 		}
 	}
 	return 0;
@@ -964,7 +964,7 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 	if (brk_opinfo->is_lease) {
 		struct lease *lease = brk_opinfo->o_lease;
 
-		if (!(lease->state == SMB2_LEASE_READ_CACHING))
+		if (!(lease->state == SMB2_LEASE_READ_CACHING_LE))
 			atomic_inc(&brk_opinfo->breaking_cnt);
 
 		if (brk_opinfo->op_state == OPLOCK_ACK_WAIT) {
@@ -980,27 +980,27 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 			 * Create overwrite break trigger the lease break to
 			 * none.
 			 */
-			lease->new_state = SMB2_LEASE_NONE;
+			lease->new_state = SMB2_LEASE_NONE_LE;
 		} else {
-			if (lease->state & SMB2_LEASE_WRITE_CACHING) {
-				if (lease->state & SMB2_LEASE_HANDLE_CACHING)
+			if (lease->state & SMB2_LEASE_WRITE_CACHING_LE) {
+				if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
 					lease->new_state =
-						SMB2_LEASE_READ_CACHING |
-						SMB2_LEASE_HANDLE_CACHING;
+						SMB2_LEASE_READ_CACHING_LE |
+						SMB2_LEASE_HANDLE_CACHING_LE;
 				else
 					lease->new_state =
-						SMB2_LEASE_READ_CACHING;
+						SMB2_LEASE_READ_CACHING_LE;
 			} else {
-				if (lease->state & SMB2_LEASE_HANDLE_CACHING)
+				if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
 					lease->new_state =
-						SMB2_LEASE_READ_CACHING;
+						SMB2_LEASE_READ_CACHING_LE;
 				else
-					lease->new_state = SMB2_LEASE_NONE;
+					lease->new_state = SMB2_LEASE_NONE_LE;
 			}
 		}
 
-		if (lease->state & (SMB2_LEASE_WRITE_CACHING |
-				SMB2_LEASE_HANDLE_CACHING))
+		if (lease->state & (SMB2_LEASE_WRITE_CACHING_LE |
+				SMB2_LEASE_HANDLE_CACHING_LE))
 			brk_opinfo->op_state = OPLOCK_ACK_WAIT;
 	} else if (brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
 		brk_opinfo->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE)
@@ -1011,8 +1011,8 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 			struct lease *lease = brk_opinfo->o_lease;
 
 			if ((brk_opinfo->open_trunc == 1 &&
-				!(lease->state & SMB2_LEASE_WRITE_CACHING)) ||
-				lease->state == SMB2_LEASE_READ_CACHING)
+				!(lease->state & SMB2_LEASE_WRITE_CACHING_LE)) ||
+				lease->state == SMB2_LEASE_READ_CACHING_LE)
 				ack_required = 0;
 			else
 				ack_required = 1;
@@ -1244,7 +1244,7 @@ int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
 			copy_lease(m_opinfo, opinfo);
 			if (atomic_read(&m_opinfo->breaking_cnt))
 				opinfo->o_lease->flags =
-					SMB2_LEASE_FLAG_BREAK_IN_PROGRESS;
+					SMB2_LEASE_FLAG_BREAK_IN_PROGRESS_LE;
 			goto out;
 		}
 	}
@@ -1288,12 +1288,12 @@ op_break_not_needed:
 
 	/* grant fixed oplock on stacked locking between lease and oplock */
 	if (prev_op_has_lease && !lctx)
-		if (prev_op_state & SMB2_LEASE_HANDLE_CACHING)
+		if (prev_op_state & SMB2_LEASE_HANDLE_CACHING_LE)
 			req_op_level = SMB2_OPLOCK_LEVEL_NONE;
 
 	if (!prev_op_has_lease && lctx) {
 		req_op_level = SMB2_OPLOCK_LEVEL_II;
-		lctx->req_state = SMB2_LEASE_READ_CACHING;
+		lctx->req_state = SMB2_LEASE_READ_CACHING_LE;
 	}
 
 set_lev:
@@ -1365,8 +1365,8 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 
 		if (brk_op->is_smb2) {
 			if (brk_op->is_lease && (brk_op->o_lease->state &
-					(~(SMB2_LEASE_READ_CACHING |
-					   SMB2_LEASE_HANDLE_CACHING)))) {
+					(~(SMB2_LEASE_READ_CACHING_LE |
+					   SMB2_LEASE_HANDLE_CACHING_LE)))) {
 				cifsd_debug("unexpected lease state(0x%x)\n",
 						brk_op->o_lease->state);
 				goto next;
@@ -1379,7 +1379,7 @@ void smb_break_all_levII_oplock(struct cifsd_tcp_conn *conn,
 
 			/* Skip oplock being break to none */
 			if (brk_op->is_lease && (brk_op->o_lease->new_state ==
-					SMB2_LEASE_NONE) &&
+					SMB2_LEASE_NONE_LE) &&
 				atomic_read(&brk_op->breaking_cnt))
 				goto next;
 		} else {
@@ -1432,14 +1432,14 @@ void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
  */
 __u8 smb2_map_lease_to_oplock(__le32 lease_state)
 {
-	if (lease_state == (SMB2_LEASE_HANDLE_CACHING |
-		SMB2_LEASE_READ_CACHING | SMB2_LEASE_WRITE_CACHING))
+	if (lease_state == (SMB2_LEASE_HANDLE_CACHING_LE |
+		SMB2_LEASE_READ_CACHING_LE | SMB2_LEASE_WRITE_CACHING_LE))
 		return SMB2_OPLOCK_LEVEL_BATCH;
-	else if (lease_state != SMB2_LEASE_WRITE_CACHING &&
-		lease_state & SMB2_LEASE_WRITE_CACHING) {
-		if (!(lease_state & SMB2_LEASE_HANDLE_CACHING))
+	else if (lease_state != SMB2_LEASE_WRITE_CACHING_LE &&
+		lease_state & SMB2_LEASE_WRITE_CACHING_LE) {
+		if (!(lease_state & SMB2_LEASE_HANDLE_CACHING_LE))
 			return SMB2_OPLOCK_LEVEL_EXCLUSIVE;
-	} else if (lease_state & SMB2_LEASE_READ_CACHING)
+	} else if (lease_state & SMB2_LEASE_READ_CACHING_LE)
 		return SMB2_OPLOCK_LEVEL_II;
 	return 0;
 }
@@ -1692,8 +1692,8 @@ found:
 			opinfo->op_state == OPLOCK_CLOSING)
 			goto op_next;
 		if (!(opinfo->o_lease->state &
-			(SMB2_LEASE_HANDLE_CACHING |
-			 SMB2_LEASE_WRITE_CACHING)))
+			(SMB2_LEASE_HANDLE_CACHING_LE |
+			 SMB2_LEASE_WRITE_CACHING_LE)))
 			goto op_next;
 		ret = compare_guid_key(opinfo, conn->ClientGUID,
 			lease_key);
