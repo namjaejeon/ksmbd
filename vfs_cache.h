@@ -77,7 +77,7 @@ struct cifsd_file {
 
 	struct cifsd_inode		*f_ci;
 	struct cifsd_inode		*f_parent_ci;
-	struct oplock_info		*f_opinfo;
+	struct oplock_info __rcu	*f_opinfo;
 	struct cifsd_tcp_conn		*conn;
 	struct cifsd_tree_connect	*tcon;
 

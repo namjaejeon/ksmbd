@@ -5864,6 +5864,10 @@ static int find_first(struct cifsd_work *work)
 			!strncmp(de->name, "..", de->namelen))
 			continue;
 
+		/* Hide backup files, e.g. ~$file.doc */
+		if (!strncmp("~$", d_info.name, 2))
+			continue;
+
 		if (cifsd_share_veto_filename(share, d_info.name)) {
 			cifsd_debug("Veto filename %s\n", d_info.name);
 			continue;

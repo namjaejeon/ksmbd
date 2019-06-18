@@ -3068,7 +3068,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	srch_flag = req->Flags;
 	srch_ptr = smb_strndup_from_utf16(req->Buffer,
-			le32_to_cpu(req->FileNameLength), 1,
+			le16_to_cpu(req->FileNameLength), 1,
 			conn->local_nls);
 	if (IS_ERR(srch_ptr)) {
 		cifsd_debug("Search Pattern not found\n");
@@ -3219,6 +3219,9 @@ int smb2_query_dir(struct cifsd_work *work)
 
 		/* dot and dotdot entries are already reserved */
 		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
+			continue;
+		/* Hide backup files, e.g. ~$file.doc */
+		if (!strncmp("~$", d_info.name, 2))
 			continue;
 
 		if (cifsd_share_veto_filename(share, d_info.name)) {
