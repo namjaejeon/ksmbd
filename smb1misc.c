@@ -125,7 +125,7 @@ static int smb1_get_byte_count(struct smb_hdr *hdr)
 	bc = le16_to_cpu(*(__le16 *)((char *)hdr +
 		sizeof(struct smb_hdr) + hdr->WordCount * 2));
 
-	switch (le16_to_cpu(hdr->Command)) {
+	switch (hdr->Command) {
 	case SMB_COM_CLOSE:
 	case SMB_COM_FLUSH:
 	case SMB_COM_READ_ANDX:
@@ -204,7 +204,7 @@ static int smb1_get_data_len(struct smb_hdr *hdr)
 	int data_len = 0;
 
 	/* data offset check */
-	switch (le16_to_cpu(hdr->Command)) {
+	switch (hdr->Command) {
 	case SMB_COM_WRITE_ANDX:
 	{
 		WRITE_REQ *req = (WRITE_REQ *)hdr;

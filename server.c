@@ -71,43 +71,49 @@ static bool iface_exists(const char *ifname)
 	struct net_device *netdev;
 	bool ret = false;
 
-	rtnl_lock();
-	for_each_netdev(&init_net, netdev) {
-		if (match_pattern(netdev->name, ifname)) {
+	rcu_read_lock();
+	netdev = dev_get_by_name_rcu(&init_net, ifname);
+	if (netdev) {
+		if (!(netdev->flags & IFF_UP))
+			cifsd_err("Device %s is down\n", ifname);
+		else
 			ret = true;
-			break;
-		}
 	}
-	rtnl_unlock();
+	rcu_read_unlock();
 	return ret;
 }
 
-int cifsd_set_interfaces(char *v)
+int cifsd_set_interfaces(char *ifc_list, int ifc_list_sz)
 {
-	char *tmp;
+	int sz = 0;
 
-	if (*v == 0x00)
+	if (!ifc_list_sz)
 		return 0;
 
-	while (v != NULL) {
+	while (ifc_list_sz > 0) {
 		struct interface *iface;
 
-		tmp = strsep(&v, " ");
-		if (!iface_exists(tmp)) {
-			cifsd_err("Unknown interface name: %s\n", tmp);
-			continue;
+		if (iface_exists(ifc_list)) {
+			iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
+			if (!iface)
+				return -ENOMEM;
+
+			iface->name = kstrdup(ifc_list, GFP_KERNEL);
+			if (!iface->name) {
+				kfree(iface);
+				return -ENOMEM;
+			}
+			list_add(&iface->entry, &server_conf.iface_list);
+		} else {
+			cifsd_err("Unknown interface: %s\n", ifc_list);
 		}
 
-		iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
-		if (!iface)
-			return -ENOMEM;
+		sz = strlen(ifc_list);
+		if (!sz)
+			break;
 
-		iface->name = kstrdup(tmp, GFP_KERNEL);
-		if (!iface->name) {
-			kfree(iface);
-			return -ENOMEM;
-		}
-		list_add(&iface->entry, &server_conf.iface_list);
+		ifc_list += sz + 1;
+		ifc_list_sz -= (sz + 1);
 	}
 
 	return 0;

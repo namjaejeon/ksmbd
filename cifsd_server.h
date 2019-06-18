@@ -36,6 +36,7 @@ struct cifsd_startup_request {
 	__u16	ipc_timeout;
 	__u32	deadtime;
 	__u32	file_max;
+	__u32	ifc_list_sz;
 	__s8	____payload[0];
 } __align;
 

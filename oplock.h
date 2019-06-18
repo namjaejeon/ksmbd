@@ -62,22 +62,22 @@ struct oplock_info {
 	struct cifsd_tcp_conn	*conn;
 	struct cifsd_session	*sess;
 	struct cifsd_work	*work;
-	bool			is_smb2;
 	struct cifsd_file	*o_fp;
 	int                     level;
 	int                     op_state;
 	uint64_t                fid;
-	__u16                   Tid;
 	atomic_t		breaking_cnt;
 	atomic_t		refcount;
+	__u16                   Tid;
 	bool			is_lease;
+	bool			is_smb2;
+	bool			open_trunc;	/* truncate on open */
 	struct lease		*o_lease;
 	struct list_head        interim_list;
 	struct list_head        op_entry;
 	struct list_head        lease_entry;
 	wait_queue_head_t oplock_q; /* Other server threads */
 	wait_queue_head_t oplock_brk; /* oplock breaking wait */
-	bool			open_trunc:1;	/* truncate on open */
 	struct rcu_head		rcu_head;
 };
 
