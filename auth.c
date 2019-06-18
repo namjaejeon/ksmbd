@@ -1281,7 +1281,10 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 	struct scatterlist assoc;
 #endif
 
-	rc = cifsd_get_encryption_key(conn, tr_hdr->SessionId, enc, key);
+	rc = cifsd_get_encryption_key(conn,
+				      le64_to_cpu(tr_hdr->SessionId),
+				      enc,
+				      key);
 	if (rc) {
 		cifsd_err("Could not get %scryption key\n", enc ? "en" : "de");
 		return 0;
