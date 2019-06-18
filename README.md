@@ -51,33 +51,43 @@ or open issues/send PRs to [CIFSD](https://github.com/cifsd-team/cifsd).
 
 
 ## Installing as a stand-alone module
-
-make
-sudo make install
+```
+	make
+	sudo make install
+```
 
 To load the driver manually, run this as root:
-modprobe cifsd
+```
+	modprobe cifsd
+```
 
 
 ## Installing as a part of the kernel
 
 1. Let's take [linux] as the path to your kernel source dir.
+```
 	cd [linux]
 	cp -ar cifsd [linux]/fs/
+```
 
 2. edit [linux]/fs/Kconfig
+```
 	source "fs/cifs/Kconfig"
 	+source "fs/cifsd/Kconfig"
 	source "fs/coda/Kconfig"
+```
 
 3. edit [linux]/fs/Makefile
+```
 	obj-$(CONFIG_CIFS)              += cifs/
 	+obj-$(CONFIG_CIFS_SERVER)       += cifsd/
 	obj-$(CONFIG_HPFS_FS)           += hpfs/
-
+```
 4. make menuconfig and set cifsd
+```
 	[*] Network File Systems  --->
 		<M>   CIFS server support
+```
 
 build your kernel
 
