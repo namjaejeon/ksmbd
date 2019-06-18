@@ -1455,8 +1455,8 @@ void create_lease_buf(u8 *rbuf, struct lease *lease)
 	char *LeaseKey = (char *)&lease->lease_key;
 
 	memset(buf, 0, sizeof(struct create_lease));
-	buf->lcontext.LeaseKeyLow = *((u64 *)LeaseKey);
-	buf->lcontext.LeaseKeyHigh = *((u64 *)(LeaseKey + 8));
+	buf->lcontext.LeaseKeyLow = *((__le64 *)LeaseKey);
+	buf->lcontext.LeaseKeyHigh = *((__le64 *)(LeaseKey + 8));
 	buf->lcontext.LeaseFlags = lease->flags;
 	buf->lcontext.LeaseState = lease->state;
 	buf->ccontext.DataOffset = cpu_to_le16(offsetof
@@ -1507,8 +1507,8 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
 
 	if (found) {
 		struct create_lease *lc = (struct create_lease *)cc;
-		*((u64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
-		*((u64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
+		*((__le64 *)lreq->lease_key) = lc->lcontext.LeaseKeyLow;
+		*((__le64 *)(lreq->lease_key + 8)) = lc->lcontext.LeaseKeyHigh;
 		lreq->req_state = lc->lcontext.LeaseState;
 		lreq->flags = lc->lcontext.LeaseFlags;
 		lreq->duration = lc->lcontext.LeaseDuration;
