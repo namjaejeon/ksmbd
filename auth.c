@@ -999,12 +999,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
 	cifsd_debug("dumping generated AES signing keys\n");
-	/*
-	 * The session id is opaque in terms of endianness, so we can't
-	 * print it as a long long. we dump it as we got it on the wire
-	 */
-	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->id),
-			&sess->id);
+	cifsd_debug("Session Id    %llu\n", sess->id);
 	cifsd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("Signing Key   %*ph\n",
@@ -1068,12 +1063,7 @@ static int generate_smb3encryptionkey(struct cifsd_session *sess,
 		return rc;
 
 	cifsd_debug("dumping generated AES encryption keys\n");
-	/*
-	 * The session id is opaque in terms of endianness, so we can't
-	 * print it as a long long. we dump it as we got it on the wire
-	 */
-	cifsd_debug("Session Id    %*ph\n", (int)sizeof(sess->id),
-			&sess->id);
+	cifsd_debug("Session Id    %llu\n", sess->id);
 	cifsd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
 	cifsd_debug("ServerIn Key  %*ph\n",
