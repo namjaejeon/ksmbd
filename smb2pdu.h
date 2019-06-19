@@ -122,7 +122,7 @@ struct smb2_pdu {
 
 extern bool encryption_enable;
 
-#define SMB3_AES128CMM_NONCE 11
+#define SMB3_AES128CCM_NONCE 11
 #define SMB3_AES128GCM_NONCE 12
 
 struct smb2_transform_hdr {
@@ -210,7 +210,6 @@ struct preauth_integrity_info {
 	__le16			Preauth_HashId;
 	/* PreAuth integrity Hash Value */
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	__le16			CipherId;
 };
 
 /* offset is sizeof smb2_negotiate_rsp - 4 but rounded up to 8 bytes.
