@@ -2397,7 +2397,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 		/*
 		 * On delete request, instead of following up, need to
 		 * look the current entity
