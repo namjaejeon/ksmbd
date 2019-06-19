@@ -63,7 +63,7 @@ int get_smb_cmd_val(struct cifsd_work *work)
 {
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 
-	return rcv_hdr->Command;
+	return (int)rcv_hdr->Command;
 }
 
 /**
