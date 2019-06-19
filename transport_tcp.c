@@ -712,9 +712,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		unsigned int command = conn->ops->get_cmd_val(work);
-
-		if (command != SMB2_CANCEL) {
+		if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 			requests_queue = &conn->requests;
 			work->type = SYNC;
 		}
