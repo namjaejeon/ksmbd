@@ -1170,7 +1170,10 @@ static int cifsd_alloc_aead(struct cifsd_tcp_conn *conn)
 	struct crypto_aead *tfm;
 
 	if (!conn->secmech.ccmaesencrypt) {
-		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
+		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
+		else
+			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
 		if (IS_ERR(tfm)) {
 			cifsd_err("Failed to alloc encrypt aead\n");
 			return PTR_ERR(tfm);
@@ -1179,7 +1182,10 @@ static int cifsd_alloc_aead(struct cifsd_tcp_conn *conn)
 	}
 
 	if (!conn->secmech.ccmaesdecrypt) {
-		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
+		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
+		else
+			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
 		if (IS_ERR(tfm)) {
 			cifsd_err("Failed to alloc decrypt aead\n");
 			free_ccmaes(conn);
@@ -1329,8 +1335,13 @@ int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
 		rc = -ENOMEM;
 		goto free_sg;
 	}
-	iv[0] = 3;
-	memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
+
+	if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+		memcpy(iv, (char *)tr_hdr->Nonce, SMB3_AES128GCM_NONCE);
+	else {
+		iv[0] = 3;
+		memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
+	}
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 	aead_request_set_assoc(req, &assoc, assoc_data_len);

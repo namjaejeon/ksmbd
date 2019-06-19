@@ -748,13 +748,13 @@ assemble_neg_contexts(struct cifsd_tcp_conn *conn,
 	inc_rfc1001_len(rsp,
 		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
-	if (conn->preauth_info->CipherId) {
+	if (conn->CipherId) {
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
 		/* Add 2 to size to round to 8 byte boundary */
 		pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
-			conn->preauth_info->CipherId);
+			conn->CipherId);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
 		/* Subtract 2 to remove unused Ciphers[1] */
 		inc_rfc1001_len(rsp,
@@ -785,18 +785,17 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	int i;
 	int cph_cnt = pneg_ctxt->CipherCount;
 
-	conn->preauth_info->CipherId = 0;
+	conn->CipherId = 0;
 
 	if (!encryption_enable)
 		return;
 
-	/* Support only AES CCM cipher now */
 	for (i = 0; i < cph_cnt; i++) {
-		if (pneg_ctxt->Ciphers[i] ==
-			SMB2_ENCRYPTION_AES128_CCM) {
-			cifsd_debug("Cipher ID = SMB2_ENCRYPTION_AES128_CCM\n");
-			conn->preauth_info->CipherId =
-				SMB2_ENCRYPTION_AES128_CCM;
+		if (pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_GCM ||
+			pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_CCM) {
+			cifsd_debug("Cipher ID = 0x%x\n",
+				pneg_ctxt->Ciphers[i]);
+			conn->CipherId = pneg_ctxt->Ciphers[i];
 			break;
 		}
 	}
@@ -828,7 +827,7 @@ deassemble_neg_contexts(struct cifsd_tcp_conn *conn,
 			ContextType = (__le16 *)pneg_ctxt;
 		} else if (*ContextType == SMB2_ENCRYPTION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_ENCRYPTION_CAPABILITIES context\n");
-			if (conn->preauth_info->CipherId)
+			if (conn->CipherId)
 				break;
 
 			decode_encrypt_ctxt(conn,
@@ -7090,7 +7089,8 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 }
 
-static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf)
+static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf,
+				__le16 cipher_type)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)old_buf;
 	unsigned int orig_len = get_rfc1002_length(old_buf);
@@ -7099,7 +7099,10 @@ static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf)
 	tr_hdr->ProtocolId = SMB2_TRANSFORM_PROTO_NUM;
 	tr_hdr->OriginalMessageSize = cpu_to_le32(orig_len);
 	tr_hdr->Flags = cpu_to_le16(0x01);
-	get_random_bytes(&tr_hdr->Nonce, SMB3_AES128CMM_NONCE);
+	if (cipher_type == SMB2_ENCRYPTION_AES128_GCM)
+		get_random_bytes(&tr_hdr->Nonce, SMB3_AES128GCM_NONCE);
+	else
+		get_random_bytes(&tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
 	memcpy(&tr_hdr->SessionId, &hdr->SessionId, 8);
 	inc_rfc1001_len(tr_hdr, sizeof(struct smb2_transform_hdr) - 4);
 	inc_rfc1001_len(tr_hdr, orig_len);
@@ -7121,7 +7124,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 		return rc;
 
 	/* fill transform header */
-	fill_transform_hdr(tr_hdr, buf);
+	fill_transform_hdr(tr_hdr, buf, work->conn->CipherId);
 
 	iov[0].iov_base = tr_hdr;
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);
