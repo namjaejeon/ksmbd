@@ -197,7 +197,7 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 

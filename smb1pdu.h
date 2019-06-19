@@ -1943,7 +1943,7 @@ static inline int init_smb1_server(struct cifsd_tcp_conn *conn)
 /* function prototypes */
 extern int init_smb_rsp_hdr(struct cifsd_work *work);
 extern int get_smb_cmd_val(struct cifsd_work *work);
-extern void set_smb_rsp_status(struct cifsd_work *work, unsigned int err);
+extern void set_smb_rsp_status(struct cifsd_work *work, __le32 err);
 extern int smb_allocate_rsp_buf(struct cifsd_work *work);
 extern int smb1_is_sign_req(struct cifsd_work *work, unsigned int command);
 extern int smb1_check_sign_req(struct cifsd_work *work);
