@@ -158,7 +158,7 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 const struct path *path,
 					 int flags,
-					 int option,
+					 __le32 option,
 					 int fexist);
 
 ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size);

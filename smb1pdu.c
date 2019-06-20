@@ -1211,8 +1211,8 @@ int smb_session_setup_andx(struct cifsd_work *work)
 			rc = -ENOENT;
 			goto out_err;
 		}
-		cifsd_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
-			sess, sess->id, uid);
+		cifsd_debug("Reuse session ID: %llu, Uid: %u\n",
+			    sess->id, uid);
 	} else {
 		sess = cifsd_smb1_session_create();
 		if (!sess) {
@@ -1222,8 +1222,7 @@ int smb_session_setup_andx(struct cifsd_work *work)
 
 		cifsd_session_register(conn, sess);
 		rsp->resp.hdr.Uid = cpu_to_le16(sess->id);
-		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
-				sess, sess->id, uid);
+		cifsd_debug("New session ID: %llu, Uid: %u\n", sess->id, uid);
 	}
 
 	if (cap & CAP_EXTENDED_SECURITY) {
