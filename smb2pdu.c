@@ -4745,14 +4745,14 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		if (file_info->LastAccessTime) {
 			attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastAccessTime)));
+						file_info->LastAccessTime));
 			attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 		}
 
 		if (file_info->ChangeTime) {
 			temp_attrs.ia_ctime =
 				to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->ChangeTime)));
+						file_info->ChangeTime));
 			attrs.ia_ctime = temp_attrs.ia_ctime;
 			attrs.ia_valid |= ATTR_CTIME;
 		} else
@@ -4760,7 +4760,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 
 		if (file_info->LastWriteTime) {
 			attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastWriteTime)));
+						file_info->LastWriteTime));
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 		}
 
