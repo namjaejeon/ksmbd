@@ -662,7 +662,8 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 		return id;
 	}
 	work->type = ASYNC;
-	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
+	work->async_id = id;
+	rsp_hdr->Id.AsyncId = cpu_to_le64(id);
 
 	cifsd_debug("Send interim Response to inform async request id : %d\n",
 			work->async_id);
