@@ -1427,7 +1427,7 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
  * Return:	0 on success, otherwise error
  */
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
-	const struct path *path, int flags, int option, int fexist)
+	const struct path *path, int flags, __le32 option, int fexist)
 {
 	struct file *filp;
 	int err = 0;
@@ -1472,7 +1472,7 @@ err_out:
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 const struct path *path,
 					 int flags,
-					 int option,
+					 __le32 option,
 					 int fexist)
 {
 	return NULL;
