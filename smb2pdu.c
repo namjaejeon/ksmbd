@@ -4727,7 +4727,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		file_info = (struct smb2_file_all_info *)buffer;
 		attrs.ia_valid = 0;
 
-		if (le64_to_cpu(file_info->CreationTime)) {
+		if (file_info->CreationTime) {
 			fp->create_time = le64_to_cpu(file_info->CreationTime);
 			if (test_share_config_flag(share,
 					CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -4743,13 +4743,13 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			}
 		}
 
-		if (le64_to_cpu(file_info->LastAccessTime)) {
+		if (file_info->LastAccessTime) {
 			attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
 					le64_to_cpu(file_info->LastAccessTime)));
 			attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 		}
 
-		if (le64_to_cpu(file_info->ChangeTime)) {
+		if (file_info->ChangeTime) {
 			temp_attrs.ia_ctime =
 				to_kern_timespec(cifs_NTtimeToUnix(
 					le64_to_cpu(file_info->ChangeTime)));
@@ -4758,7 +4758,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		} else
 			temp_attrs.ia_ctime = inode->i_ctime;
 
-		if (le64_to_cpu(file_info->LastWriteTime)) {
+		if (file_info->LastWriteTime) {
 			attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
 					le64_to_cpu(file_info->LastWriteTime)));
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
