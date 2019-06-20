@@ -784,7 +784,7 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	struct smb2_encryption_neg_context *pneg_ctxt)
 {
 	int i;
-	int cph_cnt = pneg_ctxt->CipherCount;
+	int cph_cnt = le16_to_cpu(pneg_ctxt->CipherCount);
 
 	conn->CipherId = 0;
 
