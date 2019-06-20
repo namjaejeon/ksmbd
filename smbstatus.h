@@ -40,7 +40,7 @@ struct ntstatus {
 	__le32 Code;
 };
 
-#define STATUS_SUCCESS cpu_to_le32(0x00000000)
+#define STATUS_SUCCESS 0x00000000
 #define STATUS_WAIT_0 cpu_to_le32(0x00000000)
 #define STATUS_WAIT_1 cpu_to_le32(0x00000001)
 #define STATUS_WAIT_2 cpu_to_le32(0x00000002)

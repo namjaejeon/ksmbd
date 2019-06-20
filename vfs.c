@@ -1231,7 +1231,7 @@ out:
  * @filp:	file pointer for IO
  * @options:	smb IO options
  */
-void cifsd_vfs_set_fadvise(struct file *filp, int option)
+void cifsd_vfs_set_fadvise(struct file *filp, __le32 option)
 {
 	struct address_space *mapping;
 

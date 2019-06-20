@@ -63,7 +63,7 @@ int get_smb_cmd_val(struct cifsd_work *work)
 {
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 
-	return rcv_hdr->Command;
+	return (int)rcv_hdr->Command;
 }
 
 /**
@@ -82,7 +82,7 @@ static inline int is_smbreq_unicode(struct smb_hdr *hdr)
  * @work:	smb work containing smb response header
  * @err:	error code to set in response
  */
-void set_smb_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(work);
 

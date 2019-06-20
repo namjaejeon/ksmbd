@@ -197,7 +197,7 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 
@@ -507,7 +507,6 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned int status = le32_to_cpu(hdr->Status);
 	unsigned int flags = hdr->Flags;
 	unsigned short credits_requested = le16_to_cpu(hdr->CreditRequest);
-	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
 	int total_credits;
@@ -527,7 +526,8 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	} else if (credits_requested > 0) {
 		aux_max = 0;
 		aux_credits = credits_requested - 1;
-		switch (cmd) {
+
+		switch (hdr->Command) {
 		case SMB2_NEGOTIATE:
 			break;
 		case SMB2_SESSION_SETUP:
@@ -662,7 +662,8 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 		return id;
 	}
 	work->type = ASYNC;
-	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
+	work->async_id = id;
+	rsp_hdr->Id.AsyncId = cpu_to_le64(id);
 
 	cifsd_debug("Send interim Response to inform async request id : %d\n",
 			work->async_id);
@@ -1479,11 +1480,11 @@ int smb2_tree_connect(struct cifsd_work *work)
 		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
 		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
 			FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
-			FILE_WRITE_EA_LE | FILE_EXECUTE_LE | FILE_DELETE_CHILD |
-			FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
-			FILE_DELETE_LE | FILE_READ_CONTROL_LE |
-			FILE_WRITE_DAC_LE | FILE_WRITE_OWNER_LE |
-			FILE_SYNCHRONIZE_LE;
+			FILE_WRITE_EA_LE | FILE_EXECUTE_LE |
+			FILE_DELETE_CHILD_LE | FILE_READ_ATTRIBUTES_LE |
+			FILE_WRITE_ATTRIBUTES_LE | FILE_DELETE_LE |
+			FILE_READ_CONTROL_LE | FILE_WRITE_DAC_LE |
+			FILE_WRITE_OWNER_LE | FILE_SYNCHRONIZE_LE;
 	}
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
@@ -2397,7 +2398,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 		/*
 		 * On delete request, instead of following up, need to
 		 * look the current entity
@@ -2730,18 +2731,19 @@ reconnected:
 
 	if (d_info.type == DURABLE_REQ || d_info.type == DURABLE_REQ_V2) {
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
 		if (d_info.type == DURABLE_REQ) {
 			create_durable_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_size);
 		} else {
 			create_durable_v2_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength, fp);
+					le32_to_cpu(rsp->CreateContextsLength),
+					fp);
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_v2_size);
 			inc_rfc1001_len(rsp_org,
@@ -2756,10 +2758,11 @@ reconnected:
 
 	if (maximal_access) {
 		mxac_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			maximal_access);
+		create_mxac_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				maximal_access);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
@@ -2771,10 +2774,11 @@ reconnected:
 
 	if (query_disk_id) {
 		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			stat.ino, tcon->id);
+		create_disk_id_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				stat.ino, tcon->id);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
@@ -6120,7 +6124,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
 		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
-					le16_to_cpu(neg_req->DialectCount));
+						 neg_req->DialectCount);
 		if (ret == BAD_PROT_ID || ret != conn->dialect)
 			goto out;
 
