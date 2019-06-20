@@ -2730,18 +2730,19 @@ reconnected:
 
 	if (d_info.type == DURABLE_REQ || d_info.type == DURABLE_REQ_V2) {
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
 		if (d_info.type == DURABLE_REQ) {
 			create_durable_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_size);
 		} else {
 			create_durable_v2_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength, fp);
+					le32_to_cpu(rsp->CreateContextsLength),
+					fp);
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_v2_size);
 			inc_rfc1001_len(rsp_org,
@@ -2756,10 +2757,11 @@ reconnected:
 
 	if (maximal_access) {
 		mxac_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			maximal_access);
+		create_mxac_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				maximal_access);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
@@ -2771,10 +2773,11 @@ reconnected:
 
 	if (query_disk_id) {
 		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			stat.ino, tcon->id);
+		create_disk_id_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				stat.ino, tcon->id);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
