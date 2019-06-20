@@ -1299,8 +1299,8 @@ struct smb2_file_alt_name_info {
 } __packed;
 
 struct smb2_file_stream_info {
-	__u32  NextEntryOffset;
-	__u32  StreamNameLength;
+	__le32  NextEntryOffset;
+	__le32  StreamNameLength;
 	__le64 StreamSize;
 	__le64 StreamAllocationSize;
 	char   StreamName[0];
