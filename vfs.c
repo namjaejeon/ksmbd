@@ -280,7 +280,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE |
 		    FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-		    FILE_GENERIC_ALL_LE | FILE_EXECUTE))) {
+		    FILE_GENERIC_ALL_LE | FILE_EXECUTE_LE))) {
 			cifsd_err("no right to read(%s)\n", FP_FILENAME(fp));
 			return -EACCES;
 		}
@@ -1231,7 +1231,7 @@ out:
  * @filp:	file pointer for IO
  * @options:	smb IO options
  */
-void cifsd_vfs_set_fadvise(struct file *filp, int option)
+void cifsd_vfs_set_fadvise(struct file *filp, __le32 option)
 {
 	struct address_space *mapping;
 
@@ -1427,7 +1427,7 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
  * Return:	0 on success, otherwise error
  */
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
-	const struct path *path, int flags, int option, int fexist)
+	const struct path *path, int flags, __le32 option, int fexist)
 {
 	struct file *filp;
 	int err = 0;
@@ -1472,12 +1472,29 @@ err_out:
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 const struct path *path,
 					 int flags,
-					 int option,
+					 __le32 option,
 					 int fexist)
 {
 	return NULL;
 }
 #endif
+
+static int __dir_empty(struct dir_context *ctx,
+				   const char *name,
+				   int namlen,
+				   loff_t offset,
+				   u64 ino,
+				   unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf;
+
+	buf = container_of(ctx, struct cifsd_readdir_data, ctx);
+	buf->dirent_count++;
+
+	if (buf->dirent_count > 2)
+		return -ENOTEMPTY;
+	return 0;
+}
 
 /**
  * cifsd_vfs_empty_dir() - check for empty directory
@@ -1488,14 +1505,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
-		.dirent = (void *)__get_free_page(GFP_KERNEL),
+		.ctx.actor = __dir_empty,
 		.dirent_count = 0
 	};
 	int err;
-
-	if (!r_data.dirent)
-		return -ENOMEM;
 
 	r_data.used = 0;
 	r_data.full = 0;
@@ -1506,7 +1519,6 @@ int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	else
 		err = 0;
 
-	free_page((unsigned long)(r_data.dirent));
 	return err;
 }
 
@@ -1534,20 +1546,19 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
-	if (!readdir_data.dirent) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!readdir_data.dirent)
+		return -ENOMEM;
 
 	ret = cifsd_vfs_kern_path(dirname, 0, &dir_path, true);
 	if (ret)
-		goto out;
+		goto error;
 
 	dfilp = dentry_open(&dir_path, flags, current_cred());
 	if (IS_ERR(dfilp)) {
+		path_put(&dir_path);
 		cifsd_err("cannot open directory %s\n", dirname);
 		ret = -EINVAL;
-		goto out2;
+		goto error;
 	}
 
 	while (!ret && !match_found) {
@@ -1577,11 +1588,11 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		}
 	}
 
-	free_page((unsigned long)(readdir_data.dirent));
 	fput(dfilp);
-out2:
 	path_put(&dir_path);
-out:
+
+error:
+	free_page((unsigned long)(readdir_data.dirent));
 	dirname[dirnamelen] = '/';
 	return ret;
 }

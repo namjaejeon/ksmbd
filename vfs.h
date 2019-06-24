@@ -158,7 +158,7 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 const struct path *path,
 					 int flags,
-					 int option,
+					 __le32 option,
 					 int fexist);
 
 ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size);
@@ -191,7 +191,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
 int cifsd_vfs_empty_dir(struct cifsd_file *fp);
-void cifsd_vfs_set_fadvise(struct file *filp, int option);
+void cifsd_vfs_set_fadvise(struct file *filp, __le32 option);
 int cifsd_vfs_lock(struct file *filp, int cmd, struct file_lock *flock);
 int cifsd_vfs_readdir(struct file *file, struct cifsd_readdir_data *rdata);
 int cifsd_vfs_alloc_size(struct cifsd_work *work,

@@ -15,6 +15,7 @@ config CIFS_SERVER
 	select CRYPTO_SHA512
 	select CRYPTO_AEAD2
 	select CRYPTO_CCM
+	select CRYPTO_GCM
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
 

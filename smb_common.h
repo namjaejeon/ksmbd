@@ -83,7 +83,7 @@ struct smb_version_values {
 struct smb_version_ops {
 	int (*get_cmd_val)(struct cifsd_work *swork);
 	int (*init_rsp_hdr)(struct cifsd_work *swork);
-	void (*set_rsp_status)(struct cifsd_work *swork, unsigned int err);
+	void (*set_rsp_status)(struct cifsd_work *swork, __le32 err);
 	int (*allocate_rsp_buf)(struct cifsd_work *work);
 	void (*set_rsp_credits)(struct cifsd_work *swork);
 	int (*check_user_session)(struct cifsd_work *work);

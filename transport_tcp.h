@@ -126,6 +126,8 @@ struct cifsd_tcp_conn {
 
 	/* Identifier for async message */
 	struct cifsd_ida		*async_ida;
+
+	__le16			CipherId;
 };
 
 struct cifsd_tcp_conn_ops {
@@ -148,6 +150,8 @@ int cifsd_tcp_write(struct cifsd_work *work);
 void cifsd_tcp_enqueue_request(struct cifsd_work *work);
 int cifsd_tcp_try_dequeue_request(struct cifsd_work *work);
 void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
+
+int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz);
 
 void cifsd_tcp_destroy(void);
 int cifsd_tcp_init(void);

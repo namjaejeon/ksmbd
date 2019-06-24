@@ -82,9 +82,9 @@ struct oplock_info {
 };
 
 struct lease_break_info {
-	int curr_state;
-	int new_state;
-	char lease_key[SMB2_LEASE_KEY_SIZE];
+	__le32			curr_state;
+	__le32			new_state;
+	char			lease_key[SMB2_LEASE_KEY_SIZE];
 };
 
 struct oplock_break_info {

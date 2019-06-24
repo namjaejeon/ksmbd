@@ -17,11 +17,6 @@
 
 extern int cifsd_debugging;
 
-struct interface {
-	struct list_head	entry;
-	char			*name;
-};
-
 struct cifsd_server_config {
 	unsigned int		state;
 	short			signing;
@@ -34,7 +29,6 @@ struct cifsd_server_config {
 	unsigned long		deadtime;
 
 	char			*conf[SERVER_CONF_WORK_GROUP + 1];
-	struct list_head	iface_list;
 };
 
 extern struct cifsd_server_config server_conf;
@@ -42,7 +36,6 @@ extern struct cifsd_server_config server_conf;
 int cifsd_set_netbios_name(char *v);
 int cifsd_set_server_string(char *v);
 int cifsd_set_work_group(char *v);
-int cifsd_set_interfaces(char *ifc_list, int ifc_list_sz);
 
 char *cifsd_netbios_name(void);
 char *cifsd_server_string(void);
