@@ -1534,20 +1534,19 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
-	if (!readdir_data.dirent) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!readdir_data.dirent)
+		return -ENOMEM;
 
 	ret = cifsd_vfs_kern_path(dirname, 0, &dir_path, true);
 	if (ret)
-		goto out;
+		goto error;
 
 	dfilp = dentry_open(&dir_path, flags, current_cred());
 	if (IS_ERR(dfilp)) {
+		path_put(&dir_path);
 		cifsd_err("cannot open directory %s\n", dirname);
 		ret = -EINVAL;
-		goto out2;
+		goto error;
 	}
 
 	while (!ret && !match_found) {
@@ -1577,11 +1576,11 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		}
 	}
 
-	free_page((unsigned long)(readdir_data.dirent));
 	fput(dfilp);
-out2:
 	path_put(&dir_path);
-out:
+
+error:
+	free_page((unsigned long)(readdir_data.dirent));
 	dirname[dirnamelen] = '/';
 	return ret;
 }
