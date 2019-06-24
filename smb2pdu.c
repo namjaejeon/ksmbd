@@ -197,7 +197,7 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  * set_smb2_rsp_status() - set error response code on smb2 header
  * @work:	smb work containing response buffer
  */
-void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
 
@@ -507,7 +507,6 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	unsigned int status = le32_to_cpu(hdr->Status);
 	unsigned int flags = hdr->Flags;
 	unsigned short credits_requested = le16_to_cpu(hdr->CreditRequest);
-	unsigned short cmd = le16_to_cpu(hdr->Command);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
 	int total_credits;
@@ -527,7 +526,8 @@ void smb2_set_rsp_credits(struct cifsd_work *work)
 	} else if (credits_requested > 0) {
 		aux_max = 0;
 		aux_credits = credits_requested - 1;
-		switch (cmd) {
+
+		switch (hdr->Command) {
 		case SMB2_NEGOTIATE:
 			break;
 		case SMB2_SESSION_SETUP:
@@ -662,7 +662,8 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 		return id;
 	}
 	work->type = ASYNC;
-	rsp_hdr->Id.AsyncId = work->async_id = cpu_to_le64(id);
+	work->async_id = id;
+	rsp_hdr->Id.AsyncId = cpu_to_le64(id);
 
 	cifsd_debug("Send interim Response to inform async request id : %d\n",
 			work->async_id);
@@ -783,7 +784,7 @@ decode_encrypt_ctxt(struct cifsd_tcp_conn *conn,
 	struct smb2_encryption_neg_context *pneg_ctxt)
 {
 	int i;
-	int cph_cnt = pneg_ctxt->CipherCount;
+	int cph_cnt = le16_to_cpu(pneg_ctxt->CipherCount);
 
 	conn->CipherId = 0;
 
@@ -1479,11 +1480,11 @@ int smb2_tree_connect(struct cifsd_work *work)
 		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
 		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
 			FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
-			FILE_WRITE_EA_LE | FILE_EXECUTE_LE | FILE_DELETE_CHILD |
-			FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES |
-			FILE_DELETE_LE | FILE_READ_CONTROL_LE |
-			FILE_WRITE_DAC_LE | FILE_WRITE_OWNER_LE |
-			FILE_SYNCHRONIZE_LE;
+			FILE_WRITE_EA_LE | FILE_EXECUTE_LE |
+			FILE_DELETE_CHILD_LE | FILE_READ_ATTRIBUTES_LE |
+			FILE_WRITE_ATTRIBUTES_LE | FILE_DELETE_LE |
+			FILE_READ_CONTROL_LE | FILE_WRITE_DAC_LE |
+			FILE_WRITE_OWNER_LE | FILE_SYNCHRONIZE_LE;
 	}
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
@@ -1850,7 +1851,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 				}
 			}
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
+				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				d_info->CreateGuid =
 					durable_v2_blob->CreateGuid;
@@ -1872,7 +1873,7 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 			}
 
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING)) ||
+				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				cifsd_debug("Request for durable open\n");
 				d_info->type = i;
@@ -2397,7 +2398,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	if (le32_to_cpu(req->CreateOptions) & FILE_DELETE_ON_CLOSE_LE) {
+	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 		/*
 		 * On delete request, instead of following up, need to
 		 * look the current entity
@@ -2730,18 +2731,19 @@ reconnected:
 
 	if (d_info.type == DURABLE_REQ || d_info.type == DURABLE_REQ_V2) {
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
 		if (d_info.type == DURABLE_REQ) {
 			create_durable_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_size);
 			inc_rfc1001_len(rsp_org,
 				conn->vals->create_durable_size);
 		} else {
 			create_durable_v2_rsp_buf(rsp->Buffer +
-				rsp->CreateContextsLength, fp);
+					le32_to_cpu(rsp->CreateContextsLength),
+					fp);
 			le32_add_cpu(&rsp->CreateContextsLength,
 				     conn->vals->create_durable_v2_size);
 			inc_rfc1001_len(rsp_org,
@@ -2756,10 +2758,11 @@ reconnected:
 
 	if (maximal_access) {
 		mxac_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_mxac_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			maximal_access);
+		create_mxac_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				maximal_access);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
@@ -2771,10 +2774,11 @@ reconnected:
 
 	if (query_disk_id) {
 		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
-			rsp->CreateContextsLength);
+				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
-		create_disk_id_rsp_buf(rsp->Buffer + rsp->CreateContextsLength,
-			stat.ino, tcon->id);
+		create_disk_id_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				stat.ino, tcon->id);
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
@@ -4723,7 +4727,7 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		file_info = (struct smb2_file_all_info *)buffer;
 		attrs.ia_valid = 0;
 
-		if (le64_to_cpu(file_info->CreationTime)) {
+		if (file_info->CreationTime) {
 			fp->create_time = le64_to_cpu(file_info->CreationTime);
 			if (test_share_config_flag(share,
 					CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -4739,24 +4743,24 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 			}
 		}
 
-		if (le64_to_cpu(file_info->LastAccessTime)) {
+		if (file_info->LastAccessTime) {
 			attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastAccessTime)));
+						file_info->LastAccessTime));
 			attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 		}
 
-		if (le64_to_cpu(file_info->ChangeTime)) {
+		if (file_info->ChangeTime) {
 			temp_attrs.ia_ctime =
 				to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->ChangeTime)));
+						file_info->ChangeTime));
 			attrs.ia_ctime = temp_attrs.ia_ctime;
 			attrs.ia_valid |= ATTR_CTIME;
 		} else
 			temp_attrs.ia_ctime = inode->i_ctime;
 
-		if (le64_to_cpu(file_info->LastWriteTime)) {
+		if (file_info->LastWriteTime) {
 			attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
-					le64_to_cpu(file_info->LastWriteTime)));
+						file_info->LastWriteTime));
 			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 		}
 
@@ -6120,7 +6124,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
 		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
-					le16_to_cpu(neg_req->DialectCount));
+						 neg_req->DialectCount);
 		if (ret == BAD_PROT_ID || ret != conn->dialect)
 			goto out;
 
@@ -6611,8 +6615,8 @@ err_out:
 static int check_lease_state(struct lease *lease, __le32 req_state)
 {
 	if ((lease->new_state ==
-		(SMB2_LEASE_READ_CACHING | SMB2_LEASE_HANDLE_CACHING))
-		&& !(req_state & SMB2_LEASE_WRITE_CACHING)) {
+		(SMB2_LEASE_READ_CACHING_LE | SMB2_LEASE_HANDLE_CACHING_LE))
+		&& !(req_state & SMB2_LEASE_WRITE_CACHING_LE)) {
 		lease->new_state = req_state;
 		return 0;
 	}
@@ -6672,18 +6676,18 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 	}
 
 	/* check for bad lease state */
-	if (req->LeaseState & (~(SMB2_LEASE_READ_CACHING |
-					SMB2_LEASE_HANDLE_CACHING))) {
+	if (req->LeaseState & (~(SMB2_LEASE_READ_CACHING_LE |
+					SMB2_LEASE_HANDLE_CACHING_LE))) {
 		err = STATUS_INVALID_OPLOCK_PROTOCOL;
-		if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 			lease_change_type = OPLOCK_WRITE_TO_NONE;
 		else
 			lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
 			le32_to_cpu(lease->state),
 			le32_to_cpu(req->LeaseState));
-	} else if ((lease->state == SMB2_LEASE_READ_CACHING) &&
-			(req->LeaseState != SMB2_LEASE_NONE)) {
+	} else if ((lease->state == SMB2_LEASE_READ_CACHING_LE) &&
+			(req->LeaseState != SMB2_LEASE_NONE_LE)) {
 		err = STATUS_INVALID_OPLOCK_PROTOCOL;
 		lease_change_type = OPLOCK_READ_TO_NONE;
 		cifsd_debug("handle bad lease state 0x%x -> 0x%x\n",
@@ -6692,13 +6696,13 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 	} else {
 		/* valid lease state changes */
 		err = STATUS_INVALID_DEVICE_STATE;
-		if (req->LeaseState == SMB2_LEASE_NONE) {
-			if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		if (req->LeaseState == SMB2_LEASE_NONE_LE) {
+			if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 				lease_change_type = OPLOCK_WRITE_TO_NONE;
 			else
 				lease_change_type = OPLOCK_READ_TO_NONE;
-		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING) {
-			if (lease->state & SMB2_LEASE_WRITE_CACHING)
+		} else if (req->LeaseState & SMB2_LEASE_READ_CACHING_LE) {
+			if (lease->state & SMB2_LEASE_WRITE_CACHING_LE)
 				lease_change_type = OPLOCK_WRITE_TO_READ;
 			else
 				lease_change_type = OPLOCK_READ_HANDLE_TO_READ;

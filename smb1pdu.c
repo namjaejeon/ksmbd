@@ -63,7 +63,7 @@ int get_smb_cmd_val(struct cifsd_work *work)
 {
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)REQUEST_BUF(work);
 
-	return rcv_hdr->Command;
+	return (int)rcv_hdr->Command;
 }
 
 /**
@@ -82,7 +82,7 @@ static inline int is_smbreq_unicode(struct smb_hdr *hdr)
  * @work:	smb work containing smb response header
  * @err:	error code to set in response
  */
-void set_smb_rsp_status(struct cifsd_work *work, unsigned int err)
+void set_smb_rsp_status(struct cifsd_work *work, __le32 err)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *) RESPONSE_BUF(work);
 
@@ -1211,8 +1211,8 @@ int smb_session_setup_andx(struct cifsd_work *work)
 			rc = -ENOENT;
 			goto out_err;
 		}
-		cifsd_debug("reuse session(%p) session ID : %llu, Uid : %u\n",
-			sess, sess->id, uid);
+		cifsd_debug("Reuse session ID: %llu, Uid: %u\n",
+			    sess->id, uid);
 	} else {
 		sess = cifsd_smb1_session_create();
 		if (!sess) {
@@ -1221,9 +1221,8 @@ int smb_session_setup_andx(struct cifsd_work *work)
 		}
 
 		cifsd_session_register(conn, sess);
-		rsp->resp.hdr.Uid = sess->id;
-		cifsd_debug("generate session(%p) ID : %llu, Uid : %u\n",
-				sess, sess->id, uid);
+		rsp->resp.hdr.Uid = cpu_to_le16(sess->id);
+		cifsd_debug("New session ID: %llu, Uid: %u\n", sess->id, uid);
 	}
 
 	if (cap & CAP_EXTENDED_SECURITY) {

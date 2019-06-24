@@ -655,7 +655,7 @@ static inline bool is_reconnectable(struct cifsd_file *fp)
 	if (fp->is_resilient || fp->is_persistent)
 		reconn = 1;
 	else if (fp->is_durable && opinfo->is_lease &&
-			opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING)
+			opinfo->o_lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
 		reconn = 1;
 
 	else if (fp->is_durable && opinfo->level == SMB2_OPLOCK_LEVEL_BATCH)

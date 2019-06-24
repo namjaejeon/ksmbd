@@ -22,6 +22,13 @@ static DEFINE_MUTEX(init_lock);
 static LIST_HEAD(tcp_conn_list);
 static DEFINE_RWLOCK(tcp_conn_list_lock);
 
+struct interface {
+	struct list_head	entry;
+	char			*name;
+};
+
+static LIST_HEAD(iface_list);
+
 #define CIFSD_TCP_RECV_TIMEOUT	(7 * HZ)
 #define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
 
@@ -621,10 +628,14 @@ int cifsd_tcp_init(void)
 	cifsd_tcp_nodelay(cifsd_socket);
 	cifsd_tcp_reuseaddr(cifsd_socket);
 
-	list_for_each(tmp, &server_conf.iface_list) {
+	list_for_each(tmp, &iface_list) {
 		iface = list_entry(tmp,  struct interface, entry);
-		ret = kernel_setsockopt(cifsd_socket, SOL_SOCKET,
-			SO_BINDTODEVICE, iface->name, strlen(iface->name));
+
+		ret = kernel_setsockopt(cifsd_socket,
+					SOL_SOCKET,
+					SO_BINDTODEVICE,
+					iface->name,
+					strlen(iface->name));
 		if (ret != -ENODEV && ret < 0) {
 			cifsd_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
 			goto out_error;
@@ -696,12 +707,24 @@ static void tcp_stop_kthread(void)
 		cifsd_kthread = NULL;
 }
 
+static void destroy_iface_list(void)
+{
+	struct interface *iface, *tmp;
+
+	list_for_each_entry_safe(iface, tmp, &iface_list, entry) {
+		list_del(&iface->entry);
+		kfree(iface->name);
+		kfree(iface);
+	}
+}
+
 void cifsd_tcp_destroy(void)
 {
 	mutex_lock(&init_lock);
 	tcp_destroy_socket();
 	tcp_stop_kthread();
 	tcp_stop_sessions();
+	destroy_iface_list();
 	mutex_unlock(&init_lock);
 }
 
@@ -712,9 +735,7 @@ void cifsd_tcp_enqueue_request(struct cifsd_work *work)
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		unsigned int command = conn->ops->get_cmd_val(work);
-
-		if (command != SMB2_CANCEL) {
+		if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 			requests_queue = &conn->requests;
 			work->type = SYNC;
 		}
@@ -759,4 +780,57 @@ void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops)
 {
 	default_tcp_conn_ops.process_fn = ops->process_fn;
 	default_tcp_conn_ops.terminate_fn = ops->terminate_fn;
+}
+
+static bool iface_exists(const char *ifname)
+{
+	struct net_device *netdev;
+	bool ret = false;
+
+	rcu_read_lock();
+	netdev = dev_get_by_name_rcu(&init_net, ifname);
+	if (netdev) {
+		if (!(netdev->flags & IFF_UP))
+			cifsd_err("Device %s is down\n", ifname);
+		else
+			ret = true;
+	}
+	rcu_read_unlock();
+	return ret;
+}
+
+int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
+{
+	int sz = 0;
+
+	if (!ifc_list_sz)
+		return 0;
+
+	while (ifc_list_sz > 0) {
+		struct interface *iface;
+
+		if (iface_exists(ifc_list)) {
+			iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
+			if (!iface)
+				return -ENOMEM;
+
+			iface->name = kstrdup(ifc_list, GFP_KERNEL);
+			if (!iface->name) {
+				kfree(iface);
+				return -ENOMEM;
+			}
+			list_add(&iface->entry, &iface_list);
+		} else {
+			cifsd_err("Unknown interface: %s\n", ifc_list);
+		}
+
+		sz = strlen(ifc_list);
+		if (!sz)
+			break;
+
+		ifc_list += sz + 1;
+		ifc_list_sz -= (sz + 1);
+	}
+
+	return 0;
 }

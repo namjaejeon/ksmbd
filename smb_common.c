@@ -287,7 +287,7 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 {
 	struct cifsd_tcp_conn *conn = work->conn;
 	void *buf = REQUEST_BUF(work);
-	int proto;
+	__le32 proto;
 
 	if (conn->need_neg == false)
 		return 0;

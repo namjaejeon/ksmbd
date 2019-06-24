@@ -611,12 +611,12 @@ struct create_disk_id_rsp {
 	__u8  Reserved[16];
 } __packed;
 
-#define SMB2_LEASE_NONE			cpu_to_le32(0x00)
-#define SMB2_LEASE_READ_CACHING		cpu_to_le32(0x01)
-#define SMB2_LEASE_HANDLE_CACHING	cpu_to_le32(0x02)
-#define SMB2_LEASE_WRITE_CACHING	cpu_to_le32(0x04)
+#define SMB2_LEASE_NONE_LE			cpu_to_le32(0x00)
+#define SMB2_LEASE_READ_CACHING_LE		cpu_to_le32(0x01)
+#define SMB2_LEASE_HANDLE_CACHING_LE		cpu_to_le32(0x02)
+#define SMB2_LEASE_WRITE_CACHING_LE		cpu_to_le32(0x04)
 
-#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS cpu_to_le32(0x02)
+#define SMB2_LEASE_FLAG_BREAK_IN_PROGRESS_LE	cpu_to_le32(0x02)
 
 struct lease_context {
 	__le64 LeaseKeyLow;
@@ -1299,8 +1299,8 @@ struct smb2_file_alt_name_info {
 } __packed;
 
 struct smb2_file_stream_info {
-	__u32  NextEntryOffset;
-	__u32  StreamNameLength;
+	__le32  NextEntryOffset;
+	__le32  StreamNameLength;
 	__le64 StreamSize;
 	__le64 StreamAllocationSize;
 	char   StreamName[0];
@@ -1406,7 +1406,7 @@ extern int is_smb2_neg_cmd(struct cifsd_work *work);
 extern int is_smb2_rsp(struct cifsd_work *work);
 
 extern int get_smb2_cmd_val(struct cifsd_work *work);
-extern void set_smb2_rsp_status(struct cifsd_work *work, unsigned int err);
+extern void set_smb2_rsp_status(struct cifsd_work *work, __le32 err);
 extern int init_smb2_rsp_hdr(struct cifsd_work *work);
 extern int smb2_allocate_rsp_buf(struct cifsd_work *work);
 extern bool is_chained_smb2_message(struct cifsd_work *work);
