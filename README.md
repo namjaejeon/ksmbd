@@ -116,6 +116,7 @@ build your kernel
 4. Kerberos
 5. Persistent handles
 6. Directory lease
+7. Win-ACL
 
 
 ## Supported Linux Kernel Versions

@@ -66,59 +66,6 @@ int cifsd_set_work_group(char *v)
 	return ___server_conf_set(SERVER_CONF_WORK_GROUP, v);
 }
 
-static bool iface_exists(const char *ifname)
-{
-	struct net_device *netdev;
-	bool ret = false;
-
-	rcu_read_lock();
-	netdev = dev_get_by_name_rcu(&init_net, ifname);
-	if (netdev) {
-		if (!(netdev->flags & IFF_UP))
-			cifsd_err("Device %s is down\n", ifname);
-		else
-			ret = true;
-	}
-	rcu_read_unlock();
-	return ret;
-}
-
-int cifsd_set_interfaces(char *ifc_list, int ifc_list_sz)
-{
-	int sz = 0;
-
-	if (!ifc_list_sz)
-		return 0;
-
-	while (ifc_list_sz > 0) {
-		struct interface *iface;
-
-		if (iface_exists(ifc_list)) {
-			iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
-			if (!iface)
-				return -ENOMEM;
-
-			iface->name = kstrdup(ifc_list, GFP_KERNEL);
-			if (!iface->name) {
-				kfree(iface);
-				return -ENOMEM;
-			}
-			list_add(&iface->entry, &server_conf.iface_list);
-		} else {
-			cifsd_err("Unknown interface: %s\n", ifc_list);
-		}
-
-		sz = strlen(ifc_list);
-		if (!sz)
-			break;
-
-		ifc_list += sz + 1;
-		ifc_list_sz -= (sz + 1);
-	}
-
-	return 0;
-}
-
 char *cifsd_netbios_name(void)
 {
 	return server_conf.conf[SERVER_CONF_NETBIOS_NAME];
@@ -368,25 +315,16 @@ static void cifsd_server_tcp_callbacks_init(void)
 
 static void server_conf_free(void)
 {
-	struct interface *iface, *tmp;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(server_conf.conf); i++) {
 		kfree(server_conf.conf[i]);
 		server_conf.conf[i] = NULL;
 	}
-
-	list_for_each_entry_safe(iface, tmp, &server_conf.iface_list, entry) {
-		list_del(&iface->entry);
-		kfree(iface->name);
-		kfree(iface);
-	}
 }
 
 static int server_conf_init(void)
 {
-	INIT_LIST_HEAD(&server_conf.iface_list);
-
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 	server_conf.enforced_signing = 0;
 	server_conf.min_protocol = cifsd_min_protocol();
@@ -598,5 +536,19 @@ MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
+MODULE_SOFTDEP("pre: arc4");
+MODULE_SOFTDEP("pre: des");
+MODULE_SOFTDEP("pre: ecb");
+MODULE_SOFTDEP("pre: hmac");
+MODULE_SOFTDEP("pre: md4");
+MODULE_SOFTDEP("pre: md5");
+MODULE_SOFTDEP("pre: nls");
+MODULE_SOFTDEP("pre: aes");
+MODULE_SOFTDEP("pre: cmac");
+MODULE_SOFTDEP("pre: sha256");
+MODULE_SOFTDEP("pre: sha512");
+MODULE_SOFTDEP("pre: aead2");
+MODULE_SOFTDEP("pre: ccm");
+MODULE_SOFTDEP("pre: gcm");
 module_init(cifsd_server_init)
 module_exit(cifsd_server_exit)
