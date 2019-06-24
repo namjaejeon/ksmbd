@@ -95,7 +95,11 @@ struct cifsd_dir_info {
 
 struct cifsd_readdir_data {
 	struct		dir_context ctx;
-	char		*dirent;
+	union {
+		void		*private;
+		char		*dirent;
+	};
+
 	unsigned int	used;
 	unsigned int	full;
 	unsigned int	dirent_count;

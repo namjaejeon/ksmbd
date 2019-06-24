@@ -467,7 +467,6 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 	de->d_type = d_type;
 	memcpy(de->name, name, namlen);
 	buf->used += reclen;
-	buf->dirent_count++;
 
 	return 0;
 }
