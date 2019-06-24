@@ -1479,6 +1479,23 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 }
 #endif
 
+static int __dir_empty(struct dir_context *ctx,
+				   const char *name,
+				   int namlen,
+				   loff_t offset,
+				   u64 ino,
+				   unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf;
+
+	buf = container_of(ctx, struct cifsd_readdir_data, ctx);
+	buf->dirent_count++;
+
+	if (buf->dirent_count > 2)
+		return -ENOTEMPTY;
+	return 0;
+}
+
 /**
  * cifsd_vfs_empty_dir() - check for empty directory
  * @fp:	cifsd file pointer
@@ -1488,14 +1505,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
-		.dirent = (void *)__get_free_page(GFP_KERNEL),
+		.ctx.actor = __dir_empty,
 		.dirent_count = 0
 	};
 	int err;
-
-	if (!r_data.dirent)
-		return -ENOMEM;
 
 	r_data.used = 0;
 	r_data.full = 0;
@@ -1506,7 +1519,6 @@ int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	else
 		err = 0;
 
-	free_page((unsigned long)(r_data.dirent));
 	return err;
 }
 
@@ -1534,20 +1546,19 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		.dirent = (void *)__get_free_page(GFP_KERNEL)
 	};
 
-	if (!readdir_data.dirent) {
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!readdir_data.dirent)
+		return -ENOMEM;
 
 	ret = cifsd_vfs_kern_path(dirname, 0, &dir_path, true);
 	if (ret)
-		goto out;
+		goto error;
 
 	dfilp = dentry_open(&dir_path, flags, current_cred());
 	if (IS_ERR(dfilp)) {
+		path_put(&dir_path);
 		cifsd_err("cannot open directory %s\n", dirname);
 		ret = -EINVAL;
-		goto out2;
+		goto error;
 	}
 
 	while (!ret && !match_found) {
@@ -1577,11 +1588,11 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		}
 	}
 
-	free_page((unsigned long)(readdir_data.dirent));
 	fput(dfilp);
-out2:
 	path_put(&dir_path);
-out:
+
+error:
+	free_page((unsigned long)(readdir_data.dirent));
 	dirname[dirnamelen] = '/';
 	return ret;
 }
