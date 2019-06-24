@@ -1479,6 +1479,20 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 }
 #endif
 
+static int cifsd_count_dir_entries(struct dir_context *ctx,
+				   const char *name,
+				   int namlen,
+				   loff_t offset,
+				   u64 ino,
+				   unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf;
+
+	buf = container_of(ctx, struct cifsd_readdir_data, ctx);
+	buf->dirent_count++;
+	return 0;
+}
+
 /**
  * cifsd_vfs_empty_dir() - check for empty directory
  * @fp:	cifsd file pointer
@@ -1488,14 +1502,10 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
-		.dirent = (void *)__get_free_page(GFP_KERNEL),
+		.ctx.actor = cifsd_count_dir_entries,
 		.dirent_count = 0
 	};
 	int err;
-
-	if (!r_data.dirent)
-		return -ENOMEM;
 
 	r_data.used = 0;
 	r_data.full = 0;
@@ -1506,7 +1516,6 @@ int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	else
 		err = 0;
 
-	free_page((unsigned long)(r_data.dirent));
 	return err;
 }
 
