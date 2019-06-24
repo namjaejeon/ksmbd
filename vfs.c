@@ -1479,7 +1479,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 }
 #endif
 
-static int cifsd_count_dir_entries(struct dir_context *ctx,
+static int __dir_empty(struct dir_context *ctx,
 				   const char *name,
 				   int namlen,
 				   loff_t offset,
@@ -1490,6 +1490,9 @@ static int cifsd_count_dir_entries(struct dir_context *ctx,
 
 	buf = container_of(ctx, struct cifsd_readdir_data, ctx);
 	buf->dirent_count++;
+
+	if (buf->dirent_count > 2)
+		return -ENOTEMPTY;
 	return 0;
 }
 
@@ -1502,7 +1505,7 @@ static int cifsd_count_dir_entries(struct dir_context *ctx,
 int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_count_dir_entries,
+		.ctx.actor = __dir_empty,
 		.dirent_count = 0
 	};
 	int err;
