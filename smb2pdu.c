@@ -281,6 +281,82 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 }
 
 /**
+ * smb2_set_rsp_credits() - set number of credits in response buffer
+ * @work:	smb work containing smb response buffer
+ */
+void smb2_set_rsp_credits(struct cifsd_work *work)
+{
+	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct cifsd_tcp_conn *conn = work->conn;
+	unsigned int status = le32_to_cpu(hdr->Status);
+	unsigned short credits_requested = le16_to_cpu(req_hdr->CreditRequest);
+	unsigned short cmd = le16_to_cpu(hdr->Command);
+	unsigned short credit_charge = 1, credits_granted = 0;
+	unsigned short aux_max, aux_credits, min_credits;
+	int total_credits;
+
+	if (cmd == SMB2_CANCEL)
+		goto out;
+
+	if (conn->total_credits) {
+		if (req_hdr->CreditCharge)
+			conn->total_credits -=
+				le16_to_cpu(req_hdr->CreditCharge);
+		else
+			conn->total_credits -= 1;
+	}
+
+	total_credits = conn->total_credits;
+	if (total_credits >= conn->max_credits) {
+		cifsd_debug("Total credits overflow: %d\n", total_credits);
+		total_credits = conn->max_credits;
+	}
+
+	/* get default minimum credits by shifting maximum credits by 4 */
+	min_credits = conn->max_credits >> 4;
+
+	if (credits_requested > 0) {
+		aux_max = 0;
+		aux_credits = credits_requested - 1;
+		switch (cmd) {
+		case SMB2_NEGOTIATE:
+			break;
+		case SMB2_SESSION_SETUP:
+			aux_max = (status) ? 0 : 32;
+			break;
+		default:
+			aux_max = 32;
+			break;
+		}
+		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
+		credits_granted = aux_credits + credit_charge;
+
+		/* if credits granted per client is getting bigger than default
+		 * minimum credits then we should wrap it up within the limits.
+		 */
+		if ((total_credits + credits_granted) > min_credits)
+			credits_granted = min_credits -	total_credits;
+
+	} else if (total_credits == 0) {
+		credits_granted = 1;
+	}
+
+	conn->total_credits += credits_granted;
+out:
+	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
+			credits_requested, credits_granted,
+			conn->total_credits);
+	/*
+	 * TODO: Need to adjuct CreditRequest value according to
+	 * current cpu load
+	 */
+
+	/* set number of credits granted in SMB2 hdr */
+	hdr->CreditRequest = hdr->CreditCharge = cpu_to_le16(credits_granted);
+}
+
+/**
  * init_chained_smb2_rsp() - initialize smb2 chained response
  * @work:	smb work containing smb response buffer
  */
@@ -346,7 +422,6 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -360,6 +435,9 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 	rsp_hdr->Id.SyncId.TreeId = rcv_hdr->Id.SyncId.TreeId;
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
+	spin_lock(&work->conn->credits_lock);
+	smb2_set_rsp_credits(work);
+	spin_unlock(&work->conn->credits_lock);
 }
 
 /**
@@ -418,7 +496,6 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -435,14 +512,12 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->SessionId = rcv_hdr->SessionId;
 	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
 
+	/*
+	 * Call smb2_set_rsp_credits() function to set number of credits
+	 * granted in hdr of smb2 response.
+	 */
 	spin_lock(&conn->credits_lock);
-	if (conn->total_credits) {
-		if (rcv_hdr->CreditCharge)
-			conn->total_credits -=
-				le16_to_cpu(rcv_hdr->CreditCharge);
-		else
-			conn->total_credits -= 1;
-	}
+	smb2_set_rsp_credits(work);
 	spin_unlock(&conn->credits_lock);
 
 	work->type = SYNC;
@@ -494,70 +569,6 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 	}
 
 	return 0;
-}
-
-/**
- * smb2_set_rsp_credits() - set number of credits in response buffer
- * @work:	smb work containing smb response buffer
- */
-void smb2_set_rsp_credits(struct cifsd_work *work)
-{
-	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
-	struct cifsd_tcp_conn *conn = work->conn;
-	unsigned int status = le32_to_cpu(hdr->Status);
-	unsigned int flags = hdr->Flags;
-	unsigned short credits_requested = le16_to_cpu(hdr->CreditRequest);
-	unsigned short credit_charge = 1, credits_granted = 0;
-	unsigned short aux_max, aux_credits, min_credits;
-	int total_credits;
-
-	spin_lock(&conn->credits_lock);
-	total_credits = conn->total_credits;
-	if (total_credits >= conn->max_credits) {
-		cifsd_debug("Total credits overflow: %d\n", total_credits);
-		total_credits = conn->max_credits;
-	}
-
-	/* get default minimum credits by shifting maximum credits by 4 */
-	min_credits = conn->max_credits >> 4;
-
-	if (flags & SMB2_FLAGS_ASYNC_COMMAND) {
-		credits_granted = 0;
-	} else if (credits_requested > 0) {
-		aux_max = 0;
-		aux_credits = credits_requested - 1;
-
-		switch (hdr->Command) {
-		case SMB2_NEGOTIATE:
-			break;
-		case SMB2_SESSION_SETUP:
-			aux_max = (status) ? 0 : 32;
-			break;
-		default:
-			aux_max = 32;
-			break;
-		}
-		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
-		credits_granted = aux_credits + credit_charge;
-
-		/* if credits granted per client is getting bigger than default
-		 * minimum credits then we should wrap it up within the limits.
-		 */
-		if ((total_credits + credits_granted) > min_credits)
-			credits_granted = min_credits -	total_credits;
-
-	} else if (total_credits == 0) {
-		credits_granted = 1;
-	}
-
-	conn->total_credits += credits_granted;
-	spin_unlock(&conn->credits_lock);
-
-	cifsd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
-			credits_requested, credits_granted,
-			conn->total_credits);
-	/* set number of credits granted in SMB2 hdr */
-	hdr->CreditRequest = cpu_to_le16(credits_granted);
 }
 
 /**

@@ -213,13 +213,6 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 	} while (is_chained_smb2_message(work));
 
 send:
-	/*
-	 * Call set_rsp_credits() function to set number of credits granted in
-	 * hdr of smb2 response.
-	 */
-	if (is_smb2_rsp(work))
-		conn->ops->set_rsp_credits(work);
-
 	smb3_preauth_hash_rsp(work);
 	if (work->sess && work->sess->enc && work->encrypted &&
 		conn->ops->encrypt_resp) {
