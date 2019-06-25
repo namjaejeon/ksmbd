@@ -34,7 +34,7 @@
 		fp->cdoption != FILE_OVERWRITE_LE && \
 		fp->cdoption != FILE_SUPERSEDE_LE))
 
-struct cifsd_tcp_conn;
+struct cifsd_conn;
 struct cifsd_session;
 
 struct cifsd_lock {
@@ -78,7 +78,7 @@ struct cifsd_file {
 	struct cifsd_inode		*f_ci;
 	struct cifsd_inode		*f_parent_ci;
 	struct oplock_info __rcu	*f_opinfo;
-	struct cifsd_tcp_conn		*conn;
+	struct cifsd_conn		*conn;
 	struct cifsd_tree_connect	*tcon;
 
 	__le32				daccess;

@@ -15,17 +15,17 @@
 #define CIFS_NTHASH_SIZE	(16)
 
 struct cifsd_session;
-struct cifsd_tcp_conn;
+struct cifsd_conn;
 struct kvec;
 
-int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
+int cifsd_crypt_message(struct cifsd_conn *conn,
 			struct kvec *iov,
 			unsigned int nvec,
 			int enc);
 
 void cifsd_copy_gss_neg_header(void *buf);
 
-void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn);
+void cifsd_free_conn_secmech(struct cifsd_conn *conn);
 
 int cifsd_auth_ntlm(struct cifsd_session *sess,
 		    char *pw_buf);
@@ -50,12 +50,12 @@ int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 			struct kvec *iov,
 			int n_vec,
 			char *sig);
-int cifsd_sign_smb2_pdu(struct cifsd_tcp_conn *conn,
+int cifsd_sign_smb2_pdu(struct cifsd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
 			char *sig);
-int cifsd_sign_smb3_pdu(struct cifsd_tcp_conn *conn,
+int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
@@ -70,7 +70,7 @@ int cifsd_gen_smb311_signingkey(struct cifsd_session *sess,
 int cifsd_gen_smb30_encryptionkey(struct cifsd_session *sess);
 int cifsd_gen_smb311_encryptionkey(struct cifsd_session *sess);
 
-int cifsd_gen_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
+int cifsd_gen_preauth_integrity_hash(struct cifsd_conn *conn,
 				     char *buf,
 				     __u8 *pi_hash);
 #endif

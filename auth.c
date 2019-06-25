@@ -19,7 +19,7 @@
 #include "encrypt.h"
 #include "server.h"
 #include "smb_common.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
@@ -46,7 +46,7 @@ void cifsd_copy_gss_neg_header(void *buf)
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
 }
 
-static inline void free_hmacmd5(struct cifsd_tcp_conn *conn)
+static inline void free_hmacmd5(struct cifsd_conn *conn)
 {
 	crypto_free_shash(conn->secmech.hmacmd5);
 	conn->secmech.hmacmd5 = NULL;
@@ -54,7 +54,7 @@ static inline void free_hmacmd5(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdeschmacmd5 = NULL;
 }
 
-static inline void free_hmacsha256(struct cifsd_tcp_conn *conn)
+static inline void free_hmacsha256(struct cifsd_conn *conn)
 {
 	crypto_free_shash(conn->secmech.hmacsha256);
 	conn->secmech.hmacsha256 = NULL;
@@ -62,7 +62,7 @@ static inline void free_hmacsha256(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdeschmacsha256 = NULL;
 }
 
-static inline void free_cmacaes(struct cifsd_tcp_conn *conn)
+static inline void free_cmacaes(struct cifsd_conn *conn)
 {
 	crypto_free_shash(conn->secmech.cmacaes);
 	conn->secmech.cmacaes = NULL;
@@ -70,7 +70,7 @@ static inline void free_cmacaes(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdesccmacaes = NULL;
 }
 
-static inline void free_sha512(struct cifsd_tcp_conn *conn)
+static inline void free_sha512(struct cifsd_conn *conn)
 {
 	crypto_free_shash(conn->secmech.sha512);
 	conn->secmech.sha512 = NULL;
@@ -78,7 +78,7 @@ static inline void free_sha512(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdescsha512 = NULL;
 }
 
-static inline void free_sdescmd5(struct cifsd_tcp_conn *conn)
+static inline void free_sdescmd5(struct cifsd_conn *conn)
 {
 	kfree(conn->secmech.md5);
 	conn->secmech.md5 = NULL;
@@ -86,7 +86,7 @@ static inline void free_sdescmd5(struct cifsd_tcp_conn *conn)
 	conn->secmech.sdescmd5 = NULL;
 }
 
-static inline void free_ccmaes(struct cifsd_tcp_conn *conn)
+static inline void free_ccmaes(struct cifsd_conn *conn)
 {
 	crypto_free_aead(conn->secmech.ccmaesencrypt);
 	conn->secmech.ccmaesencrypt = NULL;
@@ -94,7 +94,7 @@ static inline void free_ccmaes(struct cifsd_tcp_conn *conn)
 	conn->secmech.ccmaesencrypt = NULL;
 }
 
-void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn)
+void cifsd_free_conn_secmech(struct cifsd_conn *conn)
 {
 	free_hmacmd5(conn);
 	free_hmacsha256(conn);
@@ -104,7 +104,7 @@ void cifsd_free_conn_secmech(struct cifsd_tcp_conn *conn)
 	free_ccmaes(conn);
 }
 
-static int crypto_hmacmd5_alloc(struct cifsd_tcp_conn *conn)
+static int crypto_hmacmd5_alloc(struct cifsd_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -601,7 +601,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 }
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
-static int crypto_md5_alloc(struct cifsd_tcp_conn *conn)
+static int crypto_md5_alloc(struct cifsd_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -691,7 +691,7 @@ int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 }
 #endif
 
-static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
+static int crypto_hmacsha256_alloc(struct cifsd_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -719,7 +719,7 @@ static int crypto_hmacsha256_alloc(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
+static int crypto_cmac_alloc(struct cifsd_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -747,7 +747,7 @@ static int crypto_cmac_alloc(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
+static int crypto_sha512_alloc(struct cifsd_conn *conn)
 {
 	int rc;
 	unsigned int size;
@@ -785,7 +785,7 @@ static int crypto_sha512_alloc(struct cifsd_tcp_conn *conn)
  * @sig:	signature value generated for client request packet
  *
  */
-int cifsd_sign_smb2_pdu(struct cifsd_tcp_conn *conn,
+int cifsd_sign_smb2_pdu(struct cifsd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
@@ -841,7 +841,7 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int cifsd_sign_smb3_pdu(struct cifsd_tcp_conn *conn,
+int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
@@ -1113,7 +1113,7 @@ int cifsd_gen_smb311_encryptionkey(struct cifsd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int cifsd_gen_preauth_integrity_hash(struct cifsd_tcp_conn *conn,
+int cifsd_gen_preauth_integrity_hash(struct cifsd_conn *conn,
 				     char *buf,
 				     __u8 *pi_hash)
 {
@@ -1165,7 +1165,7 @@ out:
 	return rc;
 }
 
-static int cifsd_alloc_aead(struct cifsd_tcp_conn *conn)
+static int cifsd_alloc_aead(struct cifsd_conn *conn)
 {
 	struct crypto_aead *tfm;
 
@@ -1197,7 +1197,7 @@ static int cifsd_alloc_aead(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static int cifsd_get_encryption_key(struct cifsd_tcp_conn *conn,
+static int cifsd_get_encryption_key(struct cifsd_conn *conn,
 				    __u64 ses_id,
 				    int enc,
 				    u8 *key)
@@ -1256,7 +1256,7 @@ static struct scatterlist *cifsd_init_sg(struct kvec *iov,
 }
 #endif
 
-int cifsd_crypt_message(struct cifsd_tcp_conn *conn,
+int cifsd_crypt_message(struct cifsd_conn *conn,
 			struct kvec *iov,
 			unsigned int nvec,
 			int enc)
