@@ -422,6 +422,7 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -496,6 +497,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
