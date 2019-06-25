@@ -284,7 +284,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
  * smb2_set_rsp_credits() - set number of credits in response buffer
  * @work:	smb work containing smb response buffer
  */
-void smb2_set_rsp_credits(struct cifsd_work *work)
+static void smb2_set_rsp_credits(struct cifsd_work *work)
 {
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
