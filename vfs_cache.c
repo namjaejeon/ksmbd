@@ -13,7 +13,7 @@
 
 #include "oplock.h"
 #include "vfs.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 

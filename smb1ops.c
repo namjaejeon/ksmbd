@@ -8,7 +8,7 @@
 #include "glob.h"
 #include "smb1pdu.h"
 
-#include "transport_tcp.h"
+#include "connection.h"
 #include "smb_common.h"
 
 static struct smb_version_values smb1_server_values = {
@@ -76,7 +76,7 @@ static struct smb_version_cmds smb1_server_cmds[256] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-int init_smb1_server(struct cifsd_tcp_conn *conn)
+int init_smb1_server(struct cifsd_conn *conn)
 {
 	if (!conn)
 		return -EINVAL;

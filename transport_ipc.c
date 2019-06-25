@@ -24,6 +24,7 @@
 #include "mgmt/user_session.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/cifsd_ida.h"
+#include "connection.h"
 #include "transport_tcp.h"
 
 /* @FIXME fix this code */

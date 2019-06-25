@@ -25,7 +25,7 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "buffer_pool.h"
 #include "vfs.h"
 #include "vfs_cache.h"
@@ -1296,7 +1296,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len)
 {
-	struct cifsd_tcp_conn *conn = work->sess->conn;
+	struct cifsd_conn *conn = work->sess->conn;
 
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
@@ -1309,7 +1309,7 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 loff_t len,
 			 bool is_sparse)
 {
-	struct cifsd_tcp_conn *conn = work->sess->conn;
+	struct cifsd_conn *conn = work->sess->conn;
 	int mode;
 
 	if (oplocks_enable)
