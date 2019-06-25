@@ -305,41 +305,69 @@ calc_size_exit:
 	return len;
 }
 
-int smb2_validate_credit_charge(struct smb2_hdr *hdr)
+static inline int smb2_query_info_req_len(struct smb2_query_info_req *h)
+{
+	return le32_to_cpu(h->InputBufferLength) +
+		le32_to_cpu(h->OutputBufferLength);
+}
+
+static inline int smb2_set_info_req_len(struct smb2_set_info_req *h)
+{
+	return le32_to_cpu(h->BufferLength);
+}
+
+static inline int smb2_read_req_len(struct smb2_read_req *h)
+{
+	return le32_to_cpu(h->Length);
+}
+
+static inline int smb2_write_req_len(struct smb2_write_req *h)
+{
+	return le32_to_cpu(h->Length);
+}
+
+static inline int smb2_query_dir_req_len(struct smb2_query_directory_req *h)
+{
+	return le32_to_cpu(h->OutputBufferLength);
+}
+
+static inline int smb2_ioctl_req_len(struct smb2_ioctl_req *h)
+{
+	return le32_to_cpu(h->InputCount) +
+		le32_to_cpu(h->OutputCount);
+}
+
+static inline int smb2_ioctl_resp_len(struct smb2_ioctl_req *h)
+{
+	return le32_to_cpu(h->MaxInputResponse) +
+		le32_to_cpu(h->MaxOutputResponse);
+}
+
+static int smb2_validate_credit_charge(struct smb2_hdr *hdr)
 {
 	int req_len = 0, expect_resp_len = 0, calc_credit_num, max_len;
 	int credit_charge = le16_to_cpu(hdr->CreditCharge);
+	void *__hdr = hdr;
 
 	switch (hdr->Command) {
 	case SMB2_QUERY_INFO:
-		req_len = le32_to_cpu(
-		     ((struct smb2_query_info_req *)hdr)->InputBufferLength);
-		req_len += le32_to_cpu(
-		     ((struct smb2_query_info_req *)hdr)->OutputBufferLength);
+		req_len = smb2_query_info_req_len(__hdr);
 		break;
 	case SMB2_SET_INFO:
-		req_len = le32_to_cpu(
-		     ((struct smb2_set_info_req *)hdr)->BufferLength);
+		req_len = smb2_set_info_req_len(__hdr);
 		break;
 	case SMB2_READ:
-		req_len = le16_to_cpu(((struct smb2_read_req *)hdr)->Length);
+		req_len = smb2_read_req_len(__hdr);
 		break;
 	case SMB2_WRITE:
-		req_len = le32_to_cpu(((struct smb2_write_req *)hdr)->Length);
+		req_len = smb2_write_req_len(__hdr);
 		break;
 	case SMB2_QUERY_DIRECTORY:
-		req_len = le16_to_cpu(((struct smb2_query_directory_req *)
-			hdr)->OutputBufferLength);
+		req_len = smb2_query_dir_req_len(__hdr);
 		break;
 	case SMB2_IOCTL:
-		req_len = le32_to_cpu(
-			((struct smb2_ioctl_req *)hdr)->InputCount);
-		req_len += le32_to_cpu(
-			((struct smb2_ioctl_req *)hdr)->OutputCount);
-		expect_resp_len = le32_to_cpu(
-			((struct smb2_ioctl_req *)hdr)->MaxInputResponse);
-		expect_resp_len += le32_to_cpu(
-			((struct smb2_ioctl_req *)hdr)->MaxOutputResponse);
+		req_len = smb2_ioctl_req_len(__hdr);
+		expect_resp_len = smb2_ioctl_resp_len(__hdr);
 		break;
 	default:
 		return 0;
