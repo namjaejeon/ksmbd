@@ -328,7 +328,7 @@ static inline int smb2_write_req_len(struct smb2_write_req *h)
 
 static inline int smb2_query_dir_req_len(struct smb2_query_directory_req *h)
 {
-	return le16_to_cpu(h->OutputBufferLength);
+	return le32_to_cpu(h->OutputBufferLength);
 }
 
 static inline int smb2_ioctl_req_len(struct smb2_ioctl_req *h)
