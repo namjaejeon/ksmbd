@@ -318,7 +318,7 @@ static inline int smb2_set_info_req_len(struct smb2_set_info_req *h)
 
 static inline int smb2_read_req_len(struct smb2_read_req *h)
 {
-	return le16_to_cpu(h->Length);
+	return le32_to_cpu(h->Length);
 }
 
 static inline int smb2_write_req_len(struct smb2_write_req *h)
