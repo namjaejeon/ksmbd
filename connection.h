@@ -57,7 +57,7 @@ struct cifsd_stats {
 
 struct cifsd_transport;
 
-struct cifsd_tcp_conn {
+struct cifsd_conn {
 	struct smb_version_values	*vals;
 	struct smb_version_ops		*ops;
 	struct smb_version_cmds		*cmds;
@@ -117,7 +117,7 @@ struct cifsd_tcp_conn {
 
 	char				*mechToken;
 
-	struct cifsd_tcp_conn_ops	*conn_ops;
+	struct cifsd_conn_ops	*conn_ops;
 
 	/* Preauth Session Table */
 	struct list_head		preauth_sess_table;
@@ -130,9 +130,9 @@ struct cifsd_tcp_conn {
 	__le16			CipherId;
 };
 
-struct cifsd_tcp_conn_ops {
-	int	(*process_fn)(struct cifsd_tcp_conn *conn);
-	int	(*terminate_fn)(struct cifsd_tcp_conn *conn);
+struct cifsd_conn_ops {
+	int	(*process_fn)(struct cifsd_conn *conn);
+	int	(*terminate_fn)(struct cifsd_conn *conn);
 };
 
 struct cifsd_transport_ops {
@@ -144,7 +144,7 @@ struct cifsd_transport_ops {
 };
 
 struct cifsd_transport {
-	struct cifsd_tcp_conn		*conn;
+	struct cifsd_conn		*conn;
 	struct cifsd_transport_ops	*ops;
 	struct task_struct		*handler;
 };
@@ -153,19 +153,19 @@ struct cifsd_transport {
 #define CIFSD_TCP_SEND_TIMEOUT	(5 * HZ)
 #define CIFSD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
-bool cifsd_tcp_conn_alive(struct cifsd_tcp_conn *conn);
-void cifsd_tcp_conn_wait_idle(struct cifsd_tcp_conn *conn);
+bool cifsd_conn_alive(struct cifsd_conn *conn);
+void cifsd_conn_wait_idle(struct cifsd_conn *conn);
 
-struct cifsd_tcp_conn *cifsd_tcp_conn_alloc(void);
-void cifsd_tcp_conn_free(struct cifsd_tcp_conn *conn);
-int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_tcp_conn *, void *),
+struct cifsd_conn *cifsd_conn_alloc(void);
+void cifsd_conn_free(struct cifsd_conn *conn);
+int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	void *arg);
 struct cifsd_work;
 int cifsd_tcp_write(struct cifsd_work *work);
 
-void cifsd_tcp_enqueue_request(struct cifsd_work *work);
-int cifsd_tcp_try_dequeue_request(struct cifsd_work *work);
-void cifsd_tcp_init_server_callbacks(struct cifsd_tcp_conn_ops *ops);
+void cifsd_conn_enqueue_request(struct cifsd_work *work);
+int cifsd_conn_try_dequeue_request(struct cifsd_work *work);
+void cifsd_conn_init_server_callbacks(struct cifsd_conn_ops *ops);
 
 int cifsd_conn_handler_loop(void *p);
 
@@ -178,42 +178,42 @@ void cifsd_conn_transport_destroy(void);
  * This is a hack. We will move status to a proper place once we land
  * a multi-sessions support.
  */
-static inline bool cifsd_tcp_good(struct cifsd_work *work)
+static inline bool cifsd_conn_good(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_GOOD;
 }
 
-static inline bool cifsd_tcp_need_negotiate(struct cifsd_work *work)
+static inline bool cifsd_conn_need_negotiate(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline bool cifsd_tcp_need_reconnect(struct cifsd_work *work)
+static inline bool cifsd_conn_need_reconnect(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline bool cifsd_tcp_exiting(struct cifsd_work *work)
+static inline bool cifsd_conn_exiting(struct cifsd_work *work)
 {
 	return work->conn->tcp_status == CIFSD_SESS_EXITING;
 }
 
-static inline void cifsd_tcp_set_good(struct cifsd_work *work)
+static inline void cifsd_conn_set_good(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_GOOD;
 }
 
-static inline void cifsd_tcp_set_need_negotiate(struct cifsd_work *work)
+static inline void cifsd_conn_set_need_negotiate(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_NEGOTIATE;
 }
 
-static inline void cifsd_tcp_set_need_reconnect(struct cifsd_work *work)
+static inline void cifsd_conn_set_need_reconnect(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_NEED_RECONNECT;
 }
 
-static inline void cifsd_tcp_set_exiting(struct cifsd_work *work)
+static inline void cifsd_conn_set_exiting(struct cifsd_work *work)
 {
 	work->conn->tcp_status = CIFSD_SESS_EXITING;
 }

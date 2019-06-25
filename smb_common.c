@@ -166,7 +166,7 @@ int cifsd_verify_smb_message(struct cifsd_work *work)
  *
  * Return:      true on success, otherwise false
  */
-bool cifsd_smb_request(struct cifsd_tcp_conn *conn)
+bool cifsd_smb_request(struct cifsd_conn *conn)
 {
 	int type = *(char *)conn->request_buf;
 
@@ -277,7 +277,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 	return BAD_PROT_ID;
 }
 
-void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn)
+void cifsd_init_smb2_server_common(struct cifsd_conn *conn)
 {
 	if (init_smb2_0_server(conn) == -ENOTSUPP)
 		init_smb2_1_server(conn);
@@ -285,7 +285,7 @@ void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn)
 
 int cifsd_init_smb_server(struct cifsd_work *work)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	void *buf = REQUEST_BUF(work);
 	__le32 proto;
 
@@ -310,12 +310,12 @@ bool cifsd_pdu_size_has_room(unsigned int pdu)
 	return (pdu >= CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4);
 }
 
-int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 				      int info_level,
 				      struct cifsd_file *dir,
 				      struct cifsd_dir_info *d_info,
 				      char *search_pattern,
-				      int (*fn)(struct cifsd_tcp_conn *,
+				      int (*fn)(struct cifsd_conn *,
 						int,
 						struct cifsd_dir_info *,
 						struct cifsd_kstat *))
@@ -363,7 +363,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
  * TODO: Though this function comforms the restriction of 8.3 Filename spec,
  * but the result is different with Windows 7's one. need to check.
  */
-int cifsd_extract_shortname(struct cifsd_tcp_conn *conn,
+int cifsd_extract_shortname(struct cifsd_conn *conn,
 			    char *longname,
 			    char *shortname)
 {
@@ -471,7 +471,7 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 	return 0;
 }
 
-static int __smb2_negotiate(struct cifsd_tcp_conn *conn)
+static int __smb2_negotiate(struct cifsd_conn *conn)
 {
 	return (conn->dialect >= SMB20_PROT_ID &&
 			conn->dialect <= SMB311_PROT_ID);
@@ -490,7 +490,7 @@ int smb_handle_negotiate(struct cifsd_work *work)
 
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
 {
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 	int ret;
 
 	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));

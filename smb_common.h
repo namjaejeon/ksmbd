@@ -45,7 +45,7 @@
 extern struct list_head global_lock_list;
 
 struct cifsd_work;
-struct cifsd_tcp_conn;
+struct cifsd_conn;
 struct cifsd_dir_info;
 struct cifsd_file;
 struct dir_context;
@@ -108,7 +108,7 @@ int cifsd_max_protocol(void);
 int cifsd_lookup_protocol_idx(char *str);
 
 int cifsd_verify_smb_message(struct cifsd_work *work);
-bool cifsd_smb_request(struct cifsd_tcp_conn *conn);
+bool cifsd_smb_request(struct cifsd_conn *conn);
 
 int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count);
 
@@ -118,17 +118,17 @@ int cifsd_init_smb_server(struct cifsd_work *work);
 bool cifsd_pdu_size_has_room(unsigned int pdu);
 
 struct cifsd_kstat;
-int cifsd_populate_dot_dotdot_entries(struct cifsd_tcp_conn *conn,
+int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 				      int info_level,
 				      struct cifsd_file *dir,
 				      struct cifsd_dir_info *d_info,
 				      char *search_pattern,
-				      int (*fn)(struct cifsd_tcp_conn *,
+				      int (*fn)(struct cifsd_conn *,
 						int,
 						struct cifsd_dir_info *,
 						struct cifsd_kstat *));
 
-int cifsd_extract_shortname(struct cifsd_tcp_conn *conn,
+int cifsd_extract_shortname(struct cifsd_conn *conn,
 			    char *longname,
 			    char *shortname);
 
@@ -139,7 +139,7 @@ int cifsd_fill_dirent(struct dir_context *ctx,
 		      u64 ino,
 		      unsigned int d_type);
 
-void cifsd_init_smb2_server_common(struct cifsd_tcp_conn *conn);
+void cifsd_init_smb2_server_common(struct cifsd_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
 
 int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);

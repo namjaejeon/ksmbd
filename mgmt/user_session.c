@@ -176,14 +176,14 @@ static struct cifsd_session *__session_lookup(unsigned long long id)
 	return NULL;
 }
 
-void cifsd_session_register(struct cifsd_tcp_conn *conn,
+void cifsd_session_register(struct cifsd_conn *conn,
 			    struct cifsd_session *sess)
 {
 	sess->conn = conn;
 	list_add(&sess->sessions_entry, &conn->sessions);
 }
 
-void cifsd_sessions_deregister(struct cifsd_tcp_conn *conn)
+void cifsd_sessions_deregister(struct cifsd_conn *conn)
 {
 	struct cifsd_session *sess;
 
@@ -201,7 +201,7 @@ bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id)
 	return sess->id == id;
 }
 
-struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
+struct cifsd_session *cifsd_session_lookup(struct cifsd_conn *conn,
 					   unsigned long long id)
 {
 	struct cifsd_session *sess = NULL;

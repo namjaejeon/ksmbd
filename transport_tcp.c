@@ -52,14 +52,14 @@ static inline void cifsd_tcp_reuseaddr(struct socket *sock)
 static struct tcp_transport *alloc_transport(struct socket *client_sk)
 {
 	struct tcp_transport *t;
-	struct cifsd_tcp_conn *conn;
+	struct cifsd_conn *conn;
 
 	t = kzalloc(sizeof(*t), GFP_KERNEL);
 	if (!t)
 		return NULL;
 	t->sock = client_sk;
 
-	conn = cifsd_tcp_conn_alloc();
+	conn = cifsd_conn_alloc();
 	if (!conn) {
 		kfree(t);
 		return NULL;
@@ -77,7 +77,7 @@ static void free_transport(struct tcp_transport *t)
 	sock_release(t->sock);
 	t->sock = NULL;
 
-	cifsd_tcp_conn_free(CIFSD_TRANS(t)->conn);
+	cifsd_conn_free(CIFSD_TRANS(t)->conn);
 	kfree(t->iov);
 	kfree(t);
 }
@@ -279,7 +279,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 	unsigned int segs;
 	struct msghdr cifsd_msg;
 	struct kvec *iov;
-	struct cifsd_tcp_conn *conn = CIFSD_TRANS(t)->conn;
+	struct cifsd_conn *conn = CIFSD_TRANS(t)->conn;
 
 	iov = get_conn_iovec(t, nr_segs);
 	if (!iov)
@@ -291,7 +291,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 	for (total_read = 0; to_read; total_read += length, to_read -= length) {
 		try_to_freeze();
 
-		if (!cifsd_tcp_conn_alive(conn)) {
+		if (!cifsd_conn_alive(conn)) {
 			total_read = -ESHUTDOWN;
 			break;
 		}

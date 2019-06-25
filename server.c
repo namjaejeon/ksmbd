@@ -91,7 +91,7 @@ static inline int check_conn_state(struct cifsd_work *work)
 {
 	struct smb_hdr *rsp_hdr;
 
-	if (cifsd_tcp_exiting(work) || cifsd_tcp_need_reconnect(work)) {
+	if (cifsd_conn_exiting(work) || cifsd_conn_need_reconnect(work)) {
 		rsp_hdr = RESPONSE_BUF(work);
 		rsp_hdr->Status.CifsError = STATUS_CONNECTION_DISCONNECTED;
 		return 1;
@@ -105,7 +105,7 @@ static inline int check_conn_state(struct cifsd_work *work)
 #define TCP_HANDLER_ABORT	1
 
 static int __process_request(struct cifsd_work *work,
-			     struct cifsd_tcp_conn *conn,
+			     struct cifsd_conn *conn,
 			     unsigned int *cmd)
 {
 	struct smb_version_cmds *cmds;
@@ -163,7 +163,7 @@ andx_again:
 }
 
 static void __handle_cifsd_work(struct cifsd_work *work,
-				struct cifsd_tcp_conn *conn)
+				struct cifsd_conn *conn)
 {
 	unsigned int command = 0;
 	int rc;
@@ -239,13 +239,13 @@ send:
 static void handle_cifsd_work(struct work_struct *wk)
 {
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_tcp_conn *conn = work->conn;
+	struct cifsd_conn *conn = work->conn;
 
 	atomic64_inc(&conn->stats.request_served);
 
 	__handle_cifsd_work(work, conn);
 
-	cifsd_tcp_try_dequeue_request(work);
+	cifsd_conn_try_dequeue_request(work);
 	cifsd_free_work_struct(work);
 	atomic_dec(&conn->r_count);
 }
@@ -257,7 +257,7 @@ static void handle_cifsd_work(struct work_struct *wk)
  *
  * read remaining data from socket create and submit work.
  */
-static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
+static int queue_cifsd_work(struct cifsd_conn *conn)
 {
 	struct cifsd_work *work;
 
@@ -276,7 +276,7 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 		return -EINVAL;
 	}
 
-	cifsd_tcp_enqueue_request(work);
+	cifsd_conn_enqueue_request(work);
 	atomic_inc(&conn->r_count);
 	/* update activity on connection */
 	conn->last_active = jiffies;
@@ -285,12 +285,12 @@ static int queue_cifsd_work(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 
-static int cifsd_server_process_request(struct cifsd_tcp_conn *conn)
+static int cifsd_server_process_request(struct cifsd_conn *conn)
 {
 	return queue_cifsd_work(conn);
 }
 
-static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
+static int cifsd_server_terminate_conn(struct cifsd_conn *conn)
 {
 	cifsd_sessions_deregister(conn);
 	destroy_lease_table(conn);
@@ -299,12 +299,12 @@ static int cifsd_server_terminate_conn(struct cifsd_tcp_conn *conn)
 
 static void cifsd_server_tcp_callbacks_init(void)
 {
-	struct cifsd_tcp_conn_ops ops;
+	struct cifsd_conn_ops ops;
 
 	ops.process_fn = cifsd_server_process_request;
 	ops.terminate_fn = cifsd_server_terminate_conn;
 
-	cifsd_tcp_init_server_callbacks(&ops);
+	cifsd_conn_init_server_callbacks(&ops);
 }
 
 static void server_conf_free(void)
