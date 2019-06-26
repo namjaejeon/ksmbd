@@ -3074,6 +3074,7 @@ static int __query_dir(struct dir_context *ctx,
 	if (rc)
 		return rc;
 
+	d_info->name = name;
 	rc = smb2_populate_readdir_entry(priv->work->conn,
 					 priv->info_level,
 					 d_info,

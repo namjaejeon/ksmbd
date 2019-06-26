@@ -5891,6 +5891,7 @@ static int find_first(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
+		d_info.name = de->name;
 		rc = cifsd_vfs_readdir_name(work,
 					    &cifsd_kstat,
 					    de->name,
@@ -6121,6 +6122,7 @@ static int find_next(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
+		d_info.name = de->name;
 		rc = cifsd_vfs_readdir_name(work,
 					    &cifsd_kstat,
 					    de->name,
