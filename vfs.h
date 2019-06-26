@@ -209,10 +209,10 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
 				struct cifsd_fs_sector_size *fs_ss);
-char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct cifsd_kstat *cifsd_kstat,
-			     struct cifsd_dirent *de,
-			     char *dirpath);
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   struct cifsd_dirent *de,
+			   char *dirpath);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
 int cifsd_vfs_posix_lock_wait(struct file_lock *flock);

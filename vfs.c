@@ -1723,20 +1723,10 @@ static void fill_file_attributes(struct cifsd_work *work,
 	}
 }
 
-/**
- * read_next_entry() - read next directory entry and return absolute name
- * @work:	smb work containing share config
- * @cifsd_kstat:	cifsd wrapper of next dirent's stat
- * @de:		directory entry
- * @dirpath:	directory path name
- *
- * Return:      on success return absolute path of directory entry,
- *              otherwise NULL
- */
-char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct cifsd_kstat *cifsd_kstat,
-			     struct cifsd_dirent *de,
-			     char *dirpath)
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   struct cifsd_dirent *de,
+			   char *dirpath)
 {
 	struct path path;
 	int rc, file_pathlen, dir_pathlen;
@@ -1746,11 +1736,8 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	/* 1 for '/'*/
 	file_pathlen = dir_pathlen +  de->namelen + 1;
 	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name) {
-		cifsd_err("Name memory failed for length %d,"
-				" buf_name_len %d\n", dir_pathlen, de->namelen);
-		return ERR_PTR(-ENOMEM);
-	}
+	if (!name)
+		return -ENOMEM;
 
 	memcpy(name, dirpath, dir_pathlen);
 	memset(name + dir_pathlen, '/', 1);
@@ -1759,18 +1746,17 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 
 	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
 	if (rc) {
-		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
+		cifsd_err("lookup failed: %s [%d]\n", name, rc);
 		kfree(name);
-		return ERR_PTR(rc);
+		return -ENOMEM;
 	}
 
 	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
 	fill_create_time(work, &path, cifsd_kstat);
 	fill_file_attributes(work, &path, cifsd_kstat);
-	memcpy(name, de->name, de->namelen);
-	name[de->namelen] = '\0';
 	path_put(&path);
-	return name;
+	kfree(name);
+	return 0;
 }
 
 ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,

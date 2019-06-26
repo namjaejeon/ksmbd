@@ -3074,20 +3074,17 @@ static int __query_dir(struct dir_context *ctx,
 	de.name		= name;
 
 	cifsd_kstat.kstat	= &kstat;
-	d_info->name = cifsd_vfs_readdir_name(priv->work,
-					      &cifsd_kstat,
-					      &de,
-					      priv->dir_path);
-	if (IS_ERR(d_info->name)) {
-		cifsd_debug("Can't read dirent: %ld\n", PTR_ERR(d_info->name));
-		return -ENOMEM;
-	}
+	rc = cifsd_vfs_readdir_name(priv->work,
+				    &cifsd_kstat,
+				    &de,
+				    priv->dir_path);
+	if (rc)
+		return rc;
 
 	rc = smb2_populate_readdir_entry(priv->work->conn,
 					 priv->info_level,
 					 d_info,
 					 &cifsd_kstat);
-	kfree(d_info->name);
 	if (rc)
 		return rc;
 

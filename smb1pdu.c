@@ -5806,11 +5806,7 @@ static int find_first(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	d_info.name = NULL;
 	do {
-		kfree(d_info.name);
-		d_info.name = NULL;
-
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			r_data.used = 0;
@@ -5848,14 +5844,9 @@ static int find_first(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work,
-						     &cifsd_kstat,
-						     de,
-						     dirpath);
-		if (IS_ERR(d_info.name)) {
-			cifsd_debug("Cannot read dirent: %d\n",
-				    (int)PTR_ERR(d_info.name));
-			d_info.name = NULL;
+		rc = cifsd_vfs_readdir_name(work, &cifsd_kstat, de, dirpath);
+		if (rc) {
+			cifsd_debug("Cannot read dirent: %d\n", rc);
 			continue;
 		}
 
@@ -5877,14 +5868,11 @@ static int find_first(struct cifsd_work *work)
 						req_params->InformationLevel,
 						&d_info,
 						&cifsd_kstat);
-			if (rc) {
-				kfree(d_info.name);
+			if (rc)
 				goto err_out;
-			}
 		}
 	} while (d_info.out_buf_len >= 0);
 
-	kfree(d_info.name);
 	if (!d_info.data_count && *srch_ptr) {
 		cifsd_debug("There is no entry matched with the search pattern\n");
 		rsp->hdr.Status.CifsError = STATUS_NO_SUCH_FILE;
@@ -6082,10 +6070,8 @@ static int find_next(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work, &cifsd_kstat, de,
-			dirpath);
-		if (IS_ERR(d_info.name)) {
-			rc = PTR_ERR(d_info.name);
+		rc = cifsd_vfs_readdir_name(work, &cifsd_kstat, de, dirpath);
+		if (rc) {
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
 			rc = 0;
 			continue;
@@ -6094,14 +6080,12 @@ static int find_next(struct cifsd_work *work)
 		if (cifsd_share_veto_filename(share, d_info.name)) {
 			cifsd_debug("file(%s) is invisible by setting as veto file\n",
 				d_info.name);
-			kfree(d_info.name);
 			continue;
 		}
 
 		cifsd_debug("filename string = %s\n", d_info.name);
 		rc = smb_populate_readdir_entry(conn,
 			req_params->InformationLevel, &d_info, &cifsd_kstat);
-		kfree(d_info.name);
 		if (rc)
 			goto err_out;
 
