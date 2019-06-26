@@ -5844,7 +5844,11 @@ static int find_first(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
-		rc = cifsd_vfs_readdir_name(work, &cifsd_kstat, de, dirpath);
+		rc = cifsd_vfs_readdir_name(work,
+					    &cifsd_kstat,
+					    de->name,
+					    de->namelen,
+					    dirpath);
 		if (rc) {
 			cifsd_debug("Cannot read dirent: %d\n", rc);
 			continue;
@@ -6070,7 +6074,11 @@ static int find_next(struct cifsd_work *work)
 			continue;
 
 		cifsd_kstat.kstat = &kstat;
-		rc = cifsd_vfs_readdir_name(work, &cifsd_kstat, de, dirpath);
+		rc = cifsd_vfs_readdir_name(work,
+					    &cifsd_kstat,
+					    de->name,
+					    de->namelen,
+					    dirpath);
 		if (rc) {
 			cifsd_debug("Err while dirent read rc = %d\n", rc);
 			rc = 0;

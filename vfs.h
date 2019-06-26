@@ -107,11 +107,11 @@ struct cifsd_readdir_data {
 };
 
 struct cifsd_dirent {
-	char			*name;
 	unsigned long long	ino;
 	unsigned long long	offset;
 	unsigned int		namelen;
 	unsigned int		d_type;
+	char			name[];
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
@@ -211,8 +211,9 @@ void cifsd_vfs_smb2_sector_size(struct inode *inode,
 				struct cifsd_fs_sector_size *fs_ss);
 int cifsd_vfs_readdir_name(struct cifsd_work *work,
 			   struct cifsd_kstat *cifsd_kstat,
-			   struct cifsd_dirent *de,
-			   char *dirpath);
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
 int cifsd_vfs_posix_lock_wait(struct file_lock *flock);

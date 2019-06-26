@@ -1725,23 +1725,24 @@ static void fill_file_attributes(struct cifsd_work *work,
 
 int cifsd_vfs_readdir_name(struct cifsd_work *work,
 			   struct cifsd_kstat *cifsd_kstat,
-			   struct cifsd_dirent *de,
-			   char *dirpath)
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
 {
 	struct path path;
 	int rc, file_pathlen, dir_pathlen;
 	char *name;
 
-	dir_pathlen = strlen(dirpath);
+	dir_pathlen = strlen(dir_path);
 	/* 1 for '/'*/
-	file_pathlen = dir_pathlen +  de->namelen + 1;
+	file_pathlen = dir_pathlen +  de_name_len + 1;
 	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
 	if (!name)
 		return -ENOMEM;
 
-	memcpy(name, dirpath, dir_pathlen);
+	memcpy(name, dir_path, dir_pathlen);
 	memset(name + dir_pathlen, '/', 1);
-	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
+	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
 	name[file_pathlen] = '\0';
 
 	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);

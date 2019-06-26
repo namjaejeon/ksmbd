@@ -3041,7 +3041,6 @@ static int __query_dir(struct dir_context *ctx,
 {
 	struct cifsd_readdir_data	*buf;
 	struct smb2_query_dir_private	*priv;
-	struct cifsd_dirent		de;
 	struct cifsd_dir_info		*d_info;
 	struct kstat			kstat;
 	struct cifsd_kstat		cifsd_kstat;
@@ -3066,17 +3065,11 @@ static int __query_dir(struct dir_context *ctx,
 	if (!match_pattern(name, priv->search_pattern))
 		return 0;
 
-	de.namelen	= namlen;
-	de.offset	= offset;
-	de.ino		= ino;
-	de.d_type	= d_type;
-	/* XXX */
-	de.name		= name;
-
 	cifsd_kstat.kstat	= &kstat;
 	rc = cifsd_vfs_readdir_name(priv->work,
 				    &cifsd_kstat,
-				    &de,
+				    name,
+				    namlen,
 				    priv->dir_path);
 	if (rc)
 		return rc;
