@@ -849,11 +849,15 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 
 	spin_lock(&src_dent->d_lock);
 	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
-		if (d_really_is_negative(dst_dent)) {
+		struct cifsd_file *child_fp;
+
+		if (d_really_is_negative(dst_dent))
 			continue;
-		} else {
+
+		child_fp = cifsd_lookup_fd_inode(dst_dent->d_inode);
+		if (child_fp) {
 			spin_unlock(&src_dent->d_lock);
-			cifsd_debug("Forbid rename, dir is in use\n");
+			cifsd_debug("Forbid rename, sub file/dir is in use\n");
 			return -EACCES;
 		}
 	}
