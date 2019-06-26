@@ -106,14 +106,6 @@ struct cifsd_readdir_data {
 	unsigned int	file_attr;
 };
 
-struct cifsd_dirent {
-	unsigned long long	ino;
-	unsigned long long	offset;
-	unsigned int		namelen;
-	unsigned int		d_type;
-	char			name[];
-};
-
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
 struct cifsd_kstat {
 	struct kstat		*kstat;

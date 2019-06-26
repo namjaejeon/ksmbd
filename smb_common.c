@@ -432,45 +432,6 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 	return len;
 }
 
-/**
- * cifsd_fill_dirent() - populates a dirent details in readdir
- * @ctx:	dir_context information
- * @name:	dirent name
- * @namelen:	dirent name length
- * @offset:	dirent offset in directory
- * @ino:	dirent inode number
- * @d_type:	dirent type
- *
- * Return:	0 on success, otherwise -EINVAL
- */
-int cifsd_fill_dirent(struct dir_context *ctx,
-		      const char *name,
-		      int namlen,
-		      loff_t offset,
-		      u64 ino,
-		      unsigned int d_type)
-{
-	struct cifsd_readdir_data *buf =
-		container_of(ctx, struct cifsd_readdir_data, ctx);
-	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
-	unsigned int reclen;
-
-	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
-	if (buf->used + reclen > PAGE_SIZE) {
-		buf->full = 1;
-		return -EINVAL;
-	}
-
-	de->namelen = namlen;
-	de->offset = offset;
-	de->ino = ino;
-	de->d_type = d_type;
-	memcpy(de->name, name, namlen);
-	buf->used += reclen;
-
-	return 0;
-}
-
 static int __smb2_negotiate(struct cifsd_conn *conn)
 {
 	return (conn->dialect >= SMB20_PROT_ID &&
