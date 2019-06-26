@@ -86,11 +86,12 @@ struct cifsd_file;
 struct cifsd_dir_info {
 	char		*name;
 	char		*bufptr;
-	bool		hide_dot_file;
+	int		name_len;
 	int		out_buf_len;
 	int		num_entry;
 	int		data_count;
 	int		last_entry_offset;
+	bool		hide_dot_file;
 };
 
 struct cifsd_readdir_data {

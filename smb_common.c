@@ -327,10 +327,13 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 		struct cifsd_kstat cifsd_kstat;
 
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
-			if (i == 0)
+			if (i == 0) {
 				d_info->name = ".";
-			else
+				d_info->name_len = 1;
+			} else {
 				d_info->name = "..";
+				d_info->name_len = 2;
+			}
 
 			if (!match_pattern(d_info->name, search_pattern)) {
 				dir->dot_dotdot[i] = 1;
