@@ -3022,29 +3022,95 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	return 0;
 }
 
-/**
- * smb2_query_dir() - handler for smb2 readdir i.e. query dir command
- * @work:	smb work containing query dir request buffer
- *
- * Return:	0
- */
+struct smb2_query_dir_private {
+	struct cifsd_work	*work;
+	char			*search_pattern;
+	char			*dir_path;
+
+	struct cifsd_dir_info	*d_info;
+	int			info_level;
+	int			flags;
+};
+
+static int __query_dir(struct dir_context *ctx,
+		       const char *name,
+		       int namlen,
+		       loff_t offset,
+		       u64 ino,
+		       unsigned int d_type)
+{
+	struct cifsd_readdir_data	*buf;
+	struct smb2_query_dir_private	*priv;
+	struct cifsd_dirent		de;
+	struct cifsd_dir_info		*d_info;
+	struct kstat			kstat;
+	struct cifsd_kstat		cifsd_kstat;
+	int				rc;
+
+	buf	= container_of(ctx, struct cifsd_readdir_data, ctx);
+	priv	= buf->private;
+	d_info	= priv->d_info;
+
+	/* XXX */
+	if (d_info->out_buf_len < 2 * NAME_MAX)
+		return -ENOSPC;
+
+	/* dot and dotdot entries are already reserved */
+	if (!strcmp(".", name) || !strcmp("..", name))
+		return 0;
+	/* Hide backup files, e.g. ~$file.doc */
+	if (!strncmp("~$", name, 2))
+		return 0;
+	if (cifsd_share_veto_filename(priv->work->tcon->share_conf, name))
+		return 0;
+	if (!match_pattern(name, priv->search_pattern))
+		return 0;
+
+	de.namelen	= namlen;
+	de.offset	= offset;
+	de.ino		= ino;
+	de.d_type	= d_type;
+	/* XXX */
+	de.name		= name;
+
+	cifsd_kstat.kstat	= &kstat;
+	d_info->name = cifsd_vfs_readdir_name(priv->work,
+					      &cifsd_kstat,
+					      &de,
+					      priv->dir_path);
+	if (IS_ERR(d_info->name)) {
+		cifsd_debug("Can't read dirent: %ld\n", PTR_ERR(d_info->name));
+		return -ENOMEM;
+	}
+
+	rc = smb2_populate_readdir_entry(priv->work->conn,
+					 priv->info_level,
+					 d_info,
+					 &cifsd_kstat);
+	kfree(d_info->name);
+	if (rc)
+		return rc;
+
+	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
+		return -EEXIST;
+
+	return 0;
+}
+
 int smb2_query_dir(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct smb2_query_directory_req *req;
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	struct cifsd_share_config *share = work->tcon->share_conf;
-	struct cifsd_dirent *de;
 	struct cifsd_file *dir_fp;
 	struct cifsd_dir_info d_info;
-	int reclen = 0;
 	int rc = 0;
-	struct kstat kstat;
-	struct cifsd_kstat cifsd_kstat;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
+	struct smb2_query_dir_private query_dir_private = {NULL, };
 	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
+		.ctx.actor = __query_dir,
 	};
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
@@ -3111,20 +3177,6 @@ int smb2_query_dir(struct cifsd_work *work)
 	}
 	cifsd_debug("Directory name is %s\n", dirpath);
 
-	if (!dir_fp->readdir_data.dirent) {
-		dir_fp->readdir_data.dirent =
-			(void *)__get_free_page(GFP_KERNEL);
-		if (!dir_fp->readdir_data.dirent) {
-			cifsd_err("Failed to allocate memory\n");
-			rsp->hdr.Status = STATUS_NO_MEMORY;
-			rc = -ENOMEM;
-			goto err_out;
-		}
-		dir_fp->readdir_data.used = 0;
-		dir_fp->readdir_data.full = 0;
-		dir_fp->dirent_offset = 0;
-	}
-
 	if (srch_flag & SMB2_REOPEN) {
 		cifsd_debug("Reopen the directory\n");
 		fput(dir_fp->filp);
@@ -3134,26 +3186,19 @@ int smb2_query_dir(struct cifsd_work *work)
 			rc = -EINVAL;
 			goto err_out;
 		}
-		dir_fp->readdir_data.used = 0;
-		dir_fp->dirent_offset = 0;
 	}
 
 	if (srch_flag & SMB2_RESTART_SCANS) {
 		cifsd_debug("SMB2 RESTART SCANS\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
-		dir_fp->readdir_data.used = 0;
-		dir_fp->dirent_offset = 0;
 	}
 
 	if ((srch_flag & SMB2_INDEX_SPECIFIED) && req->FileIndex) {
 		cifsd_debug("specified index\n");
 		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
 			SEEK_SET);
-		dir_fp->readdir_data.used = 0;
-		dir_fp->dirent_offset = le32_to_cpu(req->FileIndex);
 	}
 
-	r_data.dirent = dir_fp->readdir_data.dirent;
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)rsp->Buffer;
 	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
@@ -3177,93 +3222,23 @@ int smb2_query_dir(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	/*
-	 * Hide dot files if share flags is set to
-	 * CIFSD_SHARE_FLAG_HIDE_DOT_FILES
-	 */
 	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_HIDE_DOT_FILES))
 		d_info.hide_dot_file = true;
 
-	d_info.name = NULL;
-	while (d_info.out_buf_len > 0) {
-		kfree(d_info.name);
-		d_info.name = NULL;
+	query_dir_private.work			= work;
+	query_dir_private.search_pattern	= srch_ptr;
+	query_dir_private.dir_path		= dirpath;
+	query_dir_private.d_info		= &d_info;
+	query_dir_private.info_level		= req->FileInformationClass;
+	query_dir_private.flags			= srch_flag;
 
-		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
-			dir_fp->dirent_offset = 0;
-			r_data.used = 0;
-			r_data.full = 0;
-			rc = cifsd_vfs_readdir(dir_fp->filp,
-					       &r_data);
-			if (rc < 0) {
-				cifsd_debug("err : %d\n", rc);
-				goto err_out;
-			}
+	r_data.private = &query_dir_private;
+	rc = cifsd_vfs_readdir(dir_fp->filp, &r_data);
+	if (rc)
+		goto err_out;
 
-			dir_fp->readdir_data.used = r_data.used;
-			dir_fp->readdir_data.full = r_data.full;
-			if (!dir_fp->readdir_data.used) {
-				free_page((unsigned long)
-						(dir_fp->readdir_data.dirent));
-				dir_fp->readdir_data.dirent = NULL;
-				break;
-			}
-
-			de = (struct cifsd_dirent *)
-				((char *)dir_fp->readdir_data.dirent);
-		} else {
-			de = (struct cifsd_dirent *)
-				((char *)dir_fp->readdir_data.dirent +
-				 dir_fp->dirent_offset);
-		}
-
-		reclen = ALIGN(sizeof(struct cifsd_dirent) + de->namelen,
-				sizeof(__le64));
-		dir_fp->dirent_offset += reclen;
-
-		cifsd_kstat.kstat = &kstat;
-		d_info.name = cifsd_vfs_readdir_name(work,
-						     &cifsd_kstat,
-						     de,
-						     dirpath);
-		if (IS_ERR(d_info.name)) {
-			cifsd_debug("Can't read dirent: %d\n",
-				    (int)PTR_ERR(d_info.name));
-			d_info.name = NULL;
-			continue;
-		}
-
-		/* dot and dotdot entries are already reserved */
-		if (!strcmp(".", d_info.name) || !strcmp("..", d_info.name))
-			continue;
-		/* Hide backup files, e.g. ~$file.doc */
-		if (!strncmp("~$", d_info.name, 2))
-			continue;
-
-		if (cifsd_share_veto_filename(share, d_info.name)) {
-			cifsd_debug("Veto filename %s\n", d_info.name);
-			continue;
-		}
-
-		if (match_pattern(d_info.name, srch_ptr)) {
-			rc = smb2_populate_readdir_entry(conn,
-						req->FileInformationClass,
-						&d_info,
-						&cifsd_kstat);
-			if (rc) {
-				kfree(d_info.name);
-				goto err_out;
-			}
-
-			/* server MUST only return the first search result */
-			if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
-				break;
-		}
-	}
-
-	kfree(d_info.name);
-	if (d_info.out_buf_len < 0)
-		dir_fp->dirent_offset -= reclen;
+	/* XXX */
+	WARN_ON_ONCE(d_info.out_buf_len < 0);
 
 	if (!d_info.data_count && d_info.out_buf_len >= 0) {
 		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
@@ -3301,16 +3276,9 @@ err_out:
 	kfree(srch_ptr);
 
 err_out2:
-	if (dir_fp && dir_fp->readdir_data.dirent) {
-		free_page((unsigned long)
-			(dir_fp->readdir_data.dirent));
-		dir_fp->readdir_data.dirent = NULL;
-	}
-
 	if (rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
 	smb2_set_err_rsp(work);
-
 	return 0;
 }
 

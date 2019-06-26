@@ -112,12 +112,12 @@ struct cifsd_file {
 	unsigned int			cflock_cnt;
 	/* last lock failure start offset for SMB1 */
 	unsigned long long		llock_fstart;
-#endif
 
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
-	int				dot_dotdot[2];
 	int				dirent_offset;
+#endif
+	int				dot_dotdot[2];
 };
 
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
