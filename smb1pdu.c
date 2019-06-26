@@ -5442,12 +5442,14 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	int next_entry_offset;
 	char *utfname = NULL;
 
+	/* XXX */
 	switch (info_level) {
 	case SMB_FIND_FILE_INFO_STANDARD:
 	{
 		FIND_INFO_STANDARD *fsinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FIND_INFO_STANDARD),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5480,7 +5482,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FIND_INFO_QUERY_EA_SIZE *fesize = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FIND_INFO_QUERY_EA_SIZE),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5516,7 +5519,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_DIRECTORY_INFO *fdinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5538,7 +5542,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_FULL_DIRECTORY_INFO *ffdinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_FULL_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5562,7 +5567,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_NAMES_INFO *fninfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_NAMES_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5584,7 +5590,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_BOTH_DIRECTORY_INFO *fbdinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5612,7 +5619,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		SEARCH_ID_FULL_DIR_INFO *dinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(SEARCH_ID_FULL_DIR_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5637,7 +5645,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo = NULL;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_ID_BOTH_DIRECTORY_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5670,7 +5679,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_UNIX_INFO *finfo = NULL;
 		FILE_UNIX_BASIC_INFO *unix_info;
 
-		utfname = convname_updatenextoffset(d_info->name, PATH_MAX,
+		utfname = convname_updatenextoffset(d_info->name,
+				d_info->name_len,
 				sizeof(FILE_UNIX_INFO),
 				conn->local_nls, &name_len,
 				&next_entry_offset, &d_info->out_buf_len,
@@ -5892,6 +5902,7 @@ static int find_first(struct cifsd_work *work)
 
 		cifsd_kstat.kstat = &kstat;
 		d_info.name = de->name;
+		d_info.name_len = de->namelen;
 		rc = cifsd_vfs_readdir_name(work,
 					    &cifsd_kstat,
 					    de->name,
