@@ -329,8 +329,9 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		int alignment, bool no_namelen_field)
 {
 	char *enc_buf;
+	int enc_buf_sz = min(4 * len, PATH_MAX);
 
-	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
+	enc_buf = kmalloc(enc_buf_sz, GFP_KERNEL);
 	if (!enc_buf)
 		return NULL;
 
