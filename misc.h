@@ -34,4 +34,11 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 		const struct nls_table *local_nls, int *name_len,
 		int *next_entry_offset, int *buf_len, int *data_count,
 		int alignment, bool no_namelen_field);
+
+#define CIFSD_DIR_INFO_ALIGNMENT	8
+
+struct cifsd_dir_info;
+char *cifsd_convert_dir_info_name(struct cifsd_dir_info *d_info,
+				  const struct nls_table *local_nls,
+				  int *conv_len);
 #endif /* __CIFSD_MISC_H__ */

@@ -356,3 +356,29 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 	}
 	return enc_buf;
 }
+
+char *cifsd_convert_dir_info_name(struct cifsd_dir_info *d_info,
+				  const struct nls_table *local_nls,
+				  int *conv_len)
+{
+	char *conv;
+	int  sz = min(4 * d_info->name_len, PATH_MAX);
+
+	conv = kmalloc(sz, GFP_KERNEL);
+	if (!conv)
+		return NULL;
+
+	/* XXX */
+	*conv_len = smbConvertToUTF16((__le16 *)conv,
+					d_info->name,
+					d_info->name_len,
+					local_nls,
+					0);
+	*conv_len *= 2;
+
+	/* We allocate buffer twice bigger than needed. */
+	conv[*conv_len] = 0x00;
+	conv[*conv_len + 1] = 0x00;
+	*conv_len += 2;
+	return conv;
+}
