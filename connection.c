@@ -370,7 +370,7 @@ int cifsd_conn_transport_init(void)
 	return ret;
 }
 
-void stop_sessions(void)
+static void stop_sessions(void)
 {
 	struct cifsd_conn *conn;
 
