@@ -27,7 +27,7 @@ struct tcp_transport {
 	unsigned int			nr_iov;
 };
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops;
+static struct cifsd_transport_ops cifsd_tcp_transport_ops;
 
 #define CIFSD_TRANS(t)	(&(t)->transport)
 #define TCP_TRANS(t)	((struct tcp_transport *)container_of(t, \
@@ -526,7 +526,7 @@ int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 	return 0;
 }
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops = {
+static struct cifsd_transport_ops cifsd_tcp_transport_ops = {
 	.read		= cifsd_tcp_read,
 	.writev		= cifsd_tcp_writev,
 	.disconnect	= cifsd_tcp_disconnect,
