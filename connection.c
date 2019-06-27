@@ -377,10 +377,13 @@ static void stop_sessions(void)
 again:
 	read_lock(&conn_list_lock);
 	list_for_each_entry(conn, &conn_list, tcp_conns) {
-		if (conn->handler)
+		struct task_struct *task;
+
+		task = conn->transport->handler;
+		if (task)
 			cifsd_err("Stop session handler %s/%d\n",
-				  conn->handler->comm,
-				  task_pid_nr(conn->handler));
+				  task->comm,
+				  task_pid_nr(task));
 		conn->tcp_status = CIFSD_SESS_EXITING;
 	}
 	read_unlock(&conn_list_lock);

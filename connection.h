@@ -72,7 +72,6 @@ struct cifsd_conn {
 	struct list_head		tcp_conns;
 	/* smb session 1 per user */
 	struct list_head		sessions;
-	struct task_struct		*handler;
 	unsigned long			last_active;
 	/* How many request are running currently */
 	atomic_t			req_running;
