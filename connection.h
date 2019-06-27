@@ -63,7 +63,7 @@ struct cifsd_conn {
 	struct smb_version_cmds		*cmds;
 	unsigned int			max_cmds;
 	struct mutex			srv_mutex;
-	int				tcp_status;
+	int				status;
 	unsigned int			cli_cap;
 	unsigned int			srv_cap;
 	void				*request_buf;
@@ -179,41 +179,41 @@ void cifsd_conn_transport_destroy(void);
  */
 static inline bool cifsd_conn_good(struct cifsd_work *work)
 {
-	return work->conn->tcp_status == CIFSD_SESS_GOOD;
+	return work->conn->status == CIFSD_SESS_GOOD;
 }
 
 static inline bool cifsd_conn_need_negotiate(struct cifsd_work *work)
 {
-	return work->conn->tcp_status == CIFSD_SESS_NEED_NEGOTIATE;
+	return work->conn->status == CIFSD_SESS_NEED_NEGOTIATE;
 }
 
 static inline bool cifsd_conn_need_reconnect(struct cifsd_work *work)
 {
-	return work->conn->tcp_status == CIFSD_SESS_NEED_RECONNECT;
+	return work->conn->status == CIFSD_SESS_NEED_RECONNECT;
 }
 
 static inline bool cifsd_conn_exiting(struct cifsd_work *work)
 {
-	return work->conn->tcp_status == CIFSD_SESS_EXITING;
+	return work->conn->status == CIFSD_SESS_EXITING;
 }
 
 static inline void cifsd_conn_set_good(struct cifsd_work *work)
 {
-	work->conn->tcp_status = CIFSD_SESS_GOOD;
+	work->conn->status = CIFSD_SESS_GOOD;
 }
 
 static inline void cifsd_conn_set_need_negotiate(struct cifsd_work *work)
 {
-	work->conn->tcp_status = CIFSD_SESS_NEED_NEGOTIATE;
+	work->conn->status = CIFSD_SESS_NEED_NEGOTIATE;
 }
 
 static inline void cifsd_conn_set_need_reconnect(struct cifsd_work *work)
 {
-	work->conn->tcp_status = CIFSD_SESS_NEED_RECONNECT;
+	work->conn->status = CIFSD_SESS_NEED_RECONNECT;
 }
 
 static inline void cifsd_conn_set_exiting(struct cifsd_work *work)
 {
-	work->conn->tcp_status = CIFSD_SESS_EXITING;
+	work->conn->status = CIFSD_SESS_EXITING;
 }
 #endif /* __CIFSD_CONNECTION_H__ */

@@ -59,7 +59,7 @@ struct cifsd_conn *cifsd_conn_alloc(void)
 		return NULL;
 
 	conn->need_neg = true;
-	conn->tcp_status = CIFSD_SESS_NEW;
+	conn->status = CIFSD_SESS_NEW;
 	conn->local_nls = load_nls("utf8");
 	if (!conn->local_nls)
 		conn->local_nls = load_nls_default();
@@ -225,7 +225,7 @@ bool cifsd_conn_alive(struct cifsd_conn *conn)
 	if (!cifsd_server_running())
 		return false;
 
-	if (conn->tcp_status == CIFSD_SESS_EXITING)
+	if (conn->status == CIFSD_SESS_EXITING)
 		return false;
 
 	if (kthread_should_stop())
@@ -384,7 +384,7 @@ again:
 			cifsd_err("Stop session handler %s/%d\n",
 				  task->comm,
 				  task_pid_nr(task));
-		conn->tcp_status = CIFSD_SESS_EXITING;
+		conn->status = CIFSD_SESS_EXITING;
 	}
 	read_unlock(&conn_list_lock);
 

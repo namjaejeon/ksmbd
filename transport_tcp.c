@@ -304,7 +304,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
-		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
+		} else if (conn->status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS || length == -EAGAIN) {
