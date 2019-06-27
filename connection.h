@@ -69,7 +69,7 @@ struct cifsd_conn {
 	void				*request_buf;
 	struct cifsd_transport		*transport;
 	struct nls_table		*local_nls;
-	struct list_head		tcp_conns;
+	struct list_head		conns_list;
 	/* smb session 1 per user */
 	struct list_head		sessions;
 	unsigned long			last_active;

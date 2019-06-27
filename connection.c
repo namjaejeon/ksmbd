@@ -33,7 +33,7 @@ static DEFINE_RWLOCK(conn_list_lock);
 void cifsd_conn_free(struct cifsd_conn *conn)
 {
 	write_lock(&conn_list_lock);
-	list_del(&conn->tcp_conns);
+	list_del(&conn->conns_list);
 	write_unlock(&conn_list_lock);
 
 	cifsd_free_conn_secmech(conn);
@@ -66,7 +66,7 @@ struct cifsd_conn *cifsd_conn_alloc(void)
 	atomic_set(&conn->req_running, 0);
 	atomic_set(&conn->r_count, 0);
 	init_waitqueue_head(&conn->req_running_q);
-	INIT_LIST_HEAD(&conn->tcp_conns);
+	INIT_LIST_HEAD(&conn->conns_list);
 	INIT_LIST_HEAD(&conn->sessions);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
@@ -75,7 +75,7 @@ struct cifsd_conn *cifsd_conn_alloc(void)
 	conn->async_ida = cifsd_ida_alloc();
 
 	write_lock(&conn_list_lock);
-	list_add(&conn->tcp_conns, &conn_list);
+	list_add(&conn->conns_list, &conn_list);
 	write_unlock(&conn_list_lock);
 	return conn;
 }
@@ -87,7 +87,7 @@ int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	int ret = 0;
 
 	read_lock(&conn_list_lock);
-	list_for_each_entry(t, &conn_list, tcp_conns)
+	list_for_each_entry(t, &conn_list, conns_list)
 		if (match(t, arg)) {
 			ret = 1;
 			break;
@@ -376,7 +376,7 @@ static void stop_sessions(void)
 
 again:
 	read_lock(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, tcp_conns) {
+	list_for_each_entry(conn, &conn_list, conns_list) {
 		struct task_struct *task;
 
 		task = conn->transport->handler;
