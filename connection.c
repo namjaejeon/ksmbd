@@ -19,8 +19,8 @@ static DEFINE_MUTEX(init_lock);
 
 static struct cifsd_conn_ops default_conn_ops;
 
-static LIST_HEAD(tcp_conn_list);
-static DEFINE_RWLOCK(tcp_conn_list_lock);
+static LIST_HEAD(conn_list);
+static DEFINE_RWLOCK(conn_list_lock);
 
 /**
  * cifsd_conn_free() - shutdown/release the socket and free server
@@ -32,9 +32,9 @@ static DEFINE_RWLOCK(tcp_conn_list_lock);
  */
 void cifsd_conn_free(struct cifsd_conn *conn)
 {
-	write_lock(&tcp_conn_list_lock);
+	write_lock(&conn_list_lock);
 	list_del(&conn->tcp_conns);
-	write_unlock(&tcp_conn_list_lock);
+	write_unlock(&conn_list_lock);
 
 	cifsd_free_conn_secmech(conn);
 	cifsd_free_request(conn->request_buf);
@@ -74,9 +74,9 @@ struct cifsd_conn *cifsd_conn_alloc(void)
 	spin_lock_init(&conn->credits_lock);
 	conn->async_ida = cifsd_ida_alloc();
 
-	write_lock(&tcp_conn_list_lock);
-	list_add(&conn->tcp_conns, &tcp_conn_list);
-	write_unlock(&tcp_conn_list_lock);
+	write_lock(&conn_list_lock);
+	list_add(&conn->tcp_conns, &conn_list);
+	write_unlock(&conn_list_lock);
 	return conn;
 }
 
@@ -86,13 +86,13 @@ int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	struct cifsd_conn *t;
 	int ret = 0;
 
-	read_lock(&tcp_conn_list_lock);
-	list_for_each_entry(t, &tcp_conn_list, tcp_conns)
+	read_lock(&conn_list_lock);
+	list_for_each_entry(t, &conn_list, tcp_conns)
 		if (match(t, arg)) {
 			ret = 1;
 			break;
 		}
-	read_unlock(&tcp_conn_list_lock);
+	read_unlock(&conn_list_lock);
 
 	return ret;
 }
@@ -375,16 +375,16 @@ static void stop_sessions(void)
 	struct cifsd_conn *conn;
 
 again:
-	read_lock(&tcp_conn_list_lock);
-	list_for_each_entry(conn, &tcp_conn_list, tcp_conns) {
+	read_lock(&conn_list_lock);
+	list_for_each_entry(conn, &conn_list, tcp_conns) {
 		conn->tcp_status = CIFSD_SESS_EXITING;
 		cifsd_err("Stop session handler %s/%d\n",
 				conn->handler->comm,
 				task_pid_nr(conn->handler));
 	}
-	read_unlock(&tcp_conn_list_lock);
+	read_unlock(&conn_list_lock);
 
-	if (!list_empty(&tcp_conn_list)) {
+	if (!list_empty(&conn_list)) {
 		schedule_timeout_interruptible(CIFSD_TCP_RECV_TIMEOUT / 2);
 		goto again;
 	}
