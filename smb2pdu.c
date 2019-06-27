@@ -2899,6 +2899,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	if (!conv_name)
 		return 0;
 
+	conv_len -= 2;
 	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
 				  CIFSD_DIR_INFO_ALIGNMENT);
 
