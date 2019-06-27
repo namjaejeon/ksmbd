@@ -30,11 +30,6 @@ char *extract_sharename(char *treename);
 
 char *convert_to_unix_name(struct cifsd_share_config *share, char *name);
 
-char *convname_updatenextoffset(char *namestr, int len, int size,
-		const struct nls_table *local_nls, int *name_len,
-		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment, bool no_namelen_field);
-
 #define CIFSD_DIR_INFO_ALIGNMENT	8
 
 struct cifsd_dir_info;
