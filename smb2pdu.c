@@ -6433,22 +6433,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_SET_SPARSE:
-	{
-		struct file_sparse *sparse;
-		struct cifsd_file *fp;
-
-		sparse =
-			(struct file_sparse *)&req->Buffer[0];
-
-		fp = cifsd_lookup_fd_fast(work, id);
-		if (!fp) {
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
-			goto out;
-		}
-
-		fp->f_ci->is_sparse = sparse->SetSparse;
 		break;
-	}
 	case FSCTL_SET_ZERO_DATA:
 	{
 		struct file_zero_data_information *zero_data;
@@ -6468,8 +6453,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		off = le64_to_cpu(zero_data->FileOffset);
 		len = le64_to_cpu(zero_data->BeyondFinalZero) - off;
 
-		ret = cifsd_vfs_zero_data(work, fp, off, len,
-			fp->f_ci->is_sparse);
+		ret = cifsd_vfs_zero_data(work, fp, off, len);
 		if (ret == -EACCES)
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (ret < 0)

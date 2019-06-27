@@ -849,11 +849,15 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 
 	spin_lock(&src_dent->d_lock);
 	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
-		if (d_really_is_negative(dst_dent)) {
+		struct cifsd_file *child_fp;
+
+		if (d_really_is_negative(dst_dent))
 			continue;
-		} else {
+
+		child_fp = cifsd_lookup_fd_inode(dst_dent->d_inode);
+		if (child_fp) {
 			spin_unlock(&src_dent->d_lock);
-			cifsd_debug("Forbid rename, dir is in use\n");
+			cifsd_debug("Forbid rename, sub file/dir is in use\n");
 			return -EACCES;
 		}
 	}
@@ -1306,21 +1310,14 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t off,
-			 loff_t len,
-			 bool is_sparse)
+			 loff_t len)
 {
 	struct cifsd_conn *conn = work->sess->conn;
-	int mode;
 
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
 
-	if (is_sparse == true)
-		mode = FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE;
-	else
-		mode = FALLOC_FL_ZERO_RANGE;
-
-	return vfs_fallocate(fp->filp, mode, off, len);
+	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
 }
 
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
