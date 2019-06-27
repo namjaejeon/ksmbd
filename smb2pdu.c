@@ -2548,9 +2548,6 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	if (S_ISDIR(stat.mode))
-		fp->readdir_data.dirent = NULL;
-
 	fp->filename = name;
 	fp->cdoption = req->CreateDisposition;
 	fp->daccess = req->DesiredAccess;
