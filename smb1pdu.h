@@ -888,7 +888,7 @@ typedef struct smb_com_trans_rsp {
 #define TRANSACT_DCERPCCMD	0x26
 
 /*****************************************************************************
- * TRANS2 command implentation functions
+ * TRANS2 command implementation functions
  *****************************************************************************/
 #define NO_CHANGE_64          0xFFFFFFFFFFFFFFFFULL
 
@@ -1476,7 +1476,7 @@ typedef struct {
 	__le16  InformationLevel;
 } __attribute__((packed)) TRANSACTION2_QFI_REQ_PARAMS;
 
-/* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
+/* FIND FIRST2 and FIND NEXT2 INFORMATION Level Codes*/
 
 typedef struct {
 	__le16 CreationDate; /* SMB Date see above */

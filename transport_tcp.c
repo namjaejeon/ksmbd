@@ -84,7 +84,7 @@ static void free_transport(struct tcp_transport *t)
 
 /**
  * kvec_array_init() - initialize a IO vector segment
- * @new:	IO vector to be intialized
+ * @new:	IO vector to be initialized
  * @iov:	base IO vector
  * @nr_segs:	number of segments in base iov
  * @bytes:	total iovec length so far for read

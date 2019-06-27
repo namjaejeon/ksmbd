@@ -646,7 +646,7 @@ smb2_get_name(struct cifsd_share_config *share,
 		return ERR_PTR(-ENOMEM);
 	}
 
-	cifsd_debug("absoulte name = %s\n", unixname);
+	cifsd_debug("absolute name = %s\n", unixname);
 	return unixname;
 }
 
@@ -870,7 +870,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	struct smb2_negotiate_rsp *rsp;
 	int rc = 0, err;
 
-	cifsd_debug("Recieved negotiate request\n");
+	cifsd_debug("Received negotiate request\n");
 
 	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
@@ -5683,7 +5683,7 @@ int smb2_lock(struct cifsd_work *work)
 	req = (struct smb2_lock_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_lock_rsp *)RESPONSE_BUF(work);
 
-	cifsd_debug("Recieved lock request\n");
+	cifsd_debug("Received lock request\n");
 	fp = cifsd_lookup_fd_slow(work,
 				le64_to_cpu(req->VolatileFileId),
 				le64_to_cpu(req->PersistentFileId));
@@ -6881,7 +6881,7 @@ int smb2_check_sign_req(struct cifsd_work *work)
 }
 
 /**
- * smb2_set_sign_rsp() - handler for rsp packet sign procesing
+ * smb2_set_sign_rsp() - handler for rsp packet sign processing
  * @work:   smb work containing notify command buffer
  *
  */
@@ -6974,7 +6974,7 @@ int smb3_check_sign_req(struct cifsd_work *work)
 }
 
 /**
- * smb3_set_sign_rsp() - handler for rsp packet sign procesing
+ * smb3_set_sign_rsp() - handler for rsp packet sign processing
  * @work:   smb work containing notify command buffer
  *
  */
