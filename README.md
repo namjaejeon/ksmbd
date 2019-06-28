@@ -51,6 +51,13 @@ or open issues/send PRs to [CIFSD](https://github.com/cifsd-team/cifsd).
 
 
 ## Installing as a stand-alone module
+
+Install prerequisite package for Fedora, RHEL:
+```
+	yum install kernel-devel-$(uname -r)
+```
+
+Build step:
 ```
 	make
 	sudo make install
