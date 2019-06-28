@@ -13,7 +13,7 @@
 
 #include "oplock.h"
 #include "vfs.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 
@@ -164,7 +164,6 @@ static int cifsd_inode_init(struct cifsd_inode *ci, struct cifsd_file *fp)
 	atomic_set(&ci->m_count, 1);
 	atomic_set(&ci->op_count, 0);
 	ci->m_flags = 0;
-	ci->is_sparse = 0;
 	INIT_LIST_HEAD(&ci->m_fp_list);
 	INIT_LIST_HEAD(&ci->m_op_list);
 	rwlock_init(&ci->m_lock);

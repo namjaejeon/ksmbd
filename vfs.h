@@ -95,7 +95,11 @@ struct cifsd_dir_info {
 
 struct cifsd_readdir_data {
 	struct		dir_context ctx;
-	char		*dirent;
+	union {
+		void		*private;
+		char		*dirent;
+	};
+
 	unsigned int	used;
 	unsigned int	full;
 	unsigned int	dirent_count;
@@ -200,8 +204,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t off,
-			 loff_t len,
-			 bool is_sparse);
+			 loff_t len);
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,

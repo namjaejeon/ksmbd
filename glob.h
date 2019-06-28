@@ -93,12 +93,12 @@ extern bool multi_channel_enable;
 #define	WORK_STATE_CANCELLED	0x2
 #define WORK_STATE_CLOSED	0x3
 
-struct cifsd_tcp_conn;
+struct cifsd_conn;
 
 /* one of these for every pending CIFS request at the connection */
 struct cifsd_work {
 	/* Server corresponding to this mid */
-	struct cifsd_tcp_conn		*conn;
+	struct cifsd_conn		*conn;
 	struct cifsd_session		*sess;
 	struct cifsd_tree_connect	*tcon;
 
