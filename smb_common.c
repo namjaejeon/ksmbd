@@ -161,7 +161,7 @@ int cifsd_verify_smb_message(struct cifsd_work *work)
 
 /**
  * is_smb_request() - check for valid smb request type
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  * @type:	smb request type
  *
  * Return:      true on success, otherwise false
@@ -358,7 +358,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 
 /**
  * cifsd_extract_shortname() - get shortname from long filename
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @longname:	source long filename
  * @shortname:	destination short filename
  *

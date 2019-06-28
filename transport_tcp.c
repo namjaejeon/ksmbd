@@ -117,7 +117,7 @@ static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
 
 /**
  * get_conn_iovec() - get connection iovec for reading from socket
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @nr_segs:	number of segments in iov
  *
  * Return:	return existing or newly allocate iovec
@@ -262,7 +262,7 @@ static int cifsd_tcp_run_kthread(void)
 
 /**
  * cifsd_tcp_readv() - read data from socket in given iovec
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @iov_orig:	base IO vector
  * @nr_segs:	number of segments in base iov
  * @to_read:	number of bytes to read from socket
@@ -321,7 +321,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 
 /**
  * cifsd_tcp_read() - read data from socket in given buffer
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @buf:	buffer to store read data from socket
  * @to_read:	number of bytes to read from socket
  *

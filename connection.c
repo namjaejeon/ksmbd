@@ -23,9 +23,9 @@ static LIST_HEAD(conn_list);
 static DEFINE_RWLOCK(conn_list_lock);
 
 /**
- * cifsd_conn_free() - shutdown/release the socket and free server
- *                         resources
- * @conn: - server instance for which socket is to be cleaned
+ * cifsd_conn_free() - free resources of the connection instance
+ *
+ * @conn:	connection instance to be cleand up
  *
  * During the thread termination, the corresponding conn instance
  * resources(sock/memory) are released and finally the conn object is freed.
@@ -44,11 +44,9 @@ void cifsd_conn_free(struct cifsd_conn *conn)
 }
 
 /**
- * cifsd_conn_alloc() - initialize tcp server thread for a new connection
- * @conn:     TCP server instance of connection
- * @sock:	socket associated with new connection
+ * cifsd_conn_alloc() - initialize a new connection instance
  *
- * Return:	0 on success, otherwise -ENOMEM
+ * Return:	cifsd_conn struct on success, otherwise NULL
  */
 struct cifsd_conn *cifsd_conn_alloc(void)
 {
@@ -240,7 +238,7 @@ bool cifsd_conn_alive(struct cifsd_conn *conn)
 
 /**
  * cifsd_conn_handler_loop() - session thread to listen on new smb requests
- * @p:     TCP conn instance of connection
+ * @p:		connection instance
  *
  * One thread each per connection
  *
