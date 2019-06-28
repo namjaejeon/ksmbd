@@ -160,16 +160,7 @@ void cifsd_conn_wait_idle(struct cifsd_conn *conn)
 	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
 }
 
-/**
- * cifsd_tcp_write() - send smb response over network socket
- * @cifsd_work:     smb work containing response buffer
- *
- * TODO: change this function for smb2 currently is working for
- * smb1/smb2 both as smb*_buf_length is at beginning of the  packet
- *
- * Return:	0 on success, otherwise error
- */
-int cifsd_tcp_write(struct cifsd_work *work)
+int cifsd_conn_write(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
@@ -196,7 +187,6 @@ int cifsd_tcp_write(struct cifsd_work *work)
 		iov[iov_idx] = (struct kvec) { AUX_PAYLOAD(work),
 			AUX_PAYLOAD_SIZE(work) };
 		len += iov[iov_idx++].iov_len;
-
 	} else {
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);

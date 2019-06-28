@@ -227,7 +227,7 @@ send:
 		conn->ops->is_sign_req(work, command))))
 		conn->ops->set_sign_rsp(work);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 }
 
 /**
