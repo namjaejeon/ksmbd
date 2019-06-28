@@ -11,7 +11,7 @@
 
 #include "misc.h"
 #include "smb_common.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "vfs.h"
 
 #include "mgmt/share_config.h"

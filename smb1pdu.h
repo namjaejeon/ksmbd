@@ -888,7 +888,7 @@ typedef struct smb_com_trans_rsp {
 #define TRANSACT_DCERPCCMD	0x26
 
 /*****************************************************************************
- * TRANS2 command implentation functions
+ * TRANS2 command implementation functions
  *****************************************************************************/
 #define NO_CHANGE_64          0xFFFFFFFFFFFFFFFFULL
 
@@ -1476,7 +1476,7 @@ typedef struct {
 	__le16  InformationLevel;
 } __attribute__((packed)) TRANSACTION2_QFI_REQ_PARAMS;
 
-/* FIND FIRST2 and FIND NEXT2 INFOMATION Level Codes*/
+/* FIND FIRST2 and FIND NEXT2 INFORMATION Level Codes*/
 
 typedef struct {
 	__le16 CreationDate; /* SMB Date see above */
@@ -1932,9 +1932,9 @@ typedef struct smb_com_setattr_rsp {
 } __attribute__((packed)) SETATTR_RSP;
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
-extern int init_smb1_server(struct cifsd_tcp_conn *conn);
+extern int init_smb1_server(struct cifsd_conn *conn);
 #else
-static inline int init_smb1_server(struct cifsd_tcp_conn *conn)
+static inline int init_smb1_server(struct cifsd_conn *conn)
 {
 	return -ENOTSUPP;
 }

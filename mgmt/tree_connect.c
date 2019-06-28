@@ -9,7 +9,7 @@
 #include "../cifsd_server.h" /* FIXME */
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
-#include "../transport_tcp.h"
+#include "../connection.h"
 
 #include "tree_connect.h"
 #include "user_config.h"

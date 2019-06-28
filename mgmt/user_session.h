@@ -21,7 +21,7 @@ struct cifsd_file_table;
 
 struct channel {
 	__u8			smb3signingkey[SMB3_SIGN_KEY_SIZE];
-	struct cifsd_tcp_conn	*conn;
+	struct cifsd_conn	*conn;
 	struct list_head	chann_list;
 };
 
@@ -35,7 +35,7 @@ struct cifsd_session {
 	uint64_t			id;
 
 	struct cifsd_user		*user;
-	struct cifsd_tcp_conn		*conn;
+	struct cifsd_conn		*conn;
 	unsigned int			sequence_number;
 	unsigned int			flags;
 
@@ -86,11 +86,11 @@ void cifsd_session_destroy(struct cifsd_session *sess);
 
 bool cifsd_session_id_match(struct cifsd_session *sess, unsigned long long id);
 struct cifsd_session *cifsd_session_lookup_slowpath(unsigned long long id);
-struct cifsd_session *cifsd_session_lookup(struct cifsd_tcp_conn *conn,
+struct cifsd_session *cifsd_session_lookup(struct cifsd_conn *conn,
 					   unsigned long long id);
-void cifsd_session_register(struct cifsd_tcp_conn *conn,
+void cifsd_session_register(struct cifsd_conn *conn,
 			    struct cifsd_session *sess);
-void cifsd_sessions_deregister(struct cifsd_tcp_conn *conn);
+void cifsd_sessions_deregister(struct cifsd_conn *conn);
 
 int cifsd_acquire_tree_conn_id(struct cifsd_session *sess);
 void cifsd_release_tree_conn_id(struct cifsd_session *sess, int id);

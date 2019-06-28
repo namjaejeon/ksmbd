@@ -9,7 +9,7 @@
 #include "smb2pdu.h"
 
 #include "auth.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "smb_common.h"
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
@@ -130,7 +130,6 @@ static struct smb_version_ops smb2_0_server_ops = {
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
-	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
 	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
@@ -143,7 +142,6 @@ static struct smb_version_ops smb3_0_server_ops = {
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
-	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
 	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
@@ -161,7 +159,6 @@ static struct smb_version_ops smb3_11_server_ops = {
 	.init_rsp_hdr		=	init_smb2_rsp_hdr,
 	.set_rsp_status		=	set_smb2_rsp_status,
 	.allocate_rsp_buf       =       smb2_allocate_rsp_buf,
-	.set_rsp_credits        =       smb2_set_rsp_credits,
 	.check_user_session	=	smb2_check_user_session,
 	.get_cifsd_tcon		=	smb2_get_cifsd_tcon,
 	.is_sign_req		=	smb2_is_sign_req,
@@ -202,7 +199,7 @@ static struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-int init_smb2_0_server(struct cifsd_tcp_conn *conn)
+int init_smb2_0_server(struct cifsd_conn *conn)
 {
 	conn->vals = &smb20_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -214,7 +211,7 @@ int init_smb2_0_server(struct cifsd_tcp_conn *conn)
 	return 0;
 }
 #else
-int init_smb2_0_server(struct cifsd_tcp_conn *conn)
+int init_smb2_0_server(struct cifsd_conn *conn)
 {
 	return -ENOTSUPP;
 }
@@ -225,7 +222,7 @@ int init_smb2_0_server(struct cifsd_tcp_conn *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb2_1_server(struct cifsd_tcp_conn *conn)
+void init_smb2_1_server(struct cifsd_conn *conn)
 {
 	conn->vals = &smb21_server_values;
 	conn->ops = &smb2_0_server_ops;
@@ -243,7 +240,7 @@ void init_smb2_1_server(struct cifsd_tcp_conn *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_0_server(struct cifsd_tcp_conn *conn)
+void init_smb3_0_server(struct cifsd_conn *conn)
 {
 	conn->vals = &smb30_server_values;
 	conn->ops = &smb3_0_server_ops;
@@ -267,7 +264,7 @@ void init_smb3_0_server(struct cifsd_tcp_conn *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-void init_smb3_02_server(struct cifsd_tcp_conn *conn)
+void init_smb3_02_server(struct cifsd_conn *conn)
 {
 	conn->vals = &smb302_server_values;
 	conn->ops = &smb3_0_server_ops;
@@ -291,7 +288,7 @@ void init_smb3_02_server(struct cifsd_tcp_conn *conn)
  *			command dispatcher
  * @conn:	TCP server instance of connection
  */
-int init_smb3_11_server(struct cifsd_tcp_conn *conn)
+int init_smb3_11_server(struct cifsd_conn *conn)
 {
 	conn->vals = &smb311_server_values;
 	conn->ops = &smb3_11_server_ops;

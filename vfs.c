@@ -25,7 +25,7 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "transport_tcp.h"
+#include "connection.h"
 #include "buffer_pool.h"
 #include "vfs.h"
 #include "vfs_cache.h"
@@ -849,11 +849,15 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 
 	spin_lock(&src_dent->d_lock);
 	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
-		if (d_really_is_negative(dst_dent)) {
+		struct cifsd_file *child_fp;
+
+		if (d_really_is_negative(dst_dent))
 			continue;
-		} else {
+
+		child_fp = cifsd_lookup_fd_inode(dst_dent->d_inode);
+		if (child_fp) {
 			spin_unlock(&src_dent->d_lock);
-			cifsd_debug("Forbid rename, dir is in use\n");
+			cifsd_debug("Forbid rename, sub file/dir is in use\n");
 			return -EACCES;
 		}
 	}
@@ -1296,7 +1300,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len)
 {
-	struct cifsd_tcp_conn *conn = work->sess->conn;
+	struct cifsd_conn *conn = work->sess->conn;
 
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
@@ -1306,21 +1310,14 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t off,
-			 loff_t len,
-			 bool is_sparse)
+			 loff_t len)
 {
-	struct cifsd_tcp_conn *conn = work->sess->conn;
-	int mode;
+	struct cifsd_conn *conn = work->sess->conn;
 
 	if (oplocks_enable)
 		smb_break_all_levII_oplock(conn, fp, 1);
 
-	if (is_sparse == true)
-		mode = FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE;
-	else
-		mode = FALLOC_FL_ZERO_RANGE;
-
-	return vfs_fallocate(fp->filp, mode, off, len);
+	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
 }
 
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
@@ -1522,6 +1519,27 @@ int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 	return err;
 }
 
+static int __caseless_lookup(struct dir_context *ctx,
+			     const char *name,
+			     int namlen,
+			     loff_t offset,
+			     u64 ino,
+			     unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf;
+
+	buf = container_of(ctx, struct cifsd_readdir_data, ctx);
+
+	if (buf->used != namlen)
+		return 0;
+	if (!strncasecmp((char *)buf->private, name, namlen)) {
+		strncpy((char *)buf->private, name, namlen);
+		buf->dirent_count = 1;
+		return -EEXIST;
+	}
+	return 0;
+}
+
 /**
  * cifsd_vfs_lookup_in_dir() - lookup a file in a directory
  * @dirname:	directory name
@@ -1535,19 +1553,12 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 	int ret;
 	struct file *dfilp;
 	int flags = O_RDONLY|O_LARGEFILE;
-	int used_count, reclen;
-	int iter;
-	struct cifsd_dirent *buf_p;
-	int namelen = strlen(filename);
 	int dirnamelen = strlen(dirname);
-	bool match_found = false;
 	struct cifsd_readdir_data readdir_data = {
-		.ctx.actor = cifsd_fill_dirent,
-		.dirent = (void *)__get_free_page(GFP_KERNEL)
+		.ctx.actor	= __caseless_lookup,
+		.private	= filename,
+		.used		= strlen(filename),
 	};
-
-	if (!readdir_data.dirent)
-		return -ENOMEM;
 
 	ret = cifsd_vfs_kern_path(dirname, 0, &dir_path, true);
 	if (ret)
@@ -1561,38 +1572,13 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 		goto error;
 	}
 
-	while (!ret && !match_found) {
-		readdir_data.used = 0;
-		readdir_data.full = 0;
-		ret = cifsd_vfs_readdir(dfilp,
-					&readdir_data);
-		used_count = readdir_data.used;
-		if (ret || !used_count)
-			break;
-
-		buf_p = (struct cifsd_dirent *)readdir_data.dirent;
-		for (iter = 0; iter < used_count; iter += reclen,
-		     buf_p = (struct cifsd_dirent *)((char *)buf_p + reclen)) {
-			int length;
-
-			reclen = ALIGN(sizeof(struct cifsd_dirent) +
-				       buf_p->namelen, sizeof(__le64));
-			length = buf_p->namelen;
-			if (length != namelen ||
-				strncasecmp(filename, buf_p->name, namelen))
-				continue;
-			/* got match, make absolute name */
-			memcpy(dirname + dirnamelen + 1, buf_p->name, namelen);
-			match_found = true;
-			break;
-		}
-	}
+	ret = cifsd_vfs_readdir(dfilp, &readdir_data);
+	if (readdir_data.dirent_count > 0)
+		ret = 0;
 
 	fput(dfilp);
 	path_put(&dir_path);
-
 error:
-	free_page((unsigned long)(readdir_data.dirent));
 	dirname[dirnamelen] = '/';
 	return ret;
 }
@@ -1623,6 +1609,7 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 			*filename = '/';
 			return err;
 		}
+
 		err = cifsd_vfs_lookup_in_dir(name, filename);
 		if (err)
 			return err;

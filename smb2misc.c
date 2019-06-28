@@ -9,6 +9,7 @@
 #include "smb2pdu.h"
 #include "smb_common.h"
 #include "mgmt/user_session.h"
+#include "connection.h"
 
 static int check_smb2_hdr(struct smb2_hdr *hdr)
 {
@@ -225,6 +226,7 @@ static char *smb2_get_data_area_len(int *off, int *len, struct smb2_hdr *hdr)
 		*off = le32_to_cpu(
 		     ((struct smb2_ioctl_req *)hdr)->InputOffset);
 		*len = le32_to_cpu(((struct smb2_ioctl_req *)hdr)->InputCount);
+
 		break;
 	default:
 		cifsd_debug("no length check for command\n");
@@ -301,6 +303,89 @@ static unsigned int smb2_calc_size(void *buf)
 calc_size_exit:
 	cifsd_debug("SMB2 len %d\n", len);
 	return len;
+}
+
+static inline int smb2_query_info_req_len(struct smb2_query_info_req *h)
+{
+	return le32_to_cpu(h->InputBufferLength) +
+		le32_to_cpu(h->OutputBufferLength);
+}
+
+static inline int smb2_set_info_req_len(struct smb2_set_info_req *h)
+{
+	return le32_to_cpu(h->BufferLength);
+}
+
+static inline int smb2_read_req_len(struct smb2_read_req *h)
+{
+	return le32_to_cpu(h->Length);
+}
+
+static inline int smb2_write_req_len(struct smb2_write_req *h)
+{
+	return le32_to_cpu(h->Length);
+}
+
+static inline int smb2_query_dir_req_len(struct smb2_query_directory_req *h)
+{
+	return le32_to_cpu(h->OutputBufferLength);
+}
+
+static inline int smb2_ioctl_req_len(struct smb2_ioctl_req *h)
+{
+	return le32_to_cpu(h->InputCount) +
+		le32_to_cpu(h->OutputCount);
+}
+
+static inline int smb2_ioctl_resp_len(struct smb2_ioctl_req *h)
+{
+	return le32_to_cpu(h->MaxInputResponse) +
+		le32_to_cpu(h->MaxOutputResponse);
+}
+
+static int smb2_validate_credit_charge(struct smb2_hdr *hdr)
+{
+	int req_len = 0, expect_resp_len = 0, calc_credit_num, max_len;
+	int credit_charge = le16_to_cpu(hdr->CreditCharge);
+	void *__hdr = hdr;
+
+	switch (hdr->Command) {
+	case SMB2_QUERY_INFO:
+		req_len = smb2_query_info_req_len(__hdr);
+		break;
+	case SMB2_SET_INFO:
+		req_len = smb2_set_info_req_len(__hdr);
+		break;
+	case SMB2_READ:
+		req_len = smb2_read_req_len(__hdr);
+		break;
+	case SMB2_WRITE:
+		req_len = smb2_write_req_len(__hdr);
+		break;
+	case SMB2_QUERY_DIRECTORY:
+		req_len = smb2_query_dir_req_len(__hdr);
+		break;
+	case SMB2_IOCTL:
+		req_len = smb2_ioctl_req_len(__hdr);
+		expect_resp_len = smb2_ioctl_resp_len(__hdr);
+		break;
+	default:
+		return 0;
+	}
+
+	max_len = max(req_len, expect_resp_len);
+	calc_credit_num = (max_len - 1) / 65536 + 1;
+	if (!credit_charge && max_len > 65536) {
+		cifsd_err("credit charge is zero and payload size(%d) is bigger than 64K\n",
+			max_len);
+		return 1;
+	} else if (credit_charge < calc_credit_num) {
+		cifsd_err("credit charge : %d, calc_credit_num : %d\n",
+			credit_charge, calc_credit_num);
+		return 1;
+	}
+
+	return 0;
 }
 
 int cifsd_smb2_check_message(struct cifsd_work *work)
@@ -391,7 +476,9 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 
 		return 1;
 	}
-	return 0;
+
+	return work->conn->srv_cap & SMB2_GLOBAL_CAP_LARGE_MTU ?
+		smb2_validate_credit_charge(hdr) : 0;
 }
 
 int smb2_negotiate_request(struct cifsd_work *work)
