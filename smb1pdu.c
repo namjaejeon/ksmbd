@@ -552,7 +552,7 @@ out_err:
 		cifsd_conn_set_exiting(work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + le16_to_cpu(rsp->ByteCount) +
 		extra_byte));
-	return status.ret;
+	return -EINVAL;
 }
 
 /**
