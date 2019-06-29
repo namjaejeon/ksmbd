@@ -13,9 +13,12 @@ function is_module
 	local ok=$(cat "$KERNEL_SRC"/.config | grep -c "CONFIG_CIFS_SERVER=m")
 
 	if [ "z$ok" != "z1" ]; then
-		echo "It doesn't look like CIFS_SERVER is as a kernel module"
-		exit 1
+		echo "0"
+		return
 	fi
+
+	echo "1"
+	return
 }
 
 function patch_fs_config
@@ -47,6 +50,14 @@ function patch_fs_config
 			exit 1
 		fi
 		mv "$KERNEL_SRC"/fs/Kconfig.new "$KERNEL_SRC"/fs/Kconfig
+	fi
+
+	ok=$(is_module)
+	if [ "z$ok" == "z0" ]; then
+		ok=$(echo "CONFIG_CIFS_SERVER=m" >> "$KERNEL_SRC"/.config)
+		if [ $? != 0 ]; then
+			exit 1
+		fi
 	fi
 }
 
@@ -80,7 +91,11 @@ function kcifsd_module_install
 		fi
 	fi
 
-	is_module
+	ok=$(is_module)
+	if [ "z$ok" == "z0" ]; then
+		echo "It doesn't look like CIFS_SERVER is as a kernel module"
+		exit 1
+	fi
 
 	if [ ! -f "$KERNEL_SRC"/fs/cifsd/cifsd.ko ]; then
 		echo "ERROR: cifsd.ko was not found"
