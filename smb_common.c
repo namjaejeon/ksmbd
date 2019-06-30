@@ -367,28 +367,27 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
  * but the result is different with Windows 7's one. need to check.
  */
 int cifsd_extract_shortname(struct cifsd_conn *conn,
-			    char *longname,
+			    const char *longname,
 			    char *shortname)
 {
-	char *p, *sp;
+	const char *p;
 	char base[9], extension[4];
 	char out[13] = {0};
 	int baselen = 0;
 	int extlen = 0, len = 0;
 	unsigned int csum = 0;
-	unsigned char *ptr;
+	const unsigned char *ptr;
 	bool dot_present = true;
 
 	p = longname;
 	if ((*p == '.') || (!(strcmp(p, "..")))) {
 		/*no mangling required */
-		shortname = NULL;
 		return 0;
 	}
+
 	p = strrchr(longname, '.');
 	if (p == longname) { /*name starts with a dot*/
-		sp = "___";
-		memcpy(extension, sp, 3);
+		strcpy(extension, "___");
 		extension[3] = '\0';
 	} else {
 		if (p != NULL) {
@@ -404,8 +403,10 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 	}
 
 	p = longname;
-	if (*p == '.')
-		*p++ = 0;
+	if (*p == '.') {
+		p++;
+		longname++;
+	}
 	while (*p && (baselen < 5)) {
 		if (*p != '.')
 			base[baselen++] = toupper(*p);

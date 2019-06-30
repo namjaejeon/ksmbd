@@ -129,7 +129,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 						struct cifsd_kstat *));
 
 int cifsd_extract_shortname(struct cifsd_conn *conn,
-			    char *longname,
+			    const char *longname,
 			    char *shortname);
 
 void cifsd_init_smb2_server_common(struct cifsd_conn *conn);
