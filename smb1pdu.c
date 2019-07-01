@@ -5991,9 +5991,6 @@ static int find_next(struct cifsd_work *work)
 	char *dirpath = NULL;
 	char *name = NULL;
 	char *pathname = NULL;
-	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
-	};
 	int header_size;
 
 	req_params = (TRANSACTION2_FNEXT_REQ_PARAMS *)(REQUEST_BUF(work) +
@@ -6017,7 +6014,7 @@ static int find_next(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	r_data.dirent = dir_fp->readdir_data.dirent;
+	dir_fp->readdir_data.ctx.actor = cifsd_fill_dirent;
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!pathname) {
 		cifsd_debug("Failed to allocate memory\n");
@@ -6050,17 +6047,15 @@ static int find_next(struct cifsd_work *work)
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
-			r_data.used = 0;
-			r_data.full = 0;
+			dir_fp->readdir_data.used = 0;
+			dir_fp->readdir_data.full = 0;
 			rc = cifsd_vfs_readdir(dir_fp->filp,
-					       &r_data);
+					       &dir_fp->readdir_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
 			}
 
-			dir_fp->readdir_data.used = r_data.used;
-			dir_fp->readdir_data.full = r_data.full;
 			if (!dir_fp->readdir_data.used) {
 				free_page((unsigned long)
 						(dir_fp->readdir_data.dirent));
