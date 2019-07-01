@@ -5701,10 +5701,8 @@ static int cifsd_fill_dirent(struct dir_context *ctx,
 	unsigned int reclen;
 
 	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
-	if (buf->used + reclen > PAGE_SIZE) {
-		buf->full = 1;
+	if (buf->used + reclen > PAGE_SIZE)
 		return -EINVAL;
-	}
 
 	de->namelen = namlen;
 	de->offset = offset;
@@ -5781,7 +5779,6 @@ static int find_first(struct cifsd_work *work)
 
 	dir_fp->filename = dirpath;
 	dir_fp->readdir_data.used = 0;
-	dir_fp->readdir_data.full = 0;
 	dir_fp->dirent_offset = 0;
 	dir_fp->readdir_data.file_attr =
 		le16_to_cpu(req_params->SearchAttributes);
@@ -5821,7 +5818,6 @@ static int find_first(struct cifsd_work *work)
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			dir_fp->readdir_data.full = 0;
 			rc = cifsd_vfs_readdir(dir_fp->filp,
 					       &dir_fp->readdir_data);
 			if (rc < 0) {
@@ -6042,7 +6038,6 @@ static int find_next(struct cifsd_work *work)
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			dir_fp->readdir_data.full = 0;
 			rc = cifsd_vfs_readdir(dir_fp->filp,
 					       &dir_fp->readdir_data);
 			if (rc < 0) {

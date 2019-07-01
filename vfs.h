@@ -102,7 +102,6 @@ struct cifsd_readdir_data {
 	};
 
 	unsigned int		used;
-	unsigned int		full;
 	unsigned int		dirent_count;
 	unsigned int		file_attr;
 };
