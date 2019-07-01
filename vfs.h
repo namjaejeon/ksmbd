@@ -95,16 +95,16 @@ struct cifsd_dir_info {
 };
 
 struct cifsd_readdir_data {
-	struct		dir_context ctx;
+	struct dir_context	ctx;
 	union {
 		void		*private;
 		char		*dirent;
 	};
 
-	unsigned int	used;
-	unsigned int	full;
-	unsigned int	dirent_count;
-	unsigned int	file_attr;
+	unsigned int		used;
+	unsigned int		full;
+	unsigned int		dirent_count;
+	unsigned int		file_attr;
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */

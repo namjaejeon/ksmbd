@@ -3091,9 +3091,6 @@ int smb2_query_dir(struct cifsd_work *work)
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
 	struct smb2_query_dir_private query_dir_private = {NULL, };
-	struct cifsd_readdir_data r_data = {
-		.ctx.actor = __query_dir,
-	};
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_query_directory_rsp *)RESPONSE_BUF(work);
@@ -3214,8 +3211,10 @@ int smb2_query_dir(struct cifsd_work *work)
 	query_dir_private.info_level		= req->FileInformationClass;
 	query_dir_private.flags			= srch_flag;
 
-	r_data.private = &query_dir_private;
-	rc = cifsd_vfs_readdir(dir_fp->filp, &r_data);
+	dir_fp->readdir_data.private		= &query_dir_private;
+	dir_fp->readdir_data.ctx.actor		= __query_dir;
+
+	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
 	if (rc)
 		goto err_out;
 
