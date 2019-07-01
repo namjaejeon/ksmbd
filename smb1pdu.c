@@ -5743,16 +5743,7 @@ static int find_first(struct cifsd_work *work)
 	int srch_cnt = 0;
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
-	struct cifsd_readdir_data r_data = {
-		.ctx.actor = cifsd_fill_dirent,
-		.dirent = (void *)__get_free_page(GFP_KERNEL)
-	};
 	int header_size;
-
-	if (!r_data.dirent) {
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
 
 	req_params = (TRANSACTION2_FFIRST_REQ_PARAMS *)(REQUEST_BUF(work) +
 			req->ParameterOffset + 4);
@@ -5781,8 +5772,14 @@ static int find_first(struct cifsd_work *work)
 		goto err_out;
 	}
 
+	dir_fp->readdir_data.ctx.actor = cifsd_fill_dirent;
+	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
+	if (!dir_fp->readdir_data.dirent) {
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		goto err_out;
+	}
+
 	dir_fp->filename = dirpath;
-	dir_fp->readdir_data.dirent = r_data.dirent;
 	dir_fp->readdir_data.used = 0;
 	dir_fp->readdir_data.full = 0;
 	dir_fp->dirent_offset = 0;
@@ -5823,17 +5820,15 @@ static int find_first(struct cifsd_work *work)
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
-			r_data.used = 0;
-			r_data.full = 0;
+			dir_fp->readdir_data.used = 0;
+			dir_fp->readdir_data.full = 0;
 			rc = cifsd_vfs_readdir(dir_fp->filp,
-					       &r_data);
+					       &dir_fp->readdir_data);
 			if (rc < 0) {
 				cifsd_debug("err : %d\n", rc);
 				goto err_out;
 			}
 
-			dir_fp->readdir_data.used = r_data.used;
-			dir_fp->readdir_data.full = r_data.full;
 			if (!dir_fp->readdir_data.used) {
 				free_page((unsigned long)
 						(dir_fp->readdir_data.dirent));
@@ -5954,8 +5949,7 @@ err_out:
 	}
 
 	if (rsp->hdr.Status.CifsError == 0)
-		rsp->hdr.Status.CifsError =
-			STATUS_UNEXPECTED_IO_ERROR;
+		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
 	return 0;
