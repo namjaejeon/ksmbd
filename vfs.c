@@ -1501,21 +1501,16 @@ static int __dir_empty(struct dir_context *ctx,
  */
 int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
-	struct cifsd_readdir_data r_data = {
-		.ctx.actor = __dir_empty,
-		.dirent_count = 0
-	};
 	int err;
 
-	r_data.used = 0;
-	r_data.full = 0;
+	fp->readdir_data.ctx.actor	= __dir_empty;
+	fp->readdir_data.dirent_count	= 0;
 
-	err = cifsd_vfs_readdir(fp->filp, &r_data);
-	if (r_data.dirent_count > 2)
+	err = cifsd_vfs_readdir(fp->filp, &fp->readdir_data);
+	if (fp->readdir_data.dirent_count > 2)
 		err = -ENOTEMPTY;
 	else
 		err = 0;
-
 	return err;
 }
 
