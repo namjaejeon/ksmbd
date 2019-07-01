@@ -994,7 +994,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		conn->sign = true;
 	}
 
-	conn->srv_sec_mode = rsp->SecurityMode;
+	conn->srv_sec_mode = le16_to_cpu(rsp->SecurityMode);
 	cifsd_conn_set_need_negotiate(work);
 
 err_out:
