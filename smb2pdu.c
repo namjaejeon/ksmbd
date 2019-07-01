@@ -3212,7 +3212,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	query_dir_private.flags			= srch_flag;
 
 	dir_fp->readdir_data.private		= &query_dir_private;
-	dir_fp->readdir_data.ctx.actor		= __query_dir;
+	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
 	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
 	if (rc)

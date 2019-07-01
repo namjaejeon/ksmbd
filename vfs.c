@@ -1503,7 +1503,7 @@ int cifsd_vfs_empty_dir(struct cifsd_file *fp)
 {
 	int err;
 
-	fp->readdir_data.ctx.actor	= __dir_empty;
+	set_ctx_actor(&fp->readdir_data.ctx, __dir_empty);
 	fp->readdir_data.dirent_count	= 0;
 
 	err = cifsd_vfs_readdir(fp->filp, &fp->readdir_data);

@@ -5770,7 +5770,7 @@ static int find_first(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	dir_fp->readdir_data.ctx.actor = cifsd_fill_dirent;
+	set_ctx_actor(&dir_fp->readdir_data.ctx, cifsd_fill_dirent);
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
 	if (!dir_fp->readdir_data.dirent) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
@@ -6004,7 +6004,7 @@ static int find_next(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	dir_fp->readdir_data.ctx.actor = cifsd_fill_dirent;
+	set_ctx_actor(&dir_fp->readdir_data.ctx, cifsd_fill_dirent);
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!pathname) {
 		cifsd_debug("Failed to allocate memory\n");
