@@ -396,8 +396,7 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 
 	next_hdr_offset = le32_to_cpu(req->NextCommand);
 
-	/* Align the length to 8Byte  */
-	new_len = ((len + 7) & ~7);
+	new_len = ALIGN(len, 8);
 	inc_rfc1001_len(RESPONSE_BUF(work), ((sizeof(struct smb2_hdr) - 4)
 			+ new_len - len));
 	rsp->NextCommand = cpu_to_le32(new_len);
@@ -465,7 +464,7 @@ bool is_chained_smb2_message(struct cifsd_work *work)
 		 * This is last request in chained command,
 		 * align response to 8 byte
 		 */
-		len = ((get_rfc1002_length(RESPONSE_BUF(work)) + 7) & ~7);
+		len = ALIGN(get_rfc1002_length(RESPONSE_BUF(work)), 8);
 		len = len - get_rfc1002_length(RESPONSE_BUF(work));
 		if (len) {
 			cifsd_debug("padding len %u\n", len);
@@ -6949,15 +6948,12 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 
 	if (!work->next_smb2_rsp_hdr_off) {
 		len = get_rfc1002_length(hdr_org);
-		if (req_hdr->NextCommand) {
-			/* Align the length to 8Byte  */
-			len = ((len + 7) & ~7);
-		}
+		if (req_hdr->NextCommand)
+			len = ALIGN(len, 8);
 	} else {
 		len = get_rfc1002_length(hdr_org) -
 			work->next_smb2_rsp_hdr_off;
-		/* Align the length to 8Byte  */
-		len = ((len + 7) & ~7);
+		len = ALIGN(len, 8);
 	}
 
 	if (le16_to_cpu(hdr->Command) == SMB2_SESSION_SETUP_HE) {
