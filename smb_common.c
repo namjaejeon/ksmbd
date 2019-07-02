@@ -327,10 +327,13 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 		struct cifsd_kstat cifsd_kstat;
 
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
-			if (i == 0)
+			if (i == 0) {
 				d_info->name = ".";
-			else
+				d_info->name_len = 1;
+			} else {
 				d_info->name = "..";
+				d_info->name_len = 2;
+			}
 
 			if (!match_pattern(d_info->name, search_pattern)) {
 				dir->dot_dotdot[i] = 1;
@@ -364,28 +367,27 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
  * but the result is different with Windows 7's one. need to check.
  */
 int cifsd_extract_shortname(struct cifsd_conn *conn,
-			    char *longname,
+			    const char *longname,
 			    char *shortname)
 {
-	char *p, *sp;
+	const char *p;
 	char base[9], extension[4];
 	char out[13] = {0};
 	int baselen = 0;
 	int extlen = 0, len = 0;
 	unsigned int csum = 0;
-	unsigned char *ptr;
+	const unsigned char *ptr;
 	bool dot_present = true;
 
 	p = longname;
 	if ((*p == '.') || (!(strcmp(p, "..")))) {
 		/*no mangling required */
-		shortname = NULL;
 		return 0;
 	}
+
 	p = strrchr(longname, '.');
 	if (p == longname) { /*name starts with a dot*/
-		sp = "___";
-		memcpy(extension, sp, 3);
+		strcpy(extension, "___");
 		extension[3] = '\0';
 	} else {
 		if (p != NULL) {
@@ -401,8 +403,10 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 	}
 
 	p = longname;
-	if (*p == '.')
-		*p++ = 0;
+	if (*p == '.') {
+		p++;
+		longname++;
+	}
 	while (*p && (baselen < 5)) {
 		if (*p != '.')
 			base[baselen++] = toupper(*p);
@@ -430,45 +434,6 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 			conn->local_nls, 0);
 	len = strlen(out) * 2;
 	return len;
-}
-
-/**
- * cifsd_fill_dirent() - populates a dirent details in readdir
- * @ctx:	dir_context information
- * @name:	dirent name
- * @namelen:	dirent name length
- * @offset:	dirent offset in directory
- * @ino:	dirent inode number
- * @d_type:	dirent type
- *
- * Return:	0 on success, otherwise -EINVAL
- */
-int cifsd_fill_dirent(struct dir_context *ctx,
-		      const char *name,
-		      int namlen,
-		      loff_t offset,
-		      u64 ino,
-		      unsigned int d_type)
-{
-	struct cifsd_readdir_data *buf =
-		container_of(ctx, struct cifsd_readdir_data, ctx);
-	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
-	unsigned int reclen;
-
-	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
-	if (buf->used + reclen > PAGE_SIZE) {
-		buf->full = 1;
-		return -EINVAL;
-	}
-
-	de->namelen = namlen;
-	de->offset = offset;
-	de->ino = ino;
-	de->d_type = d_type;
-	memcpy(de->name, name, namlen);
-	buf->used += reclen;
-
-	return 0;
 }
 
 static int __smb2_negotiate(struct cifsd_conn *conn)

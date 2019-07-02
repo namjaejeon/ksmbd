@@ -627,7 +627,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -748,7 +748,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -879,7 +879,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 
 	inc_rfc1001_len(rsp, 44);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -1196,15 +1196,20 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
-	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
-	int share_ret)
+int smb_grant_oplock(struct cifsd_work *work,
+		     int req_op_level,
+		     uint64_t pid,
+		     struct cifsd_file *fp,
+		     __u16 tid,
+		     struct lease_ctx_info *lctx,
+		     int share_ret)
 {
 	struct cifsd_session *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_inode *ci = fp->f_ci;
-	int prev_op_has_lease = 0, prev_op_state = 0;
+	bool prev_op_has_lease;
+	__le32 prev_op_state = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {

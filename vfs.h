@@ -84,34 +84,26 @@ struct cifsd_work;
 struct cifsd_file;
 
 struct cifsd_dir_info {
-	char		*name;
+	const char	*name;
 	char		*bufptr;
-	bool		hide_dot_file;
+	int		name_len;
 	int		out_buf_len;
 	int		num_entry;
 	int		data_count;
 	int		last_entry_offset;
+	bool		hide_dot_file;
 };
 
 struct cifsd_readdir_data {
-	struct		dir_context ctx;
+	struct dir_context	ctx;
 	union {
 		void		*private;
 		char		*dirent;
 	};
 
-	unsigned int	used;
-	unsigned int	full;
-	unsigned int	dirent_count;
-	unsigned int	file_attr;
-};
-
-struct cifsd_dirent {
-	unsigned long long	ino;
-	unsigned long long	offset;
-	unsigned int		namelen;
-	unsigned int		d_type;
-	char			name[];
+	unsigned int		used;
+	unsigned int		dirent_count;
+	unsigned int		file_attr;
 };
 
 /* cifsd kstat wrapper to get valid create time when reading dir entry */
@@ -209,10 +201,11 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
 				struct cifsd_fs_sector_size *fs_ss);
-char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct cifsd_kstat *cifsd_kstat,
-			     struct cifsd_dirent *de,
-			     char *dirpath);
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
 int cifsd_vfs_posix_lock_wait(struct file_lock *flock);

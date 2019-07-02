@@ -51,11 +51,11 @@ struct smbd_data_transfer {
 } __packed;
 
 #ifdef CONFIG_CIFSD_SMBDIRECT
-extern int cifsd_smbd_init(void);
-extern int cifsd_smbd_destroy(void);
+int cifsd_smbd_init(void);
+int cifsd_smbd_destroy(void);
 #else
-int cifsd_smbd_init(void) { return 0; }
-int cifsd_smbd_destroy(void) { return 0; }
+static inline int cifsd_smbd_init(void) { return 0; }
+static inline int cifsd_smbd_destroy(void) { return 0; }
 #endif
 
 #endif /* __CIFSD_TRANSPORT_SMBD_H__ */

@@ -455,7 +455,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		 * Some windows servers (win2016) will pad also the final
 		 * PDU in a compound to 8 bytes.
 		 */
-		if (((clc_len + 7) & ~7) == len)
+		if (ALIGN(clc_len, 8) == len)
 			return 0;
 
 		/*

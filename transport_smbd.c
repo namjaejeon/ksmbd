@@ -60,28 +60,21 @@
  * Those may change after a SMBD negotiation
  */
 /* The local peer's maximum number of credits to grant to the peer */
-int smbd_receive_credit_max = 255;
+static int smbd_receive_credit_max = 255;
 
 /* The remote peer's credit request of local peer */
-int smbd_send_credit_target = 255;
+static int smbd_send_credit_target = 255;
 
 /* The maximum single message size can be sent to remote peer */
-int smbd_max_send_size = 1364;
+static int smbd_max_send_size = 1364;
 
 /*  The maximum fragmented upper-layer payload receive size supported */
-int smbd_max_fragmented_recv_size = 1024 * 1024;
+static int smbd_max_fragmented_recv_size = 1024 * 1024;
 
 /*  The maximum single-message size which can be received */
-int smbd_max_receive_size = 8192;
+static int smbd_max_receive_size = 8192;
 
-/*
- * User configurable initial values for RDMA transport
- * The actual values used may be lower and are limited to hardware capabilities
- */
-/* Default maximum number of SGEs in a RDMA write/read */
-int smbd_max_frmr_depth = 2048;
-
-struct smbd_listener {
+static struct smbd_listener {
 	struct rdma_cm_id	*cm_id;
 } smbd_listener;
 
@@ -163,7 +156,7 @@ enum {
 	SMBD_MSG_DATA_TRANSFER
 };
 
-struct cifsd_transport_ops cifsd_smbd_transport_ops;
+static struct cifsd_transport_ops cifsd_smbd_transport_ops;
 
 struct smbd_sendmsg {
 	struct smbd_transport	*transport;
@@ -183,7 +176,6 @@ struct smbd_recvmsg {
 	u8			packet[];
 };
 
-extern struct cifsd_transport_ops cifsd_smbd_transport_ops;
 static void smbd_destroy_pools(struct smbd_transport *transport);
 static void smbd_post_recv_credits(struct work_struct *work);
 static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
@@ -464,7 +456,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 		struct smbd_data_transfer *req =
 				(struct smbd_data_transfer *) recvmsg->packet;
 		struct smb2_hdr *hdr = (struct smb2_hdr *) (recvmsg->packet
-				+ le16_to_cpu(req->data_offset) - 4);
+				+ le32_to_cpu(req->data_offset) - 4);
 		cifsd_debug("CreditGranted: %u, CreditRequested: %u, "
 				"DataLength: %u, RemaingDataLength: %u, "
 				"SMB: %x, Command: %u\n",
@@ -487,7 +479,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 			le32_to_cpu(req->max_receive_size),
 			le32_to_cpu(req->max_fragmented_size));
 		if (le16_to_cpu(req->min_version) > 0x0100 ||
-				le16_to_cpu(req->max_version < 0x0100))
+				le16_to_cpu(req->max_version) < 0x0100)
 			return -ENOTSUPP;
 		if (le16_to_cpu(req->credits_requested) <= 0 ||
 				le32_to_cpu(req->max_receive_size) <= 128 ||
@@ -887,7 +879,7 @@ static int smbd_create_header(struct smbd_transport *t,
 	sendmsg->sge[0].addr = ib_dma_map_single(t->cm_id->device,
 						 (void *)packet,
 						 header_length,
-						 DMA_BIDIRECTIONAL);
+						 DMA_TO_DEVICE);
 	if (ib_dma_mapping_error(t->cm_id->device, sendmsg->sge[0].addr)) {
 		smbd_free_sendmsg(t, sendmsg);
 		rc = -EIO;
@@ -967,7 +959,7 @@ static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
 	for (i = 0; i < nvecs; i++) {
 		sendmsg->sge[i+1].addr =
 			ib_dma_map_single(t->cm_id->device, iov[i].iov_base,
-			       iov[i].iov_len, DMA_BIDIRECTIONAL);
+			       iov[i].iov_len, DMA_TO_DEVICE);
 		if (ib_dma_mapping_error(
 				t->cm_id->device, sendmsg->sge[i+1].addr)) {
 			rc = -EIO;
@@ -1715,7 +1707,7 @@ int cifsd_smbd_destroy(void)
 	return 0;
 }
 
-struct cifsd_transport_ops cifsd_smbd_transport_ops = {
+static struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
 	.writev		= smbd_writev,
 	.read		= smbd_read,
