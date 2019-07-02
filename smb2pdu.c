@@ -3171,12 +3171,6 @@ int smb2_query_dir(struct cifsd_work *work)
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
 	}
 
-	if ((srch_flag & SMB2_INDEX_SPECIFIED) && req->FileIndex) {
-		cifsd_debug("specified index\n");
-		generic_file_llseek(dir_fp->filp, le32_to_cpu(req->FileIndex),
-			SEEK_SET);
-	}
-
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.bufptr = (char *)rsp->Buffer;
 	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
