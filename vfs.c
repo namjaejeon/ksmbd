@@ -930,10 +930,10 @@ int cifsd_vfs_fp_rename(struct cifsd_file *fp, char *newname)
 				 dst_name);
 	unlock_rename(src_dent_parent, dst_dent_parent);
 	dput(dst_dent_parent);
+	path_put(&dst_path);
 out:
 	dput(src_dent);
 	dput(src_dent_parent);
-	path_put(&dst_path);
 	return err;
 }
 
