@@ -3075,6 +3075,7 @@ static int __query_dir(struct dir_context *ctx,
 	if (rc)
 		return rc;
 
+	ctx->pos += namlen;
 	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
 		return -EEXIST;
 
