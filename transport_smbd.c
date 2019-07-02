@@ -486,7 +486,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 			le32_to_cpu(req->max_receive_size),
 			le32_to_cpu(req->max_fragmented_size));
 		if (le16_to_cpu(req->min_version) > 0x0100 ||
-				le16_to_cpu(req->max_version < 0x0100))
+				le16_to_cpu(req->max_version) < 0x0100)
 			return -ENOTSUPP;
 		if (le16_to_cpu(req->credits_requested) <= 0 ||
 				le32_to_cpu(req->max_receive_size) <= 128 ||
