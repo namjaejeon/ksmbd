@@ -2901,7 +2901,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	if (next_entry_offset > d_info->out_buf_len) {
 		kfree(conv_name);
 		d_info->out_buf_len = 0;
-		return 0;
+		return -ENOSPC;
 	}
 
 	kstat = cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
@@ -3040,12 +3040,6 @@ static int __query_dir(struct dir_context *ctx,
 	priv	= buf->private;
 	d_info	= priv->d_info;
 
-	/* XXX */
-	if (d_info->out_buf_len < NAME_MAX) {
-		d_info->out_buf_len = 0;
-		return -ENOSPC;
-	}
-
 	/* dot and dotdot entries are already reserved */
 	if (!strcmp(".", name) || !strcmp("..", name))
 		return 0;
@@ -3072,12 +3066,12 @@ static int __query_dir(struct dir_context *ctx,
 					 priv->info_level,
 					 d_info,
 					 &cifsd_kstat);
-	if (rc)
+	if (rc == -ENOSPC)
 		return rc;
 
 	ctx->pos += namlen;
 	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
-		return -EEXIST;
+		return 0;
 
 	return 0;
 }
@@ -3195,6 +3189,8 @@ int smb2_query_dir(struct cifsd_work *work)
 						&d_info,
 						srch_ptr,
 						smb2_populate_readdir_entry);
+		if (rc == -ENOSPC)
+			rc = 0;
 		if (rc)
 			goto err_out;
 	}
@@ -3213,6 +3209,8 @@ int smb2_query_dir(struct cifsd_work *work)
 	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
 	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
+	if (rc == -ENOSPC)
+		rc = 0;
 	if (rc)
 		goto err_out;
 
