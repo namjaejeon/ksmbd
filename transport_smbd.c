@@ -463,7 +463,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 		struct smbd_data_transfer *req =
 				(struct smbd_data_transfer *) recvmsg->packet;
 		struct smb2_hdr *hdr = (struct smb2_hdr *) (recvmsg->packet
-				+ le16_to_cpu(req->data_offset) - 4);
+				+ le32_to_cpu(req->data_offset) - 4);
 		cifsd_debug("CreditGranted: %u, CreditRequested: %u, "
 				"DataLength: %u, RemaingDataLength: %u, "
 				"SMB: %x, Command: %u\n",
