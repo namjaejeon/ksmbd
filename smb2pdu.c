@@ -4020,7 +4020,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			FILE_SYSTEM_ATTRIBUTE_INFO *fs_info;
 
 			fs_info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
-			fs_info->Attributes = cpu_to_le32(0x0001002f);
+			fs_info->Attributes = cpu_to_le32(0x0001006f);
 			fs_info->MaxPathNameComponentLength =
 				cpu_to_le32(stfs.f_namelen);
 			len = smbConvertToUTF16((__le16 *)
