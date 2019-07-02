@@ -60,28 +60,28 @@
  * Those may change after a SMBD negotiation
  */
 /* The local peer's maximum number of credits to grant to the peer */
-int smbd_receive_credit_max = 255;
+static int smbd_receive_credit_max = 255;
 
 /* The remote peer's credit request of local peer */
-int smbd_send_credit_target = 255;
+static int smbd_send_credit_target = 255;
 
 /* The maximum single message size can be sent to remote peer */
-int smbd_max_send_size = 1364;
+static int smbd_max_send_size = 1364;
 
 /*  The maximum fragmented upper-layer payload receive size supported */
-int smbd_max_fragmented_recv_size = 1024 * 1024;
+static int smbd_max_fragmented_recv_size = 1024 * 1024;
 
 /*  The maximum single-message size which can be received */
-int smbd_max_receive_size = 8192;
+static int smbd_max_receive_size = 8192;
 
 /*
  * User configurable initial values for RDMA transport
  * The actual values used may be lower and are limited to hardware capabilities
  */
 /* Default maximum number of SGEs in a RDMA write/read */
-int smbd_max_frmr_depth = 2048;
+static int smbd_max_frmr_depth = 2048;
 
-struct smbd_listener {
+static struct smbd_listener {
 	struct rdma_cm_id	*cm_id;
 } smbd_listener;
 
@@ -163,7 +163,7 @@ enum {
 	SMBD_MSG_DATA_TRANSFER
 };
 
-struct cifsd_transport_ops cifsd_smbd_transport_ops;
+static struct cifsd_transport_ops cifsd_smbd_transport_ops;
 
 struct smbd_sendmsg {
 	struct smbd_transport	*transport;
@@ -1715,7 +1715,7 @@ int cifsd_smbd_destroy(void)
 	return 0;
 }
 
-struct cifsd_transport_ops cifsd_smbd_transport_ops = {
+static struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
 	.writev		= smbd_writev,
 	.read		= smbd_read,
