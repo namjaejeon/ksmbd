@@ -183,7 +183,6 @@ struct smbd_recvmsg {
 	u8			packet[];
 };
 
-extern struct cifsd_transport_ops cifsd_smbd_transport_ops;
 static void smbd_destroy_pools(struct smbd_transport *transport);
 static void smbd_post_recv_credits(struct work_struct *work);
 static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
