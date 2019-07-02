@@ -6375,7 +6375,24 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_SET_SPARSE:
+	{
+		struct cifsd_file *fp;
+		struct file_sparse *sparse;
+
+		fp = cifsd_lookup_fd_fast(work, id);
+		if (!fp) {
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+
+		sparse =
+			(struct file_sparse *)&req->Buffer[0];
+		if (sparse->SetSparse)
+			fp->fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
+		else
+			fp->fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
 		break;
+	}
 	case FSCTL_SET_ZERO_DATA:
 	{
 		struct file_zero_data_information *zero_data;
