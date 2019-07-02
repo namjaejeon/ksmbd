@@ -74,13 +74,6 @@ static int smbd_max_fragmented_recv_size = 1024 * 1024;
 /*  The maximum single-message size which can be received */
 static int smbd_max_receive_size = 8192;
 
-/*
- * User configurable initial values for RDMA transport
- * The actual values used may be lower and are limited to hardware capabilities
- */
-/* Default maximum number of SGEs in a RDMA write/read */
-static int smbd_max_frmr_depth = 2048;
-
 static struct smbd_listener {
 	struct rdma_cm_id	*cm_id;
 } smbd_listener;
@@ -886,7 +879,7 @@ static int smbd_create_header(struct smbd_transport *t,
 	sendmsg->sge[0].addr = ib_dma_map_single(t->cm_id->device,
 						 (void *)packet,
 						 header_length,
-						 DMA_BIDIRECTIONAL);
+						 DMA_TO_DEVICE);
 	if (ib_dma_mapping_error(t->cm_id->device, sendmsg->sge[0].addr)) {
 		smbd_free_sendmsg(t, sendmsg);
 		rc = -EIO;
@@ -966,7 +959,7 @@ static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
 	for (i = 0; i < nvecs; i++) {
 		sendmsg->sge[i+1].addr =
 			ib_dma_map_single(t->cm_id->device, iov[i].iov_base,
-			       iov[i].iov_len, DMA_BIDIRECTIONAL);
+			       iov[i].iov_len, DMA_TO_DEVICE);
 		if (ib_dma_mapping_error(
 				t->cm_id->device, sendmsg->sge[i+1].addr)) {
 			rc = -EIO;

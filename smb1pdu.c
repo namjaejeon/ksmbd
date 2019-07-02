@@ -631,7 +631,7 @@ smb_get_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-ENOENT);
 	}
 
-	cifsd_debug("absoulte name = %s\n", unixname);
+	cifsd_debug("absolute name = %s\n", unixname);
 	return unixname;
 }
 
@@ -712,7 +712,7 @@ static char *smb_get_dir_name(struct cifsd_share_config *share, const char *src,
 		return ERR_PTR(-ENOENT);
 	}
 
-	cifsd_debug("absoulte name = %s\n", unixname);
+	cifsd_debug("absolute name = %s\n", unixname);
 	return unixname;
 }
 
@@ -3145,7 +3145,7 @@ out:
 }
 
 /*****************************************************************************
- * TRANS2 command implentation functions
+ * TRANS2 command implementation functions
  *****************************************************************************/
 
 /**
@@ -3643,7 +3643,7 @@ static int smb_set_acl(struct cifsd_work *work)
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 
-	/* 2 for paramater count + 1 pad1*/
+	/* 2 for parameter count + 1 pad1*/
 	rsp->ByteCount = 3;
 	rsp->Pad = 0;
 	inc_rfc1001_len(&rsp->hdr,
@@ -4059,7 +4059,7 @@ static int query_path_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_EA_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set EA info */
@@ -4185,7 +4185,7 @@ static int query_path_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/* 2 for paramater count + 72 data count +
+		/* 2 for parameter count + 72 data count +
 		 * filename length + 3 pad (1pad1 + 2 pad2)
 		 */
 		rsp->ByteCount = 5 + total_count;
@@ -4848,7 +4848,7 @@ prepare_rsp:
 	pSMB_rsp->t2.SetupCount = 0;
 	pSMB_rsp->t2.Reserved1 = 0;
 
-	/* 2 for paramater count + 112 data count + 3 pad (1 pad1 + 2 pad2)*/
+	/* 2 for parameter count + 112 data count + 3 pad (1 pad1 + 2 pad2)*/
 	pSMB_rsp->ByteCount = 117;
 	pSMB_rsp->Reserved2 = 0;
 	inc_rfc1001_len(&pSMB_rsp->hdr,
@@ -4930,7 +4930,7 @@ static int smb_posix_unlink(struct cifsd_work *work)
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 
-	/* 2 for paramater count + 1 pad1*/
+	/* 2 for parameter count + 1 pad1*/
 	rsp->ByteCount = 3;
 	rsp->Pad = 0;
 	inc_rfc1001_len(&rsp->hdr,
@@ -5165,7 +5165,7 @@ static int smb_set_ea(struct cifsd_work *work)
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 
-	/* 2 for paramater count + 1 pad1*/
+	/* 2 for parameter count + 1 pad1*/
 	rsp->ByteCount = 3;
 	rsp->Pad = 0;
 	inc_rfc1001_len(&rsp->hdr,
@@ -5224,7 +5224,7 @@ static int smb_set_file_size_pinfo(struct cifsd_work *work)
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 
-	/* 2 for paramater count + 1 pad1*/
+	/* 2 for parameter count + 1 pad1*/
 	rsp->ByteCount = 3;
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
@@ -6339,7 +6339,7 @@ static int query_file_info_pipe(struct cifsd_work *work)
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
-	/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+	/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 	rsp->ByteCount = 2 + sizeof(FILE_STANDARD_INFO) + 3;
 	rsp->Pad = 0;
 	/* lets set EA info */
@@ -6421,7 +6421,7 @@ static int query_file_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_STANDARD_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set EA info */
@@ -6454,7 +6454,7 @@ static int query_file_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_BASIC_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set EA info */
@@ -6492,7 +6492,7 @@ static int query_file_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_EA_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set EA info */
@@ -6520,7 +6520,7 @@ static int query_file_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_UNIX_BASIC_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set unix info info */
@@ -6593,7 +6593,7 @@ static int query_file_info(struct cifsd_work *work)
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		/*2 for paramater count & 3 pad (1pad1 + 2 pad2)*/
+		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
 		rsp->ByteCount = 2 + sizeof(FILE_ALL_INFO) + 3;
 		rsp->Pad = 0;
 		/* lets set all info info */
@@ -8025,7 +8025,7 @@ int smb1_check_sign_req(struct cifsd_work *work)
 }
 
 /**
- * smb1_set_sign_rsp() - handler for rsp packet sign procesing
+ * smb1_set_sign_rsp() - handler for rsp packet sign processing
  * @work:	smb work containing notify command buffer
  *
  */
