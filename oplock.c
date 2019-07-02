@@ -1196,15 +1196,20 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
-	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
-	int share_ret)
+int smb_grant_oplock(struct cifsd_work *work,
+		     int req_op_level,
+		     uint64_t pid,
+		     struct cifsd_file *fp,
+		     __u16 tid,
+		     struct lease_ctx_info *lctx,
+		     int share_ret)
 {
 	struct cifsd_session *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_inode *ci = fp->f_ci;
-	int prev_op_has_lease = 0, prev_op_state = 0;
+	bool prev_op_has_lease;
+	__le32 prev_op_state = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
