@@ -9,6 +9,7 @@
 #include "auth.h"
 #include "buffer_pool.h"
 #include "connection.h"
+#include "transport_tcp.h"
 
 static struct task_struct *cifsd_kthread;
 static struct socket *cifsd_socket;
@@ -27,7 +28,7 @@ struct tcp_transport {
 	unsigned int			nr_iov;
 };
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops;
+static struct cifsd_transport_ops cifsd_tcp_transport_ops;
 
 #define CIFSD_TRANS(t)	(&(t)->transport)
 #define TCP_TRANS(t)	((struct tcp_transport *)container_of(t, \
@@ -303,7 +304,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
-		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
+		} else if (conn->status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS || length == -EAGAIN) {
@@ -526,7 +527,7 @@ int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 	return 0;
 }
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops = {
+static struct cifsd_transport_ops cifsd_tcp_transport_ops = {
 	.read		= cifsd_tcp_read,
 	.writev		= cifsd_tcp_writev,
 	.disconnect	= cifsd_tcp_disconnect,

@@ -10,12 +10,15 @@ COMP_FLAGS=''
 
 function is_module
 {
-	local ok=$(cat "$KERNEL_SRC"/.config | grep -c "CONFIG_CIFS_SERVER=m")
+	local ok=$(cat "$KERNEL_SRC"/.config | grep "CONFIG_CIFS_SERVER=m")
 
-	if [ "z$ok" != "z1" ]; then
-		echo "It doesn't look like CIFS_SERVER is as a kernel module"
-		exit 1
+	if [ "z$ok" == "z" ]; then
+		echo "1"
+		return 1
 	fi
+
+	echo "0"
+	return 0
 }
 
 function patch_fs_config
@@ -48,17 +51,40 @@ function patch_fs_config
 		fi
 		mv "$KERNEL_SRC"/fs/Kconfig.new "$KERNEL_SRC"/fs/Kconfig
 	fi
+
+	ok=$(cat "$KERNEL_SRC"/.config | grep "CONFIG_NETWORK_FILESYSTEMS=y")
+	if [ "z$ok" == "z" ]; then
+		ok=$(echo "CONFIG_NETWORK_FILESYSTEMS=y" \
+			>> "$KERNEL_SRC"/.config)
+		if [ $? != 0 ]; then
+			exit 1
+		fi
+	fi
+
+	ok=$(is_module)
+	if [ "z$ok" == "z1" ]; then
+		ok=$(echo "CONFIG_CIFS_SERVER=m" >> "$KERNEL_SRC"/.config)
+		if [ $? != 0 ]; then
+			exit 1
+		fi
+		ok=$(echo "CONFIG_CIFS_INSECURE_SERVER=y" \
+			>> "$KERNEL_SRC"/.config)
+		if [ $? != 0 ]; then
+			exit 1
+		fi
+	fi
 }
 
 function kcifsd_module_make
 {
 	echo "Running cifsd make"
 
-	local c="make "$COMP_FLAGS" -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/"
+	local c="make "$COMP_FLAGS" -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd"
 
 	rm cifsd.ko
 
 	cd "$KERNEL_SRC"
+	echo $c
 	$c
 	cd "$KERNEL_SRC"/fs/cifsd
 
@@ -80,7 +106,11 @@ function kcifsd_module_install
 		fi
 	fi
 
-	is_module
+	ok=$(is_module)
+	if [ "z$ok" == "z1" ]; then
+		echo "It doesn't look like CIFS_SERVER is as a kernel module"
+		exit 1
+	fi
 
 	if [ ! -f "$KERNEL_SRC"/fs/cifsd/cifsd.ko ]; then
 		echo "ERROR: cifsd.ko was not found"
