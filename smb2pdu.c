@@ -289,7 +289,6 @@ static void smb2_set_rsp_credits(struct cifsd_work *work)
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	struct cifsd_conn *conn = work->conn;
-	unsigned int status = le32_to_cpu(hdr->Status);
 	unsigned short credits_requested = le16_to_cpu(req_hdr->CreditRequest);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
@@ -316,18 +315,10 @@ static void smb2_set_rsp_credits(struct cifsd_work *work)
 	min_credits = conn->max_credits >> 4;
 
 	if (credits_requested > 0) {
-		aux_max = 0;
 		aux_credits = credits_requested - 1;
-		switch (hdr->Command) {
-		case SMB2_NEGOTIATE:
-			break;
-		case SMB2_SESSION_SETUP:
-			aux_max = (status) ? 0 : 32;
-			break;
-		default:
-			aux_max = 32;
-			break;
-		}
+		aux_max = 32;
+		if (hdr->Command == SMB2_NEGOTIATE)
+			aux_max = 0;
 		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
 		credits_granted = aux_credits + credit_charge;
 
