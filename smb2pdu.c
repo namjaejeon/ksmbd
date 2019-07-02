@@ -3172,6 +3172,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (srch_flag & SMB2_RESTART_SCANS) {
 		cifsd_debug("SMB2 RESTART SCANS\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
+		dir_fp->readdir_data.ctx.pos = 0;
 	}
 
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
