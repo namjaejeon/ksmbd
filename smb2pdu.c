@@ -2892,7 +2892,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 						conn->local_nls,
 						&conv_len);
 	if (!conv_name)
-		return 0;
+		return -ENOMEM;
 
 	conv_len -= 2;
 	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
@@ -2900,6 +2900,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 
 	if (next_entry_offset > d_info->out_buf_len) {
 		kfree(conv_name);
+		d_info->out_buf_len = 0;
 		return 0;
 	}
 
@@ -3040,8 +3041,10 @@ static int __query_dir(struct dir_context *ctx,
 	d_info	= priv->d_info;
 
 	/* XXX */
-	if (d_info->out_buf_len < 2 * NAME_MAX)
+	if (d_info->out_buf_len < NAME_MAX) {
+		d_info->out_buf_len = 0;
 		return -ENOSPC;
+	}
 
 	/* dot and dotdot entries are already reserved */
 	if (!strcmp(".", name) || !strcmp("..", name))
@@ -3210,9 +3213,6 @@ int smb2_query_dir(struct cifsd_work *work)
 	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
 	if (rc)
 		goto err_out;
-
-	/* XXX */
-	WARN_ON_ONCE(d_info.out_buf_len < 0);
 
 	if (!d_info.data_count && d_info.out_buf_len >= 0) {
 		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
