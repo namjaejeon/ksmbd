@@ -16,6 +16,7 @@
 #include <linux/blkdev.h>
 #include <linux/fsnotify.h>
 #include <linux/dcache.h>
+#include <linux/fiemap.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 #include <linux/sched/xacct.h>
@@ -1318,6 +1319,44 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 		smb_break_all_levII_oplock(conn, fp, 1);
 
 	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
+}
+
+int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
+	u64 *out_start, u64 *out_length)
+{
+	struct inode *inode = FP_INODE(fp);
+	struct super_block *sb = inode->i_sb;
+	struct fiemap_extent_info fieinfo = { 0, };
+	u64 maxbytes = (u64) sb->s_maxbytes;
+	int ret;
+
+	if (!inode->i_op->fiemap)
+		return -EOPNOTSUPP;
+
+	if (start > maxbytes)
+		return -EFBIG;
+
+	fieinfo.fi_extents_start = kzalloc(sizeof(struct fiemap_extent),
+		GFP_KERNEL);
+	if (!fieinfo.fi_extents_start)
+		return -ENOMEM;
+
+	/*
+	 * Shrink request scope to what the fs can actually handle.
+	 */
+	if (length > maxbytes || (maxbytes - length) < start)
+		length = maxbytes - start;
+
+#define FIEMAP_MAX_EXTENTS	(UINT_MAX / sizeof(struct fiemap_extent))
+	fieinfo.fi_extents_max = FIEMAP_MAX_EXTENTS;
+
+	ret = inode->i_op->fiemap(inode, &fieinfo, start, length);
+	if (!ret) {
+		*out_start = fieinfo.fi_extents_start->fe_logical;
+		*out_length = fieinfo.fi_extents_start->fe_length;
+	}
+	kfree(fieinfo.fi_extents_start);
+	return ret;
 }
 
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)

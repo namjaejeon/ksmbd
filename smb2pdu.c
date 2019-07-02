@@ -6419,6 +6419,36 @@ int smb2_ioctl(struct cifsd_work *work)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		break;
 	}
+	case FSCTL_QUERY_ALLOCATED_RANGES:
+	{
+		struct file_allocated_range_buffer *qar_req, *qar_rsp;
+		struct cifsd_file *fp;
+		u64 start, length, ret_start = 0, ret_length = 0;
+		int ret;
+
+		fp = cifsd_lookup_fd_fast(work, id);
+		if (!fp) {
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+
+		qar_req =
+			(struct file_allocated_range_buffer *)&req->Buffer[0];
+		start = le64_to_cpu(qar_req->file_offset);
+		length = le64_to_cpu(qar_req->length);
+
+		ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
+			&ret_length);
+		if (ret)
+			goto out;
+
+		if (ret_length)
+			nbytes = sizeof(struct file_allocated_range_buffer);
+		qar_rsp = (struct file_allocated_range_buffer *)&rsp->Buffer[0];
+		qar_rsp->file_offset = cpu_to_le64(ret_start);
+		qar_rsp->length = cpu_to_le64(ret_length);
+		break;
+	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
