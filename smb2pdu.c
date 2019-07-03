@@ -3501,6 +3501,421 @@ out:
 	return rc;
 }
 
+static void get_file_access_info(struct smb2_query_info_rsp *rsp,
+				 struct cifsd_file *fp,
+				 void *rsp_org)
+{
+	struct smb2_file_access_info *file_info;
+
+	file_info = (struct smb2_file_access_info *)rsp->Buffer;
+	file_info->AccessFlags = fp->daccess;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_access_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_access_info));
+}
+
+static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
+			       struct cifsd_file *fp,
+			       void *rsp_org)
+{
+	struct smb2_file_all_info *basic_info;
+	struct kstat stat;
+	u64 time;
+
+	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
+				FILE_GENERIC_READ_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to read the attributes : 0x%x\n",
+			   fp->daccess);
+		return -EACCES;
+	}
+
+	basic_info = (struct smb2_file_all_info *)rsp->Buffer;
+	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+
+	basic_info->CreationTime = cpu_to_le64(fp->create_time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+	basic_info->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+	basic_info->LastWriteTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+	basic_info->ChangeTime = cpu_to_le64(time);
+	basic_info->Attributes = fp->fattr;
+	basic_info->Pad1 = 0;
+	rsp->OutputBufferLength =
+		cpu_to_le32(offsetof(struct smb2_file_all_info,
+						AllocationSize));
+	inc_rfc1001_len(rsp_org, offsetof(struct smb2_file_all_info,
+					  AllocationSize));
+	return 0;
+}
+
+static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
+				   struct cifsd_file *fp,
+				   void *rsp_org)
+{
+	struct smb2_file_standard_info *sinfo;
+	unsigned int delete_pending;
+	struct inode *inode;
+	struct kstat stat;
+
+	inode = fp->filp->f_path.dentry->d_inode;
+	generic_fillattr(inode, &stat);
+
+	sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
+	delete_pending = cifsd_inode_pending_delete(fp);
+
+	sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
+	sinfo->NumberOfLinks = cpu_to_le32(get_nlink(&stat) - delete_pending);
+	sinfo->DeletePending = delete_pending;
+	sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_standard_info));
+	inc_rfc1001_len(rsp_org,
+			sizeof(struct smb2_file_standard_info));
+}
+
+static void get_file_alignment_info(struct smb2_query_info_rsp *rsp,
+				    void *rsp_org)
+{
+	struct smb2_file_alignment_info *file_info;
+
+	file_info = (struct smb2_file_alignment_info *)rsp->Buffer;
+	file_info->AlignmentRequirement = 0;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_alignment_info));
+	inc_rfc1001_len(rsp_org,
+			sizeof(struct smb2_file_alignment_info));
+}
+
+static int get_file_all_info(struct cifsd_work *work,
+			     struct smb2_query_info_rsp *rsp,
+			     struct cifsd_file *fp,
+			     void *rsp_org)
+{
+	struct cifsd_conn *conn = work->conn;
+	struct smb2_file_all_info *file_info;
+	unsigned int delete_pending;
+	struct inode *inode;
+	struct kstat stat;
+	int conv_len;
+	char *filename;
+	u64 time;
+
+	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
+				FILE_GENERIC_READ_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to read the attributes : 0x%x\n",
+				fp->daccess);
+		return -EACCES;
+	}
+
+	filename = convert_to_nt_pathname(fp->filename,
+					  work->tcon->share_conf->path);
+	if (!filename)
+		return -ENOMEM;
+
+	inode = fp->filp->f_path.dentry->d_inode;
+	generic_fillattr(inode, &stat);
+
+	cifsd_debug("filename = %s\n", filename);
+	delete_pending = cifsd_inode_pending_delete(fp);
+	file_info = (struct smb2_file_all_info *)rsp->Buffer;
+
+	file_info->CreationTime = cpu_to_le64(fp->create_time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+	file_info->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+	file_info->LastWriteTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+	file_info->ChangeTime = cpu_to_le64(time);
+	file_info->Attributes = fp->fattr;
+	file_info->Pad1 = 0;
+	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
+	file_info->NumberOfLinks =
+			cpu_to_le32(get_nlink(&stat) - delete_pending);
+	file_info->DeletePending = delete_pending;
+	file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
+	file_info->Pad2 = 0;
+	file_info->IndexNumber = cpu_to_le64(stat.ino);
+	file_info->EASize = 0;
+	file_info->AccessFlags = fp->daccess;
+	file_info->CurrentByteOffset = cpu_to_le64(fp->filp->f_pos);
+	file_info->Mode = fp->coption;
+	file_info->AlignmentRequirement = 0;
+	conv_len = smbConvertToUTF16((__le16 *)file_info->FileName,
+					     filename,
+					     PATH_MAX,
+					     conn->local_nls,
+					     0);
+	conv_len *= 2;
+	file_info->FileNameLength = cpu_to_le32(conv_len);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_all_info) + conv_len - 1);
+	kfree(filename);
+	inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
+	return 0;
+}
+
+static void get_file_alternate_info(struct cifsd_work *work,
+				    struct smb2_query_info_rsp *rsp,
+				    struct cifsd_file *fp,
+				    void *rsp_org)
+{
+	struct cifsd_conn *conn = work->conn;
+	struct smb2_file_alt_name_info *file_info;
+	int conv_len;
+	char *filename;
+
+	filename = (char *)FP_FILENAME(fp);
+	file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
+	conv_len = cifsd_extract_shortname(conn,
+					   filename,
+					   file_info->FileName);
+	file_info->FileNameLength = cpu_to_le32(conv_len);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_alt_name_info) + conv_len);
+	inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
+}
+
+static void get_file_stream_info(struct cifsd_work *work,
+				 struct smb2_query_info_rsp *rsp,
+				 struct cifsd_file *fp,
+				 void *rsp_org)
+{
+	struct cifsd_conn *conn = work->conn;
+	struct smb2_file_stream_info *file_info;
+	char *stream_name, *xattr_list = NULL, *stream_buf;
+	char *stream_type;
+	struct kstat stat;
+	struct path *path = &fp->filp->f_path;
+	ssize_t xattr_list_len;
+	int nbytes = 0, streamlen, stream_name_len, next;
+
+	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
+
+	if (stream_file_enable == false) {
+		file_info->NextEntryOffset = 0;
+		streamlen  = smbConvertToUTF16((__le16 *)file_info->StreamName,
+						"::$DATA",
+						7,
+						conn->local_nls,
+						0);
+
+		streamlen *= 2;
+		file_info->StreamNameLength = cpu_to_le32(streamlen);
+
+		file_info->StreamSize = S_ISDIR(stat.mode) ? 0 :
+					cpu_to_le64(stat.size);
+		file_info->StreamAllocationSize = S_ISDIR(stat.mode) ? 0 :
+					cpu_to_le64(stat.size);
+		nbytes = sizeof(struct smb2_file_stream_info) + streamlen;
+		goto out;
+	}
+
+	xattr_list_len = cifsd_vfs_listxattr(path->dentry,
+					     &xattr_list,
+					     XATTR_LIST_MAX);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		cifsd_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (stream_name = xattr_list;
+			stream_name - xattr_list < xattr_list_len;
+			stream_name += strlen(stream_name) + 1) {
+		cifsd_debug("%s, len %zd\n", stream_name, strlen(stream_name));
+
+		if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
+			STREAM_PREFIX, STREAM_PREFIX_LEN))
+			continue;
+
+		stream_name_len = streamlen = strlen(stream_name) -
+			(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
+
+		if (fp->stream.type == 2) {
+			streamlen += 17;
+			stream_type = "$INDEX_ALLOCATION";
+		} else {
+			streamlen += 5;
+			stream_type = "$DATA";
+		}
+
+		/* plus :: size */
+		streamlen += 2;
+		stream_buf = kmalloc(streamlen + 1, GFP_KERNEL);
+		if (!stream_buf)
+			break;
+
+		streamlen = snprintf(stream_buf, streamlen + 1,
+			":%s:%s", &stream_name[XATTR_NAME_STREAM_LEN],
+			stream_type);
+
+		file_info = (struct smb2_file_stream_info *)
+			&rsp->Buffer[nbytes];
+		streamlen  = smbConvertToUTF16((__le16 *)file_info->StreamName,
+						stream_buf,
+						streamlen,
+						conn->local_nls,
+						0);
+		streamlen *= 2;
+		kfree(stream_buf);
+		file_info->StreamNameLength = cpu_to_le32(streamlen);
+		file_info->StreamSize = cpu_to_le64(stream_name_len);
+		file_info->StreamAllocationSize = cpu_to_le64(stream_name_len);
+
+		next = sizeof(struct smb2_file_stream_info) + streamlen;
+		nbytes += next;
+		file_info->NextEntryOffset = cpu_to_le32(next);
+	}
+
+	/* last entry offset should be 0 */
+	file_info->NextEntryOffset = 0;
+out:
+	if (xattr_list)
+		vfree(xattr_list);
+
+	rsp->OutputBufferLength = cpu_to_le32(nbytes);
+	inc_rfc1001_len(rsp_org, nbytes);
+}
+
+static void get_file_internal_info(struct smb2_query_info_rsp *rsp,
+				   struct cifsd_file *fp,
+				   void *rsp_org)
+{
+	struct smb2_file_internal_info *file_info;
+	struct kstat stat;
+
+	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	file_info = (struct smb2_file_internal_info *)rsp->Buffer;
+	file_info->IndexNumber = cpu_to_le64(stat.ino);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_internal_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_internal_info));
+}
+
+static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
+				      struct cifsd_file *fp,
+				      void *rsp_org)
+{
+	struct smb2_file_ntwrk_info *file_info;
+	struct inode *inode;
+	struct kstat stat;
+	u64 time;
+
+	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
+				FILE_GENERIC_READ_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to read the attributes : 0x%x\n",
+			  fp->daccess);
+		return -EACCES;
+	}
+
+	file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
+
+	inode = fp->filp->f_path.dentry->d_inode;
+	generic_fillattr(inode, &stat);
+
+	file_info->CreationTime = cpu_to_le64(fp->create_time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
+	file_info->LastAccessTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
+	file_info->LastWriteTime = cpu_to_le64(time);
+	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
+	file_info->ChangeTime = cpu_to_le64(time);
+	file_info->Attributes = fp->fattr;
+	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
+	file_info->Reserved = cpu_to_le32(0);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_ntwrk_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ntwrk_info));
+	return 0;
+}
+
+static void get_file_ea_info(struct smb2_query_info_rsp *rsp,
+			     void *rsp_org)
+{
+	struct smb2_file_ea_info *file_info;
+
+	file_info = (struct smb2_file_ea_info *)rsp->Buffer;
+	file_info->EASize = 0;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_ea_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ea_info));
+}
+
+static void get_file_position_info(struct smb2_query_info_rsp *rsp,
+				   struct cifsd_file *fp,
+				   void *rsp_org)
+{
+	struct smb2_file_pos_info *file_info;
+
+	file_info = (struct smb2_file_pos_info *)rsp->Buffer;
+	file_info->CurrentByteOffset = cpu_to_le64(fp->filp->f_pos);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_pos_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_pos_info));
+}
+
+static void get_file_mode_info(struct smb2_query_info_rsp *rsp,
+			       struct cifsd_file *fp,
+			       void *rsp_org)
+{
+	struct smb2_file_mode_info *file_info;
+
+	file_info = (struct smb2_file_mode_info *)rsp->Buffer;
+	file_info->Mode = fp->coption & FILE_MODE_INFO_MASK;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_mode_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_mode_info));
+}
+
+static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
+				      struct cifsd_file *fp,
+				      void *rsp_org)
+{
+	struct smb2_file_comp_info *file_info;
+	struct kstat stat;
+
+	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+
+	file_info = (struct smb2_file_comp_info *)rsp->Buffer;
+	file_info->CompressedFileSize = cpu_to_le64(stat.blocks << 9);
+	file_info->CompressionFormat = COMPRESSION_FORMAT_NONE;
+	file_info->CompressionUnitShift = 0;
+	file_info->ChunkShift = 0;
+	file_info->ClusterShift = 0;
+	memset(&file_info->Reserved[0], 0, 3);
+
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_comp_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_comp_info));
+}
+
+static void get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
+					struct cifsd_file *fp,
+					void *rsp_org)
+{
+	struct smb2_file_attr_tag_info *file_info;
+
+	file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
+	file_info->FileAttributes = fp->fattr;
+	file_info->ReparseTag = 0;
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
+	inc_rfc1001_len(rsp_org,
+		sizeof(struct smb2_file_attr_tag_info));
+}
+
 /**
  * smb2_get_info_file() - handler for smb2 query info command
  * @work:	smb work containing query info request buffer
@@ -3508,18 +3923,14 @@ out:
  * Return:	0 on success, otherwise error
  */
 static int smb2_get_info_file(struct cifsd_work *work,
-	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp,
-	void *rsp_org)
+			      struct smb2_query_info_req *req,
+			      struct smb2_query_info_rsp *rsp,
+			      void *rsp_org)
 {
 	struct cifsd_file *fp;
-	struct cifsd_conn *conn = work->conn;
 	int fileinfoclass = 0;
-	struct file *filp;
-	struct kstat stat;
 	int rc = 0;
 	int file_infoclass_size;
-	struct inode *inode;
-	u64 time;
 	unsigned int id = CIFSD_NO_FID, pid = CIFSD_NO_FID;
 
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -3546,406 +3957,102 @@ static int smb2_get_info_file(struct cifsd_work *work,
 	if (!fp)
 		return -ENOENT;
 
-	filp = fp->filp;
-	inode = filp->f_path.dentry->d_inode;
-	generic_fillattr(inode, &stat);
 	fileinfoclass = req->FileInfoClass;
 
 	switch (fileinfoclass) {
 	case FILE_ACCESS_INFORMATION:
-	{
-		struct smb2_file_access_info *file_info;
-
-		file_info = (struct smb2_file_access_info *)rsp->Buffer;
-
-		file_info->AccessFlags = fp->daccess;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_access_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_access_info));
+		get_file_access_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ACCESS_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_BASIC_INFORMATION:
-	{
-		struct smb2_file_all_info *basic_info;
-
-		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read the attributes : 0x%x\n",
-				fp->daccess);
-			return -EACCES;
-		}
-		basic_info = (struct smb2_file_all_info *)rsp->Buffer;
-
-		basic_info->CreationTime = cpu_to_le64(fp->create_time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
-		basic_info->LastAccessTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
-		basic_info->LastWriteTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-		basic_info->ChangeTime = cpu_to_le64(time);
-		basic_info->Attributes = fp->fattr;
-		basic_info->Pad1 = 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(offsetof(struct smb2_file_all_info,
-						AllocationSize));
-		inc_rfc1001_len(rsp_org, offsetof(struct smb2_file_all_info,
-					AllocationSize));
+		rc = get_file_basic_info(rsp, fp, rsp_org);
+		if (rc)
+			return rc;
 		file_infoclass_size = FILE_BASIC_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_STANDARD_INFORMATION:
-	{
-		struct smb2_file_standard_info *sinfo;
-		unsigned int delete_pending;
-
-		sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
-		delete_pending = cifsd_inode_pending_delete(fp);
-
-		sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
-		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.size);
-		sinfo->NumberOfLinks =
-			cpu_to_le32(get_nlink(&stat) - delete_pending);
-		sinfo->DeletePending = delete_pending;
-		sinfo->Directory = S_ISDIR(stat.mode) ? 1 : 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_standard_info));
-		inc_rfc1001_len(rsp_org,
-				sizeof(struct smb2_file_standard_info));
+		get_file_standard_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_STANDARD_INFORMATION_SIZE;
 		break;
-	}
-	case FILE_ALIGNMENT_INFORMATION:
-	{
-		struct smb2_file_alignment_info *file_info;
 
-		file_info = (struct smb2_file_alignment_info *)rsp->Buffer;
-		file_info->AlignmentRequirement = 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_alignment_info));
-		inc_rfc1001_len(rsp_org,
-				sizeof(struct smb2_file_alignment_info));
+	case FILE_ALIGNMENT_INFORMATION:
+		get_file_alignment_info(rsp, rsp_org);
 		file_infoclass_size = FILE_ALIGNMENT_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_ALL_INFORMATION:
-	{
-		struct smb2_file_all_info *file_info;
-		char *filename;
-		int uni_filename_len;
-		unsigned int delete_pending;
-
-		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read the attributes : 0x%x\n",
-				fp->daccess);
-			return -EACCES;
-		}
-
-		filename = convert_to_nt_pathname(fp->filename,
-			work->tcon->share_conf->path);
-		if (!filename)
-			return -ENOMEM;
-		cifsd_debug("filename = %s\n", filename);
-		delete_pending = cifsd_inode_pending_delete(fp);
-		file_info = (struct smb2_file_all_info *)rsp->Buffer;
-
-		file_info->CreationTime = cpu_to_le64(fp->create_time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
-		file_info->LastAccessTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
-		file_info->LastWriteTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-		file_info->ChangeTime = cpu_to_le64(time);
-		file_info->Attributes = fp->fattr;
-		file_info->Pad1 = 0;
-		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
-		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.size);
-		file_info->NumberOfLinks =
-			cpu_to_le32(get_nlink(&stat) - delete_pending);
-		file_info->DeletePending = delete_pending;
-		file_info->Directory = S_ISDIR(stat.mode) ? 1 : 0;
-		file_info->Pad2 = 0;
-		file_info->IndexNumber = cpu_to_le64(stat.ino);
-		file_info->EASize = 0;
-		file_info->AccessFlags = fp->daccess;
-		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
-		file_info->Mode = fp->coption;
-		file_info->AlignmentRequirement = 0;
-		uni_filename_len = smbConvertToUTF16(
-				(__le16 *)file_info->FileName,
-				filename, PATH_MAX,
-				conn->local_nls, 0);
-
-		uni_filename_len *= 2;
-		file_info->FileNameLength = cpu_to_le32(uni_filename_len);
-
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_all_info) +
-				    uni_filename_len - 1);
-		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
+		rc = get_file_all_info(work, rsp, fp, rsp_org);
+		if (rc)
+			return rc;
 		file_infoclass_size = FILE_ALL_INFORMATION_SIZE;
-
-		kfree(filename);
 		break;
-	}
+
 	case FILE_ALTERNATE_NAME_INFORMATION:
-	{
-		struct smb2_file_alt_name_info *file_info;
-		char *filename;
-		int uni_filename_len;
-
-		filename = (char *)FP_FILENAME(fp);
-
-		file_info = (struct smb2_file_alt_name_info *)rsp->Buffer;
-		uni_filename_len = cifsd_extract_shortname(conn,
-							filename,
-							file_info->FileName);
-		file_info->FileNameLength = cpu_to_le32(uni_filename_len);
-
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_alt_name_info) +
-				    uni_filename_len);
-		inc_rfc1001_len(rsp_org, le32_to_cpu(rsp->OutputBufferLength));
+		get_file_alternate_info(work, rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ALTERNATE_NAME_INFORMATION_SIZE;
-
 		break;
-	}
+
 	case FILE_STREAM_INFORMATION:
-	{
-		struct smb2_file_stream_info *file_info;
-		char *stream_name, *xattr_list = NULL, *stream_buf;
-		char *stream_type;
-		struct path *path = &filp->f_path;
-		ssize_t xattr_list_len;
-		int nbytes = 0, streamlen, stream_name_len, next;
-
-		file_info = (struct smb2_file_stream_info *)rsp->Buffer;
-
-		if (stream_file_enable == false) {
-			file_info->NextEntryOffset = 0;
-			streamlen  = smbConvertToUTF16(
-					(__le16 *)file_info->StreamName,
-					"::$DATA",
-					7, conn->local_nls, 0);
-
-			streamlen *= 2;
-			file_info->StreamNameLength = cpu_to_le32(streamlen);
-
-			file_info->StreamSize = S_ISDIR(stat.mode) ? 0 :
-				cpu_to_le64(stat.size);
-			file_info->StreamAllocationSize = S_ISDIR(stat.mode) ? 0 :
-				cpu_to_le64(stat.size);
-			nbytes = sizeof(struct smb2_file_stream_info)
-				+ streamlen;
-			goto out;
-		}
-
-		xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list,
-				XATTR_LIST_MAX);
-		if (xattr_list_len < 0) {
-			goto out;
-		} else if (!xattr_list_len) {
-			cifsd_debug("empty xattr in the file\n");
-			goto out;
-		}
-
-		for (stream_name = xattr_list;
-			stream_name - xattr_list < xattr_list_len;
-			stream_name += strlen(stream_name) + 1) {
-			cifsd_debug("%s, len %zd\n",
-					stream_name, strlen(stream_name));
-
-			if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
-				STREAM_PREFIX, STREAM_PREFIX_LEN))
-				continue;
-
-			stream_name_len = streamlen = strlen(stream_name) -
-				(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
-
-			if (fp->stream.type == 2) {
-				streamlen += 17;
-				stream_type = "$INDEX_ALLOCATION";
-			} else {
-				streamlen += 5;
-				stream_type = "$DATA";
-			}
-
-			/* plus :: size */
-			streamlen += 2;
-			stream_buf = kmalloc(streamlen + 1, GFP_KERNEL);
-			if (!stream_buf)
-				break;
-
-			streamlen = snprintf(stream_buf, streamlen + 1,
-				":%s:%s", &stream_name[XATTR_NAME_STREAM_LEN],
-				stream_type);
-
-			file_info = (struct smb2_file_stream_info *)
-				&rsp->Buffer[nbytes];
-			streamlen  = smbConvertToUTF16(
-					(__le16 *)file_info->StreamName,
-					stream_buf,
-					streamlen, conn->local_nls, 0);
-			streamlen *= 2;
-			kfree(stream_buf);
-			file_info->StreamNameLength = cpu_to_le32(streamlen);
-			file_info->StreamSize =
-				cpu_to_le64(stream_name_len);
-			file_info->StreamAllocationSize =
-				cpu_to_le64(stream_name_len);
-
-			next = sizeof(struct smb2_file_stream_info)
-				+ streamlen;
-			nbytes += next;
-			file_info->NextEntryOffset = cpu_to_le32(next);
-		}
-
-		/* last entry offset should be 0 */
-		file_info->NextEntryOffset = 0;
-out:
-		if (xattr_list)
-			vfree(xattr_list);
-
-		rsp->OutputBufferLength = cpu_to_le32(nbytes);
-		inc_rfc1001_len(rsp_org, nbytes);
+		get_file_stream_info(work, rsp, fp, rsp_org);
 		file_infoclass_size = FILE_STREAM_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_INTERNAL_INFORMATION:
-	{
-		struct smb2_file_internal_info *file_info;
-
-		file_info = (struct smb2_file_internal_info *)rsp->Buffer;
-
-		file_info->IndexNumber = cpu_to_le64(stat.ino);
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_internal_info));
-		inc_rfc1001_len(rsp_org,
-				sizeof(struct smb2_file_internal_info));
+		get_file_internal_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_INTERNAL_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_NETWORK_OPEN_INFORMATION:
-	{
-		struct smb2_file_ntwrk_info *file_info;
-
-		if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-			FILE_GENERIC_READ_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read the attributes : 0x%x\n",
-				fp->daccess);
-			return -EACCES;
-		}
-
-		file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
-
-		file_info->CreationTime = cpu_to_le64(fp->create_time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
-		file_info->LastAccessTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.mtime));
-		file_info->LastWriteTime = cpu_to_le64(time);
-		time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-		file_info->ChangeTime = cpu_to_le64(time);
-		file_info->Attributes = fp->fattr;
-		file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
-		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 :
-			cpu_to_le64(stat.size);
-		file_info->Reserved = cpu_to_le32(0);
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_ntwrk_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ntwrk_info));
+		rc = get_file_network_open_info(rsp, fp, rsp_org);
+		if (rc)
+			return rc;
 		file_infoclass_size = FILE_NETWORK_OPEN_INFORMATION_SIZE;
 		break;
-	}
-	case FILE_EA_INFORMATION:
-	{
-		struct smb2_file_ea_info *file_info;
 
-		file_info = (struct smb2_file_ea_info *)rsp->Buffer;
-		file_info->EASize = 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_ea_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_ea_info));
+	case FILE_EA_INFORMATION:
+		get_file_ea_info(rsp, rsp_org);
 		file_infoclass_size = FILE_EA_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_FULL_EA_INFORMATION:
-	{
 		if (!(fp->daccess & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
 			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to read the extented attributes : 0x%x\n",
-				fp->daccess);
+			cifsd_err("Not permitted to read ext attr : 0x%x\n",
+				   fp->daccess);
 			return -EACCES;
 		}
-
-		rc = smb2_get_ea(work->conn, &filp->f_path, req, rsp,
-			rsp_org);
-		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
-		if (rc < 0)
+		rc = smb2_get_ea(work->conn,
+				 &fp->filp->f_path,
+				 req,
+				 rsp,
+				 rsp_org);
+		if (rc)
 			return rc;
-		break;
-	}
-	case FILE_POSITION_INFORMATION:
-	{
-		struct smb2_file_pos_info *file_info;
 
-		file_info = (struct smb2_file_pos_info *)rsp->Buffer;
-		file_info->CurrentByteOffset = cpu_to_le64(filp->f_pos);
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_pos_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_pos_info));
+		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
+		break;
+
+	case FILE_POSITION_INFORMATION:
+		get_file_position_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_POSITION_INFORMATION_SIZE;
 		break;
-	}
-	case FILE_MODE_INFORMATION:
-	{
-		struct smb2_file_mode_info *file_info;
 
-		file_info = (struct smb2_file_mode_info *)rsp->Buffer;
-		file_info->Mode = fp->coption & FILE_MODE_INFO_MASK;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_mode_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_mode_info));
+	case FILE_MODE_INFORMATION:
+		get_file_mode_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_MODE_INFORMATION_SIZE;
 		break;
-	}
+
 	case FILE_COMPRESSION_INFORMATION:
-	{
-		struct smb2_file_comp_info *file_info;
-
-		file_info = (struct smb2_file_comp_info *)rsp->Buffer;
-		file_info->CompressedFileSize = cpu_to_le64(stat.blocks << 9);
-		file_info->CompressionFormat = COMPRESSION_FORMAT_NONE;
-		file_info->CompressionUnitShift = 0;
-		file_info->ChunkShift = 0;
-		file_info->ClusterShift = 0;
-		memset(&file_info->Reserved[0], 0, 3);
-
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_comp_info));
-		inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_comp_info));
+		get_file_compression_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_COMPRESSION_INFORMATION_SIZE;
 		break;
-	}
-	case FILE_ATTRIBUTE_TAG_INFORMATION:
-	{
-		struct smb2_file_attr_tag_info *file_info;
 
-		file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
-		file_info->FileAttributes = fp->fattr;
-		file_info->ReparseTag = 0;
-		rsp->OutputBufferLength =
-			cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
-		inc_rfc1001_len(rsp_org,
-			sizeof(struct smb2_file_attr_tag_info));
+	case FILE_ATTRIBUTE_TAG_INFORMATION:
+		get_file_attribute_tag_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ATTRIBUTE_TAG_INFORMATION_SIZE;
 		break;
-	}
 
 	default:
 		cifsd_debug("fileinfoclass %d not supported yet\n",
@@ -3954,7 +4061,8 @@ out:
 		return -EOPNOTSUPP;
 	}
 	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
-		rsp, file_infoclass_size);
+			      rsp,
+			      file_infoclass_size);
 	return rc;
 }
 
