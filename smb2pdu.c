@@ -4743,22 +4743,15 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		attrs.ia_valid |= ATTR_CTIME;
 
 		if (attrs.ia_valid) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 			struct dentry *dentry = filp->f_path.dentry;
 			struct inode *inode = dentry->d_inode;
-#else
-			struct inode *inode = FP_INODE(fp);
-#endif
+
 			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
 				rc = -EACCES;
 				goto out;
 			}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 			rc = setattr_prepare(dentry, &attrs);
-#else
-			rc = inode_change_ok(inode, &attrs);
-#endif
 			if (rc) {
 				rc = -EINVAL;
 				goto out;
