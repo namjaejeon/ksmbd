@@ -794,7 +794,7 @@ static void send_done(struct ib_cq *cq, struct ib_wc *wc)
 
 	for (i = 0; i < sendmsg->num_sge; i++)
 		ib_dma_unmap_single(t->cm_id->device,
-				sendmsg->sge[0].addr, sendmsg->sge[0].length,
+				sendmsg->sge[i].addr, sendmsg->sge[i].length,
 				DMA_TO_DEVICE);
 
 	if (sendmsg->num_sge > 1) {
