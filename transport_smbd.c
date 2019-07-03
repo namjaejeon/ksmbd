@@ -331,6 +331,7 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	t->cm_id = cm_id;
 	cm_id->context = t;
 
+	t->status = SMBD_CS_NEW;
 	init_waitqueue_head(&t->wait_status);
 
 	spin_lock_init(&t->recvmsg_queue_lock);
@@ -1150,6 +1151,11 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 		wake_up(&t->wait_send_queue);
 		break;
 	}
+	case RDMA_CM_EVENT_CONNECT_ERROR: {
+		t->status = SMBD_CS_DISCONNECTED;
+		wake_up_interruptible(&t->wait_status);
+		break;
+	}
 	default:
 		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, "
 				"event=%s (%d)\n", cm_id,
@@ -1275,8 +1281,9 @@ static int smbd_accept_client(struct smbd_transport *t)
 	if (ret)
 		return ret;
 
-	wait_event_interruptible(t->wait_status,
-				t->status == SMBD_CS_CLIENT_ACCEPTED);
+	wait_event_interruptible(t->wait_status, t->status != SMBD_CS_NEW);
+	if (t->status != SMBD_CS_CLIENT_ACCEPTED)
+		return -ENOTCONN;
 	return 0;
 }
 static int smbd_negotiate(struct smbd_transport *t)
