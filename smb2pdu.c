@@ -289,7 +289,6 @@ static void smb2_set_rsp_credits(struct cifsd_work *work)
 	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
 	struct cifsd_conn *conn = work->conn;
-	unsigned int status = le32_to_cpu(hdr->Status);
 	unsigned short credits_requested = le16_to_cpu(req_hdr->CreditRequest);
 	unsigned short credit_charge = 1, credits_granted = 0;
 	unsigned short aux_max, aux_credits, min_credits;
@@ -316,18 +315,10 @@ static void smb2_set_rsp_credits(struct cifsd_work *work)
 	min_credits = conn->max_credits >> 4;
 
 	if (credits_requested > 0) {
-		aux_max = 0;
 		aux_credits = credits_requested - 1;
-		switch (hdr->Command) {
-		case SMB2_NEGOTIATE:
-			break;
-		case SMB2_SESSION_SETUP:
-			aux_max = (status) ? 0 : 32;
-			break;
-		default:
-			aux_max = 32;
-			break;
-		}
+		aux_max = 32;
+		if (hdr->Command == SMB2_NEGOTIATE)
+			aux_max = 0;
 		aux_credits = (aux_credits < aux_max) ? aux_credits : aux_max;
 		credits_granted = aux_credits + credit_charge;
 
@@ -4020,7 +4011,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			FILE_SYSTEM_ATTRIBUTE_INFO *fs_info;
 
 			fs_info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
-			fs_info->Attributes = cpu_to_le32(0x0001002f);
+			fs_info->Attributes = cpu_to_le32(0x0001006f);
 			fs_info->MaxPathNameComponentLength =
 				cpu_to_le32(stfs.f_namelen);
 			len = smbConvertToUTF16((__le16 *)
@@ -6375,7 +6366,24 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_SET_SPARSE:
+	{
+		struct cifsd_file *fp;
+		struct file_sparse *sparse;
+
+		fp = cifsd_lookup_fd_fast(work, id);
+		if (!fp) {
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+
+		sparse =
+			(struct file_sparse *)&req->Buffer[0];
+		if (sparse->SetSparse)
+			fp->fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
+		else
+			fp->fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
 		break;
+	}
 	case FSCTL_SET_ZERO_DATA:
 	{
 		struct file_zero_data_information *zero_data;
@@ -6400,6 +6408,36 @@ int smb2_ioctl(struct cifsd_work *work)
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (ret < 0)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		break;
+	}
+	case FSCTL_QUERY_ALLOCATED_RANGES:
+	{
+		struct file_allocated_range_buffer *qar_req, *qar_rsp;
+		struct cifsd_file *fp;
+		u64 start, length, ret_start = 0, ret_length = 0;
+		int ret;
+
+		fp = cifsd_lookup_fd_fast(work, id);
+		if (!fp) {
+			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			goto out;
+		}
+
+		qar_req =
+			(struct file_allocated_range_buffer *)&req->Buffer[0];
+		start = le64_to_cpu(qar_req->file_offset);
+		length = le64_to_cpu(qar_req->length);
+
+		ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
+			&ret_length);
+		if (ret)
+			goto out;
+
+		if (ret_length)
+			nbytes = sizeof(struct file_allocated_range_buffer);
+		qar_rsp = (struct file_allocated_range_buffer *)&rsp->Buffer[0];
+		qar_rsp->file_offset = cpu_to_le64(ret_start);
+		qar_rsp->length = cpu_to_le64(ret_length);
 		break;
 	}
 	default:
