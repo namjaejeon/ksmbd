@@ -39,7 +39,7 @@ bool stream_file_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @id:		session id from smb header
  *
  * Return:      1 if valid session id, otherwise 0
@@ -2854,7 +2854,7 @@ static int readdir_info_level_struct_sz(int info_level)
 
 /**
  * smb2_populate_readdir_entry() - encode directory entry in smb2 response buffer
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @info_level:	smb information level
  * @d_info:	structure included variables for query dir
  * @cifsd_kstat:	cifsd wrapper of dirent stat information

@@ -253,7 +253,7 @@ static void handle_cifsd_work(struct work_struct *wk)
 /**
  * queue_cifsd_work() - queue a smb request to worker thread queue
  *		for proccessing smb command and sending response
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  *
  * read remaining data from socket create and submit work.
  */

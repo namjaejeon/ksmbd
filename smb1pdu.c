@@ -5449,7 +5449,7 @@ static int readdir_info_level_struct_sz(int info_level)
 
 /**
  * smb_populate_readdir_entry() - encode directory entry in smb response buffer
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @info_level:	smb information level
  * @d_info: structure included variables for query dir
  * @cifsd_kstat: cifsd wrapper of dirent stat information
