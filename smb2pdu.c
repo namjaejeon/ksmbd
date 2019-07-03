@@ -3360,16 +3360,29 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_get_ea(struct cifsd_conn *conn, struct path *path,
-	struct smb2_query_info_req *req, struct smb2_query_info_rsp *rsp,
-	void *rsp_org)
+static int smb2_get_ea(struct cifsd_conn *conn,
+		       struct cifsd_file *fp,
+		       struct smb2_query_info_req *req,
+		       struct smb2_query_info_rsp *rsp,
+		       void *rsp_org)
 {
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
 	ssize_t buf_free_len, alignment_bytes, next_offset, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
+	struct path *path;
 
+	if (!(fp->daccess & (FILE_READ_EA_LE |
+				FILE_GENERIC_READ_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("Not permitted to read ext attr : 0x%x\n",
+			  fp->daccess);
+		return -EACCES;
+	}
+
+	path = &fp->filp->f_path;
 	/* single EA entry is requested with given user.* name */
 	if (req->InputBufferLength)
 		ea_req = (struct smb2_ea_info_req *)req->Buffer;
@@ -4017,20 +4030,9 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		break;
 
 	case FILE_FULL_EA_INFORMATION:
-		if (!(fp->daccess & (FILE_READ_EA_LE | FILE_GENERIC_READ_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifsd_err("Not permitted to read ext attr : 0x%x\n",
-				   fp->daccess);
-			return -EACCES;
-		}
-		rc = smb2_get_ea(work->conn,
-				 &fp->filp->f_path,
-				 req,
-				 rsp,
-				 rsp_org);
+		rc = smb2_get_ea(work->conn, fp, req, rsp, rsp_org);
 		if (rc)
 			return rc;
-
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		break;
 
