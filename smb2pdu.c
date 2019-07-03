@@ -4745,6 +4745,318 @@ out:
 	return rc;
 }
 
+static int set_file_basic_info(struct cifsd_file *fp,
+			       char *buf,
+			       struct cifsd_share_config *share)
+{
+	struct smb2_file_all_info *file_info;
+	struct iattr attrs;
+	struct iattr temp_attrs;
+	struct file *filp;
+	struct inode *inode;
+	int rc;
+
+	if (!(fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
+				FILE_GENERIC_WRITE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("Not permitted to write attrs: 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	file_info = (struct smb2_file_all_info *)buf;
+	attrs.ia_valid = 0;
+	filp = fp->filp;
+	inode = file_inode(filp);
+
+	if (file_info->CreationTime) {
+		fp->create_time = le64_to_cpu(file_info->CreationTime);
+		if (test_share_config_flag(share,
+					CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+			rc = cifsd_vfs_setxattr(filp->f_path.dentry,
+						XATTR_NAME_CREATION_TIME,
+						(void *)&fp->create_time,
+						CREATIOM_TIME_LEN, 0);
+			if (rc) {
+				cifsd_debug("failed to set creation time\n");
+				return -EINVAL;
+			}
+		}
+	}
+
+	if (file_info->LastAccessTime) {
+		attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
+					file_info->LastAccessTime));
+		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
+	}
+
+	if (file_info->ChangeTime) {
+		temp_attrs.ia_ctime = to_kern_timespec(cifs_NTtimeToUnix(
+					file_info->ChangeTime));
+		attrs.ia_ctime = temp_attrs.ia_ctime;
+		attrs.ia_valid |= ATTR_CTIME;
+	} else
+		temp_attrs.ia_ctime = inode->i_ctime;
+
+	if (file_info->LastWriteTime) {
+		attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
+					file_info->LastWriteTime));
+		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
+	}
+
+	if (file_info->Attributes) {
+		struct kstat stat;
+
+		if (!S_ISDIR(inode->i_mode) &&
+				file_info->Attributes == ATTR_DIRECTORY) {
+			cifsd_err("can't change a file to a directory\n");
+			return -EINVAL;
+		}
+
+		generic_fillattr(inode, &stat);
+		fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+				le32_to_cpu(file_info->Attributes)));
+		if (test_share_config_flag(share,
+				CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+			rc = cifsd_vfs_setxattr(filp->f_path.dentry,
+					XATTR_NAME_FILE_ATTRIBUTE,
+					(void *)&fp->fattr,
+					FILE_ATTRIBUTE_LEN, 0);
+			if (rc)
+				cifsd_debug("failed to store file attribute in EA\n");
+			rc = 0;
+		}
+	}
+
+	/*
+	 * HACK : set ctime here to avoid ctime changed
+	 * when file_info->ChangeTime is zero.
+	 */
+	attrs.ia_ctime = temp_attrs.ia_ctime;
+	attrs.ia_valid |= ATTR_CTIME;
+
+	if (attrs.ia_valid) {
+		struct dentry *dentry = filp->f_path.dentry;
+		struct inode *inode = dentry->d_inode;
+
+		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
+			return -EACCES;
+
+		rc = setattr_prepare(dentry, &attrs);
+		if (rc)
+			return -EINVAL;
+
+		setattr_copy(inode, &attrs);
+		mark_inode_dirty(inode);
+	}
+	return 0;
+}
+
+static int set_file_allocation_info(struct cifsd_work *work,
+				    struct cifsd_file *fp,
+				    char *buf)
+{
+	/*
+	 * TODO : It's working fine only when store dos attributes
+	 * is not yes. need to implement a logic which works
+	 * properly with any smb.conf option
+	 */
+
+	struct smb2_file_alloc_info *file_alloc_info;
+	loff_t alloc_blks;
+	struct inode *inode;
+	int rc;
+
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE |
+				FILE_GENERIC_WRITE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to write data : 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	file_alloc_info = (struct smb2_file_alloc_info *)buf;
+	alloc_blks = (le64_to_cpu(file_alloc_info->AllocationSize) + 511) >> 9;
+	inode = file_inode(fp->filp);
+
+	if (alloc_blks > inode->i_blocks) {
+		rc = cifsd_vfs_alloc_size(work, fp, alloc_blks * 512);
+		if (rc) {
+			cifsd_err("cifsd_vfs_alloc_size is failed : %d\n", rc);
+			return rc;
+		}
+	} else if (alloc_blks < inode->i_blocks) {
+		loff_t size;
+
+		/*
+		 * Allocation size could be smaller than original one
+		 * which means allocated blocks in file should be
+		 * deallocated. use truncate to cut out it, but inode
+		 * size is also updated with truncate offset.
+		 * inode size is retained by backup inode size.
+		 */
+		size = i_size_read(inode);
+		rc = cifsd_vfs_truncate(work, NULL, fp, alloc_blks * 512);
+		if (rc) {
+			cifsd_err("truncate failed! filename : %s, err %d\n",
+				  fp->filename, rc);
+			return rc;
+		}
+		if (size < alloc_blks * 512)
+			i_size_write(inode, size);
+	}
+	return 0;
+}
+
+static int set_end_of_file_info(struct cifsd_work *work,
+				struct cifsd_file *fp,
+				char *buf)
+{
+	struct smb2_file_eof_info *file_eof_info;
+	loff_t newsize;
+	struct inode *inode;
+	int rc;
+
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE |
+				FILE_GENERIC_WRITE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to write data : 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	file_eof_info = (struct smb2_file_eof_info *)buf;
+	newsize = le64_to_cpu(file_eof_info->EndOfFile);
+	inode = file_inode(fp->filp);
+
+	/*
+	 * If FILE_END_OF_FILE_INFORMATION of set_info_file is called
+	 * on FAT32 shared device, truncate execution time is too long
+	 * and network error could cause from windows client. because
+	 * truncate of some filesystem like FAT32 fill zero data in
+	 * truncated range.
+	 */
+	if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC) {
+		cifsd_debug("filename : %s truncated to newsize %lld\n",
+				fp->filename, newsize);
+		rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
+		if (rc) {
+			cifsd_debug("truncate failed! filename : %s err %d\n",
+					fp->filename, rc);
+			if (rc != -EAGAIN)
+				rc = -EBADF;
+			return rc;
+		}
+	}
+	return 0;
+}
+
+static int set_rename_info(struct cifsd_work *work,
+			   struct cifsd_file *fp,
+			   char *buf)
+{
+	struct cifsd_file *parent_fp;
+
+	if (!(fp->daccess & (FILE_DELETE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to delete : 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	if (cifsd_stream_fd(fp))
+		goto next;
+
+	parent_fp = cifsd_lookup_fd_inode(PARENT_INODE(fp));
+	if (parent_fp) {
+		if (parent_fp->daccess & FILE_DELETE_LE) {
+			cifsd_err("parent dir is opened with delete access\n");
+			return -ESHARE;
+		}
+	}
+next:
+	return smb2_rename(fp,
+			   (struct smb2_file_rename_info *)buf,
+			   work->sess->conn->local_nls);
+}
+
+static int set_file_disposition_info(struct cifsd_file *fp,
+				     char *buf)
+{
+	struct smb2_file_disposition_info *file_info;
+	struct inode *inode;
+
+	if (!(fp->daccess & (FILE_DELETE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to delete : 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	inode = file_inode(fp->filp);
+	file_info = (struct smb2_file_disposition_info *)buf;
+	if (file_info->DeletePending) {
+		if (S_ISDIR(inode->i_mode) &&
+				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY)
+			return -EBUSY;
+		else
+			cifsd_set_inode_pending_delete(fp);
+	} else {
+		cifsd_clear_inode_pending_delete(fp);
+	}
+	return 0;
+}
+
+static int set_file_position_info(struct cifsd_file *fp,
+				  char *buf)
+{
+	struct smb2_file_pos_info *file_info;
+	loff_t current_byte_offset;
+	unsigned short sector_size;
+	struct inode *inode;
+
+	inode = file_inode(fp->filp);
+	file_info = (struct smb2_file_pos_info *)buf;
+	current_byte_offset = le64_to_cpu(file_info->CurrentByteOffset);
+	sector_size = cifsd_vfs_logical_sector_size(inode);
+
+	if (current_byte_offset < 0 ||
+			(fp->coption == FILE_NO_INTERMEDIATE_BUFFERING_LE &&
+			 current_byte_offset & (sector_size-1))) {
+		cifsd_err("CurrentByteOffset is not valid : %llu\n",
+			current_byte_offset);
+		return -EINVAL;
+	}
+
+	fp->filp->f_pos = current_byte_offset;
+	return 0;
+}
+
+static int set_file_mode_info(struct cifsd_file *fp,
+			      char *buf)
+{
+	struct smb2_file_mode_info *file_info;
+	__le32 mode;
+
+	file_info = (struct smb2_file_mode_info *)buf;
+	mode = file_info->Mode;
+
+	if ((mode & (~FILE_MODE_INFO_MASK)) ||
+			(mode & FILE_SYNCHRONOUS_IO_ALERT_LE &&
+			 mode & FILE_SYNCHRONOUS_IO_NONALERT_LE)) {
+		cifsd_err("Mode is not valid : 0x%x\n", le32_to_cpu(mode));
+		return -EINVAL;
+	}
+
+	/*
+	 * TODO : need to implement consideration for
+	 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
+	 */
+	cifsd_vfs_set_fadvise(fp->filp, mode);
+	fp->coption = mode;
+	return 0;
+}
+
 /**
  * smb2_set_info_file() - handler for smb2 set info command
  * @work:	smb work containing set info command buffer
@@ -4752,346 +5064,58 @@ out:
  * Return:	0 on success, otherwise error
  * TODO: need to implement an error handling for STATUS_INFO_LENGTH_MISMATCH
  */
-static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
-	int info_class, char *buffer, struct cifsd_share_config *share)
+static int smb2_set_info_file(struct cifsd_work *work,
+			      struct cifsd_file *fp,
+			      int info_class,
+			      char *buf,
+			      struct cifsd_share_config *share)
 {
-	struct cifsd_session *sess = work->sess;
-	struct nls_table *local_nls = sess->conn->local_nls;
-	int rc = 0;
-	struct file *filp;
-	struct inode *inode;
-
-	filp = fp->filp;
-	inode = file_inode(filp);
-
 	switch (info_class) {
 	case FILE_BASIC_INFORMATION:
-	{
-		struct smb2_file_all_info *file_info;
-		struct iattr attrs;
-		struct iattr temp_attrs;
+		return set_file_basic_info(fp, buf, share);
 
-		if (!(fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
-			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write the attributes : 0x%x\n",
-				fp->daccess);
-			rc = -EACCES;
-			goto out;
-		}
-
-		file_info = (struct smb2_file_all_info *)buffer;
-		attrs.ia_valid = 0;
-
-		if (file_info->CreationTime) {
-			fp->create_time = le64_to_cpu(file_info->CreationTime);
-			if (test_share_config_flag(share,
-					CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-				rc = cifsd_vfs_setxattr(filp->f_path.dentry,
-						XATTR_NAME_CREATION_TIME,
-						(void *)&fp->create_time,
-						CREATIOM_TIME_LEN, 0);
-				if (rc) {
-					cifsd_debug("failed to set creation time\n");
-					rc = -EINVAL;
-					goto out;
-				}
-			}
-		}
-
-		if (file_info->LastAccessTime) {
-			attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
-						file_info->LastAccessTime));
-			attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
-		}
-
-		if (file_info->ChangeTime) {
-			temp_attrs.ia_ctime =
-				to_kern_timespec(cifs_NTtimeToUnix(
-						file_info->ChangeTime));
-			attrs.ia_ctime = temp_attrs.ia_ctime;
-			attrs.ia_valid |= ATTR_CTIME;
-		} else
-			temp_attrs.ia_ctime = inode->i_ctime;
-
-		if (file_info->LastWriteTime) {
-			attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
-						file_info->LastWriteTime));
-			attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
-		}
-
-		if (file_info->Attributes) {
-			struct kstat stat;
-
-			if (!S_ISDIR(inode->i_mode)
-				&& file_info->Attributes == ATTR_DIRECTORY) {
-				cifsd_err("can't change a file to a directory\n");
-				rc = -EINVAL;
-				goto out;
-			}
-
-			generic_fillattr(inode, &stat);
-			fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
-					le32_to_cpu(file_info->Attributes)));
-			if (test_share_config_flag(share,
-					CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-				rc = cifsd_vfs_setxattr(filp->f_path.dentry,
-						XATTR_NAME_FILE_ATTRIBUTE,
-						(void *)&fp->fattr,
-						FILE_ATTRIBUTE_LEN, 0);
-				if (rc)
-					cifsd_debug("failed to store file attribute in EA\n");
-				rc = 0;
-			}
-		}
-
-		/*
-		 * HACK : set ctime here to avoid ctime changed
-		 * when file_info->ChangeTime is zero.
-		 */
-		attrs.ia_ctime = temp_attrs.ia_ctime;
-		attrs.ia_valid |= ATTR_CTIME;
-
-		if (attrs.ia_valid) {
-			struct dentry *dentry = filp->f_path.dentry;
-			struct inode *inode = dentry->d_inode;
-
-			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
-				rc = -EACCES;
-				goto out;
-			}
-
-			rc = setattr_prepare(dentry, &attrs);
-			if (rc) {
-				rc = -EINVAL;
-				goto out;
-			}
-
-			setattr_copy(inode, &attrs);
-			mark_inode_dirty(inode);
-		}
-		break;
-	}
 	case FILE_ALLOCATION_INFORMATION:
+		return set_file_allocation_info(work, fp, buf);
+
+	case FILE_END_OF_FILE_INFORMATION:
+		return set_end_of_file_info(work, fp, buf);
+
+	case FILE_RENAME_INFORMATION:
+		return set_rename_info(work, fp, buf);
+
+	case FILE_LINK_INFORMATION:
+		return smb2_create_link(work->tcon->share_conf,
+					(struct smb2_file_link_info *)buf,
+					fp->filp,
+					work->sess->conn->local_nls);
+
+	case FILE_DISPOSITION_INFORMATION:
+		return set_file_disposition_info(fp, buf);
+
+	case FILE_FULL_EA_INFORMATION:
 	{
-		/*
-		 * TODO : It's working fine only when store dos attributes
-		 * is not yes. need to implement a logic which works
-		 * properly with any smb.conf option
-		 */
-
-		struct smb2_file_alloc_info *file_alloc_info;
-		loff_t alloc_blks;
-
-		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
-			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write data : 0x%x\n",
-				fp->daccess);
+		if (!(fp->daccess & (FILE_WRITE_EA_LE |
+				FILE_GENERIC_WRITE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+			cifsd_err("Not permitted to write ext  attr: 0x%x\n",
+				  fp->daccess);
 			return -EACCES;
 		}
 
-		file_alloc_info = (struct smb2_file_alloc_info *)buffer;
-		alloc_blks = (le64_to_cpu(file_alloc_info->AllocationSize)
-				+ 511) >> 9;
-
-		if (alloc_blks > inode->i_blocks) {
-			rc = cifsd_vfs_alloc_size(work, fp,
-					alloc_blks * 512);
-			if (rc) {
-				cifsd_err("cifsd_vfs_alloc_size is failed : %d\n",
-					rc);
-				return rc;
-			}
-		} else if (alloc_blks < inode->i_blocks) {
-			loff_t size;
-
-			/*
-			 * Allocation size could be smaller than original one
-			 * which means allocated blocks in file should be
-			 * deallocated. use truncate to cut out it, but inode
-			 * size is also updated with truncate offset.
-			 * inode size is retained by backup inode size.
-			 */
-			size = i_size_read(inode);
-			rc = cifsd_vfs_truncate(work, NULL, fp,
-					alloc_blks * 512);
-			if (rc) {
-				cifsd_err("truncate failed! filename : %s, err %d\n",
-					fp->filename, rc);
-				return rc;
-			}
-			if (size < alloc_blks * 512)
-				i_size_write(inode, size);
-		}
-
-		break;
+		return smb2_set_ea((struct smb2_ea_info *)buf,
+				   &fp->filp->f_path);
 	}
-	case FILE_END_OF_FILE_INFORMATION:
-	{
-		struct smb2_file_eof_info *file_eof_info;
-		loff_t newsize;
 
-		if (!(fp->daccess & (FILE_WRITE_DATA_LE |
-			FILE_GENERIC_WRITE_LE | FILE_MAXIMAL_ACCESS_LE |
-			FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write data : 0x%x\n",
-				fp->daccess);
-			rc = -EACCES;
-			goto out;
-		}
-
-		file_eof_info = (struct smb2_file_eof_info *)buffer;
-
-		newsize = le64_to_cpu(file_eof_info->EndOfFile);
-
-		/*
-		 * If FILE_END_OF_FILE_INFORMATION of set_info_file is called
-		 * on FAT32 shared device, truncate execution time is too long
-		 * and network error could cause from windows client. because
-		 * truncate of some filesystem like FAT32 fill zero data in
-		 * truncated range.
-		 */
-		if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC) {
-			cifsd_debug("filename : %s truncated to newsize %lld\n",
-					fp->filename, newsize);
-			rc = cifsd_vfs_truncate(work, NULL, fp, newsize);
-			if (rc) {
-				cifsd_debug("truncate failed! filename : %s err %d\n",
-						fp->filename, rc);
-				if (rc != -EAGAIN)
-					rc = -EBADF;
-				goto out;
-			}
-		}
-		break;
-	}
-	case FILE_RENAME_INFORMATION:
-	{
-		struct cifsd_file *parent_fp;
-
-		if (!(fp->daccess & (FILE_DELETE_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to delete : 0x%x\n", fp->daccess);
-			rc = -EACCES;
-			goto out;
-		}
-
-		if (cifsd_stream_fd(fp))
-			goto next;
-
-		parent_fp = cifsd_lookup_fd_inode(PARENT_INODE(fp));
-		if (parent_fp) {
-			if (parent_fp->daccess & FILE_DELETE_LE) {
-				cifsd_err("parent dir is opened with delete access\n");
-				rc = -ESHARE;
-				goto out;
-			}
-		}
-next:
-		rc = smb2_rename(fp,
-				 (struct smb2_file_rename_info *)buffer,
-				 local_nls);
-		break;
-	}
-	case FILE_LINK_INFORMATION:
-		rc = smb2_create_link(work->tcon->share_conf,
-				      (struct smb2_file_link_info *)buffer,
-				      filp,
-				      local_nls);
-		break;
-	case FILE_DISPOSITION_INFORMATION:
-	{
-		struct smb2_file_disposition_info *file_info;
-
-		if (!(fp->daccess & (FILE_DELETE_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to delete : 0x%x\n", fp->daccess);
-			rc = -EACCES;
-			goto out;
-		}
-
-		file_info = (struct smb2_file_disposition_info *)buffer;
-		if (file_info->DeletePending) {
-			if (S_ISDIR(inode->i_mode) &&
-					cifsd_vfs_empty_dir(fp) == -ENOTEMPTY)
-				rc = -EBUSY;
-			else
-				cifsd_set_inode_pending_delete(fp);
-		} else {
-			cifsd_clear_inode_pending_delete(fp);
-		}
-		break;
-	}
-	case FILE_FULL_EA_INFORMATION:
-	{
-		if (!(fp->daccess & (FILE_WRITE_EA_LE | FILE_GENERIC_WRITE_LE |
-			FILE_MAXIMAL_ACCESS_LE | FILE_GENERIC_ALL_LE))) {
-			cifsd_err("no right to write the extended attributes : 0x%x\n",
-				fp->daccess);
-			rc = -EACCES;
-			goto out;
-		}
-
-		rc = smb2_set_ea((struct smb2_ea_info *)buffer,
-			&filp->f_path);
-		break;
-	}
 	case FILE_POSITION_INFORMATION:
-	{
-		struct smb2_file_pos_info *file_info;
-		loff_t current_byte_offset;
-		unsigned short sector_size;
+		return set_file_position_info(fp, buf);
 
-		file_info = (struct smb2_file_pos_info *)buffer;
-		current_byte_offset = le64_to_cpu(file_info->CurrentByteOffset);
-		sector_size = cifsd_vfs_logical_sector_size(inode);
-
-		if (current_byte_offset < 0 ||
-			(fp->coption == FILE_NO_INTERMEDIATE_BUFFERING_LE &&
-			current_byte_offset & (sector_size-1))) {
-			cifsd_err("CurrentByteOffset is not valid : %llu\n",
-				current_byte_offset);
-			rc = -EINVAL;
-			goto out;
-		}
-
-		filp->f_pos = current_byte_offset;
-		break;
-	}
 	case FILE_MODE_INFORMATION:
-	{
-		struct smb2_file_mode_info *file_info;
-		__le32 mode;
-
-		file_info = (struct smb2_file_mode_info *)buffer;
-		mode = file_info->Mode;
-
-		if ((mode & (~FILE_MODE_INFO_MASK)) ||
-			(mode & FILE_SYNCHRONOUS_IO_ALERT_LE
-			&& mode & FILE_SYNCHRONOUS_IO_NONALERT_LE)) {
-			cifsd_err("Mode is not valid : 0x%x\n",
-				le32_to_cpu(mode));
-			rc = -EINVAL;
-			goto out;
-		}
-
-		/*
-		 * TODO : need to implement consideration for
-		 * FILE_SYNCHRONOUS_IO_ALERT and FILE_SYNCHRONOUS_IO_NONALERT
-		 */
-		cifsd_vfs_set_fadvise(fp->filp, mode);
-		fp->coption = mode;
-
-		break;
-	}
-	default:
-		cifsd_err("Unimplemented Fileinfoclass :%d\n", info_class);
-		rc = -EOPNOTSUPP;
+		return set_file_mode_info(fp, buf);
 	}
 
-out:
-	return rc;
+	cifsd_err("Unimplemented Fileinfoclass :%d\n", info_class);
+	return -EOPNOTSUPP;
 }
 
 /**
