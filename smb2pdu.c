@@ -3980,8 +3980,6 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 	case FILE_BASIC_INFORMATION:
 		rc = get_file_basic_info(rsp, fp, rsp_org);
-		if (rc)
-			return rc;
 		file_infoclass_size = FILE_BASIC_INFORMATION_SIZE;
 		break;
 
@@ -3997,8 +3995,6 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 	case FILE_ALL_INFORMATION:
 		rc = get_file_all_info(work, rsp, fp, rsp_org);
-		if (rc)
-			return rc;
 		file_infoclass_size = FILE_ALL_INFORMATION_SIZE;
 		break;
 
@@ -4019,8 +4015,6 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 	case FILE_NETWORK_OPEN_INFORMATION:
 		rc = get_file_network_open_info(rsp, fp, rsp_org);
-		if (rc)
-			return rc;
 		file_infoclass_size = FILE_NETWORK_OPEN_INFORMATION_SIZE;
 		break;
 
@@ -4031,8 +4025,6 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 	case FILE_FULL_EA_INFORMATION:
 		rc = smb2_get_ea(work->conn, fp, req, rsp, rsp_org);
-		if (rc)
-			return rc;
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		break;
 
@@ -4058,13 +4050,13 @@ static int smb2_get_info_file(struct cifsd_work *work,
 
 	default:
 		cifsd_debug("fileinfoclass %d not supported yet\n",
-			fileinfoclass);
-		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
-		return -EOPNOTSUPP;
+			    fileinfoclass);
+		rc = -EOPNOTSUPP;
 	}
-	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
-			      rsp,
-			      file_infoclass_size);
+	if (!rc)
+		rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
+				      rsp,
+				      file_infoclass_size);
 	return rc;
 }
 
