@@ -3057,7 +3057,7 @@ static int __query_dir(struct dir_context *ctx,
 					 priv->info_level,
 					 d_info,
 					 &cifsd_kstat);
-	if (rc == -ENOSPC)
+	if (rc)
 		return rc;
 
 	ctx->pos += namlen;
