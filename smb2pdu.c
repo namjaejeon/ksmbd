@@ -3013,6 +3013,11 @@ struct smb2_query_dir_private {
 	int			flags;
 };
 
+static void restart_ctx(struct dir_context *ctx)
+{
+	ctx->pos = 0;
+}
+
 static int __query_dir(struct dir_context *ctx,
 		       const char *name,
 		       int namlen,
@@ -3060,7 +3065,6 @@ static int __query_dir(struct dir_context *ctx,
 	if (rc)
 		return rc;
 
-	ctx->pos += namlen;
 	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
 		return 0;
 
@@ -3148,6 +3152,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		cifsd_debug("Reopen the directory\n");
 		fput(dir_fp->filp);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
+		restart_ctx(&dir_fp->readdir_data.ctx);
 		if (!dir_fp->filp) {
 			cifsd_debug("Reopening dir failed\n");
 			rc = -EINVAL;
@@ -3158,7 +3163,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (srch_flag & SMB2_RESTART_SCANS) {
 		cifsd_debug("SMB2 RESTART SCANS\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
-		dir_fp->readdir_data.ctx.pos = 0;
+		restart_ctx(&dir_fp->readdir_data.ctx);
 	}
 
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
@@ -3200,6 +3205,8 @@ int smb2_query_dir(struct cifsd_work *work)
 	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
 	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
+	if (rc == 0)
+		restart_ctx(&dir_fp->readdir_data.ctx);
 	if (rc == -ENOSPC)
 		rc = 0;
 	if (rc)
