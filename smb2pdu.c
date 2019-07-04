@@ -4750,8 +4750,11 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 				rc = -EACCES;
 				goto out;
 			}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 11)
 			rc = setattr_prepare(dentry, &attrs);
+#else
+			rc = inode_change_ok(inode, &attrs);
+#endif
 			if (rc) {
 				rc = -EINVAL;
 				goto out;
