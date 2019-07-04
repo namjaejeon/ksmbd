@@ -4830,19 +4830,16 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		struct dentry *dentry = filp->f_path.dentry;
 		struct inode *inode = dentry->d_inode;
 
-			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
-				rc = -EACCES;
-				goto out;
-			}
+			if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
+				return -EACCES;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 11)
 			rc = setattr_prepare(dentry, &attrs);
 #else
 			rc = inode_change_ok(inode, &attrs);
 #endif
-			if (rc) {
-				rc = -EINVAL;
-				goto out;
-			}
+			if (rc)
+				return -EINVAL;
 
 		setattr_copy(inode, &attrs);
 		mark_inode_dirty(inode);
