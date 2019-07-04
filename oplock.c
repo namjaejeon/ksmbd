@@ -27,7 +27,7 @@ MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
 
 /**
  * get_new_opinfo() - allocate a new opinfo object for oplock info
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  * @id:		fid of open file
  * @Tid:	tree id of connection
  * @lctx:	lease context information
@@ -361,9 +361,7 @@ static int lease_none_upgrade(struct oplock_info *opinfo,
 
 /**
  * close_id_del_oplock() - release oplock object at file close time
- * @conn:     TCP server instance of connection
  * @fp:		cifsd file pointer
- * @id:		fid of open file
  */
 void close_id_del_oplock(struct cifsd_file *fp)
 {
@@ -1320,7 +1318,7 @@ err_out:
 
 /**
  * smb_break_write_oplock() - break batch/exclusive oplock to level2
- * @conn:	TCP server instance of connection
+ * @work:	smb work
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
@@ -1349,9 +1347,9 @@ static int smb_break_all_write_oplock(struct cifsd_work *work,
 /**
  * smb_break_all_levII_oplock() - send level2 oplock or read lease break command
  *	from server to client
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  * @fp:		cifsd file pointer
- * @openfile:	open file information
+ * @is_trunc:	truncate on open
  */
 void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
@@ -1416,9 +1414,8 @@ next:
 
 /**
  * smb_break_all_oplock() - break both batch/exclusive and level2 oplock
- * @conn:	TCP server instance of connection
+ * @work:	smb work
  * @fp:		cifsd file pointer
- * @openfile:	open file object
  */
 void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
 {
@@ -1665,7 +1662,7 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
  */
 /**
  * lookup_lease_in_table() - find a matching lease info object
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @lease_key:	lease key to be searched for
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL

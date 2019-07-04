@@ -39,7 +39,7 @@ bool stream_file_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @id:		session id from smb header
  *
  * Return:      1 if valid session id, otherwise 0
@@ -2854,7 +2854,7 @@ static int readdir_info_level_struct_sz(int info_level)
 
 /**
  * smb2_populate_readdir_entry() - encode directory entry in smb2 response buffer
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @info_level:	smb information level
  * @d_info:	structure included variables for query dir
  * @cifsd_kstat:	cifsd wrapper of dirent stat information
@@ -4743,22 +4743,15 @@ static int smb2_set_info_file(struct cifsd_work *work, struct cifsd_file *fp,
 		attrs.ia_valid |= ATTR_CTIME;
 
 		if (attrs.ia_valid) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 			struct dentry *dentry = filp->f_path.dentry;
 			struct inode *inode = dentry->d_inode;
-#else
-			struct inode *inode = FP_INODE(fp);
-#endif
+
 			if (IS_IMMUTABLE(inode) || IS_APPEND(inode)) {
 				rc = -EACCES;
 				goto out;
 			}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 			rc = setattr_prepare(dentry, &attrs);
-#else
-			rc = inode_change_ok(inode, &attrs);
-#endif
 			if (rc) {
 				rc = -EINVAL;
 				goto out;
