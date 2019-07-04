@@ -1359,6 +1359,8 @@ void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 
 	ci = fp->f_ci;
 	op = opinfo_get(fp);
+	if (!op)
+		return;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
@@ -1393,7 +1395,7 @@ void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 			}
 		}
 
-		if (op && op->is_lease &&
+		if (op->is_lease &&
 			brk_op->is_lease &&
 			!memcmp(conn->ClientGUID, brk_op->conn->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE) &&
