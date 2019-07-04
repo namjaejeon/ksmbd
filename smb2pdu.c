@@ -4827,19 +4827,22 @@ static int set_file_basic_info(struct cifsd_file *fp,
 	attrs.ia_valid |= ATTR_CTIME;
 
 	if (attrs.ia_valid) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 		struct dentry *dentry = filp->f_path.dentry;
 		struct inode *inode = dentry->d_inode;
-
-			if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
-				return -EACCES;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 11)
-			rc = setattr_prepare(dentry, &attrs);
 #else
-			rc = inode_change_ok(inode, &attrs);
+		struct inode *inode = FP_INODE(fp);
 #endif
-			if (rc)
-				return -EINVAL;
+		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
+			return -EACCES;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+		rc = setattr_prepare(dentry, &attrs);
+#else
+		rc = inode_change_ok(inode, &attrs);
+#endif
+		if (rc)
+			return -EINVAL;
 
 		setattr_copy(inode, &attrs);
 		mark_inode_dirty(inode);
