@@ -4351,7 +4351,6 @@ int smb2_query_info(struct cifsd_work *work)
 		break;
 	default:
 		cifsd_debug("InfoType %d not supported yet\n", req->InfoType);
-		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 		rc = -EOPNOTSUPP;
 	}
 
