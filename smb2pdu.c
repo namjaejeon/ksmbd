@@ -3914,11 +3914,20 @@ static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
 	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_comp_info));
 }
 
-static void get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
+static int get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 					struct cifsd_file *fp,
 					void *rsp_org)
 {
 	struct smb2_file_attr_tag_info *file_info;
+
+	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
+				FILE_GENERIC_READ_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE))) {
+		cifsd_err("no right to read the attributes : 0x%x\n",
+			  fp->daccess);
+		return -EACCES;
+	}
 
 	file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
 	file_info->FileAttributes = fp->fattr;
@@ -3927,6 +3936,7 @@ static void get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 		cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
 	inc_rfc1001_len(rsp_org,
 		sizeof(struct smb2_file_attr_tag_info));
+	return 0;
 }
 
 /**
@@ -4044,7 +4054,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		break;
 
 	case FILE_ATTRIBUTE_TAG_INFORMATION:
-		get_file_attribute_tag_info(rsp, fp, rsp_org);
+		rc = get_file_attribute_tag_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ATTRIBUTE_TAG_INFORMATION_SIZE;
 		break;
 
