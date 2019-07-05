@@ -2988,13 +2988,12 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	}
 
-	if (conv_name) {
-		d_info->last_entry_offset = d_info->data_count;
-		d_info->data_count += next_entry_offset;
-		d_info->out_buf_len -= next_entry_offset;
-		d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
-		kfree(conv_name);
-	}
+	d_info->last_entry_offset = d_info->data_count;
+	d_info->data_count += next_entry_offset;
+	d_info->out_buf_len -= next_entry_offset;
+	d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
+	kfree(conv_name);
+
 	cifsd_debug("info_level : %d, buf_len :%d,"
 			" next_offset : %d, data_count : %d\n",
 			info_level, d_info->out_buf_len,
