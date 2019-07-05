@@ -4875,14 +4875,6 @@ static int set_file_allocation_info(struct cifsd_work *work,
 	struct inode *inode;
 	int rc;
 
-	if (!(fp->daccess & (FILE_WRITE_DATA_LE |
-				FILE_GENERIC_WRITE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
-		cifsd_err("no right to write data : 0x%x\n", fp->daccess);
-		return -EACCES;
-	}
-
 	file_alloc_info = (struct smb2_file_alloc_info *)buf;
 	alloc_blks = (le64_to_cpu(file_alloc_info->AllocationSize) + 511) >> 9;
 	inode = file_inode(fp->filp);
@@ -4924,14 +4916,6 @@ static int set_end_of_file_info(struct cifsd_work *work,
 	loff_t newsize;
 	struct inode *inode;
 	int rc;
-
-	if (!(fp->daccess & (FILE_WRITE_DATA_LE |
-				FILE_GENERIC_WRITE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
-		cifsd_err("no right to write data : 0x%x\n", fp->daccess);
-		return -EACCES;
-	}
 
 	file_eof_info = (struct smb2_file_eof_info *)buf;
 	newsize = le64_to_cpu(file_eof_info->EndOfFile);
