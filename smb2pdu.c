@@ -2852,8 +2852,7 @@ static int readdir_info_level_struct_sz(int info_level)
 	}
 }
 
-static char *dentry_name(struct cifsd_dir_info *d_info,
-			 int info_level)
+static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 {
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
@@ -2862,7 +2861,9 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(ffdinfo->NextEntryOffset);
-		return ffdinfo->FileName;
+		d_info->name = ffdinfo->FileName;
+		d_info->name_len = le32_to_cpu(ffdinfo->FileNameLength);
+		return 0;
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
 	{
@@ -2870,7 +2871,9 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fbdinfo->NextEntryOffset);
-		return fbdinfo->FileName;
+		d_info->name = fbdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fbdinfo->FileNameLength);
+		return 0;
 	}
 	case FILE_DIRECTORY_INFORMATION:
 	{
@@ -2878,7 +2881,9 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		fdinfo = (FILE_DIRECTORY_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fdinfo->NextEntryOffset);
-		return fdinfo->FileName;
+		d_info->name = fdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fdinfo->FileNameLength);
+		return 0;
 	}
 	case FILE_NAMES_INFORMATION:
 	{
@@ -2886,7 +2891,9 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		fninfo = (FILE_NAMES_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fninfo->NextEntryOffset);
-		return fninfo->FileName;
+		d_info->name = fninfo->FileName;
+		d_info->name_len = le32_to_cpu(fninfo->FileNameLength);
+		return 0;
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
@@ -2894,7 +2901,9 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(dinfo->NextEntryOffset);
-		return dinfo->FileName;
+		d_info->name = dinfo->FileName;
+		d_info->name_len = le32_to_cpu(dinfo->FileNameLength);
+		return 0;
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 	{
@@ -2902,10 +2911,12 @@ static char *dentry_name(struct cifsd_dir_info *d_info,
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fibdinfo->NextEntryOffset);
-		return fibdinfo->FileName;
+		d_info->name = fibdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
+		return 0;
 	}
 	}
-	return NULL;
+	return -EINVAL;
 }
 
 /**
@@ -3087,11 +3098,10 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 	int			i;
 
 	for (i = 0; i < priv->d_info->num_entry; i++) {
-		char *n = dentry_name(priv->d_info, priv->info_level);
 		struct dentry *dent;
 
-		priv->d_info->name = n;
-		priv->d_info->name_len = strlen(n);
+		if (dentry_name(priv->d_info, priv->info_level))
+			return -EINVAL;
 
 		lock_dir(priv->dir_fp);
 		dent = lookup_one_len(priv->d_info->name,
@@ -3101,12 +3111,13 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 
 		if (IS_ERR(dent)) {
 			cifsd_debug("Cannot lookup `%s' [%ld]\n",
-				     n,
+				     priv->d_info->name,
 				     PTR_ERR(dent));
 			continue;
 		}
 		if (d_is_negative(dent)) {
-			cifsd_debug("Negative dentry %s\n", n);
+			cifsd_debug("Negative dentry `%s'\n",
+				    priv->d_info->name);
 			continue;
 		}
 
@@ -3152,6 +3163,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->wptr;
 		memcpy(ffdinfo->FileName, d_info->name, d_info->name_len);
 		ffdinfo->FileName[d_info->name_len] = 0x00;
+		ffdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
@@ -3162,6 +3174,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->wptr;
 		memcpy(fbdinfo->FileName, d_info->name, d_info->name_len);
 		fbdinfo->FileName[d_info->name_len] = 0x00;
+		fbdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
@@ -3172,6 +3185,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		fdinfo = (FILE_DIRECTORY_INFO *)d_info->wptr;
 		memcpy(fdinfo->FileName, d_info->name, d_info->name_len);
 		fdinfo->FileName[d_info->name_len] = 0x00;
+		fdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
@@ -3182,6 +3196,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		fninfo = (FILE_NAMES_INFO *)d_info->wptr;
 		memcpy(fninfo->FileName, d_info->name, d_info->name_len);
 		fninfo->FileName[d_info->name_len] = 0x00;
+		fninfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
@@ -3192,6 +3207,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->wptr;
 		memcpy(dinfo->FileName, d_info->name, d_info->name_len);
 		dinfo->FileName[d_info->name_len] = 0x00;
+		dinfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
@@ -3202,6 +3218,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->wptr;
 		memcpy(fibdinfo->FileName, d_info->name, d_info->name_len);
 		fibdinfo->FileName[d_info->name_len] = 0x00;
+		fibdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
