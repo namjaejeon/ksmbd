@@ -1653,16 +1653,9 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		return err;
 }
 
-/**
- * fill_create_time() - fill create time of directory entry in cifsd_kstat
- * if related config is not yes, create time is same with change time
- *
- * @work: smb work containing share config
- * @path: path info
- * @cifsd_kstat: cifsd kstat wrapper
- */
-static void fill_create_time(struct cifsd_work *work,
-	struct path *path, struct cifsd_kstat *cifsd_kstat)
+static void __file_dentry_ctime(struct cifsd_work *work,
+				struct dentry *dentry,
+				struct cifsd_kstat *cifsd_kstat)
 {
 	char *create_time = NULL;
 	int xattr_len;
@@ -1677,14 +1670,28 @@ static void fill_create_time(struct cifsd_work *work,
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-		xattr_len = cifsd_vfs_getxattr(path->dentry,
+		xattr_len = cifsd_vfs_getxattr(dentry,
 					       XATTR_NAME_CREATION_TIME,
 					       &create_time);
 		if (xattr_len > 0)
 			cifsd_kstat->create_time = *((u64 *)create_time);
-
 		cifsd_free(create_time);
 	}
+}
+
+/**
+ * fill_create_time() - fill create time of directory entry in cifsd_kstat
+ * if related config is not yes, create time is same with change time
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @cifsd_kstat: cifsd kstat wrapper
+ */
+static void fill_create_time(struct cifsd_work *work,
+			     struct path *path,
+			     struct cifsd_kstat *cifsd_kstat)
+{
+	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
 }
 
 /**
@@ -1719,17 +1726,9 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 	return info;
 }
 
-/*
- * fill_file_attributes() - fill FileAttributes of directory entry in cifsd_kstat.
- * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
- *
- * @work: smb work containing share config
- * @path: path info
- * @cifsd_kstat: cifsd kstat wrapper
- */
-
-static void fill_file_attributes(struct cifsd_work *work,
-	struct path *path, struct cifsd_kstat *cifsd_kstat)
+static void __fill_dentry_attributes(struct cifsd_work *work,
+				     struct dentry *dentry,
+				     struct cifsd_kstat *cifsd_kstat)
 {
 	/*
 	 * set default value for the case that store dos attributes is not yes
@@ -1745,16 +1744,30 @@ static void fill_file_attributes(struct cifsd_work *work,
 		char *file_attribute = NULL;
 		int rc;
 
-		rc = cifsd_vfs_getxattr(path->dentry,
+		rc = cifsd_vfs_getxattr(dentry,
 					XATTR_NAME_FILE_ATTRIBUTE,
 					&file_attribute);
 		if (rc > 0)
 			cifsd_kstat->file_attributes = *file_attribute;
 		else
 			cifsd_debug("fail to fill file attributes.\n");
-
 		cifsd_free(file_attribute);
 	}
+}
+
+/*
+ * fill_file_attributes() - fill FileAttributes of directory entry in cifsd_kstat.
+ * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
+ *
+ * @work: smb work containing share config
+ * @path: path info
+ * @cifsd_kstat: cifsd kstat wrapper
+ */
+static void fill_file_attributes(struct cifsd_work *work,
+				 struct path *path,
+				 struct cifsd_kstat *cifsd_kstat)
+{
+	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
 }
 
 int cifsd_vfs_readdir_name(struct cifsd_work *work,
@@ -1791,6 +1804,16 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 	fill_file_attributes(work, &path, cifsd_kstat);
 	path_put(&path);
 	kfree(name);
+	return 0;
+}
+
+int cifsd_vfs_fill_dentry_attrs(struct cifsd_work *work,
+				struct dentry *dentry,
+				struct cifsd_kstat *cifsd_kstat)
+{
+	generic_fillattr(dentry->d_inode, cifsd_kstat->kstat);
+	__file_dentry_ctime(work, dentry, cifsd_kstat);
+	__fill_dentry_attributes(work, dentry, cifsd_kstat);
 	return 0;
 }
 

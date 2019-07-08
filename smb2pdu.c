@@ -3017,6 +3017,8 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	}
 
+	d_info->last_entry_offset = d_info->data_count;
+	d_info->data_count += next_entry_offset;
 	d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
 	kfree(conv_name);
 
@@ -3031,7 +3033,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 struct smb2_query_dir_private {
 	struct cifsd_work	*work;
 	char			*search_pattern;
-	char			*dir_path;
+	struct cifsd_file	*dir_fp;
 
 	struct cifsd_dir_info	*d_info;
 	int			info_level;
@@ -3047,18 +3049,20 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 
 	for (i = 0; i < priv->d_info->num_entry; i++) {
 		char *n = dentry_name(priv->d_info, priv->info_level);
+		struct dentry *dent;
 
 		priv->d_info->name = n;
 		priv->d_info->name_len = strlen(n);
 
-		cifsd_kstat.kstat	= &kstat;
-		rc = cifsd_vfs_readdir_name(priv->work,
-					    &cifsd_kstat,
-					    priv->d_info->name,
-					    priv->d_info->name_len,
-					    priv->dir_path);
-		if (rc)
-			return rc;
+		dent = lookup_one_len(priv->d_info->name,
+				      priv->dir_fp->filp->f_path.dentry,
+				      priv->d_info->name_len);
+		if (IS_ERR(dent))
+			return PTR_ERR(dent);
+
+		cifsd_kstat.kstat = &kstat;
+		cifsd_vfs_fill_dentry_attrs(priv->work, dent, &cifsd_kstat);
+		dput(dent);
 
 		rc = smb2_populate_readdir_entry(priv->work->conn,
 						 priv->info_level,
@@ -3154,8 +3158,6 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 
 	d_info->num_entry++;
-	d_info->last_entry_offset = d_info->data_count;
-	d_info->data_count += next_entry_offset;
 	d_info->out_buf_len -= next_entry_offset;
 	d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
 	return 0;
@@ -3201,6 +3203,28 @@ static int __query_dir(struct dir_context *ctx,
 static void restart_ctx(struct dir_context *ctx)
 {
 	ctx->pos = 0;
+}
+
+static void lock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+#else
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+#endif
+}
+
+static void unlock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_unlock(dir->d_inode);
+#else
+	mutex_unlock(&dir->d_inode->i_mutex);
+#endif
 }
 
 int smb2_query_dir(struct cifsd_work *work)
@@ -3329,7 +3353,7 @@ int smb2_query_dir(struct cifsd_work *work)
 
 	query_dir_private.work			= work;
 	query_dir_private.search_pattern	= srch_ptr;
-	query_dir_private.dir_path		= dirpath;
+	query_dir_private.dir_fp		= dir_fp;
 	query_dir_private.d_info		= &d_info;
 	query_dir_private.info_level		= req->FileInformationClass;
 	query_dir_private.flags			= srch_flag;
@@ -3346,8 +3370,10 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (rc)
 		goto err_out;
 
+	lock_dir(dir_fp);
 	d_info.bufptr = first_dentry;
 	rc = process_query_dir_entries(&query_dir_private);
+	unlock_dir(dir_fp);
 	if (rc)
 		goto err_out;
 

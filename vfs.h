@@ -210,6 +210,10 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 			   const char *dir_path);
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat);
 
+int cifsd_vfs_fill_dentry_attrs(struct cifsd_work *work,
+				struct dentry *dentry,
+				struct cifsd_kstat *cifsd_kstat);
+
 int cifsd_vfs_posix_lock_wait(struct file_lock *flock);
 int cifsd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout);
 void cifsd_vfs_posix_lock_unblock(struct file_lock *flock);
