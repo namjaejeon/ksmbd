@@ -252,7 +252,7 @@ static int cifsd_tcp_run_kthread(struct interface *iface)
 	struct task_struct *kthread;
 
 	kthread = kthread_run(cifsd_kthread_fn, (void *)iface->cifsd_socket,
-		"kcifsd");
+		"kcifsd-%s", iface->name);
 	if (IS_ERR(kthread)) {
 		rc = PTR_ERR(kthread);
 		return rc;
