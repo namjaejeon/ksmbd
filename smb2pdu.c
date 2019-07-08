@@ -3057,6 +3057,28 @@ struct smb2_query_dir_private {
 	int			flags;
 };
 
+static void lock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+#else
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+#endif
+}
+
+static void unlock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_unlock(dir->d_inode);
+#else
+	mutex_unlock(&dir->d_inode->i_mutex);
+#endif
+}
+
 static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 {
 	struct kstat		kstat;
@@ -3071,9 +3093,12 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 		priv->d_info->name = n;
 		priv->d_info->name_len = strlen(n);
 
+		lock_dir(priv->dir_fp);
 		dent = lookup_one_len(priv->d_info->name,
 				      priv->dir_fp->filp->f_path.dentry,
 				      priv->d_info->name_len);
+		unlock_dir(priv->dir_fp);
+
 		if (IS_ERR(dent)) {
 			cifsd_debug("Cannot lookup `%s' [%ld]\n",
 				     n,
@@ -3230,28 +3255,6 @@ static void restart_ctx(struct dir_context *ctx)
 	ctx->pos = 0;
 }
 
-static void lock_dir(struct cifsd_file *dir_fp)
-{
-	struct dentry *dir = dir_fp->filp->f_path.dentry;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
-#endif
-}
-
-static void unlock_dir(struct cifsd_file *dir_fp)
-{
-	struct dentry *dir = dir_fp->filp->f_path.dentry;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_unlock(dir->d_inode);
-#else
-	mutex_unlock(&dir->d_inode->i_mutex);
-#endif
-}
-
 int smb2_query_dir(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -3396,11 +3399,9 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (rc)
 		goto err_out;
 
-	lock_dir(dir_fp);
 	d_info.wptr = d_info.rptr;
 	d_info.out_buf_len = buffer_sz;
 	rc = process_query_dir_entries(&query_dir_private);
-	unlock_dir(dir_fp);
 	if (rc)
 		goto err_out;
 
