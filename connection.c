@@ -346,14 +346,15 @@ int cifsd_conn_transport_init(void)
 	ret = cifsd_tcp_init();
 	if (ret) {
 		pr_err("Failed to init TCP subsystem: %d\n", ret);
-		return ret;
+		goto out;
 	}
 
 	ret = cifsd_smbd_init();
 	if (ret) {
 		pr_err("Failed to init SMBD subsystem: %d\n", ret);
-		return ret;
+		goto out;
 	}
+out:
 	mutex_unlock(&init_lock);
 	return ret;
 }
