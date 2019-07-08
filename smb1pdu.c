@@ -5493,7 +5493,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FIND_INFO_STANDARD *fsinfo = NULL;
 
-		fsinfo = (FIND_INFO_STANDARD *)(d_info->bufptr);
+		fsinfo = (FIND_INFO_STANDARD *)(d_info->wptr);
 		unix_to_dos_time(
 			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fsinfo->CreationTime,
@@ -5518,7 +5518,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FIND_INFO_QUERY_EA_SIZE *fesize = NULL;
 
-		fesize = (FIND_INFO_QUERY_EA_SIZE *)(d_info->bufptr);
+		fesize = (FIND_INFO_QUERY_EA_SIZE *)(d_info->wptr);
 		unix_to_dos_time(
 			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
 			&fesize->CreationTime,
@@ -5547,7 +5547,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_DIRECTORY_INFO *fdinfo = NULL;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(conv_len);
 		memcpy(fdinfo->FileName, conv_name, conv_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -5561,7 +5561,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_FULL_DIRECTORY_INFO *ffdinfo = NULL;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(conv_len);
 		ffdinfo->EaSize = 0;
 		memcpy(ffdinfo->FileName, conv_name, conv_len);
@@ -5575,7 +5575,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	{
 		FILE_NAMES_INFO *fninfo = NULL;
 
-		fninfo = (FILE_NAMES_INFO *)(d_info->bufptr);
+		fninfo = (FILE_NAMES_INFO *)(d_info->wptr);
 		fninfo->FileNameLength = cpu_to_le32(conv_len);
 		memcpy(fninfo->FileName, conv_name, conv_len);
 		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -5590,7 +5590,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_BOTH_DIRECTORY_INFO *fbdinfo = NULL;
 
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = cifsd_extract_shortname(conn,
@@ -5609,7 +5609,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		SEARCH_ID_FULL_DIR_INFO *dinfo = NULL;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(conv_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -5626,7 +5626,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo = NULL;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->ShortNameLength = cifsd_extract_shortname(conn,
@@ -5648,7 +5648,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 		FILE_UNIX_INFO *finfo = NULL;
 		FILE_UNIX_BASIC_INFO *unix_info;
 
-		finfo = (FILE_UNIX_INFO *)(d_info->bufptr);
+		finfo = (FILE_UNIX_INFO *)(d_info->wptr);
 		finfo->ResumeKey = 0;
 		unix_info = (FILE_UNIX_BASIC_INFO *)((char *)finfo + 8);
 		init_unix_info(unix_info, cifsd_kstat->kstat);
@@ -5665,7 +5665,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	d_info->last_entry_offset = d_info->data_count;
 	d_info->data_count += next_entry_offset;
 	d_info->out_buf_len -= next_entry_offset;
-	d_info->bufptr = (char *)(d_info->bufptr) + next_entry_offset;
+	d_info->wptr = (char *)(d_info->wptr) + next_entry_offset;
 	kfree(conv_name);
 
 	cifsd_debug("info_level : %d, buf_len :%d,"
@@ -5785,7 +5785,7 @@ static int find_first(struct cifsd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
-	d_info.bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP)
+	d_info.wptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP)
 		+ params_count + data_alignment_offset);
 
 	header_size = sizeof(TRANSACTION2_RSP) + params_count +
@@ -6023,7 +6023,7 @@ static int find_next(struct cifsd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
-	d_info.bufptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
+	d_info.wptr = (char *)((char *)rsp + sizeof(TRANSACTION2_RSP) +
 			params_count + data_alignment_offset);
 
 	header_size = sizeof(TRANSACTION2_RSP) + params_count +

@@ -85,7 +85,8 @@ struct cifsd_file;
 
 struct cifsd_dir_info {
 	const char	*name;
-	char		*bufptr;
+	char		*wptr;
+	char		*rptr;
 	int		name_len;
 	int		out_buf_len;
 	int		num_entry;
