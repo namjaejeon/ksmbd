@@ -1347,8 +1347,7 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 	if (length > maxbytes || (maxbytes - length) < start)
 		length = maxbytes - start;
 
-#define FIEMAP_MAX_EXTENTS	(UINT_MAX / sizeof(struct fiemap_extent))
-	fieinfo.fi_extents_max = FIEMAP_MAX_EXTENTS;
+	fieinfo.fi_extents_max = 1;
 
 	ret = inode->i_op->fiemap(inode, &fieinfo, start, length);
 	if (!ret) {
