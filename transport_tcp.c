@@ -500,15 +500,16 @@ static int alloc_iface(char *ifname)
 {
 	struct interface *iface;
 
-	iface = cifsd_alloc(sizeof(struct interface));
-	if (!iface)
+	if (!ifname)
 		return -ENOMEM;
 
-	iface->name = ifname;
-	if (!iface->name) {
-		cifsd_free(iface);
+	iface = cifsd_alloc(sizeof(struct interface));
+	if (!iface) {
+		kfree(ifname);
 		return -ENOMEM;
 	}
+
+	iface->name = ifname;
 	list_add(&iface->entry, &iface_list);
 	return 0;
 }
