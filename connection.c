@@ -342,7 +342,6 @@ int cifsd_conn_transport_init(void)
 	int ret;
 
 	mutex_lock(&init_lock);
-
 	ret = cifsd_tcp_init();
 	if (ret) {
 		pr_err("Failed to init TCP subsystem: %d\n", ret);
