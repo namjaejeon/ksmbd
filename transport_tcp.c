@@ -475,7 +475,7 @@ void cifsd_tcp_destroy(void)
 		tcp_destroy_socket(iface->cifsd_socket);
 		tcp_stop_kthread(iface->cifsd_kthread);
 		kfree(iface->name);
-		kfree(iface);
+		cifsd_free(iface);
 	}
 }
 
@@ -500,17 +500,17 @@ static int alloc_iface(char *ifname)
 {
 	struct interface *iface;
 
-	iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
-	if (!iface)
+	if (!ifname)
 		return -ENOMEM;
 
-	iface->name = ifname;
-	if (!iface->name) {
-		kfree(iface);
+	iface = cifsd_alloc(sizeof(struct interface));
+	if (!iface) {
+		kfree(ifname);
 		return -ENOMEM;
 	}
-	list_add(&iface->entry, &iface_list);
 
+	iface->name = ifname;
+	list_add(&iface->entry, &iface_list);
 	return 0;
 }
 
