@@ -473,6 +473,11 @@ int cifsd_ipc_heartbeat(void)
 		return ret;
 
 	mutex_lock(&startup_lock);
+	if (!cifsd_server_running()) {
+		mutex_unlock(&startup_lock);
+		return 0;
+	}
+
 	if (delta >= server_conf.ipc_timeout / 2) {
 		if (cifsd_ipc_heartbeat_request() == 0) {
 			mutex_unlock(&startup_lock);
