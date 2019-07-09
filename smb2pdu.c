@@ -2852,6 +2852,73 @@ static int readdir_info_level_struct_sz(int info_level)
 	}
 }
 
+static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
+{
+	switch (info_level) {
+	case FILE_FULL_DIRECTORY_INFORMATION:
+	{
+		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+
+		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(ffdinfo->NextEntryOffset);
+		d_info->name = ffdinfo->FileName;
+		d_info->name_len = le32_to_cpu(ffdinfo->FileNameLength);
+		return 0;
+	}
+	case FILE_BOTH_DIRECTORY_INFORMATION:
+	{
+		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+
+		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(fbdinfo->NextEntryOffset);
+		d_info->name = fbdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fbdinfo->FileNameLength);
+		return 0;
+	}
+	case FILE_DIRECTORY_INFORMATION:
+	{
+		FILE_DIRECTORY_INFO *fdinfo;
+
+		fdinfo = (FILE_DIRECTORY_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(fdinfo->NextEntryOffset);
+		d_info->name = fdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fdinfo->FileNameLength);
+		return 0;
+	}
+	case FILE_NAMES_INFORMATION:
+	{
+		FILE_NAMES_INFO *fninfo;
+
+		fninfo = (FILE_NAMES_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(fninfo->NextEntryOffset);
+		d_info->name = fninfo->FileName;
+		d_info->name_len = le32_to_cpu(fninfo->FileNameLength);
+		return 0;
+	}
+	case FILEID_FULL_DIRECTORY_INFORMATION:
+	{
+		SEARCH_ID_FULL_DIR_INFO *dinfo;
+
+		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(dinfo->NextEntryOffset);
+		d_info->name = dinfo->FileName;
+		d_info->name_len = le32_to_cpu(dinfo->FileNameLength);
+		return 0;
+	}
+	case FILEID_BOTH_DIRECTORY_INFORMATION:
+	{
+		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+
+		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(fibdinfo->NextEntryOffset);
+		d_info->name = fibdinfo->FileName;
+		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
+		return 0;
+	}
+	}
+	return -EINVAL;
+}
+
 /**
  * smb2_populate_readdir_entry() - encode directory entry in smb2 response buffer
  * @conn:	connection instance
@@ -2865,19 +2932,15 @@ static int readdir_info_level_struct_sz(int info_level)
  * Return:	0 on success, otherwise error
  */
 static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
-					int info_level,
-					struct cifsd_dir_info *d_info,
-					struct cifsd_kstat *cifsd_kstat)
+				       int info_level,
+				       struct cifsd_dir_info *d_info,
+				       struct cifsd_kstat *cifsd_kstat)
 {
-	int next_entry_offset;
+	int next_entry_offset = 0;
 	char *conv_name;
 	int conv_len;
-	int struct_sz;
 	void *kstat;
-
-	struct_sz = readdir_info_level_struct_sz(info_level);
-	if (struct_sz == -EOPNOTSUPP)
-		return -EOPNOTSUPP;
+	int struct_sz;
 
 	conv_name = cifsd_convert_dir_info_name(d_info,
 						conn->local_nls,
@@ -2886,16 +2949,16 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		return -ENOMEM;
 
 	conv_len -= 2;
+	struct_sz = readdir_info_level_struct_sz(info_level);
 	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
 				  CIFSD_DIR_INFO_ALIGNMENT);
 
 	if (next_entry_offset > d_info->out_buf_len) {
-		kfree(conv_name);
 		d_info->out_buf_len = 0;
 		return -ENOSPC;
 	}
 
-	kstat = cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+	kstat = cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
@@ -2907,7 +2970,6 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			ffdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
-
 		memcpy(ffdinfo->FileName, conv_name, conv_len);
 		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -2923,7 +2985,6 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fbdinfo->Reserved = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			fbdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
-
 		memcpy(fbdinfo->FileName, conv_name, conv_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -2936,7 +2997,6 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fdinfo->FileNameLength = cpu_to_le32(conv_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			fdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
-
 		memcpy(fdinfo->FileName, conv_name, conv_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -2947,7 +3007,6 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 
 		fninfo = (FILE_NAMES_INFO *)kstat;
 		fninfo->FileNameLength = cpu_to_le32(conv_len);
-
 		memcpy(fninfo->FileName, conv_name, conv_len);
 		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -2963,7 +3022,6 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			dinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
-
 		memcpy(dinfo->FileName, conv_name, conv_len);
 		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -2981,20 +3039,17 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			fibdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
-
 		memcpy(fibdinfo->FileName, conv_name, conv_len);
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
 	}
 
-	if (conv_name) {
-		d_info->last_entry_offset = d_info->data_count;
-		d_info->data_count += next_entry_offset;
-		d_info->out_buf_len -= next_entry_offset;
-		d_info->bufptr = (char *)d_info->bufptr + next_entry_offset;
-		kfree(conv_name);
-	}
+	d_info->last_entry_offset = d_info->data_count;
+	d_info->data_count += next_entry_offset;
+	d_info->wptr += next_entry_offset;
+	kfree(conv_name);
+
 	cifsd_debug("info_level : %d, buf_len :%d,"
 			" next_offset : %d, data_count : %d\n",
 			info_level, d_info->out_buf_len,
@@ -3006,12 +3061,174 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 struct smb2_query_dir_private {
 	struct cifsd_work	*work;
 	char			*search_pattern;
-	char			*dir_path;
+	struct cifsd_file	*dir_fp;
 
 	struct cifsd_dir_info	*d_info;
 	int			info_level;
 	int			flags;
 };
+
+static void lock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+#else
+	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+#endif
+}
+
+static void unlock_dir(struct cifsd_file *dir_fp)
+{
+	struct dentry *dir = dir_fp->filp->f_path.dentry;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	inode_unlock(dir->d_inode);
+#else
+	mutex_unlock(&dir->d_inode->i_mutex);
+#endif
+}
+
+static int process_query_dir_entries(struct smb2_query_dir_private *priv)
+{
+	struct kstat		kstat;
+	struct cifsd_kstat	cifsd_kstat;
+	int			rc;
+	int			i;
+
+	for (i = 0; i < priv->d_info->num_entry; i++) {
+		struct dentry *dent;
+
+		if (dentry_name(priv->d_info, priv->info_level))
+			return -EINVAL;
+
+		lock_dir(priv->dir_fp);
+		dent = lookup_one_len(priv->d_info->name,
+				      priv->dir_fp->filp->f_path.dentry,
+				      priv->d_info->name_len);
+		unlock_dir(priv->dir_fp);
+
+		if (IS_ERR(dent)) {
+			cifsd_debug("Cannot lookup `%s' [%ld]\n",
+				     priv->d_info->name,
+				     PTR_ERR(dent));
+			continue;
+		}
+		if (d_is_negative(dent)) {
+			cifsd_debug("Negative dentry `%s'\n",
+				    priv->d_info->name);
+			continue;
+		}
+
+		cifsd_kstat.kstat = &kstat;
+		cifsd_vfs_fill_dentry_attrs(priv->work, dent, &cifsd_kstat);
+
+		rc = smb2_populate_readdir_entry(priv->work->conn,
+						 priv->info_level,
+						 priv->d_info,
+						 &cifsd_kstat);
+		dput(dent);
+		if (rc)
+			return rc;
+	}
+	return 0;
+}
+
+static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
+				   int info_level)
+{
+	int struct_sz;
+	int conv_len;
+	int next_entry_offset;
+
+	struct_sz = readdir_info_level_struct_sz(info_level);
+	if (struct_sz == -EOPNOTSUPP)
+		return -EOPNOTSUPP;
+
+	conv_len = (d_info->name_len + 1) * 2;
+	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
+				  CIFSD_DIR_INFO_ALIGNMENT);
+
+	if (next_entry_offset > d_info->out_buf_len) {
+		d_info->out_buf_len = 0;
+		return -ENOSPC;
+	}
+
+	switch (info_level) {
+	case FILE_FULL_DIRECTORY_INFORMATION:
+	{
+		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+
+		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->wptr;
+		memcpy(ffdinfo->FileName, d_info->name, d_info->name_len);
+		ffdinfo->FileName[d_info->name_len] = 0x00;
+		ffdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	case FILE_BOTH_DIRECTORY_INFORMATION:
+	{
+		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+
+		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->wptr;
+		memcpy(fbdinfo->FileName, d_info->name, d_info->name_len);
+		fbdinfo->FileName[d_info->name_len] = 0x00;
+		fbdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	case FILE_DIRECTORY_INFORMATION:
+	{
+		FILE_DIRECTORY_INFO *fdinfo;
+
+		fdinfo = (FILE_DIRECTORY_INFO *)d_info->wptr;
+		memcpy(fdinfo->FileName, d_info->name, d_info->name_len);
+		fdinfo->FileName[d_info->name_len] = 0x00;
+		fdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	case FILE_NAMES_INFORMATION:
+	{
+		FILE_NAMES_INFO *fninfo;
+
+		fninfo = (FILE_NAMES_INFO *)d_info->wptr;
+		memcpy(fninfo->FileName, d_info->name, d_info->name_len);
+		fninfo->FileName[d_info->name_len] = 0x00;
+		fninfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	case FILEID_FULL_DIRECTORY_INFORMATION:
+	{
+		SEARCH_ID_FULL_DIR_INFO *dinfo;
+
+		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->wptr;
+		memcpy(dinfo->FileName, d_info->name, d_info->name_len);
+		dinfo->FileName[d_info->name_len] = 0x00;
+		dinfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	case FILEID_BOTH_DIRECTORY_INFORMATION:
+	{
+		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+
+		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->wptr;
+		memcpy(fibdinfo->FileName, d_info->name, d_info->name_len);
+		fibdinfo->FileName[d_info->name_len] = 0x00;
+		fibdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
+		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+	}
+
+	d_info->num_entry++;
+	d_info->out_buf_len -= next_entry_offset;
+	d_info->wptr += next_entry_offset;
+	return 0;
+}
 
 static int __query_dir(struct dir_context *ctx,
 		       const char *name,
@@ -3023,8 +3240,6 @@ static int __query_dir(struct dir_context *ctx,
 	struct cifsd_readdir_data	*buf;
 	struct smb2_query_dir_private	*priv;
 	struct cifsd_dir_info		*d_info;
-	struct kstat			kstat;
-	struct cifsd_kstat		cifsd_kstat;
 	int				rc;
 
 	buf	= container_of(ctx, struct cifsd_readdir_data, ctx);
@@ -3042,29 +3257,19 @@ static int __query_dir(struct dir_context *ctx,
 	if (!match_pattern(name, priv->search_pattern))
 		return 0;
 
-	cifsd_kstat.kstat	= &kstat;
-	rc = cifsd_vfs_readdir_name(priv->work,
-				    &cifsd_kstat,
-				    name,
-				    namlen,
-				    priv->dir_path);
-	if (rc)
-		return rc;
-
 	d_info->name		= name;
 	d_info->name_len	= namlen;
-	rc = smb2_populate_readdir_entry(priv->work->conn,
-					 priv->info_level,
-					 d_info,
-					 &cifsd_kstat);
+	rc = reserve_populate_dentry(d_info, priv->info_level);
 	if (rc)
 		return rc;
-
-	ctx->pos += namlen;
 	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
 		return 0;
-
 	return 0;
+}
+
+static void restart_ctx(struct dir_context *ctx)
+{
+	ctx->pos = 0;
 }
 
 int smb2_query_dir(struct cifsd_work *work)
@@ -3078,6 +3283,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	int rc = 0;
 	char *dirpath, *srch_ptr = NULL, *path = NULL;
 	unsigned char srch_flag;
+	int buffer_sz;
 	struct smb2_query_dir_private query_dir_private = {NULL, };
 
 	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
@@ -3148,6 +3354,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		cifsd_debug("Reopen the directory\n");
 		fput(dir_fp->filp);
 		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
+		restart_ctx(&dir_fp->readdir_data.ctx);
 		if (!dir_fp->filp) {
 			cifsd_debug("Reopening dir failed\n");
 			rc = -EINVAL;
@@ -3158,11 +3365,12 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (srch_flag & SMB2_RESTART_SCANS) {
 		cifsd_debug("SMB2 RESTART SCANS\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
-		dir_fp->readdir_data.ctx.pos = 0;
+		restart_ctx(&dir_fp->readdir_data.ctx);
 	}
 
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
-	d_info.bufptr = (char *)rsp->Buffer;
+	d_info.wptr = (char *)rsp->Buffer;
+	d_info.rptr = (char *)rsp->Buffer;
 	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
 				(get_rfc1002_length(rsp_org) + 4));
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
@@ -3189,19 +3397,28 @@ int smb2_query_dir(struct cifsd_work *work)
 	if (test_share_config_flag(share, CIFSD_SHARE_FLAG_HIDE_DOT_FILES))
 		d_info.hide_dot_file = true;
 
+	buffer_sz				= d_info.out_buf_len;
+	d_info.rptr				= d_info.wptr;
 	query_dir_private.work			= work;
 	query_dir_private.search_pattern	= srch_ptr;
-	query_dir_private.dir_path		= dirpath;
+	query_dir_private.dir_fp		= dir_fp;
 	query_dir_private.d_info		= &d_info;
 	query_dir_private.info_level		= req->FileInformationClass;
 	query_dir_private.flags			= srch_flag;
-
 	dir_fp->readdir_data.private		= &query_dir_private;
 	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
 	rc = cifsd_vfs_readdir(dir_fp->filp, &dir_fp->readdir_data);
+	if (rc == 0)
+		restart_ctx(&dir_fp->readdir_data.ctx);
 	if (rc == -ENOSPC)
 		rc = 0;
+	if (rc)
+		goto err_out;
+
+	d_info.wptr = d_info.rptr;
+	d_info.out_buf_len = buffer_sz;
+	rc = process_query_dir_entries(&query_dir_private);
 	if (rc)
 		goto err_out;
 
