@@ -1350,7 +1350,7 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 	fieinfo.fi_extents_max = 1;
 
 	ret = inode->i_op->fiemap(inode, &fieinfo, start, length);
-	if (!ret) {
+	if (!ret && fieinfo.fi_extents_start->fe_flags) {
 		*out_start = fieinfo.fi_extents_start->fe_logical;
 		*out_length = fieinfo.fi_extents_start->fe_length;
 	}
