@@ -2915,8 +2915,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
 		return 0;
 	}
+	default:
+		return -EINVAL;
 	}
-	return -EINVAL;
 }
 
 /**
@@ -3043,7 +3044,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
-	}
+	} /* switch (info_level) */
 
 	d_info->last_entry_offset = d_info->data_count;
 	d_info->data_count += next_entry_offset;
@@ -3222,7 +3223,7 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
-	}
+	} /* switch (info_level) */
 
 	d_info->num_entry++;
 	d_info->out_buf_len -= next_entry_offset;
