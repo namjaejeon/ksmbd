@@ -456,6 +456,61 @@ out:
 	return err;
 }
 
+static void __fill_dentry_attributes(struct cifsd_work *work,
+				     struct dentry *dentry,
+				     struct cifsd_kstat *cifsd_kstat)
+{
+	/*
+	 * set default value for the case that store dos attributes is not yes
+	 * or that acl is disable in server's filesystem and the config is yes.
+	 */
+	if (S_ISDIR(cifsd_kstat->kstat->mode))
+		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
+	else
+		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
+
+	if (test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+		char *file_attribute = NULL;
+		int rc;
+
+		rc = cifsd_vfs_getxattr(dentry,
+					XATTR_NAME_FILE_ATTRIBUTE,
+					&file_attribute);
+		if (rc > 0)
+			cifsd_kstat->file_attributes = *file_attribute;
+		else
+			cifsd_debug("fail to fill file attributes.\n");
+		cifsd_free(file_attribute);
+	}
+}
+
+static void __file_dentry_ctime(struct cifsd_work *work,
+				struct dentry *dentry,
+				struct cifsd_kstat *cifsd_kstat)
+{
+	char *create_time = NULL;
+	int xattr_len;
+	u64 time;
+
+	/*
+	 * if "store dos attributes" conf is not yes,
+	 * create time = change time
+	 */
+	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
+	cifsd_kstat->create_time = time;
+
+	if (test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+		xattr_len = cifsd_vfs_getxattr(dentry,
+					       XATTR_NAME_CREATION_TIME,
+					       &create_time);
+		if (xattr_len > 0)
+			cifsd_kstat->create_time = *((u64 *)create_time);
+		cifsd_free(create_time);
+	}
+}
+
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 /**
  * smb_check_attrs() - sanitize inode attributes
@@ -673,6 +728,57 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 
 	return err;
 }
+
+static void fill_file_attributes(struct cifsd_work *work,
+				 struct path *path,
+				 struct cifsd_kstat *cifsd_kstat)
+{
+	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
+}
+
+static void fill_create_time(struct cifsd_work *work,
+			     struct path *path,
+			     struct cifsd_kstat *cifsd_kstat)
+{
+	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
+}
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dir_path);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de_name_len + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
+
+	memcpy(name, dir_path, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+	if (rc) {
+		cifsd_err("lookup failed: %s [%d]\n", name, rc);
+		kfree(name);
+		return -ENOMEM;
+	}
+
+	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
+	path_put(&path);
+	kfree(name);
+	return 0;
+}
 #else
 static inline void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
@@ -698,6 +804,15 @@ int cifsd_vfs_symlink(const char *name, const char *symname)
 int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	return -ENOTSUPP;
+}
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	return 0;
 }
 #endif
 
@@ -1652,47 +1767,6 @@ int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		return err;
 }
 
-static void __file_dentry_ctime(struct cifsd_work *work,
-				struct dentry *dentry,
-				struct cifsd_kstat *cifsd_kstat)
-{
-	char *create_time = NULL;
-	int xattr_len;
-	u64 time;
-
-	/*
-	 * if "store dos attributes" conf is not yes,
-	 * create time = change time
-	 */
-	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
-	cifsd_kstat->create_time = time;
-
-	if (test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-		xattr_len = cifsd_vfs_getxattr(dentry,
-					       XATTR_NAME_CREATION_TIME,
-					       &create_time);
-		if (xattr_len > 0)
-			cifsd_kstat->create_time = *((u64 *)create_time);
-		cifsd_free(create_time);
-	}
-}
-
-/**
- * fill_create_time() - fill create time of directory entry in cifsd_kstat
- * if related config is not yes, create time is same with change time
- *
- * @work: smb work containing share config
- * @path: path info
- * @cifsd_kstat: cifsd kstat wrapper
- */
-static void fill_create_time(struct cifsd_work *work,
-			     struct path *path,
-			     struct cifsd_kstat *cifsd_kstat)
-{
-	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
-}
-
 /**
  * cifsd_vfs_init_kstat() - convert unix stat information to smb stat format
  * @p:          destination buffer
@@ -1723,87 +1797,6 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 	info->ExtFileAttributes = cpu_to_le32(cifsd_kstat->file_attributes);
 
 	return info;
-}
-
-static void __fill_dentry_attributes(struct cifsd_work *work,
-				     struct dentry *dentry,
-				     struct cifsd_kstat *cifsd_kstat)
-{
-	/*
-	 * set default value for the case that store dos attributes is not yes
-	 * or that acl is disable in server's filesystem and the config is yes.
-	 */
-	if (S_ISDIR(cifsd_kstat->kstat->mode))
-		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
-	else
-		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
-
-	if (test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-		char *file_attribute = NULL;
-		int rc;
-
-		rc = cifsd_vfs_getxattr(dentry,
-					XATTR_NAME_FILE_ATTRIBUTE,
-					&file_attribute);
-		if (rc > 0)
-			cifsd_kstat->file_attributes = *file_attribute;
-		else
-			cifsd_debug("fail to fill file attributes.\n");
-		cifsd_free(file_attribute);
-	}
-}
-
-/*
- * fill_file_attributes() - fill FileAttributes of directory entry in cifsd_kstat.
- * if related config is not yes, just fill 0x10(dir) or 0x80(regular file).
- *
- * @work: smb work containing share config
- * @path: path info
- * @cifsd_kstat: cifsd kstat wrapper
- */
-static void fill_file_attributes(struct cifsd_work *work,
-				 struct path *path,
-				 struct cifsd_kstat *cifsd_kstat)
-{
-	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
-}
-
-int cifsd_vfs_readdir_name(struct cifsd_work *work,
-			   struct cifsd_kstat *cifsd_kstat,
-			   const char *de_name,
-			   int de_name_len,
-			   const char *dir_path)
-{
-	struct path path;
-	int rc, file_pathlen, dir_pathlen;
-	char *name;
-
-	dir_pathlen = strlen(dir_path);
-	/* 1 for '/'*/
-	file_pathlen = dir_pathlen +  de_name_len + 1;
-	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name)
-		return -ENOMEM;
-
-	memcpy(name, dir_path, dir_pathlen);
-	memset(name + dir_pathlen, '/', 1);
-	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
-	name[file_pathlen] = '\0';
-
-	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
-	if (rc) {
-		cifsd_err("lookup failed: %s [%d]\n", name, rc);
-		kfree(name);
-		return -ENOMEM;
-	}
-
-	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
-	fill_create_time(work, &path, cifsd_kstat);
-	fill_file_attributes(work, &path, cifsd_kstat);
-	path_put(&path);
-	kfree(name);
-	return 0;
 }
 
 int cifsd_vfs_fill_dentry_attrs(struct cifsd_work *work,
