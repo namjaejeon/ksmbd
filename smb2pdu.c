@@ -3281,7 +3281,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct cifsd_file *dir_fp;
 	struct cifsd_dir_info d_info;
 	int rc = 0;
-	char *dirpath, *srch_ptr = NULL, *path = NULL;
+	char *srch_ptr = NULL;
 	unsigned char srch_flag;
 	int buffer_sz;
 	struct smb2_query_dir_private query_dir_private = {NULL, };
@@ -3333,37 +3333,10 @@ int smb2_query_dir(struct cifsd_work *work)
 	} else
 		cifsd_debug("Search pattern is %s\n", srch_ptr);
 
-	path = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!path) {
-		rsp->hdr.Status = STATUS_NO_MEMORY;
-		rc = -ENOMEM;
-		kfree(srch_ptr);
-		goto err_out2;
-	}
+	cifsd_debug("Directory name is %s\n", dir_fp->filename);
 
-	dirpath = d_path(&(dir_fp->filp->f_path), path, PATH_MAX);
-	if (IS_ERR(dirpath)) {
-		cifsd_err("Failed to get complete dir path\n");
-		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-		rc = PTR_ERR(dirpath);
-		goto err_out;
-	}
-	cifsd_debug("Directory name is %s\n", dirpath);
-
-	if (srch_flag & SMB2_REOPEN) {
-		cifsd_debug("Reopen the directory\n");
-		fput(dir_fp->filp);
-		dir_fp->filp = filp_open(dirpath, O_RDONLY, 0666);
-		restart_ctx(&dir_fp->readdir_data.ctx);
-		if (!dir_fp->filp) {
-			cifsd_debug("Reopening dir failed\n");
-			rc = -EINVAL;
-			goto err_out;
-		}
-	}
-
-	if (srch_flag & SMB2_RESTART_SCANS) {
-		cifsd_debug("SMB2 RESTART SCANS\n");
+	if (srch_flag & SMB2_REOPEN || srch_flag & SMB2_RESTART_SCANS) {
+		cifsd_debug("Restart directory scan\n");
 		generic_file_llseek(dir_fp->filp, 0, SEEK_SET);
 		restart_ctx(&dir_fp->readdir_data.ctx);
 	}
@@ -3448,13 +3421,11 @@ int smb2_query_dir(struct cifsd_work *work)
 		inc_rfc1001_len(rsp_org, 8 + d_info.data_count);
 	}
 
-	kfree(path);
 	kfree(srch_ptr);
 	return 0;
 
 err_out:
 	cifsd_err("error while processing smb2 query dir rc = %d\n", rc);
-	kfree(path);
 	kfree(srch_ptr);
 
 err_out2:
