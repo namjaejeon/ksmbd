@@ -64,6 +64,7 @@ struct cifsd_inode {
 	struct list_head		m_fp_list;
 	struct list_head		m_op_list;
 	struct oplock_info		*m_opinfo;
+	__le32				m_fattr;
 };
 
 struct cifsd_file {
@@ -84,7 +85,6 @@ struct cifsd_file {
 	__le32				saccess;
 	__le32				coption;
 	__le32				cdoption;
-	__le32				fattr;
 	__u64				create_time;
 
 	bool				is_durable;
