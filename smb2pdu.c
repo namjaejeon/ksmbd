@@ -2055,7 +2055,7 @@ static void smb2_new_xattrs(struct cifsd_tree_connect *tcon,
 
 	rc = cifsd_vfs_setxattr(path->dentry,
 				XATTR_NAME_FILE_ATTRIBUTE,
-				(void *)&fp->fattr,
+				(void *)&fp->f_ci->m_fattr,
 				FILE_ATTRIBUTE_LEN,
 				0);
 	if (rc)
@@ -2077,7 +2077,8 @@ static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
 	char *attr = NULL;
 	int rc;
 
-	fp->fattr &= ~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+	fp->f_ci->m_fattr &=
+		~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
 
 	/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
 	if (!test_share_config_flag(tcon->share_conf,
@@ -2088,7 +2089,7 @@ static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
 				XATTR_NAME_FILE_ATTRIBUTE,
 				&attr);
 	if (rc > 0)
-		fp->fattr = *((__le32 *)attr);
+		fp->f_ci->m_fattr = *((__le32 *)attr);
 
 	cifsd_free(attr);
 
@@ -2654,7 +2655,7 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-	fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+	fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 		le32_to_cpu(req->FileAttributes)));
 
 	if (!created)
@@ -2701,7 +2702,7 @@ reconnected:
 	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
 		cpu_to_le64(stat.blocks << 9);
 	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
-	rsp->FileAttributes = fp->fattr;
+	rsp->FileAttributes = fp->f_ci->m_fattr;
 
 	rsp->Reserved2 = 0;
 
@@ -3771,7 +3772,7 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	basic_info->LastWriteTime = cpu_to_le64(time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	basic_info->ChangeTime = cpu_to_le64(time);
-	basic_info->Attributes = fp->fattr;
+	basic_info->Attributes = fp->f_ci->m_fattr;
 	basic_info->Pad1 = 0;
 	rsp->OutputBufferLength =
 		cpu_to_le32(offsetof(struct smb2_file_all_info,
@@ -3862,7 +3863,7 @@ static int get_file_all_info(struct cifsd_work *work,
 	file_info->LastWriteTime = cpu_to_le64(time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	file_info->ChangeTime = cpu_to_le64(time);
-	file_info->Attributes = fp->fattr;
+	file_info->Attributes = fp->f_ci->m_fattr;
 	file_info->Pad1 = 0;
 	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
@@ -4061,7 +4062,7 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 	file_info->LastWriteTime = cpu_to_le64(time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	file_info->ChangeTime = cpu_to_le64(time);
-	file_info->Attributes = fp->fattr;
+	file_info->Attributes = fp->f_ci->m_fattr;
 	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
 	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	file_info->Reserved = cpu_to_le32(0);
@@ -4147,7 +4148,7 @@ static int get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 	}
 
 	file_info = (struct smb2_file_attr_tag_info *)rsp->Buffer;
-	file_info->FileAttributes = fp->fattr;
+	file_info->FileAttributes = fp->f_ci->m_fattr;
 	file_info->ReparseTag = 0;
 	rsp->OutputBufferLength =
 		cpu_to_le32(sizeof(struct smb2_file_attr_tag_info));
@@ -5032,13 +5033,13 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		}
 
 		generic_fillattr(inode, &stat);
-		fp->fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+		fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 				le32_to_cpu(file_info->Attributes)));
 		if (test_share_config_flag(share,
 				CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			rc = cifsd_vfs_setxattr(filp->f_path.dentry,
 					XATTR_NAME_FILE_ATTRIBUTE,
-					(void *)&fp->fattr,
+					(void *)&fp->f_ci->m_fattr,
 					FILE_ATTRIBUTE_LEN, 0);
 			if (rc)
 				cifsd_debug("failed to store file attribute in EA\n");
@@ -6715,9 +6716,9 @@ int smb2_ioctl(struct cifsd_work *work)
 		sparse =
 			(struct file_sparse *)&req->Buffer[0];
 		if (sparse->SetSparse)
-			fp->fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
 		else
-			fp->fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
 		break;
 	}
 	case FSCTL_SET_ZERO_DATA:
