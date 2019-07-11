@@ -354,8 +354,7 @@ static void __cifsd_remove_fd(struct cifsd_file_table *ft,
 
 /* copy-pasted from old fh */
 static void __cifsd_close_fd(struct cifsd_file_table *ft,
-			     struct cifsd_file *fp,
-			     unsigned int id)
+			     struct cifsd_file *fp)
 {
 	struct file *filp;
 	struct cifsd_work *cancel_work, *ctmp;
@@ -385,6 +384,13 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	cifsd_free_file_struct(fp);
 }
 
+static struct cifsd_file *cifsd_fp_get(struct cifsd_file *fp)
+{
+	if (!atomic_inc_not_zero(&fp->refcount))
+		return NULL;
+	return fp;
+}
+
 static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 					    unsigned int id)
 {
@@ -393,6 +399,9 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 
 	read_lock(&ft->lock);
 	fp = idr_find(ft->idr, id);
+	if (fp)
+		fp = cifsd_fp_get(fp);
+
 	if (fp && fp->f_ci) {
 		read_lock(&fp->f_ci->m_lock);
 		unclaimed = list_empty(&fp->node);
@@ -405,20 +414,46 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 	return fp;
 }
 
+static void __put_fd_final(struct cifsd_work *work,
+		       struct cifsd_file *fp)
+{
+	__cifsd_close_fd(&work->sess->file_table, fp);
+	atomic_dec(&work->conn->stats.open_files_count);
+}
+
 int cifsd_close_fd(struct cifsd_work *work, unsigned int id)
 {
 	struct cifsd_file	*fp;
+	struct cifsd_file_table	*ft;
 
 	if (!HAS_FILE_ID(id))
 		return 0;
 
-	fp = __cifsd_lookup_fd(&work->sess->file_table, id);
+	ft = &work->sess->file_table;
+	read_lock(&ft->lock);
+	fp = idr_find(ft->idr, id);
+	if (fp) {
+		if (!atomic_dec_and_test(&fp->refcount))
+			fp = NULL;
+	}
+	read_unlock(&ft->lock);
+
 	if (!fp)
 		return -EINVAL;
 
-	__cifsd_close_fd(&work->sess->file_table, fp, id);
-	atomic_dec(&work->conn->stats.open_files_count);
+	__put_fd_final(work, fp);
 	return 0;
+}
+
+void cifsd_fd_put(struct cifsd_work *work,
+		  struct cifsd_file *fp)
+{
+	if (!fp)
+		return;
+
+	if (!atomic_dec_and_test(&fp->refcount))
+		return;
+	__put_fd_final(work, fp);
 }
 
 static bool __sanity_check(struct cifsd_tree_connect *tcon,
@@ -483,8 +518,10 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
-			    SMB2_CREATE_GUID_SIZE))
+			    SMB2_CREATE_GUID_SIZE)) {
+			fp = cifsd_fp_get(fp);
 			break;
+		}
 	}
 	read_unlock(&global_ft.lock);
 
@@ -500,8 +537,10 @@ struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		if (!memcmp(fp->create_guid,
 			    cguid,
-			    SMB2_CREATE_GUID_SIZE))
+			    SMB2_CREATE_GUID_SIZE)) {
+			fp = cifsd_fp_get(fp);
 			break;
+		}
 	}
 	read_unlock(&global_ft.lock);
 
@@ -516,8 +555,10 @@ struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 
 	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
-		if (!strcmp(fp->filename, filename))
+		if (!strcmp(fp->filename, filename)) {
+			fp = cifsd_fp_get(fp);
 			break;
+		}
 	}
 	read_unlock(&work->sess->file_table.lock);
 
@@ -610,6 +651,7 @@ struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
 	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
 	spin_lock_init(&fp->f_lock);
+	atomic_set(&fp->refcount, 1);
 
 	fp->filp		= filp;
 	fp->conn		= work->sess->conn;
@@ -679,7 +721,7 @@ __close_file_table_ids(struct cifsd_file_table *ft,
 		if (skip(tcon, fp))
 			continue;
 
-		__cifsd_close_fd(ft, fp, id);
+		__cifsd_close_fd(ft, fp);
 		num++;
 	}
 	return num;
@@ -773,7 +815,7 @@ static void close_fd_list(struct cifsd_work *work, struct list_head *head)
 		fp = list_first_entry(head, struct cifsd_file, node);
 		list_del_init(&fp->node);
 
-		__cifsd_close_fd(&work->sess->file_table, fp, fp->volatile_id);
+		__cifsd_close_fd(&work->sess->file_table, fp);
 	}
 }
 

@@ -2825,7 +2825,7 @@ err_out1:
 		if (!fp || !fp->filename)
 			kfree(name);
 		if (fp)
-			cifsd_close_fd(work, fp->volatile_id);
+			cifsd_fd_put(work, fp);
 		smb2_set_err_rsp(work);
 		cifsd_debug("Error response: %x\n", rsp->hdr.Status);
 	}
@@ -3424,6 +3424,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	}
 
 	kfree(srch_ptr);
+	cifsd_fd_put(work, dir_fp);
 	return 0;
 
 err_out:
@@ -3434,6 +3435,7 @@ err_out2:
 	if (rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
 	smb2_set_err_rsp(work);
+	cifsd_fd_put(work, dir_fp);
 	return 0;
 }
 
@@ -4257,6 +4259,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
 				      rsp,
 				      file_infoclass_size);
+	cifsd_fd_put(work, fp);
 	return rc;
 }
 
@@ -5366,7 +5369,7 @@ int smb2_set_info(struct cifsd_work *work)
 
 	rsp->StructureSize = cpu_to_le16(2);
 	inc_rfc1001_len(rsp_org, 2);
-
+	cifsd_fd_put(work, fp);
 	return 0;
 
 err_out:
@@ -5389,7 +5392,7 @@ err_out:
 	else if (rsp->hdr.Status == 0 || rc == -EOPNOTSUPP)
 		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 	smb2_set_err_rsp(work);
-
+	cifsd_fd_put(work, fp);
 	cifsd_debug("error while processing smb2 query rc = %d\n",
 			rc);
 	return rc;
@@ -5514,9 +5517,8 @@ int smb2_read(struct cifsd_work *work)
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
 		cifsd_free_response(AUX_PAYLOAD(work));
 		INIT_AUX_PAYLOAD(work);
-		rsp->hdr.Status = STATUS_END_OF_FILE;
-		smb2_set_err_rsp(work);
-		return 0;
+		err = -EIO;
+		goto out;
 	}
 
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
@@ -5532,6 +5534,7 @@ int smb2_read(struct cifsd_work *work)
 	work->resp_hdr_sz = get_rfc1002_length(rsp_org) + 4;
 	work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(rsp_org, nbytes);
+	cifsd_fd_put(work, fp);
 	return 0;
 
 out:
@@ -5546,11 +5549,14 @@ out:
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (err == -ESHARE)
 			rsp->hdr.Status = STATUS_SHARING_VIOLATION;
+		else if (err == -EIO)
+			rsp->hdr.Status = STATUS_END_OF_FILE;
 		else
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
 		smb2_set_err_rsp(work);
 	}
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -5710,6 +5716,7 @@ int smb2_write(struct cifsd_work *work)
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp_org, 16);
+	cifsd_fd_put(work, fp);
 	return 0;
 
 out:
@@ -5727,6 +5734,7 @@ out:
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
 	smb2_set_err_rsp(work);
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -6226,7 +6234,7 @@ skip:
 	rsp->hdr.Status = STATUS_SUCCESS;
 	rsp->Reserved = 0;
 	inc_rfc1001_len(rsp, 4);
-
+	cifsd_fd_put(work, fp);
 	return err;
 
 out:
@@ -6256,6 +6264,126 @@ out:
 out2:
 	cifsd_debug("failed in taking lock(flags : %x)\n", flags);
 	smb2_set_err_rsp(work);
+	cifsd_fd_put(work, fp);
+	return 0;
+}
+
+static int smb2_ioctl_copychunk(struct cifsd_work *work,
+				struct smb2_ioctl_req *req,
+				struct smb2_ioctl_rsp *rsp)
+{
+	struct copychunk_ioctl_req *ci_req;
+	struct copychunk_ioctl_rsp *ci_rsp;
+	struct cifsd_file *src_fp = NULL, *dst_fp = NULL;
+	struct srv_copychunk *chunks;
+	unsigned int i, chunk_count, chunk_count_written;
+	unsigned int chunk_size_written;
+	loff_t total_size_written;
+	int ret, cnt_code, nbytes = 0;
+
+	cnt_code = le32_to_cpu(req->CntCode);
+	ci_req = (struct copychunk_ioctl_req *)&req->Buffer[0];
+	ci_rsp = (struct copychunk_ioctl_rsp *)&rsp->Buffer[0];
+
+	rsp->VolatileFileId = req->VolatileFileId;
+	rsp->PersistentFileId = req->PersistentFileId;
+	ci_rsp->ChunksWritten = cpu_to_le32(
+			cifsd_server_side_copy_max_chunk_count());
+	ci_rsp->ChunkBytesWritten = cpu_to_le32(
+			cifsd_server_side_copy_max_chunk_size());
+	ci_rsp->TotalBytesWritten = cpu_to_le32(
+			cifsd_server_side_copy_max_total_size());
+
+	nbytes = sizeof(struct copychunk_ioctl_rsp);
+	chunks = (struct srv_copychunk *)&ci_req->Chunks[0];
+	chunk_count = le32_to_cpu(ci_req->ChunkCount);
+	total_size_written = 0;
+
+	/* verify the SRV_COPYCHUNK_COPY packet */
+	if (chunk_count > cifsd_server_side_copy_max_chunk_count() ||
+			le32_to_cpu(req->InputCount) <
+			offsetof(struct copychunk_ioctl_req, Chunks) +
+			chunk_count * sizeof(struct srv_copychunk)) {
+		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	for (i = 0; i < chunk_count; i++) {
+		if (le32_to_cpu(chunks[i].Length) == 0 ||
+				le32_to_cpu(chunks[i].Length) >
+				cifsd_server_side_copy_max_chunk_size())
+			return 0;
+		total_size_written += le32_to_cpu(chunks[i].Length);
+	}
+	if (i < chunk_count || total_size_written >
+			cifsd_server_side_copy_max_total_size()) {
+		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	src_fp = cifsd_lookup_foreign_fd(work,
+			le64_to_cpu(ci_req->ResumeKey[0]));
+	dst_fp = cifsd_lookup_fd_slow(work,
+				 le64_to_cpu(req->VolatileFileId),
+				 le64_to_cpu(req->PersistentFileId));
+
+	if (!src_fp || src_fp->persistent_id !=
+			le64_to_cpu(ci_req->ResumeKey[1])) {
+		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+		goto out;
+	}
+	if (!dst_fp) {
+		rsp->hdr.Status = STATUS_FILE_CLOSED;
+		goto out;
+	}
+
+	/*
+	 * FILE_READ_DATA should only be included in
+	 * the FSCTL_COPYCHUNK case
+	 */
+	if (cnt_code == FSCTL_COPYCHUNK && !(dst_fp->daccess &
+			(FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
+		rsp->hdr.Status = STATUS_ACCESS_DENIED;
+		goto out;
+	} else if (cnt_code == FSCTL_COPYCHUNK_WRITE &&
+			dst_fp->daccess &
+			 (FILE_READ_DATA_LE |
+			FILE_GENERIC_READ_LE)) {
+		rsp->hdr.Status = STATUS_ACCESS_DENIED;
+		goto out;
+	}
+
+	ret = cifsd_vfs_copy_file_ranges(work, src_fp, dst_fp,
+			chunks, chunk_count,
+			&chunk_count_written, &chunk_size_written,
+			&total_size_written);
+	if (ret < 0) {
+		if (ret == -EACCES) {
+			rsp->hdr.Status = STATUS_ACCESS_DENIED;
+			goto out;
+		}
+		if (ret == -EAGAIN)
+			rsp->hdr.Status = STATUS_FILE_LOCK_CONFLICT;
+		else if (ret == -EBADF)
+			rsp->hdr.Status = STATUS_INVALID_HANDLE;
+		else if (ret == -EFBIG || ret == -ENOSPC)
+			rsp->hdr.Status = STATUS_DISK_FULL;
+		else if (ret == -EINVAL)
+			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		else if (ret == -EISDIR)
+			rsp->hdr.Status = STATUS_FILE_IS_A_DIRECTORY;
+		else if (ret == -E2BIG)
+			rsp->hdr.Status = STATUS_INVALID_VIEW_SIZE;
+		else
+			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+	}
+
+	ci_rsp->ChunksWritten = cpu_to_le32(chunk_count_written);
+	ci_rsp->ChunkBytesWritten = cpu_to_le32(chunk_size_written);
+	ci_rsp->TotalBytesWritten = cpu_to_le32(total_size_written);
+out:
+	cifsd_fd_put(work, src_fp);
+	cifsd_fd_put(work, dst_fp);
 	return 0;
 }
 
@@ -6554,126 +6682,17 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		rsp->PersistentFileId = req->PersistentFileId;
 		rsp->VolatileFileId = req->VolatileFileId;
+		cifsd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_COPYCHUNK:
 	case FSCTL_COPYCHUNK_WRITE:
-	{
-		struct copychunk_ioctl_req *ci_req;
-		struct copychunk_ioctl_rsp *ci_rsp;
-		struct cifsd_file *src_fp, *dst_fp;
-		struct srv_copychunk *chunks;
-		unsigned int i, chunk_count, chunk_count_written;
-		unsigned int chunk_size_written;
-		loff_t total_size_written;
-		int ret;
-
-		ci_req = (struct copychunk_ioctl_req *)&req->Buffer[0];
-		ci_rsp = (struct copychunk_ioctl_rsp *)&rsp->Buffer[0];
-
-		rsp->VolatileFileId = req->VolatileFileId;
-		rsp->PersistentFileId = req->PersistentFileId;
-		ci_rsp->ChunksWritten = cpu_to_le32(
-				cifsd_server_side_copy_max_chunk_count());
-		ci_rsp->ChunkBytesWritten = cpu_to_le32(
-				cifsd_server_side_copy_max_chunk_size());
-		ci_rsp->TotalBytesWritten = cpu_to_le32(
-				cifsd_server_side_copy_max_total_size());
-
-		nbytes = sizeof(struct copychunk_ioctl_rsp);
-		chunks = (struct srv_copychunk *)&ci_req->Chunks[0];
-		chunk_count = le32_to_cpu(ci_req->ChunkCount);
-		total_size_written = 0;
-
 		if (out_buf_len < sizeof(struct copychunk_ioctl_rsp)) {
 			req->hdr.Status = STATUS_INVALID_PARAMETER;
 			goto out;
 		}
-
-		/* verify the SRV_COPYCHUNK_COPY packet */
-		if (chunk_count > cifsd_server_side_copy_max_chunk_count() ||
-				le32_to_cpu(req->InputCount) <
-				offsetof(struct copychunk_ioctl_req, Chunks) +
-				chunk_count * sizeof(struct srv_copychunk)) {
-			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		for (i = 0; i < chunk_count; i++) {
-			if (le32_to_cpu(chunks[i].Length) == 0 ||
-					le32_to_cpu(chunks[i].Length) >
-					cifsd_server_side_copy_max_chunk_size())
-				break;
-			total_size_written += le32_to_cpu(chunks[i].Length);
-		}
-		if (i < chunk_count || total_size_written >
-				cifsd_server_side_copy_max_total_size()) {
-			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-			break;
-		}
-
-		src_fp = cifsd_lookup_foreign_fd(work,
-				le64_to_cpu(ci_req->ResumeKey[0]));
-		dst_fp = cifsd_lookup_fd_slow(work,
-					 le64_to_cpu(req->VolatileFileId),
-					 le64_to_cpu(req->PersistentFileId));
-
-		if (!src_fp || src_fp->persistent_id !=
-				le64_to_cpu(ci_req->ResumeKey[1])) {
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
-			goto out;
-		}
-		if (!dst_fp) {
-			rsp->hdr.Status = STATUS_FILE_CLOSED;
-			goto out;
-		}
-
-		/*
-		 * FILE_READ_DATA should only be included in
-		 * the FSCTL_COPYCHUNK case
-		 */
-		if (cnt_code == FSCTL_COPYCHUNK && !(dst_fp->daccess &
-				(FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
-			rsp->hdr.Status = STATUS_ACCESS_DENIED;
-			goto out;
-		} else if (cnt_code == FSCTL_COPYCHUNK_WRITE &&
-				dst_fp->daccess &
-				 (FILE_READ_DATA_LE |
-				FILE_GENERIC_READ_LE)) {
-			rsp->hdr.Status = STATUS_ACCESS_DENIED;
-			goto out;
-		}
-
-		ret = cifsd_vfs_copy_file_ranges(work, src_fp, dst_fp,
-				chunks, chunk_count,
-				&chunk_count_written, &chunk_size_written,
-				&total_size_written);
-		if (ret < 0) {
-			if (ret == -EACCES) {
-				rsp->hdr.Status = STATUS_ACCESS_DENIED;
-				goto out;
-			}
-			if (ret == -EAGAIN)
-				rsp->hdr.Status = STATUS_FILE_LOCK_CONFLICT;
-			else if (ret == -EBADF)
-				rsp->hdr.Status = STATUS_INVALID_HANDLE;
-			else if (ret == -EFBIG || ret == -ENOSPC)
-				rsp->hdr.Status = STATUS_DISK_FULL;
-			else if (ret == -EINVAL)
-				rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-			else if (ret == -EISDIR)
-				rsp->hdr.Status = STATUS_FILE_IS_A_DIRECTORY;
-			else if (ret == -E2BIG)
-				rsp->hdr.Status = STATUS_INVALID_VIEW_SIZE;
-			else
-				rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
-		}
-
-		ci_rsp->ChunksWritten = cpu_to_le32(chunk_count_written);
-		ci_rsp->ChunkBytesWritten = cpu_to_le32(chunk_size_written);
-		ci_rsp->TotalBytesWritten = cpu_to_le32(total_size_written);
+		smb2_ioctl_copychunk(work, req, rsp);
 		break;
-	}
 	case FSCTL_SET_SPARSE:
 	{
 		struct cifsd_file *fp;
@@ -6685,12 +6704,12 @@ int smb2_ioctl(struct cifsd_work *work)
 			goto out;
 		}
 
-		sparse =
-			(struct file_sparse *)&req->Buffer[0];
+		sparse = (struct file_sparse *)&req->Buffer[0];
 		if (sparse->SetSparse)
 			fp->f_ci->m_fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
 		else
 			fp->f_ci->m_fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
+		cifsd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_SET_ZERO_DATA:
@@ -6717,6 +6736,7 @@ int smb2_ioctl(struct cifsd_work *work)
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (ret < 0)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		cifsd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_QUERY_ALLOCATED_RANGES:
@@ -6738,7 +6758,8 @@ int smb2_ioctl(struct cifsd_work *work)
 		length = le64_to_cpu(qar_req->length);
 
 		ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
-			&ret_length);
+				       &ret_length);
+		cifsd_fd_put(work, fp);
 		if (ret)
 			goto out;
 
@@ -6813,6 +6834,7 @@ static int smb20_oplock_break_ack(struct cifsd_work *work)
 		cifsd_err("unexpected null oplock_info\n");
 		rsp->hdr.Status = STATUS_INVALID_OPLOCK_PROTOCOL;
 		smb2_set_err_rsp(work);
+		cifsd_fd_put(work, fp);
 		return 0;
 	}
 
@@ -6883,6 +6905,7 @@ static int smb20_oplock_break_ack(struct cifsd_work *work)
 	}
 
 	opinfo_put(opinfo);
+	cifsd_fd_put(work, fp);
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
 	rsp->Reserved = 0;
@@ -6894,6 +6917,7 @@ static int smb20_oplock_break_ack(struct cifsd_work *work)
 
 err_out:
 	opinfo_put(opinfo);
+	cifsd_fd_put(work, fp);
 	smb2_set_err_rsp(work);
 	return 0;
 }

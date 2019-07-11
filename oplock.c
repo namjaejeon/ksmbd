@@ -708,6 +708,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb2_allocate_rsp_buf failed! ");
 		cifsd_free_work_struct(work);
+		cifsd_fd_put(work, fp);
 		return;
 	}
 
@@ -746,6 +747,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 
+	cifsd_fd_put(work, fp);
 	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }

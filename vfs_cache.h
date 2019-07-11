@@ -81,6 +81,7 @@ struct cifsd_file {
 	struct cifsd_conn		*conn;
 	struct cifsd_tree_connect	*tcon;
 
+	atomic_t			refcount;
 	__le32				daccess;
 	__le32				saccess;
 	__le32				coption;
@@ -175,6 +176,8 @@ struct cifsd_file *cifsd_lookup_foreign_fd(struct cifsd_work *work,
 struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 					unsigned int id,
 					unsigned int pid);
+
+void cifsd_fd_put(struct cifsd_work *work, struct cifsd_file *fp);
 
 struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id);
 struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id);
