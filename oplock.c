@@ -27,7 +27,7 @@ MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
 
 /**
  * get_new_opinfo() - allocate a new opinfo object for oplock info
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  * @id:		fid of open file
  * @Tid:	tree id of connection
  * @lctx:	lease context information
@@ -361,9 +361,7 @@ static int lease_none_upgrade(struct oplock_info *opinfo,
 
 /**
  * close_id_del_oplock() - release oplock object at file close time
- * @conn:     TCP server instance of connection
  * @fp:		cifsd file pointer
- * @id:		fid of open file
  */
 void close_id_del_oplock(struct cifsd_file *fp)
 {
@@ -627,7 +625,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	cifsd_debug("sending oplock break for fid %d lock level = %d\n",
 			req->Fid, req->OplockLevel);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -748,7 +746,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	cifsd_debug("sending oplock break v_id %llu p_id = %llu lock level = %d\n",
 			rsp->VolatileFid, rsp->PersistentFid, rsp->OplockLevel);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -879,7 +877,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 
 	inc_rfc1001_len(rsp, 44);
 
-	cifsd_tcp_write(work);
+	cifsd_conn_write(work);
 	cifsd_free_work_struct(work);
 }
 
@@ -1196,15 +1194,20 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
  *
  * Return:      0 on success, otherwise error
  */
-int smb_grant_oplock(struct cifsd_work *work, int req_op_level, uint64_t pid,
-	struct cifsd_file *fp, __u16 tid, struct lease_ctx_info *lctx,
-	int share_ret)
+int smb_grant_oplock(struct cifsd_work *work,
+		     int req_op_level,
+		     uint64_t pid,
+		     struct cifsd_file *fp,
+		     __u16 tid,
+		     struct lease_ctx_info *lctx,
+		     int share_ret)
 {
 	struct cifsd_session *sess = work->sess;
 	int err = 0;
 	struct oplock_info *opinfo = NULL, *prev_opinfo = NULL;
 	struct cifsd_inode *ci = fp->f_ci;
-	int prev_op_has_lease = 0, prev_op_state = 0;
+	bool prev_op_has_lease;
+	__le32 prev_op_state = 0;
 
 	/* not support directory lease */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
@@ -1315,7 +1318,7 @@ err_out:
 
 /**
  * smb_break_write_oplock() - break batch/exclusive oplock to level2
- * @conn:	TCP server instance of connection
+ * @work:	smb work
  * @fp:		cifsd file pointer
  * @openfile:	open file object
  */
@@ -1344,9 +1347,9 @@ static int smb_break_all_write_oplock(struct cifsd_work *work,
 /**
  * smb_break_all_levII_oplock() - send level2 oplock or read lease break command
  *	from server to client
- * @conn:     TCP server instance of connection
+ * @conn:	connection instance
  * @fp:		cifsd file pointer
- * @openfile:	open file information
+ * @is_trunc:	truncate on open
  */
 void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 	struct cifsd_file *fp, int is_trunc)
@@ -1356,6 +1359,8 @@ void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 
 	ci = fp->f_ci;
 	op = opinfo_get(fp);
+	if (!op)
+		return;
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
@@ -1390,7 +1395,7 @@ void smb_break_all_levII_oplock(struct cifsd_conn *conn,
 			}
 		}
 
-		if (op && op->is_lease &&
+		if (op->is_lease &&
 			brk_op->is_lease &&
 			!memcmp(conn->ClientGUID, brk_op->conn->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE) &&
@@ -1411,9 +1416,8 @@ next:
 
 /**
  * smb_break_all_oplock() - break both batch/exclusive and level2 oplock
- * @conn:	TCP server instance of connection
+ * @work:	smb work
  * @fp:		cifsd file pointer
- * @openfile:	open file object
  */
 void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
 {
@@ -1660,7 +1664,7 @@ void create_disk_id_rsp_buf(char *cc, __u64 file_id, __u64 vol_id)
  */
 /**
  * lookup_lease_in_table() - find a matching lease info object
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  * @lease_key:	lease key to be searched for
  *
  * Return:      opinfo if found matching opinfo, otherwise NULL

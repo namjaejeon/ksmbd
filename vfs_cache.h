@@ -64,6 +64,7 @@ struct cifsd_inode {
 	struct list_head		m_fp_list;
 	struct list_head		m_op_list;
 	struct oplock_info		*m_opinfo;
+	__le32				m_fattr;
 };
 
 struct cifsd_file {
@@ -84,7 +85,6 @@ struct cifsd_file {
 	__le32				saccess;
 	__le32				coption;
 	__le32				cdoption;
-	__le32				fattr;
 	__u64				create_time;
 
 	bool				is_durable;
@@ -112,13 +112,37 @@ struct cifsd_file {
 	unsigned int			cflock_cnt;
 	/* last lock failure start offset for SMB1 */
 	unsigned long long		llock_fstart;
-#endif
 
+	int				dirent_offset;
+#endif
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
 	int				dot_dotdot[2];
-	int				dirent_offset;
 };
+
+/*
+ * Starting from 4.16 ->actor is not const anymore. The const prevents
+ * the structure from being used as part of a kmalloc'd object as it
+ * makes the compiler require that the actor member be set at object
+ * initialisation time (or not at all).
+ */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
+static void inline set_ctx_actor(struct dir_context *ctx,
+				 filldir_t actor)
+{
+	struct dir_context c = {
+		.actor	= actor,
+		.pos	= ctx->pos,
+	};
+	memcpy(ctx, &c, sizeof(struct dir_context));
+}
+#else
+static void inline set_ctx_actor(struct dir_context *ctx,
+				 filldir_t actor)
+{
+	ctx->actor = actor;
+}
+#endif
 
 #define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
 

@@ -74,7 +74,7 @@ static struct smb_version_cmds smb1_server_cmds[256] = {
 /**
  * init_smb1_server() - initialize a smb server connection with smb1
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 int init_smb1_server(struct cifsd_conn *conn)
 {
