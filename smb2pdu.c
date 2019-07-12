@@ -6279,7 +6279,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 	unsigned int i, chunk_count, chunk_count_written;
 	unsigned int chunk_size_written;
 	loff_t total_size_written;
-	int ret, cnt_code, nbytes = 0;
+	int ret, cnt_code;
 
 	cnt_code = le32_to_cpu(req->CntCode);
 	ci_req = (struct copychunk_ioctl_req *)&req->Buffer[0];
@@ -6294,7 +6294,6 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 	ci_rsp->TotalBytesWritten = cpu_to_le32(
 			cifsd_server_side_copy_max_total_size());
 
-	nbytes = sizeof(struct copychunk_ioctl_rsp);
 	chunks = (struct srv_copychunk *)&ci_req->Chunks[0];
 	chunk_count = le32_to_cpu(ci_req->ChunkCount);
 	total_size_written = 0;
@@ -6692,6 +6691,8 @@ int smb2_ioctl(struct cifsd_work *work)
 			req->hdr.Status = STATUS_INVALID_PARAMETER;
 			goto out;
 		}
+
+		nbytes = sizeof(struct copychunk_ioctl_rsp);
 		if (smb2_ioctl_copychunk(work, req, rsp) < 0)
 			goto out;
 		break;
