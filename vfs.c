@@ -633,6 +633,7 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 out:
 	if (name)
 		path_put(&path);
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -666,6 +667,7 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 #endif
 	if (err)
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -836,7 +838,7 @@ int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifsd_err("smb fsync failed, err = %d\n", err);
-
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
