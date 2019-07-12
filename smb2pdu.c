@@ -5517,8 +5517,10 @@ int smb2_read(struct cifsd_work *work)
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
 		cifsd_free_response(AUX_PAYLOAD(work));
 		INIT_AUX_PAYLOAD(work);
-		err = -EIO;
-		goto out;
+		rsp->hdr.Status = STATUS_END_OF_FILE;
+		smb2_set_err_rsp(work);
+		cifsd_fd_put(work, fp);
+		return 0;
 	}
 
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
@@ -5549,8 +5551,6 @@ out:
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (err == -ESHARE)
 			rsp->hdr.Status = STATUS_SHARING_VIOLATION;
-		else if (err == -EIO)
-			rsp->hdr.Status = STATUS_END_OF_FILE;
 		else
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
