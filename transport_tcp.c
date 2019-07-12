@@ -9,11 +9,11 @@
 #include "auth.h"
 #include "buffer_pool.h"
 #include "connection.h"
-
-static struct task_struct *cifsd_kthread;
-static struct socket *cifsd_socket;
+#include "transport_tcp.h"
 
 struct interface {
+	struct task_struct	*cifsd_kthread;
+	struct socket		*cifsd_socket;
 	struct list_head	entry;
 	char			*name;
 };
@@ -27,7 +27,7 @@ struct tcp_transport {
 	unsigned int			nr_iov;
 };
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops;
+static struct cifsd_transport_ops cifsd_tcp_transport_ops;
 
 #define CIFSD_TRANS(t)	(&(t)->transport)
 #define TCP_TRANS(t)	((struct tcp_transport *)container_of(t, \
@@ -116,7 +116,7 @@ static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
 
 /**
  * get_conn_iovec() - get connection iovec for reading from socket
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @nr_segs:	number of segments in iov
  *
  * Return:	return existing or newly allocate iovec
@@ -209,6 +209,7 @@ out_error:
 static int cifsd_kthread_fn(void *p)
 {
 	struct socket *client_sk = NULL;
+	struct socket *cifsd_socket = (struct socket *)p;
 	int ret;
 
 	while (!kthread_should_stop()) {
@@ -245,23 +246,25 @@ static int cifsd_kthread_fn(void *p)
  *
  * Return:	0 on success or error number
  */
-static int cifsd_tcp_run_kthread(void)
+static int cifsd_tcp_run_kthread(struct interface *iface)
 {
 	int rc;
+	struct task_struct *kthread;
 
-	cifsd_kthread = kthread_run(cifsd_kthread_fn, NULL, "kcifsd");
-	if (IS_ERR(cifsd_kthread)) {
-		rc = PTR_ERR(cifsd_kthread);
-		cifsd_kthread = NULL;
+	kthread = kthread_run(cifsd_kthread_fn, (void *)iface->cifsd_socket,
+		"kcifsd-%s", iface->name);
+	if (IS_ERR(kthread)) {
+		rc = PTR_ERR(kthread);
 		return rc;
 	}
+	iface->cifsd_kthread = kthread;
 
 	return 0;
 }
 
 /**
  * cifsd_tcp_readv() - read data from socket in given iovec
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @iov_orig:	base IO vector
  * @nr_segs:	number of segments in base iov
  * @to_read:	number of bytes to read from socket
@@ -303,7 +306,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
-		} else if (conn->tcp_status == CIFSD_SESS_NEED_RECONNECT) {
+		} else if (conn->status == CIFSD_SESS_NEED_RECONNECT) {
 			total_read = -EAGAIN;
 			break;
 		} else if (length == -ERESTARTSYS || length == -EAGAIN) {
@@ -320,7 +323,7 @@ static int cifsd_tcp_readv(struct tcp_transport *t,
 
 /**
  * cifsd_tcp_read() - read data from socket in given buffer
- * @conn:     TCP server instance of connection
+ * @t:		TCP transport instance
  * @buf:	buffer to store read data from socket
  * @to_read:	number of bytes to read from socket
  *
@@ -353,7 +356,7 @@ static void cifsd_tcp_disconnect(struct cifsd_transport *t)
 	free_transport(TCP_TRANS(t));
 }
 
-static void tcp_destroy_socket(void)
+static void tcp_destroy_socket(struct socket *cifsd_socket)
 {
 	int ret;
 
@@ -365,25 +368,19 @@ static void tcp_destroy_socket(void)
 		cifsd_err("Failed to shutdown socket: %d\n", ret);
 	} else {
 		sock_release(cifsd_socket);
-		cifsd_socket = NULL;
 	}
 }
 
 /**
- * cifsd_tcp_init - create socket for kcifsd/0
+ * create_socket - create socket for kcifsd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */
-int cifsd_tcp_init(void)
+static int create_socket(struct interface *iface)
 {
 	int ret;
 	struct sockaddr_in sin;
-	struct interface *iface;
-	struct list_head *tmp;
-
-	if (cifsd_socket) {
-		return 0;
-	}
+	struct socket *cifsd_socket;
 
 	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &cifsd_socket);
 	if (ret) {
@@ -398,19 +395,14 @@ int cifsd_tcp_init(void)
 	cifsd_tcp_nodelay(cifsd_socket);
 	cifsd_tcp_reuseaddr(cifsd_socket);
 
-	list_for_each(tmp, &iface_list) {
-		iface = list_entry(tmp,  struct interface, entry);
-
-		ret = kernel_setsockopt(cifsd_socket,
-					SOL_SOCKET,
-					SO_BINDTODEVICE,
-					iface->name,
-					strlen(iface->name));
-		if (ret != -ENODEV && ret < 0) {
-			cifsd_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
-			goto out_error;
-		}
-
+	ret = kernel_setsockopt(cifsd_socket,
+				SOL_SOCKET,
+				SO_BINDTODEVICE,
+				iface->name,
+				strlen(iface->name));
+	if (ret != -ENODEV && ret < 0) {
+		cifsd_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
+		goto out_error;
 	}
 
 	ret = kernel_bind(cifsd_socket, (struct sockaddr *)&sin, sizeof(sin));
@@ -428,7 +420,8 @@ int cifsd_tcp_init(void)
 		goto out_error;
 	}
 
-	ret = cifsd_tcp_run_kthread();
+	iface->cifsd_socket = cifsd_socket;
+	ret = cifsd_tcp_run_kthread(iface);
 	if (ret) {
 		cifsd_err("Can't start cifsd main kthread: %d\n", ret);
 		goto out_error;
@@ -437,40 +430,53 @@ int cifsd_tcp_init(void)
 	return 0;
 
 out_error:
-	tcp_destroy_socket();
+	tcp_destroy_socket(cifsd_socket);
+	iface->cifsd_socket = NULL;
 	return ret;
 }
 
-static void tcp_stop_kthread(void)
+int cifsd_tcp_init(void)
+{
+	struct interface *iface;
+	struct list_head *tmp;
+	int ret;
+
+	if (list_empty(&iface_list))
+		return 0;
+
+	list_for_each(tmp, &iface_list) {
+		iface = list_entry(tmp, struct interface, entry);
+		ret = create_socket(iface);
+		if (ret)
+			break;
+	}
+
+	return ret;
+}
+
+static void tcp_stop_kthread(struct task_struct *kthread)
 {
 	int ret;
 
-	if (!cifsd_kthread)
+	if (!kthread)
 		return;
 
-	ret = kthread_stop(cifsd_kthread);
+	ret = kthread_stop(kthread);
 	if (ret)
 		cifsd_err("failed to stop forker thread\n");
-	else
-		cifsd_kthread = NULL;
 }
 
-static void destroy_iface_list(void)
+void cifsd_tcp_destroy(void)
 {
 	struct interface *iface, *tmp;
 
 	list_for_each_entry_safe(iface, tmp, &iface_list, entry) {
 		list_del(&iface->entry);
+		tcp_destroy_socket(iface->cifsd_socket);
+		tcp_stop_kthread(iface->cifsd_kthread);
 		kfree(iface->name);
-		kfree(iface);
+		cifsd_free(iface);
 	}
-}
-
-void cifsd_tcp_destroy(void)
-{
-	tcp_destroy_socket();
-	tcp_stop_kthread();
-	destroy_iface_list();
 }
 
 static bool iface_exists(const char *ifname)
@@ -490,27 +496,44 @@ static bool iface_exists(const char *ifname)
 	return ret;
 }
 
+static int alloc_iface(char *ifname)
+{
+	struct interface *iface;
+
+	if (!ifname)
+		return -ENOMEM;
+
+	iface = cifsd_alloc(sizeof(struct interface));
+	if (!iface) {
+		kfree(ifname);
+		return -ENOMEM;
+	}
+
+	iface->name = ifname;
+	list_add(&iface->entry, &iface_list);
+	return 0;
+}
+
 int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 {
 	int sz = 0;
 
-	if (!ifc_list_sz)
+	if (!ifc_list_sz) {
+		struct net_device *netdev;
+
+		rtnl_lock();
+		for_each_netdev(&init_net, netdev) {
+			if (alloc_iface(kstrdup(netdev->name, GFP_KERNEL)))
+				return -ENOMEM;
+		}
+		rtnl_unlock();
 		return 0;
+	}
 
 	while (ifc_list_sz > 0) {
-		struct interface *iface;
-
 		if (iface_exists(ifc_list)) {
-			iface = kmalloc(sizeof(struct interface), GFP_KERNEL);
-			if (!iface)
+			if (alloc_iface(kstrdup(ifc_list, GFP_KERNEL)))
 				return -ENOMEM;
-
-			iface->name = kstrdup(ifc_list, GFP_KERNEL);
-			if (!iface->name) {
-				kfree(iface);
-				return -ENOMEM;
-			}
-			list_add(&iface->entry, &iface_list);
 		} else {
 			cifsd_err("Unknown interface: %s\n", ifc_list);
 		}
@@ -526,7 +549,7 @@ int cifsd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 	return 0;
 }
 
-struct cifsd_transport_ops cifsd_tcp_transport_ops = {
+static struct cifsd_transport_ops cifsd_tcp_transport_ops = {
 	.read		= cifsd_tcp_read,
 	.writev		= cifsd_tcp_writev,
 	.disconnect	= cifsd_tcp_disconnect,

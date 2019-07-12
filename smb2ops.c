@@ -197,7 +197,7 @@ static struct smb_version_cmds smb2_0_server_cmds[NUMBER_OF_SMB2_COMMANDS] = {
 /**
  * init_smb2_0_server() - initialize a smb server connection with smb2.0
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 int init_smb2_0_server(struct cifsd_conn *conn)
 {
@@ -220,7 +220,7 @@ int init_smb2_0_server(struct cifsd_conn *conn)
 /**
  * init_smb2_1_server() - initialize a smb server connection with smb2.1
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 void init_smb2_1_server(struct cifsd_conn *conn)
 {
@@ -238,7 +238,7 @@ void init_smb2_1_server(struct cifsd_conn *conn)
 /**
  * init_smb3_0_server() - initialize a smb server connection with smb3.0
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 void init_smb3_0_server(struct cifsd_conn *conn)
 {
@@ -262,7 +262,7 @@ void init_smb3_0_server(struct cifsd_conn *conn)
 /**
  * init_smb3_02_server() - initialize a smb server connection with smb3.02
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 void init_smb3_02_server(struct cifsd_conn *conn)
 {
@@ -286,7 +286,7 @@ void init_smb3_02_server(struct cifsd_conn *conn)
 /**
  * init_smb3_11_server() - initialize a smb server connection with smb3.11
  *			command dispatcher
- * @conn:	TCP server instance of connection
+ * @conn:	connection instance
  */
 int init_smb3_11_server(struct cifsd_conn *conn)
 {

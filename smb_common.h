@@ -129,15 +129,8 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 						struct cifsd_kstat *));
 
 int cifsd_extract_shortname(struct cifsd_conn *conn,
-			    char *longname,
+			    const char *longname,
 			    char *shortname);
-
-int cifsd_fill_dirent(struct dir_context *ctx,
-		      const char *name,
-		      int namlen,
-		      loff_t offset,
-		      u64 ino,
-		      unsigned int d_type);
 
 void cifsd_init_smb2_server_common(struct cifsd_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
