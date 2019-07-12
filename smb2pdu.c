@@ -6312,7 +6312,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 		if (le32_to_cpu(chunks[i].Length) == 0 ||
 				le32_to_cpu(chunks[i].Length) >
 				cifsd_server_side_copy_max_chunk_size())
-			return 0;
+			break;
 		total_size_written += le32_to_cpu(chunks[i].Length);
 	}
 	if (i < chunk_count || total_size_written >
@@ -6327,6 +6327,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 				 le64_to_cpu(req->VolatileFileId),
 				 le64_to_cpu(req->PersistentFileId));
 
+	ret = -EINVAL;
 	if (!src_fp || src_fp->persistent_id !=
 			le64_to_cpu(ci_req->ResumeKey[1])) {
 		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -6384,7 +6385,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 out:
 	cifsd_fd_put(work, src_fp);
 	cifsd_fd_put(work, dst_fp);
-	return 0;
+	return ret;
 }
 
 /**
@@ -6691,7 +6692,8 @@ int smb2_ioctl(struct cifsd_work *work)
 			req->hdr.Status = STATUS_INVALID_PARAMETER;
 			goto out;
 		}
-		smb2_ioctl_copychunk(work, req, rsp);
+		if (smb2_ioctl_copychunk(work, req, rsp) < 0)
+			goto out;
 		break;
 	case FSCTL_SET_SPARSE:
 	{
