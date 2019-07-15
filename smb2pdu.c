@@ -1884,12 +1884,9 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 		case APP_INSTANCE_ID:
 		{
 			struct create_app_inst_id *inst_id;
-			struct cifsd_file *fp;
 
 			inst_id = (struct create_app_inst_id *)context;
-			fp = cifsd_lookup_fd_app_id(inst_id->AppInstanceId);
-			if (fp)
-				cifsd_close_fd(work, fp->volatile_id);
+			cifsd_close_fd_app_id(work, inst_id->AppInstanceId);
 			d_info->app_id = inst_id->AppInstanceId;
 			break;
 		}

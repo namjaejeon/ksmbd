@@ -415,7 +415,7 @@ static struct cifsd_file *__cifsd_lookup_fd(struct cifsd_file_table *ft,
 }
 
 static void __put_fd_final(struct cifsd_work *work,
-		       struct cifsd_file *fp)
+			   struct cifsd_file *fp)
 {
 	__cifsd_close_fd(&work->sess->file_table, fp);
 	atomic_dec(&work->conn->stats.open_files_count);
@@ -509,7 +509,8 @@ struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id)
 	return __cifsd_lookup_fd(&global_ft, id);
 }
 
-struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
+int cifsd_close_fd_app_id(struct cifsd_work *work,
+			  char *app_id)
 {
 	struct cifsd_file	*fp = NULL;
 	unsigned int		id;
@@ -519,13 +520,18 @@ struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id)
 		if (!memcmp(fp->app_instance_id,
 			    app_id,
 			    SMB2_CREATE_GUID_SIZE)) {
-			fp = cifsd_fp_get(fp);
+			if (!atomic_dec_and_test(&fp->refcount))
+				fp = NULL;
 			break;
 		}
 	}
 	read_unlock(&global_ft.lock);
 
-	return fp;
+	if (!fp)
+		return -EINVAL;
+
+	__put_fd_final(work, fp);
+	return 0;
 }
 
 struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid)
