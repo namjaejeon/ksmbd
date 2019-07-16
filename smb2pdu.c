@@ -1884,12 +1884,9 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 		case APP_INSTANCE_ID:
 		{
 			struct create_app_inst_id *inst_id;
-			struct cifsd_file *fp;
 
 			inst_id = (struct create_app_inst_id *)context;
-			fp = cifsd_lookup_fd_app_id(inst_id->AppInstanceId);
-			if (fp)
-				cifsd_close_fd(work, fp->volatile_id);
+			cifsd_close_fd_app_id(work, inst_id->AppInstanceId);
 			d_info->app_id = inst_id->AppInstanceId;
 			break;
 		}
@@ -5517,8 +5514,10 @@ int smb2_read(struct cifsd_work *work)
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
 		cifsd_free_response(AUX_PAYLOAD(work));
 		INIT_AUX_PAYLOAD(work);
-		err = -EIO;
-		goto out;
+		rsp->hdr.Status = STATUS_END_OF_FILE;
+		smb2_set_err_rsp(work);
+		cifsd_fd_put(work, fp);
+		return 0;
 	}
 
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
@@ -5549,8 +5548,6 @@ out:
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (err == -ESHARE)
 			rsp->hdr.Status = STATUS_SHARING_VIOLATION;
-		else if (err == -EIO)
-			rsp->hdr.Status = STATUS_END_OF_FILE;
 		else
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
@@ -6279,7 +6276,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 	unsigned int i, chunk_count, chunk_count_written;
 	unsigned int chunk_size_written;
 	loff_t total_size_written;
-	int ret, cnt_code, nbytes = 0;
+	int ret, cnt_code;
 
 	cnt_code = le32_to_cpu(req->CntCode);
 	ci_req = (struct copychunk_ioctl_req *)&req->Buffer[0];
@@ -6294,7 +6291,6 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 	ci_rsp->TotalBytesWritten = cpu_to_le32(
 			cifsd_server_side_copy_max_total_size());
 
-	nbytes = sizeof(struct copychunk_ioctl_rsp);
 	chunks = (struct srv_copychunk *)&ci_req->Chunks[0];
 	chunk_count = le32_to_cpu(ci_req->ChunkCount);
 	total_size_written = 0;
@@ -6312,7 +6308,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 		if (le32_to_cpu(chunks[i].Length) == 0 ||
 				le32_to_cpu(chunks[i].Length) >
 				cifsd_server_side_copy_max_chunk_size())
-			return 0;
+			break;
 		total_size_written += le32_to_cpu(chunks[i].Length);
 	}
 	if (i < chunk_count || total_size_written >
@@ -6327,6 +6323,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 				 le64_to_cpu(req->VolatileFileId),
 				 le64_to_cpu(req->PersistentFileId));
 
+	ret = -EINVAL;
 	if (!src_fp || src_fp->persistent_id !=
 			le64_to_cpu(ci_req->ResumeKey[1])) {
 		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -6384,7 +6381,7 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 out:
 	cifsd_fd_put(work, src_fp);
 	cifsd_fd_put(work, dst_fp);
-	return 0;
+	return ret;
 }
 
 /**
@@ -6691,7 +6688,10 @@ int smb2_ioctl(struct cifsd_work *work)
 			req->hdr.Status = STATUS_INVALID_PARAMETER;
 			goto out;
 		}
-		smb2_ioctl_copychunk(work, req, rsp);
+
+		nbytes = sizeof(struct copychunk_ioctl_rsp);
+		if (smb2_ioctl_copychunk(work, req, rsp) < 0)
+			goto out;
 		break;
 	case FSCTL_SET_SPARSE:
 	{

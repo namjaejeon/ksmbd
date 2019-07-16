@@ -179,8 +179,8 @@ struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
 
 void cifsd_fd_put(struct cifsd_work *work, struct cifsd_file *fp);
 
+int cifsd_close_fd_app_id(struct cifsd_work *work, char *app_id);
 struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id);
-struct cifsd_file *cifsd_lookup_fd_app_id(char *app_id);
 struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid);
 struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
 					    char *filename);
