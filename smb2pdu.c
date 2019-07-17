@@ -2421,7 +2421,7 @@ int smb2_open(struct cifsd_work *work)
 		rc = 0;
 	} else {
 		file_present = true;
-		generic_fillattr(path.dentry->d_inode, &stat);
+		generic_fillattr(d_inode(path.dentry), &stat);
 	}
 	if (stream_name) {
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
@@ -2472,7 +2472,7 @@ int smb2_open(struct cifsd_work *work)
 
 	if (durable_enable && file_present)
 		file_present = cifsd_close_inode_fds(work,
-						     path.dentry->d_inode);
+						     d_inode(path.dentry));
 
 	if (test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE))
 		open_flags = smb2_create_open_flags(file_present,
@@ -2498,7 +2498,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 	}
 
-	rc = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	rc = cifsd_query_inode_status(d_inode(path.dentry->d_parent));
 	if (rc == CIFSD_INODE_STATUS_PENDING_DELETE) {
 		rc = -EBUSY;
 		goto err_out;
@@ -2603,7 +2603,7 @@ int smb2_open(struct cifsd_work *work)
 		need_truncate = 1;
 	}
 
-	generic_fillattr(path.dentry->d_inode, &stat);
+	generic_fillattr(d_inode(path.dentry), &stat);
 
 	/* Check delete pending among previous fp before oplock break */
 	if (cifsd_inode_pending_delete(fp)) {
@@ -3072,9 +3072,9 @@ static void lock_dir(struct cifsd_file *dir_fp)
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
-	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
 #endif
 }
 
@@ -3083,9 +3083,9 @@ static void unlock_dir(struct cifsd_file *dir_fp)
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_unlock(dir->d_inode);
+	inode_unlock(d_inode(dir));
 #else
-	mutex_unlock(&dir->d_inode->i_mutex);
+	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 }
 
@@ -4357,7 +4357,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 
 			fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
 			logical_sector_size =
-				cifsd_vfs_logical_sector_size(path.dentry->d_inode);
+				cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
 			fs_size_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4380,7 +4380,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			fs_fullsize_info =
 				(struct smb2_fs_full_size_info *)(rsp->Buffer);
 			logical_sector_size =
-				cifsd_vfs_logical_sector_size(path.dentry->d_inode);
+				cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
 			fs_fullsize_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4427,7 +4427,7 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			struct cifsd_fs_sector_size fs_ss;
 
 			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
-			cifsd_vfs_smb2_sector_size(path.dentry->d_inode, &fs_ss);
+			cifsd_vfs_smb2_sector_size(d_inode(path.dentry), &fs_ss);
 
 			ss_info->LogicalBytesPerSector =
 				cpu_to_le32(fs_ss.logical_sector_size);
@@ -5029,7 +5029,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 	if (attrs.ia_valid) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
 		struct dentry *dentry = filp->f_path.dentry;
-		struct inode *inode = dentry->d_inode;
+		struct inode *inode = d_inode(dentry);
 #else
 		struct inode *inode = FP_INODE(fp);
 #endif

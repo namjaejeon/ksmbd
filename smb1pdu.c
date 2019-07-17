@@ -2403,7 +2403,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 		}
 	}
 
-	err = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	err = cifsd_query_inode_status(d_inode(path.dentry->d_parent));
 	if (err == CIFSD_INODE_STATUS_PENDING_DELETE) {
 		err = -EBUSY;
 		goto free_path;
@@ -3924,7 +3924,7 @@ static int query_path_info(struct cifsd_work *work)
 		FILE_INFO_STANDARD *infos;
 
 		cifsd_debug("SMB_INFO_STANDARD\n");
-		rc = cifsd_query_inode_status(path.dentry->d_inode);
+		rc = cifsd_query_inode_status(d_inode(path.dentry));
 		if (rc == CIFSD_INODE_STATUS_PENDING_DELETE) {
 			rc = -EBUSY;
 			goto err_out;
@@ -3971,7 +3971,7 @@ static int query_path_info(struct cifsd_work *work)
 		unsigned int del_pending;
 
 		cifsd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
-		del_pending = cifsd_query_inode_status(path.dentry->d_inode);
+		del_pending = cifsd_query_inode_status(d_inode(path.dentry));
 		if (del_pending == CIFSD_INODE_STATUS_PENDING_DELETE)
 			del_pending = 1;
 		else
@@ -4122,7 +4122,7 @@ static int query_path_info(struct cifsd_work *work)
 
 		cifsd_debug("SMB_QUERY_FILE_ALL_INFO\n");
 
-		del_pending = cifsd_query_inode_status(path.dentry->d_inode);
+		del_pending = cifsd_query_inode_status(d_inode(path.dentry));
 		if (del_pending == CIFSD_INODE_STATUS_PENDING_DELETE)
 			del_pending = 1;
 		else
@@ -4751,7 +4751,7 @@ static int smb_posix_open(struct cifsd_work *work)
 			goto out;
 		}
 		cifsd_debug("mkdir done for %s, inode %lu\n",
-				name, path.dentry->d_inode->i_ino);
+				name, d_inode(path.dentry)->i_ino);
 		goto prepare_rsp;
 	}
 
@@ -7027,7 +7027,7 @@ static int create_dir(struct cifsd_work *work)
 
 		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-			generic_fillattr(path.dentry->d_inode, &stat);
+			generic_fillattr(d_inode(path.dentry), &stat);
 			ctime = cifs_UnixTimeToNT(from_kern_timespec(
 							stat.ctime));
 
@@ -7182,7 +7182,7 @@ int smb_mkdir(struct cifsd_work *work)
 
 		err = cifsd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-			generic_fillattr(path.dentry->d_inode, &stat);
+			generic_fillattr(d_inode(path.dentry), &stat);
 			ctime = cifs_UnixTimeToNT(from_kern_timespec(
 								stat.ctime));
 
@@ -7280,7 +7280,7 @@ int smb_checkdir(struct cifsd_work *work)
 		}
 	}
 
-	generic_fillattr(path.dentry->d_inode, &stat);
+	generic_fillattr(d_inode(path.dentry), &stat);
 
 	if (!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status.CifsError = STATUS_NOT_A_DIRECTORY;
@@ -7524,7 +7524,7 @@ static int smb_query_info_path(struct cifsd_work *work,
 		return STATUS_OBJECT_NAME_NOT_FOUND;
 	}
 
-	generic_fillattr(path.dentry->d_inode, st);
+	generic_fillattr(d_inode(path.dentry), st);
 	smb_put_name(name);
 	return 0;
 }
@@ -7710,7 +7710,7 @@ int smb_open_andx(struct cifsd_work *work)
 	if (err)
 		file_present = false;
 	else
-		generic_fillattr(path.dentry->d_inode, &stat);
+		generic_fillattr(d_inode(path.dentry), &stat);
 
 	oplock_flags = le32_to_cpu(req->OpenFlags) &
 		(REQ_OPLOCK | REQ_BATCHOPLOCK);
@@ -7752,10 +7752,10 @@ int smb_open_andx(struct cifsd_work *work)
 			cifsd_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
-		generic_fillattr(path.dentry->d_inode, &stat);
+		generic_fillattr(d_inode(path.dentry), &stat);
 	}
 
-	err = cifsd_query_inode_status(path.dentry->d_parent->d_inode);
+	err = cifsd_query_inode_status(d_inode(path.dentry->d_parent));
 	if (err == CIFSD_INODE_STATUS_PENDING_DELETE) {
 		err = -EBUSY;
 		goto free_path;
@@ -7937,7 +7937,7 @@ int smb_setattr(struct cifsd_work *work)
 		err = 0;
 		goto out;
 	}
-	generic_fillattr(path.dentry->d_inode, &stat);
+	generic_fillattr(d_inode(path.dentry), &stat);
 	path_put(&path);
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
