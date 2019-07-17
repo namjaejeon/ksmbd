@@ -18,7 +18,7 @@
 #include <linux/dcache.h>
 #include <linux/fiemap.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
 #else
 #include <linux/sched.h>
