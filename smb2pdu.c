@@ -3734,7 +3734,7 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	}
 
 	basic_info = (struct smb2_file_all_info *)rsp->Buffer;
-	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	generic_fillattr(FP_INODE(fp), &stat);
 
 	basic_info->CreationTime = cpu_to_le64(fp->create_time);
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.atime));
@@ -3762,7 +3762,7 @@ static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
 	struct inode *inode;
 	struct kstat stat;
 
-	inode = fp->filp->f_path.dentry->d_inode;
+	inode = FP_INODE(fp);
 	generic_fillattr(inode, &stat);
 
 	sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
@@ -3820,7 +3820,7 @@ static int get_file_all_info(struct cifsd_work *work,
 	if (!filename)
 		return -ENOMEM;
 
-	inode = fp->filp->f_path.dentry->d_inode;
+	inode = FP_INODE(fp);
 	generic_fillattr(inode, &stat);
 
 	cifsd_debug("filename = %s\n", filename);
@@ -3898,7 +3898,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 	ssize_t xattr_list_len;
 	int nbytes = 0, streamlen, stream_name_len, next;
 
-	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
 	if (stream_file_enable == false) {
@@ -3995,7 +3995,7 @@ static void get_file_internal_info(struct smb2_query_info_rsp *rsp,
 	struct smb2_file_internal_info *file_info;
 	struct kstat stat;
 
-	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_internal_info *)rsp->Buffer;
 	file_info->IndexNumber = cpu_to_le64(stat.ino);
 	rsp->OutputBufferLength =
@@ -4023,7 +4023,7 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 
 	file_info = (struct smb2_file_ntwrk_info *)rsp->Buffer;
 
-	inode = fp->filp->f_path.dentry->d_inode;
+	inode = FP_INODE(fp);
 	generic_fillattr(inode, &stat);
 
 	file_info->CreationTime = cpu_to_le64(fp->create_time);
@@ -4088,7 +4088,7 @@ static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
 	struct smb2_file_comp_info *file_info;
 	struct kstat stat;
 
-	generic_fillattr(fp->filp->f_path.dentry->d_inode, &stat);
+	generic_fillattr(FP_INODE(fp), &stat);
 
 	file_info = (struct smb2_file_comp_info *)rsp->Buffer;
 	file_info->CompressedFileSize = cpu_to_le64(stat.blocks << 9);

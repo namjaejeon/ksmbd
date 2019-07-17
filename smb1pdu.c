@@ -6393,10 +6393,9 @@ static int query_file_info(struct cifsd_work *work)
 		rsp_hdr->Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		rc = -EIO;
 		goto err_out;
-	} else
-		filp = fp->filp;
+	}
 
-	generic_fillattr(filp->f_path.dentry->d_inode, &st);
+	generic_fillattr(FP_INODE(fp), &st);
 
 	switch (req_params->InformationLevel) {
 
@@ -6724,12 +6723,12 @@ static int smb_set_dispostion(struct cifsd_work *work)
 			return -EPERM;
 		}
 
-		if (!(fp->filp->f_path.dentry->d_inode->i_mode & 0222)) {
+		if (!(FP_INODE(fp)->i_mode & 0222)) {
 			rsp->hdr.Status.CifsError = STATUS_CANNOT_DELETE;
 			return -EPERM;
 		}
 
-		if (S_ISDIR(fp->filp->f_path.dentry->d_inode->i_mode) &&
+		if (S_ISDIR(FP_INODE(fp)->i_mode) &&
 				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY) {
 			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
 			return -ENOTEMPTY;
