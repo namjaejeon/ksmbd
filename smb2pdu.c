@@ -6385,13 +6385,13 @@ static unsigned int idev_ipv4_address(struct in_device *idev)
 		if (ifa->ifa_flags & IFA_F_SECONDARY)
 			continue;
 
-		addr = ifa->ifa_address;
+		addr = be32_to_cpu(ifa->ifa_address);
 		break;
 	}
 	rcu_read_unlock();
 #else
 	for_primary_ifa(idev) {
-		addr = ifa->ifa_address;
+		addr = be32_to_cpu(ifa->ifa_address);
 		break;
 	} endfor_ifa(idev);
 #endif
