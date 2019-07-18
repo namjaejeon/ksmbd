@@ -18,7 +18,7 @@
 #include <linux/dcache.h>
 #include <linux/fiemap.h>
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
 #else
 #include <linux/sched.h>
@@ -93,9 +93,9 @@ int cifsd_vfs_create(struct cifsd_work *work,
 	}
 
 	mode |= S_IFREG;
-	err = vfs_create(path.dentry->d_inode, dentry, mode, true);
+	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
 	if (!err)
-		cifsd_vfs_inode_uid_gid(work, dentry->d_inode);
+		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
 	else
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
 
@@ -129,9 +129,9 @@ int cifsd_vfs_mkdir(struct cifsd_work *work,
 	}
 
 	mode |= S_IFDIR;
-	err = vfs_mkdir(path.dentry->d_inode, dentry, mode);
+	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
 	if (!err)
-		cifsd_vfs_inode_uid_gid(work, dentry->d_inode);
+		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
 	else
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
@@ -271,7 +271,7 @@ int cifsd_vfs_read(struct cifsd_work *work,
 
 	rbuf = AUX_PAYLOAD(work);
 	filp = fp->filp;
-	inode = filp->f_path.dentry->d_inode;
+	inode = d_inode(filp->f_path.dentry);
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
 
@@ -572,7 +572,7 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 			return -ENOENT;
 		}
 		dentry = path.dentry;
-		inode = dentry->d_inode;
+		inode = d_inode(dentry);
 	} else {
 
 		fp = cifsd_lookup_fd_fast(work, fid);
@@ -583,7 +583,7 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 
 		filp = fp->filp;
 		dentry = filp->f_path.dentry;
-		inode = dentry->d_inode;
+		inode = d_inode(dentry);
 	}
 
 	/* no need to update mode of symlink */
@@ -633,6 +633,7 @@ int cifsd_vfs_setattr(struct cifsd_work *work, const char *name,
 out:
 	if (name)
 		path_put(&path);
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -666,6 +667,7 @@ int cifsd_vfs_getattr(struct cifsd_work *work, uint64_t fid,
 #endif
 	if (err)
 		cifsd_err("getattr failed for fid %llu, err %d\n", fid, err);
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -689,7 +691,7 @@ int cifsd_vfs_symlink(const char *name, const char *symname)
 		return err;
 	}
 
-	err = vfs_symlink(dentry->d_parent->d_inode, dentry, name);
+	err = vfs_symlink(d_inode(dentry->d_parent), dentry, name);
 	if (err && (err != -EEXIST || err != -ENOSPC))
 		cifsd_debug("failed to create symlink, err %d\n", err);
 
@@ -715,7 +717,7 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 	if (!path)
 		return -ENOENT;
 
-	inode = path->dentry->d_inode;
+	inode = d_inode(path->dentry);
 	if (!S_ISLNK(inode->i_mode))
 		return -EINVAL;
 
@@ -772,7 +774,7 @@ int cifsd_vfs_readdir_name(struct cifsd_work *work,
 		return -ENOMEM;
 	}
 
-	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
+	generic_fillattr(d_inode(path.dentry), cifsd_kstat->kstat);
 	fill_create_time(work, &path, cifsd_kstat);
 	fill_file_attributes(work, &path, cifsd_kstat);
 	path_put(&path);
@@ -836,7 +838,7 @@ int cifsd_vfs_fsync(struct cifsd_work *work, uint64_t fid, uint64_t p_id)
 	err = vfs_fsync(fp->filp, 0);
 	if (err < 0)
 		cifsd_err("smb fsync failed, err = %d\n", err);
-
+	cifsd_fd_put(work, fp);
 	return err;
 }
 
@@ -864,13 +866,13 @@ int cifsd_vfs_remove_file(char *name)
 	}
 
 	dir = parent.dentry;
-	if (!dir->d_inode)
+	if (!d_inode(dir))
 		goto out;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
-	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
 #endif
 	dentry = lookup_one_len(last, dir, strlen(last));
 	if (IS_ERR(dentry)) {
@@ -879,18 +881,18 @@ int cifsd_vfs_remove_file(char *name)
 		goto out_err;
 	}
 
-	if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
+	if (!d_inode(dentry) || !d_inode(dentry)->i_nlink) {
 		dput(dentry);
 		err = -ENOENT;
 		goto out_err;
 	}
 
-	if (S_ISDIR(dentry->d_inode->i_mode)) {
-		err = vfs_rmdir(dir->d_inode, dentry);
+	if (S_ISDIR(d_inode(dentry)->i_mode)) {
+		err = vfs_rmdir(d_inode(dir), dentry);
 		if (err && err != -ENOTEMPTY)
 			cifsd_debug("%s: rmdir failed, err %d\n", name, err);
 	} else {
-		err = vfs_unlink(dir->d_inode, dentry, NULL);
+		err = vfs_unlink(d_inode(dir), dentry, NULL);
 		if (err)
 			cifsd_debug("%s: unlink failed, err %d\n", name, err);
 	}
@@ -898,9 +900,9 @@ int cifsd_vfs_remove_file(char *name)
 	dput(dentry);
 out_err:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_unlock(dir->d_inode);
+	inode_unlock(d_inode(dir));
 #else
-	mutex_unlock(&dir->d_inode->i_mutex);
+	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 out:
 	path_put(&parent);
@@ -941,7 +943,7 @@ int cifsd_vfs_link(const char *oldname, const char *newname)
 		goto out3;
 	}
 
-	err = vfs_link(oldpath.dentry, newpath.dentry->d_inode, dentry, NULL);
+	err = vfs_link(oldpath.dentry, d_inode(newpath.dentry), dentry, NULL);
 	if (err)
 		cifsd_debug("vfs_link failed err %d\n", err);
 
@@ -970,7 +972,7 @@ static int __cifsd_vfs_rename(struct dentry *src_dent_parent,
 		if (d_really_is_negative(dst_dent))
 			continue;
 
-		child_fp = cifsd_lookup_fd_inode(dst_dent->d_inode);
+		child_fp = cifsd_lookup_fd_inode(d_inode(dst_dent));
 		if (child_fp) {
 			spin_unlock(&src_dent->d_lock);
 			cifsd_debug("Forbid rename, sub file/dir is in use\n");
@@ -1484,25 +1486,25 @@ int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 
 	dget(dentry);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_lock_nested(dir->d_inode, I_MUTEX_PARENT);
+	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
-	mutex_lock_nested(&dir->d_inode->i_mutex, I_MUTEX_PARENT);
+	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
 #endif
-	if (!dentry->d_inode || !dentry->d_inode->i_nlink) {
+	if (!d_inode(dentry) || !d_inode(dentry)->i_nlink) {
 		err = -ENOENT;
 		goto out;
 	}
 
-	if (S_ISDIR(dentry->d_inode->i_mode))
-		err = vfs_rmdir(dir->d_inode, dentry);
+	if (S_ISDIR(d_inode(dentry)->i_mode))
+		err = vfs_rmdir(d_inode(dir), dentry);
 	else
-		err = vfs_unlink(dir->d_inode, dentry, NULL);
+		err = vfs_unlink(d_inode(dir), dentry, NULL);
 
 out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
-	inode_unlock(dir->d_inode);
+	inode_unlock(d_inode(dir));
 #else
-	mutex_unlock(&dir->d_inode->i_mutex);
+	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 	dput(dentry);
 	if (err)
@@ -1803,7 +1805,7 @@ int cifsd_vfs_fill_dentry_attrs(struct cifsd_work *work,
 				struct dentry *dentry,
 				struct cifsd_kstat *cifsd_kstat)
 {
-	generic_fillattr(dentry->d_inode, cifsd_kstat->kstat);
+	generic_fillattr(d_inode(dentry), cifsd_kstat->kstat);
 	__file_dentry_ctime(work, dentry, cifsd_kstat);
 	__fill_dentry_attributes(work, dentry, cifsd_kstat);
 	return 0;

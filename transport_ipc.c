@@ -348,11 +348,11 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 		ret = ipc_server_config_on_startup(req);
 		if (ret)
 			goto out;
+		server_queue_ctrl_init_work();
 	}
 
 	cifsd_tools_pid = info->snd_portid;
 	ipc_update_last_active();
-	server_queue_ctrl_init_work();
 
 out:
 	mutex_unlock(&startup_lock);

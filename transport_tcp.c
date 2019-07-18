@@ -16,6 +16,7 @@ struct interface {
 	struct socket		*cifsd_socket;
 	struct list_head	entry;
 	char			*name;
+	struct mutex		sock_release_lock;
 };
 
 static LIST_HEAD(iface_list);
@@ -209,7 +210,7 @@ out_error:
 static int cifsd_kthread_fn(void *p)
 {
 	struct socket *client_sk = NULL;
-	struct socket *cifsd_socket = (struct socket *)p;
+	struct interface *iface = (struct interface *)p;
 	int ret;
 
 	while (!kthread_should_stop()) {
@@ -218,7 +219,14 @@ static int cifsd_kthread_fn(void *p)
 			continue;
 		}
 
-		ret = kernel_accept(cifsd_socket, &client_sk, O_NONBLOCK);
+		mutex_lock(&iface->sock_release_lock);
+		if (!iface->cifsd_socket) {
+			mutex_unlock(&iface->sock_release_lock);
+			break;
+		}
+		ret = kernel_accept(iface->cifsd_socket, &client_sk,
+				O_NONBLOCK);
+		mutex_unlock(&iface->sock_release_lock);
 		if (ret) {
 			if (ret == -EAGAIN)
 				/* check for new connections every 100 msecs */
@@ -251,7 +259,7 @@ static int cifsd_tcp_run_kthread(struct interface *iface)
 	int rc;
 	struct task_struct *kthread;
 
-	kthread = kthread_run(cifsd_kthread_fn, (void *)iface->cifsd_socket,
+	kthread = kthread_run(cifsd_kthread_fn, (void *)iface,
 		"kcifsd-%s", iface->name);
 	if (IS_ERR(kthread)) {
 		rc = PTR_ERR(kthread);
@@ -472,8 +480,11 @@ void cifsd_tcp_destroy(void)
 
 	list_for_each_entry_safe(iface, tmp, &iface_list, entry) {
 		list_del(&iface->entry);
-		tcp_destroy_socket(iface->cifsd_socket);
 		tcp_stop_kthread(iface->cifsd_kthread);
+		mutex_lock(&iface->sock_release_lock);
+		tcp_destroy_socket(iface->cifsd_socket);
+		iface->cifsd_socket = NULL;
+		mutex_unlock(&iface->sock_release_lock);
 		kfree(iface->name);
 		cifsd_free(iface);
 	}
@@ -511,6 +522,7 @@ static int alloc_iface(char *ifname)
 
 	iface->name = ifname;
 	list_add(&iface->entry, &iface_list);
+	mutex_init(&iface->sock_release_lock);
 	return 0;
 }
 
