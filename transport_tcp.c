@@ -482,8 +482,8 @@ void cifsd_tcp_destroy(void)
 		list_del(&iface->entry);
 		tcp_stop_kthread(iface->cifsd_kthread);
 		mutex_lock(&iface->sock_release_lock);
-		iface->cifsd_socket = NULL;
 		tcp_destroy_socket(iface->cifsd_socket);
+		iface->cifsd_socket = NULL;
 		mutex_unlock(&iface->sock_release_lock);
 		kfree(iface->name);
 		cifsd_free(iface);
