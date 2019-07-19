@@ -17,6 +17,8 @@
  *   the GNU General Public License for more details.
  */
 
+#define cifsd_pr_fmt(fmt)	"kcifsd: smbd: " fmt
+
 #include <linux/kthread.h>
 #include <linux/rwlock.h>
 #include <linux/list.h>

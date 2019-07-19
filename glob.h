@@ -169,16 +169,20 @@ struct cifsd_work {
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
+#ifndef cifsd_pr_fmt
+#define cifsd_pr_fmt(fmt)	"kcifsd: " fmt
+#endif
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
-			pr_info("kcifsd: %s:%d: " fmt,		\
+			pr_info(cifsd_pr_fmt("%s:%d: " fmt),	\
 			__func__, __LINE__, ##__VA_ARGS__);	\
 	} while (0)
 
-#define cifsd_info(fmt, ...) pr_info("kcifsd: " fmt, ##__VA_ARGS__)
+#define cifsd_info(fmt, ...) pr_info(cifsd_pr_fmt(fmt), ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...) pr_err("kcifsd: %s:%d: " fmt,	\
+#define cifsd_err(fmt, ...) pr_err(cifsd_pr_fmt("%s:%d: " fmt),	\
 			__func__, __LINE__, ##__VA_ARGS__)
 
 static inline unsigned int get_rfc1002_length(void *buf)
