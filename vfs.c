@@ -67,9 +67,9 @@ static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 	i_gid_write(inode, gid);
 }
 
-void cifsd_vfs_inherit_smack(struct cifsd_work *work,
-			     struct dentry *dir_dentry,
-			     struct dentry *dentry)
+static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
+				    struct dentry *dir_dentry,
+				    struct dentry *dentry)
 {
 	char *name, *xattr_list = NULL, *smack_buf;
 	int value_len, xattr_list_len;
