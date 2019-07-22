@@ -158,7 +158,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 					 __le32 option,
 					 int fexist);
 
-ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size);
+ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list);
 ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 			   char *xattr_name,
 			   char **xattr_buf);

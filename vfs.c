@@ -78,8 +78,7 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 				    CIFSD_SHARE_FLAG_INHERIT_SMACK))
 		return;
 
-	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list,
-		XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list);
 	if (xattr_list_len < 0)
 		return;
 	else if (!xattr_list_len) {
@@ -192,9 +191,7 @@ static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len <= 0)
 		goto out;
 
@@ -1233,30 +1230,30 @@ int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
  *
  * Return:	xattr list length on success, otherwise error
  */
-ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
+ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 {
-	ssize_t err;
+	ssize_t size;
 	char *vlist = NULL;
 
-	if (size) {
-		if (size > XATTR_LIST_MAX)
-			size = XATTR_LIST_MAX;
-		vlist = vmalloc(size);
-		if (!vlist)
-			return -ENOMEM;
-	}
+	size = vfs_listxattr(dentry, NULL, 0);
+	if (size <= 0)
+		return size;
+
+	vlist = vmalloc(size);
+	if (!vlist)
+		return -ENOMEM;
 
 	*list = vlist;
-	err = vfs_listxattr(dentry, vlist, size);
-	if (err == -ERANGE) {
+	size = vfs_listxattr(dentry, vlist, size);
+	if (size == -ERANGE) {
 		/* The file system tried to returned a list bigger
 		 * than XATTR_LIST_MAX bytes. Not possible.
 		 */
-		err = -E2BIG;
+		size = -E2BIG;
 		cifsd_debug("listxattr failed\n");
 	}
 
-	return err;
+	return size;
 }
 
 static ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
@@ -1365,8 +1362,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 	ssize_t xattr_list_len;
 	int err = 0;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list,
-		XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len < 0) {
 		goto out;
 	} else if (!xattr_list_len) {
@@ -1863,9 +1859,7 @@ ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len <= 0)
 		goto out;
 
