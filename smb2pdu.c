@@ -3590,7 +3590,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
 		buf_free_len = le32_to_cpu(req->OutputBufferLength);
 
-	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
 		goto out;
@@ -3920,9 +3920,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 		goto out;
 	}
 
-	xattr_list_len = cifsd_vfs_listxattr(path->dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (xattr_list_len < 0) {
 		goto out;
 	} else if (!xattr_list_len) {
@@ -4744,7 +4742,7 @@ static int smb2_rename(struct cifsd_file *fp,
 {
 	struct cifsd_share_config *share = fp->tcon->share_conf;
 	char *new_name = NULL, *abs_oldname = NULL, *old_name = NULL;
-	char *tmp_name = NULL, *pathname = NULL;
+	char *pathname = NULL;
 	struct path path;
 	bool file_present = true;
 	int rc;
@@ -4811,30 +4809,22 @@ static int smb2_rename(struct cifsd_file *fp,
 		goto out;
 	}
 
-	tmp_name = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!tmp_name) {
-		rc = -ENOMEM;
-		goto out;
-	}
-	strncpy(tmp_name, new_name, PATH_MAX);
-	tmp_name[PATH_MAX - 1] = 0x00;
 	cifsd_debug("new name %s\n", new_name);
-	rc = cifsd_vfs_kern_path(tmp_name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(new_name, 0, &path, 1);
 	if (rc)
 		file_present = false;
 	else
 		path_put(&path);
 
-	if (cifsd_share_veto_filename(share, tmp_name)) {
+	if (cifsd_share_veto_filename(share, new_name)) {
 		rc = -ENOENT;
-		cifsd_debug("file(%s) rename is not allowed by setting as veto file\n",
-			tmp_name);
+		cifsd_debug("Can't rename vetoed file: %s\n", new_name);
 		goto out;
 	}
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = cifsd_vfs_remove_file(tmp_name);
+			rc = cifsd_vfs_remove_file(new_name);
 			if (rc) {
 				if (rc != -ENOTEMPTY)
 					rc = -EINVAL;
@@ -4856,7 +4846,6 @@ static int smb2_rename(struct cifsd_file *fp,
 	rc = cifsd_vfs_fp_rename(fp, new_name);
 out:
 	kfree(pathname);
-	kfree(tmp_name);
 	if (!IS_ERR(new_name))
 		smb2_put_name(new_name);
 	return rc;
