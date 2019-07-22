@@ -6371,7 +6371,6 @@ static int query_file_info(struct cifsd_work *work)
 	TRANSACTION2_QFI_REQ_PARAMS *req_params;
 	struct cifsd_file *fp;
 	struct kstat st;
-	struct file *filp;
 	__u16 fid;
 	char *ptr;
 	int rc = 0;

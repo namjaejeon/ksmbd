@@ -24,7 +24,7 @@ script:
 
  # Compile with 4.1 kernel
  - cd ../linux-stable
- - yes "" | make oldconfig
+ - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
@@ -34,7 +34,7 @@ script:
 
  # Compile with latest Tovalds' kernel
  - cd ../linux
- - yes "" | make oldconfig
+ - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
@@ -44,7 +44,7 @@ script:
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
  - cd ../linux-stable
- - yes "" | make oldconfig
+ - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
@@ -54,7 +54,7 @@ script:
 
  # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
  - cd ../linux
- - yes "" | make oldconfig
+ - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
