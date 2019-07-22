@@ -105,7 +105,11 @@ void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 					rc);
 			continue;
 		}
+		cifsd_free(smack_buf);
 	}
+
+	if (xattr_list)
+		vfree(xattr_list);
 }
 
 /**
