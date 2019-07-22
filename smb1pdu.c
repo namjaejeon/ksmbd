@@ -3768,7 +3768,7 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	buf_free_len = cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp) + 4) -
 		sizeof(TRANSACTION2_RSP);
-	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
 		goto out;

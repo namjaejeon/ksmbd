@@ -3590,7 +3590,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
 		buf_free_len = le32_to_cpu(req->OutputBufferLength);
 
-	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
 		goto out;
@@ -3920,9 +3920,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 		goto out;
 	}
 
-	xattr_list_len = cifsd_vfs_listxattr(path->dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (xattr_list_len < 0) {
 		goto out;
 	} else if (!xattr_list_len) {
