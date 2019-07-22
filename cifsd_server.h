@@ -10,8 +10,8 @@
 
 #include <linux/types.h>
 
-#define CIFSD_GENL_NAME      "CIFSD_GENL"
-#define CIFSD_GENL_VERSION    0x01
+#define CIFSD_GENL_NAME		"CIFSD_GENL"
+#define CIFSD_GENL_VERSION		0x01
 
 #ifndef __align
 #define __align		__attribute__((__aligned__(4)))
