@@ -68,13 +68,14 @@ static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 }
 
 void cifsd_vfs_inherit_smack(struct cifsd_work *work,
-	struct dentry *dir_dentry, struct dentry *dentry)
+			     struct dentry *dir_dentry,
+			     struct dentry *dentry)
 {
 	char *name, *xattr_list = NULL, *smack_buf;
 	int value_len, xattr_list_len;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				   CIFSD_SHARE_FLAG_INHERIT_SMACK))
+				    CIFSD_SHARE_FLAG_INHERIT_SMACK))
 		return;
 
 	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list,
@@ -99,13 +100,10 @@ void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 			continue;
 
 		rc = cifsd_vfs_setxattr(dentry, XATTR_NAME_SMACK, smack_buf,
-				value_len, 0);
-		if (rc < 0) {
-			cifsd_err("cifsd_vfs_setxattr is failed(%d)\n",
-					rc);
-			continue;
-		}
+					value_len, 0);
 		cifsd_free(smack_buf);
+		if (rc < 0)
+			cifsd_err("cifsd_vfs_setxattr() failed: %d\n", rc);
 	}
 
 	if (xattr_list)
