@@ -67,6 +67,47 @@ static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 	i_gid_write(inode, gid);
 }
 
+void cifsd_vfs_inherit_smack(struct cifsd_work *work,
+	struct dentry *dir_dentry, struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL, *smack_buf;
+	int value_len, xattr_list_len;
+
+	if (!test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_INHERIT_SMACK))
+		return;
+
+	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list,
+		XATTR_LIST_MAX);
+	if (xattr_list_len < 0)
+		return;
+	else if (!xattr_list_len) {
+		cifsd_err("no ea data in the file\n");
+		return;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		int rc;
+
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strcmp(name, XATTR_NAME_SMACK))
+			continue;
+
+		value_len = cifsd_vfs_getxattr(dir_dentry, name, &smack_buf);
+		if (value_len <= 0)
+			continue;
+
+		rc = cifsd_vfs_setxattr(dentry, XATTR_NAME_SMACK, smack_buf,
+				value_len, 0);
+		if (rc < 0) {
+			cifsd_err("cifsd_vfs_setxattr is failed(%d)\n",
+					rc);
+			continue;
+		}
+	}
+}
+
 /**
  * cifsd_vfs_create() - vfs helper for smb create file
  * @work:	work
@@ -94,8 +135,10 @@ int cifsd_vfs_create(struct cifsd_work *work,
 
 	mode |= S_IFREG;
 	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
-	if (!err)
+	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
+		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
+	}
 	else
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
 
