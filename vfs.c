@@ -1774,6 +1774,14 @@ error:
 	return ret;
 }
 
+static void roolback_path_modification(char *filename)
+{
+	if (filename) {
+		filename--;
+		*filename = '/';
+	}
+}
+
 /**
  * cifsd_vfs_kern_path() - lookup a file and get path info
  * @name:	name of file for lookup
@@ -1786,28 +1794,31 @@ error:
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless)
 {
+	char *filename = NULL;
 	int err;
 
 	err = kern_path(name, flags, path);
-	if (err && caseless) {
-		char *filename = extract_last_component(name);
+	if (!err)
+		return err;
 
+	if (caseless) {
+		filename = extract_last_component(name);
 		if (!filename)
-			return err;
-		if (strlen(name) == 0) {
-			/* root reached */
-			filename--;
-			*filename = '/';
-			return err;
-		}
+			goto out;
+
+		/* root reached */
+		if (strlen(name) == 0)
+			goto out;
 
 		err = cifsd_vfs_lookup_in_dir(name, filename);
 		if (err)
-			return err;
+			goto out;
 		err = kern_path(name, flags, path);
-		return err;
-	} else
-		return err;
+	}
+
+out:
+	roolback_path_modification(filename);
+	return err;
 }
 
 /**
