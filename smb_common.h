@@ -60,7 +60,8 @@ struct smb_version_values {
 	char		*version_string;
 	__u16		protocol_id;
 	__le16		lock_cmd;
-	__u32		req_capabilities;
+	__u32		capabilities;
+	__u32		max_io_size;
 	__u32		large_lock_type;
 	__u32		exclusive_lock_type;
 	__u32		shared_lock_type;
@@ -137,8 +138,6 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
 
 int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);
 
-unsigned int cifsd_max_msg_size(void);
-unsigned int cifsd_default_io_size(void);
 unsigned int cifsd_small_buffer_size(void);
 unsigned int cifsd_server_side_copy_max_chunk_count(void);
 unsigned int cifsd_server_side_copy_max_chunk_size(void);

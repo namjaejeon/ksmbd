@@ -258,9 +258,9 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	 */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
-	rsp->MaxTransactSize = cpu_to_le32(cifsd_max_msg_size());
-	rsp->MaxReadSize = cpu_to_le32(cifsd_max_msg_size());
-	rsp->MaxWriteSize = cpu_to_le32(cifsd_max_msg_size());
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_io_size);
 
 	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
@@ -531,7 +531,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	struct smb2_query_info_req *req;
 	size_t small_sz = cifsd_small_buffer_size();
-	size_t large_sz = cifsd_max_msg_size() + MAX_SMB2_HDR_SIZE;
+	size_t large_sz = work->conn->vals->max_io_size + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);
 
@@ -929,24 +929,19 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
-	rsp->Capabilities = cpu_to_le32(conn->srv_cap);
+	rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
 
-	/* Default message size limit 64K till SMB2.0, no LargeMTU*/
-	rsp->MaxTransactSize = cpu_to_le32(cifsd_max_msg_size());
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_io_size);
 
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
 				SMB2_CLIENT_GUID_SIZE);
 		conn->cli_sec_mode = le16_to_cpu(req->SecurityMode);
-		/* With LargeMTU above SMB2.0, default message limit is 1MB */
-		rsp->MaxReadSize = cpu_to_le32(cifsd_default_io_size());
-		rsp->MaxWriteSize = cpu_to_le32(cifsd_default_io_size());
-	} else {
-		rsp->MaxReadSize = cpu_to_le32(cifsd_max_msg_size());
-		rsp->MaxWriteSize = cpu_to_le32(cifsd_max_msg_size());
 	}
 
 	rsp->StructureSize = cpu_to_le16(65);
@@ -1340,7 +1335,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 				(conn->sign || server_conf.enforced_signing)))
 				sess->sign = true;
 
-			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
+			if (conn->vals->capabilities &
+					SMB2_GLOBAL_CAP_ENCRYPTION &&
 					conn->ops->generate_encryptionkey) {
 				rc = conn->ops->generate_encryptionkey(sess);
 				if (rc) {
@@ -2613,7 +2609,7 @@ int smb2_open(struct cifsd_work *work)
 
 	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
-		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
+		!(conn->vals->capabilities & SMB2_GLOBAL_CAP_LEASING))) {
 		if (share_ret < 0 && !S_ISDIR(FP_INODE(fp)->i_mode)) {
 			rc = share_ret;
 			goto err_out;
@@ -3343,7 +3339,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.wptr = (char *)rsp->Buffer;
 	d_info.rptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = (cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
+	d_info.out_buf_len = (conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
 				(get_rfc1002_length(rsp_org) + 4));
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
 				le32_to_cpu(req->OutputBufferLength)) -
@@ -3583,7 +3579,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
 	}
 
-	buf_free_len = cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
+	buf_free_len = conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
 		(get_rfc1002_length(rsp_org) + 4)
 		- sizeof(struct smb2_query_info_rsp);
 
@@ -5439,6 +5435,7 @@ static noinline int smb2_read_pipe(struct cifsd_work *work)
  */
 int smb2_read(struct cifsd_work *work)
 {
+	struct cifsd_conn *conn = work->conn;
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
@@ -5477,12 +5474,12 @@ int smb2_read(struct cifsd_work *work)
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
-	if (length > cifsd_default_io_size()) {
+	if (length > conn->vals->max_io_size) {
 		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				length, cifsd_default_io_size());
+				length, conn->vals->max_io_size);
 		cifsd_debug("limiting read size to max size(%u)\n",
-				cifsd_default_io_size());
-		length = cifsd_default_io_size();
+				conn->vals->max_io_size);
+		length = conn->vals->max_io_size;
 	}
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
@@ -6509,7 +6506,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		nbytes = sizeof(struct validate_negotiate_info_rsp);
 		neg_rsp = (struct validate_negotiate_info_rsp *)&rsp->Buffer[0];
-		neg_rsp->Capabilities = cpu_to_le32(conn->srv_cap);
+		neg_rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
 		memset(neg_rsp->Guid, 0, SMB2_CLIENT_GUID_SIZE);
 		neg_rsp->SecurityMode = cpu_to_le16(conn->srv_sec_mode);
 		neg_rsp->Dialect = cpu_to_le16(conn->dialect);
