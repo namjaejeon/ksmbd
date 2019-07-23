@@ -6373,6 +6373,31 @@ out:
 	return ret;
 }
 
+static unsigned int idev_ipv4_address(struct in_device *idev)
+{
+	unsigned int addr = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
+	struct in_ifaddr *ifa;
+
+	rcu_read_lock();
+	in_dev_for_each_ifa_rcu(ifa, idev) {
+		if (ifa->ifa_flags & IFA_F_SECONDARY)
+			continue;
+
+		addr = ifa->ifa_address;
+		break;
+	}
+	rcu_read_unlock();
+#else
+	for_primary_ifa(idev) {
+		addr = ifa->ifa_address;
+		break;
+	} endfor_ifa(idev);
+#endif
+	return addr;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6591,11 +6616,8 @@ int smb2_ioctl(struct cifsd_work *work)
 				idev = __in_dev_get_rtnl(netdev);
 				if (!idev)
 					continue;
-				for_primary_ifa(idev) {
-					sockaddr_storage->addr4.IPv4address =
-						cpu_to_le32(ifa->ifa_address);
-					break;
-				} endfor_ifa(idev);
+				sockaddr_storage->addr4.IPv4address =
+					cpu_to_le32(idev_ipv4_address(idev));
 			} else {
 				struct inet6_dev *idev6;
 				struct inet6_ifaddr *ifa;
