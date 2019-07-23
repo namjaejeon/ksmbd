@@ -837,7 +837,6 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	neg_rsp->MaxBufferSize = cpu_to_le32(conn->vals->max_io_size);
 	neg_rsp->MaxRawSize = cpu_to_le32(SMB1_MAX_RAW_SIZE);
 	neg_rsp->SessionKey = 0;
-	conn->srv_cap = SMB1_SERVER_CAPS;
 	neg_rsp->Capabilities = cpu_to_le32(SMB1_SERVER_CAPS);
 
 	time = cifsd_systime();
@@ -2784,7 +2783,7 @@ int smb_read_andx(struct cifsd_work *work)
 	 * and a read fail occurs. If it is 0xFFFF, limit it to not set
 	 * the value.
 	 */
-	if (conn->srv_cap & CAP_LARGE_READ_X &&
+	if (conn->vals->capabilities & CAP_LARGE_READ_X &&
 		le32_to_cpu(req->MaxCountHigh) < 0xFFFF)
 		count |= le32_to_cpu(req->MaxCountHigh) << 16;
 
@@ -2915,7 +2914,7 @@ static int smb_write_andx_pipe(struct cifsd_work *work)
 	size_t count = 0;
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (work->conn->srv_cap & CAP_LARGE_WRITE_X)
+	if (work->conn->vals->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 	rpc_resp = cifsd_rpc_write(work->sess, req->Fid, req->Data, count);
@@ -2997,7 +2996,7 @@ int smb_write_andx(struct cifsd_work *work)
 	writethrough = (le16_to_cpu(req->WriteMode) == 1);
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (conn->srv_cap & CAP_LARGE_WRITE_X)
+	if (conn->vals->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 	if (count > CIFS_DEFAULT_IOSIZE) {

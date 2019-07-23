@@ -929,7 +929,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
-	rsp->Capabilities = cpu_to_le32(conn->srv_cap);
+	rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
 
 	/* For stats */
 	conn->connection_type = conn->dialect;
@@ -1335,7 +1335,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 				(conn->sign || server_conf.enforced_signing)))
 				sess->sign = true;
 
-			if (conn->srv_cap & SMB2_GLOBAL_CAP_ENCRYPTION &&
+			if (conn->vals->capabilities &
+					SMB2_GLOBAL_CAP_ENCRYPTION &&
 					conn->ops->generate_encryptionkey) {
 				rc = conn->ops->generate_encryptionkey(sess);
 				if (rc) {
@@ -2608,7 +2609,7 @@ int smb2_open(struct cifsd_work *work)
 
 	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
 	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
-		!(conn->srv_cap & SMB2_GLOBAL_CAP_LEASING))) {
+		!(conn->vals->capabilities & SMB2_GLOBAL_CAP_LEASING))) {
 		if (share_ret < 0 && !S_ISDIR(FP_INODE(fp)->i_mode)) {
 			rc = share_ret;
 			goto err_out;
@@ -6505,7 +6506,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		nbytes = sizeof(struct validate_negotiate_info_rsp);
 		neg_rsp = (struct validate_negotiate_info_rsp *)&rsp->Buffer[0];
-		neg_rsp->Capabilities = cpu_to_le32(conn->srv_cap);
+		neg_rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
 		memset(neg_rsp->Guid, 0, SMB2_CLIENT_GUID_SIZE);
 		neg_rsp->SecurityMode = cpu_to_le16(conn->srv_sec_mode);
 		neg_rsp->Dialect = cpu_to_le16(conn->dialect);

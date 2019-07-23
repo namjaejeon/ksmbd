@@ -477,7 +477,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		return 1;
 	}
 
-	return work->conn->srv_cap & SMB2_GLOBAL_CAP_LARGE_MTU ?
+	return work->conn->vals->capabilities & SMB2_GLOBAL_CAP_LARGE_MTU ?
 		smb2_validate_credit_charge(hdr) : 0;
 }
 

@@ -60,7 +60,7 @@ struct smb_version_values {
 	char		*version_string;
 	__u16		protocol_id;
 	__le16		lock_cmd;
-	__u32		req_capabilities;
+	__u32		capabilities;
 	__u32		max_io_size;
 	__u32		large_lock_type;
 	__u32		exclusive_lock_type;
