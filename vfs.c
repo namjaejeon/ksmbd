@@ -51,6 +51,14 @@ static char *extract_last_component(char *path)
 	return p;
 }
 
+static void roolback_path_modification(char *filename)
+{
+	if (filename) {
+		filename--;
+		*filename = '/';
+	}
+}
+
 static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 				    struct inode *inode)
 {
@@ -920,6 +928,7 @@ int cifsd_vfs_remove_file(char *name)
 	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
 		cifsd_debug("can't get %s, err %d\n", name, err);
+		roolback_path_modification(last);
 		return err;
 	}
 
@@ -963,6 +972,7 @@ out_err:
 	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 out:
+	roolback_path_modification(last);
 	path_put(&parent);
 	return err;
 }
@@ -1788,14 +1798,6 @@ static int cifsd_vfs_lookup_in_dir(char *dirname, char *filename)
 error:
 	dirname[dirnamelen] = '/';
 	return ret;
-}
-
-static void roolback_path_modification(char *filename)
-{
-	if (filename) {
-		filename--;
-		*filename = '/';
-	}
 }
 
 /**
