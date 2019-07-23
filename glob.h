@@ -169,6 +169,8 @@ struct cifsd_work {
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
+#define CIFS_DEFAULT_IOSIZE	(64 * 1024)
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
