@@ -67,6 +67,17 @@ static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 	i_gid_write(inode, gid);
 }
 
+static void cifsd_vfs_inherit_owner(struct cifsd_work *work,
+				    struct inode *parent_inode,
+				    struct inode *inode)
+{
+	if (!test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_INHERIT_OWNER))
+		return;
+
+	i_uid_write(inode, i_uid_read(parent_inode));
+}
+
 static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 				    struct dentry *dir_dentry,
 				    struct dentry *dentry)
@@ -138,6 +149,8 @@ int cifsd_vfs_create(struct cifsd_work *work,
 	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
 	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
+		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(dentry));
 		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
 	}
 	else
@@ -174,9 +187,12 @@ int cifsd_vfs_mkdir(struct cifsd_work *work,
 
 	mode |= S_IFDIR;
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
-	if (!err)
+	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
-	else
+		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(dentry));
+		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
+	} else
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);

@@ -190,6 +190,7 @@ enum CIFSD_TREE_CONN_STATUS {
 #define CIFSD_SHARE_FLAG_PIPE			(1 << 8)
 #define CIFSD_SHARE_FLAG_HIDE_DOT_FILES		(1 << 9)
 #define CIFSD_SHARE_FLAG_INHERIT_SMACK		(1 << 10)
+#define CIFSD_SHARE_FLAG_INHERIT_OWNER		(1 << 11)
 
 /*
  * Tree connect request flags.
