@@ -187,9 +187,12 @@ int cifsd_vfs_mkdir(struct cifsd_work *work,
 
 	mode |= S_IFDIR;
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
-	if (!err)
+	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
-	else
+		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(dentry));
+		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
+	} else
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);
