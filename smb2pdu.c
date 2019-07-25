@@ -729,13 +729,13 @@ build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
 
 static void
 build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
-	__le16 cipher_id)
+	__le16 cipher_type)
 {
 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(4);
 	pneg_ctxt->Reserved = cpu_to_le32(0);
 	pneg_ctxt->CipherCount = cpu_to_le16(1);
-	pneg_ctxt->Ciphers[0] = cipher_id;
+	pneg_ctxt->Ciphers[0] = cipher_type;
 }
 
 static void
@@ -753,13 +753,13 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 	inc_rfc1001_len(rsp,
 		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
 
-	if (conn->CipherId) {
+	if (conn->cipher_type) {
 		cifsd_debug("assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
 		/* Add 2 to size to round to 8 byte boundary */
 		pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
-			conn->CipherId);
+			conn->cipher_type);
 		rsp->NegotiateContextCount = cpu_to_le16(2);
 		/* Subtract 2 to remove unused Ciphers[1] */
 		inc_rfc1001_len(rsp,
@@ -790,7 +790,7 @@ decode_encrypt_ctxt(struct cifsd_conn *conn,
 	int i;
 	int cph_cnt = le16_to_cpu(pneg_ctxt->CipherCount);
 
-	conn->CipherId = 0;
+	conn->cipher_type = 0;
 
 	if (!encryption_enable)
 		return;
@@ -800,7 +800,7 @@ decode_encrypt_ctxt(struct cifsd_conn *conn,
 			pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_CCM) {
 			cifsd_debug("Cipher ID = 0x%x\n",
 				pneg_ctxt->Ciphers[i]);
-			conn->CipherId = pneg_ctxt->Ciphers[i];
+			conn->cipher_type = pneg_ctxt->Ciphers[i];
 			break;
 		}
 	}
@@ -832,7 +832,7 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 			ContextType = (__le16 *)pneg_ctxt;
 		} else if (*ContextType == SMB2_ENCRYPTION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_ENCRYPTION_CAPABILITIES context\n");
-			if (conn->CipherId)
+			if (conn->cipher_type)
 				break;
 
 			decode_encrypt_ctxt(conn,
@@ -7444,7 +7444,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 		return rc;
 
 	/* fill transform header */
-	fill_transform_hdr(tr_hdr, buf, work->conn->CipherId);
+	fill_transform_hdr(tr_hdr, buf, work->conn->cipher_type);
 
 	iov[0].iov_base = tr_hdr;
 	iov[0].iov_len = sizeof(struct smb2_transform_hdr);

@@ -125,7 +125,7 @@ struct cifsd_conn {
 	/* Identifier for async message */
 	struct cifsd_ida		*async_ida;
 
-	__le16			CipherId;
+	__le16			cipher_type;
 };
 
 struct cifsd_conn_ops {

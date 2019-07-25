@@ -1171,7 +1171,7 @@ static int cifsd_alloc_aead(struct cifsd_conn *conn)
 	struct crypto_aead *tfm;
 
 	if (!conn->secmech.ccmaesencrypt) {
-		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+		if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
 		else
 			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
@@ -1183,7 +1183,7 @@ static int cifsd_alloc_aead(struct cifsd_conn *conn)
 	}
 
 	if (!conn->secmech.ccmaesdecrypt) {
-		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+		if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
 		else
 			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
@@ -1337,7 +1337,7 @@ int cifsd_crypt_message(struct cifsd_conn *conn,
 		goto free_sg;
 	}
 
-	if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+	if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 		memcpy(iv, (char *)tr_hdr->Nonce, SMB3_AES128GCM_NONCE);
 	else {
 		iv[0] = 3;
