@@ -171,17 +171,31 @@ struct cifsd_work {
 
 #define CIFS_DEFAULT_IOSIZE	(64 * 1024)
 
+#ifndef cifsd_pr_fmt
+#ifdef SUBMOD_NAME
+#define cifsd_pr_fmt(fmt)	"kcifsd: " SUBMOD_NAME ": " fmt
+#else
+#define cifsd_pr_fmt(fmt)	"kcifsd: " fmt
+#endif
+#endif
+
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
-			pr_info("kcifsd: %s:%d: " fmt,		\
-			__func__, __LINE__, ##__VA_ARGS__);	\
+			pr_info(cifsd_pr_fmt("%s:%d: " fmt),	\
+				__func__,			\
+				__LINE__,			\
+				##__VA_ARGS__);			\
 	} while (0)
 
-#define cifsd_info(fmt, ...) pr_info("kcifsd: " fmt, ##__VA_ARGS__)
+#define cifsd_info(fmt, ...)					\
+			pr_info(cifsd_pr_fmt(fmt), ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...) pr_err("kcifsd: %s:%d: " fmt,	\
-			__func__, __LINE__, ##__VA_ARGS__)
+#define cifsd_err(fmt, ...) 					\
+			pr_err(cifsd_pr_fmt("%s:%d: " fmt),	\
+				__func__,			\
+				__LINE__,			\
+				##__VA_ARGS__)
 
 static inline unsigned int get_rfc1002_length(void *buf)
 {
