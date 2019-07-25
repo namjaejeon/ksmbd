@@ -6,6 +6,8 @@
 #include <linux/math64.h>
 #include <linux/fs.h>
 #include <linux/posix_acl_xattr.h>
+#include <linux/namei.h>
+#include <linux/statfs.h>
 
 #include "glob.h"
 #include "smb1pdu.h"

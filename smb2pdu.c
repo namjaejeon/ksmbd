@@ -7,6 +7,8 @@
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
 #include <linux/syscalls.h>
+#include <linux/namei.h>
+#include <linux/statfs.h>
 
 #include "glob.h"
 #include "smb2pdu.h"

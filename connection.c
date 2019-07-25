@@ -5,6 +5,8 @@
  */
 
 #include <linux/mutex.h>
+#include <linux/freezer.h>
+#include <linux/module.h>
 
 #include "server.h"
 #include "auth.h"

@@ -7,37 +7,11 @@
 #ifndef __CIFSD_GLOB_H
 #define __CIFSD_GLOB_H
 
-#include <linux/list.h>
-#include <linux/spinlock_types.h>
-#include <linux/slab.h>
-#include <linux/netdevice.h>
-#include <linux/ip.h>
-#include <linux/in.h>
-#include <net/sock.h>
-#include <net/tcp.h>
-#include <net/inet_connection_sock.h>
-#include <net/request_sock.h>
-#include <linux/byteorder/generic.h>
-#include <linux/string.h>
-#include <linux/kthread.h>
-#include <linux/module.h>
-#include <linux/freezer.h>
-#include <linux/workqueue.h>
 #include <linux/ctype.h>
-#include <linux/time.h>
-#include <linux/nls.h>
-#include <linux/unistd.h>
-#include <linux/scatterlist.h>
-#include <linux/statfs.h>
-#include <linux/namei.h>
 #include <linux/version.h>
-#include <linux/fdtable.h>
-#include <linux/vmalloc.h>
-#include <uapi/linux/xattr.h>
-#include <linux/hashtable.h>
+
 #include "unicode.h"
 #include "vfs_cache.h"
-#include <crypto/hash.h>
 #include "smberr.h"
 
 /* @FIXME clean up this code */
