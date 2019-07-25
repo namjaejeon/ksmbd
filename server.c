@@ -12,6 +12,8 @@
 #endif
 #include <linux/workqueue.h>
 #include <linux/sysfs.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
 
 #include "server.h"
 #include "smb_common.h"

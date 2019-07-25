@@ -15,7 +15,7 @@
 #ifndef __ENCRYPT_H__
 #define __ENCRYPT_H__
 
-struct shash_desc;
+#include <crypto/hash.h>
 
 /* crypto security descriptor definition */
 struct sdesc {

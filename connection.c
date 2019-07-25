@@ -5,6 +5,8 @@
  */
 
 #include <linux/mutex.h>
+#include <linux/freezer.h>
+#include <linux/module.h>
 
 #include "server.h"
 #include "auth.h"
@@ -189,8 +191,7 @@ int cifsd_conn_write(struct cifsd_work *work)
 		if (HAS_TRANSFORM_BUF(work))
 			iov[iov_idx].iov_len = RESP_HDR_SIZE(work);
 		else
-			iov[iov_idx].iov_len =
-				get_rfc1002_length(rsp_hdr) + 4;
+			iov[iov_idx].iov_len = get_rfc1002_len(rsp_hdr) + 4;
 		iov[iov_idx].iov_base = rsp_hdr;
 		len += iov[iov_idx++].iov_len;
 	}
@@ -270,7 +271,7 @@ int cifsd_conn_handler_loop(void *p)
 		if (size != sizeof(hdr_buf))
 			break;
 
-		pdu_size = get_rfc1002_length(hdr_buf);
+		pdu_size = get_rfc1002_len(hdr_buf);
 		cifsd_debug("RFC1002 header %u bytes\n", pdu_size);
 
 		/* make sure we have enough to get to SMB header end */

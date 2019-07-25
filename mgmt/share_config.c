@@ -8,6 +8,7 @@
 #include <linux/slab.h>
 #include <linux/rwsem.h>
 #include <linux/parser.h>
+#include <linux/namei.h>
 
 #include "share_config.h"
 #include "../buffer_pool.h"

@@ -16,7 +16,6 @@
 #include <linux/string.h>
 #include <linux/kernel.h>
 #include <linux/random.h>
-#include <crypto/hash.h>
 #include <linux/scatterlist.h>
 
 #include "glob.h" /* FIXME */

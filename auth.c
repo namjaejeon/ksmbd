@@ -11,6 +11,7 @@
 #include <linux/writeback.h>
 #include <linux/uio.h>
 #include <linux/xattr.h>
+#include <crypto/hash.h>
 #include <crypto/aead.h>
 
 #include "auth.h"
