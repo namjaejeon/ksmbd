@@ -776,9 +776,8 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
 			conn->cipher_type);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		/* Subtract 2 to remove unused Ciphers[1] */
 		inc_rfc1001_len(rsp,
-			2 + sizeof(struct smb2_encryption_neg_context) - 2);
+			2 + sizeof(struct smb2_encryption_neg_context));
 		/* Add 2 to size to round to 8 byte boundary */
 		pneg_ctxt += sizeof(struct smb2_encryption_neg_context) + 2;
 	}
@@ -811,7 +810,7 @@ decode_preauth_ctxt(struct cifsd_conn *conn,
 	return err;
 }
 
-static void
+static int
 decode_encrypt_ctxt(struct cifsd_conn *conn,
 	struct smb2_encryption_neg_context *pneg_ctxt)
 {
@@ -821,7 +820,7 @@ decode_encrypt_ctxt(struct cifsd_conn *conn,
 	conn->cipher_type = 0;
 
 	if (!encryption_enable)
-		return;
+		goto out;
 
 	for (i = 0; i < cph_cnt; i++) {
 		if (pneg_ctxt->Ciphers[i] == SMB2_ENCRYPTION_AES128_GCM ||
@@ -832,6 +831,14 @@ decode_encrypt_ctxt(struct cifsd_conn *conn,
 			break;
 		}
 	}
+
+out:
+	/*
+	 * Return encrypt context size in request.
+	 * So need to plus extra number of ciphers size.
+	 */
+	return sizeof(struct smb2_encryption_neg_context) +
+		((cph_cnt - 1) * 2);
 }
 
 static int
@@ -842,6 +849,10 @@ decode_compress_ctxt(struct cifsd_conn *conn,
 
 	conn->compress_algorithm = SMB3_COMPRESS_LZ77;
 
+	/*
+	 * Return compression context size in request.
+	 * So need to plus extra number of CompressionAlgorithms size.
+	 */
 	return sizeof(struct smb2_encryption_neg_context) +
 		((algo_cnt - 1) * 2);
 }
@@ -875,11 +886,10 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 			if (conn->cipher_type)
 				break;
 
-			decode_encrypt_ctxt(conn,
+			ctxt_size = decode_encrypt_ctxt(conn,
 				(struct smb2_encryption_neg_context *)
 				pneg_ctxt);
-			pneg_ctxt +=
-				sizeof(struct smb2_encryption_neg_context) + 2;
+			pneg_ctxt += ctxt_size + 2;
 		} else if (*ContextType == SMB2_COMPRESSION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_COMPRESSION_CAPABILITIES context\n");
 			if (conn->compress_algorithm)
