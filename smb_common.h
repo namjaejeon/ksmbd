@@ -144,7 +144,7 @@ unsigned int cifsd_server_side_copy_max_chunk_size(void);
 unsigned int cifsd_server_side_copy_max_total_size(void);
 bool is_asterisk(char *p);
 
-static inline unsigned int get_rfc1002_length(void *buf)
+static inline unsigned int get_rfc1002_len(void *buf)
 {
 	return be32_to_cpu(*((__be32 *)buf)) & 0xffffff;
 }

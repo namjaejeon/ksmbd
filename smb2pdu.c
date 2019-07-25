@@ -382,8 +382,8 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 		work->compound_sid = le64_to_cpu(rsp->SessionId);
 	}
 
-	len = get_rfc1002_length(RESPONSE_BUF(work)) -
-				 work->next_smb2_rsp_hdr_off;
+	len = get_rfc1002_len(RESPONSE_BUF(work)) -
+			work->next_smb2_rsp_hdr_off;
 
 	next_hdr_offset = le32_to_cpu(req->NextCommand);
 
@@ -455,8 +455,8 @@ bool is_chained_smb2_message(struct cifsd_work *work)
 		 * This is last request in chained command,
 		 * align response to 8 byte
 		 */
-		len = ALIGN(get_rfc1002_length(RESPONSE_BUF(work)), 8);
-		len = len - get_rfc1002_length(RESPONSE_BUF(work));
+		len = ALIGN(get_rfc1002_len(RESPONSE_BUF(work)), 8);
+		len = len - get_rfc1002_len(RESPONSE_BUF(work));
 		if (len) {
 			cifsd_debug("padding len %u\n", len);
 			inc_rfc1001_len(RESPONSE_BUF(work), len);
@@ -3340,7 +3340,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	d_info.wptr = (char *)rsp->Buffer;
 	d_info.rptr = (char *)rsp->Buffer;
 	d_info.out_buf_len = (conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
-				(get_rfc1002_length(rsp_org) + 4));
+				(get_rfc1002_len(rsp_org) + 4));
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
 				le32_to_cpu(req->OutputBufferLength)) -
 				sizeof(struct smb2_query_directory_rsp);
@@ -3580,7 +3580,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	}
 
 	buf_free_len = conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_length(rsp_org) + 4)
+		(get_rfc1002_len(rsp_org) + 4)
 		- sizeof(struct smb2_query_info_rsp);
 
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
@@ -5516,7 +5516,7 @@ int smb2_read(struct cifsd_work *work)
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp_org, 16);
-	work->resp_hdr_sz = get_rfc1002_length(rsp_org) + 4;
+	work->resp_hdr_sz = get_rfc1002_len(rsp_org) + 4;
 	work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(rsp_org, nbytes);
 	cifsd_fd_put(work, fp);
@@ -5569,12 +5569,12 @@ static noinline int smb2_write_pipe(struct cifsd_work *work)
 			(offsetof(struct smb2_write_req, Buffer) - 4)) {
 		data_buf = (char *)&req->Buffer[0];
 	} else {
-		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_length(req)) ||
+		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
 				(le16_to_cpu(req->DataOffset) +
-				 length > get_rfc1002_length(req))) {
+				 length > get_rfc1002_len(req))) {
 			cifsd_err("invalid write data offset %u, smb_len %u\n",
 					le16_to_cpu(req->DataOffset),
-					get_rfc1002_length(req));
+					get_rfc1002_len(req));
 			err = -EINVAL;
 			goto out;
 		}
@@ -5667,12 +5667,12 @@ int smb2_write(struct cifsd_work *work)
 			(offsetof(struct smb2_write_req, Buffer) - 4)) {
 		data_buf = (char *)&req->Buffer[0];
 	} else {
-		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_length(req)) ||
+		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
 				(le16_to_cpu(req->DataOffset) +
-				 length > get_rfc1002_length(req))) {
+				 length > get_rfc1002_len(req))) {
 			cifsd_err("invalid write data offset %u, smb_len %u\n",
 					le16_to_cpu(req->DataOffset),
-					get_rfc1002_length(req));
+					get_rfc1002_len(req));
 			err = -EINVAL;
 			goto out;
 		}
@@ -7320,12 +7320,11 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 			work->next_smb2_rcv_hdr_off);
 
 	if (!work->next_smb2_rsp_hdr_off) {
-		len = get_rfc1002_length(hdr_org);
+		len = get_rfc1002_len(hdr_org);
 		if (req_hdr->NextCommand)
 			len = ALIGN(len, 8);
 	} else {
-		len = get_rfc1002_length(hdr_org) -
-			work->next_smb2_rsp_hdr_off;
+		len = get_rfc1002_len(hdr_org) - work->next_smb2_rsp_hdr_off;
 		len = ALIGN(len, 8);
 	}
 
@@ -7412,7 +7411,7 @@ static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf,
 				__le16 cipher_type)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)old_buf;
-	unsigned int orig_len = get_rfc1002_length(old_buf);
+	unsigned int orig_len = get_rfc1002_len(old_buf);
 
 	memset(tr_hdr, 0, sizeof(struct smb2_transform_hdr));
 	tr_hdr->ProtocolId = SMB2_TRANSFORM_PROTO_NUM;
@@ -7450,7 +7449,7 @@ int smb3_encrypt_resp(struct cifsd_work *work)
 	buf_size += iov[0].iov_len - 4;
 
 	iov[1].iov_base = buf + 4;
-	iov[1].iov_len = get_rfc1002_length(buf);
+	iov[1].iov_len = get_rfc1002_len(buf);
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[1].iov_len = RESP_HDR_SIZE(work) - 4;
 
@@ -7485,7 +7484,7 @@ int smb3_decrypt_req(struct cifsd_work *work)
 	struct cifsd_session *sess;
 	char *buf = REQUEST_BUF(work);
 	struct smb2_hdr *hdr;
-	unsigned int pdu_length = get_rfc1002_length(buf);
+	unsigned int pdu_length = get_rfc1002_len(buf);
 	struct kvec iov[2];
 	unsigned int buf_data_size = pdu_length + 4 -
 		sizeof(struct smb2_transform_hdr);
