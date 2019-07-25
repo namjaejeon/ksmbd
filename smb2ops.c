@@ -300,7 +300,7 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 	if (multi_channel_enable)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
-	if (conn->CipherId)
+	if (conn->cipher_type)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 
 	INIT_LIST_HEAD(&conn->preauth_sess_table);

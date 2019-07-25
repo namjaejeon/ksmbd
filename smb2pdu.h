@@ -223,6 +223,14 @@ struct preauth_integrity_info {
 
 #define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
 #define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
+#define SMB2_COMPRESSION_CAPABILITIES		cpu_to_le16(3)
+
+struct smb2_neg_context {
+	__le16  ContextType;
+	__le16  DataLength;
+	__le32  Reserved;
+	/* Followed by array of data */
+} __packed;
 
 struct smb2_preauth_neg_context {
 	__le16	ContextType; /* 1 */
@@ -243,7 +251,22 @@ struct smb2_encryption_neg_context {
 	__le16	DataLength;
 	__le32	Reserved;
 	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
-	__le16	Ciphers[2]; /* Ciphers[0] since only one used now */
+	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
+} __packed;
+
+#define SMB3_COMPRESS_NONE	cpu_to_le16(0x0000)
+#define SMB3_COMPRESS_LZNT1	cpu_to_le16(0x0001)
+#define SMB3_COMPRESS_LZ77	cpu_to_le16(0x0002)
+#define SMB3_COMPRESS_LZ77_HUFF	cpu_to_le16(0x0003)
+
+struct smb2_compression_capabilities_context {
+	__le16	ContextType; /* 3 */
+	__le16  DataLength;
+	__u32	Reserved;
+	__le16	CompressionAlgorithmCount;
+	__u16	Padding;
+	__u32	Reserved1;
+	__le16	CompressionAlgorithms[1];
 } __packed;
 
 struct smb2_negotiate_rsp {
