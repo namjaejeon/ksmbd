@@ -241,7 +241,7 @@ int cifsd_smb1_check_message(struct cifsd_work *work)
 	char *buf = REQUEST_BUF(work);
 	int command = hdr->Command;
 	__u32 clc_len;  /* calculated length */
-	__u32 len = get_rfc1002_length(buf);
+	__u32 len = get_rfc1002_len(buf);
 	int wc, data_len;
 
 	if (check_smb1_hdr(hdr))

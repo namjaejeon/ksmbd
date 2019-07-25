@@ -9,6 +9,8 @@
 
 #include <linux/file.h>
 #include <linux/fs.h>
+#include <linux/namei.h>
+#include <uapi/linux/xattr.h>
 
 /* CREATION TIME XATTR PREFIX */
 #define CREATION_TIME_PREFIX		"creation.time."

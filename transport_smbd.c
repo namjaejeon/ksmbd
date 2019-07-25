@@ -17,6 +17,8 @@
  *   the GNU General Public License for more details.
  */
 
+#define SUBMOD_NAME	"smbd"
+
 #include <linux/kthread.h>
 #include <linux/rwlock.h>
 #include <linux/list.h>
