@@ -720,15 +720,15 @@ static int crypto_hmacsha256_alloc(struct cifsd_conn *conn,
 	}
 	conn->secmech.sdeschmacsha256->shash.tfm = conn->secmech.hmacsha256;
 
-	rc = crypto_shash_setkey(conn->secmech.hmacsha256,
-				 key,
-				 SMB2_NTLMV2_SESSKEY_SIZE);
+	rc = crypto_shash_setkey(conn->secmech.hmacsha256, key, sz);
 	if (rc)
 		cifsd_debug("hmacsha256 setkey error %d\n", rc);
 	return rc;
 }
 
-static int crypto_cmac_alloc(struct cifsd_conn *conn)
+static int crypto_cmac_alloc(struct cifsd_conn *conn,
+			     char *key,
+			     int sz)
 {
 	int rc;
 	unsigned int size;
@@ -753,7 +753,11 @@ static int crypto_cmac_alloc(struct cifsd_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdesccmacaes->shash.tfm = conn->secmech.cmacaes;
-	return 0;
+
+	rc = crypto_shash_setkey(conn->secmech.cmacaes, key, sz);
+	if (rc)
+		cifsd_debug("cmaces setkey error %d\n", rc);
+	return rc;
 }
 
 static int crypto_sha512_alloc(struct cifsd_conn *conn)
@@ -850,16 +854,9 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 	int rc;
 	int i;
 
-	rc = crypto_cmac_alloc(conn);
+	rc = crypto_cmac_alloc(conn, key, SMB2_CMACAES_SIZE);
 	if (rc) {
 		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_setkey(conn->secmech.cmacaes, key,
-		SMB2_CMACAES_SIZE);
-	if (rc) {
-		cifsd_debug("cmaces update error %d\n", rc);
 		goto out;
 	}
 
@@ -883,7 +880,6 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 		sig);
 	if (rc)
 		cifsd_debug("cmaces generation error %d\n", rc);
-
 out:
 	return rc;
 }
