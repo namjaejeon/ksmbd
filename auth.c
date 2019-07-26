@@ -850,6 +850,12 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 	int rc;
 	int i;
 
+	rc = crypto_cmac_alloc(conn);
+	if (rc) {
+		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
+		goto out;
+	}
+
 	rc = crypto_shash_setkey(conn->secmech.cmacaes, key,
 		SMB2_CMACAES_SIZE);
 	if (rc) {
@@ -912,12 +918,6 @@ static int generate_key(struct cifsd_session *sess, struct kvec label,
 	rc = crypto_shash_init(&sess->conn->secmech.sdeschmacsha256->shash);
 	if (rc) {
 		cifsd_debug("hmacsha256 init error %d\n", rc);
-		goto smb3signkey_ret;
-	}
-
-	rc = crypto_cmac_alloc(sess->conn);
-	if (rc) {
-		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
