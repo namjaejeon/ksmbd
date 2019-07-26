@@ -6444,13 +6444,13 @@ static unsigned int idev_ipv4_address(struct in_device *idev)
 		if (ifa->ifa_flags & IFA_F_SECONDARY)
 			continue;
 
-		addr = be32_to_cpu(ifa->ifa_address);
+		addr = ifa->ifa_address;
 		break;
 	}
 	rcu_read_unlock();
 #else
 	for_primary_ifa(idev) {
-		addr = be32_to_cpu(ifa->ifa_address);
+		addr = ifa->ifa_address;
 		break;
 	} endfor_ifa(idev);
 #endif
@@ -6676,7 +6676,7 @@ int smb2_ioctl(struct cifsd_work *work)
 				if (!idev)
 					continue;
 				sockaddr_storage->addr4.IPv4address =
-					cpu_to_le32(idev_ipv4_address(idev));
+					idev_ipv4_address(idev);
 			} else {
 				struct inet6_dev *idev6;
 				struct inet6_ifaddr *ifa;
