@@ -127,6 +127,7 @@ struct cifsd_conn {
 
 	__le16				cipher_type;
 	__le16				compress_algorithm;
+	bool				posix_ext_supported;
 };
 
 struct cifsd_conn_ops {
