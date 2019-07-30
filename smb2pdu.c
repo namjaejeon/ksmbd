@@ -932,6 +932,13 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 				(struct smb2_compression_capabilities_context *)
 				pneg_ctxt);
 			pneg_ctxt += ctxt_size + 2;
+		} else if (*ContextType == SMB2_NETNAME_NEGOTIATE_CONTEXT_ID) {
+			cifsd_debug("deassemble SMB2_NETNAME_NEGOTIATE_CONTEXT_ID context\n");
+			ctxt_size = sizeof(struct smb2_netname_neg_context);
+			ctxt_size += DIV_ROUND_UP(
+				le16_to_cpu(((struct smb2_netname_neg_context *)
+					pneg_ctxt)->DataLength), 8) * 8;
+			pneg_ctxt += ctxt_size;
 		} else if (*ContextType == SMB2_POSIX_EXTENSIONS_AVAILABLE) {
 			cifsd_debug("deassemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
 			conn->posix_ext_supported = true;
