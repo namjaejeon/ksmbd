@@ -753,6 +753,30 @@ build_compression_ctxt(struct smb2_compression_capabilities_context *pneg_ctxt,
 }
 
 static void
+build_posix_ctxt(struct smb2_posix_neg_context *pneg_ctxt)
+{
+	pneg_ctxt->ContextType = SMB2_POSIX_EXTENSIONS_AVAILABLE;
+	pneg_ctxt->DataLength = cpu_to_le16(POSIX_CTXT_DATA_LEN);
+	/* SMB2_CREATE_TAG_POSIX is "0x93AD25509CB411E7B42383DE968BCD7C" */
+	pneg_ctxt->Name[0] = 0x93;
+	pneg_ctxt->Name[1] = 0xAD;
+	pneg_ctxt->Name[2] = 0x25;
+	pneg_ctxt->Name[3] = 0x50;
+	pneg_ctxt->Name[4] = 0x9C;
+	pneg_ctxt->Name[5] = 0xB4;
+	pneg_ctxt->Name[6] = 0x11;
+	pneg_ctxt->Name[7] = 0xE7;
+	pneg_ctxt->Name[8] = 0xB4;
+	pneg_ctxt->Name[9] = 0x23;
+	pneg_ctxt->Name[10] = 0x83;
+	pneg_ctxt->Name[11] = 0xDE;
+	pneg_ctxt->Name[12] = 0x96;
+	pneg_ctxt->Name[13] = 0x8B;
+	pneg_ctxt->Name[14] = 0xCD;
+	pneg_ctxt->Name[15] = 0x7C;
+}
+
+static void
 assemble_neg_contexts(struct cifsd_conn *conn,
 	struct smb2_negotiate_rsp *rsp)
 {
@@ -791,6 +815,15 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
 		inc_rfc1001_len(rsp, 2 +
 			sizeof(struct smb2_compression_capabilities_context));
+		pneg_ctxt += sizeof(struct smb2_compression_capabilities_context) + 2;
+	}
+
+	if (conn->posix_ext_supported) {
+		cifsd_debug("assemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
+		build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
+		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
+		inc_rfc1001_len(rsp, 2 +
+			sizeof(struct smb2_posix_neg_context));
 	}
 }
 
@@ -899,6 +932,10 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 				(struct smb2_compression_capabilities_context *)
 				pneg_ctxt);
 			pneg_ctxt += ctxt_size + 2;
+		} else if (*ContextType == SMB2_POSIX_EXTENSIONS_AVAILABLE) {
+			cifsd_debug("deassemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
+			conn->posix_ext_supported = true;
+			pneg_ctxt += sizeof(struct smb2_posix_neg_context) + 2;
 		}
 		ContextType = (__le16 *)pneg_ctxt;
 
