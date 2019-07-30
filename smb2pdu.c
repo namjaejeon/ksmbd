@@ -6607,7 +6607,8 @@ int smb2_ioctl(struct cifsd_work *work)
 		struct network_interface_info_ioctl_rsp *nii_rsp = NULL;
 		struct net_device *netdev;
 		struct sockaddr_storage_rsp *sockaddr_storage;
-		unsigned int speed, flags;
+		unsigned int flags;
+		unsigned long long speed;
 
 		rtnl_lock();
 		for_each_netdev(&init_net, netdev) {
@@ -6653,12 +6654,15 @@ int smb2_ioctl(struct cifsd_work *work)
 			}
 #endif
 			else {
-				cifsd_err("%s speed is unknown, defaulting to 100\n",
-					netdev->name);
-				speed = 1000;
+				cifsd_err("%s %s %s\n",
+					  netdev->name,
+					  "speed is unknown,",
+					  "defaulting to 1Gb/sec\n");
+				speed = SPEED_1000;
 			}
 
-			nii_rsp->LinkSpeed = cpu_to_le64(speed * 1000000);
+			speed *= 1000000;
+			nii_rsp->LinkSpeed = cpu_to_le64(speed);
 
 			sockaddr_storage = (struct sockaddr_storage_rsp *)
 						nii_rsp->SockAddr_Storage;
