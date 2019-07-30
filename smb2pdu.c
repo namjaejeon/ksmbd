@@ -6457,6 +6457,126 @@ static unsigned int idev_ipv4_address(struct in_device *idev)
 	return addr;
 }
 
+static int query_iface_info_ioctl(struct cifsd_conn *conn,
+				  struct smb2_ioctl_req *req,
+				  struct smb2_ioctl_rsp *rsp)
+{
+	struct network_interface_info_ioctl_rsp *nii_rsp = NULL;
+	int nbytes = 0;
+	struct net_device *netdev;
+	struct sockaddr_storage_rsp *sockaddr_storage;
+	unsigned int flags;
+	unsigned long long speed;
+
+	rtnl_lock();
+	for_each_netdev(&init_net, netdev) {
+		if (unlikely(!netdev)) {
+			rtnl_unlock();
+			return -EINVAL;
+		}
+
+		if (netdev->type == ARPHRD_LOOPBACK)
+			continue;
+
+		flags = dev_get_flags(netdev);
+		if (!(flags & IFF_RUNNING))
+			continue;
+
+		nii_rsp = (struct network_interface_info_ioctl_rsp *)
+				&rsp->Buffer[nbytes];
+		nii_rsp->IfIndex = cpu_to_le32(netdev->ifindex);
+
+		/* TODO: specify the RDMA capabilities */
+		if (netdev->num_tx_queues > 1)
+			nii_rsp->Capability = cpu_to_le32(RSS_CAPABLE);
+		else
+			nii_rsp->Capability = 0;
+
+		nii_rsp->Next = cpu_to_le32(152);
+		nii_rsp->Reserved = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
+		if (netdev->ethtool_ops->get_link_ksettings) {
+			struct ethtool_link_ksettings cmd;
+
+			netdev->ethtool_ops->get_link_ksettings(netdev, &cmd);
+			speed = cmd.base.speed;
+		}
+#else
+		if (netdev->ethtool_ops->get_settings) {
+			struct ethtool_cmd cmd;
+
+			netdev->ethtool_ops->get_settings(netdev, &cmd);
+			speed = cmd.speed;
+		}
+#endif
+		else {
+			cifsd_err("%s %s %s\n",
+				  netdev->name,
+				  "speed is unknown,",
+				  "defaulting to 1Gb/sec\n");
+			speed = SPEED_1000;
+		}
+
+		speed *= 1000000;
+		nii_rsp->LinkSpeed = cpu_to_le64(speed);
+
+		sockaddr_storage = (struct sockaddr_storage_rsp *)
+					nii_rsp->SockAddr_Storage;
+		memset(sockaddr_storage, 0, 128);
+
+		if (conn->peer_addr.ss_family == PF_INET) {
+			struct in_device *idev;
+
+			sockaddr_storage->Family = cpu_to_le16(INTERNETWORK);
+			sockaddr_storage->addr4.Port = 0;
+
+			idev = __in_dev_get_rtnl(netdev);
+			if (!idev)
+				continue;
+			sockaddr_storage->addr4.IPv4address =
+						idev_ipv4_address(idev);
+		} else {
+			struct inet6_dev *idev6;
+			struct inet6_ifaddr *ifa;
+			__u8 *ipv6_addr = sockaddr_storage->addr6.IPv6address;
+
+			sockaddr_storage->Family = cpu_to_le16(INTERNETWORKV6);
+			sockaddr_storage->addr6.Port = 0;
+			sockaddr_storage->addr6.FlowInfo = 0;
+
+			idev6 = __in6_dev_get(netdev);
+			if (!idev6)
+				continue;
+
+			list_for_each_entry(ifa, &idev6->addr_list, if_list) {
+				if (ifa->flags & (IFA_F_TENTATIVE |
+							IFA_F_DEPRECATED))
+					continue;
+				memcpy(ipv6_addr, ifa->addr.s6_addr, 16);
+				break;
+			}
+			sockaddr_storage->addr6.ScopeId = 0;
+		}
+
+		nbytes += sizeof(struct network_interface_info_ioctl_rsp);
+	}
+	rtnl_unlock();
+
+	/* zero if this is last one */
+	if (nii_rsp)
+		nii_rsp->Next = 0;
+
+	if (!nbytes) {
+		rsp->hdr.Status = STATUS_BUFFER_TOO_SMALL;
+		return -EINVAL;
+	}
+
+	rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
+	rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
+	return nbytes;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6564,8 +6684,7 @@ int smb2_ioctl(struct cifsd_work *work)
 				goto out;
 			}
 
-			memcpy((char *)rsp->Buffer, rpc_resp->payload,
-					nbytes);
+			memcpy((char *)rsp->Buffer, rpc_resp->payload, nbytes);
 			cifsd_free(rpc_resp);
 		}
 		break;
@@ -6604,123 +6723,9 @@ int smb2_ioctl(struct cifsd_work *work)
 	}
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
 	{
-		struct network_interface_info_ioctl_rsp *nii_rsp = NULL;
-		struct net_device *netdev;
-		struct sockaddr_storage_rsp *sockaddr_storage;
-		unsigned int speed, flags;
-
-		rtnl_lock();
-		for_each_netdev(&init_net, netdev) {
-			if (unlikely(!netdev)) {
-				rtnl_unlock();
-				goto out;
-			}
-
-			if (netdev->type == ARPHRD_LOOPBACK)
-				continue;
-
-			flags = dev_get_flags(netdev);
-			if (!(flags & IFF_RUNNING))
-				continue;
-
-			nii_rsp = (struct network_interface_info_ioctl_rsp *)
-					&rsp->Buffer[nbytes];
-			nii_rsp->IfIndex = cpu_to_le32(netdev->ifindex);
-
-			/* TODO: specify the RDMA capabilities */
-			if (netdev->num_tx_queues > 1)
-				nii_rsp->Capability = cpu_to_le32(RSS_CAPABLE);
-			else
-				nii_rsp->Capability = 0;
-
-			nii_rsp->Next = cpu_to_le32(152);
-			nii_rsp->Reserved = 0;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
-			if (netdev->ethtool_ops->get_link_ksettings) {
-				struct ethtool_link_ksettings cmd;
-
-				netdev->ethtool_ops->get_link_ksettings(netdev,
-					&cmd);
-				speed = cmd.base.speed;
-			}
-#else
-			if (netdev->ethtool_ops->get_settings) {
-				struct ethtool_cmd cmd;
-
-				netdev->ethtool_ops->get_settings(netdev, &cmd);
-				speed = cmd.speed;
-			}
-#endif
-			else {
-				cifsd_err("%s speed is unknown, defaulting to 100\n",
-					netdev->name);
-				speed = 1000;
-			}
-
-			nii_rsp->LinkSpeed = cpu_to_le64(speed * 1000000);
-
-			sockaddr_storage = (struct sockaddr_storage_rsp *)
-						nii_rsp->SockAddr_Storage;
-
-			memset(sockaddr_storage, 0, 128);
-
-			if (conn->peer_addr.ss_family == PF_INET) {
-				struct in_device *idev;
-
-				sockaddr_storage->Family =
-					cpu_to_le16(INTERNETWORK);
-				sockaddr_storage->addr4.Port = 0;
-
-				idev = __in_dev_get_rtnl(netdev);
-				if (!idev)
-					continue;
-				sockaddr_storage->addr4.IPv4address =
-					idev_ipv4_address(idev);
-			} else {
-				struct inet6_dev *idev6;
-				struct inet6_ifaddr *ifa;
-				__u8 *ipv6_addr =
-					sockaddr_storage->addr6.IPv6address;
-
-				sockaddr_storage->Family =
-					cpu_to_le16(INTERNETWORKV6);
-				sockaddr_storage->addr6.Port = 0;
-				sockaddr_storage->addr6.FlowInfo = 0;
-
-				idev6 = __in6_dev_get(netdev);
-				if (!idev6)
-					continue;
-
-				list_for_each_entry(ifa, &idev6->addr_list,
-						if_list) {
-					if (ifa->flags & (IFA_F_TENTATIVE |
-							IFA_F_DEPRECATED))
-						continue;
-					memcpy(ipv6_addr, ifa->addr.s6_addr,
-						16);
-					break;
-				}
-				sockaddr_storage->addr6.ScopeId = 0;
-			}
-
-			nbytes +=
-				sizeof(struct network_interface_info_ioctl_rsp);
-		}
-		rtnl_unlock();
-
-		/* zero if this is last one */
-		if (nii_rsp)
-			nii_rsp->Next = 0;
-
-		if (!nbytes) {
-			rsp->hdr.Status = STATUS_BUFFER_TOO_SMALL;
+		nbytes = query_iface_info_ioctl(conn, req, rsp);
+		if (nbytes < 0)
 			goto out;
-		}
-
-		rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
-		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
-
 		break;
 	}
 	case FSCTL_REQUEST_RESUME_KEY:
