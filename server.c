@@ -343,6 +343,7 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
+	cifsd_ipc_soft_reset();
 	cifsd_conn_transport_destroy();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
