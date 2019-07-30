@@ -912,8 +912,8 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 
 			status = decode_preauth_ctxt(conn,
 				(struct smb2_preauth_neg_context *)pneg_ctxt);
-			pneg_ctxt +=
-				sizeof(struct smb2_preauth_neg_context) + 2;
+			pneg_ctxt += DIV_ROUND_UP(
+				sizeof(struct smb2_preauth_neg_context), 8) * 8;
 		} else if (*ContextType == SMB2_ENCRYPTION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_ENCRYPTION_CAPABILITIES context\n");
 			if (conn->cipher_type)
@@ -922,7 +922,7 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 			ctxt_size = decode_encrypt_ctxt(conn,
 				(struct smb2_encryption_neg_context *)
 				pneg_ctxt);
-			pneg_ctxt += ctxt_size + 2;
+			pneg_ctxt += DIV_ROUND_UP(ctxt_size, 8) * 8;
 		} else if (*ContextType == SMB2_COMPRESSION_CAPABILITIES) {
 			cifsd_debug("deassemble SMB2_COMPRESSION_CAPABILITIES context\n");
 			if (conn->compress_algorithm)
@@ -931,7 +931,7 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 			ctxt_size = decode_compress_ctxt(conn,
 				(struct smb2_compression_capabilities_context *)
 				pneg_ctxt);
-			pneg_ctxt += ctxt_size + 2;
+			pneg_ctxt += DIV_ROUND_UP(ctxt_size, 8) * 8;
 		} else if (*ContextType == SMB2_NETNAME_NEGOTIATE_CONTEXT_ID) {
 			cifsd_debug("deassemble SMB2_NETNAME_NEGOTIATE_CONTEXT_ID context\n");
 			ctxt_size = sizeof(struct smb2_netname_neg_context);
@@ -942,7 +942,8 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 		} else if (*ContextType == SMB2_POSIX_EXTENSIONS_AVAILABLE) {
 			cifsd_debug("deassemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
 			conn->posix_ext_supported = true;
-			pneg_ctxt += sizeof(struct smb2_posix_neg_context) + 2;
+			pneg_ctxt += DIV_ROUND_UP(
+				sizeof(struct smb2_posix_neg_context), 8) * 8;
 		}
 		ContextType = (__le16 *)pneg_ctxt;
 
