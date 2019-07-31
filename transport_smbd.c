@@ -1713,6 +1713,7 @@ int cifsd_smbd_destroy(void)
 {
 	if (smbd_listener.cm_id)
 		rdma_destroy_id(smbd_listener.cm_id);
+	smbd_listener.cm_id = NULL;
 	return 0;
 }
 

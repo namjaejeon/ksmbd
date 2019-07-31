@@ -798,6 +798,13 @@ void cifsd_ipc_release(void)
 	genl_unregister_family(&cifsd_genl_family);
 }
 
+void cifsd_ipc_soft_reset(void)
+{
+	mutex_lock(&startup_lock);
+	cifsd_tools_pid = 0;
+	mutex_unlock(&startup_lock);
+}
+
 int cifsd_ipc_init(void)
 {
 	int ret;
