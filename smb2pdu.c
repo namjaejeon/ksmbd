@@ -2241,7 +2241,7 @@ static int smb2_creat(struct cifsd_work *work,
 	} else {
 		cifsd_debug("creating regular file\n");
 
-		mode = share_config_create_mask(share);
+		mode = share_config_create_mode(share);
 		rc = cifsd_vfs_create(work, name, mode);
 		if (rc) {
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;

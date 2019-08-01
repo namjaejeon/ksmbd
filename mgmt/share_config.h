@@ -27,13 +27,16 @@ struct cifsd_share_config {
 	struct work_struct	free_work;
 	unsigned short		create_mask;
 	unsigned short		directory_mask;
+	unsigned short		force_create_mode;
 	unsigned short		force_uid;
 	unsigned short		force_gid;
 };
 
-static inline int share_config_create_mask(struct cifsd_share_config *share)
+static inline int share_config_create_mode(struct cifsd_share_config *share)
 {
-	return share->create_mask;
+	if (!share->force_create_mode)
+		return share->create_mask;
+	return share->force_create_mode & share->create_mask;
 }
 
 static inline int share_config_directory_mask(struct cifsd_share_config *share)
