@@ -2232,7 +2232,7 @@ static int smb2_creat(struct cifsd_work *work,
 	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 		cifsd_debug("creating directory\n");
 
-		mode = share_config_directory_mask(share);
+		mode = share_config_directory_mode(share);
 		rc = cifsd_vfs_mkdir(work, name, mode);
 		if (rc) {
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;

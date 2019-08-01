@@ -72,6 +72,7 @@ struct cifsd_share_config_response {
 	__u16	create_mask;
 	__u16	directory_mask;
 	__u16	force_create_mode;
+	__u16	force_directory_mode;
 	__u16	force_uid;
 	__u16	force_gid;
 	__u32	veto_list_sz;

@@ -28,6 +28,7 @@ struct cifsd_share_config {
 	unsigned short		create_mask;
 	unsigned short		directory_mask;
 	unsigned short		force_create_mode;
+	unsigned short		force_directory_mode;
 	unsigned short		force_uid;
 	unsigned short		force_gid;
 };
@@ -39,9 +40,11 @@ static inline int share_config_create_mode(struct cifsd_share_config *share)
 	return share->force_create_mode & share->create_mask;
 }
 
-static inline int share_config_directory_mask(struct cifsd_share_config *share)
+static inline int share_config_directory_mode(struct cifsd_share_config *share)
 {
-	return share->directory_mask;
+	if (!share->force_directory_mode)
+		return share->directory_mask;
+	return share->force_directory_mode & share->directory_mask;
 }
 
 static inline int test_share_config_flag(struct cifsd_share_config *share,

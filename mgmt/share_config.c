@@ -154,6 +154,7 @@ static struct cifsd_share_config *share_config_request(char *name)
 		share->create_mask = resp->create_mask;
 		share->directory_mask = resp->directory_mask;
 		share->force_create_mode = resp->force_create_mode;
+		share->force_directory_mode = resp->force_directory_mode;
 		share->force_uid = resp->force_uid;
 		share->force_gid = resp->force_gid;
 		ret = parse_veto_list(share,
