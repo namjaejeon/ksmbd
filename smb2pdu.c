@@ -2210,8 +2210,7 @@ static int smb2_creat(struct cifsd_work *work,
 		      char *name,
 		      int open_flags,
 		      umode_t posix_mode,
-		      struct smb2_create_req *req,
-		      struct smb2_create_rsp *rsp)
+		      bool is_dir)
 {
 	struct cifsd_tree_connect *tcon = work->tcon;
 	struct cifsd_share_config *share = tcon->share_conf;
@@ -2219,45 +2218,39 @@ static int smb2_creat(struct cifsd_work *work,
 	int rc;
 
 	if (!(open_flags & O_CREAT)) {
+		smb2_set_err_rsp(work);
 		if (test_tree_conn_flag(tcon,
 					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
 			cifsd_debug("File does not exist\n");
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
-		} else {
-			cifsd_debug("User does not have write permission\n");
-			rsp->hdr.Status = STATUS_ACCESS_DENIED;
+			return -EBADF;
 		}
-		smb2_set_err_rsp(work);
-		return -ENOENT;
+
+		cifsd_debug("User does not have write permission\n");
+		return -EACCES;
 	}
 
 	cifsd_debug("file does not exist, so creating\n");
-	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
+	if (is_dir == true) {
 		cifsd_debug("creating directory\n");
 
 		mode = share_config_directory_mode(share, posix_mode);
 		rc = cifsd_vfs_mkdir(work, name, mode);
-		if (rc) {
-			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
-			return rc;
-		}
+		if (rc)
+			return -EIO;
 	} else {
 		cifsd_debug("creating regular file\n");
 
 		mode = share_config_create_mode(share, posix_mode);
 		rc = cifsd_vfs_create(work, name, mode);
-		if (rc) {
-			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
-			return rc;
-		}
+		if (rc)
+			return -EIO;
 	}
 
 	rc = cifsd_vfs_kern_path(name, 0, path, 0);
 	if (rc) {
 		cifsd_err("cannot get linux path (%s), err = %d\n",
 				name, rc);
-		rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
-		return rc;
+		return -EIO;
 	}
 	return 0;
 }
@@ -2607,11 +2600,9 @@ int smb2_open(struct cifsd_work *work)
 	/*create file if not present */
 	if (!file_present) {
 		rc = smb2_creat(work, &path, name, open_flags, posix_mode,
-			req, rsp);
-		if (rc != 0) {
-			kfree(name);
-			return (rc == -ENOENT) ? 0 : rc;
-		}
+			req->CreateOptions & FILE_DIRECTORY_FILE_LE);
+		if (rc)
+			goto err_out;
 
 		created = true;
 		if (ea_buf) {
