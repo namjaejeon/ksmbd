@@ -33,17 +33,28 @@ struct cifsd_share_config {
 	unsigned short		force_gid;
 };
 
-static inline int share_config_create_mode(struct cifsd_share_config *share)
+static inline int share_config_create_mode(struct cifsd_share_config *share,
+	umode_t posix_mode)
 {
-	if (!share->force_create_mode)
-		return share->create_mask;
+	if (!share->force_create_mode) {
+		if (!posix_mode)
+			return share->create_mask;
+		else
+			return posix_mode & share->create_mask;
+	}
 	return share->force_create_mode & share->create_mask;
 }
 
-static inline int share_config_directory_mode(struct cifsd_share_config *share)
+static inline int share_config_directory_mode(struct cifsd_share_config *share,
+	umode_t posix_mode)
 {
-	if (!share->force_directory_mode)
-		return share->directory_mask;
+	if (!share->force_directory_mode) {
+		if (!posix_mode)
+			return share->directory_mask;
+		else
+			return posix_mode & share->directory_mask;
+	}
+
 	return share->force_directory_mode & share->directory_mask;
 }
 

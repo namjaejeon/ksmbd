@@ -511,6 +511,7 @@ struct smb2_tree_disconnect_rsp {
 #define SMB2_CREATE_APP_INSTANCE_ID     "\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74"
  #define SMB2_CREATE_APP_INSTANCE_VERSION	"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10"
 #define SVHDX_OPEN_DEVICE_CONTEXT       0x83CE6F1AD851E0986E34401CC9BCFCE9
+#define SMB2_CREATE_TAG_POSIX		"\x93\xAD\x25\x50\x9C\xB4\x11\xE7\xB4\x23\x83\xDE\x96\x8B\xCD\x7C"
 
 struct smb2_create_req {
 	struct smb2_hdr hdr;
@@ -621,6 +622,13 @@ struct create_alloc_size_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	__le64 AllocationSize;
+} __packed;
+
+struct create_posix {
+	struct create_context ccontext;
+	__u8    Name[16];
+	__le32  Mode;
+	__u32   Reserved;
 } __packed;
 
 struct create_durable_rsp {

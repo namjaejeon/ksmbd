@@ -1593,6 +1593,8 @@ int smb2_tree_connect(struct cifsd_work *work)
 	}
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
+	if (conn->posix_ext_supported)
+		status.tree_conn->posix_extensions = true;
 
 out_err1:
 	rsp->StructureSize = cpu_to_le16(16);
@@ -2207,6 +2209,7 @@ static int smb2_creat(struct cifsd_work *work,
 		      struct path *path,
 		      char *name,
 		      int open_flags,
+		      umode_t posix_mode,
 		      struct smb2_create_req *req,
 		      struct smb2_create_rsp *rsp)
 {
@@ -2232,7 +2235,7 @@ static int smb2_creat(struct cifsd_work *work,
 	if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 		cifsd_debug("creating directory\n");
 
-		mode = share_config_directory_mode(share);
+		mode = share_config_directory_mode(share, posix_mode);
 		rc = cifsd_vfs_mkdir(work, name, mode);
 		if (rc) {
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
@@ -2241,7 +2244,7 @@ static int smb2_creat(struct cifsd_work *work,
 	} else {
 		cifsd_debug("creating regular file\n");
 
-		mode = share_config_create_mode(share);
+		mode = share_config_create_mode(share, posix_mode);
 		rc = cifsd_vfs_create(work, name, mode);
 		if (rc) {
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
@@ -2294,6 +2297,7 @@ int smb2_open(struct cifsd_work *work)
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
 	u64 time;
+	umode_t posix_mode = 0;
 
 	req = (struct smb2_create_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_create_rsp *)RESPONSE_BUF(work);
@@ -2499,6 +2503,23 @@ int smb2_open(struct cifsd_work *work)
 			rc = -EBADF;
 			goto err_out1;
 		}
+
+		if (tcon->posix_extensions) {
+			context = smb2_find_context_vals(req,
+				SMB2_CREATE_TAG_POSIX);
+			if (IS_ERR(context)) {
+				rc = check_context_err(context,
+						SMB2_CREATE_TAG_POSIX);
+				if (rc < 0)
+					goto err_out1;
+			} else {
+				struct create_posix *posix =
+					(struct create_posix *)context;
+				cifsd_debug("get posix context\n");
+
+				posix_mode = le32_to_cpu(posix->Mode);
+			}
+		}
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
@@ -2585,7 +2606,8 @@ int smb2_open(struct cifsd_work *work)
 
 	/*create file if not present */
 	if (!file_present) {
-		rc = smb2_creat(work, &path, name, open_flags, req, rsp);
+		rc = smb2_creat(work, &path, name, open_flags, posix_mode,
+			req, rsp);
 		if (rc != 0) {
 			kfree(name);
 			return (rc == -ENOENT) ? 0 : rc;

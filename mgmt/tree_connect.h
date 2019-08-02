@@ -23,6 +23,7 @@ struct cifsd_tree_connect {
 	struct list_head		list;
 
 	int				maximal_access;
+	bool				posix_extensions;
 };
 
 struct cifsd_tree_conn_status {
