@@ -53,6 +53,4 @@ static inline int cifsd_server_configurable(void)
 
 int server_queue_ctrl_init_work(void);
 int server_queue_ctrl_reset_work(void);
-
-int cifsd_server_daemon_heartbeat(void);
 #endif /* __SERVER_H__ */
