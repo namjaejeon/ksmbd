@@ -13,8 +13,8 @@
 #define CIFSD_GENL_NAME		"CIFSD_GENL"
 #define CIFSD_GENL_VERSION		0x01
 
-#ifndef __align
-#define __align		__attribute__((__aligned__(4)))
+#ifndef ____cifsd_align
+#define ____cifsd_align		__attribute__((__aligned__(4)))
 #endif
 
 #define CIFSD_REQ_MAX_ACCOUNT_NAME_SZ	48
@@ -23,7 +23,7 @@
 
 struct cifsd_heartbeat {
 	__u32	handle;
-} __align;
+} ____cifsd_align;
 
 struct cifsd_startup_request {
 	__s32	signing;
@@ -38,18 +38,18 @@ struct cifsd_startup_request {
 	__u32	file_max;
 	__u32	ifc_list_sz;
 	__s8	____payload[0];
-} __align;
+} ____cifsd_align;
 
 #define CIFSD_STARTUP_CONFIG_INTERFACES(s)	((s)->____payload)
 
 struct cifsd_shutdown_request {
 	__s32	reserved;
-} __align;
+} ____cifsd_align;
 
 struct cifsd_login_request {
 	__u32	handle;
 	__s8	account[CIFSD_REQ_MAX_ACCOUNT_NAME_SZ];
-} __align;
+} ____cifsd_align;
 
 struct cifsd_login_response {
 	__u32	handle;
@@ -59,12 +59,12 @@ struct cifsd_login_response {
 	__u16	status;
 	__u16	hash_sz;
 	__s8	hash[CIFSD_REQ_MAX_HASH_SZ];
-} __align;
+} ____cifsd_align;
 
 struct cifsd_share_config_request {
 	__u32	handle;
 	__s8	share_name[CIFSD_REQ_MAX_SHARE_NAME];
-} __align;
+} ____cifsd_align;
 
 struct cifsd_share_config_response {
 	__u32	handle;
@@ -77,7 +77,7 @@ struct cifsd_share_config_response {
 	__u16	force_gid;
 	__u32	veto_list_sz;
 	__s8	____payload[0];
-} __align;
+} ____cifsd_align;
 
 #define CIFSD_SHARE_CONFIG_VETO_LIST(s)	((s)->____payload)
 #define CIFSD_SHARE_CONFIG_PATH(s)				\
@@ -97,22 +97,22 @@ struct cifsd_tree_connect_request {
 	__s8	account[CIFSD_REQ_MAX_ACCOUNT_NAME_SZ];
 	__s8	share[CIFSD_REQ_MAX_SHARE_NAME];
 	__s8	peer_addr[64];
-} __align;
+} ____cifsd_align;
 
 struct cifsd_tree_connect_response {
 	__u32	handle;
 	__u16	status;
 	__u16	connection_flags;
-} __align;
+} ____cifsd_align;
 
 struct cifsd_tree_disconnect_request {
 	__u64	session_id;
 	__u64	connect_id;
-} __align;
+} ____cifsd_align;
 
 struct cifsd_logout_request {
 	__s8	account[CIFSD_REQ_MAX_ACCOUNT_NAME_SZ];
-} __align;
+} ____cifsd_align;
 
 struct cifsd_rpc_command {
 	__u32	handle;
