@@ -119,7 +119,7 @@ struct cifsd_rpc_command {
 	__u32	flags;
 	__u32	payload_sz;
 	__u8	payload[0];
-};
+} ____cifsd_align;
 
 /*
  * This also used as NETLINK attribute type value.
