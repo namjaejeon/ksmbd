@@ -11,6 +11,7 @@
 #include <linux/writeback.h>
 #include <linux/uio.h>
 #include <linux/xattr.h>
+#include <crypto/hash.h>
 #include <crypto/aead.h>
 
 #include "auth.h"
@@ -691,7 +692,9 @@ int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 }
 #endif
 
-static int crypto_hmacsha256_alloc(struct cifsd_conn *conn)
+static int crypto_hmacsha256_alloc(struct cifsd_conn *conn,
+				   char *key,
+				   int sz)
 {
 	int rc;
 	unsigned int size;
@@ -716,10 +719,16 @@ static int crypto_hmacsha256_alloc(struct cifsd_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdeschmacsha256->shash.tfm = conn->secmech.hmacsha256;
-	return 0;
+
+	rc = crypto_shash_setkey(conn->secmech.hmacsha256, key, sz);
+	if (rc)
+		cifsd_debug("hmacsha256 setkey error %d\n", rc);
+	return rc;
 }
 
-static int crypto_cmac_alloc(struct cifsd_conn *conn)
+static int crypto_cmac_alloc(struct cifsd_conn *conn,
+			     char *key,
+			     int sz)
 {
 	int rc;
 	unsigned int size;
@@ -744,7 +753,11 @@ static int crypto_cmac_alloc(struct cifsd_conn *conn)
 		return -ENOMEM;
 	}
 	conn->secmech.sdesccmacaes->shash.tfm = conn->secmech.cmacaes;
-	return 0;
+
+	rc = crypto_shash_setkey(conn->secmech.cmacaes, key, sz);
+	if (rc)
+		cifsd_debug("cmaces setkey error %d\n", rc);
+	return rc;
 }
 
 static int crypto_sha512_alloc(struct cifsd_conn *conn)
@@ -794,16 +807,9 @@ int cifsd_sign_smb2_pdu(struct cifsd_conn *conn,
 	int rc;
 	int i;
 
-	rc = crypto_hmacsha256_alloc(conn);
+	rc = crypto_hmacsha256_alloc(conn, key, SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
 		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
-		goto out;
-	}
-
-	rc = crypto_shash_setkey(conn->secmech.hmacsha256, key,
-		SMB2_NTLMV2_SESSKEY_SIZE);
-	if (rc) {
-		cifsd_debug("hmacsha256 update error %d\n", rc);
 		goto out;
 	}
 
@@ -823,11 +829,9 @@ int cifsd_sign_smb2_pdu(struct cifsd_conn *conn,
 		}
 	}
 
-	rc = crypto_shash_final(&conn->secmech.sdeschmacsha256->shash,
-		sig);
+	rc = crypto_shash_final(&conn->secmech.sdeschmacsha256->shash, sig);
 	if (rc)
 		cifsd_debug("hmacsha256 generation error %d\n", rc);
-
 out:
 	return rc;
 }
@@ -850,10 +854,9 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 	int rc;
 	int i;
 
-	rc = crypto_shash_setkey(conn->secmech.cmacaes, key,
-		SMB2_CMACAES_SIZE);
+	rc = crypto_cmac_alloc(conn, key, SMB2_CMACAES_SIZE);
 	if (rc) {
-		cifsd_debug("cmaces update error %d\n", rc);
+		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
 		goto out;
 	}
 
@@ -877,7 +880,6 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 		sig);
 	if (rc)
 		cifsd_debug("cmaces generation error %d\n", rc);
-
 out:
 	return rc;
 }
@@ -901,28 +903,17 @@ static int generate_key(struct cifsd_session *sess, struct kvec label,
 	memset(prfhash, 0x0, SMB2_HMACSHA256_SIZE);
 	memset(key, 0x0, key_size);
 
-	rc = crypto_hmacsha256_alloc(sess->conn);
+	rc = crypto_hmacsha256_alloc(sess->conn,
+				     sess->sess_key,
+				     SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
 		cifsd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
-	rc = crypto_cmac_alloc(sess->conn);
-	if (rc) {
-		cifsd_debug("could not crypto alloc cmac rc %d\n", rc);
-		goto smb3signkey_ret;
-	}
-
-	rc = crypto_shash_setkey(sess->conn->secmech.hmacsha256,
-			sess->sess_key, SMB2_NTLMV2_SESSKEY_SIZE);
-	if (rc) {
-		cifsd_debug("could not set with session key\n");
-		goto smb3signkey_ret;
-	}
-
 	rc = crypto_shash_init(&sess->conn->secmech.sdeschmacsha256->shash);
 	if (rc) {
-		cifsd_debug("could not init sign hmac\n");
+		cifsd_debug("hmacsha256 init error %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
@@ -1170,7 +1161,7 @@ static int cifsd_alloc_aead(struct cifsd_conn *conn)
 	struct crypto_aead *tfm;
 
 	if (!conn->secmech.ccmaesencrypt) {
-		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+		if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
 		else
 			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
@@ -1182,7 +1173,7 @@ static int cifsd_alloc_aead(struct cifsd_conn *conn)
 	}
 
 	if (!conn->secmech.ccmaesdecrypt) {
-		if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+		if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 			tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
 		else
 			tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
@@ -1336,7 +1327,7 @@ int cifsd_crypt_message(struct cifsd_conn *conn,
 		goto free_sg;
 	}
 
-	if (conn->CipherId == SMB2_ENCRYPTION_AES128_GCM)
+	if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
 		memcpy(iv, (char *)tr_hdr->Nonce, SMB3_AES128GCM_NONCE);
 	else {
 		iv[0] = 3;

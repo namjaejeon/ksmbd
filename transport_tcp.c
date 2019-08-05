@@ -4,6 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/freezer.h>
+
 #include "smb_common.h"
 #include "server.h"
 #include "auth.h"

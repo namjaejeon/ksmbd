@@ -12,6 +12,8 @@
 #endif
 #include <linux/workqueue.h>
 #include <linux/sysfs.h>
+#include <linux/module.h>
+#include <linux/moduleparam.h>
 
 #include "server.h"
 #include "smb_common.h"
@@ -341,6 +343,7 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
+	cifsd_ipc_soft_reset();
 	cifsd_conn_transport_destroy();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
@@ -429,11 +432,27 @@ static ssize_t stats_show(struct class *class,
 	return sz;
 }
 
+static ssize_t kill_server_store(struct class *class,
+				 struct class_attribute *attr,
+				 const char *buf,
+				 size_t len)
+{
+	if (!sysfs_streq(buf, "hard"))
+		return len;
+
+	cifsd_err("kill command received\n");
+	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
+	server_queue_ctrl_reset_work();
+	return len;
+}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static CLASS_ATTR_RO(stats);
+static CLASS_ATTR_WO(kill_server);
 
 static struct attribute *cifsd_control_class_attrs[] = {
 	&class_attr_stats.attr,
+	&class_attr_kill_server.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(cifsd_control_class);
@@ -446,6 +465,7 @@ static struct class cifsd_control_class = {
 #else
 static struct class_attribute cifsd_control_class_attrs[] = {
 	__ATTR_RO(stats),
+	__ATTR_WO(kill_server),
 	__ATTR_NULL,
 };
 

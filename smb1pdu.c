@@ -6,6 +6,8 @@
 #include <linux/math64.h>
 #include <linux/fs.h>
 #include <linux/posix_acl_xattr.h>
+#include <linux/namei.h>
+#include <linux/statfs.h>
 
 #include "glob.h"
 #include "smb1pdu.h"
@@ -148,7 +150,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
 	size_t small_sz = cifsd_small_buffer_size();
-	size_t large_sz = cifsd_max_msg_size() + MAX_CIFS_HDR_SIZE;
+	size_t large_sz = work->conn->vals->max_io_size + MAX_CIFS_HDR_SIZE;
 	size_t sz = small_sz;
 
 	if (cmd == SMB_COM_TRANSACTION2) {
@@ -220,7 +222,7 @@ static char *andx_request_buffer(char *buf, int command)
  */
 static char *andx_response_buffer(char *buf)
 {
-	int pdu_length = get_rfc1002_length(buf);
+	int pdu_length = get_rfc1002_len(buf);
 
 	return buf + 4 + pdu_length;
 }
@@ -489,7 +491,7 @@ int smb_tree_connect_andx(struct cifsd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(rsp_hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(rsp_hdr));
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -516,7 +518,7 @@ out_err:
 	rsp->WordCount = 7;
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(rsp_hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(rsp_hdr));
 	rsp->OptionalSupport = 0;
 	rsp->MaximalShareAccessRights = 0;
 	rsp->GuestMaximalShareAccessRights = 0;
@@ -834,10 +836,9 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	}
 	neg_rsp->MaxMpxCount = cpu_to_le16(SMB1_MAX_MPX_COUNT);
 	neg_rsp->MaxNumberVcs = cpu_to_le16(SMB1_MAX_VCS);
-	neg_rsp->MaxBufferSize = cpu_to_le32(cifsd_max_msg_size());
+	neg_rsp->MaxBufferSize = cpu_to_le32(conn->vals->max_io_size);
 	neg_rsp->MaxRawSize = cpu_to_le32(SMB1_MAX_RAW_SIZE);
 	neg_rsp->SessionKey = 0;
-	conn->srv_cap = SMB1_SERVER_CAPS;
 	neg_rsp->Capabilities = cpu_to_le32(SMB1_SERVER_CAPS);
 
 	time = cifsd_systime();
@@ -983,7 +984,7 @@ static int build_sess_rsp_noextsec(struct cifsd_session *sess,
 no_password_check:
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(&rsp->hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
@@ -1168,7 +1169,7 @@ no_password_check:
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(&rsp->hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
@@ -1818,7 +1819,7 @@ skip:
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(&rsp->hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2609,7 +2610,7 @@ out:
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2733,7 +2734,7 @@ static int smb_read_andx_pipe(struct cifsd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2784,16 +2785,16 @@ int smb_read_andx(struct cifsd_work *work)
 	 * and a read fail occurs. If it is 0xFFFF, limit it to not set
 	 * the value.
 	 */
-	if (conn->srv_cap & CAP_LARGE_READ_X &&
+	if (conn->vals->capabilities & CAP_LARGE_READ_X &&
 		le32_to_cpu(req->MaxCountHigh) < 0xFFFF)
 		count |= le32_to_cpu(req->MaxCountHigh) << 16;
 
-	if (count > cifsd_default_io_size()) {
+	if (count > CIFS_DEFAULT_IOSIZE) {
 		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				count, cifsd_default_io_size());
+				count, CIFS_DEFAULT_IOSIZE);
 		cifsd_debug("limiting read size to max size(%u)\n",
-				cifsd_default_io_size());
-		count = cifsd_default_io_size();
+				CIFS_DEFAULT_IOSIZE);
+		count = CIFS_DEFAULT_IOSIZE;
 	}
 
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
@@ -2826,13 +2827,13 @@ int smb_read_andx(struct cifsd_work *work)
 
 	rsp->ByteCount = cpu_to_le16(nbytes);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	work->resp_hdr_sz = get_rfc1002_length(rsp) + 4;
+	work->resp_hdr_sz = get_rfc1002_len(rsp) + 4;
 	work->aux_payload_sz = nbytes;
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2915,7 +2916,7 @@ static int smb_write_andx_pipe(struct cifsd_work *work)
 	size_t count = 0;
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (work->conn->srv_cap & CAP_LARGE_WRITE_X)
+	if (work->conn->vals->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
 	rpc_resp = cifsd_rpc_write(work->sess, req->Fid, req->Data, count);
@@ -2947,7 +2948,7 @@ static int smb_write_andx_pipe(struct cifsd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2997,27 +2998,27 @@ int smb_write_andx(struct cifsd_work *work)
 	writethrough = (le16_to_cpu(req->WriteMode) == 1);
 
 	count = le16_to_cpu(req->DataLengthLow);
-	if (conn->srv_cap & CAP_LARGE_WRITE_X)
+	if (conn->vals->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
 
-	if (count > cifsd_default_io_size()) {
+	if (count > CIFS_DEFAULT_IOSIZE) {
 		cifsd_debug("write size(%zu) exceeds max size(%u)\n",
-				count, cifsd_default_io_size());
+				count, CIFS_DEFAULT_IOSIZE);
 		cifsd_debug("limiting write size to max size(%u)\n",
-				cifsd_default_io_size());
-		count = cifsd_default_io_size();
+				CIFS_DEFAULT_IOSIZE);
+		count = CIFS_DEFAULT_IOSIZE;
 	}
 
 	if (le16_to_cpu(req->DataOffset) ==
 			(offsetof(struct smb_com_write_req, Data) - 4)) {
 		data_buf = (char *)&req->Data[0];
 	} else {
-		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_length(req)) ||
+		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
 				(le16_to_cpu(req->DataOffset) +
-				 count > get_rfc1002_length(req))) {
+				 count > get_rfc1002_len(req))) {
 			cifsd_err("invalid write data offset %u, smb_len %u\n",
 					le16_to_cpu(req->DataOffset),
-					get_rfc1002_length(req));
+					get_rfc1002_len(req));
 			err = -EINVAL;
 			goto out;
 		}
@@ -3045,7 +3046,7 @@ int smb_write_andx(struct cifsd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_length(&rsp->hdr);
+	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -3765,10 +3766,9 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	__u16 rsp_data_cnt = 4;
 
 	eabuf->list_len = cpu_to_le32(rsp_data_cnt);
-	buf_free_len = cifsd_max_msg_size() + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_length(rsp) + 4) -
-		sizeof(TRANSACTION2_RSP);
-	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list, XATTR_LIST_MAX);
+	buf_free_len = conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
+		(get_rfc1002_len(rsp) + 4) - sizeof(TRANSACTION2_RSP);
+	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
 		goto out;
@@ -6371,7 +6371,6 @@ static int query_file_info(struct cifsd_work *work)
 	TRANSACTION2_QFI_REQ_PARAMS *req_params;
 	struct cifsd_file *fp;
 	struct kstat st;
-	struct file *filp;
 	__u16 fid;
 	char *ptr;
 	int rc = 0;
@@ -7890,7 +7889,7 @@ out:
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = cpu_to_le16(get_rfc1002_length(&rsp->hdr));
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;

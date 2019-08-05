@@ -10,8 +10,8 @@
 
 #include <linux/types.h>
 
-#define CIFSD_GENL_NAME      "CIFSD_GENL"
-#define CIFSD_GENL_VERSION    0x01
+#define CIFSD_GENL_NAME		"CIFSD_GENL"
+#define CIFSD_GENL_VERSION		0x01
 
 #ifndef __align
 #define __align		__attribute__((__aligned__(4)))
@@ -71,6 +71,8 @@ struct cifsd_share_config_response {
 	__u32	flags;
 	__u16	create_mask;
 	__u16	directory_mask;
+	__u16	force_create_mode;
+	__u16	force_directory_mode;
 	__u16	force_uid;
 	__u16	force_gid;
 	__u32	veto_list_sz;
@@ -189,6 +191,8 @@ enum CIFSD_TREE_CONN_STATUS {
 #define CIFSD_SHARE_FLAG_OPLOCKS		(1 << 7)
 #define CIFSD_SHARE_FLAG_PIPE			(1 << 8)
 #define CIFSD_SHARE_FLAG_HIDE_DOT_FILES		(1 << 9)
+#define CIFSD_SHARE_FLAG_INHERIT_SMACK		(1 << 10)
+#define CIFSD_SHARE_FLAG_INHERIT_OWNER		(1 << 11)
 
 /*
  * Tree connect request flags.

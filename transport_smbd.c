@@ -17,6 +17,8 @@
  *   the GNU General Public License for more details.
  */
 
+#define SUBMOD_NAME	"smbd"
+
 #include <linux/kthread.h>
 #include <linux/rwlock.h>
 #include <linux/list.h>
@@ -1711,6 +1713,7 @@ int cifsd_smbd_destroy(void)
 {
 	if (smbd_listener.cm_id)
 		rdma_destroy_id(smbd_listener.cm_id);
+	smbd_listener.cm_id = NULL;
 	return 0;
 }
 

@@ -51,6 +51,14 @@ static char *extract_last_component(char *path)
 	return p;
 }
 
+static void roolback_path_modification(char *filename)
+{
+	if (filename) {
+		filename--;
+		*filename = '/';
+	}
+}
+
 static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 				    struct inode *inode)
 {
@@ -65,6 +73,59 @@ static void cifsd_vfs_inode_uid_gid(struct cifsd_work *work,
 
 	i_uid_write(inode, uid);
 	i_gid_write(inode, gid);
+}
+
+static void cifsd_vfs_inherit_owner(struct cifsd_work *work,
+				    struct inode *parent_inode,
+				    struct inode *inode)
+{
+	if (!test_share_config_flag(work->tcon->share_conf,
+				   CIFSD_SHARE_FLAG_INHERIT_OWNER))
+		return;
+
+	i_uid_write(inode, i_uid_read(parent_inode));
+}
+
+static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
+				    struct dentry *dir_dentry,
+				    struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL, *smack_buf;
+	int value_len, xattr_list_len;
+
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    CIFSD_SHARE_FLAG_INHERIT_SMACK))
+		return;
+
+	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list);
+	if (xattr_list_len < 0)
+		return;
+	else if (!xattr_list_len) {
+		cifsd_err("no ea data in the file\n");
+		return;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		int rc;
+
+		cifsd_debug("%s, len %zd\n", name, strlen(name));
+		if (strcmp(name, XATTR_NAME_SMACK))
+			continue;
+
+		value_len = cifsd_vfs_getxattr(dir_dentry, name, &smack_buf);
+		if (value_len <= 0)
+			continue;
+
+		rc = cifsd_vfs_setxattr(dentry, XATTR_NAME_SMACK, smack_buf,
+					value_len, 0);
+		cifsd_free(smack_buf);
+		if (rc < 0)
+			cifsd_err("cifsd_vfs_setxattr() failed: %d\n", rc);
+	}
+
+	if (xattr_list)
+		vfree(xattr_list);
 }
 
 /**
@@ -94,8 +155,12 @@ int cifsd_vfs_create(struct cifsd_work *work,
 
 	mode |= S_IFREG;
 	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
-	if (!err)
+	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
+		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(dentry));
+		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
+	}
 	else
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
 
@@ -130,9 +195,12 @@ int cifsd_vfs_mkdir(struct cifsd_work *work,
 
 	mode |= S_IFDIR;
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
-	if (!err)
+	if (!err) {
 		cifsd_vfs_inode_uid_gid(work, d_inode(dentry));
-	else
+		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(dentry));
+		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
+	} else
 		cifsd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);
@@ -147,9 +215,7 @@ static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len <= 0)
 		goto out;
 
@@ -862,6 +928,7 @@ int cifsd_vfs_remove_file(char *name)
 	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
 	if (err) {
 		cifsd_debug("can't get %s, err %d\n", name, err);
+		roolback_path_modification(last);
 		return err;
 	}
 
@@ -905,6 +972,7 @@ out_err:
 	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 out:
+	roolback_path_modification(last);
 	path_put(&parent);
 	return err;
 }
@@ -1188,30 +1256,30 @@ int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
  *
  * Return:	xattr list length on success, otherwise error
  */
-ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list, int size)
+ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 {
-	ssize_t err;
+	ssize_t size;
 	char *vlist = NULL;
 
-	if (size) {
-		if (size > XATTR_LIST_MAX)
-			size = XATTR_LIST_MAX;
-		vlist = vmalloc(size);
-		if (!vlist)
-			return -ENOMEM;
-	}
+	size = vfs_listxattr(dentry, NULL, 0);
+	if (size <= 0)
+		return size;
+
+	vlist = vmalloc(size);
+	if (!vlist)
+		return -ENOMEM;
 
 	*list = vlist;
-	err = vfs_listxattr(dentry, vlist, size);
-	if (err == -ERANGE) {
+	size = vfs_listxattr(dentry, vlist, size);
+	if (size == -ERANGE) {
 		/* The file system tried to returned a list bigger
 		 * than XATTR_LIST_MAX bytes. Not possible.
 		 */
-		err = -E2BIG;
+		size = -E2BIG;
 		cifsd_debug("listxattr failed\n");
 	}
 
-	return err;
+	return size;
 }
 
 static ssize_t cifsd_vfs_xattr_len(struct dentry *dentry,
@@ -1320,8 +1388,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 	ssize_t xattr_list_len;
 	int err = 0;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list,
-		XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len < 0) {
 		goto out;
 	} else if (!xattr_list_len) {
@@ -1745,28 +1812,31 @@ error:
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless)
 {
+	char *filename = NULL;
 	int err;
 
 	err = kern_path(name, flags, path);
-	if (err && caseless) {
-		char *filename = extract_last_component(name);
+	if (!err)
+		return err;
 
+	if (caseless) {
+		filename = extract_last_component(name);
 		if (!filename)
-			return err;
-		if (strlen(name) == 0) {
-			/* root reached */
-			filename--;
-			*filename = '/';
-			return err;
-		}
+			goto out;
+
+		/* root reached */
+		if (strlen(name) == 0)
+			goto out;
 
 		err = cifsd_vfs_lookup_in_dir(name, filename);
 		if (err)
-			return err;
+			goto out;
 		err = kern_path(name, flags, path);
-		return err;
-	} else
-		return err;
+	}
+
+out:
+	roolback_path_modification(filename);
+	return err;
 }
 
 /**
@@ -1818,9 +1888,7 @@ ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
 
-	xattr_list_len = cifsd_vfs_listxattr(dentry,
-					     &xattr_list,
-					     XATTR_LIST_MAX);
+	xattr_list_len = cifsd_vfs_listxattr(dentry, &xattr_list);
 	if (xattr_list_len <= 0)
 		goto out;
 

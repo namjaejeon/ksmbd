@@ -79,16 +79,6 @@ static struct smb_protocol smb_protos[] = {
 	},
 };
 
-unsigned int cifsd_max_msg_size(void)
-{
-	return 65536;
-}
-
-unsigned int cifsd_default_io_size(void)
-{
-	return (1024 * 1024);
-}
-
 unsigned int cifsd_small_buffer_size(void)
 {
 	return 448;

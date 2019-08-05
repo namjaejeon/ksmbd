@@ -43,17 +43,18 @@ static unsigned int cifsd_tools_pid;
 
 #define CIFSD_IPC_MSG_HANDLE(m)	(*(unsigned int *)m)
 
-#define CIFSD_INVALID_IPC_VERSION(m)					\
-	({								\
-		int ret = 0;						\
-									\
-		if (m->genlhdr->version != CIFSD_GENL_VERSION) {	\
-			cifsd_err("IPC protocol version mismatch: %d\n",\
-				m->genlhdr->version);			\
-			ret = 1;					\
-		}							\
-		ret;							\
-	})
+static bool cifsd_ipc_validate_version(struct genl_info *m)
+{
+	if (m->genlhdr->version != CIFSD_GENL_VERSION) {
+		cifsd_err("%s. cifsd: %d, kernel module: %d. %s.\n",
+			  "Daemon and kernel module version mismatch",
+			  m->genlhdr->version,
+			  CIFSD_GENL_VERSION,
+			  "User-space cifsd should terminate");
+		return false;
+	}
+	return true;
+}
 
 struct cifsd_ipc_msg {
 	unsigned int		type;
@@ -321,7 +322,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 {
 	int ret = 0;
 
-	if (CIFSD_INVALID_IPC_VERSION(info))
+	if (!cifsd_ipc_validate_version(info))
 		return -EINVAL;
 
 	if (!info->attrs[CIFSD_EVENT_STARTING_UP])
@@ -377,7 +378,7 @@ static int handle_generic_event(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 	}
 
-	if (CIFSD_INVALID_IPC_VERSION(info))
+	if (!cifsd_ipc_validate_version(info))
 		return -EINVAL;
 
 	if (!info->attrs[type])
@@ -795,6 +796,13 @@ void cifsd_ipc_release(void)
 {
 	cifsd_ida_free(ida);
 	genl_unregister_family(&cifsd_genl_family);
+}
+
+void cifsd_ipc_soft_reset(void)
+{
+	mutex_lock(&startup_lock);
+	cifsd_tools_pid = 0;
+	mutex_unlock(&startup_lock);
 }
 
 int cifsd_ipc_init(void)
