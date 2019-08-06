@@ -9,7 +9,6 @@
 #include <linux/module.h>
 
 #include "server.h"
-#include "auth.h"
 #include "buffer_pool.h"
 #include "smb_common.h"
 #include "mgmt/cifsd_ida.h"
@@ -38,7 +37,6 @@ void cifsd_conn_free(struct cifsd_conn *conn)
 	list_del(&conn->conns_list);
 	write_unlock(&conn_list_lock);
 
-	cifsd_free_conn_secmech(conn);
 	cifsd_free_request(conn->request_buf);
 	cifsd_ida_free(conn->async_ida);
 	kfree(conn->preauth_info);

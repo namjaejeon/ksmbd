@@ -87,7 +87,6 @@ struct cifsd_conn {
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-	struct cifsd_secmech		secmech;
 	union {
 		/* pending trans request table */
 		struct trans_state	*recent_trans;
