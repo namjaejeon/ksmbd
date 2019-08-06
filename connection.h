@@ -65,7 +65,7 @@ struct cifsd_conn {
 	struct mutex			srv_mutex;
 	int				status;
 	unsigned int			cli_cap;
-	void				*request_buf;
+	char				*request_buf;
 	struct cifsd_transport		*transport;
 	struct nls_table		*local_nls;
 	struct list_head		conns_list;
