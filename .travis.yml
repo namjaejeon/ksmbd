@@ -74,6 +74,7 @@ script:
  - make fs/cifsd/cifsd.ko
 
  # Run xfstests testsuite
+ - cd ../cifsd
  - make
  - sudo make install
  - sudo modprobe cifsd
