@@ -9,9 +9,6 @@
 #include <linux/ctype.h>
 #include <linux/workqueue.h>
 
-#define SYNC 1
-#define ASYNC 2
-
 #define	WORK_STATE_CANCELLED	0x2
 #define WORK_STATE_CLOSED	0x3
 
@@ -46,7 +43,6 @@ struct cifsd_work {
 
 	/* Transform header buffer */
 	void				*tr_buf;
-	int				type;
 
 	/*
 	 * Current Local FID assigned compound response if SMB2 CREATE
@@ -64,7 +60,8 @@ struct cifsd_work {
 	bool				send_no_response:1;
 	/* Request is encrypted */
 	bool				encrypted:1;
-
+	/* Is this SYNC or ASYNC cifsd_work */
+	bool				syncronous:1;
 	/* List head at conn->requests */
 	struct list_head		request_entry;
 	/* List head at conn->async_requests */

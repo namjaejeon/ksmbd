@@ -514,7 +514,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	smb2_set_rsp_credits(work);
 	spin_unlock(&conn->credits_lock);
 
-	work->type = SYNC;
+	work->syncronous = true;
 	if (work->async_id) {
 		cifds_release_id(conn->async_ida, work->async_id);
 		work->async_id = 0;
@@ -666,7 +666,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 		cifsd_err("Failed to alloc async message id\n");
 		return id;
 	}
-	work->type = ASYNC;
+	work->syncronous = false;
 	work->async_id = id;
 	rsp_hdr->Id.AsyncId = cpu_to_le64(id);
 

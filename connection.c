@@ -104,7 +104,7 @@ void cifsd_conn_enqueue_request(struct cifsd_work *work)
 	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 			requests_queue = &conn->requests;
-			work->type = SYNC;
+			work->syncronous = true;
 		}
 	} else {
 		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
@@ -132,7 +132,7 @@ int cifsd_conn_try_dequeue_request(struct cifsd_work *work)
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
-		if (work->type == ASYNC)
+		if (work->syncronous == false)
 			list_del_init(&work->async_request_entry);
 		ret = 0;
 	}
