@@ -29,6 +29,7 @@
 #include "time_wrappers.h"
 #include "server.h"
 #include "smb_common.h"
+#include "cifsd_work.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -513,7 +514,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
 	smb2_set_rsp_credits(work);
 	spin_unlock(&conn->credits_lock);
 
-	work->type = SYNC;
+	work->syncronous = true;
 	if (work->async_id) {
 		cifds_release_id(conn->async_ida, work->async_id);
 		work->async_id = 0;
@@ -665,7 +666,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 		cifsd_err("Failed to alloc async message id\n");
 		return id;
 	}
-	work->type = ASYNC;
+	work->syncronous = false;
 	work->async_id = id;
 	rsp_hdr->Id.AsyncId = cpu_to_le64(id);
 
@@ -6678,7 +6679,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
-	out_buf_len = min(NETLINK_CIFSD_MAX_PAYLOAD, out_buf_len);
+	out_buf_len = min(CIFSD_IPC_MAX_PAYLOAD, out_buf_len);
 	data_buf = (char *)&req->Buffer[0];
 
 	switch (cnt_code) {
