@@ -34,7 +34,6 @@ extern bool multi_channel_enable;
 #define SYNC 1
 #define ASYNC 2
 
-#define WORK_STATE_ENCRYPTED	0x1
 #define	WORK_STATE_CANCELLED	0x2
 #define WORK_STATE_CLOSED	0x3
 
