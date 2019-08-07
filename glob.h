@@ -25,9 +25,6 @@ extern bool multi_channel_enable;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
-/* SMB2 timeouts */
-#define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
-
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
