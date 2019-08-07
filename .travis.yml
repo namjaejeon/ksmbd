@@ -75,16 +75,15 @@ script:
 
  # Run xfstests testsuite
  - cd ../cifsd
- - make
- - sudo make install
+ - make > /dev/null
+ - sudo make install > /dev/null
  - sudo modprobe cifsd
  - sudo modprobe cifs
- - cat /proc/filesystems
  - cd cifsd-tools
- - ./autogen.sh
- - ./configure
- - make
- - sudo make install
+ - ./autogen.sh > /dev/null
+ - ./configure > /dev/null
+ - make > /dev/null
+ - sudo make install > /dev/null
  - cd ..
  - sudo mkdir -p /etc/cifs/
  - sudo mkdir -p /mnt/1
@@ -96,10 +95,10 @@ script:
  - cifsd -n --c=./smb.conf --u=./cifspwd.db&
  - ps -ax | grep cifsd
  - cd cifsd-test-result/testsuites/
- - tar xzvf xfstests-cifsd.tgz
+ - tar xzvf xfstests-cifsd.tgz > /dev/null
  - cd xfstests-cifsd
- - ./configure
- - make
+ - ./configure > /dev/null
+ - make > /dev/null
  - sudo ./check cifs/001
  - sudo ./check generic/001
  - sudo ./check generic/002
