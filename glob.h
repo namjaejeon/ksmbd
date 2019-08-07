@@ -25,35 +25,6 @@ extern bool multi_channel_enable;
 
 #define NETLINK_CIFSD_MAX_PAYLOAD	4096
 
-/*
- *  * Size of the ntlm client response
- *   */
-#define CIFS_AUTH_RESP_SIZE (24)
-#define CIFS_SMB1_SIGNATURE_SIZE (8)
-#define CIFS_SMB1_SESSKEY_SIZE (16)
-
-/*
- *  * Size of the session key (crypto key encrypted with the password
- *   */
-#define SMB2_NTLMV2_SESSKEY_SIZE (16)
-#define SMB2_SIGNATURE_SIZE (16)
-#define SMB2_HMACSHA256_SIZE (32)
-#define SMB2_CMACAES_SIZE (16)
-
-/*
- *  * Size of the smb3 signing key
- *   */
-#define SMB3_SIGN_KEY_SIZE (16)
-
-#define CIFS_CLIENT_CHALLENGE_SIZE (8)
-#define CIFS_SERVER_CHALLENGE_SIZE (8)
-
-/* SMB2 Max Credits */
-#define SMB2_MAX_CREDITS 8192
-
-#define SMB2_CLIENT_GUID_SIZE		16
-#define SMB2_CREATE_GUID_SIZE		16
-
 /* SMB2 timeouts */
 #define SMB_ECHO_INTERVAL		(60*HZ) /* 60 msecs */
 

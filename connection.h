@@ -15,7 +15,7 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
-#include "glob.h" /* FIXME */
+#include "smb_common.h"
 
 #define CIFSD_SOCKET_BACKLOG		16
 
