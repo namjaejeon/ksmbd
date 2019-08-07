@@ -9,6 +9,7 @@
 #include "misc.h"
 /* @FIXME */
 #include "connection.h"
+#include "cifsd_work.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";

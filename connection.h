@@ -16,6 +16,7 @@
 #include <linux/nls.h>
 
 #include "smb_common.h"
+#include "cifsd_work.h"
 
 #define CIFSD_SOCKET_BACKLOG		16
 
@@ -143,7 +144,6 @@ struct cifsd_conn *cifsd_conn_alloc(void);
 void cifsd_conn_free(struct cifsd_conn *conn);
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	void *arg);
-struct cifsd_work;
 int cifsd_conn_write(struct cifsd_work *work);
 
 void cifsd_conn_enqueue_request(struct cifsd_work *work);

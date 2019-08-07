@@ -29,6 +29,7 @@
 #include "time_wrappers.h"
 #include "server.h"
 #include "smb_common.h"
+#include "cifsd_work.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
