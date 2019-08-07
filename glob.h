@@ -23,8 +23,6 @@ extern bool lease_enable;
 extern bool durable_enable;
 extern bool multi_channel_enable;
 
-#define NETLINK_CIFSD_MAX_PAYLOAD	4096
-
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 

@@ -6679,7 +6679,7 @@ int smb2_ioctl(struct cifsd_work *work)
 
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
-	out_buf_len = min(NETLINK_CIFSD_MAX_PAYLOAD, out_buf_len);
+	out_buf_len = min(CIFSD_IPC_MAX_PAYLOAD, out_buf_len);
 	data_buf = (char *)&req->Buffer[0];
 
 	switch (cnt_code) {
