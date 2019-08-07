@@ -28,8 +28,6 @@ extern bool multi_channel_enable;
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
-#define CIFS_DEFAULT_IOSIZE	(64 * 1024)
-
 #ifndef cifsd_pr_fmt
 #ifdef SUBMOD_NAME
 #define cifsd_pr_fmt(fmt)	"kcifsd: " SUBMOD_NAME ": " fmt
