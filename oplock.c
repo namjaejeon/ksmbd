@@ -4,6 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/moduleparam.h>
+
 #include "glob.h"
 #include "oplock.h"
 
@@ -1531,7 +1533,7 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
  *
  * Return:      pointer to requested context, NULL if @str context not found
  */
-struct create_context *smb2_find_context_vals(void *open_req, const char *str)
+struct create_context *smb2_find_context_vals(void *open_req, const char *tag)
 {
 	char *data_offset;
 	struct create_context *cc;
@@ -1550,7 +1552,7 @@ struct create_context *smb2_find_context_vals(void *open_req, const char *str)
 		if (val < 4)
 			return ERR_PTR(-EINVAL);
 
-		if (strcmp(name, str) == 0)
+		if (memcmp(name, tag, val) == 0)
 			return cc;
 		next = le32_to_cpu(cc->Next);
 	} while (next != 0);

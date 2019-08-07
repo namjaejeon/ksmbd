@@ -395,7 +395,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 	struct smb2_hdr *hdr = &pdu->hdr;
 	int command;
 	__u32 clc_len;  /* calculated length */
-	__u32 len = get_rfc1002_length(buf);
+	__u32 len = get_rfc1002_len(buf);
 
 	if (work->next_smb2_rcv_hdr_off) {
 		pdu = (struct smb2_pdu *)(buf + work->next_smb2_rcv_hdr_off);
@@ -477,7 +477,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		return 1;
 	}
 
-	return work->conn->srv_cap & SMB2_GLOBAL_CAP_LARGE_MTU ?
+	return work->conn->vals->capabilities & SMB2_GLOBAL_CAP_LARGE_MTU ?
 		smb2_validate_credit_charge(hdr) : 0;
 }
 

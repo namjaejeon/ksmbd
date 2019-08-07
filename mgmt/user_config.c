@@ -3,6 +3,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/slab.h>
+
 #include "user_config.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"

@@ -4,6 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/freezer.h>
+
 #include "smb_common.h"
 #include "server.h"
 #include "auth.h"
@@ -214,11 +216,6 @@ static int cifsd_kthread_fn(void *p)
 	int ret;
 
 	while (!kthread_should_stop()) {
-		if (cifsd_server_daemon_heartbeat()) {
-			schedule_timeout_interruptible(HZ);
-			continue;
-		}
-
 		mutex_lock(&iface->sock_release_lock);
 		if (!iface->cifsd_socket) {
 			mutex_unlock(&iface->sock_release_lock);

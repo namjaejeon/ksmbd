@@ -16,7 +16,8 @@
 static struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
 	.protocol_id = SMB20_PROT_ID,
-	.req_capabilities = 0, /* MBZ */
+	.capabilities = 0,
+	.max_io_size = CIFS_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -38,7 +39,8 @@ static struct smb_version_values smb20_server_values = {
 static struct smb_version_values smb21_server_values = {
 	.version_string = SMB21_VERSION_STRING,
 	.protocol_id = SMB21_PROT_ID,
-	.req_capabilities = 0, /* MBZ */
+	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
+	.max_io_size = SMB21_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -59,8 +61,8 @@ static struct smb_version_values smb21_server_values = {
 static struct smb_version_values smb30_server_values = {
 	.version_string = SMB30_VERSION_STRING,
 	.protocol_id = SMB30_PROT_ID,
-	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
-						| SMB2_GLOBAL_CAP_LARGE_MTU,
+	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
+	.max_io_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -82,8 +84,8 @@ static struct smb_version_values smb30_server_values = {
 static struct smb_version_values smb302_server_values = {
 	.version_string = SMB302_VERSION_STRING,
 	.protocol_id = SMB302_PROT_ID,
-	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
-						| SMB2_GLOBAL_CAP_LARGE_MTU,
+	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
+	.max_io_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -105,8 +107,8 @@ static struct smb_version_values smb302_server_values = {
 static struct smb_version_values smb311_server_values = {
 	.version_string = SMB311_VERSION_STRING,
 	.protocol_id = SMB311_PROT_ID,
-	.req_capabilities = SMB2_GLOBAL_CAP_DFS | SMB2_GLOBAL_CAP_LEASING
-						| SMB2_GLOBAL_CAP_LARGE_MTU,
+	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
+	.max_io_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -207,7 +209,6 @@ int init_smb2_0_server(struct cifsd_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 	conn->total_credits = 0;
-	conn->srv_cap = 0;
 	return 0;
 }
 #else
@@ -229,10 +230,9 @@ void init_smb2_1_server(struct cifsd_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
-	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 }
 
 /**
@@ -247,16 +247,15 @@ void init_smb3_0_server(struct cifsd_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
-	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
 	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
 /**
@@ -271,16 +270,15 @@ void init_smb3_02_server(struct cifsd_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
-	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
 	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
 /**
@@ -295,16 +293,15 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
-	conn->srv_cap = SMB2_GLOBAL_CAP_LARGE_MTU;
 
 	if (lease_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_LEASING;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
-	if (conn->CipherId)
-		conn->srv_cap |= SMB2_GLOBAL_CAP_ENCRYPTION;
+	if (conn->cipher_type)
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;

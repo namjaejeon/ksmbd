@@ -12,6 +12,7 @@
 #include <net/net_namespace.h>
 #include <net/genetlink.h>
 #include <linux/socket.h>
+#include <linux/workqueue.h>
 
 #include "transport_ipc.h"
 #include "buffer_pool.h"
@@ -43,17 +44,18 @@ static unsigned int cifsd_tools_pid;
 
 #define CIFSD_IPC_MSG_HANDLE(m)	(*(unsigned int *)m)
 
-#define CIFSD_INVALID_IPC_VERSION(m)					\
-	({								\
-		int ret = 0;						\
-									\
-		if (m->genlhdr->version != CIFSD_GENL_VERSION) {	\
-			cifsd_err("IPC protocol version mismatch: %d\n",\
-				m->genlhdr->version);			\
-			ret = 1;					\
-		}							\
-		ret;							\
-	})
+static bool cifsd_ipc_validate_version(struct genl_info *m)
+{
+	if (m->genlhdr->version != CIFSD_GENL_VERSION) {
+		cifsd_err("%s. cifsd: %d, kernel module: %d. %s.\n",
+			  "Daemon and kernel module version mismatch",
+			  m->genlhdr->version,
+			  CIFSD_GENL_VERSION,
+			  "User-space cifsd should terminate");
+		return false;
+	}
+	return true;
+}
 
 struct cifsd_ipc_msg {
 	unsigned int		type;
@@ -73,10 +75,13 @@ struct ipc_msg_table_entry {
 	void			*response;
 };
 
+static struct delayed_work ipc_timer_work;
+
 static int handle_startup_event(struct sk_buff *skb, struct genl_info *info);
 static int handle_unsupported_event(struct sk_buff *skb,
 				    struct genl_info *info);
 static int handle_generic_event(struct sk_buff *skb, struct genl_info *info);
+static int cifsd_ipc_heartbeat_request(void);
 
 static const struct nla_policy cifsd_nl_policy[CIFSD_EVENT_MAX] = {
 	[CIFSD_EVENT_UNSPEC] = {
@@ -287,7 +292,7 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	cifsd_set_fd_limit(req->file_max);
 	server_conf.signing = req->signing;
 	server_conf.tcp_port = req->tcp_port;
-	server_conf.ipc_timeout = req->ipc_timeout;
+	server_conf.ipc_timeout = req->ipc_timeout * HZ;
 	server_conf.deadtime = req->deadtime * SMB_ECHO_INTERVAL;
 
 	ret = cifsd_set_netbios_name(req->netbios_name);
@@ -314,6 +319,8 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 			server_conf.max_protocol = ret;
 	}
 
+	if (server_conf.ipc_timeout)
+		schedule_delayed_work(&ipc_timer_work, server_conf.ipc_timeout);
 	return 0;
 }
 
@@ -321,7 +328,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 {
 	int ret = 0;
 
-	if (CIFSD_INVALID_IPC_VERSION(info))
+	if (!cifsd_ipc_validate_version(info))
 		return -EINVAL;
 
 	if (!info->attrs[CIFSD_EVENT_STARTING_UP])
@@ -377,7 +384,7 @@ static int handle_generic_event(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 	}
 
-	if (CIFSD_INVALID_IPC_VERSION(info))
+	if (!cifsd_ipc_validate_version(info))
 		return -EINVAL;
 
 	if (!info->attrs[type])
@@ -454,46 +461,18 @@ out:
 	return entry.response;
 }
 
-int cifsd_ipc_heartbeat(void)
+static int cifsd_ipc_heartbeat_request(void)
 {
-	unsigned long delta;
-	int ret = 0;
+	struct cifsd_ipc_msg *msg;
+	int ret;
 
-	if (!server_conf.ipc_timeout)
-		return ret;
+	msg = ipc_msg_alloc(sizeof(struct cifsd_heartbeat));
+	if (!msg)
+		return -EINVAL;
 
-	if (time_after(jiffies, server_conf.ipc_last_active)) {
-		delta = (jiffies - server_conf.ipc_last_active) / HZ;
-	} else {
-		ipc_update_last_active();
-		return ret;
-	}
-
-	if (delta < server_conf.ipc_timeout / 2)
-		return ret;
-
-	mutex_lock(&startup_lock);
-	if (!cifsd_server_running()) {
-		mutex_unlock(&startup_lock);
-		return 0;
-	}
-
-	if (delta >= server_conf.ipc_timeout / 2) {
-		if (cifsd_ipc_heartbeat_request() == 0) {
-			mutex_unlock(&startup_lock);
-			return ret;
-		}
-	}
-
-	if (delta >= server_conf.ipc_timeout) {
-		WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
-		server_conf.ipc_last_active = 0;
-		cifsd_tools_pid = 0;
-
-		cifsd_err("No IPC daemon response for %lus\n", delta);
-		ret = -EINVAL;
-	}
-	mutex_unlock(&startup_lock);
+	msg->type = CIFSD_EVENT_HEARTBEAT_REQUEST;
+	ret = ipc_msg_send(msg);
+	ipc_msg_free(msg);
 	return ret;
 }
 
@@ -589,21 +568,6 @@ int cifsd_ipc_logout_request(const char *account)
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	strncpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
 
-	ret = ipc_msg_send(msg);
-	ipc_msg_free(msg);
-	return ret;
-}
-
-int cifsd_ipc_heartbeat_request(void)
-{
-	struct cifsd_ipc_msg *msg;
-	int ret;
-
-	msg = ipc_msg_alloc(sizeof(struct cifsd_heartbeat));
-	if (!msg)
-		return -EINVAL;
-
-	msg->type = CIFSD_EVENT_HEARTBEAT_REQUEST;
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
 	return ret;
@@ -781,6 +745,49 @@ struct cifsd_rpc_command *cifsd_rpc_rap(struct cifsd_session *sess,
 	return resp;
 }
 
+static int __ipc_heartbeat(void)
+{
+	unsigned long delta;
+
+	if (!cifsd_server_running())
+		return 0;
+
+	if (time_after(jiffies, server_conf.ipc_last_active)) {
+		delta = (jiffies - server_conf.ipc_last_active);
+	} else {
+		ipc_update_last_active();
+		schedule_delayed_work(&ipc_timer_work,
+				      server_conf.ipc_timeout);
+		return 0;
+	}
+
+	if (delta < server_conf.ipc_timeout) {
+		schedule_delayed_work(&ipc_timer_work,
+				      server_conf.ipc_timeout - delta);
+		return 0;
+	}
+
+	if (cifsd_ipc_heartbeat_request() == 0) {
+		schedule_delayed_work(&ipc_timer_work,
+				      server_conf.ipc_timeout);
+		return 0;
+	}
+
+	mutex_lock(&startup_lock);
+	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
+	server_conf.ipc_last_active = 0;
+	cifsd_tools_pid = 0;
+	cifsd_err("No IPC daemon response for %lus\n", delta / HZ);
+	mutex_unlock(&startup_lock);
+	return -EINVAL;
+}
+
+static void ipc_timer_heartbeat(struct work_struct *w)
+{
+	if (__ipc_heartbeat())
+		server_queue_ctrl_reset_work();
+}
+
 int cifsd_ipc_id_alloc(void)
 {
 	return cifds_acquire_id(ida);
@@ -793,8 +800,17 @@ void cifsd_rpc_id_free(int handle)
 
 void cifsd_ipc_release(void)
 {
+	cancel_delayed_work_sync(&ipc_timer_work);
 	cifsd_ida_free(ida);
 	genl_unregister_family(&cifsd_genl_family);
+}
+
+void cifsd_ipc_soft_reset(void)
+{
+	mutex_lock(&startup_lock);
+	cifsd_tools_pid = 0;
+	cancel_delayed_work_sync(&ipc_timer_work);
+	mutex_unlock(&startup_lock);
 }
 
 int cifsd_ipc_init(void)
@@ -802,6 +818,8 @@ int cifsd_ipc_init(void)
 	int ret;
 
 	cifsd_nl_init_fixup();
+	INIT_DELAYED_WORK(&ipc_timer_work, ipc_timer_heartbeat);
+
 	ret = genl_register_family(&cifsd_genl_family);
 	if (ret) {
 		cifsd_err("Failed to register CIFSD netlink interface %d\n",

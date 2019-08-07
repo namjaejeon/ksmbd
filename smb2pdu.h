@@ -78,6 +78,9 @@
 #define SMB2_PROTO_NUMBER cpu_to_le32(0x424d53fe) /* 'B''M''S' */
 #define SMB2_TRANSFORM_PROTO_NUM cpu_to_le32(0x424d53fd)
 
+#define SMB21_DEFAULT_IOSIZE	(1024 * 1024)
+#define SMB3_DEFAULT_IOSIZE	(4 * 1024 * 1024)
+
 /*
  * SMB2 Header Definition
  *
@@ -220,6 +223,16 @@ struct preauth_integrity_info {
 
 #define SMB2_PREAUTH_INTEGRITY_CAPABILITIES	cpu_to_le16(1)
 #define SMB2_ENCRYPTION_CAPABILITIES		cpu_to_le16(2)
+#define SMB2_COMPRESSION_CAPABILITIES		cpu_to_le16(3)
+#define SMB2_NETNAME_NEGOTIATE_CONTEXT_ID	cpu_to_le16(5)
+#define SMB2_POSIX_EXTENSIONS_AVAILABLE		cpu_to_le16(0x100)
+
+struct smb2_neg_context {
+	__le16  ContextType;
+	__le16  DataLength;
+	__le32  Reserved;
+	/* Followed by array of data */
+} __packed;
 
 struct smb2_preauth_neg_context {
 	__le16	ContextType; /* 1 */
@@ -240,7 +253,37 @@ struct smb2_encryption_neg_context {
 	__le16	DataLength;
 	__le32	Reserved;
 	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
-	__le16	Ciphers[2]; /* Ciphers[0] since only one used now */
+	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
+} __packed;
+
+#define SMB3_COMPRESS_NONE	cpu_to_le16(0x0000)
+#define SMB3_COMPRESS_LZNT1	cpu_to_le16(0x0001)
+#define SMB3_COMPRESS_LZ77	cpu_to_le16(0x0002)
+#define SMB3_COMPRESS_LZ77_HUFF	cpu_to_le16(0x0003)
+
+struct smb2_compression_capabilities_context {
+	__le16	ContextType; /* 3 */
+	__le16  DataLength;
+	__u32	Reserved;
+	__le16	CompressionAlgorithmCount;
+	__u16	Padding;
+	__u32	Reserved1;
+	__le16	CompressionAlgorithms[1];
+} __packed;
+
+#define POSIX_CTXT_DATA_LEN     16
+struct smb2_posix_neg_context {
+	__le16	ContextType; /* 0x100 */
+	__le16	DataLength;
+	__le32	Reserved;
+	__u8	Name[16]; /* POSIX ctxt GUID 93AD25509CB411E7B42383DE968BCD7C */
+} __packed;
+
+struct smb2_netname_neg_context {
+	__le16	ContextType; /* 0x100 */
+	__le16	DataLength;
+	__le32	Reserved;
+	__le16	NetName[0]; /* hostname of target converted to UCS-2 */
 } __packed;
 
 struct smb2_negotiate_rsp {
@@ -468,6 +511,7 @@ struct smb2_tree_disconnect_rsp {
 #define SMB2_CREATE_APP_INSTANCE_ID     "\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74"
  #define SMB2_CREATE_APP_INSTANCE_VERSION	"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10"
 #define SVHDX_OPEN_DEVICE_CONTEXT       0x83CE6F1AD851E0986E34401CC9BCFCE9
+#define SMB2_CREATE_TAG_POSIX		"\x93\xAD\x25\x50\x9C\xB4\x11\xE7\xB4\x23\x83\xDE\x96\x8B\xCD\x7C"
 
 struct smb2_create_req {
 	struct smb2_hdr hdr;
@@ -578,6 +622,13 @@ struct create_alloc_size_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	__le64 AllocationSize;
+} __packed;
+
+struct create_posix {
+	struct create_context ccontext;
+	__u8    Name[16];
+	__le32  Mode;
+	__u32   Reserved;
 } __packed;
 
 struct create_durable_rsp {

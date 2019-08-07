@@ -114,7 +114,7 @@ build your kernel
 10. Secure negotiate
 11. Signing Update
 12. Preautentication integrity(SMB 3.1.1)
-13. SMB3 encryption
+13. SMB3 encryption(CCM, GCM)
 
 *Planned*
 1. SMB direct(RDMA)
