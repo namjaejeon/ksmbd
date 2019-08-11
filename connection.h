@@ -15,7 +15,8 @@
 #include <linux/kthread.h>
 #include <linux/nls.h>
 
-#include "glob.h" /* FIXME */
+#include "smb_common.h"
+#include "cifsd_work.h"
 
 #define CIFSD_SOCKET_BACKLOG		16
 
@@ -34,22 +35,6 @@ enum {
 	CIFSD_SESS_NEED_NEGOTIATE
 };
 
-/* crypto hashing related structure/fields, not specific to a sec mech */
-struct cifsd_secmech {
-	struct crypto_shash *hmacmd5; /* hmac-md5 hash function */
-	struct crypto_shash *md5; /* md5 hash function */
-	struct crypto_shash *hmacsha256; /* hmac-sha256 hash function */
-	struct crypto_shash *cmacaes; /* block-cipher based MAC function */
-	struct crypto_shash *sha512; /* sha512 hash function */
-	struct sdesc *sdeschmacmd5;  /* ctxt to generate ntlmv2 hash, CR1 */
-	struct sdesc *sdescmd5; /* ctxt to generate cifs/smb signature */
-	struct sdesc *sdeschmacsha256;  /* ctxt to generate smb2 signature */
-	struct sdesc *sdesccmacaes;  /* ctxt to generate smb3 signature */
-	struct sdesc *sdescsha512;  /* ctxt to generate preauth integrity */
-	struct crypto_aead *ccmaesencrypt; /* smb3 encryption aead */
-	struct crypto_aead *ccmaesdecrypt; /* smb3 decryption aead */
-};
-
 struct cifsd_stats {
 	atomic_t			open_files_count;
 	atomic64_t			request_served;
@@ -65,7 +50,7 @@ struct cifsd_conn {
 	struct mutex			srv_mutex;
 	int				status;
 	unsigned int			cli_cap;
-	void				*request_buf;
+	char				*request_buf;
 	struct cifsd_transport		*transport;
 	struct nls_table		*local_nls;
 	struct list_head		conns_list;
@@ -87,7 +72,6 @@ struct cifsd_conn {
 	int				connection_type;
 	struct cifsd_stats		stats;
 	char				ClientGUID[SMB2_CLIENT_GUID_SIZE];
-	struct cifsd_secmech		secmech;
 	union {
 		/* pending trans request table */
 		struct trans_state	*recent_trans;
@@ -160,7 +144,6 @@ struct cifsd_conn *cifsd_conn_alloc(void);
 void cifsd_conn_free(struct cifsd_conn *conn);
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	void *arg);
-struct cifsd_work;
 int cifsd_conn_write(struct cifsd_work *work);
 
 void cifsd_conn_enqueue_request(struct cifsd_work *work);

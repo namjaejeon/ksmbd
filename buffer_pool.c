@@ -12,7 +12,6 @@
 #include "connection.h"
 #include "mgmt/cifsd_ida.h"
 
-static struct kmem_cache *work_cache;
 static struct kmem_cache *filp_cache;
 
 /*
@@ -97,30 +96,6 @@ void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 	return nptr;
 }
 
-struct cifsd_work *cifsd_alloc_work_struct(void)
-{
-	struct cifsd_work *work = kmem_cache_zalloc(work_cache, GFP_KERNEL);
-
-	if (work) {
-		INIT_LIST_HEAD(&work->request_entry);
-		INIT_LIST_HEAD(&work->async_request_entry);
-		INIT_LIST_HEAD(&work->fp_entry);
-		INIT_LIST_HEAD(&work->interim_entry);
-	}
-	return work;
-}
-
-void cifsd_free_work_struct(struct cifsd_work *work)
-{
-	cifsd_free_response(RESPONSE_BUF(work));
-	cifsd_free_response(AUX_PAYLOAD(work));
-	cifsd_free_response(TRANSFORM_BUF(work));
-	cifsd_free_request(REQUEST_BUF(work));
-	if (work->async_id)
-		cifds_release_id(work->conn->async_ida, work->async_id);
-	kmem_cache_free(work_cache, work);
-}
-
 void cifsd_free_file_struct(void *filp)
 {
 	kmem_cache_free(filp_cache, filp);
@@ -133,16 +108,13 @@ void *cifsd_alloc_file_struct(void)
 
 void cifsd_destroy_buffer_pools(void)
 {
-	kmem_cache_destroy(work_cache);
+	cifsd_work_pool_destroy();
 	kmem_cache_destroy(filp_cache);
 }
 
 int cifsd_init_buffer_pools(void)
 {
-	work_cache = kmem_cache_create("cifsd_work_cache",
-					sizeof(struct cifsd_work), 0,
-					SLAB_HWCACHE_ALIGN, NULL);
-	if (!work_cache)
+	if (cifsd_work_pool_init())
 		goto out;
 
 	filp_cache = kmem_cache_create("cifsd_file_cache",

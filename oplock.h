@@ -7,6 +7,8 @@
 #ifndef __CIFSD_OPLOCK_H
 #define __CIFSD_OPLOCK_H
 
+#include "smb_common.h"
+
 #define OPLOCK_WAIT_TIME	(35*HZ)
 
 /* SMB Oplock levels */

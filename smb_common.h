@@ -42,6 +42,10 @@
 #define SMB311_PROT_ID		0x0311
 #define BAD_PROT_ID		0xFFFF
 
+#define SMB_ECHO_INTERVAL	(60*HZ)
+
+#define CIFS_DEFAULT_IOSIZE	(64 * 1024)
+
 extern struct list_head global_lock_list;
 
 struct cifsd_work;

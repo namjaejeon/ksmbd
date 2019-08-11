@@ -9,6 +9,8 @@
 #include <linux/wait.h>
 #include "cifsd_server.h"  /* FIXME */
 
+#define CIFSD_IPC_MAX_PAYLOAD	4096
+
 struct cifsd_login_response *
 cifsd_ipc_login_request(const char *account);
 

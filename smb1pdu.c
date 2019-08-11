@@ -1883,8 +1883,8 @@ int smb_trans(struct cifsd_work *work)
 	int padding;
 
 	buf_len = le16_to_cpu(req->MaxDataCount);
-	buf_len = min((int)(NETLINK_CIFSD_MAX_PAYLOAD - sizeof(TRANS_RSP)),
-			buf_len);
+	buf_len = min((int)(CIFSD_IPC_MAX_PAYLOAD - sizeof(TRANS_RSP)),
+		       buf_len);
 
 	if (req->SetupCount)
 		setup_bytes_count = 2 * req->SetupCount;
