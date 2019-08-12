@@ -3411,7 +3411,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct smb2_query_directory_req *req;
 	struct smb2_query_directory_rsp *rsp, *rsp_org;
 	struct cifsd_share_config *share = work->tcon->share_conf;
-	struct cifsd_file *dir_fp;
+	struct cifsd_file *dir_fp = NULL;
 	struct cifsd_dir_info d_info;
 	int rc = 0;
 	char *srch_ptr = NULL;
