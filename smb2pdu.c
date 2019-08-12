@@ -3388,6 +3388,23 @@ static void restart_ctx(struct dir_context *ctx)
 	ctx->pos = 0;
 }
 
+static int verify_info_level(int info_level)
+{
+	switch (info_level) {
+	case FILE_FULL_DIRECTORY_INFORMATION:
+	case FILE_BOTH_DIRECTORY_INFORMATION:
+	case FILE_DIRECTORY_INFORMATION:
+	case FILE_NAMES_INFORMATION:
+	case FILEID_FULL_DIRECTORY_INFORMATION:
+	case FILEID_BOTH_DIRECTORY_INFORMATION:
+		break;
+	default:
+		return -EOPNOTSUPP;
+	}
+
+	return 0;
+}
+
 int smb2_query_dir(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -3411,6 +3428,12 @@ int smb2_query_dir(struct cifsd_work *work)
 				work->next_smb2_rcv_hdr_off);
 		rsp = (struct smb2_query_directory_rsp *)((char *)rsp +
 				work->next_smb2_rsp_hdr_off);
+	}
+
+	rc = verify_info_level(req->FileInformationClass);
+	if (rc) {
+		rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;
+		goto err_out2;
 	}
 
 	dir_fp = cifsd_lookup_fd_slow(work,
