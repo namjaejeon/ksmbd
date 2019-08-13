@@ -2021,6 +2021,9 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 	int next = 0;
 
 	do {
+		if (!eabuf->EaNameLength)
+			goto next;
+
 		cifsd_debug("name : <%s>, name_len : %u, value_len : %u, next : %u\n",
 				eabuf->name, eabuf->EaNameLength,
 				le16_to_cpu(eabuf->EaValueLength),
@@ -2073,6 +2076,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		}
 
 		kfree(attr_name);
+next:
 		next = le32_to_cpu(eabuf->NextEntryOffset);
 		eabuf = (struct smb2_ea_info *)((char *)eabuf + next);
 	} while (next != 0);
