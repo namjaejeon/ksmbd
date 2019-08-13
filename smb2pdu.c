@@ -4700,7 +4700,7 @@ int smb2_query_info(struct cifsd_work *work)
 		else if (rc == -EIO)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 		else if (rc == -EOPNOTSUPP || rsp->hdr.Status == 0)
-			rsp->hdr.Status = STATUS_NOT_SUPPORTED;
+			rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;
 		smb2_set_err_rsp(work);
 
 		cifsd_debug("error while processing smb2 query rc = %d\n",
@@ -5516,7 +5516,7 @@ err_out:
 	else if (rc == -EEXIST)
 		rsp->hdr.Status = STATUS_OBJECT_NAME_COLLISION;
 	else if (rsp->hdr.Status == 0 || rc == -EOPNOTSUPP)
-		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
+		rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;
 	smb2_set_err_rsp(work);
 	cifsd_fd_put(work, fp);
 	cifsd_debug("error while processing smb2 query rc = %d\n",
