@@ -211,19 +211,19 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.find
  - sudo rm -rf /mnt/test1/*
  # smb2 dir test
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.find
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.find
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.fixed
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.fixed
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.one
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.one
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.many
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.many
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.modify
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.modify
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.sorted
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.sorted
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.file-index
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.file-index
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.dir.large-files
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.large-files
  - sudo rm -rf /mnt/test1/*
