@@ -248,3 +248,8 @@ script:
  # smb2 maxfid test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.maxfid
  - sudo rm -rf /mnt/test1/*
+ # smb2 sharemode test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.sharemode-access
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.access-sharemode
+ - sudo rm -rf /mnt/test1/*
