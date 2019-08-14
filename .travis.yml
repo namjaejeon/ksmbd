@@ -201,3 +201,11 @@ script:
  - sudo rm -rf /mnt/test1/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.access
  - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.scan
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.getinfo
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.setinfo
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.find
+ - sudo rm -rf /mnt/test1/*
