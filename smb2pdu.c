@@ -2984,7 +2984,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 			break;
 
 		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		ffdinfo->FileNameLength = cpu_to_le32(name_len);
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
@@ -3005,7 +3005,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		if (!utfname)
 			break;
 		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(name_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = 0;
@@ -3029,7 +3029,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 			break;
 
 		fdinfo = (FILE_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fdinfo->FileNameLength = cpu_to_le32(name_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			fdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
@@ -3050,7 +3050,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 			break;
 
 		fninfo = (FILE_NAMES_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fninfo->FileNameLength = cpu_to_le32(name_len);
 
 		memcpy(fninfo->FileName, utfname, name_len);
@@ -3069,7 +3069,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 			break;
 
 		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(name_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -3093,7 +3093,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 			break;
 
 		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)
-				cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
+			cifsd_vfs_init_kstat(&d_info->bufptr, cifsd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(name_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);

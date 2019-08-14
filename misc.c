@@ -346,9 +346,8 @@ char *convname_updatenextoffset(char *namestr, int len, int size,
 	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
 
 	if (*next_entry_offset > *buf_len) {
-		cifsd_debug("buf_len : %d next_entry_offset : %d"
-				" data_count : %d\n", *buf_len,
-				*next_entry_offset, *data_count);
+		cifsd_debug("buf_len : %d next_entry_offset : %d data_count : %d\n",
+			*buf_len, *next_entry_offset, *data_count);
 		*buf_len = -1;
 		kfree(enc_buf);
 		return NULL;

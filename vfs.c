@@ -851,11 +851,8 @@ char *cifsd_vfs_readdir_name(struct cifsd_work *work,
 	/* 1 for '/'*/
 	file_pathlen = dir_pathlen +  de->namelen + 1;
 	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name) {
-		cifsd_err("Name memory failed for length %d,"
-				" buf_name_len %d\n", dir_pathlen, de->namelen);
+	if (!name)
 		return ERR_PTR(-ENOMEM);
-	}
 
 	memcpy(name, dirpath, dir_pathlen);
 	memset(name + dir_pathlen, '/', 1);
