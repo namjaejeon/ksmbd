@@ -5002,8 +5002,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		}
 
 		generic_fillattr(inode, &stat);
-		fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
-				le32_to_cpu(file_info->Attributes)));
+		fp->f_ci->m_fattr = le32_to_cpu(file_info->Attributes);
 		if (test_share_config_flag(share,
 				CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			rc = cifsd_vfs_setxattr(filp->f_path.dentry,
