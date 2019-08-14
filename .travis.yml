@@ -245,3 +245,6 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
  - sudo rm -rf /mnt/test1/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_bench
+ # smb2 maxfid test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.maxfid
+ - sudo rm -rf /mnt/test1/*
