@@ -227,3 +227,21 @@ script:
  - sudo rm -rf /mnt/test1/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.large-files
  - sudo rm -rf /mnt/test1/*
+ # smb2 rename test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple_nodelete
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_sharing
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_and_delete_access
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_share_delete_but_delete_access
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_no_delete_access
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.msword
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
+ - sudo rm -rf /mnt/test1/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_bench
