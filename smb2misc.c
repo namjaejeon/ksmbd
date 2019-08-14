@@ -413,14 +413,14 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		return 1;
 
 	if (hdr->StructureSize != SMB2_HEADER_STRUCTURE_SIZE) {
-		cifsd_err("Illegal structure size %u\n",
+		cifsd_debug("Illegal structure size %u\n",
 			le16_to_cpu(hdr->StructureSize));
 		return 1;
 	}
 
 	command = le16_to_cpu(hdr->Command);
 	if (command >= NUMBER_OF_SMB2_COMMANDS) {
-		cifsd_err("Illegal SMB2 command %d\n", command);
+		cifsd_debug("Illegal SMB2 command %d\n", command);
 		return 1;
 	}
 
@@ -428,7 +428,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		if (command != SMB2_OPLOCK_BREAK_HE && (hdr->Status == 0 ||
 		    pdu->StructureSize2 != SMB2_ERROR_STRUCTURE_SIZE2_LE)) {
 			/* error packets have 9 byte structure size */
-			cifsd_err("Illegal request size %u for command %d\n",
+			cifsd_debug("Illegal request size %u for command %d\n",
 				le16_to_cpu(pdu->StructureSize2), command);
 			return 1;
 		} else if (command == SMB2_OPLOCK_BREAK_HE
@@ -438,7 +438,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 				&& (le16_to_cpu(pdu->StructureSize2) !=
 					OP_BREAK_STRUCT_SIZE_21)) {
 			/* special case for SMB2.1 lease break message */
-			cifsd_err("Illegal request size %d for oplock break\n",
+			cifsd_debug("Illegal request size %d for oplock break\n",
 				le16_to_cpu(pdu->StructureSize2));
 			return 1;
 		}
@@ -470,7 +470,7 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 					len, clc_len, command, mid);
 			return 0;
 		}
-		cifsd_err(
+		cifsd_debug(
 			"cli req too short, len %d not %d. cmd:%d mid:%llu\n",
 				len, clc_len, command, mid);
 
