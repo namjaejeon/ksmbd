@@ -92,6 +92,7 @@ script:
  - sudo mkdir -p /mnt/2
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
+ - sudo mkdir -p /mnt/test3
  - cifsadmin -i ./cifspwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - cifsd -n --c=./smb.conf --u=./cifspwd.db&
@@ -190,22 +191,22 @@ script:
  - make -j > /dev/null
  - sudo make install > /dev/null
  # smb2 connect test
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.connect
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test1/*
  # smb2 read test
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.eof
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.eof
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.position
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.position
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.dir
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.dir
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.read.access
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.access
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.scan
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.scan
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.getinfo
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.getinfo
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.setinfo
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.setinfo
  - sudo rm -rf /mnt/test1/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test1/ -Utestuser%1234 smb2.scan.find
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.find
  - sudo rm -rf /mnt/test1/*
