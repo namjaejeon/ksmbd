@@ -187,9 +187,8 @@ script:
  - cd ..
  - tar xzvf samba-cifsd.tgz > /dev/null
  - cd samba-cifsd/
- - ./configure > /dev/null
+ - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
  - make -j > /dev/null
- - sudo make install > /dev/null
  # smb2 connect test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test3/*
@@ -202,6 +201,7 @@ script:
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.access
  - sudo rm -rf /mnt/test3/*
+ # smb2 scan test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.scan
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.getinfo
