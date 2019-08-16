@@ -6380,9 +6380,9 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 	struct copychunk_ioctl_rsp *ci_rsp;
 	struct cifsd_file *src_fp = NULL, *dst_fp = NULL;
 	struct srv_copychunk *chunks;
-	unsigned int i, chunk_count, chunk_count_written;
-	unsigned int chunk_size_written;
-	loff_t total_size_written;
+	unsigned int i, chunk_count, chunk_count_written = 0;
+	unsigned int chunk_size_written = 0;
+	loff_t total_size_written = 0;
 	int ret, cnt_code;
 
 	cnt_code = le32_to_cpu(req->CntCode);
@@ -6462,10 +6462,8 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 			&chunk_count_written, &chunk_size_written,
 			&total_size_written);
 	if (ret < 0) {
-		if (ret == -EACCES) {
+		if (ret == -EACCES)
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
-			goto out;
-		}
 		if (ret == -EAGAIN)
 			rsp->hdr.Status = STATUS_FILE_LOCK_CONFLICT;
 		else if (ret == -EBADF)
@@ -6824,8 +6822,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		}
 
 		nbytes = sizeof(struct copychunk_ioctl_rsp);
-		if (smb2_ioctl_copychunk(work, req, rsp) < 0)
-			goto out;
+		smb2_ioctl_copychunk(work, req, rsp);
 		break;
 	case FSCTL_SET_SPARSE:
 	{
