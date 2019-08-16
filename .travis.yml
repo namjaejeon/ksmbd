@@ -123,7 +123,7 @@ script:
  - sudo ./check generic/074
  - sudo ./check generic/075
  - sudo ./check generic/080
-# - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
+ - sudo ./check generic/084
  - sudo ./check generic/091
  - sudo ./check generic/095
  - sudo ./check generic/098
