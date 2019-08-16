@@ -120,7 +120,7 @@ struct cifsd_dirent {
 struct cifsd_kstat {
 	struct kstat		*kstat;
 	unsigned long long	create_time;
-	int			file_attributes;
+	__le32			file_attributes;
 };
 
 struct cifsd_fs_sector_size {

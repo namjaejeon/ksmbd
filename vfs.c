@@ -531,9 +531,9 @@ static void __fill_dentry_attributes(struct cifsd_work *work,
 	 * or that acl is disable in server's filesystem and the config is yes.
 	 */
 	if (S_ISDIR(cifsd_kstat->kstat->mode))
-		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
+		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_DIRECTORY_LE;
 	else
-		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
+		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_ARCHIVE_LE;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -544,7 +544,8 @@ static void __fill_dentry_attributes(struct cifsd_work *work,
 					XATTR_NAME_FILE_ATTRIBUTE,
 					&file_attribute);
 		if (rc > 0)
-			cifsd_kstat->file_attributes = *file_attribute;
+			cifsd_kstat->file_attributes =
+				*((__le32 *)file_attribute);
 		else
 			cifsd_debug("fail to fill file attributes.\n");
 		cifsd_free(file_attribute);
@@ -1849,7 +1850,7 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
 	info->ChangeTime = cpu_to_le64(time);
 
-	if (cifsd_kstat->file_attributes & ATTR_DIRECTORY) {
+	if (cifsd_kstat->file_attributes & FILE_ATTRIBUTE_DIRECTORY_LE) {
 		info->EndOfFile = 0;
 		info->AllocationSize = 0;
 	} else {
@@ -1857,7 +1858,7 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 		info->AllocationSize =
 			cpu_to_le64(cifsd_kstat->kstat->blocks << 9);
 	}
-	info->ExtFileAttributes = cpu_to_le32(cifsd_kstat->file_attributes);
+	info->ExtFileAttributes = cifsd_kstat->file_attributes;
 
 	return info;
 }
