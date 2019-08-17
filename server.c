@@ -21,6 +21,7 @@
 #include "connection.h"
 #include "transport_ipc.h"
 #include "mgmt/user_session.h"
+#include "crypto_ctx.h"
 
 int cifsd_debugging;
 
@@ -118,8 +119,7 @@ static int __process_request(struct cifsd_work *work,
 		return TCP_HANDLER_CONTINUE;
 
 	if (cifsd_verify_smb_message(work)) {
-		cifsd_err("Malformed smb request\n");
-		conn->ops->set_rsp_status(work, STATUS_INVALID_PARAMETER);
+		work->send_no_response = 1;
 		return TCP_HANDLER_ABORT;
 	}
 
@@ -343,6 +343,8 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
+	server_conf_free();
+	server_conf_init();
 	cifsd_ipc_soft_reset();
 	cifsd_conn_transport_destroy();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
@@ -393,17 +395,6 @@ int server_queue_ctrl_init_work(void)
 int server_queue_ctrl_reset_work(void)
 {
 	return __queue_ctrl_work(SERVER_CTRL_TYPE_RESET);
-}
-
-int cifsd_server_daemon_heartbeat(void)
-{
-	if (cifsd_ipc_heartbeat()) {
-		server_conf_free();
-		server_conf_init();
-		server_queue_ctrl_reset_work();
-		return -EINVAL;
-	}
-	return 0;
 }
 
 static ssize_t stats_show(struct class *class,
@@ -484,7 +475,7 @@ static int cifsd_server_shutdown(void)
 	cifsd_ipc_release();
 	cifsd_conn_transport_destroy();
 	cifsd_free_session_table();
-
+	cifsd_crypto_destroy();
 	cifsd_free_global_file_table();
 	destroy_lease_table(NULL);
 	cifsd_destroy_buffer_pools();
@@ -525,6 +516,10 @@ static int __init cifsd_server_init(void)
 		goto error;
 
 	ret = cifsd_inode_hash_init();
+	if (ret)
+		goto error;
+
+	ret = cifsd_crypto_create();
 	if (ret)
 		goto error;
 	return 0;

@@ -42,6 +42,10 @@
 #define SMB311_PROT_ID		0x0311
 #define BAD_PROT_ID		0xFFFF
 
+#define SMB_ECHO_INTERVAL	(60*HZ)
+
+#define CIFS_DEFAULT_IOSIZE	(64 * 1024)
+
 extern struct list_head global_lock_list;
 
 struct cifsd_work;
@@ -132,6 +136,13 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 int cifsd_extract_shortname(struct cifsd_conn *conn,
 			    const char *longname,
 			    char *shortname);
+
+int cifsd_fill_dirent(struct dir_context *ctx,
+		const char *name,
+		int namlen,
+		loff_t offset,
+		u64 ino,
+		unsigned int d_type);
 
 void cifsd_init_smb2_server_common(struct cifsd_conn *conn);
 int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);

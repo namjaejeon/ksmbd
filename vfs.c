@@ -531,9 +531,9 @@ static void __fill_dentry_attributes(struct cifsd_work *work,
 	 * or that acl is disable in server's filesystem and the config is yes.
 	 */
 	if (S_ISDIR(cifsd_kstat->kstat->mode))
-		cifsd_kstat->file_attributes = ATTR_DIRECTORY;
+		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_DIRECTORY_LE;
 	else
-		cifsd_kstat->file_attributes = ATTR_ARCHIVE;
+		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_ARCHIVE_LE;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -544,7 +544,8 @@ static void __fill_dentry_attributes(struct cifsd_work *work,
 					XATTR_NAME_FILE_ATTRIBUTE,
 					&file_attribute);
 		if (rc > 0)
-			cifsd_kstat->file_attributes = *file_attribute;
+			cifsd_kstat->file_attributes =
+				*((__le32 *)file_attribute);
 		else
 			cifsd_debug("fail to fill file attributes.\n");
 		cifsd_free(file_attribute);
@@ -796,57 +797,6 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 
 	return err;
 }
-
-static void fill_file_attributes(struct cifsd_work *work,
-				 struct path *path,
-				 struct cifsd_kstat *cifsd_kstat)
-{
-	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
-}
-
-static void fill_create_time(struct cifsd_work *work,
-			     struct path *path,
-			     struct cifsd_kstat *cifsd_kstat)
-{
-	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
-}
-
-int cifsd_vfs_readdir_name(struct cifsd_work *work,
-			   struct cifsd_kstat *cifsd_kstat,
-			   const char *de_name,
-			   int de_name_len,
-			   const char *dir_path)
-{
-	struct path path;
-	int rc, file_pathlen, dir_pathlen;
-	char *name;
-
-	dir_pathlen = strlen(dir_path);
-	/* 1 for '/'*/
-	file_pathlen = dir_pathlen +  de_name_len + 1;
-	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name)
-		return -ENOMEM;
-
-	memcpy(name, dir_path, dir_pathlen);
-	memset(name + dir_pathlen, '/', 1);
-	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
-	name[file_pathlen] = '\0';
-
-	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
-	if (rc) {
-		cifsd_err("lookup failed: %s [%d]\n", name, rc);
-		kfree(name);
-		return -ENOMEM;
-	}
-
-	generic_fillattr(d_inode(path.dentry), cifsd_kstat->kstat);
-	fill_create_time(work, &path, cifsd_kstat);
-	fill_file_attributes(work, &path, cifsd_kstat);
-	path_put(&path);
-	kfree(name);
-	return 0;
-}
 #else
 static inline void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
@@ -873,16 +823,58 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	return -ENOTSUPP;
 }
-
-int cifsd_vfs_readdir_name(struct cifsd_work *work,
-			   struct cifsd_kstat *cifsd_kstat,
-			   const char *de_name,
-			   int de_name_len,
-			   const char *dir_path)
-{
-	return 0;
-}
 #endif
+
+static void fill_file_attributes(struct cifsd_work *work,
+				 struct path *path,
+				 struct cifsd_kstat *cifsd_kstat)
+{
+	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
+}
+
+static void fill_create_time(struct cifsd_work *work,
+			     struct path *path,
+			     struct cifsd_kstat *cifsd_kstat)
+{
+	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
+}
+
+char *cifsd_vfs_readdir_name(struct cifsd_work *work,
+			     struct cifsd_kstat *cifsd_kstat,
+			     struct cifsd_dirent *de,
+			     char *dirpath)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dirpath);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de->namelen + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name)
+		return ERR_PTR(-ENOMEM);
+
+	memcpy(name, dirpath, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+	if (rc) {
+		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
+		kfree(name);
+		return ERR_PTR(rc);
+	}
+
+	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
+	memcpy(name, de->name, de->namelen);
+	name[de->namelen] = '\0';
+	path_put(&path);
+	return name;
+}
 
 /**
  * cifsd_vfs_fsync() - vfs helper for smb fsync
@@ -1858,7 +1850,7 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
 	info->ChangeTime = cpu_to_le64(time);
 
-	if (cifsd_kstat->file_attributes & ATTR_DIRECTORY) {
+	if (cifsd_kstat->file_attributes & FILE_ATTRIBUTE_DIRECTORY_LE) {
 		info->EndOfFile = 0;
 		info->AllocationSize = 0;
 	} else {
@@ -1866,7 +1858,7 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 		info->AllocationSize =
 			cpu_to_le64(cifsd_kstat->kstat->blocks << 9);
 	}
-	info->ExtFileAttributes = cpu_to_le32(cifsd_kstat->file_attributes);
+	info->ExtFileAttributes = cifsd_kstat->file_attributes;
 
 	return info;
 }
