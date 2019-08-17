@@ -69,6 +69,27 @@
 #define FILE_CREATED           0x00000002
 #define FILE_OVERWRITTEN       0x00000003
 
+/*
+ * Size of the session key (crypto key encrypted with the password
+ */
+#define SMB2_NTLMV2_SESSKEY_SIZE	16
+#define SMB2_SIGNATURE_SIZE		16
+#define SMB2_HMACSHA256_SIZE		32
+#define SMB2_CMACAES_SIZE		16
+
+/*
+ * Size of the smb3 signing key
+ */
+#define SMB3_SIGN_KEY_SIZE		16
+
+#define CIFS_CLIENT_CHALLENGE_SIZE	8
+#define CIFS_SERVER_CHALLENGE_SIZE	8
+
+/* SMB2 Max Credits */
+#define SMB2_MAX_CREDITS		8192
+
+#define SMB2_CLIENT_GUID_SIZE		16
+#define SMB2_CREATE_GUID_SIZE		16
 
 #define NUMBER_OF_SMB2_COMMANDS	0x0013
 

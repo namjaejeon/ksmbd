@@ -9,6 +9,7 @@
 #include "misc.h"
 /* @FIXME */
 #include "connection.h"
+#include "cifsd_work.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
@@ -319,10 +320,8 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
 			if (i == 0) {
 				d_info->name = ".";
-				d_info->name_len = 1;
 			} else {
 				d_info->name = "..";
-				d_info->name_len = 2;
 			}
 
 			if (!match_pattern(d_info->name, search_pattern)) {
@@ -424,6 +423,45 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 			conn->local_nls, 0);
 	len = strlen(out) * 2;
 	return len;
+}
+
+/**
+ * cifsd_fill_dirent() - populates a dirent details in readdir
+ * @ctx:	dir_context information
+ * @name:	dirent name
+ * @namelen:	dirent name length
+ * @offset:	dirent offset in directory
+ * @ino:	dirent inode number
+ * @d_type:	dirent type
+ *
+ * Return:	0 on success, otherwise -EINVAL
+ */
+int cifsd_fill_dirent(struct dir_context *ctx,
+		      const char *name,
+		      int namlen,
+		      loff_t offset,
+		      u64 ino,
+		      unsigned int d_type)
+{
+	struct cifsd_readdir_data *buf =
+		container_of(ctx, struct cifsd_readdir_data, ctx);
+	struct cifsd_dirent *de = (void *)(buf->dirent + buf->used);
+	unsigned int reclen;
+
+	reclen = ALIGN(sizeof(struct cifsd_dirent) + namlen, sizeof(u64));
+	if (buf->used + reclen > PAGE_SIZE) {
+		buf->full = 1;
+		return -EINVAL;
+	}
+
+	de->namelen = namlen;
+	de->offset = offset;
+	de->ino = ino;
+	de->d_type = d_type;
+	memcpy(de->name, name, namlen);
+	buf->used += reclen;
+
+	return 0;
 }
 
 static int __smb2_negotiate(struct cifsd_conn *conn)

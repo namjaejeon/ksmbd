@@ -23,6 +23,8 @@ before_script:
  - export PATH=/usr/local/lib:$PATH
  - sudo useradd fsgqa
  - sudo useradd 123456-fsgqa
+ # Prerequisite for smbtorture testing
+ - sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-dev
 
 script:
  # Copy cifsd source to kernel
@@ -90,6 +92,7 @@ script:
  - sudo mkdir -p /mnt/2
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
+ - sudo mkdir -p /mnt/test3
  - cifsadmin -i ./cifspwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - cifsd -n --c=./smb.conf --u=./cifspwd.db&
@@ -98,7 +101,7 @@ script:
  - tar xzvf xfstests-cifsd.tgz > /dev/null
  - cd xfstests-cifsd
  - ./configure > /dev/null
- - make > /dev/null
+ - make -j > /dev/null
  - sudo ./check cifs/001
  - sudo ./check generic/001
  - sudo ./check generic/002
@@ -181,3 +184,73 @@ script:
 # - time_wait sudo ./check generic/476 (timeover > 10m)
  - sudo ./check generic/490
 # - sudo ./check generic/504 #fail, It may be cifs client issue on 4.15 kernel
+ - cd ..
+ - tar xzvf samba-cifsd.tgz > /dev/null
+ - cd samba-cifsd/
+ - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
+ - make -j > /dev/null
+ # smb2 connect test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
+ - sudo rm -rf /mnt/test3/*
+ # smb2 read test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.eof
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.position
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.dir
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.access
+ - sudo rm -rf /mnt/test3/*
+ # smb2 scan test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.scan
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.getinfo
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.setinfo
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.find
+ - sudo rm -rf /mnt/test3/*
+ # smb2 dir test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.find
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.fixed
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.one
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.many
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.modify
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.sorted
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.file-index
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.large-files
+ - sudo rm -rf /mnt/test3/*
+ # smb2 rename test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple_nodelete
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_sharing
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_and_delete_access
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_share_delete_but_delete_access
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_no_delete_access
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.msword
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_bench
+ - sudo rm -rf /mnt/test3/*
+ # smb2 maxfid test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.maxfid
+ - sudo rm -rf /mnt/test3/*
+ # smb2 sharemode test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.sharemode-access
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.access-sharemode
+ - sudo rm -rf /mnt/test3/*

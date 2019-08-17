@@ -8,7 +8,7 @@
 
 #include <linux/hashtable.h>
 
-#include "../glob.h"  /* FIXME */
+#include "../smb_common.h"
 #include "../ntlmssp.h"
 
 #define CIFDS_SESSION_FLAG_SMB1		(1 << 0)
