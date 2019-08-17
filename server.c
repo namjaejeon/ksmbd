@@ -119,8 +119,7 @@ static int __process_request(struct cifsd_work *work,
 		return TCP_HANDLER_CONTINUE;
 
 	if (cifsd_verify_smb_message(work)) {
-		cifsd_err("Malformed smb request\n");
-		conn->ops->set_rsp_status(work, STATUS_INVALID_PARAMETER);
+		work->send_no_response = 1;
 		return TCP_HANDLER_ABORT;
 	}
 
