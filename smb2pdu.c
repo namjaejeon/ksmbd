@@ -38,7 +38,6 @@
 
 bool multi_channel_enable;
 bool encryption_enable;
-bool stream_file_enable;
 
 /**
  * check_session_id() - check for valid session id in smb header
@@ -2355,7 +2354,8 @@ int smb2_open(struct cifsd_work *work)
 
 	cifsd_debug("converted name = %s\n", name);
 	if (strchr(name, ':')) {
-		if (stream_file_enable == false) {
+		if (!test_share_config_flag(work->tcon->share_conf,
+				CIFSD_SHARE_FLAG_STREAMS)) {
 			rc = -EBADF;
 			goto err_out1;
 		}
@@ -3909,7 +3909,8 @@ static void get_file_stream_info(struct cifsd_work *work,
 	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
 
-	if (stream_file_enable == false) {
+	if (!test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_STREAMS)) {
 		file_info->NextEntryOffset = 0;
 		streamlen  = smbConvertToUTF16((__le16 *)file_info->StreamName,
 						"::$DATA",
