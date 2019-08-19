@@ -2135,7 +2135,7 @@ static noinline int smb2_set_stream_name_xattr(struct path *path,
 	rc = cifsd_vfs_casexattr_len(path->dentry,
 				     xattr_stream_name,
 				     xattr_stream_size);
-	if (rc > 0)
+	if (rc >= 0)
 		return 0;
 
 	if (fp->cdoption == FILE_OPEN_LE) {
