@@ -6340,12 +6340,6 @@ static int smb2_ioctl_copychunk(struct cifsd_work *work,
 			(FILE_READ_DATA_LE | FILE_GENERIC_READ_LE))) {
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		goto out;
-	} else if (cnt_code == FSCTL_COPYCHUNK_WRITE &&
-			dst_fp->daccess &
-			 (FILE_READ_DATA_LE |
-			FILE_GENERIC_READ_LE)) {
-		rsp->hdr.Status = STATUS_ACCESS_DENIED;
-		goto out;
 	}
 
 	ret = cifsd_vfs_copy_file_ranges(work, src_fp, dst_fp,
