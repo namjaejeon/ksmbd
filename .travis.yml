@@ -280,3 +280,14 @@ script:
  # smb2 streams test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams
  - sudo rm -rf /mnt/test3/*
+ # smb2 create test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.gentest
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.blob
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.open
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.brlocked
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.multi
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.delete
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.leading-slash
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.impersonation
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.dir-alloc-size
+ - sudo rm -rf /mnt/test3/*
