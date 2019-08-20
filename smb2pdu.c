@@ -2135,7 +2135,7 @@ static noinline int smb2_set_stream_name_xattr(struct path *path,
 	rc = cifsd_vfs_casexattr_len(path->dentry,
 				     xattr_stream_name,
 				     xattr_stream_size);
-	if (rc > 0)
+	if (rc >= 0)
 		return 0;
 
 	if (fp->cdoption == FILE_OPEN_LE) {
@@ -2443,7 +2443,7 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out1;
 	}
 
-	if (req->DesiredAccess && !(req->DesiredAccess & DISIRED_ACCESS_MASK)) {
+	if (!req->DesiredAccess || !(req->DesiredAccess & DESIRED_ACCESS_MASK)) {
 		cifsd_err("Invalid disired access : 0x%x\n",
 			le32_to_cpu(req->DesiredAccess));
 		rc = -EACCES;
@@ -2679,42 +2679,6 @@ int smb2_open(struct cifsd_work *work)
 		file_info = FILE_CREATED;
 	}
 
-	if (req->CreateContextsOffset) {
-		struct create_alloc_size_req *az_req;
-
-		az_req = (struct create_alloc_size_req *)
-				smb2_find_context_vals(req,
-				SMB2_CREATE_ALLOCATION_SIZE);
-		if (IS_ERR(az_req)) {
-			rc = check_context_err(az_req,
-				SMB2_CREATE_ALLOCATION_SIZE);
-			if (rc < 0)
-				goto err_out1;
-		} else {
-			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
-			int err;
-
-			cifsd_debug("request smb2 create allocate size : %llu\n",
-				alloc_size);
-			err = cifsd_vfs_alloc_size(work, fp, alloc_size);
-			if (err < 0)
-				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
-					err);
-		}
-
-		context = smb2_find_context_vals(req,
-				SMB2_CREATE_QUERY_ON_DISK_ID);
-		if (IS_ERR(context)) {
-			rc = check_context_err(context,
-				SMB2_CREATE_QUERY_ON_DISK_ID);
-			if (rc < 0)
-				goto err_out1;
-		} else {
-			cifsd_debug("get query on disk id context\n");
-			query_disk_id = 1;
-		}
-	}
-
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 	if (!S_ISDIR(file_inode(filp)->i_mode) && open_flags & O_TRUNC
@@ -2766,7 +2730,46 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
+	if (req->CreateContextsOffset) {
+		struct create_alloc_size_req *az_req;
+
+		az_req = (struct create_alloc_size_req *)
+				smb2_find_context_vals(req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+		if (IS_ERR(az_req)) {
+			rc = check_context_err(az_req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+			if (rc < 0)
+				goto err_out1;
+		} else {
+			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
+			int err;
+
+			cifsd_debug("request smb2 create allocate size : %llu\n",
+				alloc_size);
+			err = cifsd_vfs_alloc_size(work, fp, alloc_size);
+			if (err < 0)
+				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
+					err);
+		}
+
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+		if (IS_ERR(context)) {
+			rc = check_context_err(context,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+			if (rc < 0)
+				goto err_out1;
+		} else {
+			cifsd_debug("get query on disk id context\n");
+			query_disk_id = 1;
+		}
+	}
+
+	if (test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_STREAMS) &&
+		(file_info != FILE_OPENED) &&
+			!S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
 		cifsd_vfs_setxattr(path.dentry, XATTR_NAME_STREAM,
 				   NULL, 0, 0);
@@ -3776,7 +3779,8 @@ static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
 	sinfo = (struct smb2_file_standard_info *)rsp->Buffer;
 	delete_pending = cifsd_inode_pending_delete(fp);
 
-	sinfo->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	sinfo->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+		cpu_to_le64(inode->i_blocks << 9);
 	sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	sinfo->NumberOfLinks = cpu_to_le32(get_nlink(&stat) - delete_pending);
 	sinfo->DeletePending = delete_pending;
@@ -3844,7 +3848,8 @@ static int get_file_all_info(struct cifsd_work *work,
 	file_info->ChangeTime = cpu_to_le64(time);
 	file_info->Attributes = fp->f_ci->m_fattr;
 	file_info->Pad1 = 0;
-	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+		cpu_to_le64(inode->i_blocks << 9);
 	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	file_info->NumberOfLinks =
 			cpu_to_le32(get_nlink(&stat) - delete_pending);
@@ -4041,7 +4046,8 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 	time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
 	file_info->ChangeTime = cpu_to_le64(time);
 	file_info->Attributes = fp->f_ci->m_fattr;
-	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+		cpu_to_le64(inode->i_blocks << 9);
 	file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	file_info->Reserved = cpu_to_le32(0);
 	rsp->OutputBufferLength =
