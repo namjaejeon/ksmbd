@@ -2766,7 +2766,10 @@ int smb2_open(struct cifsd_work *work)
 			goto err_out;
 	}
 
-	if ((file_info != FILE_OPENED) && !S_ISDIR(file_inode(filp)->i_mode)) {
+	if (test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_STREAMS) &&
+		(file_info != FILE_OPENED) &&
+			!S_ISDIR(file_inode(filp)->i_mode)) {
 		/* Create default data stream in xattr */
 		cifsd_vfs_setxattr(path.dentry, XATTR_NAME_STREAM,
 				   NULL, 0, 0);
