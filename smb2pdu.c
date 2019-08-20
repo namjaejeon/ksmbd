@@ -2526,6 +2526,17 @@ int smb2_open(struct cifsd_work *work)
 		 * look the current entity
 		 */
 		rc = cifsd_vfs_kern_path(name, 0, &path, 1);
+		if (!rc) {
+			/*
+			 * If file exists with under flags, return access
+			 * denied error.
+			 */
+			if (req->CreateDisposition == FILE_OVERWRITE_IF_LE ||
+				req->CreateDisposition == FILE_OPEN_IF_LE) {
+				rc = -EACCES;
+				goto err_out;
+			}
+		}
 	} else {
 		/*
 		 * Use LOOKUP_FOLLOW to follow the path of
