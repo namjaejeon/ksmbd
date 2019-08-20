@@ -2679,42 +2679,6 @@ int smb2_open(struct cifsd_work *work)
 		file_info = FILE_CREATED;
 	}
 
-	if (req->CreateContextsOffset) {
-		struct create_alloc_size_req *az_req;
-
-		az_req = (struct create_alloc_size_req *)
-				smb2_find_context_vals(req,
-				SMB2_CREATE_ALLOCATION_SIZE);
-		if (IS_ERR(az_req)) {
-			rc = check_context_err(az_req,
-				SMB2_CREATE_ALLOCATION_SIZE);
-			if (rc < 0)
-				goto err_out1;
-		} else {
-			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
-			int err;
-
-			cifsd_debug("request smb2 create allocate size : %llu\n",
-				alloc_size);
-			err = cifsd_vfs_alloc_size(work, fp, alloc_size);
-			if (err < 0)
-				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
-					err);
-		}
-
-		context = smb2_find_context_vals(req,
-				SMB2_CREATE_QUERY_ON_DISK_ID);
-		if (IS_ERR(context)) {
-			rc = check_context_err(context,
-				SMB2_CREATE_QUERY_ON_DISK_ID);
-			if (rc < 0)
-				goto err_out1;
-		} else {
-			cifsd_debug("get query on disk id context\n");
-			query_disk_id = 1;
-		}
-	}
-
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 	if (!S_ISDIR(file_inode(filp)->i_mode) && open_flags & O_TRUNC
@@ -2764,6 +2728,42 @@ int smb2_open(struct cifsd_work *work)
 		rc = smb2_create_truncate(&path, stream_name != NULL);
 		if (rc)
 			goto err_out;
+	}
+
+	if (req->CreateContextsOffset) {
+		struct create_alloc_size_req *az_req;
+
+		az_req = (struct create_alloc_size_req *)
+				smb2_find_context_vals(req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+		if (IS_ERR(az_req)) {
+			rc = check_context_err(az_req,
+				SMB2_CREATE_ALLOCATION_SIZE);
+			if (rc < 0)
+				goto err_out1;
+		} else {
+			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
+			int err;
+
+			cifsd_debug("request smb2 create allocate size : %llu\n",
+				alloc_size);
+			err = cifsd_vfs_alloc_size(work, fp, alloc_size);
+			if (err < 0)
+				cifsd_debug("cifsd_vfs_alloc_size is failed : %d\n",
+					err);
+		}
+
+		context = smb2_find_context_vals(req,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+		if (IS_ERR(context)) {
+			rc = check_context_err(context,
+				SMB2_CREATE_QUERY_ON_DISK_ID);
+			if (rc < 0)
+				goto err_out1;
+		} else {
+			cifsd_debug("get query on disk id context\n");
+			query_disk_id = 1;
+		}
 	}
 
 	if (test_share_config_flag(work->tcon->share_conf,
