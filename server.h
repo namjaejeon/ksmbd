@@ -18,6 +18,7 @@
 extern int cifsd_debugging;
 
 struct cifsd_server_config {
+	unsigned int		flags;
 	unsigned int		state;
 	short			signing;
 	short			enforced_signing;

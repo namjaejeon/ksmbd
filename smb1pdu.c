@@ -7774,7 +7774,9 @@ int smb_open_andx(struct cifsd_work *work)
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
-	if (oplocks_enable && !S_ISDIR(file_inode(fp->filp)->i_mode) &&
+	if (test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_OPLOCKS) &&
+		!S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
 		/* Client cannot request levelII oplock directly */
 		err = smb_grant_oplock(work, oplock_flags, fp->volatile_id,
