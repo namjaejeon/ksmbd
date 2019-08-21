@@ -5,6 +5,7 @@
  */
 
 #include <linux/fs.h>
+#include <linux/slab.h>
 
 /* @FIXME */
 #include "glob.h"
