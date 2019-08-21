@@ -1550,6 +1550,12 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 	return vfs_removexattr(dentry, attr_name);
 }
 
+void cifsd_vfs_xattr_free(char *xattr)
+{
+	if (xattr)
+		vfree(xattr);
+}
+
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 {
 	int err = 0;

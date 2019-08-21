@@ -3867,8 +3867,7 @@ done:
 	rsp->OutputBufferLength = cpu_to_le32(rsp_data_cnt);
 	inc_rfc1001_len(rsp_org, rsp_data_cnt);
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return rc;
 }
 
@@ -4151,8 +4150,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 	/* last entry offset should be 0 */
 	file_info->NextEntryOffset = 0;
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 
 	rsp->OutputBufferLength = cpu_to_le32(nbytes);
 	inc_rfc1001_len(rsp_org, nbytes);

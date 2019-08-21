@@ -8,6 +8,7 @@
 #include <linux/posix_acl_xattr.h>
 #include <linux/namei.h>
 #include <linux/statfs.h>
+#include <linux/vmalloc.h>
 
 #include "glob.h"
 #include "smb1pdu.h"
@@ -3844,8 +3845,7 @@ done:
 	rsp->ByteCount = cpu_to_le16(rsp_data_cnt + 5);
 	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return rc;
 }
 

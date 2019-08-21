@@ -186,6 +186,7 @@ int cifsd_vfs_xattr_stream_name(char *stream_name,
 
 int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams);
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name);
+void cifsd_vfs_xattr_free(char *xattr);
 
 int cifsd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 		bool caseless);
