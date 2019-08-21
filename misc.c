@@ -315,6 +315,9 @@ char *cifsd_convert_dir_info_name(struct cifsd_dir_info *d_info,
 	char *conv;
 	int  sz = min(4 * d_info->name_len, PATH_MAX);
 
+	if (!sz)
+		return NULL;
+
 	conv = kmalloc(sz, GFP_KERNEL);
 	if (!conv)
 		return NULL;
