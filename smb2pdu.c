@@ -3083,6 +3083,12 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		return -ENOMEM;
 
 	conv_len -= 2;
+	/* Somehow the name has only terminating NULL bytes */
+	if (conv_len < 0) {
+		kfree(conv_name);
+		return -EINVAL;
+	}
+
 	struct_sz = readdir_info_level_struct_sz(info_level);
 	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
 				  CIFSD_DIR_INFO_ALIGNMENT);
