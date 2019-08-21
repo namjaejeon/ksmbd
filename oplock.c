@@ -13,16 +13,14 @@
 #include "buffer_pool.h"
 #include "connection.h"
 #include "mgmt/user_session.h"
+#include "mgmt/share_config.h"
+#include "mgmt/tree_connect.h"
 
-bool oplocks_enable;
 bool lease_enable;
 bool durable_enable;
 
 static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
-
-module_param(oplocks_enable, bool, 0644);
-MODULE_PARM_DESC(oplocks_enable, "Enable or disable oplocks. Default: y/Y/1");
 
 module_param(lease_enable, bool, 0644);
 MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
@@ -369,7 +367,7 @@ void close_id_del_oplock(struct cifsd_file *fp)
 {
 	struct oplock_info *opinfo;
 
-	if (!oplocks_enable || S_ISDIR(file_inode(fp->filp)->i_mode))
+	if (S_ISDIR(file_inode(fp->filp)->i_mode))
 		return;
 
 	opinfo = opinfo_get(fp);
@@ -1355,11 +1353,17 @@ static int smb_break_all_write_oplock(struct cifsd_work *work,
  * @fp:		cifsd file pointer
  * @is_trunc:	truncate on open
  */
-void smb_break_all_levII_oplock(struct cifsd_conn *conn,
+void smb_break_all_levII_oplock(struct cifsd_work *work,
 	struct cifsd_file *fp, int is_trunc)
 {
 	struct oplock_info *op, *brk_op;
 	struct cifsd_inode *ci;
+	struct cifsd_conn *conn = work->sess->conn;
+
+	if (!test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_OPLOCKS)) {
+		return;
+	}
 
 	ci = fp->f_ci;
 	op = opinfo_get(fp);
@@ -1427,9 +1431,13 @@ void smb_break_all_oplock(struct cifsd_work *work, struct cifsd_file *fp)
 {
 	int ret;
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_OPLOCKS))
+		return;
+
 	ret = smb_break_all_write_oplock(work, fp, 1);
 	if (!ret)
-		smb_break_all_levII_oplock(work->conn, fp, 1);
+		smb_break_all_levII_oplock(work, fp, 1);
 }
 
 /**

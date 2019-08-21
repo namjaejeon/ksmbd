@@ -2398,7 +2398,7 @@ int smb2_open(struct cifsd_work *work)
 			goto reconnected;
 		}
 	} else {
-		if (oplocks_enable && req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
+		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
 			lc = parse_lease_state(req);
 	}
 
@@ -2694,8 +2694,7 @@ int smb2_open(struct cifsd_work *work)
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
 	if (!S_ISDIR(file_inode(filp)->i_mode) && open_flags & O_TRUNC
 		&& !fp->attrib_only && !stream_name) {
-		if (oplocks_enable)
-			smb_break_all_oplock(work, fp);
+		smb_break_all_oplock(work, fp);
 		need_truncate = 1;
 	}
 
@@ -2708,7 +2707,9 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	share_ret = cifsd_smb_check_shared_mode(fp->filp, fp);
-	if (!oplocks_enable || (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
+	if (!test_share_config_flag(work->tcon->share_conf,
+			CIFSD_SHARE_FLAG_OPLOCKS) ||
+		(req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
 		!(conn->vals->capabilities & SMB2_GLOBAL_CAP_LEASING))) {
 		if (share_ret < 0 && !S_ISDIR(FP_INODE(fp)->i_mode)) {
 			rc = share_ret;
@@ -6383,7 +6384,7 @@ skip:
 		}
 	}
 
-	if (oplocks_enable && atomic_read(&fp->f_ci->op_count) > 1)
+	if (atomic_read(&fp->f_ci->op_count) > 1)
 		smb_break_all_oplock(work, fp);
 
 	rsp->StructureSize = cpu_to_le16(4);
