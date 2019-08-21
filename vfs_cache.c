@@ -6,6 +6,7 @@
 
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 /* @FIXME */
 #include "glob.h"
