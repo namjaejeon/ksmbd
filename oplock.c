@@ -16,14 +16,10 @@
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 
-bool lease_enable;
 bool durable_enable;
 
 static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
-
-module_param(lease_enable, bool, 0644);
-MODULE_PARM_DESC(lease_enable, "Enable or disable lease. Default: y/Y/1");
 
 /**
  * get_new_opinfo() - allocate a new opinfo object for oplock info

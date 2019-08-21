@@ -25,7 +25,14 @@ struct cifsd_heartbeat {
 	__u32	handle;
 } ____cifsd_align;
 
+/*
+ * Global config flags.
+ */
+#define CIFSD_GLOBAL_FLAG_INVALID	(0)
+#define CIFSD_GLOBAL_FLAG_SMB2_LEASES	(1 << 0)
+
 struct cifsd_startup_request {
+	__u32	flags;
 	__s32	signing;
 	__s8	min_prot[16];
 	__s8	max_prot[16];
