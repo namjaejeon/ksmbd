@@ -489,10 +489,8 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 		goto out;
 	}
 
-	if (oplocks_enable) {
-		/* Do we need to break any of a levelII oplock? */
-		smb_break_all_levII_oplock(sess->conn, fp, 1);
-	}
+	/* Do we need to break any of a levelII oplock? */
+	smb_break_all_levII_oplock(work, fp, 1);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	old_fs = get_fs();
@@ -1201,7 +1199,6 @@ int cifsd_vfs_rename_slowpath(char *oldname, char *newname)
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size)
 {
-	struct cifsd_session *sess = work->sess;
 	struct path path;
 	int err = 0;
 	struct inode *inode;
@@ -1222,24 +1219,24 @@ int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 		struct file *filp;
 
 		filp = fp->filp;
-		if (oplocks_enable) {
-			/* Do we need to break any of a levelII oplock? */
-			smb_break_all_levII_oplock(sess->conn, fp, 1);
-		} else {
-			inode = file_inode(filp);
-			if (size < inode->i_size) {
-				err = check_lock_range(filp, size,
-					inode->i_size - 1, WRITE);
-			} else {
-				err = check_lock_range(filp, inode->i_size,
-					size - 1, WRITE);
-			}
 
-			if (err) {
-				cifsd_err("failed due to lock\n");
-				return -EAGAIN;
-			}
+		/* Do we need to break any of a levelII oplock? */
+		smb_break_all_levII_oplock(work, fp, 1);
+
+		inode = file_inode(filp);
+		if (size < inode->i_size) {
+			err = check_lock_range(filp, size,
+					inode->i_size - 1, WRITE);
+		} else {
+			err = check_lock_range(filp, inode->i_size,
+					size - 1, WRITE);
 		}
+
+		if (err) {
+			cifsd_err("failed due to lock\n");
+			return -EAGAIN;
+		}
+
 		err = vfs_truncate(&filp->f_path, size);
 		if (err)
 			cifsd_err("truncate failed for filename : %s err %d\n",
@@ -1482,10 +1479,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len)
 {
-	struct cifsd_conn *conn = work->sess->conn;
-
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(conn, fp, 1);
+	smb_break_all_levII_oplock(work, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
@@ -1494,11 +1488,7 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 loff_t off,
 			 loff_t len)
 {
-	struct cifsd_conn *conn = work->sess->conn;
-
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(conn, fp, 1);
-
+	smb_break_all_levII_oplock(work, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
 }
 
@@ -1672,7 +1662,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	}
 
 	if (flags & O_TRUNC) {
-		if (oplocks_enable && fexist)
+		if (fexist)
 			smb_break_all_oplock(work, fp);
 		err = vfs_truncate((struct path *)path, 0);
 		if (err)
@@ -2019,8 +2009,7 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 	if (cifsd_stream_fd(src_fp) || cifsd_stream_fd(dst_fp))
 		return -EBADF;
 
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(work->sess->conn, dst_fp, 1);
+	smb_break_all_levII_oplock(work, dst_fp, 1);
 
 	for (i = 0; i < chunk_count; i++) {
 		src_off = le64_to_cpu(chunks[i].SourceOffset);
