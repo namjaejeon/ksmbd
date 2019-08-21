@@ -3258,7 +3258,10 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 		}
 
 		cifsd_kstat.kstat = &kstat;
-		cifsd_vfs_fill_dentry_attrs(priv->work, dent, &cifsd_kstat);
+		if (priv->info_level != FILE_NAMES_INFORMATION)
+			cifsd_vfs_fill_dentry_attrs(priv->work,
+						    dent,
+						    &cifsd_kstat);
 
 		rc = smb2_populate_readdir_entry(priv->work->conn,
 						 priv->info_level,
