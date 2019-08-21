@@ -291,3 +291,18 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.impersonation
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.dir-alloc-size
  - sudo rm -rf /mnt/test3/*
+ # smb2 delete-on-close test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.OVERWRITE_IF
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.OVERWRITE_IF Existing"
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.CREATE
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.CREATE Existing"
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.CREATE_IF
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.CREATE_IF Existing"
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.FIND_and_set_DOC
+ - sudo rm -rf /mnt/test3/*
