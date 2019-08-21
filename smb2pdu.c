@@ -2977,7 +2977,7 @@ static int readdir_info_level_struct_sz(int info_level)
 	case FILE_NAMES_INFORMATION:
 		return sizeof(FILE_NAMES_INFO);
 	case FILEID_FULL_DIRECTORY_INFORMATION:
-		return sizeof(SEARCH_ID_FULL_DIR_INFO);
+		return sizeof(FILE_ID_FULL_DIR_INFO);
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 		return sizeof(FILE_ID_BOTH_DIRECTORY_INFO);
 	default:
@@ -3030,9 +3030,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		SEARCH_ID_FULL_DIR_INFO *dinfo;
+		FILE_ID_FULL_DIR_INFO *dinfo;
 
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->rptr;
+		dinfo = (FILE_ID_FULL_DIR_INFO *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(dinfo->NextEntryOffset);
 		d_info->name = dinfo->FileName;
 		d_info->name_len = le32_to_cpu(dinfo->FileNameLength);
@@ -3155,9 +3155,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		SEARCH_ID_FULL_DIR_INFO *dinfo;
+		FILE_ID_FULL_DIR_INFO *dinfo;
 
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)kstat;
+		dinfo = (FILE_ID_FULL_DIR_INFO *)kstat;
 		dinfo->FileNameLength = cpu_to_le32(conv_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -3347,9 +3347,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		SEARCH_ID_FULL_DIR_INFO *dinfo;
+		FILE_ID_FULL_DIR_INFO *dinfo;
 
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)d_info->wptr;
+		dinfo = (FILE_ID_FULL_DIR_INFO *)d_info->wptr;
 		memcpy(dinfo->FileName, d_info->name, d_info->name_len);
 		dinfo->FileName[d_info->name_len] = 0x00;
 		dinfo->FileNameLength = cpu_to_le32(d_info->name_len);

@@ -5437,7 +5437,7 @@ static int readdir_info_level_struct_sz(int info_level)
 	case SMB_FIND_FILE_BOTH_DIRECTORY_INFO:
 		return sizeof(FILE_BOTH_DIRECTORY_INFO);
 	case SMB_FIND_FILE_ID_FULL_DIR_INFO:
-		return sizeof(SEARCH_ID_FULL_DIR_INFO);
+		return sizeof(FILE_ID_FULL_DIR_INFO);
 	case SMB_FIND_FILE_ID_BOTH_DIR_INFO:
 		return sizeof(FILE_ID_BOTH_DIRECTORY_INFO);
 	case SMB_FIND_FILE_UNIX:
@@ -5606,9 +5606,9 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case SMB_FIND_FILE_ID_FULL_DIR_INFO:
 	{
-		SEARCH_ID_FULL_DIR_INFO *dinfo = NULL;
+		FILE_ID_FULL_DIR_INFO *dinfo = NULL;
 
-		dinfo = (SEARCH_ID_FULL_DIR_INFO *)
+		dinfo = (FILE_ID_FULL_DIR_INFO *)
 			cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 		dinfo->FileNameLength = cpu_to_le32(conv_len);
 		dinfo->EaSize = 0;
