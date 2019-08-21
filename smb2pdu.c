@@ -3092,7 +3092,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		return -ENOSPC;
 	}
 
-	kstat = cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
+	kstat = d_info->wptr;
+	if (info_level != FILE_NAMES_INFORMATION)
+		kstat = cifsd_vfs_init_kstat(&d_info->wptr, cifsd_kstat);
 
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
