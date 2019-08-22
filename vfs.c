@@ -126,8 +126,7 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 			cifsd_err("cifsd_vfs_setxattr() failed: %d\n", rc);
 	}
 
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 }
 
 /**
@@ -236,8 +235,7 @@ static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 	}
 
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return value_len;
 }
 
@@ -1268,7 +1266,7 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 	if (size <= 0)
 		return size;
 
-	vlist = vmalloc(size);
+	vlist = cifsd_alloc(size);
 	if (!vlist)
 		return -ENOMEM;
 
@@ -1412,9 +1410,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 			cifsd_debug("remove xattr failed : %s\n", name);
 	}
 out:
-	if (xattr_list)
-		vfree(xattr_list);
-
+	cifsd_vfs_xattr_free(xattr_list);
 	return err;
 }
 
@@ -1552,8 +1548,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 
 void cifsd_vfs_xattr_free(char *xattr)
 {
-	if (xattr)
-		vfree(xattr);
+	cifsd_free(xattr);
 }
 
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
@@ -1912,8 +1907,7 @@ ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 	}
 
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return value_len;
 }
 
