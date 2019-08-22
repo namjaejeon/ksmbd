@@ -17,6 +17,8 @@
 #include <linux/fsnotify.h>
 #include <linux/dcache.h>
 #include <linux/fiemap.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
@@ -489,10 +491,8 @@ int cifsd_vfs_write(struct cifsd_work *work, struct cifsd_file *fp,
 		goto out;
 	}
 
-	if (oplocks_enable) {
-		/* Do we need to break any of a levelII oplock? */
-		smb_break_all_levII_oplock(sess->conn, fp, 1);
-	}
+	/* Do we need to break any of a levelII oplock? */
+	smb_break_all_levII_oplock(work, fp, 1);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
 	old_fs = get_fs();
@@ -797,6 +797,57 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 
 	return err;
 }
+
+static void fill_file_attributes(struct cifsd_work *work,
+				 struct path *path,
+				 struct cifsd_kstat *cifsd_kstat)
+{
+	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
+}
+
+static void fill_create_time(struct cifsd_work *work,
+			     struct path *path,
+			     struct cifsd_kstat *cifsd_kstat)
+{
+	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
+}
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dir_path);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de_name_len + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
+
+	memcpy(name, dir_path, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+	if (rc) {
+		cifsd_err("lookup failed: %s [%d]\n", name, rc);
+		kfree(name);
+		return -ENOMEM;
+	}
+
+	generic_fillattr(d_inode(path.dentry), cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
+	path_put(&path);
+	kfree(name);
+	return 0;
+}
 #else
 static inline void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
@@ -823,58 +874,16 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	return -ENOTSUPP;
 }
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	return 0;
+}
 #endif
-
-static void fill_file_attributes(struct cifsd_work *work,
-				 struct path *path,
-				 struct cifsd_kstat *cifsd_kstat)
-{
-	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
-}
-
-static void fill_create_time(struct cifsd_work *work,
-			     struct path *path,
-			     struct cifsd_kstat *cifsd_kstat)
-{
-	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
-}
-
-char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct cifsd_kstat *cifsd_kstat,
-			     struct cifsd_dirent *de,
-			     char *dirpath)
-{
-	struct path path;
-	int rc, file_pathlen, dir_pathlen;
-	char *name;
-
-	dir_pathlen = strlen(dirpath);
-	/* 1 for '/'*/
-	file_pathlen = dir_pathlen +  de->namelen + 1;
-	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name)
-		return ERR_PTR(-ENOMEM);
-
-	memcpy(name, dirpath, dir_pathlen);
-	memset(name + dir_pathlen, '/', 1);
-	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
-	name[file_pathlen] = '\0';
-
-	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
-	if (rc) {
-		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
-		kfree(name);
-		return ERR_PTR(rc);
-	}
-
-	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
-	fill_create_time(work, &path, cifsd_kstat);
-	fill_file_attributes(work, &path, cifsd_kstat);
-	memcpy(name, de->name, de->namelen);
-	name[de->namelen] = '\0';
-	path_put(&path);
-	return name;
-}
 
 /**
  * cifsd_vfs_fsync() - vfs helper for smb fsync
@@ -1192,7 +1201,6 @@ int cifsd_vfs_rename_slowpath(char *oldname, char *newname)
 int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 	struct cifsd_file *fp, loff_t size)
 {
-	struct cifsd_session *sess = work->sess;
 	struct path path;
 	int err = 0;
 	struct inode *inode;
@@ -1213,24 +1221,24 @@ int cifsd_vfs_truncate(struct cifsd_work *work, const char *name,
 		struct file *filp;
 
 		filp = fp->filp;
-		if (oplocks_enable) {
-			/* Do we need to break any of a levelII oplock? */
-			smb_break_all_levII_oplock(sess->conn, fp, 1);
-		} else {
-			inode = file_inode(filp);
-			if (size < inode->i_size) {
-				err = check_lock_range(filp, size,
-					inode->i_size - 1, WRITE);
-			} else {
-				err = check_lock_range(filp, inode->i_size,
-					size - 1, WRITE);
-			}
 
-			if (err) {
-				cifsd_err("failed due to lock\n");
-				return -EAGAIN;
-			}
+		/* Do we need to break any of a levelII oplock? */
+		smb_break_all_levII_oplock(work, fp, 1);
+
+		inode = file_inode(filp);
+		if (size < inode->i_size) {
+			err = check_lock_range(filp, size,
+					inode->i_size - 1, WRITE);
+		} else {
+			err = check_lock_range(filp, inode->i_size,
+					size - 1, WRITE);
 		}
+
+		if (err) {
+			cifsd_err("failed due to lock\n");
+			return -EAGAIN;
+		}
+
 		err = vfs_truncate(&filp->f_path, size);
 		if (err)
 			cifsd_err("truncate failed for filename : %s err %d\n",
@@ -1477,10 +1485,7 @@ int cifsd_vfs_alloc_size(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t len)
 {
-	struct cifsd_conn *conn = work->sess->conn;
-
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(conn, fp, 1);
+	smb_break_all_levII_oplock(work, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
@@ -1489,11 +1494,7 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 loff_t off,
 			 loff_t len)
 {
-	struct cifsd_conn *conn = work->sess->conn;
-
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(conn, fp, 1);
-
+	smb_break_all_levII_oplock(work, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
 }
 
@@ -1537,6 +1538,12 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 {
 	return vfs_removexattr(dentry, attr_name);
+}
+
+void cifsd_vfs_xattr_free(char *xattr)
+{
+	if (xattr)
+		vfree(xattr);
 }
 
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
@@ -1662,7 +1669,7 @@ struct cifsd_file *cifsd_vfs_dentry_open(struct cifsd_work *work,
 	}
 
 	if (flags & O_TRUNC) {
-		if (oplocks_enable && fexist)
+		if (fexist)
 			smb_break_all_oplock(work, fp);
 		err = vfs_truncate((struct path *)path, 0);
 		if (err)
@@ -2010,8 +2017,7 @@ int cifsd_vfs_copy_file_ranges(struct cifsd_work *work,
 	if (cifsd_stream_fd(src_fp) || cifsd_stream_fd(dst_fp))
 		return -EBADF;
 
-	if (oplocks_enable)
-		smb_break_all_levII_oplock(work->sess->conn, dst_fp, 1);
+	smb_break_all_levII_oplock(work, dst_fp, 1);
 
 	for (i = 0; i < chunk_count; i++) {
 		src_off = le64_to_cpu(chunks[i].SourceOffset);
