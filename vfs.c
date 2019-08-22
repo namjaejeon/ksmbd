@@ -100,9 +100,9 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 		return;
 
 	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list);
-	if (xattr_list_len < 0)
-		return;
-	else if (!xattr_list_len) {
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
 		cifsd_err("no ea data in the file\n");
 		return;
 	}
@@ -125,7 +125,7 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 		if (rc < 0)
 			cifsd_err("cifsd_vfs_setxattr() failed: %d\n", rc);
 	}
-
+out:
 	cifsd_vfs_xattr_free(xattr_list);
 }
 
