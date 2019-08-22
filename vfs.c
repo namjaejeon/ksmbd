@@ -1272,12 +1272,10 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 
 	*list = vlist;
 	size = vfs_listxattr(dentry, vlist, size);
-	if (size == -ERANGE) {
-		/* The file system tried to returned a list bigger
-		 * than XATTR_LIST_MAX bytes. Not possible.
-		 */
-		size = -E2BIG;
+	if (size < 0) {
 		cifsd_debug("listxattr failed\n");
+		cifsd_vfs_xattr_free(vlist);
+		*list = NULL;
 	}
 
 	return size;
