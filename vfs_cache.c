@@ -5,6 +5,8 @@
  */
 
 #include <linux/fs.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 /* @FIXME */
 #include "glob.h"
@@ -230,7 +232,7 @@ int __init cifsd_inode_hash_init(void)
 	size = bucketsize << inode_hash_shift;
 
 	/* init master fp hash table */
-	inode_hashtable = __vmalloc(size, GFP_ATOMIC, PAGE_KERNEL);
+	inode_hashtable = vmalloc(size);
 	if (!inode_hashtable)
 		return -ENOMEM;
 
