@@ -100,9 +100,9 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 		return;
 
 	xattr_list_len = cifsd_vfs_listxattr(dir_dentry, &xattr_list);
-	if (xattr_list_len < 0)
-		return;
-	else if (!xattr_list_len) {
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
 		cifsd_err("no ea data in the file\n");
 		return;
 	}
@@ -125,9 +125,8 @@ static void cifsd_vfs_inherit_smack(struct cifsd_work *work,
 		if (rc < 0)
 			cifsd_err("cifsd_vfs_setxattr() failed: %d\n", rc);
 	}
-
-	if (xattr_list)
-		vfree(xattr_list);
+out:
+	cifsd_vfs_xattr_free(xattr_list);
 }
 
 /**
@@ -236,8 +235,7 @@ static ssize_t cifsd_vfs_getcasexattr(struct dentry *dentry,
 	}
 
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return value_len;
 }
 
@@ -1265,18 +1263,16 @@ ssize_t cifsd_vfs_listxattr(struct dentry *dentry, char **list)
 	if (size <= 0)
 		return size;
 
-	vlist = vmalloc(size);
+	vlist = cifsd_alloc(size);
 	if (!vlist)
 		return -ENOMEM;
 
 	*list = vlist;
 	size = vfs_listxattr(dentry, vlist, size);
-	if (size == -ERANGE) {
-		/* The file system tried to returned a list bigger
-		 * than XATTR_LIST_MAX bytes. Not possible.
-		 */
-		size = -E2BIG;
+	if (size < 0) {
 		cifsd_debug("listxattr failed\n");
+		cifsd_vfs_xattr_free(vlist);
+		*list = NULL;
 	}
 
 	return size;
@@ -1409,9 +1405,7 @@ int cifsd_vfs_truncate_xattr(struct dentry *dentry, int wo_streams)
 			cifsd_debug("remove xattr failed : %s\n", name);
 	}
 out:
-	if (xattr_list)
-		vfree(xattr_list);
-
+	cifsd_vfs_xattr_free(xattr_list);
 	return err;
 }
 
@@ -1542,8 +1536,7 @@ int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 
 void cifsd_vfs_xattr_free(char *xattr)
 {
-	if (xattr)
-		vfree(xattr);
+	cifsd_free(xattr);
 }
 
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
@@ -1902,8 +1895,7 @@ ssize_t cifsd_vfs_casexattr_len(struct dentry *dentry,
 	}
 
 out:
-	if (xattr_list)
-		vfree(xattr_list);
+	cifsd_vfs_xattr_free(xattr_list);
 	return value_len;
 }
 

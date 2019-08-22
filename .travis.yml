@@ -43,7 +43,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile with latest Tovalds' kernel
  - cd ../linux
@@ -53,7 +53,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
  - cd ../linux-stable
@@ -63,7 +63,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
  - cd ../linux
@@ -73,7 +73,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Run xfstests testsuite
  - cd ../cifsd
@@ -84,7 +84,7 @@ script:
  - cd cifsd-tools
  - ./autogen.sh > /dev/null
  - ./configure > /dev/null
- - make > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  - sudo make install > /dev/null
  - cd ..
  - sudo mkdir -p /etc/cifs/
@@ -101,7 +101,7 @@ script:
  - tar xzvf xfstests-cifsd.tgz > /dev/null
  - cd xfstests-cifsd
  - ./configure > /dev/null
- - make -j > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  - sudo ./check cifs/001
  - sudo ./check generic/001
  - sudo ./check generic/002
@@ -188,7 +188,7 @@ script:
  - tar xzvf samba-cifsd.tgz > /dev/null
  - cd samba-cifsd/
  - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
- - make -j > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  # smb2 connect test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test3/*
