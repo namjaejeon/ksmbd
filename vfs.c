@@ -17,6 +17,8 @@
 #include <linux/fsnotify.h>
 #include <linux/dcache.h>
 #include <linux/fiemap.h>
+#include <linux/slab.h>
+#include <linux/vmalloc.h>
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
@@ -797,6 +799,57 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 
 	return err;
 }
+
+static void fill_file_attributes(struct cifsd_work *work,
+				 struct path *path,
+				 struct cifsd_kstat *cifsd_kstat)
+{
+	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
+}
+
+static void fill_create_time(struct cifsd_work *work,
+			     struct path *path,
+			     struct cifsd_kstat *cifsd_kstat)
+{
+	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
+}
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	struct path path;
+	int rc, file_pathlen, dir_pathlen;
+	char *name;
+
+	dir_pathlen = strlen(dir_path);
+	/* 1 for '/'*/
+	file_pathlen = dir_pathlen +  de_name_len + 1;
+	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
+	if (!name)
+		return -ENOMEM;
+
+	memcpy(name, dir_path, dir_pathlen);
+	memset(name + dir_pathlen, '/', 1);
+	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
+	name[file_pathlen] = '\0';
+
+	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+	if (rc) {
+		cifsd_err("lookup failed: %s [%d]\n", name, rc);
+		kfree(name);
+		return -ENOMEM;
+	}
+
+	generic_fillattr(d_inode(path.dentry), cifsd_kstat->kstat);
+	fill_create_time(work, &path, cifsd_kstat);
+	fill_file_attributes(work, &path, cifsd_kstat);
+	path_put(&path);
+	kfree(name);
+	return 0;
+}
 #else
 static inline void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 {
@@ -823,58 +876,16 @@ int cifsd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	return -ENOTSUPP;
 }
+
+int cifsd_vfs_readdir_name(struct cifsd_work *work,
+			   struct cifsd_kstat *cifsd_kstat,
+			   const char *de_name,
+			   int de_name_len,
+			   const char *dir_path)
+{
+	return 0;
+}
 #endif
-
-static void fill_file_attributes(struct cifsd_work *work,
-				 struct path *path,
-				 struct cifsd_kstat *cifsd_kstat)
-{
-	__fill_dentry_attributes(work, path->dentry, cifsd_kstat);
-}
-
-static void fill_create_time(struct cifsd_work *work,
-			     struct path *path,
-			     struct cifsd_kstat *cifsd_kstat)
-{
-	__file_dentry_ctime(work, path->dentry, cifsd_kstat);
-}
-
-char *cifsd_vfs_readdir_name(struct cifsd_work *work,
-			     struct cifsd_kstat *cifsd_kstat,
-			     struct cifsd_dirent *de,
-			     char *dirpath)
-{
-	struct path path;
-	int rc, file_pathlen, dir_pathlen;
-	char *name;
-
-	dir_pathlen = strlen(dirpath);
-	/* 1 for '/'*/
-	file_pathlen = dir_pathlen +  de->namelen + 1;
-	name = kmalloc(file_pathlen + 1, GFP_KERNEL);
-	if (!name)
-		return ERR_PTR(-ENOMEM);
-
-	memcpy(name, dirpath, dir_pathlen);
-	memset(name + dir_pathlen, '/', 1);
-	memcpy(name + dir_pathlen + 1, de->name, de->namelen);
-	name[file_pathlen] = '\0';
-
-	rc = cifsd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
-	if (rc) {
-		cifsd_err("look up failed for (%s) with rc=%d\n", name, rc);
-		kfree(name);
-		return ERR_PTR(rc);
-	}
-
-	generic_fillattr(path.dentry->d_inode, cifsd_kstat->kstat);
-	fill_create_time(work, &path, cifsd_kstat);
-	fill_file_attributes(work, &path, cifsd_kstat);
-	memcpy(name, de->name, de->namelen);
-	name[de->namelen] = '\0';
-	path_put(&path);
-	return name;
-}
 
 /**
  * cifsd_vfs_fsync() - vfs helper for smb fsync
@@ -1537,6 +1548,12 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 int cifsd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 {
 	return vfs_removexattr(dentry, attr_name);
+}
+
+void cifsd_vfs_xattr_free(char *xattr)
+{
+	if (xattr)
+		vfree(xattr);
 }
 
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry)

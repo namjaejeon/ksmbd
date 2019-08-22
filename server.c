@@ -343,10 +343,10 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
-	server_conf_free();
-	server_conf_init();
 	cifsd_ipc_soft_reset();
 	cifsd_conn_transport_destroy();
+	server_conf_free();
+	server_conf_init();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 }
 
