@@ -11,6 +11,8 @@
 #include "auth.h"
 #include "connection.h"
 #include "smb_common.h"
+#include "server.h"
+#include "cifsd_server.h"
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 static struct smb_version_values smb20_server_values = {
@@ -231,7 +233,7 @@ void init_smb2_1_server(struct cifsd_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 
-	if (lease_enable)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 }
 
@@ -248,7 +250,7 @@ void init_smb3_0_server(struct cifsd_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 
-	if (lease_enable)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
@@ -271,7 +273,7 @@ void init_smb3_02_server(struct cifsd_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 
-	if (lease_enable)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)
@@ -294,7 +296,7 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
 	conn->max_credits = SMB2_MAX_CREDITS;
 
-	if (lease_enable)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
 	if (multi_channel_enable)

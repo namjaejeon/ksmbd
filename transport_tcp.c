@@ -419,7 +419,7 @@ static int create_socket(struct interface *iface)
 	cifsd_socket->sk->sk_rcvtimeo = CIFSD_TCP_RECV_TIMEOUT;
 	cifsd_socket->sk->sk_sndtimeo = CIFSD_TCP_SEND_TIMEOUT;
 
-	ret = cifsd_socket->ops->listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
+	ret = kernel_listen(cifsd_socket, CIFSD_SOCKET_BACKLOG);
 	if (ret) {
 		cifsd_err("Port listen() error: %d\n", ret);
 		goto out_error;
