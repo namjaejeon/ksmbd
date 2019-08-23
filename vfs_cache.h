@@ -114,11 +114,11 @@ struct cifsd_file {
 	/* last lock failure start offset for SMB1 */
 	unsigned long long		llock_fstart;
 
+	int				dirent_offset;
 #endif
 	/* if ls is happening on directory, below is valid*/
 	struct cifsd_readdir_data	readdir_data;
 	int				dot_dotdot[2];
-	int				dirent_offset;
 };
 
 /*

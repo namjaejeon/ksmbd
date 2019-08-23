@@ -308,49 +308,31 @@ char *convert_to_unix_name(struct cifsd_share_config *share, char *name)
 	return new_name;
 }
 
-/**
- * convname_updatenextoffset() - convert name to UTF, update next_entry_offset
- * @namestr:            source filename buffer
- * @len:                source buffer length
- * @size:               used buffer size
- * @local_nls           code page table
- * @name_len:           file name length after conversion
- * @next_entry_offset:  offset of dentry
- * @buf_len:            response buffer length
- * @data_count:         used response buffer size
- * @no_namelen_field:	flag which shows if a namelen field flag exist
- *
- * Return:      return error if next entry could not fit in current response
- *              buffer, otherwise return encode buffer.
- */
-char *convname_updatenextoffset(char *namestr, int len, int size,
-		const struct nls_table *local_nls, int *name_len,
-		int *next_entry_offset, int *buf_len, int *data_count,
-		int alignment, bool no_namelen_field)
+char *cifsd_convert_dir_info_name(struct cifsd_dir_info *d_info,
+				  const struct nls_table *local_nls,
+				  int *conv_len)
 {
-	char *enc_buf;
+	char *conv;
+	int  sz = min(4 * d_info->name_len, PATH_MAX);
 
-	enc_buf = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!enc_buf)
+	if (!sz)
 		return NULL;
 
-	*name_len = smbConvertToUTF16((__le16 *)enc_buf,
-			namestr, len, local_nls, 0);
-	*name_len *= 2;
-	if (no_namelen_field) {
-		enc_buf[*name_len] = '\0';
-		enc_buf[*name_len+1] = '\0';
-		*name_len += 2;
-	}
-
-	*next_entry_offset = (size - 1 + *name_len + alignment) & ~alignment;
-
-	if (*next_entry_offset > *buf_len) {
-		cifsd_debug("buf_len : %d next_entry_offset : %d data_count : %d\n",
-			*buf_len, *next_entry_offset, *data_count);
-		*buf_len = -1;
-		kfree(enc_buf);
+	conv = kmalloc(sz, GFP_KERNEL);
+	if (!conv)
 		return NULL;
-	}
-	return enc_buf;
+
+	/* XXX */
+	*conv_len = smbConvertToUTF16((__le16 *)conv,
+					d_info->name,
+					d_info->name_len,
+					local_nls,
+					0);
+	*conv_len *= 2;
+
+	/* We allocate buffer twice bigger than needed. */
+	conv[*conv_len] = 0x00;
+	conv[*conv_len + 1] = 0x00;
+	*conv_len += 2;
+	return conv;
 }

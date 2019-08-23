@@ -25,7 +25,14 @@ struct cifsd_heartbeat {
 	__u32	handle;
 } ____cifsd_align;
 
+/*
+ * Global config flags.
+ */
+#define CIFSD_GLOBAL_FLAG_INVALID	(0)
+#define CIFSD_GLOBAL_FLAG_SMB2_LEASES	(1 << 0)
+
 struct cifsd_startup_request {
+	__u32	flags;
 	__s32	signing;
 	__s8	min_prot[16];
 	__s8	max_prot[16];
@@ -193,6 +200,7 @@ enum CIFSD_TREE_CONN_STATUS {
 #define CIFSD_SHARE_FLAG_HIDE_DOT_FILES		(1 << 9)
 #define CIFSD_SHARE_FLAG_INHERIT_SMACK		(1 << 10)
 #define CIFSD_SHARE_FLAG_INHERIT_OWNER		(1 << 11)
+#define CIFSD_SHARE_FLAG_STREAMS		(1 << 12)
 
 /*
  * Tree connect request flags.

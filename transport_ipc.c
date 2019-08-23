@@ -290,6 +290,7 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	int ret;
 
 	cifsd_set_fd_limit(req->file_max);
+	server_conf.flags = req->flags;
 	server_conf.signing = req->signing;
 	server_conf.tcp_port = req->tcp_port;
 	server_conf.ipc_timeout = req->ipc_timeout * HZ;

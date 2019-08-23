@@ -1604,7 +1604,7 @@ typedef struct {
 	__le32 Reserved;
 	__le64 UniqueId; /* inode num - le since Samba puts ino in low 32 bit*/
 	char FileName[1];
-} __attribute__((packed)) SEARCH_ID_FULL_DIR_INFO; /* level 0x105 FF rsp data */
+} __attribute__((packed)) FILE_ID_FULL_DIR_INFO; /* level 0x105 FF rsp data */
 
 typedef struct {
 	__le32 NextEntryOffset;
