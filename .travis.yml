@@ -93,7 +93,7 @@ script:
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
  - sudo mkdir -p /mnt/test3
- - cifsadmin -i ./cifspwd.db -a testuser -p 1234
+ - cifsuseradd -i ./cifspwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - cifsd -n --c=./smb.conf --u=./cifspwd.db&
  - ps -ax | grep cifsd
