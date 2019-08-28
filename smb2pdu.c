@@ -1164,6 +1164,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
+		uint64_t prev_id;
+
 		sess = cifsd_smb2_session_create();
 		if (!sess) {
 			rc = -ENOMEM;
@@ -1173,7 +1175,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 		cifsd_session_register(conn, sess);
 
 		/* Check for previous session */
-		if (le64_to_cpu(req->PreviousSessionId))
+		prev_id = le64_to_cpu(req->PreviousSessionId);
+		if (prev_id && prev_id != sess->id)
 			destroy_previous_session(
 					le64_to_cpu(req->PreviousSessionId));
 	} else {
