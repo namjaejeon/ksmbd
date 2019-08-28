@@ -6,6 +6,7 @@
 #include <linux/list.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
+#include <linux/workqueue.h>
 
 #include "connection.h"
 #include "cifsd_work.h"
@@ -13,6 +14,7 @@
 #include "mgmt/cifsd_ida.h"
 
 static struct kmem_cache *work_cache;
+static struct workqueue_struct *cifsd_wq;
 
 struct cifsd_work *cifsd_alloc_work_struct(void)
 {
@@ -51,4 +53,24 @@ int cifsd_work_pool_init(void)
 	if (!work_cache)
 		return -EINVAL;
 	return 0;
+}
+
+int cifsd_workqueue_init(void)
+{
+	cifsd_wq = alloc_workqueue("kcifsd-io", 0, 0);
+	if (!cifsd_wq)
+		return -EINVAL;
+	return 0;
+}
+
+void cifsd_workqueue_destroy(void)
+{
+	flush_workqueue(cifsd_wq);
+	destroy_workqueue(cifsd_wq);
+	cifsd_wq = NULL;
+}
+
+bool cifsd_queue_work(struct cifsd_work *work)
+{
+	return queue_work(cifsd_wq, &work->work);
 }
