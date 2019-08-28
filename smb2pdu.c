@@ -692,6 +692,7 @@ void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
 
 	work->multiRsp = 1;
 	cifsd_conn_write(work);
+	rsp_hdr->Status = 0;
 	work->multiRsp = 0;
 }
 

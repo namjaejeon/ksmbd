@@ -919,6 +919,7 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 
 			in_work = list_entry(tmp, struct cifsd_work,
 				interim_entry);
+			setup_async_work(in_work, NULL, NULL);
 			smb2_send_interim_resp(in_work, STATUS_PENDING);
 			list_del(&in_work->interim_entry);
 		}
