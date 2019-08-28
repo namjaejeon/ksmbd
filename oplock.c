@@ -649,7 +649,7 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		int rc;
 
 		INIT_WORK(&work->work, __smb1_oplock_break_noti);
-		schedule_work(&work->work);
+		cifsd_queue_work(work);
 
 		/*
 		 * TODO: change to wait_event_interruptible_timeout once oplock
@@ -784,7 +784,7 @@ static int smb2_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		int rc;
 
 		INIT_WORK(&work->work, __smb2_oplock_break_noti);
-		schedule_work(&work->work);
+		cifsd_queue_work(work);
 
 		rc = wait_event_interruptible_timeout(opinfo->oplock_q,
 			opinfo->op_state == OPLOCK_STATE_NONE ||
@@ -924,7 +924,7 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 			list_del(&in_work->interim_entry);
 		}
 		INIT_WORK(&work->work, __smb2_lease_break_noti);
-		schedule_work(&work->work);
+		cifsd_queue_work(work);
 		wait_for_lease_break_ack(opinfo);
 
 		if (!atomic_read(&opinfo->breaking_cnt))
