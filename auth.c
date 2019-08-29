@@ -71,32 +71,26 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 {
 	int rc;
 	unsigned char key2[8];
-	struct crypto_blkcipher *tfm_des;
 	struct scatterlist sgin, sgout;
-	struct blkcipher_desc desc;
+	struct cifsd_crypto_ctx *ctx;
 
 	str_to_key(key, key2);
 
-	tfm_des = crypto_alloc_blkcipher("ecb(des)", 0, CRYPTO_ALG_ASYNC);
-	if (IS_ERR(tfm_des)) {
-		rc = PTR_ERR(tfm_des);
+	ctx = cifsd_crypto_ctx_find_ecbdes();
+	if (!ctx) {
 		cifsd_debug("could not allocate des crypto API\n");
-		goto smbhash_err;
+		return -EINVAL;
 	}
 
-	desc.tfm = tfm_des;
-
-	crypto_blkcipher_setkey(tfm_des, key2, 8);
+	crypto_blkcipher_setkey(CRYPTO_ECBDES_TFM(ctx), key2, 8);
 
 	sg_init_one(&sgin, in, 8);
 	sg_init_one(&sgout, out, 8);
 
-	rc = crypto_blkcipher_encrypt(&desc, &sgout, &sgin, 8);
+	rc = crypto_blkcipher_encrypt(CRYPTO_ECBDES(ctx), &sgout, &sgin, 8);
 	if (rc)
 		cifsd_debug("could not encrypt crypt key rc: %d\n", rc);
-
-	crypto_free_blkcipher(tfm_des);
-smbhash_err:
+	cifsd_release_crypto_ctx(ctx);
 	return rc;
 }
 
