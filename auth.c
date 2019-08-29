@@ -26,11 +26,6 @@
 #include "mgmt/user_config.h"
 #include "crypto_ctx.h"
 
-struct sdesc {
-	struct shash_desc	shash;
-	char			ctx[];
-};
-
 /*
  * Fixed format data defining GSS header and fixed string
  * "not_defined_in_RFC4178@please_ignore".
