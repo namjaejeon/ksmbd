@@ -14,6 +14,7 @@ enum {
 	CRYPTO_SHASH_HMACSHA256,
 	CRYPTO_SHASH_CMACAES,
 	CRYPTO_SHASH_SHA512,
+	CRYPTO_SHASH_MD4,
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 	CRYPTO_SHASH_MD5,
 #endif
@@ -37,6 +38,7 @@ struct cifsd_crypto_ctx {
 #define CRYPTO_HMACSHA256(c)	((c)->desc[CRYPTO_SHASH_HMACSHA256])
 #define CRYPTO_CMACAES(c)	((c)->desc[CRYPTO_SHASH_CMACAES])
 #define CRYPTO_SHA512(c)	((c)->desc[CRYPTO_SHASH_SHA512])
+#define CRYPTO_MD4(c)		((c)->desc[CRYPTO_SHASH_MD4])
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 #define CRYPTO_MD5(c)		((c)->desc[CRYPTO_SHASH_MD5])
 #else
@@ -51,6 +53,8 @@ struct cifsd_crypto_ctx {
 				((c)->desc[CRYPTO_SHASH_CMACAES]->tfm)
 #define CRYPTO_SHA512_TFM(c)	\
 				((c)->desc[CRYPTO_SHASH_SHA512]->tfm)
+#define CRYPTO_MD4_TFM(c)	\
+				((c)->desc[CRYPTO_SHASH_MD4]->tfm)
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 #define CRYPTO_MD5_TFM(c)	\
 				((c)->desc[CRYPTO_SHASH_MD5]->tfm)
@@ -68,6 +72,7 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_hmacmd5(void);
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_hmacsha256(void);
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_cmacaes(void);
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_sha512(void);
+struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md4(void);
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md5(void);
 
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_gcm(void);

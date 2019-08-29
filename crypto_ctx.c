@@ -70,6 +70,9 @@ static struct shash_desc *alloc_shash_desc(int id)
 	case CRYPTO_SHASH_SHA512:
 		tfm = crypto_alloc_shash("sha512", 0, 0);
 		break;
+	case CRYPTO_SHASH_MD4:
+		tfm = crypto_alloc_shash("md4", 0, 0);
+		break;
 #ifdef CONFIG_CIFS_INSECURE_SERVER
 	case CRYPTO_SHASH_MD5:
 		tfm = crypto_alloc_shash("md5", 0, 0);
@@ -198,6 +201,11 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_cmacaes(void)
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_sha512(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_SHA512);
+}
+
+struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md4(void)
+{
+	return ____crypto_shash_ctx_find(CRYPTO_SHASH_MD4);
 }
 
 #ifdef CONFIG_CIFS_INSECURE_SERVER
