@@ -127,42 +127,31 @@ static int cifsd_enc_md4(unsigned char *md4_hash,
 			 int link_len)
 {
 	int rc;
-	unsigned int size;
-	struct crypto_shash *md4;
-	struct sdesc *sdescmd4;
+	struct cifsd_crypto_ctx *ctx;
 
-	md4 = crypto_alloc_shash("md4", 0, 0);
-	if (IS_ERR(md4)) {
-		rc = PTR_ERR(md4);
-		cifsd_debug("Crypto md4 allocation error %d\n", rc);
-		return rc;
+	ctx = cifsd_crypto_ctx_find_md4();
+	if (!ctx) {
+		cifsd_debug("Crypto md4 allocation error\n");
+		return -EINVAL;
 	}
-	size = sizeof(struct shash_desc) + crypto_shash_descsize(md4);
-	sdescmd4 = kmalloc(size, GFP_KERNEL);
-	if (!sdescmd4) {
-		rc = -ENOMEM;
-		goto smb_mdfour_err;
-	}
-	sdescmd4->shash.tfm = md4;
 
-	rc = crypto_shash_init(&sdescmd4->shash);
+	rc = crypto_shash_init(CRYPTO_MD4(ctx));
 	if (rc) {
 		cifsd_debug("Could not init md4 shash\n");
-		goto smb_mdfour_err;
+		goto out;
 	}
-	rc = crypto_shash_update(&sdescmd4->shash, link_str, link_len);
+
+	rc = crypto_shash_update(CRYPTO_MD4(ctx), link_str, link_len);
 	if (rc) {
 		cifsd_debug("Could not update with link_str\n");
-		goto smb_mdfour_err;
+		goto out;
 	}
-	rc = crypto_shash_final(&sdescmd4->shash, md4_hash);
+
+	rc = crypto_shash_final(CRYPTO_MD4(ctx), md4_hash);
 	if (rc)
 		cifsd_debug("Could not generate md4 hash\n");
-
-smb_mdfour_err:
-	crypto_free_shash(md4);
-	kfree(sdescmd4);
-
+out:
+	cifsd_release_crypto_ctx(ctx);
 	return rc;
 }
 
