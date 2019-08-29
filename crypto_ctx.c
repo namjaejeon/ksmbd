@@ -73,11 +73,9 @@ static struct shash_desc *alloc_shash_desc(int id)
 	case CRYPTO_SHASH_MD4:
 		tfm = crypto_alloc_shash("md4", 0, 0);
 		break;
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 	case CRYPTO_SHASH_MD5:
 		tfm = crypto_alloc_shash("md5", 0, 0);
 		break;
-#endif
 	}
 
 	if (!tfm)
@@ -208,17 +206,10 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md4(void)
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_MD4);
 }
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md5(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_MD5);
 }
-#else
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md5(void)
-{
-	return NULL;
-}
-#endif
 
 static struct cifsd_crypto_ctx *____crypto_aead_ctx_find(int id)
 {

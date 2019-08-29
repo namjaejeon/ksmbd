@@ -15,9 +15,7 @@ enum {
 	CRYPTO_SHASH_CMACAES,
 	CRYPTO_SHASH_SHA512,
 	CRYPTO_SHASH_MD4,
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 	CRYPTO_SHASH_MD5,
-#endif
 	CRYPTO_SHASH_MAX,
 };
 
@@ -39,11 +37,7 @@ struct cifsd_crypto_ctx {
 #define CRYPTO_CMACAES(c)	((c)->desc[CRYPTO_SHASH_CMACAES])
 #define CRYPTO_SHA512(c)	((c)->desc[CRYPTO_SHASH_SHA512])
 #define CRYPTO_MD4(c)		((c)->desc[CRYPTO_SHASH_MD4])
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 #define CRYPTO_MD5(c)		((c)->desc[CRYPTO_SHASH_MD5])
-#else
-#define CRYPTO_MD5(c)		((c)->desc[CRYPTO_SHASH_MD5])
-#endif
 
 #define CRYPTO_HMACMD5_TFM(c)	\
 				((c)->desc[CRYPTO_SHASH_HMACMD5]->tfm)
@@ -55,14 +49,8 @@ struct cifsd_crypto_ctx {
 				((c)->desc[CRYPTO_SHASH_SHA512]->tfm)
 #define CRYPTO_MD4_TFM(c)	\
 				((c)->desc[CRYPTO_SHASH_MD4]->tfm)
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 #define CRYPTO_MD5_TFM(c)	\
 				((c)->desc[CRYPTO_SHASH_MD5]->tfm)
-#else
-#define CRYPTO_MD5_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_MD5]->tfm)
-#endif
-
 #define CRYPTO_GCM(c)		((c)->ccmaes[CRYPTO_AEAD_AES128_GCM])
 #define CRYPTO_CCM(c)		((c)->ccmaes[CRYPTO_AEAD_AES128_CCM])
 
