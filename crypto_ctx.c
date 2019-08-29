@@ -22,13 +22,21 @@ struct crypto_ctx_list {
 
 static struct crypto_ctx_list ctx_list;
 
+static inline void free_blk(struct blkcipher_desc *desc)
+{
+	if (desc) {
+		crypto_free_blkcipher(desc->tfm);
+		kfree(desc);
+	}
+}
+
 static inline void free_aead(struct crypto_aead *aead)
 {
 	if (aead)
 		crypto_free_aead(aead);
 }
 
-static void free_shash_desc(struct shash_desc *shash)
+static void free_shash(struct shash_desc *shash)
 {
 	if (shash) {
 		crypto_free_shash(shash->tfm);
@@ -36,7 +44,7 @@ static void free_shash_desc(struct shash_desc *shash)
 	}
 }
 
-static struct crypto_aead *crypto_aead(int id)
+static struct crypto_aead *alloc_aead(int id)
 {
 	struct crypto_aead *tfm = NULL;
 
@@ -90,6 +98,28 @@ static struct shash_desc *alloc_shash_desc(int id)
 	return shash;
 }
 
+static struct blkcipher_desc *alloc_blk_desc(int id)
+{
+	struct crypto_blkcipher *tfm = NULL;
+	struct blkcipher_desc *desc;
+
+	switch (id) {
+	case CRYPTO_BLK_ECBDES:
+		tfm = crypto_alloc_blkcipher("ecb(des)", 0, CRYPTO_ALG_ASYNC);
+		break;
+	}
+
+	if (!tfm)
+		return NULL;
+
+	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
+	if (!desc)
+		crypto_free_blkcipher(tfm);
+	else
+		desc->tfm = tfm;
+	return desc;
+}
+
 static struct cifsd_crypto_ctx *ctx_alloc(void)
 {
 	return cifsd_alloc(sizeof(struct cifsd_crypto_ctx));
@@ -100,9 +130,11 @@ static void ctx_free(struct cifsd_crypto_ctx *ctx)
 	int i;
 
 	for (i = 0; i < CRYPTO_SHASH_MAX; i++)
-		free_shash_desc(ctx->desc[i]);
+		free_shash(ctx->desc[i]);
 	for (i = 0; i < CRYPTO_AEAD_MAX; i++)
 		free_aead(ctx->ccmaes[i]);
+	for (i = 0; i < CRYPTO_BLK_MAX; i++)
+		free_blk(ctx->blk_desc[i]);
 	cifsd_free(ctx);
 }
 
@@ -222,7 +254,7 @@ static struct cifsd_crypto_ctx *____crypto_aead_ctx_find(int id)
 	if (ctx->ccmaes[id])
 		return ctx;
 
-	ctx->ccmaes[id] = crypto_aead(id);
+	ctx->ccmaes[id] = alloc_aead(id);
 	if (ctx->ccmaes[id])
 		return ctx;
 	cifsd_release_crypto_ctx(ctx);
@@ -237,6 +269,29 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_gcm(void)
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ccm(void)
 {
 	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_CCM);
+}
+
+static struct cifsd_crypto_ctx *____crypto_blk_ctx_find(int id)
+{
+	struct cifsd_crypto_ctx *ctx;
+
+	if (id >= CRYPTO_BLK_MAX)
+		return NULL;
+
+	ctx = cifsd_find_crypto_ctx();
+	if (ctx->blk_desc[id])
+		return ctx;
+
+	ctx->blk_desc[id] = alloc_blk_desc(id);
+	if (ctx->blk_desc[id])
+		return ctx;
+	cifsd_release_crypto_ctx(ctx);
+	return NULL;
+}
+
+struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ecbdes(void)
+{
+	return ____crypto_blk_ctx_find(CRYPTO_BLK_ECBDES);
 }
 
 void cifsd_crypto_destroy(void)

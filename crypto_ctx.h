@@ -10,7 +10,7 @@
 #include <crypto/aead.h>
 
 enum {
-	CRYPTO_SHASH_HMACMD5,
+	CRYPTO_SHASH_HMACMD5	= 0,
 	CRYPTO_SHASH_HMACSHA256,
 	CRYPTO_SHASH_CMACAES,
 	CRYPTO_SHASH_SHA512,
@@ -20,9 +20,14 @@ enum {
 };
 
 enum {
-	CRYPTO_AEAD_AES128_GCM,
+	CRYPTO_AEAD_AES128_GCM = 16,
 	CRYPTO_AEAD_AES128_CCM,
 	CRYPTO_AEAD_MAX,
+};
+
+enum {
+	CRYPTO_BLK_ECBDES	= 32,
+	CRYPTO_BLK_MAX,
 };
 
 struct cifsd_crypto_ctx {
@@ -30,6 +35,7 @@ struct cifsd_crypto_ctx {
 
 	struct shash_desc		*desc[CRYPTO_SHASH_MAX];
 	struct crypto_aead		*ccmaes[CRYPTO_AEAD_MAX];
+	struct blkcipher_desc		*blk_desc[CRYPTO_BLK_MAX];
 };
 
 #define CRYPTO_HMACMD5(c)	((c)->desc[CRYPTO_SHASH_HMACMD5])
@@ -39,20 +45,19 @@ struct cifsd_crypto_ctx {
 #define CRYPTO_MD4(c)		((c)->desc[CRYPTO_SHASH_MD4])
 #define CRYPTO_MD5(c)		((c)->desc[CRYPTO_SHASH_MD5])
 
-#define CRYPTO_HMACMD5_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_HMACMD5]->tfm)
+#define CRYPTO_HMACMD5_TFM(c)	((c)->desc[CRYPTO_SHASH_HMACMD5]->tfm)
 #define CRYPTO_HMACSHA256_TFM(c)\
 				((c)->desc[CRYPTO_SHASH_HMACSHA256]->tfm)
-#define CRYPTO_CMACAES_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_CMACAES]->tfm)
-#define CRYPTO_SHA512_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_SHA512]->tfm)
-#define CRYPTO_MD4_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_MD4]->tfm)
-#define CRYPTO_MD5_TFM(c)	\
-				((c)->desc[CRYPTO_SHASH_MD5]->tfm)
+#define CRYPTO_CMACAES_TFM(c)	((c)->desc[CRYPTO_SHASH_CMACAES]->tfm)
+#define CRYPTO_SHA512_TFM(c)	((c)->desc[CRYPTO_SHASH_SHA512]->tfm)
+#define CRYPTO_MD4_TFM(c)	((c)->desc[CRYPTO_SHASH_MD4]->tfm)
+#define CRYPTO_MD5_TFM(c)	((c)->desc[CRYPTO_SHASH_MD5]->tfm)
+
 #define CRYPTO_GCM(c)		((c)->ccmaes[CRYPTO_AEAD_AES128_GCM])
 #define CRYPTO_CCM(c)		((c)->ccmaes[CRYPTO_AEAD_AES128_CCM])
+
+#define CRYPTO_ECBDES(c)	((c)->blk_desc[CRYPTO_BLK_ECBDES])
+#define CRYPTO_ECBDES_TFM(c)	((c)->blk_desc[CRYPTO_BLK_ECBDES]->tfm)
 
 void cifsd_release_crypto_ctx(struct cifsd_crypto_ctx *ctx);
 
@@ -65,6 +70,8 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md5(void);
 
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_gcm(void);
 struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ccm(void);
+
+struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ecbdes(void);
 
 void cifsd_crypto_destroy(void);
 int cifsd_crypto_create(void);
