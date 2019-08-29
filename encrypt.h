@@ -18,11 +18,6 @@
 #include <crypto/hash.h>
 
 /* crypto security descriptor definition */
-struct sdesc {
-	struct shash_desc	shash;
-	char			ctx[];
-};
-
 int cifsd_enc_p24(unsigned char *p21,
 		  const unsigned char *c8,
 		  unsigned char *p24);
