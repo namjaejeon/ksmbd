@@ -161,50 +161,37 @@ static int cifsd_enc_update_sess_key(unsigned char *md5_hash,
 				     int len)
 {
 	int rc;
-	unsigned int size;
-	struct crypto_shash *md5;
-	struct sdesc *sdescmd5;
+	struct cifsd_crypto_ctx *ctx;
 
-	md5 = crypto_alloc_shash("md5", 0, 0);
-	if (IS_ERR(md5)) {
-		rc = PTR_ERR(md5);
-		cifsd_debug("Crypto md5 allocation error %d\n", rc);
-		return rc;
+	ctx = cifsd_crypto_ctx_find_md5();
+	if (!ctx) {
+		cifsd_debug("Crypto md5 allocation error\n");
+		return -EINVAL;
 	}
-	size = sizeof(struct shash_desc) + crypto_shash_descsize(md5);
-	sdescmd5 = kmalloc(size, GFP_KERNEL);
-	if (!sdescmd5) {
-		rc = -ENOMEM;
-		goto err_out;
-	}
-	sdescmd5->shash.tfm = md5;
 
-	rc = crypto_shash_init(&sdescmd5->shash);
+	rc = crypto_shash_init(CRYPTO_MD5(ctx));
 	if (rc) {
 		cifsd_debug("Could not init md5 shash\n");
-		goto err_out;
+		goto out;
 	}
 
-	rc = crypto_shash_update(&sdescmd5->shash, server_challenge, len);
+	rc = crypto_shash_update(CRYPTO_MD5(ctx), server_challenge, len);
 	if (rc) {
 		cifsd_debug("Could not update with challenge\n");
-		goto err_out;
+		goto out;
 	}
 
-	rc = crypto_shash_update(&sdescmd5->shash, nonce, len);
+	rc = crypto_shash_update(CRYPTO_MD5(ctx), nonce, len);
 	if (rc) {
 		cifsd_debug("Could not update with nonce\n");
-		goto err_out;
+		goto out;
 	}
 
-	rc = crypto_shash_final(&sdescmd5->shash, md5_hash);
+	rc = crypto_shash_final(CRYPTO_MD5(ctx), md5_hash);
 	if (rc)
 		cifsd_debug("Could not generate md5 hash\n");
-
-err_out:
-	crypto_free_shash(md5);
-	kfree(sdescmd5);
-
+out:
+	cifsd_release_crypto_ctx(ctx);
 	return rc;
 }
 
