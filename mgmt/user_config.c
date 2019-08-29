@@ -53,3 +53,10 @@ void cifsd_free_user(struct cifsd_user *user)
 	cifsd_free(user->passkey);
 	cifsd_free(user);
 }
+
+int cifsd_anonymous_user(struct cifsd_user *user)
+{
+	if (user->name[0] == '\0')
+		return 1;
+	return 0;
+}

@@ -283,7 +283,7 @@ static int queue_cifsd_work(struct cifsd_conn *conn)
 	/* update activity on connection */
 	conn->last_active = jiffies;
 	INIT_WORK(&work->work, handle_cifsd_work);
-	schedule_work(&work->work);
+	cifsd_queue_work(work);
 	return 0;
 }
 
@@ -472,6 +472,7 @@ static int cifsd_server_shutdown(void)
 	WRITE_ONCE(server_conf.state, SERVER_STATE_SHUTTING_DOWN);
 
 	class_unregister(&cifsd_control_class);
+	cifsd_workqueue_destroy();
 	cifsd_ipc_release();
 	cifsd_conn_transport_destroy();
 	cifsd_free_session_table();
@@ -520,6 +521,10 @@ static int __init cifsd_server_init(void)
 		goto error;
 
 	ret = cifsd_crypto_create();
+	if (ret)
+		goto error;
+
+	ret = cifsd_workqueue_init();
 	if (ret)
 		goto error;
 	return 0;

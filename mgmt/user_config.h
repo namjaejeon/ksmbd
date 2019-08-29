@@ -62,4 +62,5 @@ static inline unsigned int user_gid(struct cifsd_user *user)
 
 struct cifsd_user *cifsd_alloc_user(const char *account);
 void cifsd_free_user(struct cifsd_user *user);
+int cifsd_anonymous_user(struct cifsd_user *user);
 #endif /* __USER_CONFIG_MANAGEMENT_H__ */
