@@ -43,7 +43,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile with latest Tovalds' kernel
  - cd ../linux
@@ -53,7 +53,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
  - cd ../linux-stable
@@ -63,7 +63,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
  - cd ../linux
@@ -73,7 +73,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - gcc -v
- - make fs/cifsd/cifsd.ko
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Run xfstests testsuite
  - cd ../cifsd
@@ -84,7 +84,7 @@ script:
  - cd cifsd-tools
  - ./autogen.sh > /dev/null
  - ./configure > /dev/null
- - make > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  - sudo make install > /dev/null
  - cd ..
  - sudo mkdir -p /etc/cifs/
@@ -93,7 +93,7 @@ script:
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
  - sudo mkdir -p /mnt/test3
- - cifsadmin -i ./cifspwd.db -a testuser -p 1234
+ - cifsuseradd -i ./cifspwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - cifsd -n --c=./smb.conf --u=./cifspwd.db&
  - ps -ax | grep cifsd
@@ -101,7 +101,7 @@ script:
  - tar xzvf xfstests-cifsd.tgz > /dev/null
  - cd xfstests-cifsd
  - ./configure > /dev/null
- - make -j > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  - sudo ./check cifs/001
  - sudo ./check generic/001
  - sudo ./check generic/002
@@ -188,7 +188,7 @@ script:
  - tar xzvf samba-cifsd.tgz > /dev/null
  - cd samba-cifsd/
  - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
- - make -j > /dev/null
+ - make -j$((`nproc`+1)) > /dev/null
  # smb2 connect test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test3/*
@@ -306,3 +306,57 @@ script:
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.FIND_and_set_DOC
  - sudo rm -rf /mnt/test3/*
+ # smb2 oplock test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive4
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive5
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive6
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive9
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch4
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch5
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch6
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch7
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch8
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch9
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch9a
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch10
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch11
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch12
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch13
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch14
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch15
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch16
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch19
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch20
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch21
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch22
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch23
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch24
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch25
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch26 #fail
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.stream1 #fail
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.doc
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl1
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl2
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii500
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii501
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
+ - sudo rm -rf /mnt/test3/*
+ # smb2 session test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth4

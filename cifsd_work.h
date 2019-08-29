@@ -96,4 +96,8 @@ void cifsd_free_work_struct(struct cifsd_work *work);
 void cifsd_work_pool_destroy(void);
 int cifsd_work_pool_init(void);
 
+int cifsd_workqueue_init(void);
+void cifsd_workqueue_destroy(void);
+bool cifsd_queue_work(struct cifsd_work *work);
+
 #endif /* __CIFSD_WORK_H__ */

@@ -692,6 +692,7 @@ void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
 
 	work->multiRsp = 1;
 	cifsd_conn_write(work);
+	rsp_hdr->Status = 0;
 	work->multiRsp = 0;
 }
 
@@ -1164,10 +1165,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
-		/* Check for previous session */
-		if (le64_to_cpu(req->PreviousSessionId))
-			destroy_previous_session(
-					le64_to_cpu(req->PreviousSessionId));
+		uint64_t prev_id;
 
 		sess = cifsd_smb2_session_create();
 		if (!sess) {
@@ -1176,6 +1174,12 @@ int smb2_sess_setup(struct cifsd_work *work)
 		}
 		rsp->hdr.SessionId = cpu_to_le64(sess->id);
 		cifsd_session_register(conn, sess);
+
+		/* Check for previous session */
+		prev_id = le64_to_cpu(req->PreviousSessionId);
+		if (prev_id && prev_id != sess->id)
+			destroy_previous_session(
+					le64_to_cpu(req->PreviousSessionId));
 	} else {
 		if (multi_channel_enable &&
 			req->hdr.Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
@@ -1187,14 +1191,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-			if (sess->state & SMB2_SESSION_IN_PROGRESS) {
+			if (sess->state == SMB2_SESSION_IN_PROGRESS) {
 				rc = -EINVAL;
 				rsp->hdr.Status =
 					STATUS_REQUEST_NOT_ACCEPTED;
 				goto out_err;
 			}
 
-			if (sess->state & SMB2_SESSION_EXPIRED) {
+			if (sess->state == SMB2_SESSION_EXPIRED) {
 				rc = -EINVAL;
 				rsp->hdr.Status =
 					STATUS_NETWORK_SESSION_EXPIRED;
@@ -1241,7 +1245,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	}
 	work->sess = sess;
 
-	if (sess->state & SMB2_SESSION_EXPIRED)
+	if (sess->state == SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
 
 	negblob = (NEGOTIATE_MESSAGE *)((char *)&req->hdr.ProtocolId +
@@ -1364,25 +1368,26 @@ int smb2_sess_setup(struct cifsd_work *work)
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
-
-		if (conn->dialect >= SMB30_PROT_ID) {
-			chann = lookup_chann_list(sess);
-			if (!chann) {
-				chann = kmalloc(sizeof(struct channel),
-					GFP_KERNEL);
-				if (!chann) {
-					rc = -ENOMEM;
-					goto out_err;
-				}
-
-				chann->conn = conn;
-				INIT_LIST_HEAD(&chann->chann_list);
-				list_add(&chann->chann_list,
-					&sess->cifsd_chann_list);
-			}
-		}
+		struct cifsd_user *user;
 
 		cifsd_debug("authenticate phase\n");
+		if (conn->use_spnego) {
+			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
+					&spnego_blob_len, 0)) {
+				rc = -ENOMEM;
+				goto out_err;
+			}
+
+			memcpy((char *)&rsp->hdr.ProtocolId +
+				le16_to_cpu(rsp->SecurityBufferOffset),
+				spnego_blob, spnego_blob_len);
+			rsp->SecurityBufferLength =
+				cpu_to_le16(spnego_blob_len);
+			kfree(spnego_blob);
+			inc_rfc1001_len(rsp,
+				le16_to_cpu(rsp->SecurityBufferLength));
+		}
+
 		if (conn->use_spnego && conn->mechToken)
 			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
 		else
@@ -1403,16 +1408,28 @@ int smb2_sess_setup(struct cifsd_work *work)
 		}
 
 		cifsd_debug("session setup request for user %s\n", username);
-		sess->user = cifsd_alloc_user(username);
+		user = cifsd_alloc_user(username);
 		kfree(username);
-
-		if (!sess->user) {
+		if (!user) {
 			cifsd_debug("Unknown user name or an error\n");
 			rc = -EINVAL;
 			rsp->hdr.Status = STATUS_LOGON_FAILURE;
 			goto out_err;
 		}
 
+		if (sess->state == SMB2_SESSION_VALID) {
+			/*
+			 * Reuse session if anonymous try to connect
+			 * on reauthetication.
+			 */
+			if (cifsd_anonymous_user(user)) {
+				cifsd_free_user(user);
+				return 0;
+			}
+			cifsd_free_user(sess->user);
+		}
+
+		sess->user = user;
 		if (user_guest(sess->user)) {
 			if (conn->sign) {
 				cifsd_debug("Guest login not allowed when signing enabled\n");
@@ -1435,6 +1452,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 				rsp->hdr.Status = STATUS_LOGON_FAILURE;
 				goto out_err;
 			}
+
+			/*
+			 * If session state is SMB2_SESSION_VALID, We can assume
+			 * that it is reauthentication. And the user/password
+			 * has been verified, so return it here.
+			 */
+			if (sess->state == SMB2_SESSION_VALID)
+				return 0;
 
 			if (!sess->sign && sess->is_guest == false &&
 				((req->SecurityMode &
@@ -1461,7 +1486,23 @@ int smb2_sess_setup(struct cifsd_work *work)
 				 */
 				sess->sign = false;
 			}
+		}
 
+		if (conn->dialect >= SMB30_PROT_ID) {
+			chann = lookup_chann_list(sess);
+			if (!chann) {
+				chann = kmalloc(sizeof(struct channel),
+					GFP_KERNEL);
+				if (!chann) {
+					rc = -ENOMEM;
+					goto out_err;
+				}
+
+				chann->conn = conn;
+				INIT_LIST_HEAD(&chann->chann_list);
+				list_add(&chann->chann_list,
+					&sess->cifsd_chann_list);
+			}
 		}
 
 		if (conn->ops->generate_signingkey) {
@@ -1487,26 +1528,8 @@ int smb2_sess_setup(struct cifsd_work *work)
 				goto out_err;
 			}
 
-		if (conn->use_spnego) {
-			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
-					&spnego_blob_len, 0)) {
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			memcpy((char *)&rsp->hdr.ProtocolId +
-				le16_to_cpu(rsp->SecurityBufferOffset),
-				spnego_blob, spnego_blob_len);
-			rsp->SecurityBufferLength =
-				cpu_to_le16(spnego_blob_len);
-			kfree(spnego_blob);
-			inc_rfc1001_len(rsp,
-				le16_to_cpu(rsp->SecurityBufferLength));
-		}
-
 		cifsd_conn_set_good(work);
 		sess->state = SMB2_SESSION_VALID;
-		work->sess = sess;
 		kfree(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
 	} else {
@@ -7558,7 +7581,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 			conn->preauth_info->Preauth_HashValue);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
-			rsp->Status == STATUS_MORE_PROCESSING_REQUIRED) {
+			sess && sess->state == SMB2_SESSION_IN_PROGRESS) {
 		__u8 *hash_value;
 
 		if (multi_channel_enable &&
