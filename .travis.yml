@@ -109,6 +109,10 @@ script:
  - sudo ./check generic/006
  - sudo ./check generic/007
  - sudo ./check generic/011
+ - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
+ - mv tests/generic/013.new tests/generic/013
+ - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
+ - mv tests/generic/013.out.new tests/generic/013.out
  - sudo ./check generic/013
  - sudo ./check generic/014
  - sudo ./check generic/023
@@ -118,15 +122,27 @@ script:
  - sudo ./check generic/030
  - sudo ./check generic/036
  - sudo ./check generic/037
+ - sed -e s/3000000/300000/ tests/generic/069 > tests/generic/069.new
+ - mv tests/generic/069.new tests/generic/069
+ - sed -e s/3000000/300000/ tests/generic/069.out > tests/generic/069.out.new
+ - mv tests/generic/069.out.new tests/generic/069.out
  - sudo ./check generic/069
 # - travis_wait sudo ./check generic/070 (timeover > 10m)
+ - sed -e s/numloops=10/numloops=2/ -e s/numfiles=5/numfiles=2/ -e s/numchildren=3/numchildren=2/ tests/generic/074 > tests/generic/074.new
+ - mv tests/generic/074.new tests/generic/074
  - sudo ./check generic/074
  - sudo ./check generic/075
  - sudo ./check generic/080
 # - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
+ - mv tests/generic/091.new tests/generic/091
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
+ - mv tests/generic/091.out.new tests/generic/091.out
  - sudo ./check generic/091
  - sudo ./check generic/095
  - sudo ./check generic/098
+ - sed -e s/SIZE=10/SIZE=7/ -e s/DEPTH=5/DEPTH=3/ tests/generic/100 > tests/generic/100.new
+ - mv tests/generic/100.new tests/generic/100
  - sudo ./check generic/100
  - sudo ./check generic/109
  - sudo ./check generic/112
@@ -135,6 +151,8 @@ script:
  - sudo ./check generic/124
  - sudo ./check generic/125
 # - travis_wait sudo ./check generic/127 (timeover > 10m)
+ - sed -e "s/-i 100000/-i 70000/" -e "s/-i 100000/-i 70000/" tests/generic/129 > tests/generic/129.new
+ - mv tests/generic/129.new tests/generic/129
  - sudo ./check generic/129
  - sudo ./check generic/130
  - sudo ./check generic/133
@@ -178,6 +196,8 @@ script:
  - sudo ./check generic/448
  - sudo ./check generic/451
  - sudo ./check generic/460
+ - sed -e s/BLOCK_SZ=65536/BLOCK_SZ=8192/ -e s/PROC_CNT=16/PROC_CNT=4/ tests/generic/464 > tests/generic/464.new
+ - mv tests/generic/464.new tests/generic/464
  - sudo ./check generic/464
  - sudo ./check generic/465
  - sudo ./check generic/469
