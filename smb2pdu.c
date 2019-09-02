@@ -4090,7 +4090,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 	struct kstat stat;
 	struct path *path = &fp->filp->f_path;
 	ssize_t xattr_list_len;
-	int nbytes = 0, streamlen, stream_name_len, next;
+	int nbytes = 0, streamlen, stream_name_len, next, idx = 0;
 
 	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
@@ -4123,17 +4123,20 @@ static void get_file_stream_info(struct cifsd_work *work,
 		goto out;
 	}
 
-	for (stream_name = xattr_list;
-			stream_name - xattr_list < xattr_list_len;
-			stream_name += strlen(stream_name) + 1) {
-		cifsd_debug("%s, len %zd\n", stream_name, strlen(stream_name));
+	while (idx < xattr_list_len) {
+		stream_name = xattr_list + idx;
+		streamlen = strlen(stream_name);
+		idx += streamlen + 1;
+
+		cifsd_debug("%s, len %d\n", stream_name, streamlen);
 
 		if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
 			STREAM_PREFIX, STREAM_PREFIX_LEN))
 			continue;
 
-		stream_name_len = streamlen = strlen(stream_name) -
-			(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
+		stream_name_len = streamlen - (XATTR_USER_PREFIX_LEN +
+				STREAM_PREFIX_LEN);
+		streamlen = stream_name_len;
 
 		if (fp->stream.type == 2) {
 			streamlen += 17;
