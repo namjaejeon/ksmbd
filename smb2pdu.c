@@ -3750,7 +3750,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 {
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL, *buf;
-	int rc, name_len, value_len, xattr_list_len;
+	int rc, name_len, value_len, xattr_list_len, idx;
 	ssize_t buf_free_len, alignment_bytes, next_offset, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 	struct path *path;
@@ -3796,10 +3796,15 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	ptr = (char *)rsp->Buffer;
 	eainfo = (struct smb2_ea_info *)ptr;
 	prev_eainfo = eainfo;
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
+	idx = 0;
 
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
+	while (idx < xattr_list_len) {
+		name = xattr_list + idx;
+		name_len = strlen(name);
+
+		cifsd_debug("%s, len %d\n", name, name_len);
+		idx += name_len + 1;
+
 		/*
 		 * CIFS does not support EA other than user.* namespace,
 		 * still keep the framework generic, to list other attrs
@@ -3825,7 +3830,6 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 			FILE_ATTRIBUTE_PREFIX, FILE_ATTRIBUTE_PREFIX_LEN))
 			continue;
 
-		name_len = strlen(name);
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
 			name_len -= XATTR_USER_PREFIX_LEN;
 
