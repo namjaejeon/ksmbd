@@ -2361,6 +2361,28 @@ int smb2_open(struct cifsd_work *work)
 				rc = -ENOENT;
 			goto err_out1;
 		}
+
+		cifsd_debug("converted name = %s\n", name);
+		if (strchr(name, ':')) {
+			if (!test_share_config_flag(work->tcon->share_conf,
+					CIFSD_SHARE_FLAG_STREAMS)) {
+				rc = -EBADF;
+				goto err_out1;
+			}
+			rc = parse_stream_name(name, &stream_name, &s_type);
+			if (rc < 0)
+				goto err_out1;
+		}
+
+		rc = cifsd_validate_filename(name);
+		if (rc < 0)
+			goto err_out1;
+
+		if (cifsd_share_veto_filename(share, name)) {
+			rc = -ENOENT;
+			cifsd_debug("Reject open(), vetoed file: %s\n", name);
+			goto err_out1;
+		}
 	} else {
 		len = strlen(share->path);
 		cifsd_debug("share path len %d\n", len);
@@ -2373,29 +2395,6 @@ int smb2_open(struct cifsd_work *work)
 
 		memcpy(name, share->path, len);
 		*(name + len) = '\0';
-	}
-
-	cifsd_debug("converted name = %s\n", name);
-	if (strchr(name, ':')) {
-		if (!test_share_config_flag(work->tcon->share_conf,
-				CIFSD_SHARE_FLAG_STREAMS)) {
-			rc = -EBADF;
-			goto err_out1;
-		}
-		rc = parse_stream_name(name, &stream_name, &s_type);
-		if (rc < 0)
-			goto err_out1;
-	}
-
-	rc = cifsd_validate_filename(name);
-	if (rc < 0)
-		goto err_out1;
-
-	if (cifsd_share_veto_filename(share, name)) {
-		rc = -ENOENT;
-		cifsd_debug("file(%s) open is not allowed by setting as veto file\n",
-			name);
-		goto err_out1;
 	}
 
 	req_op_level = req->RequestedOplockLevel;
