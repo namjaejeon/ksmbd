@@ -184,6 +184,8 @@ script:
  - sudo ./check generic/257
 # - sudo ./check generic/263 #fail, It may be cifsd issue
 # - sudo ./check generic/285 #fail, It may be cifs client issue on 4.15 kernel
+ - sed -e "s/<< 20/<< 10/g" tests/generic/286 > tests/generic/286.new
+ - mv tests/generic/286.new tests/generic/286
  - sudo ./check generic/286
  - sudo ./check generic/308
  - sudo ./check generic/309
