@@ -12,6 +12,7 @@ before_script:
  - tar xf linux-4.1.36.tar.gz
  - mv linux-4.1.36 linux-stable
  - ./.travis_get_mainline_kernel
+ - cp ./.travis_cmd_wrapper.pl ~/travis_cmd_wrapper.pl
  # Prerequisite for xfstests testing
  - sudo apt-get install cifs-utils
  - sudo apt-get install linux-headers-$(uname -r)
