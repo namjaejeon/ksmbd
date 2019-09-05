@@ -136,6 +136,8 @@ script:
  - sed -e s/numloops=10/numloops=2/ -e s/numfiles=5/numfiles=2/ -e s/numchildren=3/numchildren=2/ tests/generic/074 > tests/generic/074.new
  - mv tests/generic/074.new tests/generic/074
  - sudo ./check generic/074
+ - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/075 > tests/generic/075.new
+ - mv tests/generic/075.new tests/generic/075
  - sudo ./check generic/075
  - sudo ./check generic/080
 # - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
