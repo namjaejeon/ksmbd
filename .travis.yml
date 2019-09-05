@@ -127,9 +127,9 @@ script:
  - sudo ./check generic/030
  - sudo ./check generic/036
  - sudo ./check generic/037
- - sed -e s/3000000/300000/ tests/generic/069 > tests/generic/069.new
+ - sed -e s/3000000/30000/ tests/generic/069 > tests/generic/069.new
  - mv tests/generic/069.new tests/generic/069
- - sed -e s/3000000/300000/ tests/generic/069.out > tests/generic/069.out.new
+ - sed -e s/3000000/30000/ tests/generic/069.out > tests/generic/069.out.new
  - mv tests/generic/069.out.new tests/generic/069.out
  - sudo ./check generic/069
 # - travis_wait sudo ./check generic/070 (timeover > 10m)
