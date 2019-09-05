@@ -152,6 +152,8 @@ script:
  - mv tests/generic/100.new tests/generic/100
  - sudo ./check generic/100
  - sudo ./check generic/109
+ - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/112 > tests/generic/112.new
+ - mv tests/generic/112.new tests/generic/112
  - sudo ./check generic/112
  - sudo ./check generic/113
 # - time_wait sudo ./check generic/117 (timeover > 10m)
