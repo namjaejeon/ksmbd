@@ -2361,6 +2361,28 @@ int smb2_open(struct cifsd_work *work)
 				rc = -ENOENT;
 			goto err_out1;
 		}
+
+		cifsd_debug("converted name = %s\n", name);
+		if (strchr(name, ':')) {
+			if (!test_share_config_flag(work->tcon->share_conf,
+					CIFSD_SHARE_FLAG_STREAMS)) {
+				rc = -EBADF;
+				goto err_out1;
+			}
+			rc = parse_stream_name(name, &stream_name, &s_type);
+			if (rc < 0)
+				goto err_out1;
+		}
+
+		rc = cifsd_validate_filename(name);
+		if (rc < 0)
+			goto err_out1;
+
+		if (cifsd_share_veto_filename(share, name)) {
+			rc = -ENOENT;
+			cifsd_debug("Reject open(), vetoed file: %s\n", name);
+			goto err_out1;
+		}
 	} else {
 		len = strlen(share->path);
 		cifsd_debug("share path len %d\n", len);
@@ -2373,29 +2395,6 @@ int smb2_open(struct cifsd_work *work)
 
 		memcpy(name, share->path, len);
 		*(name + len) = '\0';
-	}
-
-	cifsd_debug("converted name = %s\n", name);
-	if (strchr(name, ':')) {
-		if (!test_share_config_flag(work->tcon->share_conf,
-				CIFSD_SHARE_FLAG_STREAMS)) {
-			rc = -EBADF;
-			goto err_out1;
-		}
-		rc = parse_stream_name(name, &stream_name, &s_type);
-		if (rc < 0)
-			goto err_out1;
-	}
-
-	rc = cifsd_validate_filename(name);
-	if (rc < 0)
-		goto err_out1;
-
-	if (cifsd_share_veto_filename(share, name)) {
-		rc = -ENOENT;
-		cifsd_debug("file(%s) open is not allowed by setting as veto file\n",
-			name);
-		goto err_out1;
 	}
 
 	req_op_level = req->RequestedOplockLevel;
@@ -3750,7 +3749,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 {
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL, *buf;
-	int rc, name_len, value_len, xattr_list_len;
+	int rc, name_len, value_len, xattr_list_len, idx;
 	ssize_t buf_free_len, alignment_bytes, next_offset, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 	struct path *path;
@@ -3796,10 +3795,15 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	ptr = (char *)rsp->Buffer;
 	eainfo = (struct smb2_ea_info *)ptr;
 	prev_eainfo = eainfo;
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
+	idx = 0;
 
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
+	while (idx < xattr_list_len) {
+		name = xattr_list + idx;
+		name_len = strlen(name);
+
+		cifsd_debug("%s, len %d\n", name, name_len);
+		idx += name_len + 1;
+
 		/*
 		 * CIFS does not support EA other than user.* namespace,
 		 * still keep the framework generic, to list other attrs
@@ -3825,7 +3829,6 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 			FILE_ATTRIBUTE_PREFIX, FILE_ATTRIBUTE_PREFIX_LEN))
 			continue;
 
-		name_len = strlen(name);
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
 			name_len -= XATTR_USER_PREFIX_LEN;
 
@@ -4090,7 +4093,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 	struct kstat stat;
 	struct path *path = &fp->filp->f_path;
 	ssize_t xattr_list_len;
-	int nbytes = 0, streamlen, stream_name_len, next;
+	int nbytes = 0, streamlen, stream_name_len, next, idx = 0;
 
 	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
@@ -4123,17 +4126,20 @@ static void get_file_stream_info(struct cifsd_work *work,
 		goto out;
 	}
 
-	for (stream_name = xattr_list;
-			stream_name - xattr_list < xattr_list_len;
-			stream_name += strlen(stream_name) + 1) {
-		cifsd_debug("%s, len %zd\n", stream_name, strlen(stream_name));
+	while (idx < xattr_list_len) {
+		stream_name = xattr_list + idx;
+		streamlen = strlen(stream_name);
+		idx += streamlen + 1;
+
+		cifsd_debug("%s, len %d\n", stream_name, streamlen);
 
 		if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
 			STREAM_PREFIX, STREAM_PREFIX_LEN))
 			continue;
 
-		stream_name_len = streamlen = strlen(stream_name) -
-			(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
+		stream_name_len = streamlen - (XATTR_USER_PREFIX_LEN +
+				STREAM_PREFIX_LEN);
+		streamlen = stream_name_len;
 
 		if (fp->stream.type == 2) {
 			streamlen += 17;
