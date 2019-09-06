@@ -215,11 +215,14 @@ script:
 # - time_wait sudo ./check generic/476 (timeover > 10m)
  - sudo ./check generic/490
 # - sudo ./check generic/504 #fail, It may be cifs client issue on 4.15 kernel
+#
+#
+#
  - cd ..
  - tar xzvf samba-cifsd.tgz > /dev/null
  - cd samba-cifsd/
  - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
- - make -j$((`nproc`+1)) > /dev/null
+ - make -j$((`nproc`+1)) bin/smbtorture > /dev/null
  # smb2 connect test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test3/*
