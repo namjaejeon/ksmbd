@@ -23,6 +23,7 @@
 #include <linux/rwlock.h>
 #include <linux/list.h>
 #include <linux/mempool.h>
+#include <linux/highmem.h>
 #include <linux/scatterlist.h>
 #include <rdma/ib_verbs.h>
 #include <rdma/rdma_cm.h>
@@ -178,6 +179,10 @@ struct smbd_recvmsg {
 	bool			first_segment;
 	u8			packet[];
 };
+
+#define BUFFER_NR_PAGES(buf, len)					\
+		(DIV_ROUND_UP((unsigned long)(buf) + (len), PAGE_SIZE)	\
+			- (unsigned long)(buf) / PAGE_SIZE)
 
 static void smbd_destroy_pools(struct smbd_transport *transport);
 static void smbd_post_recv_credits(struct work_struct *work);
@@ -941,58 +946,114 @@ static int smbd_post_send(struct smbd_transport *t,
 	return ret;
 }
 
-static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
-			int nvecs, int remaining_data_length)
+static int get_sg_list(void *buf, int size,
+			struct scatterlist *sg_list, int nentries)
 {
-	int i, rc;
-	struct smbd_sendmsg *sendmsg;
-	int data_length;
+	bool high = is_vmalloc_addr(buf);
+	struct page *page;
+	int offset, len;
+	int i = 0;
 
-	if (nvecs > SMBD_MAX_SEND_SGES-1)
-		return -ENOMEM;
+	if (nentries < BUFFER_NR_PAGES(buf, size))
+		return -EINVAL;
+
+	offset = offset_in_page(buf);
+	buf -= offset;
+	while (size > 0) {
+		len = min_t(int, PAGE_SIZE - offset, size);
+		if (high)
+			page = vmalloc_to_page(buf);
+		else
+			page = kmap_to_page(buf);
+
+		if (!sg_list)
+			return -EINVAL;
+		sg_set_page(sg_list, page, len, offset);
+		sg_list = sg_next(sg_list);
+
+		buf += PAGE_SIZE;
+		size -= len;
+		offset = 0;
+		i++;
+	}
+	return i;
+}
+
+static int get_mapped_sg_list(struct ib_device *device, void *buf, int size,
+			struct scatterlist *sg_list, int nentries,
+			enum dma_data_direction dir)
+{
+	int npages;
+
+	npages = get_sg_list(buf, size, sg_list, nentries);
+	if (npages <= 0)
+		return -EINVAL;
+	return ib_dma_map_sg(device, sg_list, npages, dir);
+}
+
+static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
+			int niov, int remaining_data_length)
+{
+	int i, j, ret;
+	struct smbd_sendmsg *msg;
+	int data_length;
+	struct scatterlist sg[SMBD_MAX_SEND_SGES-1];
 
 	data_length = 0;
-	for (i = 0; i < nvecs; i++)
+	for (i = 0; i < niov; i++)
 		data_length += iov[i].iov_len;
 
-	rc = smbd_create_header(
-		t, data_length, remaining_data_length, &sendmsg);
-	if (rc)
-		return rc;
+	ret = smbd_create_header(
+		t, data_length, remaining_data_length, &msg);
+	if (ret)
+		return ret;
 
-	for (i = 0; i < nvecs; i++) {
-		sendmsg->sge[i+1].addr =
-			ib_dma_map_single(t->cm_id->device, iov[i].iov_base,
-			       iov[i].iov_len, DMA_TO_DEVICE);
-		if (ib_dma_mapping_error(
-				t->cm_id->device, sendmsg->sge[i+1].addr)) {
-			rc = -EIO;
-			sendmsg->sge[i+1].addr = 0;
-			goto dma_mapping_failure;
+	for (i = 0; i < niov; i++) {
+		struct ib_sge *sge;
+		int sg_cnt;
+
+		sg_init_table(sg, SMBD_MAX_SEND_SGES-1);
+		sg_cnt = get_mapped_sg_list(t->cm_id->device,
+				iov[i].iov_base, iov[i].iov_len,
+				sg, SMBD_MAX_SEND_SGES-1, DMA_TO_DEVICE);
+		if (sg_cnt <= 0) {
+			cifsd_err("failed to map buffer\n");
+			goto err;
+		} else if (sg_cnt + msg->num_sge > SMBD_MAX_SEND_SGES-1) {
+			cifsd_err("buffer not fitted into sges\n");
+			ret = -E2BIG;
+			ib_dma_unmap_sg(t->cm_id->device, sg, sg_cnt,
+					DMA_TO_DEVICE);
+			goto err;
 		}
-		sendmsg->sge[i+1].length = iov[i].iov_len;
-		sendmsg->sge[i+1].lkey = t->pd->local_dma_lkey;
-		sendmsg->num_sge++;
+
+		for (j = 0; j < sg_cnt; j++) {
+			sge = &msg->sge[msg->num_sge];
+			sge->addr = sg_dma_address(&sg[j]);
+			sge->length = sg_dma_len(&sg[j]);
+			sge->lkey  = t->pd->local_dma_lkey;
+			msg->num_sge++;
+		}
 	}
 
-	rc = smbd_post_send(t, sendmsg, data_length);
-	if (!rc)
+	ret = smbd_post_send(t, msg, data_length);
+	if (!ret)
 		return 0;
 
-dma_mapping_failure:
-	for (i = 1; i < sendmsg->num_sge; i++)
-		if (sendmsg->sge[i].addr)
-			ib_dma_unmap_single(t->cm_id->device,
-					    sendmsg->sge[i].addr,
-					    sendmsg->sge[i].length,
+err:
+	for (i = 1; i < msg->num_sge; i++)
+		if (msg->sge[i].addr)
+			ib_dma_unmap_page(t->cm_id->device,
+					    msg->sge[i].addr,
+					    msg->sge[i].length,
 					    DMA_TO_DEVICE);
 	ib_dma_unmap_single(t->cm_id->device,
-			    sendmsg->sge[0].addr,
-			    sendmsg->sge[0].length,
+			    msg->sge[0].addr,
+			    msg->sge[0].length,
 			    DMA_TO_DEVICE);
-	smbd_free_sendmsg(t, sendmsg);
+	smbd_free_sendmsg(t, msg);
 	atomic_inc(&t->send_credits);
-	return rc;
+	return ret;
 }
 
 static int smbd_writev(struct cifsd_transport *t, struct kvec *iov,
