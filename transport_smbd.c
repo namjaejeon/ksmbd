@@ -43,7 +43,8 @@
 /* SMBD negotiation timeout in seconds */
 #define SMBD_NEGOTIATE_TIMEOUT		120
 
-#define SMBDIRECT_MAX_SGE		4
+#define SMBD_MAX_SEND_SGES		8
+#define SMBD_MAX_RECV_SGES		1
 
 /*
  * Default maximum number of RDMA read/write outstanding on this connection
@@ -68,7 +69,7 @@ static int smbd_receive_credit_max = 255;
 static int smbd_send_credit_target = 255;
 
 /* The maximum single message size can be sent to remote peer */
-static int smbd_max_send_size = 1364;
+static int smbd_max_send_size = 8192;
 
 /*  The maximum fragmented upper-layer payload receive size supported */
 static int smbd_max_fragmented_recv_size = 1024 * 1024;
@@ -163,7 +164,7 @@ static struct cifsd_transport_ops cifsd_smbd_transport_ops;
 struct smbd_sendmsg {
 	struct smbd_transport	*transport;
 	int			num_sge;
-	struct ib_sge		sge[SMBDIRECT_MAX_SGE];
+	struct ib_sge		sge[SMBD_MAX_SEND_SGES];
 	struct ib_cqe		cqe;
 	u8			packet[];
 };
@@ -947,7 +948,7 @@ static int smbd_post_send_data(struct smbd_transport *t, struct kvec *iov,
 	struct smbd_sendmsg *sendmsg;
 	int data_length;
 
-	if (nvecs > SMBDIRECT_MAX_SGE-1)
+	if (nvecs > SMBD_MAX_SEND_SGES-1)
 		return -ENOMEM;
 
 	data_length = 0;
@@ -1346,6 +1347,17 @@ out:
 static int smbd_init_params(struct smbd_transport *t)
 {
 	struct ib_device *device = t->cm_id->device;
+	int max_send_sges;
+
+	/* need 2 more sge. because a SMBD header will be mapped,
+	 * and maybe a send buffer could be not page aligned.
+	 */
+	t->max_send_size = smbd_max_send_size;
+	max_send_sges = DIV_ROUND_UP(t->max_send_size, PAGE_SIZE) + 2;
+	if (max_send_sges > SMBD_MAX_SEND_SGES) {
+		cifsd_err("max_send_size %d is too large\n", t->max_send_size);
+		return -EINVAL;
+	}
 
 	if (smbd_send_credit_target > device->attrs.max_cqe ||
 			smbd_send_credit_target > device->attrs.max_qp_wr) {
@@ -1384,20 +1396,20 @@ static int smbd_init_params(struct smbd_transport *t)
 	t->max_recv_size = smbd_max_receive_size;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
-	if (device->attrs.max_send_sge < SMBDIRECT_MAX_SGE) {
+	if (device->attrs.max_send_sge < max_send_sges) {
 		cifsd_err(
 			"warning: device max_send_sge = %d too small\n",
 			device->attrs.max_send_sge);
 		return -EINVAL;
 	}
-	if (device->attrs.max_recv_sge < SMBDIRECT_MAX_SGE) {
+	if (device->attrs.max_recv_sge < SMBD_MAX_RECV_SGES) {
 		cifsd_err(
 			"warning: device max_recv_sge = %d too small\n",
 			device->attrs.max_recv_sge);
 		return -EINVAL;
 	}
 #else
-	if (device->attrs.max_sge < SMBDIRECT_MAX_SGE) {
+	if (device->attrs.max_sge < max_send_sges) {
 		cifsd_err(
 			"warning: device max_sge = %d too small\n",
 			device->attrs.max_sge);
@@ -1483,14 +1495,7 @@ err:
 static int smbd_create_qpair(struct smbd_transport *t)
 {
 	int ret;
-	struct ib_qp_init_attr qp_attr = {
-		.cap.max_send_wr	= t->send_credit_target,
-		.cap.max_recv_wr	= t->recv_credit_max,
-		.cap.max_send_sge	= SMBDIRECT_MAX_SGE,
-		.cap.max_recv_sge	= 1,
-		.qp_type		= IB_QPT_RC,
-		.sq_sig_type		= IB_SIGNAL_REQ_WR,
-	};
+	struct ib_qp_init_attr qp_attr;
 
 	t->pd = ib_alloc_pd(t->cm_id->device, 0);
 	if (IS_ERR(t->pd)) {
@@ -1523,8 +1528,8 @@ static int smbd_create_qpair(struct smbd_transport *t)
 	qp_attr.qp_context = t;
 	qp_attr.cap.max_send_wr = t->send_credit_target;
 	qp_attr.cap.max_recv_wr = t->recv_credit_max;
-	qp_attr.cap.max_send_sge = SMBDIRECT_MAX_SGE;
-	qp_attr.cap.max_recv_sge = SMBDIRECT_MAX_SGE;
+	qp_attr.cap.max_send_sge = SMBD_MAX_SEND_SGES;
+	qp_attr.cap.max_recv_sge = SMBD_MAX_RECV_SGES;
 	qp_attr.cap.max_inline_data = 0;
 	qp_attr.sq_sig_type = IB_SIGNAL_REQ_WR;
 	qp_attr.qp_type = IB_QPT_RC;
