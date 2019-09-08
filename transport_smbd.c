@@ -51,7 +51,7 @@
  * Default maximum number of RDMA read/write outstanding on this connection
  * This value is possibly decreased during QP creation on hardware limit
  */
-#define SMBD_CM_RESPONDER_RESOURCES	32
+#define SMBD_CM_INITIATOR_DEPTH		8
 
 /* Maximum number of retries on data transfer operations */
 #define SMBD_CM_RETRY			6
@@ -78,6 +78,10 @@ static int smbd_max_fragmented_recv_size = 1024 * 1024;
 /*  The maximum single-message size which can be received */
 static int smbd_max_receive_size = 8192;
 
+static int smbd_max_read_write_size = 1024 * 1024;
+
+static int smbd_max_outstanding_rw_ops = 8;
+
 static struct smbd_listener {
 	struct rdma_cm_id	*cm_id;
 } smbd_listener;
@@ -103,10 +107,12 @@ struct smbd_transport {
 	struct ib_cq		*recv_cq;
 	struct ib_pd		*pd;
 	struct ib_qp		*qp;
+
 	int			max_send_size;
 	int			max_recv_size;
 	int			max_fragmented_send_size;
 	int			max_fragmented_recv_size;
+	int			max_rdma_rw_size;
 
 	int			recv_credit_max;
 	int			recv_credit_target;
@@ -115,8 +121,10 @@ struct smbd_transport {
 	atomic_t		send_credits;
 	spinlock_t		lock_new_recv_credits;
 	int			new_recv_credits;
+	atomic_t		rw_avail_ops;
 
-	wait_queue_head_t	wait_send_queue;
+	wait_queue_head_t	wait_send_credits;
+	wait_queue_head_t	wait_rw_avail_ops;
 
 	mempool_t		*sendmsg_mempool;
 	struct kmem_cache	*sendmsg_cache;
@@ -178,6 +186,15 @@ struct smbd_recvmsg {
 	struct ib_cqe		cqe;
 	bool			first_segment;
 	u8			packet[];
+};
+
+struct smbd_rdma_rw_msg {
+	struct smbd_transport	*t;
+	struct ib_cqe		cqe;
+	struct completion	*completion;
+	struct rdma_rw_ctx	rw_ctx;
+	struct sg_table		sgt;
+	struct scatterlist	sg_list[0];
 };
 
 #define BUFFER_NR_PAGES(buf, len)					\
@@ -351,7 +368,8 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	t->reassembly_data_length = 0;
 	t->reassembly_queue_length = 0;
 	init_waitqueue_head(&t->wait_reassembly_queue);
-	init_waitqueue_head(&t->wait_send_queue);
+	init_waitqueue_head(&t->wait_send_credits);
+	init_waitqueue_head(&t->wait_rw_avail_ops);
 
 	spin_lock_init(&t->empty_recvmsg_queue_lock);
 	INIT_LIST_HEAD(&t->empty_recvmsg_queue);
@@ -400,7 +418,7 @@ static void free_transport(struct smbd_transport *t)
 		ib_destroy_qp(t->qp);
 	}
 
-	wake_up_interruptible(&t->wait_send_queue);
+	wake_up_interruptible(&t->wait_send_credits);
 
 	cifsd_debug("wait for all send to finish\n");
 	wait_event(t->wait_smbd_send_pending, t->smbd_send_pending == 0);
@@ -564,7 +582,7 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 			queue_work(t->workqueue, &t->send_immediate_work);
 
 		if (atomic_read(&t->send_credits) > 0)
-			wake_up_interruptible(&t->wait_send_queue);
+			wake_up_interruptible(&t->wait_send_credits);
 		break;
 	}
 	default:
@@ -837,7 +855,7 @@ static int smbd_create_header(struct smbd_transport *t,
 	int rc;
 
 	/* Wait for send credits. A SMBD packet needs one credit */
-	rc = wait_event_interruptible(t->wait_send_queue,
+	rc = wait_event_interruptible(t->wait_send_credits,
 		atomic_read(&t->send_credits) > 0 ||
 		t->status != SMBD_CS_CONNECTED);
 	if (rc)
@@ -1181,6 +1199,153 @@ done:
 
 }
 
+static void read_write_done(struct ib_cq *cq, struct ib_wc *wc,
+				enum dma_data_direction dir)
+{
+	struct smbd_rdma_rw_msg *msg = container_of(wc->wr_cqe,
+						struct smbd_rdma_rw_msg, cqe);
+	struct smbd_transport *t = msg->t;
+
+	if (wc->status != IB_WC_SUCCESS) {
+		cifsd_err("read/write error. opcode = %d, status = %s(%d)\n",
+			wc->opcode, ib_wc_status_msg(wc->status), wc->status);
+		smbd_disconnect_rdma_connection(t);
+	}
+
+	if (atomic_inc_return(&t->rw_avail_ops) > 0)
+		wake_up(&t->wait_rw_avail_ops);
+
+	rdma_rw_ctx_destroy(&msg->rw_ctx, t->qp, t->qp->port,
+			msg->sg_list, msg->sgt.nents, dir);
+	sg_free_table_chained(&msg->sgt, msg->sg_list);
+
+	complete(msg->completion);
+	kfree(msg);
+}
+
+static void read_done(struct ib_cq *cq, struct ib_wc *wc)
+{
+	read_write_done(cq, wc, DMA_FROM_DEVICE);
+}
+
+static void write_done(struct ib_cq *cq, struct ib_wc *wc)
+{
+	read_write_done(cq, wc, DMA_TO_DEVICE);
+}
+
+static int wait_for_avail_rw_ops(struct smbd_transport *t)
+{
+	int ret;
+
+	do {
+		if (atomic_dec_return(&t->rw_avail_ops) >= 0)
+			return 0;
+
+		atomic_inc(&t->rw_avail_ops);
+		ret = wait_event_interruptible(t->wait_rw_avail_ops,
+				atomic_read(&t->rw_avail_ops) > 0 ||
+				t->status != SMBD_CS_CONNECTED);
+
+		if (t->status != SMBD_CS_CONNECTED)
+			return -ENOTCONN;
+		else if (ret < 0)
+			return ret;
+	} while (true);
+}
+
+static int smbd_rdma_xmit(struct smbd_transport *t, void *buf, int buf_len,
+			u32 remote_key, u64 remote_offset, u32 remote_len,
+			bool is_read)
+{
+	struct smbd_rdma_rw_msg *msg;
+	int ret;
+	DECLARE_COMPLETION_ONSTACK(completion);
+	struct ib_send_wr *first_wr = NULL;
+
+	ret = wait_for_avail_rw_ops(t);
+	if (ret < 0)
+		return ret;
+
+	/* TODO: mempool */
+	msg = kmalloc(offsetof(struct smbd_rdma_rw_msg, sg_list) +
+		sizeof(struct scatterlist) * SG_CHUNK_SIZE, GFP_KERNEL);
+	if (!msg) {
+		atomic_inc(&t->rw_avail_ops);
+		return -ENOMEM;
+	}
+
+	msg->sgt.sgl = &msg->sg_list[0];
+	ret = sg_alloc_table_chained(&msg->sgt,
+				BUFFER_NR_PAGES(buf, buf_len),
+				msg->sg_list);
+	if (ret) {
+		atomic_inc(&t->rw_avail_ops);
+		kfree(msg);
+		return -ENOMEM;
+	}
+
+	ret = get_sg_list(buf, buf_len, msg->sgt.sgl, msg->sgt.orig_nents);
+	if (ret <= 0) {
+		cifsd_err("failed to get pages\n");
+		goto err;
+	}
+
+	ret = rdma_rw_ctx_init(&msg->rw_ctx, t->qp, t->qp->port,
+			msg->sg_list, BUFFER_NR_PAGES(buf, buf_len),
+			0, remote_offset, remote_key,
+			is_read ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+	if (ret < 0) {
+		cifsd_err("failed to init rdma_rw_ctx: %d\n", ret);
+		goto err;
+	}
+
+	msg->t = t;
+	msg->cqe.done = is_read ? read_done : write_done;
+	msg->completion = &completion;
+	first_wr = rdma_rw_ctx_wrs(&msg->rw_ctx, t->qp, t->qp->port,
+				&msg->cqe, NULL);
+
+	ret = ib_post_send(t->qp, first_wr, NULL);
+	if (ret) {
+		cifsd_err("failed to post send wr: %d\n", ret);
+		goto err;
+	}
+
+	wait_for_completion(&completion);
+	return 0;
+
+err:
+	atomic_inc(&t->rw_avail_ops);
+	if (first_wr)
+		rdma_rw_ctx_destroy(&msg->rw_ctx, t->qp, t->qp->port,
+				msg->sg_list, msg->sgt.nents,
+				is_read ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
+	sg_free_table_chained(&msg->sgt, msg->sg_list);
+	kfree(msg);
+	return ret;
+
+}
+
+static int smbd_rdma_write(struct cifsd_transport *t,
+			void *buf, unsigned int buflen,
+			u32 remote_key, u64 remote_offset,
+			u32 remote_len)
+{
+	return smbd_rdma_xmit(SMBD_TRANS(t), buf, buflen,
+			remote_key, remote_offset,
+			remote_len, false);
+}
+
+static int smbd_rdma_read(struct cifsd_transport *t,
+			void *buf, unsigned int buflen,
+			u32 remote_key, u64 remote_offset,
+			u32 remote_len)
+{
+	return smbd_rdma_xmit(SMBD_TRANS(t), buf, buflen,
+			remote_key, remote_offset,
+			remote_len, true);
+}
+
 static void smbd_disconnect(struct cifsd_transport *t)
 {
 	struct smbd_transport *st = SMBD_TRANS(t);
@@ -1212,7 +1377,7 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 		t->status = SMBD_CS_DISCONNECTED;
 		wake_up_interruptible(&t->wait_status);
 		wake_up_interruptible(&t->wait_reassembly_queue);
-		wake_up(&t->wait_send_queue);
+		wake_up(&t->wait_send_credits);
 		break;
 	}
 	case RDMA_CM_EVENT_CONNECT_ERROR: {
@@ -1272,7 +1437,7 @@ static int smbd_send_negotiate_response(struct smbd_transport *t, int failed)
 				cpu_to_le16(t->send_credit_target);
 		resp->credits_granted = cpu_to_le16(
 				manage_credits_prior_sending(t));
-		resp->max_readwrite_size = cpu_to_le32(SMBD_MAX_RW_SIZE);
+		resp->max_readwrite_size = cpu_to_le32(t->max_rdma_rw_size);
 		resp->preferred_send_size = cpu_to_le32(t->max_send_size);
 		resp->max_receive_size = cpu_to_le32(t->max_recv_size);
 		resp->max_fragmented_size =
@@ -1314,12 +1479,10 @@ static int smbd_accept_client(struct smbd_transport *t)
 	int ret;
 
 	memset(&conn_param, 0, sizeof(conn_param));
-	conn_param.initiator_depth = 0;
-	conn_param.responder_resources =
-		t->cm_id->device->attrs.max_qp_rd_atom
-			< SMBD_CM_RESPONDER_RESOURCES ?
-		t->cm_id->device->attrs.max_qp_rd_atom :
-		SMBD_CM_RESPONDER_RESOURCES;
+	conn_param.initiator_depth = min_t(u8,
+				t->cm_id->device->attrs.max_qp_rd_atom,
+				SMBD_CM_INITIATOR_DEPTH);
+	conn_param.responder_resources = 0;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 	t->cm_id->device->ops.get_port_immutable(t->cm_id->device,
@@ -1405,10 +1568,10 @@ out:
 	return ret;
 }
 
-static int smbd_init_params(struct smbd_transport *t)
+static int smbd_init_params(struct smbd_transport *t, struct ib_qp_cap *cap)
 {
 	struct ib_device *device = t->cm_id->device;
-	int max_send_sges;
+	int max_send_sges, max_pages, max_rw_wrs, max_send_wrs;
 
 	/* need 2 more sge. because a SMBD header will be mapped,
 	 * and maybe a send buffer could be not page aligned.
@@ -1420,13 +1583,28 @@ static int smbd_init_params(struct smbd_transport *t)
 		return -EINVAL;
 	}
 
-	if (smbd_send_credit_target > device->attrs.max_cqe ||
-			smbd_send_credit_target > device->attrs.max_qp_wr) {
+	/* allow smbd_max_outstanding_rw_ops of in-flight RDMA read/writes.
+	 * HCA guarantees at least max_send_sge of sges for a RDMA read/write
+	 * work request, and if memory registration is used, we need reg_mr,
+	 * local_inv wrs for each read/write.
+	 */
+	t->max_rdma_rw_size = smbd_max_read_write_size;
+	max_pages = DIV_ROUND_UP(t->max_rdma_rw_size, PAGE_SIZE) + 1;
+	max_rw_wrs = DIV_ROUND_UP(max_pages, SMBD_MAX_SEND_SGES);
+	max_rw_wrs += rdma_rw_mr_factor(device, t->cm_id->port_num,
+			max_pages) * 2;
+	max_rw_wrs *= smbd_max_outstanding_rw_ops;
+
+	max_send_wrs = smbd_send_credit_target + max_rw_wrs;
+	if (max_send_wrs > device->attrs.max_cqe ||
+			max_send_wrs > device->attrs.max_qp_wr) {
 		cifsd_err(
-			"consider lowering send_credit_target = %d. "
+			"consider lowering send_credit_target = %d, or "
+			"max_outstanding_rw_ops = %d.\n"
 			"Possible CQE overrun, device "
-			"reporting max_cpe %d max_qp_wr %d\n",
+			"reporting max_cqe %d max_qp_wr %d\n",
 			smbd_send_credit_target,
+			smbd_max_outstanding_rw_ops,
 			device->attrs.max_cqe,
 			device->attrs.max_qp_wr);
 		return -EINVAL;
@@ -1444,20 +1622,8 @@ static int smbd_init_params(struct smbd_transport *t)
 		return -EINVAL;
 	}
 
-	t->recv_credit_max = smbd_receive_credit_max;
-	t->recv_credit_target = 10;
-	t->new_recv_credits = 0;
-	atomic_set(&t->recv_credits, 0);
-
-	t->send_credit_target = smbd_send_credit_target;
-	atomic_set(&t->send_credits, 0);
-
-	t->max_send_size = smbd_max_send_size;
-	t->max_fragmented_recv_size = smbd_max_fragmented_recv_size;
-	t->max_recv_size = smbd_max_receive_size;
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
-	if (device->attrs.max_send_sge < max_send_sges) {
+	if (device->attrs.max_send_sge < SMBD_MAX_SEND_SGES) {
 		cifsd_err(
 			"warning: device max_send_sge = %d too small\n",
 			device->attrs.max_send_sge);
@@ -1470,13 +1636,33 @@ static int smbd_init_params(struct smbd_transport *t)
 		return -EINVAL;
 	}
 #else
-	if (device->attrs.max_sge < max_send_sges) {
+	if (device->attrs.max_sge < SMBD_MAX_SEND_SGES) {
 		cifsd_err(
 			"warning: device max_sge = %d too small\n",
 			device->attrs.max_sge);
 		return -EINVAL;
 	}
 #endif
+
+	t->recv_credit_max = smbd_receive_credit_max;
+	t->recv_credit_target = 10;
+	t->new_recv_credits = 0;
+	atomic_set(&t->recv_credits, 0);
+
+	t->send_credit_target = smbd_send_credit_target;
+	atomic_set(&t->send_credits, 0);
+	atomic_set(&t->rw_avail_ops, smbd_max_outstanding_rw_ops);
+
+	t->max_send_size = smbd_max_send_size;
+	t->max_recv_size = smbd_max_receive_size;
+	t->max_fragmented_recv_size = smbd_max_fragmented_recv_size;
+
+	cap->max_send_wr = max_send_wrs;
+	cap->max_recv_wr = t->recv_credit_max;
+	cap->max_send_sge = SMBD_MAX_SEND_SGES;
+	cap->max_recv_sge = SMBD_MAX_RECV_SGES;
+	cap->max_inline_data = 0;
+	cap->max_rdma_ctxs = 0;
 	return 0;
 }
 
@@ -1553,7 +1739,7 @@ err:
 	return -ENOMEM;
 }
 
-static int smbd_create_qpair(struct smbd_transport *t)
+static int smbd_create_qpair(struct smbd_transport *t, struct ib_qp_cap *cap)
 {
 	int ret;
 	struct ib_qp_init_attr qp_attr;
@@ -1576,7 +1762,8 @@ static int smbd_create_qpair(struct smbd_transport *t)
 	}
 
 	t->recv_cq = ib_alloc_cq(t->cm_id->device, t,
-			t->recv_credit_max, 0, IB_POLL_SOFTIRQ);
+			cap->max_send_wr + cap->max_rdma_ctxs,
+			0, IB_POLL_SOFTIRQ);
 	if (IS_ERR(t->recv_cq)) {
 		cifsd_err("Can't create RDMA recv CQ\n");
 		ret = PTR_ERR(t->recv_cq);
@@ -1587,11 +1774,7 @@ static int smbd_create_qpair(struct smbd_transport *t)
 	memset(&qp_attr, 0, sizeof(qp_attr));
 	qp_attr.event_handler = smbd_qpair_handler;
 	qp_attr.qp_context = t;
-	qp_attr.cap.max_send_wr = t->send_credit_target;
-	qp_attr.cap.max_recv_wr = t->recv_credit_max;
-	qp_attr.cap.max_send_sge = SMBD_MAX_SEND_SGES;
-	qp_attr.cap.max_recv_sge = SMBD_MAX_RECV_SGES;
-	qp_attr.cap.max_inline_data = 0;
+	qp_attr.cap = *cap;
 	qp_attr.sq_sig_type = IB_SIGNAL_REQ_WR;
 	qp_attr.qp_type = IB_QPT_RC;
 	qp_attr.send_cq = t->send_cq;
@@ -1632,8 +1815,9 @@ static int smbd_prepare(struct cifsd_transport *t)
 {
 	struct smbd_transport *st = SMBD_TRANS(t);
 	int ret;
+	struct ib_qp_cap qp_cap;
 
-	ret = smbd_init_params(st);
+	ret = smbd_init_params(st, &qp_cap);
 	if (ret) {
 		cifsd_err("Can't configure RDMA parameters\n");
 		return ret;
@@ -1645,7 +1829,7 @@ static int smbd_prepare(struct cifsd_transport *t)
 		return ret;
 	}
 
-	ret = smbd_create_qpair(st);
+	ret = smbd_create_qpair(st, &qp_cap);
 	if (ret) {
 		cifsd_err("Can't accept RDMA client: %d\n", ret);
 		return ret;
@@ -1785,7 +1969,9 @@ int cifsd_smbd_destroy(void)
 
 static struct cifsd_transport_ops cifsd_smbd_transport_ops = {
 	.prepare	= smbd_prepare,
+	.disconnect	= smbd_disconnect,
 	.writev		= smbd_writev,
 	.read		= smbd_read,
-	.disconnect	= smbd_disconnect,
+	.rdma_read	= smbd_rdma_read,
+	.rdma_write	= smbd_rdma_write,
 };
