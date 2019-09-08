@@ -744,6 +744,16 @@ struct smb2_flush_rsp {
 	__le16 Reserved;
 } __packed;
 
+struct smb2_buffer_desc_v1 {
+	__le64 offset;
+	__le32 token;
+	__le32 length;
+} __packed;
+
+#define SMB2_CHANNEL_NONE		cpu_to_le32(0x00000000)
+#define SMB2_CHANNEL_RDMA_V1		cpu_to_le32(0x00000001)
+#define SMB2_CHANNEL_RDMA_V1_INVALIDATE cpu_to_le32(0x00000002)
+
 struct smb2_read_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 49 */
