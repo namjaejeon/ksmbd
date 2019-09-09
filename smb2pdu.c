@@ -5646,6 +5646,10 @@ static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
 		|| le16_to_cpu(req->ReadChannelInfoLength) < sizeof(*desc))
 		return -EINVAL;
 
+	work->need_invalidate_rkey =
+		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+	work->remote_key = le32_to_cpu(desc->token);
+
 	err = cifsd_conn_rdma_write(work->conn,
 				data_buf, length,
 				le32_to_cpu(desc->token),
@@ -5886,6 +5890,10 @@ static ssize_t smb2_write_rdma_channel(struct cifsd_work *work,
 	if (req->WriteChannelInfoOffset == 0
 		|| le16_to_cpu(req->WriteChannelInfoLength) < sizeof(*desc))
 		return -EINVAL;
+
+	work->need_invalidate_rkey =
+		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+	work->remote_key = le32_to_cpu(desc->token);
 
 	data_buf =
 		cifsd_alloc_response(length);

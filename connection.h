@@ -125,7 +125,8 @@ struct cifsd_transport_ops {
 	int (*read)(struct cifsd_transport *t,
 			char *buf, unsigned int size);
 	int (*writev)(struct cifsd_transport *t,
-			struct kvec *iovs, int nvecs, int size);
+			struct kvec *iovs, int niov, int size,
+			bool need_invalidate_rkey, unsigned int remote_key);
 	int (*rdma_read)(struct cifsd_transport *t,
 				void *buf, unsigned int len, u32 remote_key,
 				u64 remote_offset, u32 remote_len);

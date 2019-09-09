@@ -169,7 +169,7 @@ static struct cifsd_transport_ops cifsd_smbd_transport_ops;
 struct smbd_send_ctx {
 	struct list_head	msg_list;
 	int			wr_cnt;
-	bool			need_invalid;
+	bool			need_invalidate_rkey;
 	unsigned int		remote_key;
 };
 
@@ -883,11 +883,11 @@ static int smbd_post_send(struct smbd_transport *t, struct ib_send_wr *wr)
 
 static void smbd_send_ctx_init(struct smbd_transport *t,
 			struct smbd_send_ctx *send_ctx,
-			bool need_invalid, unsigned int remote_key)
+			bool need_invalidate_rkey, unsigned int remote_key)
 {
 	INIT_LIST_HEAD(&send_ctx->msg_list);
 	send_ctx->wr_cnt = 0;
-	send_ctx->need_invalid = need_invalid;
+	send_ctx->need_invalidate_rkey = need_invalidate_rkey;
 	send_ctx->remote_key = remote_key;
 }
 
@@ -909,7 +909,7 @@ static int smbd_flush_send_list(struct smbd_transport *t,
 
 	last->wr.send_flags = IB_SEND_SIGNALED;
 	last->wr.wr_cqe = &last->cqe;
-	if (is_last && send_ctx->need_invalid) {
+	if (is_last && send_ctx->need_invalidate_rkey) {
 		last->wr.opcode = IB_WR_SEND_WITH_INV;
 		last->wr.ex.invalidate_rkey = send_ctx->remote_key;
 	}
@@ -917,7 +917,7 @@ static int smbd_flush_send_list(struct smbd_transport *t,
 	ret = smbd_post_send(t, &first->wr);
 	if (!ret) {
 		smbd_send_ctx_init(t, send_ctx,
-			send_ctx->need_invalid, send_ctx->remote_key);
+			send_ctx->need_invalidate_rkey, send_ctx->remote_key);
 	} else {
 		atomic_add(send_ctx->wr_cnt, &t->send_credits);
 		list_for_each_entry_safe(first, last, &send_ctx->msg_list,
@@ -1159,8 +1159,9 @@ err:
 	return ret;
 }
 
-static int smbd_writev(struct cifsd_transport *t, struct kvec *iov,
-			int niovs, int buflen)
+static int smbd_writev(struct cifsd_transport *t,
+			struct kvec *iov, int niovs, int buflen,
+			bool need_invalidate, unsigned int remote_key)
 {
 	struct smbd_transport *st = SMBD_TRANS(t);
 	int remaining_data_length;
@@ -1184,7 +1185,7 @@ static int smbd_writev(struct cifsd_transport *t, struct kvec *iov,
 	remaining_data_length = buflen;
 	cifsd_debug("Sending smb (RDMA): smb_len=%u\n", buflen);
 
-	smbd_send_ctx_init(st, &send_ctx, false, 0);
+	smbd_send_ctx_init(st, &send_ctx, need_invalidate, remote_key);
 	start = i = 0;
 	buflen = 0;
 	while (true) {

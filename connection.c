@@ -196,7 +196,9 @@ int cifsd_conn_write(struct cifsd_work *work)
 
 	cifsd_conn_lock(conn);
 	sent = conn->transport->ops->writev(conn->transport, &iov[0],
-					iov_idx, len);
+					iov_idx, len,
+					work->need_invalidate_rkey,
+					work->remote_key);
 	cifsd_conn_unlock(conn);
 
 	if (sent < 0) {
