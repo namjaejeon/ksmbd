@@ -3535,8 +3535,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.wptr = (char *)rsp->Buffer;
 	d_info.rptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = (conn->vals->max_read_size +
-				MAX_HEADER_SIZE(conn) -
+	d_info.out_buf_len = (work->response_sz -
 				(get_rfc1002_len(rsp_org) + 4));
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
 				le32_to_cpu(req->OutputBufferLength)) -
@@ -3742,7 +3741,7 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_get_ea(struct cifsd_conn *conn,
+static int smb2_get_ea(struct cifsd_work *work,
 		       struct cifsd_file *fp,
 		       struct smb2_query_info_req *req,
 		       struct smb2_query_info_rsp *rsp,
@@ -4423,7 +4422,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		break;
 
 	case FILE_FULL_EA_INFORMATION:
-		rc = smb2_get_ea(work->conn, fp, req, rsp, rsp_org);
+		rc = smb2_get_ea(work, fp, req, rsp, rsp_org);
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		break;
 
@@ -5640,7 +5639,6 @@ static noinline int smb2_read_pipe(struct cifsd_work *work)
  */
 int smb2_read(struct cifsd_work *work)
 {
-	struct cifsd_conn *conn = work->conn;
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
@@ -5679,12 +5677,12 @@ int smb2_read(struct cifsd_work *work)
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
-	if (length > conn->vals->max_read_size) {
+	if (length > work->response_sz) {
 		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				length, conn->vals->max_read_size);
+			    length, work->response_sz);
 		cifsd_debug("limiting read size to max size(%u)\n",
-				conn->vals->max_read_size);
-		length = conn->vals->max_read_size;
+			    work->response_sz);
+		length = work->response_sz;
 	}
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
