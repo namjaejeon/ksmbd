@@ -313,3 +313,19 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;
 }
+
+void init_smb2_max_read_size(unsigned int sz)
+{
+	smb21_server_values.max_read_size = sz;
+	smb30_server_values.max_read_size = sz;
+	smb302_server_values.max_read_size = sz;
+	smb311_server_values.max_read_size = sz;
+}
+
+void init_smb2_max_write_size(unsigned int sz)
+{
+	smb21_server_values.max_write_size = sz;
+	smb30_server_values.max_write_size = sz;
+	smb302_server_values.max_write_size = sz;
+	smb311_server_values.max_write_size = sz;
+}
