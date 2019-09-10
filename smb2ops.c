@@ -334,3 +334,11 @@ void init_smb2_max_write_size(unsigned int sz)
 	smb302_server_values.max_write_size = sz;
 	smb311_server_values.max_write_size = sz;
 }
+
+void init_smb2_max_trans_size(unsigned int sz)
+{
+	smb21_server_values.max_trans_size = sz;
+	smb30_server_values.max_trans_size = sz;
+	smb302_server_values.max_trans_size = sz;
+	smb311_server_values.max_trans_size = sz;
+}
