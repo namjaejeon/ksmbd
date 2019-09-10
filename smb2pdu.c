@@ -18,7 +18,6 @@
 
 #include "auth.h"
 #include "asn1.h"
-#include "encrypt.h"
 #include "buffer_pool.h"
 #include "connection.h"
 #include "transport_ipc.h"
