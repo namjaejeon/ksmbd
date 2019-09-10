@@ -74,6 +74,9 @@ struct cifsd_work {
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;
 	struct list_head		interim_entry;
+
+	bool				need_invalidate_rkey;
+	unsigned int			remote_key;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)

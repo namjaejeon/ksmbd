@@ -196,7 +196,9 @@ int cifsd_conn_write(struct cifsd_work *work)
 
 	cifsd_conn_lock(conn);
 	sent = conn->transport->ops->writev(conn->transport, &iov[0],
-					iov_idx, len);
+					iov_idx, len,
+					work->need_invalidate_rkey,
+					work->remote_key);
 	cifsd_conn_unlock(conn);
 
 	if (sent < 0) {
@@ -205,6 +207,36 @@ int cifsd_conn_write(struct cifsd_work *work)
 	}
 
 	return 0;
+}
+
+int cifsd_conn_rdma_read(struct cifsd_conn *conn,
+				void *buf, unsigned int buflen,
+				u32 remote_key, u64 remote_offset,
+				u32 remote_len)
+{
+	int ret = -EINVAL;
+
+	if (conn->transport->ops->rdma_read)
+		ret = conn->transport->ops->rdma_read(conn->transport,
+						buf, buflen,
+						remote_key, remote_offset,
+						remote_len);
+	return ret;
+}
+
+int cifsd_conn_rdma_write(struct cifsd_conn *conn,
+				void *buf, unsigned int buflen,
+				u32 remote_key, u64 remote_offset,
+				u32 remote_len)
+{
+	int ret = -EINVAL;
+
+	if (conn->transport->ops->rdma_write)
+		ret = conn->transport->ops->rdma_write(conn->transport,
+						buf, buflen,
+						remote_key, remote_offset,
+						remote_len);
+	return ret;
 }
 
 bool cifsd_conn_alive(struct cifsd_conn *conn)
