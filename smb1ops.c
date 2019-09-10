@@ -17,6 +17,7 @@ static struct smb_version_values smb1_server_values = {
 	.capabilities = SMB1_SERVER_CAPS,
 	.max_read_size = CIFS_DEFAULT_IOSIZE,
 	.max_write_size = CIFS_DEFAULT_IOSIZE,
+	.max_trans_size = CIFS_DEFAULT_IOSIZE,
 	.large_lock_type = LOCKING_ANDX_LARGE_FILES,
 	.exclusive_lock_type = 0,
 	.shared_lock_type = LOCKING_ANDX_SHARED_LOCK,
