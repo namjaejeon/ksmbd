@@ -544,10 +544,12 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 	t = recvmsg->transport;
 
 	if (wc->status != IB_WC_SUCCESS || wc->opcode != IB_WC_RECV) {
-		cifsd_err("Recv error. status='%s (%d)' opcode=%d\n",
-			ib_wc_status_msg(wc->status), wc->status,
-			wc->opcode);
-		smbd_disconnect_rdma_connection(t);
+		if (wc->status != IB_WC_WR_FLUSH_ERR) {
+			cifsd_err("Recv error. status='%s (%d)' opcode=%d\n",
+				ib_wc_status_msg(wc->status), wc->status,
+				wc->opcode);
+			smbd_disconnect_rdma_connection(t);
+		}
 		__put_empty_recvmsg(t, recvmsg);
 		return;
 	}
