@@ -545,7 +545,8 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 		if (req->InfoType == SMB2_O_INFO_FILE &&
 			(req->FileInfoClass == FILE_FULL_EA_INFORMATION ||
 				req->FileInfoClass == FILE_ALL_INFORMATION))
-			sz = large_sz;
+			sz = work->conn->vals->max_trans_size +
+				MAX_SMB2_HDR_SIZE;
 	}
 
 	/* allocate large response buf for chained commands */
@@ -3775,9 +3776,9 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
 	}
 
-	buf_free_len = conn->vals->max_read_size + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_len(rsp_org) + 4)
-		- sizeof(struct smb2_query_info_rsp);
+	buf_free_len = work->response_sz -
+			(get_rfc1002_len(rsp_org) + 4) -
+			sizeof(struct smb2_query_info_rsp);
 
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
 		buf_free_len = le32_to_cpu(req->OutputBufferLength);
