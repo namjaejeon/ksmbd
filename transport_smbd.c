@@ -1807,7 +1807,7 @@ static int smbd_create_qpair(struct smbd_transport *t, struct ib_qp_cap *cap)
 	}
 
 	t->send_cq = ib_alloc_cq(t->cm_id->device, t,
-			t->send_credit_target, 0, IB_POLL_SOFTIRQ);
+			t->send_credit_target, 0, IB_POLL_WORKQUEUE);
 	if (IS_ERR(t->send_cq)) {
 		cifsd_err("Can't create RDMA send CQ\n");
 		ret = PTR_ERR(t->send_cq);
@@ -1817,7 +1817,7 @@ static int smbd_create_qpair(struct smbd_transport *t, struct ib_qp_cap *cap)
 
 	t->recv_cq = ib_alloc_cq(t->cm_id->device, t,
 			cap->max_send_wr + cap->max_rdma_ctxs,
-			0, IB_POLL_SOFTIRQ);
+			0, IB_POLL_WORKQUEUE);
 	if (IS_ERR(t->recv_cq)) {
 		cifsd_err("Can't create RDMA recv CQ\n");
 		ret = PTR_ERR(t->recv_cq);
