@@ -259,7 +259,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	 */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
-	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_read_size);
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_trans_size);
 	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_read_size);
 	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_write_size);
 
@@ -1041,7 +1041,7 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* For stats */
 	conn->connection_type = conn->dialect;
 
-	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_write_size);
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_trans_size);
 	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_read_size);
 	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_write_size);
 
