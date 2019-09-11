@@ -5670,6 +5670,7 @@ static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
  */
 int smb2_read(struct cifsd_work *work)
 {
+	struct cifsd_conn *conn = work->conn;
 	struct smb2_read_req *req;
 	struct smb2_read_rsp *rsp, *rsp_org;
 	struct cifsd_file *fp;
@@ -5708,12 +5709,10 @@ int smb2_read(struct cifsd_work *work)
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
-	if (length > work->response_sz) {
-		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-			    length, work->response_sz);
+	if (length > conn->vals->max_read_size) {
 		cifsd_debug("limiting read size to max size(%u)\n",
-			    work->response_sz);
-		length = work->response_sz;
+			    conn->vals->max_read_size);
+		length = conn->vals->max_read_size;
 	}
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),

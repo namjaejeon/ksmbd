@@ -47,7 +47,7 @@ script:
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
- # Compile with latest Tovalds' kernel
+ # Compile with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
@@ -69,7 +69,7 @@ script:
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
- # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
+ # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
@@ -77,6 +77,17 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
+ - gcc -v
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
+
+ # Compile secure server build + SMBD with latest Torvalds' kernel
+ - cd ../linux
+ - yes "" | make oldconfig > /dev/null
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo 'CONFIG_CIFSD_SMBDIRECT=y' >> .config
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 

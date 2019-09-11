@@ -3768,8 +3768,8 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	__u16 rsp_data_cnt = 4;
 
 	eabuf->list_len = cpu_to_le32(rsp_data_cnt);
-	buf_free_len = conn->vals->max_read_size + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_len(rsp) + 4) - sizeof(TRANSACTION2_RSP);
+	buf_free_len = work->response_sz - (get_rfc1002_len(rsp) + 4) -
+		sizeof(TRANSACTION2_RSP);
 	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
