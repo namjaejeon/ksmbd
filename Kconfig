@@ -28,3 +28,10 @@ config CIFS_INSECURE_SERVER
         help
 	  This enables deprecated insecure protocols dialects: SMB1/CIFS
 	  and SMB2.0
+
+config CIFSD_SMBDIRECT
+	bool "Support for SMB Direct protocol"
+	depends on CIFS_SERVER && INFINIBAND && INFINIBAND_ADDR_TRANS
+	default n
+	help
+	  This enables SMB direct protocol for SMB 3.x

@@ -347,8 +347,9 @@ static int cifsd_tcp_read(struct cifsd_transport *t,
 	return cifsd_tcp_readv(TCP_TRANS(t), &iov, 1, to_read);
 }
 
-static int cifsd_tcp_writev(struct cifsd_transport *t, struct kvec *iov,
-			int nvecs, int size)
+static int cifsd_tcp_writev(struct cifsd_transport *t,
+			struct kvec *iov, int nvecs, int size,
+			bool need_invalidate, unsigned int remote_key)
 
 {
 	struct msghdr smb_msg = {.msg_flags = MSG_NOSIGNAL};

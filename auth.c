@@ -13,11 +13,12 @@
 #include <linux/xattr.h>
 #include <crypto/hash.h>
 #include <crypto/aead.h>
+#include <linux/random.h>
+#include <linux/scatterlist.h>
 
 #include "auth.h"
 #include "glob.h"
 
-#include "encrypt.h"
 #include "server.h"
 #include "smb_common.h"
 #include "connection.h"
@@ -46,6 +47,141 @@ static char NEGOTIATE_GSS_HEADER[AUTH_GSS_LENGTH] = {
 void cifsd_copy_gss_neg_header(void *buf)
 {
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
+}
+
+static void
+str_to_key(unsigned char *str, unsigned char *key)
+{
+	int i;
+
+	key[0] = str[0] >> 1;
+	key[1] = ((str[0] & 0x01) << 6) | (str[1] >> 2);
+	key[2] = ((str[1] & 0x03) << 5) | (str[2] >> 3);
+	key[3] = ((str[2] & 0x07) << 4) | (str[3] >> 4);
+	key[4] = ((str[3] & 0x0F) << 3) | (str[4] >> 5);
+	key[5] = ((str[4] & 0x1F) << 2) | (str[5] >> 6);
+	key[6] = ((str[5] & 0x3F) << 1) | (str[6] >> 7);
+	key[7] = str[6] & 0x7F;
+	for (i = 0; i < 8; i++)
+		key[i] = (key[i] << 1);
+}
+
+static int
+smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
+{
+	int rc;
+	unsigned char key2[8];
+	struct scatterlist sgin, sgout;
+	struct cifsd_crypto_ctx *ctx;
+
+	str_to_key(key, key2);
+
+	ctx = cifsd_crypto_ctx_find_ecbdes();
+	if (!ctx) {
+		cifsd_debug("could not allocate des crypto API\n");
+		return -EINVAL;
+	}
+
+	crypto_blkcipher_setkey(CRYPTO_ECBDES_TFM(ctx), key2, 8);
+
+	sg_init_one(&sgin, in, 8);
+	sg_init_one(&sgout, out, 8);
+
+	rc = crypto_blkcipher_encrypt(CRYPTO_ECBDES(ctx), &sgout, &sgin, 8);
+	if (rc)
+		cifsd_debug("could not encrypt crypt key rc: %d\n", rc);
+	cifsd_release_crypto_ctx(ctx);
+	return rc;
+}
+
+static int cifsd_enc_p24(unsigned char *p21,
+			 const unsigned char *c8,
+			 unsigned char *p24)
+{
+	int rc;
+
+	rc = smbhash(p24, c8, p21);
+	if (rc)
+		return rc;
+	rc = smbhash(p24 + 8, c8, p21 + 7);
+	if (rc)
+		return rc;
+	rc = smbhash(p24 + 16, c8, p21 + 14);
+	return rc;
+}
+
+/* produce a md4 message digest from data of length n bytes */
+static int cifsd_enc_md4(unsigned char *md4_hash,
+			 unsigned char *link_str,
+			 int link_len)
+{
+	int rc;
+	struct cifsd_crypto_ctx *ctx;
+
+	ctx = cifsd_crypto_ctx_find_md4();
+	if (!ctx) {
+		cifsd_debug("Crypto md4 allocation error\n");
+		return -EINVAL;
+	}
+
+	rc = crypto_shash_init(CRYPTO_MD4(ctx));
+	if (rc) {
+		cifsd_debug("Could not init md4 shash\n");
+		goto out;
+	}
+
+	rc = crypto_shash_update(CRYPTO_MD4(ctx), link_str, link_len);
+	if (rc) {
+		cifsd_debug("Could not update with link_str\n");
+		goto out;
+	}
+
+	rc = crypto_shash_final(CRYPTO_MD4(ctx), md4_hash);
+	if (rc)
+		cifsd_debug("Could not generate md4 hash\n");
+out:
+	cifsd_release_crypto_ctx(ctx);
+	return rc;
+}
+
+static int cifsd_enc_update_sess_key(unsigned char *md5_hash,
+				     char *nonce,
+				     char *server_challenge,
+				     int len)
+{
+	int rc;
+	struct cifsd_crypto_ctx *ctx;
+
+	ctx = cifsd_crypto_ctx_find_md5();
+	if (!ctx) {
+		cifsd_debug("Crypto md5 allocation error\n");
+		return -EINVAL;
+	}
+
+	rc = crypto_shash_init(CRYPTO_MD5(ctx));
+	if (rc) {
+		cifsd_debug("Could not init md5 shash\n");
+		goto out;
+	}
+
+	rc = crypto_shash_update(CRYPTO_MD5(ctx), server_challenge, len);
+	if (rc) {
+		cifsd_debug("Could not update with challenge\n");
+		goto out;
+	}
+
+	rc = crypto_shash_update(CRYPTO_MD5(ctx), nonce, len);
+	if (rc) {
+		cifsd_debug("Could not update with nonce\n");
+		goto out;
+	}
+
+	rc = crypto_shash_final(CRYPTO_MD5(ctx), md5_hash);
+	if (rc)
+		cifsd_debug("Could not generate md5 hash\n");
+out:
+	cifsd_release_crypto_ctx(ctx);
+	return rc;
 }
 
 /**

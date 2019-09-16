@@ -12,6 +12,7 @@ before_script:
  - tar xf linux-4.1.36.tar.gz
  - mv linux-4.1.36 linux-stable
  - ./.travis_get_mainline_kernel
+ - cp ./.travis_cmd_wrapper.pl ~/travis_cmd_wrapper.pl
  # Prerequisite for xfstests testing
  - sudo apt-get install cifs-utils
  - sudo apt-get install linux-headers-$(uname -r)
@@ -42,16 +43,18 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
+ - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
- # Compile with latest Tovalds' kernel
+ # Compile with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
+ - echo 'CONFIG_CIFSD_SMBDIRECT=y' >> .config
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
@@ -62,16 +65,29 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
- # Compile secure server build (no smb1.0 & smb2.0) with latest Tovalds' kernel
+ # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
+ - gcc -v
+ - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
+
+ # Compile secure server build + SMBD with latest Torvalds' kernel
+ - cd ../linux
+ - yes "" | make oldconfig > /dev/null
+ - echo 'obj-$(CONFIG_CIFS_SERVER) += cifsd/' >> fs/Makefile
+ - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'CONFIG_CIFS_SERVER=m' >> .config
+ - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo 'CONFIG_CIFSD_SMBDIRECT=y' >> .config
  - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
@@ -108,7 +124,15 @@ script:
  - sudo ./check generic/005
  - sudo ./check generic/006
  - sudo ./check generic/007
+ - sed -e "s/count=1000/count=100/" -e "s/-p 5/-p 3/" tests/generic/011 > tests/generic/011.new
+ - sed -e "s/-p 5/-p 3/" tests/generic/011.out > tests/generic/011.out.new
+ - mv tests/generic/011.new tests/generic/011
+ - mv tests/generic/011.out.new tests/generic/011.out
  - sudo ./check generic/011
+ - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
+ - mv tests/generic/013.new tests/generic/013
+ - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
+ - mv tests/generic/013.out.new tests/generic/013.out
  - sudo ./check generic/013
  - sudo ./check generic/014
  - sudo ./check generic/023
@@ -118,23 +142,41 @@ script:
  - sudo ./check generic/030
  - sudo ./check generic/036
  - sudo ./check generic/037
+ - sed -e s/3000000/30000/ tests/generic/069 > tests/generic/069.new
+ - mv tests/generic/069.new tests/generic/069
+ - sed -e s/3000000/30000/ tests/generic/069.out > tests/generic/069.out.new
+ - mv tests/generic/069.out.new tests/generic/069.out
  - sudo ./check generic/069
 # - travis_wait sudo ./check generic/070 (timeover > 10m)
+ - sed -e s/numloops=10/numloops=2/ -e s/numfiles=5/numfiles=2/ -e s/numchildren=3/numchildren=2/ tests/generic/074 > tests/generic/074.new
+ - mv tests/generic/074.new tests/generic/074
  - sudo ./check generic/074
+ - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/075 > tests/generic/075.new
+ - mv tests/generic/075.new tests/generic/075
  - sudo ./check generic/075
  - sudo ./check generic/080
 # - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
+ - mv tests/generic/091.new tests/generic/091
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
+ - mv tests/generic/091.out.new tests/generic/091.out
  - sudo ./check generic/091
  - sudo ./check generic/095
  - sudo ./check generic/098
+ - sed -e s/SIZE=10/SIZE=7/ -e s/DEPTH=5/DEPTH=3/ tests/generic/100 > tests/generic/100.new
+ - mv tests/generic/100.new tests/generic/100
  - sudo ./check generic/100
  - sudo ./check generic/109
+ - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/112 > tests/generic/112.new
+ - mv tests/generic/112.new tests/generic/112
  - sudo ./check generic/112
  - sudo ./check generic/113
 # - time_wait sudo ./check generic/117 (timeover > 10m)
  - sudo ./check generic/124
  - sudo ./check generic/125
 # - travis_wait sudo ./check generic/127 (timeover > 10m)
+ - sed -e "s/-i 100000/-i 70000/" -e "s/-i 100000/-i 70000/" tests/generic/129 > tests/generic/129.new
+ - mv tests/generic/129.new tests/generic/129
  - sudo ./check generic/129
  - sudo ./check generic/130
  - sudo ./check generic/133
@@ -157,6 +199,8 @@ script:
  - sudo ./check generic/257
 # - sudo ./check generic/263 #fail, It may be cifsd issue
 # - sudo ./check generic/285 #fail, It may be cifs client issue on 4.15 kernel
+ - sed -e "s/<< 20/<< 10/g" tests/generic/286 > tests/generic/286.new
+ - mv tests/generic/286.new tests/generic/286
  - sudo ./check generic/286
  - sudo ./check generic/308
  - sudo ./check generic/309
@@ -178,17 +222,22 @@ script:
  - sudo ./check generic/448
  - sudo ./check generic/451
  - sudo ./check generic/460
+ - sed -e s/BLOCK_SZ=65536/BLOCK_SZ=8192/ -e s/PROC_CNT=16/PROC_CNT=4/ tests/generic/464 > tests/generic/464.new
+ - mv tests/generic/464.new tests/generic/464
  - sudo ./check generic/464
  - sudo ./check generic/465
  - sudo ./check generic/469
 # - time_wait sudo ./check generic/476 (timeover > 10m)
  - sudo ./check generic/490
 # - sudo ./check generic/504 #fail, It may be cifs client issue on 4.15 kernel
+#
+#
+#
  - cd ..
  - tar xzvf samba-cifsd.tgz > /dev/null
  - cd samba-cifsd/
  - ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap > /dev/null
- - make -j$((`nproc`+1)) > /dev/null
+ - make -j$((`nproc`+1)) bin/smbtorture > /dev/null
  # smb2 connect test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
  - sudo rm -rf /mnt/test3/*
