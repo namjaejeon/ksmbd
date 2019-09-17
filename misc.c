@@ -217,7 +217,7 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && name_len != len) {
-		strncpy(ab_pathname, &filename[len], name_len);
+		strscpy(ab_pathname, &filename[len], name_len);
 		cifsd_conv_path_to_windows(ab_pathname);
 	}
 
