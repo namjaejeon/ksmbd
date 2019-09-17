@@ -217,7 +217,11 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && name_len != len) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+		strncpy(ab_pathname, &filename[len], name_len);
+#else
 		strscpy(ab_pathname, &filename[len], name_len);
+#endif
 		cifsd_conv_path_to_windows(ab_pathname);
 	}
 
