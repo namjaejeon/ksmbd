@@ -552,8 +552,9 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 	if (le32_to_cpu(hdr->NextCommand) > 0)
 		sz = large_sz;
 
-	work->response_buf = cifsd_alloc_response(sz);
+	work->response_buf = cifsd_find_buffer(sz);
 	work->response_sz = sz;
+	work->buffered_rsp = true;
 
 	if (!RESPONSE_BUF(work)) {
 		cifsd_err("Failed to allocate %zu bytes buffer\n", sz);

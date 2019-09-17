@@ -9,8 +9,8 @@
 #include <linux/ctype.h>
 #include <linux/workqueue.h>
 
-#define	WORK_STATE_CANCELLED	0x2
-#define WORK_STATE_CLOSED	0x3
+#define	WORK_STATE_CANCELLED	(1 << 1)
+#define WORK_STATE_CLOSED	(1 << 2)
 
 struct cifsd_conn;
 struct cifsd_session;
@@ -54,6 +54,7 @@ struct cifsd_work {
 
 	int				state;
 
+	bool				buffered_rsp:1;
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool				multiRsp:1;
 	/* No response for cancelled request */

@@ -8,6 +8,9 @@
 
 struct cifsd_work;
 
+void *cifsd_find_buffer(size_t size);
+void cifsd_release_buffer(void *buffer);
+
 void *cifsd_alloc(size_t size);
 void cifsd_free(void *ptr);
 

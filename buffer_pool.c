@@ -3,6 +3,9 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
+#include <linux/kernel.h>
+#include <linux/wait.h>
+#include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
@@ -13,6 +16,24 @@
 #include "mgmt/cifsd_ida.h"
 
 static struct kmem_cache *filp_cache;
+
+struct wm {
+	struct list_head	list;
+	unsigned int		sz;
+	char			buffer[0];
+};
+
+struct wm_list {
+	struct list_head	list;
+	unsigned int		sz;
+
+	spinlock_t		wm_lock;
+	int			avail_wm;
+	struct list_head	idle_wm;
+	wait_queue_head_t	wm_wait;
+};
+
+static LIST_HEAD(wm_lists);
 
 /*
  * A simple kvmalloc()/kvfree() implementation.
@@ -50,7 +71,6 @@ static inline void __free(void *addr)
 		vfree(addr);
 	else
 		kfree(addr);
-
 }
 
 void *cifsd_alloc(size_t size)
@@ -61,6 +81,148 @@ void *cifsd_alloc(size_t size)
 void cifsd_free(void *ptr)
 {
 	__free(ptr);
+}
+
+static struct wm *wm_alloc(size_t sz, gfp_t flags)
+{
+	struct wm *wm;
+	size_t alloc_sz = sz + sizeof(struct wm);
+
+	wm = __alloc(alloc_sz, flags);
+	if (!wm)
+		return NULL;
+	wm->sz = sz;
+	return wm;
+}
+
+static int register_wm_size_class(size_t sz)
+{
+	struct wm_list *l;
+
+	list_for_each_entry(l, &wm_lists, list) {
+		if (l->sz == sz)
+			return 0;
+	}
+
+	l = __alloc(sizeof(struct wm_list), GFP_KERNEL | __GFP_ZERO);
+	if (!l)
+		return -ENOMEM;
+
+	l->sz = sz;
+	spin_lock_init(&l->wm_lock);
+	INIT_LIST_HEAD(&l->idle_wm);
+	init_waitqueue_head(&l->wm_wait);
+	l->avail_wm = 0;
+
+	list_add(&l->list, &wm_lists);
+	return 0;
+}
+
+
+static struct wm_list* match_wm_list(size_t size)
+{
+	struct wm_list *l;
+
+	list_for_each_entry(l, &wm_lists, list) {
+		if (l->sz == size)
+			return l;
+	}
+
+	return NULL;
+}
+
+static struct wm *find_wm(size_t size, gfp_t flags)
+{
+	struct wm_list *wm_list;
+	struct wm *wm;
+
+	wm_list = match_wm_list(size);
+	if (!wm_list) {
+		if (register_wm_size_class(size))
+			return NULL;
+		wm_list = match_wm_list(size);
+	}
+
+	if (!wm_list)
+		return NULL;
+
+	while (1) {
+		spin_lock(&wm_list->wm_lock);
+		if (!list_empty(&wm_list->idle_wm)) {
+			wm = list_entry(wm_list->idle_wm.next,
+					struct wm,
+					list);
+			list_del(&wm->list);
+			spin_unlock(&wm_list->wm_lock);
+			return wm;
+		}
+
+		if (wm_list->avail_wm > num_online_cpus()) {
+			spin_unlock(&wm_list->wm_lock);
+			wait_event(wm_list->wm_wait,
+				   !list_empty(&wm_list->idle_wm));
+			continue;
+		}
+
+		wm_list->avail_wm++;
+		spin_unlock(&wm_list->wm_lock);
+
+		wm = wm_alloc(size, flags);
+		if (!wm) {
+			spin_lock(&wm_list->wm_lock);
+			wm_list->avail_wm--;
+			spin_unlock(&wm_list->wm_lock);
+			wait_event(wm_list->wm_wait,
+				   !list_empty(&wm_list->idle_wm));
+			continue;
+		}
+		break;
+	}
+
+	if (flags & __GFP_ZERO)
+		memset(wm->buffer, 0x00, wm->sz);
+	return wm;
+}
+
+static void release_wm(struct wm *wm, struct wm_list *wm_list)
+{
+	if (!wm)
+		return;
+
+	spin_lock(&wm_list->wm_lock);
+	if (wm_list->avail_wm <= num_online_cpus()) {
+		list_add(&wm->list, &wm_list->idle_wm);
+		spin_unlock(&wm_list->wm_lock);
+		wake_up(&wm_list->wm_wait);
+		return;
+	}
+
+	wm_list->avail_wm--;
+	spin_unlock(&wm_list->wm_lock);
+	cifsd_free(wm);
+}
+
+static void wm_list_free(struct wm_list *l)
+{
+	struct wm *wm;
+
+	while (!list_empty(&l->idle_wm)) {
+		wm = list_entry(l->idle_wm.next, struct wm, list);
+		list_del(&wm->list);
+		__free(wm);
+	}
+	__free(l);
+}
+
+static void wm_lists_destroy(void)
+{
+	struct wm_list *l;
+
+	while (!list_empty(&wm_lists)) {
+		l = list_entry(wm_lists.next, struct wm_list, list);
+		list_del(&l->list);
+		wm_list_free(l);
+	}
 }
 
 void cifsd_free_request(void *addr)
@@ -81,6 +243,33 @@ void cifsd_free_response(void *buffer)
 void *cifsd_alloc_response(size_t size)
 {
 	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
+}
+
+void *cifsd_find_buffer(size_t size)
+{
+	struct wm *wm;
+
+	wm = find_wm(size, GFP_KERNEL | __GFP_ZERO);
+
+	WARN_ON(!wm);
+	if (wm)
+		return wm->buffer;
+	return NULL;
+}
+
+void cifsd_release_buffer(void *buffer)
+{
+	struct wm_list *wm_list;
+	struct wm *wm;
+
+	if (!buffer)
+		return;
+
+	wm = container_of(buffer, struct wm, buffer);
+	wm_list = match_wm_list(wm->sz);
+	WARN_ON(!wm_list);
+	if (wm_list)
+		release_wm(wm, wm_list);
 }
 
 void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
@@ -108,6 +297,7 @@ void *cifsd_alloc_file_struct(void)
 
 void cifsd_destroy_buffer_pools(void)
 {
+	wm_lists_destroy();
 	cifsd_work_pool_destroy();
 	kmem_cache_destroy(filp_cache);
 }

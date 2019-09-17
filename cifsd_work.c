@@ -31,7 +31,11 @@ struct cifsd_work *cifsd_alloc_work_struct(void)
 
 void cifsd_free_work_struct(struct cifsd_work *work)
 {
-	cifsd_free_response(RESPONSE_BUF(work));
+	if (work->buffered_rsp)
+		cifsd_release_buffer(RESPONSE_BUF(work));
+	else
+		cifsd_free_response(RESPONSE_BUF(work));
+
 	cifsd_free_response(AUX_PAYLOAD(work));
 	cifsd_free_response(TRANSFORM_BUF(work));
 	cifsd_free_request(REQUEST_BUF(work));
