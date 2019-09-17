@@ -3757,7 +3757,6 @@ out:
  */
 static int smb_get_ea(struct cifsd_work *work, struct path *path)
 {
-	struct cifsd_conn *conn = work->conn;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
