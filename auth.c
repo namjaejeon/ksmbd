@@ -651,8 +651,8 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	tinfo->Length = 0;
 	target_info_len += 4;
 
-	chgblob->TargetInfoArray.Length = chgblob->TargetInfoArray.MaximumLength =
-			cpu_to_le16(target_info_len);
+	chgblob->TargetInfoArray.Length = cpu_to_le16(target_info_len);
+	chgblob->TargetInfoArray.MaximumLength = cpu_to_le16(target_info_len);
 	blob_len += target_info_len;
 	kfree(name);
 	cifsd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
