@@ -150,7 +150,7 @@ struct smbd_transport {
 	atomic_t		send_pending;
 
 	struct workqueue_struct	*workqueue;
-	struct work_struct	post_recv_credits_work;
+	struct delayed_work	post_recv_credits_work;
 	struct work_struct	send_immediate_work;
 	struct work_struct	disconnect_work;
 };
@@ -250,7 +250,7 @@ static void put_recvmsg(struct smbd_transport *t,
 	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
 
 	if (t->status == SMBD_CS_CONNECTED)
-		queue_work(t->workqueue, &t->post_recv_credits_work);
+		mod_delayed_work(t->workqueue, &t->post_recv_credits_work, 0);
 }
 
 static struct smbd_recvmsg *get_empty_recvmsg(struct smbd_transport *t)
@@ -288,7 +288,8 @@ static void put_empty_recvmsg(struct smbd_transport *t,
 {
 	__put_empty_recvmsg(t, recvmsg);
 	if (t->status == SMBD_CS_CONNECTED)
-		queue_work(t->workqueue, &t->post_recv_credits_work);
+		queue_delayed_work(t->workqueue, &t->post_recv_credits_work,
+				10 * HZ);
 }
 
 static void enqueue_reassembly(struct smbd_transport *t,
@@ -388,7 +389,7 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 
 	spin_lock_init(&t->lock_new_recv_credits);
 
-	INIT_WORK(&t->post_recv_credits_work, smbd_post_recv_credits);
+	INIT_DELAYED_WORK(&t->post_recv_credits_work, smbd_post_recv_credits);
 	INIT_WORK(&t->send_immediate_work, smbd_send_immediate_work);
 	INIT_WORK(&t->disconnect_work, smbd_disconnect_rdma_work);
 
@@ -416,11 +417,6 @@ static void free_transport(struct smbd_transport *t)
 	struct smbd_recvmsg *recvmsg;
 	unsigned long flags;
 
-	if (t->qp) {
-		ib_drain_qp(t->qp);
-		ib_destroy_qp(t->qp);
-	}
-
 	wake_up_interruptible(&t->wait_send_credits);
 
 	cifsd_debug("wait for all send posted to IB to finish\n");
@@ -428,6 +424,15 @@ static void free_transport(struct smbd_transport *t)
 		atomic_read(&t->send_payload_pending) == 0);
 	wait_event(t->wait_send_pending,
 		atomic_read(&t->send_pending) == 0);
+
+	cancel_work_sync(&t->disconnect_work);
+	cancel_delayed_work_sync(&t->post_recv_credits_work);
+	cancel_work_sync(&t->send_immediate_work);
+
+	if (t->qp) {
+		ib_drain_qp(t->qp);
+		ib_destroy_qp(t->qp);
+	}
 
 	cifsd_debug("drain the reassembly queue\n");
 	do {
@@ -762,7 +767,7 @@ read_rfc1002_done:
 static void smbd_post_recv_credits(struct work_struct *work)
 {
 	struct smbd_transport *t = container_of(work, struct smbd_transport,
-					post_recv_credits_work);
+					post_recv_credits_work.work);
 	struct smbd_recvmsg *recvmsg;
 	int credits;
 	int ret;
@@ -1591,7 +1596,7 @@ static int smbd_negotiate(struct smbd_transport *t)
 		goto out;
 	}
 
-	smbd_post_recv_credits(&t->post_recv_credits_work);
+	smbd_post_recv_credits(&t->post_recv_credits_work.work);
 
 	cifsd_debug("Waiting for SMBD negotiate request\n");
 	ret = wait_event_interruptible_timeout(t->wait_status,
