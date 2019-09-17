@@ -5,7 +5,7 @@
  *
  * uniupr.h - Unicode compressed case ranges
  *
-*/
+ */
 #ifndef __CIFSD_UNIUPR_H
 #define __CIFSD_UNIUPR_H
 
