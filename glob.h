@@ -46,7 +46,7 @@ extern bool multi_channel_enable;
 #define cifsd_info(fmt, ...)					\
 			pr_info(cifsd_pr_fmt(fmt), ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...) 					\
+#define cifsd_err(fmt, ...)					\
 			pr_err(cifsd_pr_fmt("%s:%d: " fmt),	\
 				__func__,			\
 				__LINE__,			\
