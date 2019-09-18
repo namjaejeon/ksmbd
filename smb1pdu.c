@@ -151,7 +151,7 @@ int smb_allocate_rsp_buf(struct cifsd_work *work)
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
 	size_t small_sz = cifsd_small_buffer_size();
-	size_t large_sz = work->conn->vals->max_io_size + MAX_CIFS_HDR_SIZE;
+	size_t large_sz = work->conn->vals->max_read_size + MAX_CIFS_HDR_SIZE;
 	size_t sz = small_sz;
 
 	if (cmd == SMB_COM_TRANSACTION2) {
@@ -837,7 +837,7 @@ int smb_handle_negotiate(struct cifsd_work *work)
 	}
 	neg_rsp->MaxMpxCount = cpu_to_le16(SMB1_MAX_MPX_COUNT);
 	neg_rsp->MaxNumberVcs = cpu_to_le16(SMB1_MAX_VCS);
-	neg_rsp->MaxBufferSize = cpu_to_le32(conn->vals->max_io_size);
+	neg_rsp->MaxBufferSize = cpu_to_le32(conn->vals->max_read_size);
 	neg_rsp->MaxRawSize = cpu_to_le32(SMB1_MAX_RAW_SIZE);
 	neg_rsp->SessionKey = 0;
 	neg_rsp->Capabilities = cpu_to_le32(SMB1_SERVER_CAPS);
@@ -3757,7 +3757,6 @@ out:
  */
 static int smb_get_ea(struct cifsd_work *work, struct path *path)
 {
-	struct cifsd_conn *conn = work->conn;
 	TRANSACTION2_RSP *rsp = (TRANSACTION2_RSP *)RESPONSE_BUF(work);
 	char *name, *ptr, *xattr_list = NULL, *buf;
 	int rc, name_len, value_len, xattr_list_len;
@@ -3768,8 +3767,8 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 	__u16 rsp_data_cnt = 4;
 
 	eabuf->list_len = cpu_to_le32(rsp_data_cnt);
-	buf_free_len = conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_len(rsp) + 4) - sizeof(TRANSACTION2_RSP);
+	buf_free_len = work->response_sz - (get_rfc1002_len(rsp) + 4) -
+		sizeof(TRANSACTION2_RSP);
 	rc = cifsd_vfs_listxattr(path->dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;

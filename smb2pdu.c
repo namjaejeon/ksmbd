@@ -18,7 +18,6 @@
 
 #include "auth.h"
 #include "asn1.h"
-#include "encrypt.h"
 #include "buffer_pool.h"
 #include "connection.h"
 #include "transport_ipc.h"
@@ -260,9 +259,9 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	 */
 	rsp->Capabilities = 0;
 	/* Default Max Message Size till SMB2.0, 64K*/
-	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_io_size);
-	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_io_size);
-	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_trans_size);
+	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_read_size);
+	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_write_size);
 
 	rsp->SystemTime = cpu_to_le64(cifsd_systime());
 	rsp->ServerStartTime = 0;
@@ -532,7 +531,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	size_t small_sz = cifsd_small_buffer_size();
-	size_t large_sz = work->conn->vals->max_io_size + MAX_SMB2_HDR_SIZE;
+	size_t large_sz = work->conn->vals->max_read_size + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);
 
@@ -546,7 +545,8 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 		if (req->InfoType == SMB2_O_INFO_FILE &&
 			(req->FileInfoClass == FILE_FULL_EA_INFORMATION ||
 				req->FileInfoClass == FILE_ALL_INFORMATION))
-			sz = large_sz;
+			sz = work->conn->vals->max_trans_size +
+				MAX_SMB2_HDR_SIZE;
 	}
 
 	/* allocate large response buf for chained commands */
@@ -1042,9 +1042,9 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	/* For stats */
 	conn->connection_type = conn->dialect;
 
-	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_io_size);
-	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_io_size);
-	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_io_size);
+	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_trans_size);
+	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_read_size);
+	rsp->MaxWriteSize = cpu_to_le32(conn->vals->max_write_size);
 
 	if (conn->dialect > SMB20_PROT_ID) {
 		memcpy(conn->ClientGUID, req->ClientGUID,
@@ -2361,6 +2361,28 @@ int smb2_open(struct cifsd_work *work)
 				rc = -ENOENT;
 			goto err_out1;
 		}
+
+		cifsd_debug("converted name = %s\n", name);
+		if (strchr(name, ':')) {
+			if (!test_share_config_flag(work->tcon->share_conf,
+					CIFSD_SHARE_FLAG_STREAMS)) {
+				rc = -EBADF;
+				goto err_out1;
+			}
+			rc = parse_stream_name(name, &stream_name, &s_type);
+			if (rc < 0)
+				goto err_out1;
+		}
+
+		rc = cifsd_validate_filename(name);
+		if (rc < 0)
+			goto err_out1;
+
+		if (cifsd_share_veto_filename(share, name)) {
+			rc = -ENOENT;
+			cifsd_debug("Reject open(), vetoed file: %s\n", name);
+			goto err_out1;
+		}
 	} else {
 		len = strlen(share->path);
 		cifsd_debug("share path len %d\n", len);
@@ -2373,29 +2395,6 @@ int smb2_open(struct cifsd_work *work)
 
 		memcpy(name, share->path, len);
 		*(name + len) = '\0';
-	}
-
-	cifsd_debug("converted name = %s\n", name);
-	if (strchr(name, ':')) {
-		if (!test_share_config_flag(work->tcon->share_conf,
-				CIFSD_SHARE_FLAG_STREAMS)) {
-			rc = -EBADF;
-			goto err_out1;
-		}
-		rc = parse_stream_name(name, &stream_name, &s_type);
-		if (rc < 0)
-			goto err_out1;
-	}
-
-	rc = cifsd_validate_filename(name);
-	if (rc < 0)
-		goto err_out1;
-
-	if (cifsd_share_veto_filename(share, name)) {
-		rc = -ENOENT;
-		cifsd_debug("file(%s) open is not allowed by setting as veto file\n",
-			name);
-		goto err_out1;
 	}
 
 	req_op_level = req->RequestedOplockLevel;
@@ -3536,7 +3535,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	memset(&d_info, 0, sizeof(struct cifsd_dir_info));
 	d_info.wptr = (char *)rsp->Buffer;
 	d_info.rptr = (char *)rsp->Buffer;
-	d_info.out_buf_len = (conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
+	d_info.out_buf_len = (work->response_sz -
 				(get_rfc1002_len(rsp_org) + 4));
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
 				le32_to_cpu(req->OutputBufferLength)) -
@@ -3742,7 +3741,7 @@ static int smb2_get_info_file_pipe(struct cifsd_session *sess,
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_get_ea(struct cifsd_conn *conn,
+static int smb2_get_ea(struct cifsd_work *work,
 		       struct cifsd_file *fp,
 		       struct smb2_query_info_req *req,
 		       struct smb2_query_info_rsp *rsp,
@@ -3750,7 +3749,7 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 {
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *ptr, *xattr_list = NULL, *buf;
-	int rc, name_len, value_len, xattr_list_len;
+	int rc, name_len, value_len, xattr_list_len, idx;
 	ssize_t buf_free_len, alignment_bytes, next_offset, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 	struct path *path;
@@ -3776,9 +3775,9 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 				"flags 0x%x\n", le32_to_cpu(req->Flags));
 	}
 
-	buf_free_len = conn->vals->max_io_size + MAX_HEADER_SIZE(conn) -
-		(get_rfc1002_len(rsp_org) + 4)
-		- sizeof(struct smb2_query_info_rsp);
+	buf_free_len = work->response_sz -
+			(get_rfc1002_len(rsp_org) + 4) -
+			sizeof(struct smb2_query_info_rsp);
 
 	if (le32_to_cpu(req->OutputBufferLength) < buf_free_len)
 		buf_free_len = le32_to_cpu(req->OutputBufferLength);
@@ -3796,10 +3795,15 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 	ptr = (char *)rsp->Buffer;
 	eainfo = (struct smb2_ea_info *)ptr;
 	prev_eainfo = eainfo;
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
+	idx = 0;
 
-		cifsd_debug("%s, len %zd\n", name, strlen(name));
+	while (idx < xattr_list_len) {
+		name = xattr_list + idx;
+		name_len = strlen(name);
+
+		cifsd_debug("%s, len %d\n", name, name_len);
+		idx += name_len + 1;
+
 		/*
 		 * CIFS does not support EA other than user.* namespace,
 		 * still keep the framework generic, to list other attrs
@@ -3825,7 +3829,6 @@ static int smb2_get_ea(struct cifsd_conn *conn,
 			FILE_ATTRIBUTE_PREFIX, FILE_ATTRIBUTE_PREFIX_LEN))
 			continue;
 
-		name_len = strlen(name);
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
 			name_len -= XATTR_USER_PREFIX_LEN;
 
@@ -4090,7 +4093,7 @@ static void get_file_stream_info(struct cifsd_work *work,
 	struct kstat stat;
 	struct path *path = &fp->filp->f_path;
 	ssize_t xattr_list_len;
-	int nbytes = 0, streamlen, stream_name_len, next;
+	int nbytes = 0, streamlen, stream_name_len, next, idx = 0;
 
 	generic_fillattr(FP_INODE(fp), &stat);
 	file_info = (struct smb2_file_stream_info *)rsp->Buffer;
@@ -4123,17 +4126,20 @@ static void get_file_stream_info(struct cifsd_work *work,
 		goto out;
 	}
 
-	for (stream_name = xattr_list;
-			stream_name - xattr_list < xattr_list_len;
-			stream_name += strlen(stream_name) + 1) {
-		cifsd_debug("%s, len %zd\n", stream_name, strlen(stream_name));
+	while (idx < xattr_list_len) {
+		stream_name = xattr_list + idx;
+		streamlen = strlen(stream_name);
+		idx += streamlen + 1;
+
+		cifsd_debug("%s, len %d\n", stream_name, streamlen);
 
 		if (strncmp(&stream_name[XATTR_USER_PREFIX_LEN],
 			STREAM_PREFIX, STREAM_PREFIX_LEN))
 			continue;
 
-		stream_name_len = streamlen = strlen(stream_name) -
-			(XATTR_USER_PREFIX_LEN + STREAM_PREFIX_LEN);
+		stream_name_len = streamlen - (XATTR_USER_PREFIX_LEN +
+				STREAM_PREFIX_LEN);
+		streamlen = stream_name_len;
 
 		if (fp->stream.type == 2) {
 			streamlen += 17;
@@ -4416,7 +4422,7 @@ static int smb2_get_info_file(struct cifsd_work *work,
 		break;
 
 	case FILE_FULL_EA_INFORMATION:
-		rc = smb2_get_ea(work->conn, fp, req, rsp, rsp_org);
+		rc = smb2_get_ea(work, fp, req, rsp, rsp_org);
 		file_infoclass_size = FILE_FULL_EA_INFORMATION_SIZE;
 		break;
 
@@ -5625,6 +5631,37 @@ static noinline int smb2_read_pipe(struct cifsd_work *work)
 	return 0;
 }
 
+static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
+				struct smb2_read_req *req,
+				void *data_buf, size_t length)
+{
+	struct smb2_buffer_desc_v1 *desc =
+		(struct smb2_buffer_desc_v1 *)&req->Buffer[0];
+	int err;
+
+	if (work->conn->dialect == SMB30_PROT_ID
+		&& le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1)
+		return -EINVAL;
+
+	if (req->ReadChannelInfoOffset == 0
+		|| le16_to_cpu(req->ReadChannelInfoLength) < sizeof(*desc))
+		return -EINVAL;
+
+	work->need_invalidate_rkey =
+		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+	work->remote_key = le32_to_cpu(desc->token);
+
+	err = cifsd_conn_rdma_write(work->conn,
+				data_buf, length,
+				le32_to_cpu(desc->token),
+				le64_to_cpu(desc->offset),
+				le32_to_cpu(desc->length));
+	if (err)
+		return err;
+
+	return length;
+}
+
 /**
  * smb2_read() - handler for smb2 read from file
  * @work:	smb work containing read command buffer
@@ -5639,7 +5676,7 @@ int smb2_read(struct cifsd_work *work)
 	struct cifsd_file *fp;
 	loff_t offset;
 	size_t length, mincount;
-	ssize_t nbytes = 0;
+	ssize_t nbytes = 0, remain_bytes = 0;
 	int err = 0;
 
 	req = (struct smb2_read_req *)REQUEST_BUF(work);
@@ -5672,12 +5709,10 @@ int smb2_read(struct cifsd_work *work)
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
 
-	if (length > conn->vals->max_io_size) {
-		cifsd_debug("read size(%zu) exceeds max size(%u)\n",
-				length, conn->vals->max_io_size);
+	if (length > conn->vals->max_read_size) {
 		cifsd_debug("limiting read size to max size(%u)\n",
-				conn->vals->max_io_size);
-		length = conn->vals->max_io_size;
+			    conn->vals->max_read_size);
+		length = conn->vals->max_read_size;
 	}
 
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
@@ -5707,11 +5742,27 @@ int smb2_read(struct cifsd_work *work)
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
 						nbytes, offset, mincount);
 
+	if (le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
+			le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1) {
+		/* write data to the client using rdma channel */
+		remain_bytes = smb2_read_rdma_channel(work, req,
+						AUX_PAYLOAD(work), nbytes);
+
+		cifsd_free_response(AUX_PAYLOAD(work));
+		INIT_AUX_PAYLOAD(work);
+
+		nbytes = 0;
+		if (remain_bytes < 0) {
+			err = (int)remain_bytes;
+			goto out;
+		}
+	}
+
 	rsp->StructureSize = cpu_to_le16(17);
 	rsp->DataOffset = 80;
 	rsp->Reserved = 0;
 	rsp->DataLength = cpu_to_le32(nbytes);
-	rsp->DataRemaining = 0;
+	rsp->DataRemaining = cpu_to_le32(remain_bytes);
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(rsp_org, 16);
 	work->resp_hdr_sz = get_rfc1002_len(rsp_org) + 4;
@@ -5732,6 +5783,8 @@ out:
 			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		else if (err == -ESHARE)
 			rsp->hdr.Status = STATUS_SHARING_VIOLATION;
+		else if (err == -EINVAL)
+			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		else
 			rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
@@ -5815,6 +5868,57 @@ out:
 	return err;
 }
 
+static ssize_t smb2_write_rdma_channel(struct cifsd_work *work,
+			struct smb2_write_req *req, struct cifsd_file *fp,
+			loff_t offset, size_t length, bool sync)
+{
+	struct smb2_buffer_desc_v1 *desc;
+	char *data_buf;
+	int ret;
+	ssize_t nbytes;
+
+	desc = (struct smb2_buffer_desc_v1 *)&req->Buffer[0];
+
+	if (work->conn->dialect == SMB30_PROT_ID
+		&& le32_to_cpu(req->Channel != SMB2_CHANNEL_RDMA_V1))
+		return -EINVAL;
+
+	if (req->Length != 0 || req->DataOffset != 0)
+		return -EINVAL;
+
+	if (req->WriteChannelInfoOffset == 0
+		|| le16_to_cpu(req->WriteChannelInfoLength) < sizeof(*desc))
+		return -EINVAL;
+
+	work->need_invalidate_rkey =
+		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+	work->remote_key = le32_to_cpu(desc->token);
+
+	data_buf =
+		cifsd_alloc_response(length);
+	if (!data_buf)
+		return -ENOMEM;
+
+	ret = cifsd_conn_rdma_read(work->conn, data_buf, length,
+				le32_to_cpu(desc->token),
+				le64_to_cpu(desc->offset),
+				le32_to_cpu(desc->length));
+
+	if (ret < 0) {
+		cifsd_free_response(data_buf);
+		return ret;
+	}
+
+	ret = cifsd_vfs_write(work, fp, data_buf, length, &offset,
+				sync, &nbytes);
+
+	cifsd_free_response(data_buf);
+	if (ret < 0)
+		return ret;
+
+	return nbytes;
+}
+
 /**
  * smb2_write() - handler for smb2 write from file
  * @work:	smb work containing write command buffer
@@ -5861,34 +5965,54 @@ int smb2_write(struct cifsd_work *work)
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
 
-	if (le16_to_cpu(req->DataOffset) ==
-			(offsetof(struct smb2_write_req, Buffer) - 4)) {
-		data_buf = (char *)&req->Buffer[0];
-	} else {
-		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
-				(le16_to_cpu(req->DataOffset) +
-				 length > get_rfc1002_len(req))) {
-			cifsd_err("invalid write data offset %u, smb_len %u\n",
-					le16_to_cpu(req->DataOffset),
-					get_rfc1002_len(req));
-			err = -EINVAL;
-			goto out;
-		}
-
-		data_buf = (char *)(((char *)&req->hdr.ProtocolId) +
-				le16_to_cpu(req->DataOffset));
-	}
-
-	cifsd_debug("flags %u\n", le32_to_cpu(req->Flags));
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
 
-	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
-		offset, length);
-	err = cifsd_vfs_write(work, fp, data_buf, length, &offset,
-			      writethrough, &nbytes);
-	if (err < 0)
-		goto out;
+	if (le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1 &&
+		le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
+
+		if (le16_to_cpu(req->DataOffset) ==
+				(offsetof(struct smb2_write_req, Buffer) - 4)) {
+			data_buf = (char *)&req->Buffer[0];
+		} else {
+			if ((le16_to_cpu(req->DataOffset) >
+					get_rfc1002_len(req)) ||
+					(le16_to_cpu(req->DataOffset) +
+					 length > get_rfc1002_len(req))) {
+				cifsd_err("invalid write data offset %u, "
+						"smb_len %u\n",
+						le16_to_cpu(req->DataOffset),
+						get_rfc1002_len(req));
+				err = -EINVAL;
+				goto out;
+			}
+
+			data_buf = (char *)(((char *)&req->hdr.ProtocolId) +
+					le16_to_cpu(req->DataOffset));
+		}
+
+		cifsd_debug("flags %u\n", le32_to_cpu(req->Flags));
+		if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
+			writethrough = true;
+
+		cifsd_debug("filename %s, offset %lld, len %zu\n",
+			FP_FILENAME(fp), offset, length);
+		err = cifsd_vfs_write(work, fp, data_buf, length, &offset,
+				      writethrough, &nbytes);
+		if (err < 0)
+			goto out;
+	} else {
+		/* read data from the client using rdma channel, and
+		 * write the data.
+		 */
+		nbytes = smb2_write_rdma_channel(work, req, fp, offset,
+					le32_to_cpu(req->RemainingBytes),
+					writethrough);
+		if (nbytes < 0) {
+			err = (int)nbytes;
+			goto out;
+		}
+	}
 
 	rsp->StructureSize = cpu_to_le16(17);
 	rsp->DataOffset = 0;
@@ -5911,6 +6035,8 @@ out:
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 	else if (err == -ESHARE)
 		rsp->hdr.Status = STATUS_SHARING_VIOLATION;
+	else if (err == -EINVAL)
+		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	else
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
 

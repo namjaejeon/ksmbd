@@ -744,6 +744,16 @@ struct smb2_flush_rsp {
 	__le16 Reserved;
 } __packed;
 
+struct smb2_buffer_desc_v1 {
+	__le64 offset;
+	__le32 token;
+	__le32 length;
+} __packed;
+
+#define SMB2_CHANNEL_NONE		cpu_to_le32(0x00000000)
+#define SMB2_CHANNEL_RDMA_V1		cpu_to_le32(0x00000001)
+#define SMB2_CHANNEL_RDMA_V1_INVALIDATE cpu_to_le32(0x00000002)
+
 struct smb2_read_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 49 */
@@ -1478,6 +1488,10 @@ extern void init_smb2_1_server(struct cifsd_conn *conn);
 extern void init_smb3_0_server(struct cifsd_conn *conn);
 extern void init_smb3_02_server(struct cifsd_conn *conn);
 extern int init_smb3_11_server(struct cifsd_conn *conn);
+
+extern void init_smb2_max_read_size(unsigned int sz);
+extern void init_smb2_max_write_size(unsigned int sz);
+extern void init_smb2_max_trans_size(unsigned int sz);
 
 extern int is_smb2_neg_cmd(struct cifsd_work *work);
 extern int is_smb2_rsp(struct cifsd_work *work);

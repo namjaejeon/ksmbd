@@ -296,6 +296,13 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	server_conf.ipc_timeout = req->ipc_timeout * HZ;
 	server_conf.deadtime = req->deadtime * SMB_ECHO_INTERVAL;
 
+	if (req->smb2_max_read)
+		init_smb2_max_read_size(req->smb2_max_read);
+	if (req->smb2_max_write)
+		init_smb2_max_write_size(req->smb2_max_write);
+	if (req->smb2_max_trans)
+		init_smb2_max_trans_size(req->smb2_max_trans);
+
 	ret = cifsd_set_netbios_name(req->netbios_name);
 	ret |= cifsd_set_server_string(req->server_string);
 	ret |= cifsd_set_work_group(req->work_group);
