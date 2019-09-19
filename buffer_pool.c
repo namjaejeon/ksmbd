@@ -9,6 +9,7 @@
 #include <linux/mm.h>
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
+#include <linux/rwlock.h>
 
 #include "glob.h"
 #include "buffer_pool.h"
@@ -34,6 +35,7 @@ struct wm_list {
 };
 
 static LIST_HEAD(wm_lists);
+static DEFINE_RWLOCK(wm_lists_lock);
 
 /*
  * A simple kvmalloc()/kvfree() implementation.
@@ -97,38 +99,45 @@ static struct wm *wm_alloc(size_t sz, gfp_t flags)
 
 static int register_wm_size_class(size_t sz)
 {
-	struct wm_list *l;
+	struct wm_list *l, *nl;
 
-	list_for_each_entry(l, &wm_lists, list) {
-		if (l->sz == sz)
-			return 0;
-	}
-
-	l = __alloc(sizeof(struct wm_list), GFP_KERNEL | __GFP_ZERO);
-	if (!l)
+	nl = __alloc(sizeof(struct wm_list), GFP_KERNEL | __GFP_ZERO);
+	if (!nl)
 		return -ENOMEM;
 
-	l->sz = sz;
-	spin_lock_init(&l->wm_lock);
-	INIT_LIST_HEAD(&l->idle_wm);
-	init_waitqueue_head(&l->wm_wait);
-	l->avail_wm = 0;
+	nl->sz = sz;
+	spin_lock_init(&nl->wm_lock);
+	INIT_LIST_HEAD(&nl->idle_wm);
+	init_waitqueue_head(&nl->wm_wait);
+	nl->avail_wm = 0;
 
-	list_add(&l->list, &wm_lists);
+	write_lock(&wm_lists_lock);
+	list_for_each_entry(l, &wm_lists, list) {
+		if (l->sz == sz) {
+			write_unlock(&wm_lists_lock);
+			__free(nl);
+			return 0;
+		}
+	}
+
+	list_add(&nl->list, &wm_lists);
+	write_unlock(&wm_lists_lock);
 	return 0;
 }
 
-
 static struct wm_list* match_wm_list(size_t size)
 {
-	struct wm_list *l;
+	struct wm_list *l, *rl = NULL;
 
+	read_lock(&wm_lists_lock);
 	list_for_each_entry(l, &wm_lists, list) {
-		if (l->sz == size)
-			return l;
+		if (l->sz == size) {
+			rl = l;
+			break;
+		}
 	}
-
-	return NULL;
+	read_unlock(&wm_lists_lock);
+	return rl;
 }
 
 static struct wm *find_wm(size_t size, gfp_t flags)
