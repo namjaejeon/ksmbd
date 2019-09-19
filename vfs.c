@@ -1425,24 +1425,6 @@ void cifsd_vfs_set_fadvise(struct file *filp, __le32 option)
 
 	if (option & FILE_WRITE_THROUGH_LE)
 		filp->f_flags |= O_SYNC;
-/*
-	 * TODO : need to add special handling for Direct I/O.
-	 * Direct I/O relies on MM Context of the "current" process
-	 * to retrieve the pages corresponding to the user address
-	 * do_direct_IO()->dio_get_page()->
-				dio_refill_pages()->get_user_pages_fast()
-	 * struct mm_struct *mm = current->mm;
-	 * All work items in CIFSD are handled through default "kworker"
-	 * - which do not have any MM Context.
-	 * To handle Direct I/O will need to create another thread
-	 * in kernel with MM context and redirect all direct I/O calls to
-	 * thread. Since, this is Server and direct I/O not bottleneck.
-	 * So, making default READ path to be buffered in all sequences
-	 * (clearing direct IO flag).
-	else if (option & FILE_NO_INTERMEDIATE_BUFFERING_LE &&
-		 filp->f_mapping->a_ops->direct_IO)
-		filp->f_flags |= O_DIRECT;
-*/
 	else if (option & FILE_SEQUENTIAL_ONLY_LE) {
 		filp->f_ra.ra_pages = inode_to_bdi(mapping->host)->ra_pages * 2;
 		spin_lock(&filp->f_lock);

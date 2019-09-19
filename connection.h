@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
@@ -121,10 +121,18 @@ struct cifsd_conn_ops {
 
 struct cifsd_transport_ops {
 	int (*prepare)(struct cifsd_transport *t);
-	int (*read)(struct cifsd_transport *t, char *buf, unsigned int size);
-	int (*writev)(struct cifsd_transport *t, struct kvec *iovs, int nvecs,
-			int size);
 	void (*disconnect)(struct cifsd_transport *t);
+	int (*read)(struct cifsd_transport *t,
+			char *buf, unsigned int size);
+	int (*writev)(struct cifsd_transport *t,
+			struct kvec *iovs, int niov, int size,
+			bool need_invalidate_rkey, unsigned int remote_key);
+	int (*rdma_read)(struct cifsd_transport *t,
+				void *buf, unsigned int len, u32 remote_key,
+				u64 remote_offset, u32 remote_len);
+	int (*rdma_write)(struct cifsd_transport *t,
+				void *buf, unsigned int len, u32 remote_key,
+				u64 remote_offset, u32 remote_len);
 };
 
 struct cifsd_transport {
@@ -145,6 +153,14 @@ void cifsd_conn_free(struct cifsd_conn *conn);
 int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
 	void *arg);
 int cifsd_conn_write(struct cifsd_work *work);
+int cifsd_conn_rdma_read(struct cifsd_conn *conn,
+				void *buf, unsigned int buflen,
+				u32 remote_key, u64 remote_offset,
+				u32 remote_len);
+int cifsd_conn_rdma_write(struct cifsd_conn *conn,
+				void *buf, unsigned int buflen,
+				u32 remote_key, u64 remote_offset,
+				u32 remote_len);
 
 void cifsd_conn_enqueue_request(struct cifsd_work *work);
 int cifsd_conn_try_dequeue_request(struct cifsd_work *work);

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2019 Samsung Electronics Co., Ltd.
  */
@@ -74,6 +74,9 @@ struct cifsd_work {
 	void				(*cancel_fn)(void **argv);
 	struct list_head		fp_entry;
 	struct list_head		interim_entry;
+
+	bool				need_invalidate_rkey;
+	unsigned int			remote_key;
 };
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)

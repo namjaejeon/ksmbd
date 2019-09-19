@@ -205,9 +205,10 @@ out:
 char *convert_to_nt_pathname(char *filename, char *sharepath)
 {
 	char *ab_pathname;
-	int len;
+	int len, name_len;
 
-	ab_pathname = kmalloc(strlen(filename), GFP_KERNEL);
+	name_len = strlen(filename);
+	ab_pathname = kmalloc(name_len, GFP_KERNEL);
 	if (!ab_pathname)
 		return NULL;
 
@@ -215,8 +216,12 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 	ab_pathname[1] = '\0';
 
 	len = strlen(sharepath);
-	if (!strncmp(filename, sharepath, len) && strlen(filename) != len) {
-		strcpy(ab_pathname, &filename[len]);
+	if (!strncmp(filename, sharepath, len) && name_len != len) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+		strncpy(ab_pathname, &filename[len], name_len);
+#else
+		strscpy(ab_pathname, &filename[len], name_len);
+#endif
 		cifsd_conv_path_to_windows(ab_pathname);
 	}
 

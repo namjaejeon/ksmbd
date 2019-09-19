@@ -19,7 +19,9 @@ static struct smb_version_values smb20_server_values = {
 	.version_string = SMB20_VERSION_STRING,
 	.protocol_id = SMB20_PROT_ID,
 	.capabilities = 0,
-	.max_io_size = CIFS_DEFAULT_IOSIZE,
+	.max_read_size = CIFS_DEFAULT_IOSIZE,
+	.max_write_size = CIFS_DEFAULT_IOSIZE,
+	.max_trans_size = CIFS_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -42,7 +44,9 @@ static struct smb_version_values smb21_server_values = {
 	.version_string = SMB21_VERSION_STRING,
 	.protocol_id = SMB21_PROT_ID,
 	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
-	.max_io_size = SMB21_DEFAULT_IOSIZE,
+	.max_read_size = SMB21_DEFAULT_IOSIZE,
+	.max_write_size = SMB21_DEFAULT_IOSIZE,
+	.max_trans_size = SMB21_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -64,7 +68,9 @@ static struct smb_version_values smb30_server_values = {
 	.version_string = SMB30_VERSION_STRING,
 	.protocol_id = SMB30_PROT_ID,
 	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
-	.max_io_size = SMB3_DEFAULT_IOSIZE,
+	.max_read_size = SMB3_DEFAULT_IOSIZE,
+	.max_write_size = SMB3_DEFAULT_IOSIZE,
+	.max_trans_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -87,7 +93,9 @@ static struct smb_version_values smb302_server_values = {
 	.version_string = SMB302_VERSION_STRING,
 	.protocol_id = SMB302_PROT_ID,
 	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
-	.max_io_size = SMB3_DEFAULT_IOSIZE,
+	.max_read_size = SMB3_DEFAULT_IOSIZE,
+	.max_write_size = SMB3_DEFAULT_IOSIZE,
+	.max_trans_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -110,7 +118,9 @@ static struct smb_version_values smb311_server_values = {
 	.version_string = SMB311_VERSION_STRING,
 	.protocol_id = SMB311_PROT_ID,
 	.capabilities = SMB2_GLOBAL_CAP_LARGE_MTU,
-	.max_io_size = SMB3_DEFAULT_IOSIZE,
+	.max_read_size = SMB3_DEFAULT_IOSIZE,
+	.max_write_size = SMB3_DEFAULT_IOSIZE,
+	.max_trans_size = SMB3_DEFAULT_IOSIZE,
 	.large_lock_type = 0,
 	.exclusive_lock_type = SMB2_LOCKFLAG_EXCLUSIVE,
 	.shared_lock_type = SMB2_LOCKFLAG_SHARED,
@@ -307,4 +317,28 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;
+}
+
+void init_smb2_max_read_size(unsigned int sz)
+{
+	smb21_server_values.max_read_size = sz;
+	smb30_server_values.max_read_size = sz;
+	smb302_server_values.max_read_size = sz;
+	smb311_server_values.max_read_size = sz;
+}
+
+void init_smb2_max_write_size(unsigned int sz)
+{
+	smb21_server_values.max_write_size = sz;
+	smb30_server_values.max_write_size = sz;
+	smb302_server_values.max_write_size = sz;
+	smb311_server_values.max_write_size = sz;
+}
+
+void init_smb2_max_trans_size(unsigned int sz)
+{
+	smb21_server_values.max_trans_size = sz;
+	smb30_server_values.max_trans_size = sz;
+	smb302_server_values.max_trans_size = sz;
+	smb311_server_values.max_trans_size = sz;
 }

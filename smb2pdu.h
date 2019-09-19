@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
@@ -117,8 +117,10 @@
 
 struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */
-				/* length is only two or three bytes - with
-				 one or two byte type preceding it that MBZ */
+				/*
+				 * length is only two or three bytes - with
+				 * one or two byte type preceding it that MBZ
+				 */
 	__le32 ProtocolId;	/* 0xFE 'S' 'M' 'B' */
 	__le16 StructureSize;	/* 64 */
 	__le16 CreditCharge;	/* MBZ */
@@ -312,7 +314,7 @@ struct smb2_negotiate_rsp {
 	__le16 StructureSize;	/* Must be 65 */
 	__le16 SecurityMode;
 	__le16 DialectRevision;
-	__le16 NegotiateContextCount;	/* Prior to SMB3.1.1 was Reserved & MBZ */
+	__le16 NegotiateContextCount; /* Prior to SMB3.1.1 was Reserved & MBZ */
 	__u8   ServerGUID[16];
 	__le32 Capabilities;
 	__le32 MaxTransactSize;
@@ -743,6 +745,16 @@ struct smb2_flush_rsp {
 	__le16 StructureSize;
 	__le16 Reserved;
 } __packed;
+
+struct smb2_buffer_desc_v1 {
+	__le64 offset;
+	__le32 token;
+	__le32 length;
+} __packed;
+
+#define SMB2_CHANNEL_NONE		cpu_to_le32(0x00000000)
+#define SMB2_CHANNEL_RDMA_V1		cpu_to_le32(0x00000001)
+#define SMB2_CHANNEL_RDMA_V1_INVALIDATE cpu_to_le32(0x00000002)
 
 struct smb2_read_req {
 	struct smb2_hdr hdr;
@@ -1478,6 +1490,10 @@ extern void init_smb2_1_server(struct cifsd_conn *conn);
 extern void init_smb3_0_server(struct cifsd_conn *conn);
 extern void init_smb3_02_server(struct cifsd_conn *conn);
 extern int init_smb3_11_server(struct cifsd_conn *conn);
+
+extern void init_smb2_max_read_size(unsigned int sz);
+extern void init_smb2_max_write_size(unsigned int sz);
+extern void init_smb2_max_trans_size(unsigned int sz);
 
 extern int is_smb2_neg_cmd(struct cifsd_work *work);
 extern int is_smb2_rsp(struct cifsd_work *work);

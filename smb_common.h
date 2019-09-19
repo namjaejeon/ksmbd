@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
@@ -65,7 +65,9 @@ struct smb_version_values {
 	__u16		protocol_id;
 	__le16		lock_cmd;
 	__u32		capabilities;
-	__u32		max_io_size;
+	__u32		max_read_size;
+	__u32		max_write_size;
+	__u32		max_trans_size;
 	__u32		large_lock_type;
 	__u32		exclusive_lock_type;
 	__u32		shared_lock_type;

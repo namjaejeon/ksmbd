@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  *
@@ -43,6 +43,9 @@ struct cifsd_startup_request {
 	__u16	ipc_timeout;
 	__u32	deadtime;
 	__u32	file_max;
+	__u32	smb2_max_write;
+	__u32	smb2_max_read;
+	__u32	smb2_max_trans;
 	__u32	ifc_list_sz;
 	__s8	____payload[0];
 } ____cifsd_align;
@@ -220,18 +223,18 @@ enum CIFSD_TREE_CONN_STATUS {
 /*
  * RPC over IPC.
  */
-#define CIFSD_RPC_METHOD_RETURN		( 1 << 0)
-#define CIFSD_RPC_SRVSVC_METHOD_INVOKE	( 1 << 1)
+#define CIFSD_RPC_METHOD_RETURN		(1 << 0)
+#define CIFSD_RPC_SRVSVC_METHOD_INVOKE	(1 << 1)
 #define CIFSD_RPC_SRVSVC_METHOD_RETURN	((1 << 1) | CIFSD_RPC_METHOD_RETURN)
-#define CIFSD_RPC_WKSSVC_METHOD_INVOKE	( 1 << 2)
+#define CIFSD_RPC_WKSSVC_METHOD_INVOKE	(1 << 2)
 #define CIFSD_RPC_WKSSVC_METHOD_RETURN	((1 << 2) | CIFSD_RPC_METHOD_RETURN)
 #define CIFSD_RPC_IOCTL_METHOD		((1 << 3) | CIFSD_RPC_METHOD_RETURN)
-#define CIFSD_RPC_OPEN_METHOD		( 1 << 4)
-#define CIFSD_RPC_WRITE_METHOD		( 1 << 5)
+#define CIFSD_RPC_OPEN_METHOD		(1 << 4)
+#define CIFSD_RPC_WRITE_METHOD		(1 << 5)
 #define CIFSD_RPC_READ_METHOD		((1 << 6) | CIFSD_RPC_METHOD_RETURN)
-#define CIFSD_RPC_CLOSE_METHOD		( 1 << 7)
+#define CIFSD_RPC_CLOSE_METHOD		(1 << 7)
 #define CIFSD_RPC_RAP_METHOD		((1 << 8) | CIFSD_RPC_METHOD_RETURN)
-#define CIFSD_RPC_RESTRICTED_CONTEXT	( 1 << 9)
+#define CIFSD_RPC_RESTRICTED_CONTEXT	(1 << 9)
 
 #define CIFSD_RPC_OK			0
 #define CIFSD_RPC_EBAD_FUNC		0x00000001
