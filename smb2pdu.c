@@ -6153,7 +6153,7 @@ int smb2_cancel(struct cifsd_work *work)
 	}
 
 	if (canceled) {
-		cancel_work->state = WORK_STATE_CANCELLED;
+		cancel_work->state_cancelled = true;
 		if (cancel_work->cancel_fn)
 			cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
@@ -6496,14 +6496,13 @@ skip:
 
 				err = cifsd_vfs_posix_lock_wait(flock);
 
-				if (work->state == WORK_STATE_CANCELLED ||
-					work->state == WORK_STATE_CLOSED) {
+				if (work->state_cancelled ||
+						work->state_closed) {
 					list_del(&smb_lock->llist);
 					list_del(&smb_lock->glist);
 					locks_free_lock(flock);
 
-					if (work->state ==
-						WORK_STATE_CANCELLED) {
+					if (work->state_cancelled) {
 						spin_lock(&fp->f_lock);
 						list_del(&work->fp_entry);
 						spin_unlock(&fp->f_lock);
