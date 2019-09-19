@@ -6,8 +6,6 @@
 #ifndef __CIFSD_BUFFER_POOL_H__
 #define __CIFSD_BUFFER_POOL_H__
 
-struct cifsd_work;
-
 void *cifsd_find_buffer(size_t size);
 void cifsd_release_buffer(void *buffer);
 
@@ -20,9 +18,6 @@ void cifsd_free_response(void *buffer);
 void *cifsd_alloc_response(size_t size);
 
 void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz);
-
-struct cifsd_work *cifsd_alloc_work_struct(void);
-void cifsd_free_work_struct(struct cifsd_work *work);
 
 void cifsd_free_file_struct(void *filp);
 void *cifsd_alloc_file_struct(void);
