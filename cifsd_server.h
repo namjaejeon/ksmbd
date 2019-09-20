@@ -30,6 +30,7 @@ struct cifsd_heartbeat {
  */
 #define CIFSD_GLOBAL_FLAG_INVALID	(0)
 #define CIFSD_GLOBAL_FLAG_SMB2_LEASES	(1 << 0)
+#define CIFSD_GLOBAL_FLAG_CACHE_TBUF	(1 << 1)
 
 struct cifsd_startup_request {
 	__u32	flags;
