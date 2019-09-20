@@ -531,7 +531,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
 	size_t small_sz = cifsd_small_buffer_size();
-	size_t large_sz = work->conn->vals->max_read_size + MAX_SMB2_HDR_SIZE;
+	size_t large_sz = work->conn->vals->max_trans_size + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);
 
@@ -545,8 +545,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 		if (req->InfoType == SMB2_O_INFO_FILE &&
 			(req->FileInfoClass == FILE_FULL_EA_INFORMATION ||
 				req->FileInfoClass == FILE_ALL_INFORMATION))
-			sz = work->conn->vals->max_trans_size +
-				MAX_SMB2_HDR_SIZE;
+			sz = large_sz;
 	}
 
 	/* allocate large response buf for chained commands */
