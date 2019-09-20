@@ -816,7 +816,9 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
 		inc_rfc1001_len(rsp, 2 +
 			sizeof(struct smb2_compression_capabilities_context));
-		pneg_ctxt += sizeof(struct smb2_compression_capabilities_context) + 2;
+		pneg_ctxt +=
+			sizeof(struct smb2_compression_capabilities_context) +
+			2;
 	}
 
 	if (conn->posix_ext_supported) {
@@ -1032,7 +1034,8 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 	case SMB2X_PROT_ID:
 	case BAD_PROT_ID:
 	default:
-		cifsd_err("Server dialect :0x%x not supported\n", conn->dialect);
+		cifsd_err("Server dialect :0x%x not supported\n",
+			conn->dialect);
 		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 		rc = -EINVAL;
 		goto err_out;
@@ -1880,8 +1883,8 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 	int i, err = 0;
 	uint64_t persistent_id = 0;
 	int req_op_level;
-	static const char * const durable_arr[] = {"DH2C", "DHnC", "DH2Q", "DHnQ",
-		SMB2_CREATE_APP_INSTANCE_ID};
+	static const char * const durable_arr[] = {"DH2C", "DHnC", "DH2Q",
+		"DHnQ", SMB2_CREATE_APP_INSTANCE_ID};
 
 	req_op_level = req->RequestedOplockLevel;
 	for (i = 1; i <= 5; i++) {
@@ -1963,8 +1966,8 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 			durable_v2_blob =
 				(struct create_durable_req_v2 *)context;
 			cifsd_debug("Request for durable v2 open\n");
-			d_info->fp =
-				cifsd_lookup_fd_cguid(durable_v2_blob->CreateGuid);
+			d_info->fp = cifsd_lookup_fd_cguid(
+					durable_v2_blob->CreateGuid);
 			if (d_info->fp) {
 				if (!memcmp(conn->ClientGUID,
 					d_info->fp->client_guid,
@@ -1981,7 +1984,8 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 				}
 			}
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
+				(lc->req_state &
+					SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				d_info->CreateGuid =
 					durable_v2_blob->CreateGuid;
@@ -2003,7 +2007,8 @@ static int parse_durable_handle_context(struct cifsd_work *work,
 			}
 
 			if (((lc &&
-				(lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
+				(lc->req_state &
+					SMB2_LEASE_HANDLE_CACHING_LE)) ||
 				(req_op_level == SMB2_OPLOCK_LEVEL_BATCH))) {
 				cifsd_debug("Request for durable open\n");
 				d_info->type = i;
@@ -2465,7 +2470,8 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out1;
 	}
 
-	if (!req->DesiredAccess || !(req->DesiredAccess & DESIRED_ACCESS_MASK)) {
+	if (!req->DesiredAccess ||
+			!(req->DesiredAccess & DESIRED_ACCESS_MASK)) {
 		cifsd_err("Invalid disired access : 0x%x\n",
 			le32_to_cpu(req->DesiredAccess));
 		rc = -EACCES;
@@ -3077,7 +3083,8 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 }
 
 /**
- * smb2_populate_readdir_entry() - encode directory entry in smb2 response buffer
+ * smb2_populate_readdir_entry() - encode directory entry in smb2 response
+ * buffer
  * @conn:	connection instance
  * @info_level:	smb information level
  * @d_info:	structure included variables for query dir
@@ -4555,8 +4562,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			unsigned short logical_sector_size;
 
 			fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
-			logical_sector_size =
-				cifsd_vfs_logical_sector_size(d_inode(path.dentry));
+			logical_sector_size = cifsd_vfs_logical_sector_size(
+				d_inode(path.dentry));
 
 			fs_size_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4578,8 +4585,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 
 			fs_fullsize_info =
 				(struct smb2_fs_full_size_info *)(rsp->Buffer);
-			logical_sector_size =
-				cifsd_vfs_logical_sector_size(d_inode(path.dentry));
+			logical_sector_size = cifsd_vfs_logical_sector_size(
+				d_inode(path.dentry));
 
 			fs_fullsize_info->TotalAllocationUnits =
 						cpu_to_le64(stfs.f_blocks);
@@ -4626,7 +4633,8 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 			struct cifsd_fs_sector_size fs_ss;
 
 			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
-			cifsd_vfs_smb2_sector_size(d_inode(path.dentry), &fs_ss);
+			cifsd_vfs_smb2_sector_size(d_inode(path.dentry),
+				&fs_ss);
 
 			ss_info->LogicalBytesPerSector =
 				cpu_to_le32(fs_ss.logical_sector_size);

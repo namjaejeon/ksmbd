@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: LGPL-2.1-or-later
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 /*
  *   Copyright (c) International Business Machines  Corp., 2002,2007
  *   Author(s): Steve French (sfrench@us.ibm.com)
@@ -113,8 +113,10 @@ typedef struct _NEGOTIATE_MESSAGE {
 	__le32 NegotiateFlags;
 	SECURITY_BUFFER DomainName;	/* RFC 1001 style and ASCII */
 	SECURITY_BUFFER WorkstationName;	/* RFC 1001 and ASCII */
-	/* SECURITY_BUFFER for version info not present since we
-	   do not set the version is present flag */
+	/*
+	 * SECURITY_BUFFER for version info not present since we
+	 * do not set the version is present flag
+	 */
 	char DomainString[0];
 	/* followed by WorkstationString */
 } __attribute__((packed)) NEGOTIATE_MESSAGE, *PNEGOTIATE_MESSAGE;
@@ -127,8 +129,10 @@ typedef struct _CHALLENGE_MESSAGE {
 	__u8 Challenge[CIFS_CRYPTO_KEY_SIZE];
 	__u8 Reserved[8];
 	SECURITY_BUFFER TargetInfoArray;
-	/* SECURITY_BUFFER for version info not present since we
-	   do not set the version is present flag */
+	/*
+	 * SECURITY_BUFFER for version info not present since we
+	 * do not set the version is present flag
+	 */
 } __attribute__((packed)) CHALLENGE_MESSAGE, *PCHALLENGE_MESSAGE;
 
 typedef struct _AUTHENTICATE_MESSAGE {
@@ -141,8 +145,10 @@ typedef struct _AUTHENTICATE_MESSAGE {
 	SECURITY_BUFFER WorkstationName;
 	SECURITY_BUFFER SessionKey;
 	__le32 NegotiateFlags;
-	/* SECURITY_BUFFER for version info not present since we
-	   do not set the version is present flag */
+	/*
+	 * SECURITY_BUFFER for version info not present since we
+	 * do not set the version is present flag
+	 */
 	char UserString[0];
 } __attribute__((packed)) AUTHENTICATE_MESSAGE, *PAUTHENTICATE_MESSAGE;
 

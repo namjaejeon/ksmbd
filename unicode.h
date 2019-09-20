@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * Some of the source code in this file came from fs/cifs/cifs_unicode.c
  * cifs_unicode:  Unicode kernel case support

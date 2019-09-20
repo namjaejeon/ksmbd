@@ -2660,8 +2660,10 @@ int smb_close(struct cifsd_work *work)
 		goto IPC_out;
 	}
 
-	/* TODO: linux cifs client does not send LastWriteTime,
-	   need to check if windows client use this field */
+	/*
+	 * TODO: linux cifs client does not send LastWriteTime,
+	 * need to check if windows client use this field
+	 */
 	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
 		cifsd_info("need to set last modified time before close\n");
 
@@ -3412,10 +3414,10 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
  */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
-				     const struct posix_acl_xattr_entry *local_ace)
+			     const struct posix_acl_xattr_entry *local_ace)
 #else
 static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
-				     const posix_acl_xattr_entry *local_ace)
+			     const posix_acl_xattr_entry *local_ace)
 #endif
 {
 	__u16 rc = 0; /* 0 = ACL converted ok */
@@ -4351,7 +4353,8 @@ static void create_trans2_reply(struct cifsd_work *work, __u16 count)
  */
 static int set_fs_info(struct cifsd_work *work)
 {
-	TRANSACTION2_SETFSI_REQ *req = (TRANSACTION2_SETFSI_REQ *)REQUEST_BUF(work);
+	TRANSACTION2_SETFSI_REQ *req =
+		(TRANSACTION2_SETFSI_REQ *)REQUEST_BUF(work);
 	TRANSACTION2_SETFSI_RSP	*rsp =
 				(TRANSACTION2_SETFSI_RSP *)RESPONSE_BUF(work);
 	int info_level = le16_to_cpu(req->InformationLevel);
@@ -4599,11 +4602,6 @@ static __u32 smb_posix_convert_flags(__u32 flags)
 		posix_flags |= O_DIRECTORY;
 	if (flags & SMB_O_NOFOLLOW)
 		posix_flags |= O_NOFOLLOW;
-/*
-	* TODO : need to add special handling for Direct I/O.
-	if (flags & SMB_O_DIRECT)
-		posix_flags |= O_DIRECT;
-*/
 	if (flags & SMB_O_APPEND)
 		posix_flags |= O_APPEND;
 
@@ -4654,7 +4652,8 @@ static int smb_get_disposition(unsigned int flags, bool file_present,
  */
 static int smb_posix_open(struct cifsd_work *work)
 {
-	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)REQUEST_BUF(work);
+	TRANSACTION2_SPI_REQ *pSMB_req =
+		(TRANSACTION2_SPI_REQ *)REQUEST_BUF(work);
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 		(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(work);
 	struct cifsd_share_config *share = work->tcon->share_conf;
@@ -5364,7 +5363,8 @@ static int smb_creat_symlink(struct cifsd_work *work)
  */
 static int set_path_info(struct cifsd_work *work)
 {
-	TRANSACTION2_SPI_REQ *pSMB_req = (TRANSACTION2_SPI_REQ *)REQUEST_BUF(work);
+	TRANSACTION2_SPI_REQ *pSMB_req =
+		(TRANSACTION2_SPI_REQ *)REQUEST_BUF(work);
 	TRANSACTION2_SPI_RSP *pSMB_rsp =
 				(TRANSACTION2_SPI_RSP *)RESPONSE_BUF(work);
 	__u16 info_level, total_param;
@@ -5497,7 +5497,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 
 		fsinfo = (FIND_INFO_STANDARD *)(d_info->wptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
+			cifs_NTtimeToUnix(
+				cpu_to_le64(cifsd_kstat->create_time)),
 			&fsinfo->CreationTime,
 			&fsinfo->CreationDate);
 		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->atime),
@@ -5522,7 +5523,8 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 
 		fesize = (FIND_INFO_QUERY_EA_SIZE *)(d_info->wptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(cpu_to_le64(cifsd_kstat->create_time)),
+			cifs_NTtimeToUnix(
+				cpu_to_le64(cifsd_kstat->create_time)),
 			&fesize->CreationTime,
 			&fesize->CreationDate);
 		unix_to_dos_time(from_kern_timespec(cifsd_kstat->kstat->atime),
@@ -7537,7 +7539,8 @@ static int smb_query_info_path(struct cifsd_work *work,
  */
 int smb_query_info(struct cifsd_work *work)
 {
-	QUERY_INFORMATION_RSP *rsp = (QUERY_INFORMATION_RSP *)RESPONSE_BUF(work);
+	QUERY_INFORMATION_RSP *rsp =
+		(QUERY_INFORMATION_RSP *)RESPONSE_BUF(work);
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	struct kstat st = {0,};
 	__u16 attr = 0;
@@ -7706,7 +7709,8 @@ int smb_open_andx(struct cifsd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = cifsd_vfs_kern_path(name, 0, &path, req->hdr.Flags & SMBFLG_CASELESS);
+	err = cifsd_vfs_kern_path(name, 0, &path,
+			req->hdr.Flags & SMBFLG_CASELESS);
 	if (err)
 		file_present = false;
 	else

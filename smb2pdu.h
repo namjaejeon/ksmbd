@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
@@ -117,8 +117,10 @@
 
 struct smb2_hdr {
 	__be32 smb2_buf_length;	/* big endian on wire */
-				/* length is only two or three bytes - with
-				 one or two byte type preceding it that MBZ */
+				/*
+				 * length is only two or three bytes - with
+				 * one or two byte type preceding it that MBZ
+				 */
 	__le32 ProtocolId;	/* 0xFE 'S' 'M' 'B' */
 	__le16 StructureSize;	/* 64 */
 	__le16 CreditCharge;	/* MBZ */
@@ -312,7 +314,7 @@ struct smb2_negotiate_rsp {
 	__le16 StructureSize;	/* Must be 65 */
 	__le16 SecurityMode;
 	__le16 DialectRevision;
-	__le16 NegotiateContextCount;	/* Prior to SMB3.1.1 was Reserved & MBZ */
+	__le16 NegotiateContextCount; /* Prior to SMB3.1.1 was Reserved & MBZ */
 	__u8   ServerGUID[16];
 	__le32 Capabilities;
 	__le32 MaxTransactSize;
