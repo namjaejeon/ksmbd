@@ -296,6 +296,10 @@ static int ipc_server_config_on_startup(struct cifsd_startup_request *req)
 	server_conf.ipc_timeout = req->ipc_timeout * HZ;
 	server_conf.deadtime = req->deadtime * SMB_ECHO_INTERVAL;
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+	server_conf.flags &= ~CIFSD_GLOBAL_FLAG_CACHE_RSP;
+#endif
+
 	if (req->smb2_max_read)
 		init_smb2_max_read_size(req->smb2_max_read);
 	if (req->smb2_max_write)
