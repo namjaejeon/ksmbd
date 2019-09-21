@@ -8,10 +8,14 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 
+#include "server.h"
 #include "connection.h"
 #include "cifsd_work.h"
 #include "buffer_pool.h"
 #include "mgmt/cifsd_ida.h"
+
+/* @FIXME */
+#include "cifsd_server.h"
 
 static struct kmem_cache *work_cache;
 static struct workqueue_struct *cifsd_wq;
@@ -31,7 +35,7 @@ struct cifsd_work *cifsd_alloc_work_struct(void)
 
 void cifsd_free_work_struct(struct cifsd_work *work)
 {
-	if (work->buffered_rsp)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_TBUF)
 		cifsd_release_buffer(RESPONSE_BUF(work));
 	else
 		cifsd_free_response(RESPONSE_BUF(work));

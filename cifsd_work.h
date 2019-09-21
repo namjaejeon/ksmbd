@@ -52,7 +52,6 @@ struct cifsd_work {
 	bool				state_cancelled:1;
 	bool				state_closed:1;
 
-	bool				buffered_rsp:1;
 	/* Multiple responses for one request e.g. SMB ECHO */
 	bool				multiRsp:1;
 	/* No response for cancelled request */
