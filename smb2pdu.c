@@ -6780,7 +6780,7 @@ static int query_iface_info_ioctl(struct cifsd_conn *conn,
 			cifsd_err("%s %s %s\n",
 				  netdev->name,
 				  "speed is unknown,",
-				  "defaulting to 1Gb/sec\n");
+				  "defaulting to 1Gb/sec");
 			speed = SPEED_1000;
 		}
 
