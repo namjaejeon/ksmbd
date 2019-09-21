@@ -5728,7 +5728,10 @@ int smb2_read(struct cifsd_work *work)
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
 
-	work->aux_payload_buf = cifsd_alloc_response(length);
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+		work->aux_payload_buf = cifsd_find_buffer(length);
+	else
+		work->aux_payload_buf = cifsd_alloc_response(length);
 	if (!work->aux_payload_buf) {
 		err = nbytes;
 		goto out;

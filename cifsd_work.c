@@ -40,7 +40,11 @@ void cifsd_free_work_struct(struct cifsd_work *work)
 	else
 		cifsd_free_response(RESPONSE_BUF(work));
 
-	cifsd_free_response(AUX_PAYLOAD(work));
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+		cifsd_release_buffer(AUX_PAYLOAD(work));
+	else
+		cifsd_free_response(AUX_PAYLOAD(work));
+
 	cifsd_free_response(TRANSFORM_BUF(work));
 	cifsd_free_request(REQUEST_BUF(work));
 	if (work->async_id)
