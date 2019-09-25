@@ -156,11 +156,11 @@ script:
  - sudo ./check generic/075
  - sudo ./check generic/080
 # - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
- - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
- - mv tests/generic/091.new tests/generic/091
- - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
- - mv tests/generic/091.out.new tests/generic/091.out
- - sudo ./check generic/091
+# - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
+# - mv tests/generic/091.new tests/generic/091
+# - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
+# - mv tests/generic/091.out.new tests/generic/091.out
+# - sudo ./check generic/091
  - sudo ./check generic/095
  - sudo ./check generic/098
  - sed -e s/SIZE=10/SIZE=7/ -e s/DEPTH=5/DEPTH=3/ tests/generic/100 > tests/generic/100.new

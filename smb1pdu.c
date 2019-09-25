@@ -2804,7 +2804,10 @@ int smb_read_andx(struct cifsd_work *work)
 	cifsd_debug("filename %s, offset %lld, count %zu\n", FP_FILENAME(fp),
 		pos, count);
 
-	work->aux_payload_buf = cifsd_alloc_request(count);
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+		work->aux_payload_buf = cifsd_find_buffer(count);
+	else
+		work->aux_payload_buf = cifsd_alloc_response(count);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;

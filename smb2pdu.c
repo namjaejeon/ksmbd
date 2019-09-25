@@ -552,14 +552,17 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 	if (le32_to_cpu(hdr->NextCommand) > 0)
 		sz = large_sz;
 
-	work->response_buf = cifsd_alloc_response(sz);
-	work->response_sz = sz;
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_TBUF)
+		work->response_buf = cifsd_find_buffer(sz);
+	else
+		work->response_buf = cifsd_alloc_response(sz);
 
 	if (!RESPONSE_BUF(work)) {
 		cifsd_err("Failed to allocate %zu bytes buffer\n", sz);
 		return -ENOMEM;
 	}
 
+	work->response_sz = sz;
 	return 0;
 }
 
@@ -5725,7 +5728,10 @@ int smb2_read(struct cifsd_work *work)
 	cifsd_debug("filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
 
-	work->aux_payload_buf = cifsd_alloc_response(length);
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+		work->aux_payload_buf = cifsd_find_buffer(length);
+	else
+		work->aux_payload_buf = cifsd_alloc_response(length);
 	if (!work->aux_payload_buf) {
 		err = nbytes;
 		goto out;
@@ -6152,7 +6158,7 @@ int smb2_cancel(struct cifsd_work *work)
 	}
 
 	if (canceled) {
-		cancel_work->state = WORK_STATE_CANCELLED;
+		cancel_work->state_cancelled = true;
 		if (cancel_work->cancel_fn)
 			cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
@@ -6495,14 +6501,13 @@ skip:
 
 				err = cifsd_vfs_posix_lock_wait(flock);
 
-				if (work->state == WORK_STATE_CANCELLED ||
-					work->state == WORK_STATE_CLOSED) {
+				if (work->state_cancelled ||
+						work->state_closed) {
 					list_del(&smb_lock->llist);
 					list_del(&smb_lock->glist);
 					locks_free_lock(flock);
 
-					if (work->state ==
-						WORK_STATE_CANCELLED) {
+					if (work->state_cancelled) {
 						spin_lock(&fp->f_lock);
 						list_del(&work->fp_entry);
 						spin_unlock(&fp->f_lock);
@@ -6775,7 +6780,7 @@ static int query_iface_info_ioctl(struct cifsd_conn *conn,
 			cifsd_err("%s %s %s\n",
 				  netdev->name,
 				  "speed is unknown,",
-				  "defaulting to 1Gb/sec\n");
+				  "defaulting to 1Gb/sec");
 			speed = SPEED_1000;
 		}
 
