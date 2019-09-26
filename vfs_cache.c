@@ -372,7 +372,7 @@ static void __cifsd_close_fd(struct cifsd_file_table *ft,
 	list_for_each_entry_safe(cancel_work, ctmp, &fp->blocked_works,
 		fp_entry) {
 		list_del(&cancel_work->fp_entry);
-		cancel_work->state = WORK_STATE_CLOSED;
+		cancel_work->state_closed = true;
 		cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
 	spin_unlock(&fp->f_lock);
