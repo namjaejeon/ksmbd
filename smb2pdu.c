@@ -5744,7 +5744,10 @@ int smb2_read(struct cifsd_work *work)
 	}
 
 	if ((nbytes == 0 && length != 0) || nbytes < mincount) {
-		cifsd_free_response(AUX_PAYLOAD(work));
+		if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+			cifsd_release_buffer(AUX_PAYLOAD(work));
+		else
+			cifsd_free_response(AUX_PAYLOAD(work));
 		INIT_AUX_PAYLOAD(work);
 		rsp->hdr.Status = STATUS_END_OF_FILE;
 		smb2_set_err_rsp(work);
@@ -5760,8 +5763,10 @@ int smb2_read(struct cifsd_work *work)
 		/* write data to the client using rdma channel */
 		remain_bytes = smb2_read_rdma_channel(work, req,
 						AUX_PAYLOAD(work), nbytes);
-
-		cifsd_free_response(AUX_PAYLOAD(work));
+		if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+			cifsd_release_buffer(AUX_PAYLOAD(work));
+		else
+			cifsd_free_response(AUX_PAYLOAD(work));
 		INIT_AUX_PAYLOAD(work);
 
 		nbytes = 0;
@@ -5907,8 +5912,7 @@ static ssize_t smb2_write_rdma_channel(struct cifsd_work *work,
 		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
 	work->remote_key = le32_to_cpu(desc->token);
 
-	data_buf =
-		cifsd_alloc_response(length);
+	data_buf = cifsd_alloc_response(length);
 	if (!data_buf)
 		return -ENOMEM;
 
