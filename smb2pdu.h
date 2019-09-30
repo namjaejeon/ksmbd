@@ -288,10 +288,10 @@ struct smb2_encryption_neg_context {
 struct smb2_compression_capabilities_context {
 	__le16	ContextType; /* 3 */
 	__le16  DataLength;
-	__u32	Reserved;
+	__le32	Reserved;
 	__le16	CompressionAlgorithmCount;
 	__u16	Padding;
-	__u32	Reserved1;
+	__le32	Reserved1;
 	__le16	CompressionAlgorithms[1];
 } __packed;
 
