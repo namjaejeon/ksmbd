@@ -1844,7 +1844,7 @@ static noinline int create_smb2_pipe(struct cifsd_work *work)
 	rsp->ChangeTime = cpu_to_le64(0);
 	rsp->AllocationSize = cpu_to_le64(0);
 	rsp->EndofFile = cpu_to_le64(0);
-	rsp->FileAttributes = FILE_ATTRIBUTE_NORMAL_LE;
+	rsp->FileAttributes = ATTR_NORMAL_LE;
 	rsp->Reserved2 = 0;
 	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->PersistentFileId = 0;
@@ -2213,8 +2213,7 @@ static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
 	char *attr = NULL;
 	int rc;
 
-	fp->f_ci->m_fattr &=
-		~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+	fp->f_ci->m_fattr &= ~(ATTR_HIDDEN_LE | ATTR_SYSTEM_LE);
 
 	/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
 	if (!test_share_config_flag(tcon->share_conf,
@@ -2481,7 +2480,7 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (req->FileAttributes &&
-		!(req->FileAttributes & FILE_ATTRIBUTE_MASK)) {
+		!(req->FileAttributes & ATTR_MASK_LE)) {
 		cifsd_err("Invalid file attribute : 0x%x\n",
 			le32_to_cpu(req->FileAttributes));
 		rc = -EINVAL;
@@ -2600,7 +2599,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
-			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
+			req->FileAttributes & ATTR_NORMAL_LE) {
 			rsp->hdr.Status = STATUS_NOT_A_DIRECTORY;
 			rc = -EIO;
 		}
@@ -3143,7 +3142,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		ffdinfo->FileNameLength = cpu_to_le32(conv_len);
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			ffdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			ffdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(ffdinfo->FileName, conv_name, conv_len);
 		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3158,7 +3157,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fbdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fbdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fbdinfo->FileName, conv_name, conv_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3170,7 +3169,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fdinfo = (FILE_DIRECTORY_INFO *)kstat;
 		fdinfo->FileNameLength = cpu_to_le32(conv_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fdinfo->FileName, conv_name, conv_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3195,7 +3194,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		dinfo->Reserved = 0;
 		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			dinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			dinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(dinfo->FileName, conv_name, conv_len);
 		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3212,7 +3211,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fibdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fibdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fibdinfo->FileName, conv_name, conv_len);
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -7050,9 +7049,9 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		sparse = (struct file_sparse *)&req->Buffer[0];
 		if (sparse->SetSparse)
-			fp->f_ci->m_fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
 		else
-			fp->f_ci->m_fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr &= ~ATTR_SPARSE_FILE_LE;
 		cifsd_fd_put(work, fp);
 		break;
 	}

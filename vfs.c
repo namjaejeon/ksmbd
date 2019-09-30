@@ -529,9 +529,9 @@ static void __fill_dentry_attributes(struct cifsd_work *work,
 	 * or that acl is disable in server's filesystem and the config is yes.
 	 */
 	if (S_ISDIR(cifsd_kstat->kstat->mode))
-		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_DIRECTORY_LE;
+		cifsd_kstat->file_attributes = ATTR_DIRECTORY_LE;
 	else
-		cifsd_kstat->file_attributes = FILE_ATTRIBUTE_ARCHIVE_LE;
+		cifsd_kstat->file_attributes = ATTR_ARCHIVE_LE;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -1832,7 +1832,7 @@ void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 	time = cifs_UnixTimeToNT(from_kern_timespec(cifsd_kstat->kstat->ctime));
 	info->ChangeTime = cpu_to_le64(time);
 
-	if (cifsd_kstat->file_attributes & FILE_ATTRIBUTE_DIRECTORY_LE) {
+	if (cifsd_kstat->file_attributes & ATTR_DIRECTORY_LE) {
 		info->EndOfFile = 0;
 		info->AllocationSize = 0;
 	} else {
