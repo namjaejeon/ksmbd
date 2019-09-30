@@ -718,8 +718,8 @@ static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 	return attr;
 }
 
-static void
-build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
+static void build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt,
+			       __le16 hash_id)
 {
 	pneg_ctxt->ContextType = SMB2_PREAUTH_INTEGRITY_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(38);
@@ -730,9 +730,8 @@ build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
 	pneg_ctxt->HashAlgorithms = hash_id;
 }
 
-static void
-build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
-	__le16 cipher_type)
+static void build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
+			       __le16 cipher_type)
 {
 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(4);
@@ -741,13 +740,12 @@ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
 	pneg_ctxt->Ciphers[0] = cipher_type;
 }
 
-static void
-build_compression_ctxt(struct smb2_compression_capabilities_context *pneg_ctxt,
-	__le16 comp_algo)
+static void build_compression_ctxt(struct smb2_compression_ctx *pneg_ctxt,
+				   __le16 comp_algo)
 {
 	pneg_ctxt->ContextType = SMB2_COMPRESSION_CAPABILITIES;
 	pneg_ctxt->DataLength =
-		cpu_to_le16(sizeof(struct smb2_compression_capabilities_context)
+		cpu_to_le16(sizeof(struct smb2_compression_ctx)
 			- sizeof(struct smb2_neg_context));
 	pneg_ctxt->Reserved = cpu_to_le32(0);
 	pneg_ctxt->CompressionAlgorithmCount = cpu_to_le16(1);
@@ -812,15 +810,11 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 	if (conn->compress_algorithm) {
 		cifsd_debug("assemble SMB2_COMPRESSION_CAPABILITIES context\n");
 		/* Temporarily set to SMB3_COMPRESS_NONE */
-		build_compression_ctxt(
-			(struct smb2_compression_capabilities_context *)
-				pneg_ctxt, SMB3_COMPRESS_NONE);
+		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
+					SMB3_COMPRESS_NONE);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 +
-			sizeof(struct smb2_compression_capabilities_context));
-		pneg_ctxt +=
-			sizeof(struct smb2_compression_capabilities_context) +
-			2;
+		inc_rfc1001_len(rsp, 2 + sizeof(struct smb2_compression_ctx));
+		pneg_ctxt += sizeof(struct smb2_compression_ctx) + 2;
 	}
 
 	if (conn->posix_ext_supported) {
@@ -848,9 +842,8 @@ decode_preauth_ctxt(struct cifsd_conn *conn,
 	return err;
 }
 
-static int
-decode_encrypt_ctxt(struct cifsd_conn *conn,
-	struct smb2_encryption_neg_context *pneg_ctxt)
+static int decode_encrypt_ctxt(struct cifsd_conn *conn,
+			       struct smb2_encryption_neg_context *pneg_ctxt)
 {
 	int i;
 	int cph_cnt = le16_to_cpu(pneg_ctxt->CipherCount);
@@ -879,9 +872,8 @@ out:
 		((cph_cnt - 1) * 2);
 }
 
-static int
-decode_compress_ctxt(struct cifsd_conn *conn,
-	struct smb2_compression_capabilities_context *pneg_ctxt)
+static int decode_compress_ctxt(struct cifsd_conn *conn,
+				struct smb2_compression_ctx *pneg_ctxt)
 {
 	int algo_cnt = le16_to_cpu(pneg_ctxt->CompressionAlgorithmCount);
 
@@ -895,9 +887,8 @@ decode_compress_ctxt(struct cifsd_conn *conn,
 		((algo_cnt - 1) * 2);
 }
 
-static int
-deassemble_neg_contexts(struct cifsd_conn *conn,
-	struct smb2_negotiate_req *req)
+static int deassemble_neg_contexts(struct cifsd_conn *conn,
+				   struct smb2_negotiate_req *req)
 {
 	int i = 0, status = 0;
 	/* +4 is to account for the RFC1001 len field */
@@ -934,8 +925,8 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 				break;
 
 			ctxt_size = decode_compress_ctxt(conn,
-				(struct smb2_compression_capabilities_context *)
-				pneg_ctxt);
+						(struct smb2_compression_ctx *)
+						pneg_ctxt);
 			pneg_ctxt += DIV_ROUND_UP(ctxt_size, 8) * 8;
 		} else if (*ContextType == SMB2_NETNAME_NEGOTIATE_CONTEXT_ID) {
 			cifsd_debug("deassemble SMB2_NETNAME_NEGOTIATE_CONTEXT_ID context\n");

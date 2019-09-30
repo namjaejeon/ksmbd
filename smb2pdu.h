@@ -285,7 +285,7 @@ struct smb2_encryption_neg_context {
 #define SMB3_COMPRESS_LZ77	cpu_to_le16(0x0002)
 #define SMB3_COMPRESS_LZ77_HUFF	cpu_to_le16(0x0003)
 
-struct smb2_compression_capabilities_context {
+struct smb2_compression_ctx {
 	__le16	ContextType; /* 3 */
 	__le16  DataLength;
 	__le32	Reserved;
