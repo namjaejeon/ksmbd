@@ -4497,12 +4497,12 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	switch (fsinfoclass) {
 	case FS_DEVICE_INFORMATION:
 	{
-		FILE_SYSTEM_DEVICE_INFO *fs_info;
+		FILE_SYSTEM_DEVICE_INFO *info;
 
-		fs_info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
+		info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
 
-		fs_info->DeviceType = cpu_to_le32(stfs.f_type);
-		fs_info->DeviceCharacteristics = cpu_to_le32(0x00000020);
+		info->DeviceType = cpu_to_le32(stfs.f_type);
+		info->DeviceCharacteristics = cpu_to_le32(0x00000020);
 		rsp->OutputBufferLength = cpu_to_le32(8);
 		inc_rfc1001_len(rsp_org, 8);
 		fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
@@ -4510,18 +4510,16 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_ATTRIBUTE_INFORMATION:
 	{
-		FILE_SYSTEM_ATTRIBUTE_INFO *fs_info;
+		FILE_SYSTEM_ATTRIBUTE_INFO *info;
 		size_t sz;
 
-		fs_info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
-		fs_info->Attributes = cpu_to_le32(0x0001006f);
-		fs_info->MaxPathNameComponentLength =
-			cpu_to_le32(stfs.f_namelen);
-		len = smbConvertToUTF16((__le16 *)
-					fs_info->FileSystemName, "NTFS",
-					PATH_MAX, conn->local_nls, 0);
+		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
+		info->Attributes = cpu_to_le32(0x0001006f);
+		info->MaxPathNameComponentLength = cpu_to_le32(stfs.f_namelen);
+		len = smbConvertToUTF16((__le16 *)info->FileSystemName,
+					"NTFS", PATH_MAX, conn->local_nls, 0);
 		len = len * 2;
-		fs_info->FileSystemNameLen = cpu_to_le32(len);
+		info->FileSystemNameLen = cpu_to_le32(len);
 		sz = sizeof(FILE_SYSTEM_ATTRIBUTE_INFO) - 2 + len;
 		rsp->OutputBufferLength = cpu_to_le32(sz);
 		inc_rfc1001_len(rsp_org, sz);
@@ -4530,19 +4528,19 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_VOLUME_INFORMATION:
 	{
-		FILE_SYSTEM_VOL_INFO *fsvinfo;
+		FILE_SYSTEM_VOL_INFO *info;
 		size_t sz;
 
-		fsvinfo = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
-		fsvinfo->VolumeCreationTime = 0;
+		info = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
+		info->VolumeCreationTime = 0;
 		/* Taking dummy value of serial number*/
-		fsvinfo->SerialNumber = cpu_to_le32(0xbc3ac512);
-		len = smbConvertToUTF16((__le16 *)fsvinfo->VolumeLabel,
+		info->SerialNumber = cpu_to_le32(0xbc3ac512);
+		len = smbConvertToUTF16((__le16 *)info->VolumeLabel,
 					share->name, PATH_MAX,
 					conn->local_nls, 0);
 		len = len * 2;
-		fsvinfo->VolumeLabelSize = cpu_to_le32(len);
-		fsvinfo->Reserved = 0;
+		info->VolumeLabelSize = cpu_to_le32(len);
+		info->Reserved = 0;
 		sz = sizeof(FILE_SYSTEM_VOL_INFO) - 2 + len;
 		rsp->OutputBufferLength = cpu_to_le32(sz);
 		inc_rfc1001_len(rsp_org, sz);
@@ -4551,18 +4549,17 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_SIZE_INFORMATION:
 	{
-		FILE_SYSTEM_INFO *fs_size_info;
+		FILE_SYSTEM_INFO *info;
 		unsigned short logical_sector_size;
 
-		fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
+		info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
 		logical_sector_size =
 			cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
-		fs_size_info->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
-		fs_size_info->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
-		fs_size_info->SectorsPerAllocationUnit =
-			cpu_to_le32(stfs.f_bsize >> 9);
-		fs_size_info->BytesPerSector = cpu_to_le32(logical_sector_size);
+		info->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
+		info->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
+		info->SectorsPerAllocationUnit = cpu_to_le32(stfs.f_bsize >> 9);
+		info->BytesPerSector = cpu_to_le32(logical_sector_size);
 		rsp->OutputBufferLength = cpu_to_le32(24);
 		inc_rfc1001_len(rsp_org, 24);
 		fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
@@ -4570,24 +4567,20 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_FULL_SIZE_INFORMATION:
 	{
-		struct smb2_fs_full_size_info *fs_fullsize_info;
+		struct smb2_fs_full_size_info *info;
 		unsigned short logical_sector_size;
 
-		fs_fullsize_info =
-			(struct smb2_fs_full_size_info *)(rsp->Buffer);
+		info = (struct smb2_fs_full_size_info *)(rsp->Buffer);
 		logical_sector_size =
 			cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
-		fs_fullsize_info->TotalAllocationUnits =
-						cpu_to_le64(stfs.f_blocks);
-		fs_fullsize_info->CallerAvailableAllocationUnits =
-						cpu_to_le64(stfs.f_bavail);
-		fs_fullsize_info->ActualAvailableAllocationUnits =
-						cpu_to_le64(stfs.f_bfree);
-		fs_fullsize_info->SectorsPerAllocationUnit =
-						cpu_to_le32(stfs.f_bsize >> 9);
-		fs_fullsize_info->BytesPerSector =
-				cpu_to_le32(logical_sector_size);
+		info->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
+		info->CallerAvailableAllocationUnits =
+					cpu_to_le64(stfs.f_bavail);
+		info->ActualAvailableAllocationUnits =
+					cpu_to_le64(stfs.f_bfree);
+		info->SectorsPerAllocationUnit = cpu_to_le32(stfs.f_bsize >> 9);
+		info->BytesPerSector = cpu_to_le32(logical_sector_size);
 		rsp->OutputBufferLength = cpu_to_le32(32);
 		inc_rfc1001_len(rsp_org, 32);
 		fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
@@ -4595,21 +4588,20 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_OBJECT_ID_INFORMATION:
 	{
-		struct object_id_info *obj_info;
+		struct object_id_info *info;
 
-		obj_info = (struct object_id_info *)(rsp->Buffer);
+		info = (struct object_id_info *)(rsp->Buffer);
 
 		if (!user_guest(sess->user))
-			memcpy(obj_info->objid, user_passkey(sess->user), 16);
+			memcpy(info->objid, user_passkey(sess->user), 16);
 		else
-			memset(obj_info->objid, 0, 16);
+			memset(info->objid, 0, 16);
 
-		obj_info->extended_info.magic =
-			cpu_to_le32(EXTENDED_INFO_MAGIC);
-		obj_info->extended_info.version = cpu_to_le32(1);
-		obj_info->extended_info.release = cpu_to_le32(1);
-		obj_info->extended_info.rel_date = 0;
-		strncpy(obj_info->extended_info.version_string,
+		info->extended_info.magic = cpu_to_le32(EXTENDED_INFO_MAGIC);
+		info->extended_info.version = cpu_to_le32(1);
+		info->extended_info.release = cpu_to_le32(1);
+		info->extended_info.rel_date = 0;
+		strncpy(info->extended_info.version_string,
 			"1.1.0",
 			STRING_LENGTH);
 		rsp->OutputBufferLength = cpu_to_le32(64);
@@ -4619,25 +4611,24 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_SECTOR_SIZE_INFORMATION:
 	{
-		struct smb3_fs_ss_info *ss_info;
+		struct smb3_fs_ss_info *info;
 		struct cifsd_fs_sector_size fs_ss;
 
-		ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
+		info = (struct smb3_fs_ss_info *)(rsp->Buffer);
 		cifsd_vfs_smb2_sector_size(d_inode(path.dentry), &fs_ss);
 
-		ss_info->LogicalBytesPerSector =
+		info->LogicalBytesPerSector =
 				cpu_to_le32(fs_ss.logical_sector_size);
-		ss_info->PhysicalBytesPerSectorForAtomicity =
+		info->PhysicalBytesPerSectorForAtomicity =
 				cpu_to_le32(fs_ss.physical_sector_size);
-		ss_info->PhysicalBytesPerSectorForPerf =
+		info->PhysicalBytesPerSectorForPerf =
 				cpu_to_le32(fs_ss.optimal_io_size);
-		ss_info->FSEffPhysicalBytesPerSectorForAtomicity =
+		info->FSEffPhysicalBytesPerSectorForAtomicity =
 				cpu_to_le32(fs_ss.optimal_io_size);
-		ss_info->Flags =
-			cpu_to_le32(SSINFO_FLAGS_ALIGNED_DEVICE |
+		info->Flags = cpu_to_le32(SSINFO_FLAGS_ALIGNED_DEVICE |
 				    SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE);
-		ss_info->ByteOffsetForSectorAlignment = 0;
-		ss_info->ByteOffsetForPartitionAlignment = 0;
+		info->ByteOffsetForSectorAlignment = 0;
+		info->ByteOffsetForPartitionAlignment = 0;
 		rsp->OutputBufferLength = cpu_to_le32(28);
 		inc_rfc1001_len(rsp_org, 28);
 		fs_infoclass_size = FS_SECTOR_SIZE_INFORMATION_SIZE;
@@ -4651,16 +4642,15 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 		 * modify this to get valid Quota values
 		 * from Linux kernel
 		 */
-		struct smb2_fs_control_info *fs_control_info;
+		struct smb2_fs_control_info *info;
 
-		fs_control_info = (struct smb2_fs_control_info *)(rsp->Buffer);
-		fs_control_info->FreeSpaceStartFiltering = 0;
-		fs_control_info->FreeSpaceThreshold = 0;
-		fs_control_info->FreeSpaceStopFiltering = 0;
-		fs_control_info->DefaultQuotaThreshold =
-						cpu_to_le64(SMB2_NO_FID);
-		fs_control_info->DefaultQuotaLimit = cpu_to_le64(SMB2_NO_FID);
-		fs_control_info->Padding = 0;
+		info = (struct smb2_fs_control_info *)(rsp->Buffer);
+		info->FreeSpaceStartFiltering = 0;
+		info->FreeSpaceThreshold = 0;
+		info->FreeSpaceStopFiltering = 0;
+		info->DefaultQuotaThreshold = cpu_to_le64(SMB2_NO_FID);
+		info->DefaultQuotaLimit = cpu_to_le64(SMB2_NO_FID);
+		info->Padding = 0;
 		rsp->OutputBufferLength = cpu_to_le32(48);
 		inc_rfc1001_len(rsp_org, 48);
 		fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
