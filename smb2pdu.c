@@ -4465,11 +4465,14 @@ static int smb2_get_info_file(struct cifsd_work *work,
  * Return:	0 on success, otherwise error
  * TODO: need to implement STATUS_INFO_LENGTH_MISMATCH error handling
  */
-static int smb2_get_info_filesystem(struct cifsd_session *sess,
-	struct cifsd_share_config *share, struct smb2_query_info_req *req,
-	struct smb2_query_info_rsp *rsp, void *rsp_org)
+static int smb2_get_info_filesystem(struct cifsd_work *work,
+				    struct smb2_query_info_req *req,
+				    struct smb2_query_info_rsp *rsp,
+				    void *rsp_org)
 {
+	struct cifsd_session *sess = work->sess;
 	struct cifsd_conn *conn = sess->conn;
+	struct cifsd_share_config *share = work->tcon->share_conf;
 	int fsinfoclass = 0;
 	struct kstatfs stfs;
 	struct path path;
@@ -4718,7 +4721,6 @@ int smb2_query_info(struct cifsd_work *work)
 {
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp, *rsp_org;
-	struct cifsd_session *sess = work->sess;
 	int rc = 0;
 
 	req = (struct smb2_query_info_req *)REQUEST_BUF(work);
@@ -4741,8 +4743,7 @@ int smb2_query_info(struct cifsd_work *work)
 		break;
 	case SMB2_O_INFO_FILESYSTEM:
 		cifsd_debug("GOT SMB2_O_INFO_FILESYSTEM\n");
-		rc = smb2_get_info_filesystem(sess, work->tcon->share_conf,
-			req, rsp, (void *)rsp_org);
+		rc = smb2_get_info_filesystem(work, req, rsp, (void *)rsp_org);
 		break;
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
