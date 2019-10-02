@@ -35,8 +35,6 @@
 #include "mgmt/user_session.h"
 #include "mgmt/cifsd_ida.h"
 
-bool encryption_enable;
-
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	connection instance
@@ -856,7 +854,7 @@ decode_encrypt_ctxt(struct cifsd_conn *conn,
 
 	conn->cipher_type = 0;
 
-	if (!encryption_enable)
+	if (!(server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_ENCRYPTION))
 		goto out;
 
 	for (i = 0; i < cph_cnt; i++) {

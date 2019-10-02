@@ -147,8 +147,6 @@ struct smb2_pdu {
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
 } __packed;
 
-extern bool encryption_enable;
-
 #define SMB3_AES128CCM_NONCE 11
 #define SMB3_AES128GCM_NONCE 12
 

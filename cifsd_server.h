@@ -28,10 +28,11 @@ struct cifsd_heartbeat {
 /*
  * Global config flags.
  */
-#define CIFSD_GLOBAL_FLAG_INVALID	(0)
-#define CIFSD_GLOBAL_FLAG_SMB2_LEASES	(1 << 0)
-#define CIFSD_GLOBAL_FLAG_CACHE_TBUF	(1 << 1)
-#define CIFSD_GLOBAL_FLAG_CACHE_RBUF	(1 << 2)
+#define CIFSD_GLOBAL_FLAG_INVALID		(0)
+#define CIFSD_GLOBAL_FLAG_SMB2_LEASES		(1 << 0)
+#define CIFSD_GLOBAL_FLAG_CACHE_TBUF		(1 << 1)
+#define CIFSD_GLOBAL_FLAG_CACHE_RBUF		(1 << 2)
+#define CIFSD_GLOBAL_FLAG_SMB2_ENCRYPTION	(1 << 3)
 
 struct cifsd_startup_request {
 	__u32	flags;
