@@ -6059,6 +6059,7 @@ int smb2_cancel(struct cifsd_work *work)
 
 	if (canceled) {
 		cancel_work->state_cancelled = true;
+		cancel_work->state_closed = false;
 		if (cancel_work->cancel_fn)
 			cancel_work->cancel_fn(cancel_work->cancel_argv);
 	}
