@@ -263,10 +263,8 @@ void init_smb3_0_server(struct cifsd_conn *conn)
 	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
-	if (multi_channel_enable)
-		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
-
-	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_ENCRYPTION &&
+		conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
@@ -286,10 +284,8 @@ void init_smb3_02_server(struct cifsd_conn *conn)
 	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
 
-	if (multi_channel_enable)
-		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
-
-	if (encryption_enable && conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_ENCRYPTION &&
+		conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
 }
 
@@ -308,9 +304,6 @@ int init_smb3_11_server(struct cifsd_conn *conn)
 
 	if (server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_LEASES)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_LEASING;
-
-	if (multi_channel_enable)
-		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
 	if (conn->cipher_type)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;

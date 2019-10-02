@@ -35,9 +35,6 @@
 #include "mgmt/user_session.h"
 #include "mgmt/cifsd_ida.h"
 
-bool multi_channel_enable;
-bool encryption_enable;
-
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	connection instance
@@ -850,7 +847,7 @@ static int decode_encrypt_ctxt(struct cifsd_conn *conn,
 
 	conn->cipher_type = 0;
 
-	if (!encryption_enable)
+	if (!(server_conf.flags & CIFSD_GLOBAL_FLAG_SMB2_ENCRYPTION))
 		goto out;
 
 	for (i = 0; i < cph_cnt; i++) {
@@ -1106,27 +1103,6 @@ static int match_conn_by_dialect(struct cifsd_conn *conn, void *arg)
 	return 0;
 }
 
-static struct preauth_session *get_preauth_session(struct cifsd_conn *conn,
-		uint64_t sess_id)
-{
-	struct preauth_session *p_sess;
-
-	list_for_each_entry(p_sess, &conn->preauth_sess_table, list_entry)
-		if (p_sess->sess_id == sess_id)
-			return p_sess;
-
-	p_sess = kmalloc(sizeof(struct preauth_session), GFP_KERNEL);
-	if (!p_sess)
-		return NULL;
-	p_sess->sess_id = sess_id;
-	memcpy(p_sess->Preauth_HashValue,
-		conn->preauth_info->Preauth_HashValue,
-		PREAUTH_HASHVALUE_SIZE);
-	list_add(&p_sess->list_entry, &conn->preauth_sess_table);
-
-	return p_sess;
-}
-
 /**
  * smb2_sess_setup() - handler for smb2 session setup command
  * @work:	smb work containing smb request buffer
@@ -1177,66 +1153,13 @@ int smb2_sess_setup(struct cifsd_work *work)
 			destroy_previous_session(
 					le64_to_cpu(req->PreviousSessionId));
 	} else {
-		if (multi_channel_enable &&
-			req->hdr.Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
-			sess = cifsd_session_lookup_slowpath(
+		sess = cifsd_session_lookup(conn,
 					le64_to_cpu(req->hdr.SessionId));
-			if (!(req->hdr.Flags & SMB2_FLAGS_SIGNED)) {
-				rc = -EINVAL;
-				rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-				goto out_err;
-			}
-
-			if (sess->state == SMB2_SESSION_IN_PROGRESS) {
-				rc = -EINVAL;
-				rsp->hdr.Status =
-					STATUS_REQUEST_NOT_ACCEPTED;
-				goto out_err;
-			}
-
-			if (sess->state == SMB2_SESSION_EXPIRED) {
-				rc = -EINVAL;
-				rsp->hdr.Status =
-					STATUS_NETWORK_SESSION_EXPIRED;
-				goto out_err;
-			}
-
-			if (sess->is_anonymous || sess->is_guest) {
-				rc = -EINVAL;
-				rsp->hdr.Status = STATUS_NOT_SUPPORTED;
-				goto out_err;
-			}
-
-			sess = cifsd_session_lookup(conn,
-					le64_to_cpu(req->hdr.SessionId));
-			if (!sess) {
-				rc = -EINVAL;
-				rsp->hdr.Status =
-					STATUS_REQUEST_NOT_ACCEPTED;
-				goto out_err;
-			}
-
-			if (conn->dialect >= SMB311_PROT_ID) {
-				p_sess = get_preauth_session(conn,
-					le64_to_cpu(req->hdr.SessionId));
-				if (!p_sess) {
-					rc = -EINVAL;
-					rsp->hdr.Status =
-						STATUS_INVALID_PARAMETER;
-					goto out_err;
-				}
-			}
-
-			binding_flags = true;
-		} else {
-			sess = cifsd_session_lookup(conn,
-					le64_to_cpu(req->hdr.SessionId));
-			if (!sess) {
-				rc = -ENOENT;
-				rsp->hdr.Status =
-					STATUS_USER_SESSION_DELETED;
-				goto out_err;
-			}
+		if (!sess) {
+			rc = -ENOENT;
+			rsp->hdr.Status =
+				STATUS_USER_SESSION_DELETED;
+			goto out_err;
 		}
 	}
 	work->sess = sess;
@@ -2396,7 +2319,8 @@ int smb2_open(struct cifsd_work *work)
 
 	req_op_level = req->RequestedOplockLevel;
 	memset(&d_info, 0, sizeof(struct durable_info));
-	if (durable_enable && req->CreateContextsOffset) {
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_DURABLE_HANDLE &&
+		req->CreateContextsOffset) {
 		lc = parse_lease_state(req);
 		rc = parse_durable_handle_context(work, req, lc, &d_info);
 		if (rc) {
@@ -2623,7 +2547,8 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	if (durable_enable && file_present)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_DURABLE_HANDLE &&
+		file_present)
 		file_present = cifsd_close_inode_fds(work,
 						     d_inode(path.dentry));
 
@@ -7697,18 +7622,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 			sess && sess->state == SMB2_SESSION_IN_PROGRESS) {
 		__u8 *hash_value;
 
-		if (multi_channel_enable &&
-				conn->dialect >= SMB311_PROT_ID &&
-				le32_to_cpu(req->Flags) &
-					SMB2_SESSION_REQ_FLAG_BINDING) {
-			struct preauth_session *preauth_sess;
-
-			preauth_sess = get_preauth_session(conn,
-					le64_to_cpu(req->SessionId));
-			hash_value = preauth_sess->Preauth_HashValue;
-		} else
-			hash_value = sess->Preauth_HashValue;
-
+		hash_value = sess->Preauth_HashValue;
 		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
 				hash_value);
 	}
