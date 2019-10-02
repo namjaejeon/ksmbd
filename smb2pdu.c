@@ -2329,7 +2329,8 @@ int smb2_open(struct cifsd_work *work)
 
 	req_op_level = req->RequestedOplockLevel;
 	memset(&d_info, 0, sizeof(struct durable_info));
-	if (durable_enable && req->CreateContextsOffset) {
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_DURABLE_HANDLE &&
+		req->CreateContextsOffset) {
 		lc = parse_lease_state(req);
 		rc = parse_durable_handle_context(work, req, lc, &d_info);
 		if (rc) {
@@ -2556,7 +2557,8 @@ int smb2_open(struct cifsd_work *work)
 		goto err_out;
 	}
 
-	if (durable_enable && file_present)
+	if (server_conf.flags & CIFSD_GLOBAL_FLAG_DURABLE_HANDLE &&
+		file_present)
 		file_present = cifsd_close_inode_fds(work,
 						     d_inode(path.dentry));
 
