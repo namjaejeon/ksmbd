@@ -718,8 +718,8 @@ static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 	return attr;
 }
 
-static void
-build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
+static void build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt,
+			       __le16 hash_id)
 {
 	pneg_ctxt->ContextType = SMB2_PREAUTH_INTEGRITY_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(38);
@@ -730,9 +730,8 @@ build_preauth_ctxt(struct smb2_preauth_neg_context *pneg_ctxt, __le16 hash_id)
 	pneg_ctxt->HashAlgorithms = hash_id;
 }
 
-static void
-build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
-	__le16 cipher_type)
+static void build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
+			       __le16 cipher_type)
 {
 	pneg_ctxt->ContextType = SMB2_ENCRYPTION_CAPABILITIES;
 	pneg_ctxt->DataLength = cpu_to_le16(4);
@@ -741,13 +740,12 @@ build_encrypt_ctxt(struct smb2_encryption_neg_context *pneg_ctxt,
 	pneg_ctxt->Ciphers[0] = cipher_type;
 }
 
-static void
-build_compression_ctxt(struct smb2_compression_capabilities_context *pneg_ctxt,
-	__le16 comp_algo)
+static void build_compression_ctxt(struct smb2_compression_ctx *pneg_ctxt,
+				   __le16 comp_algo)
 {
 	pneg_ctxt->ContextType = SMB2_COMPRESSION_CAPABILITIES;
 	pneg_ctxt->DataLength =
-		cpu_to_le16(sizeof(struct smb2_compression_capabilities_context)
+		cpu_to_le16(sizeof(struct smb2_compression_ctx)
 			- sizeof(struct smb2_neg_context));
 	pneg_ctxt->Reserved = cpu_to_le32(0);
 	pneg_ctxt->CompressionAlgorithmCount = cpu_to_le16(1);
@@ -812,15 +810,11 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 	if (conn->compress_algorithm) {
 		cifsd_debug("assemble SMB2_COMPRESSION_CAPABILITIES context\n");
 		/* Temporarily set to SMB3_COMPRESS_NONE */
-		build_compression_ctxt(
-			(struct smb2_compression_capabilities_context *)
-				pneg_ctxt, SMB3_COMPRESS_NONE);
+		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
+					SMB3_COMPRESS_NONE);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 +
-			sizeof(struct smb2_compression_capabilities_context));
-		pneg_ctxt +=
-			sizeof(struct smb2_compression_capabilities_context) +
-			2;
+		inc_rfc1001_len(rsp, 2 + sizeof(struct smb2_compression_ctx));
+		pneg_ctxt += sizeof(struct smb2_compression_ctx) + 2;
 	}
 
 	if (conn->posix_ext_supported) {
@@ -848,9 +842,8 @@ decode_preauth_ctxt(struct cifsd_conn *conn,
 	return err;
 }
 
-static int
-decode_encrypt_ctxt(struct cifsd_conn *conn,
-	struct smb2_encryption_neg_context *pneg_ctxt)
+static int decode_encrypt_ctxt(struct cifsd_conn *conn,
+			       struct smb2_encryption_neg_context *pneg_ctxt)
 {
 	int i;
 	int cph_cnt = le16_to_cpu(pneg_ctxt->CipherCount);
@@ -879,9 +872,8 @@ out:
 		((cph_cnt - 1) * 2);
 }
 
-static int
-decode_compress_ctxt(struct cifsd_conn *conn,
-	struct smb2_compression_capabilities_context *pneg_ctxt)
+static int decode_compress_ctxt(struct cifsd_conn *conn,
+				struct smb2_compression_ctx *pneg_ctxt)
 {
 	int algo_cnt = le16_to_cpu(pneg_ctxt->CompressionAlgorithmCount);
 
@@ -895,9 +887,8 @@ decode_compress_ctxt(struct cifsd_conn *conn,
 		((algo_cnt - 1) * 2);
 }
 
-static int
-deassemble_neg_contexts(struct cifsd_conn *conn,
-	struct smb2_negotiate_req *req)
+static int deassemble_neg_contexts(struct cifsd_conn *conn,
+				   struct smb2_negotiate_req *req)
 {
 	int i = 0, status = 0;
 	/* +4 is to account for the RFC1001 len field */
@@ -934,8 +925,8 @@ deassemble_neg_contexts(struct cifsd_conn *conn,
 				break;
 
 			ctxt_size = decode_compress_ctxt(conn,
-				(struct smb2_compression_capabilities_context *)
-				pneg_ctxt);
+						(struct smb2_compression_ctx *)
+						pneg_ctxt);
 			pneg_ctxt += DIV_ROUND_UP(ctxt_size, 8) * 8;
 		} else if (*ContextType == SMB2_NETNAME_NEGOTIATE_CONTEXT_ID) {
 			cifsd_debug("deassemble SMB2_NETNAME_NEGOTIATE_CONTEXT_ID context\n");
@@ -1844,7 +1835,7 @@ static noinline int create_smb2_pipe(struct cifsd_work *work)
 	rsp->ChangeTime = cpu_to_le64(0);
 	rsp->AllocationSize = cpu_to_le64(0);
 	rsp->EndofFile = cpu_to_le64(0);
-	rsp->FileAttributes = FILE_ATTRIBUTE_NORMAL_LE;
+	rsp->FileAttributes = ATTR_NORMAL_LE;
 	rsp->Reserved2 = 0;
 	rsp->VolatileFileId = cpu_to_le64(id);
 	rsp->PersistentFileId = 0;
@@ -2213,8 +2204,7 @@ static void smb2_update_xattrs(struct cifsd_tree_connect *tcon,
 	char *attr = NULL;
 	int rc;
 
-	fp->f_ci->m_fattr &=
-		~(FILE_ATTRIBUTE_HIDDEN_LE | FILE_ATTRIBUTE_SYSTEM_LE);
+	fp->f_ci->m_fattr &= ~(ATTR_HIDDEN_LE | ATTR_SYSTEM_LE);
 
 	/* get FileAttributes from XATTR_NAME_FILE_ATTRIBUTE */
 	if (!test_share_config_flag(tcon->share_conf,
@@ -2481,7 +2471,7 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	if (req->FileAttributes &&
-		!(req->FileAttributes & FILE_ATTRIBUTE_MASK)) {
+		!(req->FileAttributes & ATTR_MASK_LE)) {
 		cifsd_err("Invalid file attribute : 0x%x\n",
 			le32_to_cpu(req->FileAttributes));
 		rc = -EINVAL;
@@ -2600,7 +2590,7 @@ int smb2_open(struct cifsd_work *work)
 		}
 
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE &&
-			req->FileAttributes & FILE_ATTRIBUTE_NORMAL_LE) {
+			req->FileAttributes & ATTR_NORMAL_LE) {
 			rsp->hdr.Status = STATUS_NOT_A_DIRECTORY;
 			rc = -EIO;
 		}
@@ -3143,7 +3133,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		ffdinfo->FileNameLength = cpu_to_le32(conv_len);
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			ffdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			ffdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(ffdinfo->FileName, conv_name, conv_len);
 		ffdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3158,7 +3148,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fbdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fbdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fbdinfo->FileName, conv_name, conv_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3170,7 +3160,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fdinfo = (FILE_DIRECTORY_INFO *)kstat;
 		fdinfo->FileNameLength = cpu_to_le32(conv_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fdinfo->FileName, conv_name, conv_len);
 		fdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3195,7 +3185,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		dinfo->Reserved = 0;
 		dinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			dinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			dinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(dinfo->FileName, conv_name, conv_len);
 		dinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -3212,7 +3202,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = cpu_to_le16(0);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
-			fibdinfo->ExtFileAttributes |= FILE_ATTRIBUTE_HIDDEN_LE;
+			fibdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
 		memcpy(fibdinfo->FileName, conv_name, conv_len);
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
@@ -4475,11 +4465,14 @@ static int smb2_get_info_file(struct cifsd_work *work,
  * Return:	0 on success, otherwise error
  * TODO: need to implement STATUS_INFO_LENGTH_MISMATCH error handling
  */
-static int smb2_get_info_filesystem(struct cifsd_session *sess,
-	struct cifsd_share_config *share, struct smb2_query_info_req *req,
-	struct smb2_query_info_rsp *rsp, void *rsp_org)
+static int smb2_get_info_filesystem(struct cifsd_work *work,
+				    struct smb2_query_info_req *req,
+				    struct smb2_query_info_rsp *rsp,
+				    void *rsp_org)
 {
+	struct cifsd_session *sess = work->sess;
 	struct cifsd_conn *conn = sess->conn;
+	struct cifsd_share_config *share = work->tcon->share_conf;
 	int fsinfoclass = 0;
 	struct kstatfs stfs;
 	struct path path;
@@ -4503,195 +4496,175 @@ static int smb2_get_info_filesystem(struct cifsd_session *sess,
 
 	switch (fsinfoclass) {
 	case FS_DEVICE_INFORMATION:
-		{
-			FILE_SYSTEM_DEVICE_INFO *fs_info;
+	{
+		FILE_SYSTEM_DEVICE_INFO *info;
 
-			fs_info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
+		info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
 
-			fs_info->DeviceType = cpu_to_le32(stfs.f_type);
-			fs_info->DeviceCharacteristics =
-				cpu_to_le32(0x00000020);
-			rsp->OutputBufferLength = cpu_to_le32(8);
-			inc_rfc1001_len(rsp_org, 8);
-			fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
-			break;
-		}
+		info->DeviceType = cpu_to_le32(stfs.f_type);
+		info->DeviceCharacteristics = cpu_to_le32(0x00000020);
+		rsp->OutputBufferLength = cpu_to_le32(8);
+		inc_rfc1001_len(rsp_org, 8);
+		fs_infoclass_size = FS_DEVICE_INFORMATION_SIZE;
+		break;
+	}
 	case FS_ATTRIBUTE_INFORMATION:
-		{
-			FILE_SYSTEM_ATTRIBUTE_INFO *fs_info;
+	{
+		FILE_SYSTEM_ATTRIBUTE_INFO *info;
+		size_t sz;
 
-			fs_info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
-			fs_info->Attributes = cpu_to_le32(0x0001006f);
-			fs_info->MaxPathNameComponentLength =
-				cpu_to_le32(stfs.f_namelen);
-			len = smbConvertToUTF16((__le16 *)
-					fs_info->FileSystemName, "NTFS",
-					PATH_MAX, conn->local_nls, 0);
-			len = len * 2;
-			fs_info->FileSystemNameLen = cpu_to_le32(len);
-			rsp->OutputBufferLength = cpu_to_le32(sizeof
-					(FILE_SYSTEM_ATTRIBUTE_INFO) -2 + len);
-			inc_rfc1001_len(rsp_org,
-				sizeof(FILE_SYSTEM_ATTRIBUTE_INFO) - 2 + len);
-			fs_infoclass_size = FS_ATTRIBUTE_INFORMATION_SIZE;
-			break;
-		}
+		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
+		info->Attributes = cpu_to_le32(0x0001006f);
+		info->MaxPathNameComponentLength = cpu_to_le32(stfs.f_namelen);
+		len = smbConvertToUTF16((__le16 *)info->FileSystemName,
+					"NTFS", PATH_MAX, conn->local_nls, 0);
+		len = len * 2;
+		info->FileSystemNameLen = cpu_to_le32(len);
+		sz = sizeof(FILE_SYSTEM_ATTRIBUTE_INFO) - 2 + len;
+		rsp->OutputBufferLength = cpu_to_le32(sz);
+		inc_rfc1001_len(rsp_org, sz);
+		fs_infoclass_size = FS_ATTRIBUTE_INFORMATION_SIZE;
+		break;
+	}
 	case FS_VOLUME_INFORMATION:
-		{
-			FILE_SYSTEM_VOL_INFO *fsvinfo;
+	{
+		FILE_SYSTEM_VOL_INFO *info;
+		size_t sz;
 
-			fsvinfo = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
-			fsvinfo->VolumeCreationTime = 0;
-			/* Taking dummy value of serial number*/
-			fsvinfo->SerialNumber = cpu_to_le32(0xbc3ac512);
-			len = smbConvertToUTF16((__le16 *)fsvinfo->VolumeLabel,
-				share->name, PATH_MAX,
+		info = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
+		info->VolumeCreationTime = 0;
+		/* Taking dummy value of serial number*/
+		info->SerialNumber = cpu_to_le32(0xbc3ac512);
+		len = smbConvertToUTF16((__le16 *)info->VolumeLabel,
+					share->name, PATH_MAX,
 					conn->local_nls, 0);
-			len = len * 2;
-			fsvinfo->VolumeLabelSize = cpu_to_le32(len);
-			fsvinfo->Reserved = 0;
-			rsp->OutputBufferLength =
-				cpu_to_le32(sizeof(FILE_SYSTEM_VOL_INFO)
-								- 2 + len);
-			inc_rfc1001_len(rsp_org, sizeof(FILE_SYSTEM_VOL_INFO)
-								+ len - 2);
-			fs_infoclass_size = FS_VOLUME_INFORMATION_SIZE;
-			break;
-		}
+		len = len * 2;
+		info->VolumeLabelSize = cpu_to_le32(len);
+		info->Reserved = 0;
+		sz = sizeof(FILE_SYSTEM_VOL_INFO) - 2 + len;
+		rsp->OutputBufferLength = cpu_to_le32(sz);
+		inc_rfc1001_len(rsp_org, sz);
+		fs_infoclass_size = FS_VOLUME_INFORMATION_SIZE;
+		break;
+	}
 	case FS_SIZE_INFORMATION:
-		{
-			FILE_SYSTEM_INFO *fs_size_info;
-			unsigned short logical_sector_size;
+	{
+		FILE_SYSTEM_INFO *info;
+		unsigned short logical_sector_size;
 
-			fs_size_info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
-			logical_sector_size = cifsd_vfs_logical_sector_size(
-				d_inode(path.dentry));
+		info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
+		logical_sector_size =
+			cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
-			fs_size_info->TotalAllocationUnits =
-						cpu_to_le64(stfs.f_blocks);
-			fs_size_info->FreeAllocationUnits =
-						cpu_to_le64(stfs.f_bfree);
-			fs_size_info->SectorsPerAllocationUnit =
-						cpu_to_le32(stfs.f_bsize >> 9);
-			fs_size_info->BytesPerSector =
-				cpu_to_le32(logical_sector_size);
-			rsp->OutputBufferLength = cpu_to_le32(24);
-			inc_rfc1001_len(rsp_org, 24);
-			fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
-			break;
-		}
+		info->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
+		info->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
+		info->SectorsPerAllocationUnit = cpu_to_le32(stfs.f_bsize >> 9);
+		info->BytesPerSector = cpu_to_le32(logical_sector_size);
+		rsp->OutputBufferLength = cpu_to_le32(24);
+		inc_rfc1001_len(rsp_org, 24);
+		fs_infoclass_size = FS_SIZE_INFORMATION_SIZE;
+		break;
+	}
 	case FS_FULL_SIZE_INFORMATION:
-		{
-			struct smb2_fs_full_size_info *fs_fullsize_info;
-			unsigned short logical_sector_size;
+	{
+		struct smb2_fs_full_size_info *info;
+		unsigned short logical_sector_size;
 
-			fs_fullsize_info =
-				(struct smb2_fs_full_size_info *)(rsp->Buffer);
-			logical_sector_size = cifsd_vfs_logical_sector_size(
-				d_inode(path.dentry));
+		info = (struct smb2_fs_full_size_info *)(rsp->Buffer);
+		logical_sector_size =
+			cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 
-			fs_fullsize_info->TotalAllocationUnits =
-						cpu_to_le64(stfs.f_blocks);
-			fs_fullsize_info->CallerAvailableAllocationUnits =
-						cpu_to_le64(stfs.f_bavail);
-			fs_fullsize_info->ActualAvailableAllocationUnits =
-						cpu_to_le64(stfs.f_bfree);
-			fs_fullsize_info->SectorsPerAllocationUnit =
-						cpu_to_le32(stfs.f_bsize >> 9);
-			fs_fullsize_info->BytesPerSector =
-				cpu_to_le32(logical_sector_size);
-			rsp->OutputBufferLength = cpu_to_le32(32);
-			inc_rfc1001_len(rsp_org, 32);
-			fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
-			break;
-		}
+		info->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
+		info->CallerAvailableAllocationUnits =
+					cpu_to_le64(stfs.f_bavail);
+		info->ActualAvailableAllocationUnits =
+					cpu_to_le64(stfs.f_bfree);
+		info->SectorsPerAllocationUnit = cpu_to_le32(stfs.f_bsize >> 9);
+		info->BytesPerSector = cpu_to_le32(logical_sector_size);
+		rsp->OutputBufferLength = cpu_to_le32(32);
+		inc_rfc1001_len(rsp_org, 32);
+		fs_infoclass_size = FS_FULL_SIZE_INFORMATION_SIZE;
+		break;
+	}
 	case FS_OBJECT_ID_INFORMATION:
-		{
-			struct object_id_info *obj_info;
+	{
+		struct object_id_info *info;
 
-			obj_info = (struct object_id_info *)(rsp->Buffer);
+		info = (struct object_id_info *)(rsp->Buffer);
 
-			if (!user_guest(sess->user)) {
-				memcpy(obj_info->objid,
-					user_passkey(sess->user), 16);
-			} else
-				memset(obj_info->objid, 0, 16);
+		if (!user_guest(sess->user))
+			memcpy(info->objid, user_passkey(sess->user), 16);
+		else
+			memset(info->objid, 0, 16);
 
-			obj_info->extended_info.magic =
-				cpu_to_le32(EXTENDED_INFO_MAGIC);
-			obj_info->extended_info.version = cpu_to_le32(1);
-			obj_info->extended_info.release = cpu_to_le32(1);
-			obj_info->extended_info.rel_date = 0;
-			strncpy(obj_info->extended_info.version_string,
-					"1.1.0", STRING_LENGTH);
-			rsp->OutputBufferLength = cpu_to_le32(64);
-			inc_rfc1001_len(rsp_org, 64);
-			fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
-			break;
-		}
+		info->extended_info.magic = cpu_to_le32(EXTENDED_INFO_MAGIC);
+		info->extended_info.version = cpu_to_le32(1);
+		info->extended_info.release = cpu_to_le32(1);
+		info->extended_info.rel_date = 0;
+		strncpy(info->extended_info.version_string,
+			"1.1.0",
+			STRING_LENGTH);
+		rsp->OutputBufferLength = cpu_to_le32(64);
+		inc_rfc1001_len(rsp_org, 64);
+		fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
+		break;
+	}
 	case FS_SECTOR_SIZE_INFORMATION:
-		{
-			struct smb3_fs_ss_info *ss_info;
-			struct cifsd_fs_sector_size fs_ss;
+	{
+		struct smb3_fs_ss_info *info;
+		struct cifsd_fs_sector_size fs_ss;
 
-			ss_info = (struct smb3_fs_ss_info *)(rsp->Buffer);
-			cifsd_vfs_smb2_sector_size(d_inode(path.dentry),
-				&fs_ss);
+		info = (struct smb3_fs_ss_info *)(rsp->Buffer);
+		cifsd_vfs_smb2_sector_size(d_inode(path.dentry), &fs_ss);
 
-			ss_info->LogicalBytesPerSector =
+		info->LogicalBytesPerSector =
 				cpu_to_le32(fs_ss.logical_sector_size);
-			ss_info->PhysicalBytesPerSectorForAtomicity =
+		info->PhysicalBytesPerSectorForAtomicity =
 				cpu_to_le32(fs_ss.physical_sector_size);
-			ss_info->PhysicalBytesPerSectorForPerf =
+		info->PhysicalBytesPerSectorForPerf =
 				cpu_to_le32(fs_ss.optimal_io_size);
-			ss_info->FSEffPhysicalBytesPerSectorForAtomicity =
+		info->FSEffPhysicalBytesPerSectorForAtomicity =
 				cpu_to_le32(fs_ss.optimal_io_size);
-			ss_info->Flags = cpu_to_le32(
-				SSINFO_FLAGS_ALIGNED_DEVICE |
-				SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE);
-			ss_info->ByteOffsetForSectorAlignment = 0;
-			ss_info->ByteOffsetForPartitionAlignment = 0;
-			rsp->OutputBufferLength = cpu_to_le32(28);
-			inc_rfc1001_len(rsp_org, 28);
-			fs_infoclass_size = FS_SECTOR_SIZE_INFORMATION_SIZE;
-			break;
-		}
+		info->Flags = cpu_to_le32(SSINFO_FLAGS_ALIGNED_DEVICE |
+				    SSINFO_FLAGS_PARTITION_ALIGNED_ON_DEVICE);
+		info->ByteOffsetForSectorAlignment = 0;
+		info->ByteOffsetForPartitionAlignment = 0;
+		rsp->OutputBufferLength = cpu_to_le32(28);
+		inc_rfc1001_len(rsp_org, 28);
+		fs_infoclass_size = FS_SECTOR_SIZE_INFORMATION_SIZE;
+		break;
+	}
 	case FS_CONTROL_INFORMATION:
-		{
-			/*
-			 * TODO : The current implementation is based on
-			 * test result with win7(NTFS) server. It's need to
-			 * modify this to get valid Quota values
-			 * from Linux kernel
-			 */
+	{
+		/*
+		 * TODO : The current implementation is based on
+		 * test result with win7(NTFS) server. It's need to
+		 * modify this to get valid Quota values
+		 * from Linux kernel
+		 */
+		struct smb2_fs_control_info *info;
 
-			 struct smb2_fs_control_info *fs_control_info;
-
-			 fs_control_info =
-				(struct smb2_fs_control_info *)(rsp->Buffer);
-			 fs_control_info->FreeSpaceStartFiltering = 0;
-			 fs_control_info->FreeSpaceThreshold = 0;
-			 fs_control_info->FreeSpaceStopFiltering = 0;
-			 fs_control_info->DefaultQuotaThreshold =
-				cpu_to_le64(SMB2_NO_FID);
-			 fs_control_info->DefaultQuotaLimit =
-				cpu_to_le64(SMB2_NO_FID);
-			 fs_control_info->Padding = 0;
-			 rsp->OutputBufferLength = cpu_to_le32(48);
-			 inc_rfc1001_len(rsp_org, 48);
-			 fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
-
-			 break;
-		}
+		info = (struct smb2_fs_control_info *)(rsp->Buffer);
+		info->FreeSpaceStartFiltering = 0;
+		info->FreeSpaceThreshold = 0;
+		info->FreeSpaceStopFiltering = 0;
+		info->DefaultQuotaThreshold = cpu_to_le64(SMB2_NO_FID);
+		info->DefaultQuotaLimit = cpu_to_le64(SMB2_NO_FID);
+		info->Padding = 0;
+		rsp->OutputBufferLength = cpu_to_le32(48);
+		inc_rfc1001_len(rsp_org, 48);
+		fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
+		break;
+	}
 	default:
 		path_put(&path);
 		return -EOPNOTSUPP;
 	}
 	rc = buffer_check_err(le32_to_cpu(req->OutputBufferLength),
-		rsp, fs_infoclass_size);
+			      rsp,
+			      fs_infoclass_size);
 	path_put(&path);
 	return rc;
-
 }
 
 static int smb2_get_info_sec(struct cifsd_work *work,
@@ -4728,7 +4701,6 @@ int smb2_query_info(struct cifsd_work *work)
 {
 	struct smb2_query_info_req *req;
 	struct smb2_query_info_rsp *rsp, *rsp_org;
-	struct cifsd_session *sess = work->sess;
 	int rc = 0;
 
 	req = (struct smb2_query_info_req *)REQUEST_BUF(work);
@@ -4751,8 +4723,7 @@ int smb2_query_info(struct cifsd_work *work)
 		break;
 	case SMB2_O_INFO_FILESYSTEM:
 		cifsd_debug("GOT SMB2_O_INFO_FILESYSTEM\n");
-		rc = smb2_get_info_filesystem(sess, work->tcon->share_conf,
-			req, rsp, (void *)rsp_org);
+		rc = smb2_get_info_filesystem(work, req, rsp, (void *)rsp_org);
 		break;
 	case SMB2_O_INFO_SECURITY:
 		cifsd_debug("GOT SMB2_O_INFO_SECURITY\n");
@@ -7050,9 +7021,9 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		sparse = (struct file_sparse *)&req->Buffer[0];
 		if (sparse->SetSparse)
-			fp->f_ci->m_fattr |= FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
 		else
-			fp->f_ci->m_fattr &= ~FILE_ATTRIBUTE_SPARSE_FILE_LE;
+			fp->f_ci->m_fattr &= ~ATTR_SPARSE_FILE_LE;
 		cifsd_fd_put(work, fp);
 		break;
 	}

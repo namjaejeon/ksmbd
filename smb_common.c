@@ -332,7 +332,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 			}
 
 			generic_fillattr(PARENT_INODE(dir), &kstat);
-			cifsd_kstat.file_attributes = ATTR_DIRECTORY;
+			cifsd_kstat.file_attributes = ATTR_DIRECTORY_LE;
 			cifsd_kstat.kstat = &kstat;
 			rc = fn(conn, info_level, d_info, &cifsd_kstat);
 			if (rc)
