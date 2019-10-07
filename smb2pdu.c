@@ -1169,17 +1169,17 @@ int smb2_sess_setup(struct cifsd_work *work)
 			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (conn->use_spnego) {
-		rc = cifsd_decode_negTokenInit((char *)negblob,
-				le16_to_cpu(req->SecurityBufferLength), conn);
+		int sz = le16_to_cpu(req->SecurityBufferLength);
+
+		rc = cifsd_decode_negTokenInit((char *)negblob, sz, conn);
 		if (!rc) {
 			cifsd_debug("negTokenInit parse err %d\n", rc);
 			/* If failed, it might be negTokenTarg */
 			rc = cifsd_decode_negTokenTarg((char *)negblob,
-					le16_to_cpu(req->SecurityBufferLength),
-					conn);
+							sz,
+							conn);
 			if (!rc) {
-				cifsd_debug("negTokenTarg parse err %d\n",
-					rc);
+				cifsd_debug("negTokenTarg parse err %d\n", rc);
 				conn->use_spnego = false;
 			}
 			rc = 0;
