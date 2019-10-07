@@ -808,7 +808,7 @@ assemble_neg_contexts(struct cifsd_conn *conn,
 		cifsd_debug("assemble SMB2_COMPRESSION_CAPABILITIES context\n");
 		/* Temporarily set to SMB3_COMPRESS_NONE */
 		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
-					SMB3_COMPRESS_NONE);
+					conn->compress_algorithm);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
 		inc_rfc1001_len(rsp, 2 + sizeof(struct smb2_compression_ctx));
 		pneg_ctxt += sizeof(struct smb2_compression_ctx) + 2;
@@ -874,7 +874,7 @@ static int decode_compress_ctxt(struct cifsd_conn *conn,
 {
 	int algo_cnt = le16_to_cpu(pneg_ctxt->CompressionAlgorithmCount);
 
-	conn->compress_algorithm = SMB3_COMPRESS_LZ77;
+	conn->compress_algorithm = SMB3_COMPRESS_NONE;
 
 	/*
 	 * Return compression context size in request.
