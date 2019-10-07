@@ -44,7 +44,6 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
- - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile with latest Torvalds' kernel
@@ -55,7 +54,6 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_CIFSD_SMBDIRECT=y' >> .config
- - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
@@ -66,7 +64,6 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
- - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
@@ -77,7 +74,6 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_CIFSD_SMBDIRECT is not set' >> .config
- - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
@@ -88,7 +84,6 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo 'CONFIG_CIFSD_SMBDIRECT=y' >> .config
- - gcc -v
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Run xfstests testsuite

@@ -13,69 +13,77 @@ struct cifsd_conn;
 struct cifsd_session;
 struct cifsd_tree_connect;
 
+enum {
+	CIFSD_WORK_ACTIVE = 0,
+	CIFSD_WORK_CANCELLED,
+	CIFSD_WORK_CLOSED,
+};
+
 /* one of these for every pending CIFS request at the connection */
 struct cifsd_work {
 	/* Server corresponding to this mid */
-	struct cifsd_conn		*conn;
-	struct cifsd_session		*sess;
-	struct cifsd_tree_connect	*tcon;
+	struct cifsd_conn               *conn;
+	struct cifsd_session            *sess;
+	struct cifsd_tree_connect       *tcon;
 
 	/* Pointer to received SMB header */
-	char				*request_buf;
+	char                            *request_buf;
 	/* Response buffer */
-	char				*response_buf;
-	unsigned int			response_sz;
+	char                            *response_buf;
 
 	/* Read data buffer */
-	char				*aux_payload_buf;
-	/* Read data count */
-	unsigned int			aux_payload_sz;
-	/* response smb header size */
-	unsigned int			resp_hdr_sz;
+	char                            *aux_payload_buf;
 
 	/* Next cmd hdr in compound req buf*/
-	int				next_smb2_rcv_hdr_off;
+	int                             next_smb2_rcv_hdr_off;
 	/* Next cmd hdr in compound rsp buf*/
-	int				next_smb2_rsp_hdr_off;
-
-	/* Transform header buffer */
-	void				*tr_buf;
+	int                             next_smb2_rsp_hdr_off;
 
 	/*
 	 * Current Local FID assigned compound response if SMB2 CREATE
 	 * command is present in compound request
 	 */
-	unsigned int			compound_fid;
-	unsigned int			compound_pfid;
-	unsigned int			compound_sid;
+	unsigned int                    compound_fid;
+	unsigned int                    compound_pfid;
+	unsigned int                    compound_sid;
 
-	bool				state_cancelled:1;
-	bool				state_closed:1;
+	/* response smb header size */
+	unsigned int                    resp_hdr_sz;
+	unsigned int                    response_sz;
+	/* Read data count */
+	unsigned int                    aux_payload_sz;
 
+	void				*tr_buf;
+
+	unsigned char			state;
 	/* Multiple responses for one request e.g. SMB ECHO */
-	bool				multiRsp:1;
+	bool                            multiRsp:1;
 	/* No response for cancelled request */
-	bool				send_no_response:1;
+	bool                            send_no_response:1;
 	/* Request is encrypted */
-	bool				encrypted:1;
+	bool                            encrypted:1;
 	/* Is this SYNC or ASYNC cifsd_work */
-	bool				syncronous:1;
-	/* List head at conn->requests */
-	struct list_head		request_entry;
-	/* List head at conn->async_requests */
-	struct list_head		async_request_entry;
-	struct work_struct		work;
+	bool                            syncronous:1;
+	bool                            need_invalidate_rkey:1;
 
+	unsigned int                    remote_key;
 	/* cancel works */
-	int				async_id;
-	void				**cancel_argv;
-	void				(*cancel_fn)(void **argv);
-	struct list_head		fp_entry;
-	struct list_head		interim_entry;
+	int                             async_id;
+	void                            **cancel_argv;
+	void                            (*cancel_fn)(void **argv);
 
-	bool				need_invalidate_rkey;
-	unsigned int			remote_key;
+	struct work_struct              work;
+	/* List head at conn->requests */
+	struct list_head                request_entry;
+	/* List head at conn->async_requests */
+	struct list_head                async_request_entry;
+	struct list_head                fp_entry;
+	struct list_head                interim_entry;
 };
+
+#define WORK_CANCELLED(w)	((w)->state == CIFSD_WORK_CANCELLED)
+#define WORK_CLOSED(w)		((w)->state == CIFSD_WORK_CLOSED)
+#define WORK_ACTIVE(w)		((w)->state == CIFSD_WORK_ACTIVE)
 
 #define RESPONSE_BUF(w)		(void *)((w)->response_buf)
 #define RESPONSE_SZ(w)		((w)->response_sz)
