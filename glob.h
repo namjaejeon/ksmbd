@@ -18,10 +18,6 @@
 
 extern int cifsd_debugging;
 extern int cifsd_caseless_search;
-extern bool oplocks_enable;
-extern bool lease_enable;
-extern bool durable_enable;
-extern bool multi_channel_enable;
 
 #define DATA_STREAM	1
 #define DIR_STREAM	2

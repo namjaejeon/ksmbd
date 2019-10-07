@@ -16,8 +16,6 @@
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 
-bool durable_enable;
-
 static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
 

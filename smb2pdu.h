@@ -101,6 +101,7 @@
 
 #define SMB21_DEFAULT_IOSIZE	(1024 * 1024)
 #define SMB3_DEFAULT_IOSIZE	(4 * 1024 * 1024)
+#define SMB3_DEFAULT_TRANS_SIZE	(1024 * 1024)
 
 /*
  * SMB2 Header Definition
@@ -145,8 +146,6 @@ struct smb2_pdu {
 	struct smb2_hdr hdr;
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
 } __packed;
-
-extern bool encryption_enable;
 
 #define SMB3_AES128CCM_NONCE 11
 #define SMB3_AES128GCM_NONCE 12
@@ -284,13 +283,13 @@ struct smb2_encryption_neg_context {
 #define SMB3_COMPRESS_LZ77	cpu_to_le16(0x0002)
 #define SMB3_COMPRESS_LZ77_HUFF	cpu_to_le16(0x0003)
 
-struct smb2_compression_capabilities_context {
+struct smb2_compression_ctx {
 	__le16	ContextType; /* 3 */
 	__le16  DataLength;
-	__u32	Reserved;
+	__le32	Reserved;
 	__le16	CompressionAlgorithmCount;
 	__u16	Padding;
-	__u32	Reserved1;
+	__le32	Reserved1;
 	__le16	CompressionAlgorithms[1];
 } __packed;
 
@@ -438,23 +437,22 @@ struct smb2_tree_disconnect_rsp {
 	__le16 Reserved;
 } __packed;
 
-/* File Attrubutes */
-#define FILE_ATTRIBUTE_READONLY_LE		cpu_to_le32(0x00000001)
-#define FILE_ATTRIBUTE_HIDDEN_LE		cpu_to_le32(0x00000002)
-#define FILE_ATTRIBUTE_SYSTEM_LE		cpu_to_le32(0x00000004)
-#define FILE_ATTRIBUTE_DIRECTORY_LE		cpu_to_le32(0x00000010)
-#define FILE_ATTRIBUTE_ARCHIVE_LE		cpu_to_le32(0x00000020)
-#define FILE_ATTRIBUTE_NORMAL_LE		cpu_to_le32(0x00000080)
-#define FILE_ATTRIBUTE_TEMPORARY_LE		cpu_to_le32(0x00000100)
-#define FILE_ATTRIBUTE_SPARSE_FILE_LE		cpu_to_le32(0x00000200)
-#define FILE_ATTRIBUTE_REPARSE_POINT_LE		cpu_to_le32(0x00000400)
-#define FILE_ATTRIBUTE_COMPRESSED_LE		cpu_to_le32(0x00000800)
-#define FILE_ATTRIBUTE_OFFLINE_LE		cpu_to_le32(0x00001000)
-#define FILE_ATTRIBUTE_NOT_CONTENT_INDEXED_LE	cpu_to_le32(0x00002000)
-#define FILE_ATTRIBUTE_ENCRYPTED_LE		cpu_to_le32(0x00004000)
-#define FILE_ATTRIBUTE_INTEGRITY_STREAML_LE	cpu_to_le32(0x00008000)
-#define FILE_ATTRIBUTE_NO_SCRUB_DATA_LE		cpu_to_le32(0x00020000)
-#define FILE_ATTRIBUTE_MASK			cpu_to_le32(0x00007FB7)
+#define ATTR_READONLY_LE	cpu_to_le32(ATTR_READONLY)
+#define ATTR_HIDDEN_LE		cpu_to_le32(ATTR_HIDDEN)
+#define ATTR_SYSTEM_LE		cpu_to_le32(ATTR_SYSTEM)
+#define ATTR_DIRECTORY_LE	cpu_to_le32(ATTR_DIRECTORY)
+#define ATTR_ARCHIVE_LE		cpu_to_le32(ATTR_ARCHIVE)
+#define ATTR_NORMAL_LE		cpu_to_le32(ATTR_NORMAL)
+#define ATTR_TEMPORARY_LE	cpu_to_le32(ATTR_TEMPORARY)
+#define ATTR_SPARSE_FILE_LE	cpu_to_le32(ATTR_SPARSE)
+#define ATTR_REPARSE_POINT_LE	cpu_to_le32(ATTR_REPARSE)
+#define ATTR_COMPRESSED_LE	cpu_to_le32(ATTR_COMPRESSED)
+#define ATTR_OFFLINE_LE		cpu_to_le32(ATTR_OFFLINE)
+#define ATTR_NOT_CONTENT_INDEXED_LE	cpu_to_le32(ATTR_NOT_CONTENT_INDEXED)
+#define ATTR_ENCRYPTED_LE	cpu_to_le32(ATTR_ENCRYPTED)
+#define ATTR_INTEGRITY_STREAML_LE	cpu_to_le32(0x00008000)
+#define ATTR_NO_SCRUB_DATA_LE	cpu_to_le32(0x00020000)
+#define ATTR_MASK_LE		cpu_to_le32(0x00007FB7)
 
 /* Oplock levels */
 #define SMB2_OPLOCK_LEVEL_NONE		0x00
