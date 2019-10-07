@@ -1150,15 +1150,13 @@ int smb2_sess_setup(struct cifsd_work *work)
 		/* Check for previous session */
 		prev_id = le64_to_cpu(req->PreviousSessionId);
 		if (prev_id && prev_id != sess->id)
-			destroy_previous_session(
-					le64_to_cpu(req->PreviousSessionId));
+			destroy_previous_session(prev_id);
 	} else {
 		sess = cifsd_session_lookup(conn,
-					le64_to_cpu(req->hdr.SessionId));
+				le64_to_cpu(req->hdr.SessionId));
 		if (!sess) {
 			rc = -ENOENT;
-			rsp->hdr.Status =
-				STATUS_USER_SESSION_DELETED;
+			rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
 			goto out_err;
 		}
 	}
