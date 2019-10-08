@@ -1225,6 +1225,179 @@ out:
 	return rc;
 }
 
+static AUTHENTICATE_MESSAGE *user_authblob(struct cifsd_conn *conn,
+					   struct smb2_sess_setup_req *req)
+{
+	int sz;
+
+	if (conn->use_spnego && conn->mechToken)
+		return (AUTHENTICATE_MESSAGE *)conn->mechToken;
+
+	sz = le16_to_cpu(req->SecurityBufferOffset);
+	return (AUTHENTICATE_MESSAGE *)((char *)&req->hdr.ProtocolId + sz);
+}
+
+static struct cifsd_user *session_user(struct cifsd_conn *conn,
+				       struct smb2_sess_setup_req *req)
+{
+	AUTHENTICATE_MESSAGE *authblob;
+	struct cifsd_user *user;
+	char *name;
+	int sz;
+
+	authblob = user_authblob(conn, req);
+	sz = le32_to_cpu(authblob->UserName.BufferOffset);
+	name = smb_strndup_from_utf16((const char *)authblob + sz,
+				      le16_to_cpu(authblob->UserName.Length),
+				      true,
+				      conn->local_nls);
+	if (IS_ERR(name)) {
+		cifsd_err("cannot allocate memory\n");
+		return NULL;
+	}
+
+	cifsd_debug("session setup request for user %s\n", name);
+	user = cifsd_alloc_user(name);
+	kfree(name);
+	return user;
+}
+
+static int ntlm_authenticate(struct cifsd_work *work)
+{
+	struct smb2_sess_setup_req *req;
+	struct smb2_sess_setup_rsp *rsp;
+	struct cifsd_conn *conn = work->conn;
+	struct cifsd_session *sess = work->sess;
+	struct channel *chann = NULL;
+	struct cifsd_user *user;
+	int sz, rc;
+
+	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
+	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
+
+	cifsd_debug("authenticate phase\n");
+	if (conn->use_spnego) {
+		unsigned char *spnego_blob;
+		u16 spnego_blob_len;
+
+		rc = build_spnego_ntlmssp_auth_blob(&spnego_blob,
+						    &spnego_blob_len,
+						    0);
+		if (rc)
+			return -ENOMEM;
+
+		sz = le16_to_cpu(rsp->SecurityBufferOffset);
+		memcpy((char *)&rsp->hdr.ProtocolId + sz,
+			spnego_blob,
+			spnego_blob_len);
+		rsp->SecurityBufferLength = cpu_to_le16(spnego_blob_len);
+		kfree(spnego_blob);
+		inc_rfc1001_len(rsp, le16_to_cpu(rsp->SecurityBufferLength));
+	}
+
+	user = session_user(conn, req);
+	if (!user) {
+		cifsd_debug("Unknown user name or an error\n");
+		rsp->hdr.Status = STATUS_LOGON_FAILURE;
+		return -EINVAL;
+	}
+
+	if (sess->state == SMB2_SESSION_VALID) {
+		/*
+		 * Reuse session if anonymous try to connect
+		 * on reauthetication.
+		 */
+		if (cifsd_anonymous_user(user)) {
+			cifsd_free_user(user);
+			return 0;
+		}
+		cifsd_free_user(sess->user);
+	}
+
+	sess->user = user;
+	if (user_guest(sess->user)) {
+		if (conn->sign) {
+			cifsd_debug("Guest login not allowed when signing enabled\n");
+			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+			return -EACCES;
+		}
+
+		rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
+	} else {
+		AUTHENTICATE_MESSAGE *authblob;
+
+		authblob = user_authblob(conn, req);
+		sz = le16_to_cpu(req->SecurityBufferLength);
+		rc = cifsd_decode_ntlmssp_auth_blob(authblob, sz, sess);
+		if (rc) {
+			set_user_flag(sess->user, CIFSD_USER_FLAG_BAD_PASSWORD);
+			cifsd_debug("authentication failed\n");
+			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+			return -EINVAL;
+		}
+
+		/*
+		 * If session state is SMB2_SESSION_VALID, We can assume
+		 * that it is reauthentication. And the user/password
+		 * has been verified, so return it here.
+		 */
+		if (sess->state == SMB2_SESSION_VALID)
+			return 0;
+
+		if ((conn->sign || server_conf.enforced_signing) ||
+		     (req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED_LE))
+			sess->sign = true;
+
+		if (conn->vals->capabilities & SMB2_GLOBAL_CAP_ENCRYPTION &&
+				conn->ops->generate_encryptionkey) {
+			rc = conn->ops->generate_encryptionkey(sess);
+			if (rc) {
+				cifsd_debug("SMB3 encryption key generation failed\n");
+				rsp->hdr.Status = STATUS_LOGON_FAILURE;
+				return rc;
+			}
+			sess->enc = true;
+			rsp->SessionFlags = SMB2_SESSION_FLAG_ENCRYPT_DATA_LE;
+			/*
+			 * signing is disable if encryption is enable
+			 * on this session
+			 */
+			sess->sign = false;
+		}
+	}
+
+	if (conn->dialect >= SMB30_PROT_ID) {
+		chann = lookup_chann_list(sess);
+		if (!chann) {
+			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
+			if (!chann)
+				return -ENOMEM;
+
+			chann->conn = conn;
+			INIT_LIST_HEAD(&chann->chann_list);
+			list_add(&chann->chann_list, &sess->cifsd_chann_list);
+		}
+	}
+
+	if (conn->ops->generate_signingkey) {
+		rc = conn->ops->generate_signingkey(sess);
+		if (rc) {
+			cifsd_debug("SMB3 signing key generation failed\n");
+			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+			return rc;
+		}
+	}
+
+	if (conn->dialect > SMB20_PROT_ID) {
+		if (cifsd_tcp_for_each_conn(match_conn_by_dialect, conn)) {
+			cifsd_err("fail to verify the dialect\n");
+			rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
+			return -EPERM;
+		}
+	}
+	return 0;
+}
+
 int smb2_sess_setup(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -1232,10 +1405,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	struct smb2_sess_setup_rsp *rsp;
 	struct cifsd_session *sess;
 	NEGOTIATE_MESSAGE *negblob;
-	struct channel *chann = NULL;
 	int rc = 0;
-	unsigned char *spnego_blob;
-	u16 spnego_blob_len;
 
 	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
@@ -1303,163 +1473,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 				le16_to_cpu(rsp->SecurityBufferLength) - 1);
 
 	} else if (negblob->MessageType == NtLmAuthenticate) {
-		AUTHENTICATE_MESSAGE *authblob;
-		char *username;
-		struct cifsd_user *user;
-
-		cifsd_debug("authenticate phase\n");
-		if (conn->use_spnego) {
-			if (build_spnego_ntlmssp_auth_blob(&spnego_blob,
-					&spnego_blob_len, 0)) {
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			memcpy((char *)&rsp->hdr.ProtocolId +
-				le16_to_cpu(rsp->SecurityBufferOffset),
-				spnego_blob, spnego_blob_len);
-			rsp->SecurityBufferLength =
-				cpu_to_le16(spnego_blob_len);
-			kfree(spnego_blob);
-			inc_rfc1001_len(rsp,
-				le16_to_cpu(rsp->SecurityBufferLength));
-		}
-
-		if (conn->use_spnego && conn->mechToken)
-			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
-		else
-			authblob = (AUTHENTICATE_MESSAGE *)
-				((char *)&req->hdr.ProtocolId +
-				 le16_to_cpu(req->SecurityBufferOffset));
-
-		username = smb_strndup_from_utf16((const char *)authblob +
-				le32_to_cpu(authblob->UserName.BufferOffset),
-				le16_to_cpu(authblob->UserName.Length), true,
-				conn->local_nls);
-
-		if (IS_ERR(username)) {
-			cifsd_err("cannot allocate memory\n");
-			rc = PTR_ERR(username);
-			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+		rc = ntlm_authenticate(work);
+		if (rc)
 			goto out_err;
-		}
-
-		cifsd_debug("session setup request for user %s\n", username);
-		user = cifsd_alloc_user(username);
-		kfree(username);
-		if (!user) {
-			cifsd_debug("Unknown user name or an error\n");
-			rc = -EINVAL;
-			rsp->hdr.Status = STATUS_LOGON_FAILURE;
-			goto out_err;
-		}
-
-		if (sess->state == SMB2_SESSION_VALID) {
-			/*
-			 * Reuse session if anonymous try to connect
-			 * on reauthetication.
-			 */
-			if (cifsd_anonymous_user(user)) {
-				cifsd_free_user(user);
-				return 0;
-			}
-			cifsd_free_user(sess->user);
-		}
-
-		sess->user = user;
-		if (user_guest(sess->user)) {
-			if (conn->sign) {
-				cifsd_debug("Guest login not allowed when signing enabled\n");
-				rc = -EACCES;
-				rsp->hdr.Status = STATUS_LOGON_FAILURE;
-				goto out_err;
-			}
-
-			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
-		} else {
-			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
-				le16_to_cpu(req->SecurityBufferLength),
-				sess);
-			if (rc) {
-				set_user_flag(sess->user,
-					      CIFSD_USER_FLAG_BAD_PASSWORD);
-				cifsd_debug("authentication failed\n");
-				rc = -EINVAL;
-				rsp->hdr.Status = STATUS_LOGON_FAILURE;
-				goto out_err;
-			}
-
-			/*
-			 * If session state is SMB2_SESSION_VALID, We can assume
-			 * that it is reauthentication. And the user/password
-			 * has been verified, so return it here.
-			 */
-			if (sess->state == SMB2_SESSION_VALID)
-				return 0;
-
-			if ((conn->sign || server_conf.enforced_signing) ||
-			     (req->SecurityMode &
-			      SMB2_NEGOTIATE_SIGNING_REQUIRED_LE))
-				sess->sign = true;
-
-			if (conn->vals->capabilities &
-					SMB2_GLOBAL_CAP_ENCRYPTION &&
-					conn->ops->generate_encryptionkey) {
-				rc = conn->ops->generate_encryptionkey(sess);
-				if (rc) {
-					cifsd_debug("SMB3 encryption key generation failed\n");
-					rsp->hdr.Status =
-						STATUS_LOGON_FAILURE;
-					goto out_err;
-				}
-				sess->enc = true;
-				rsp->SessionFlags =
-					SMB2_SESSION_FLAG_ENCRYPT_DATA_LE;
-				/*
-				 * signing is disable if encryption is enable
-				 * on this session
-				 */
-				sess->sign = false;
-			}
-		}
-
-		if (conn->dialect >= SMB30_PROT_ID) {
-			chann = lookup_chann_list(sess);
-			if (!chann) {
-				chann = kmalloc(sizeof(struct channel),
-					GFP_KERNEL);
-				if (!chann) {
-					rc = -ENOMEM;
-					goto out_err;
-				}
-
-				chann->conn = conn;
-				INIT_LIST_HEAD(&chann->chann_list);
-				list_add(&chann->chann_list,
-					&sess->cifsd_chann_list);
-			}
-		}
-
-		if (conn->ops->generate_signingkey) {
-			rc = conn->ops->generate_signingkey(sess);
-			if (rc) {
-				cifsd_debug("SMB3 signing key generation failed\n");
-				rsp->hdr.Status =
-					STATUS_LOGON_FAILURE;
-				goto out_err;
-			}
-		}
-
-		if (conn->dialect > SMB20_PROT_ID)
-			if (cifsd_tcp_for_each_conn(match_conn_by_dialect,
-				conn)) {
-				cifsd_err("fail to verify the dialect\n");
-
-				rc = -EPERM;
-				rsp->hdr.Status =
-					STATUS_USER_SESSION_DELETED;
-				goto out_err;
-			}
 
 		cifsd_conn_set_good(work);
 		sess->state = SMB2_SESSION_VALID;
