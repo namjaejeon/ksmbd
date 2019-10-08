@@ -389,7 +389,7 @@ script:
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl2
  - sudo rm -rf /mnt/test3/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii500
  - sudo rm -rf /mnt/test3/*
