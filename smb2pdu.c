@@ -1159,6 +1159,72 @@ static int decode_negotiation_token(struct cifsd_work *work,
 	return 0;
 }
 
+static int ntlm_negotiate(struct cifsd_work *work,
+			  NEGOTIATE_MESSAGE *negblob)
+{
+	struct smb2_sess_setup_req *req;
+	struct smb2_sess_setup_rsp *rsp;
+	CHALLENGE_MESSAGE *chgblob;
+	unsigned char *spnego_blob;
+	u16 spnego_blob_len;
+	char *neg_blob;
+	int sz, rc;
+
+	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
+	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
+
+	cifsd_debug("negotiate phase\n");
+	sz = le16_to_cpu(req->SecurityBufferLength);
+	rc = cifsd_decode_ntlmssp_neg_blob(negblob, sz, work->sess);
+	if (rc)
+		return rc;
+
+	sz = le16_to_cpu(rsp->SecurityBufferOffset);
+	chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId + sz);
+	memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
+
+	if (!work->conn->use_spnego) {
+		sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
+		if (sz < 0)
+			return -ENOMEM;
+
+		rsp->SecurityBufferLength = cpu_to_le16(sz);
+		return 0;
+	}
+
+	sz = sizeof(struct _NEGOTIATE_MESSAGE);
+	sz += (strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
+
+	neg_blob = kzalloc(sz, GFP_KERNEL);
+	if (!neg_blob)
+		return -ENOMEM;
+
+	chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+	sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
+	if (sz < 0) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	rc = build_spnego_ntlmssp_neg_blob(&spnego_blob,
+					  &spnego_blob_len,
+					  neg_blob,
+					  sz);
+	if (rc) {
+		rc = -ENOMEM;
+		goto out;
+	}
+
+	sz = le16_to_cpu(rsp->SecurityBufferOffset);
+	memcpy((char *)&rsp->hdr.ProtocolId + sz, spnego_blob, spnego_blob_len);
+	rsp->SecurityBufferLength = cpu_to_le16(spnego_blob_len);
+
+out:
+	kfree(spnego_blob);
+	kfree(neg_blob);
+	return rc;
+}
+
 int smb2_sess_setup(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -1170,8 +1236,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 	int rc = 0;
 	unsigned char *spnego_blob;
 	u16 spnego_blob_len;
-	char *neg_blob;
-	int neg_blob_len;
 
 	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
@@ -1226,72 +1290,18 @@ int smb2_sess_setup(struct cifsd_work *work)
 		goto out_err;
 
 	if (negblob->MessageType == NtLmNegotiate) {
-		CHALLENGE_MESSAGE *chgblob;
-
-		cifsd_debug("negotiate phase\n");
-		rc = cifsd_decode_ntlmssp_neg_blob(negblob,
-			le16_to_cpu(req->SecurityBufferLength),
-			sess);
+		rc = ntlm_negotiate(work, negblob);
 		if (rc)
 			goto out_err;
 
-		chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId +
-				le16_to_cpu(rsp->SecurityBufferOffset));
-		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
-
-		if (conn->use_spnego) {
-			int sz;
-
-			sz = sizeof(struct _NEGOTIATE_MESSAGE) +
-				(strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
-			neg_blob = kzalloc(sz, GFP_KERNEL);
-			if (!neg_blob) {
-				rc = -ENOMEM;
-				goto out_err;
-			}
-			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
-			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
-					chgblob,
-					sess);
-			if (neg_blob_len < 0) {
-				kfree(neg_blob);
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			if (build_spnego_ntlmssp_neg_blob(&spnego_blob,
-						&spnego_blob_len,
-						neg_blob, neg_blob_len)) {
-				kfree(neg_blob);
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			memcpy((char *)&rsp->hdr.ProtocolId +
-					le16_to_cpu(rsp->SecurityBufferOffset),
-					spnego_blob, spnego_blob_len);
-			rsp->SecurityBufferLength =
-				cpu_to_le16(spnego_blob_len);
-			kfree(spnego_blob);
-			kfree(neg_blob);
-		} else {
-			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
-					chgblob,
-					sess);
-			if (neg_blob_len < 0) {
-				rc = -ENOMEM;
-				goto out_err;
-			}
-
-			rsp->SecurityBufferLength = cpu_to_le16(neg_blob_len);
-		}
-
 		rsp->hdr.Status = STATUS_MORE_PROCESSING_REQUIRED;
-		/* Note: here total size -1 is done as
-		 * an adjustment for 0 size blob
+		/*
+		 * Note: here total size -1 is done as an adjustment for
+		 * 0 size blob
 		 */
-		inc_rfc1001_len(rsp, le16_to_cpu(rsp->SecurityBufferLength)
-			- 1);
+		inc_rfc1001_len(rsp,
+				le16_to_cpu(rsp->SecurityBufferLength) - 1);
+
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		AUTHENTICATE_MESSAGE *authblob;
 		char *username;
