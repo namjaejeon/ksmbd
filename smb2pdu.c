@@ -1122,7 +1122,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int neg_blob_len;
-	struct preauth_session *p_sess = NULL;
 	bool binding_flags = false;
 
 	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
@@ -1192,25 +1191,21 @@ int smb2_sess_setup(struct cifsd_work *work)
 	if (conn->dialect == SMB311_PROT_ID) {
 		__u8 *preauth_hashvalue;
 
-		if (p_sess)
-			preauth_hashvalue = p_sess->Preauth_HashValue;
-		else {
-			if (negblob->MessageType == NtLmNegotiate) {
+		if (negblob->MessageType == NtLmNegotiate) {
+			if (!sess->Preauth_HashValue) {
+				sess->Preauth_HashValue =
+					kmalloc(PREAUTH_HASHVALUE_SIZE,
+					GFP_KERNEL);
 				if (!sess->Preauth_HashValue) {
-					sess->Preauth_HashValue =
-						kmalloc(PREAUTH_HASHVALUE_SIZE,
-						GFP_KERNEL);
-					if (!sess->Preauth_HashValue) {
-						rc = -ENOMEM;
-						goto out_err;
-					}
+					rc = -ENOMEM;
+					goto out_err;
 				}
-				memcpy(sess->Preauth_HashValue,
-					conn->preauth_info->Preauth_HashValue,
-					PREAUTH_HASHVALUE_SIZE);
 			}
-			preauth_hashvalue = sess->Preauth_HashValue;
+			memcpy(sess->Preauth_HashValue,
+				conn->preauth_info->Preauth_HashValue,
+				PREAUTH_HASHVALUE_SIZE);
 		}
+		preauth_hashvalue = sess->Preauth_HashValue;
 		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
 			preauth_hashvalue);
 	}
@@ -1423,9 +1418,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 		}
 
 		if (conn->ops->generate_signingkey) {
-			rc = conn->ops->generate_signingkey(
-					sess, binding_flags,
-					p_sess->Preauth_HashValue);
+			rc = conn->ops->generate_signingkey(sess,
+						binding_flags,
+						sess->Preauth_HashValue);
 			if (rc) {
 				cifsd_debug("SMB3 signing key generation failed\n");
 				rsp->hdr.Status =
