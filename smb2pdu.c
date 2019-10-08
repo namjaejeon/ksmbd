@@ -1366,7 +1366,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 
 			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
-			sess->is_guest = true;
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBufferLength),
@@ -1388,10 +1387,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 			if (sess->state == SMB2_SESSION_VALID)
 				return 0;
 
-			if (!sess->sign && sess->is_guest == false &&
-				((req->SecurityMode &
-				SMB2_NEGOTIATE_SIGNING_REQUIRED_LE) ||
-				(conn->sign || server_conf.enforced_signing)))
+			if ((conn->sign || server_conf.enforced_signing) ||
+			     (req->SecurityMode &
+			      SMB2_NEGOTIATE_SIGNING_REQUIRED_LE))
 				sess->sign = true;
 
 			if (conn->vals->capabilities &

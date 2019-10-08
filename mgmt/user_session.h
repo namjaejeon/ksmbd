@@ -42,7 +42,6 @@ struct cifsd_session {
 	bool				sign;
 	bool				enc;
 	bool				is_anonymous;
-	bool				is_guest;
 
 	int				state;
 	__u8				*Preauth_HashValue;
