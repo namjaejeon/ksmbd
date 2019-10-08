@@ -1122,7 +1122,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int neg_blob_len;
-	bool binding_flags = false;
 
 	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
@@ -1418,9 +1417,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		}
 
 		if (conn->ops->generate_signingkey) {
-			rc = conn->ops->generate_signingkey(sess,
-						binding_flags,
-						sess->Preauth_HashValue);
+			rc = conn->ops->generate_signingkey(sess);
 			if (rc) {
 				cifsd_debug("SMB3 signing key generation failed\n");
 				rsp->hdr.Status =
