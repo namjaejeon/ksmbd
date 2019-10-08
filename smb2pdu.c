@@ -1103,12 +1103,62 @@ static int match_conn_by_dialect(struct cifsd_conn *conn, void *arg)
 	return 0;
 }
 
-/**
- * smb2_sess_setup() - handler for smb2 session setup command
- * @work:	smb work containing smb request buffer
- *
- * Return:      0 on success, otherwise error
- */
+static int alloc_preauth_hash(struct cifsd_session *sess,
+			      struct cifsd_conn *conn)
+{
+	if (sess->Preauth_HashValue)
+		return 0;
+
+	sess->Preauth_HashValue = cifsd_alloc(PREAUTH_HASHVALUE_SIZE);
+	if (!sess->Preauth_HashValue)
+		return -ENOMEM;
+
+	memcpy(sess->Preauth_HashValue,
+	       conn->preauth_info->Preauth_HashValue,
+	       PREAUTH_HASHVALUE_SIZE);
+	return 0;
+}
+
+static int generate_preauth_hash(struct cifsd_work *work,
+				 NEGOTIATE_MESSAGE *negblob)
+{
+	struct cifsd_conn *conn = work->conn;
+	struct cifsd_session *sess = work->sess;
+
+	if (conn->dialect != SMB311_PROT_ID)
+		return 0;
+
+	if (negblob->MessageType == NtLmNegotiate) {
+		if (alloc_preauth_hash(sess, conn))
+			return -ENOMEM;
+	}
+
+	cifsd_gen_preauth_integrity_hash(conn,
+					 REQUEST_BUF(work),
+					 sess->Preauth_HashValue);
+	return 0;
+}
+
+static int decode_negotiation_token(struct cifsd_work *work,
+				    NEGOTIATE_MESSAGE *negblob)
+{
+	struct cifsd_conn *conn = work->conn;
+	struct smb2_sess_setup_req *req;
+	int sz;
+
+	if (!conn->use_spnego)
+		return -EINVAL;
+
+	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
+	sz = le16_to_cpu(req->SecurityBufferLength);
+
+	if (!cifsd_decode_negTokenInit((char *)negblob, sz, conn)) {
+		if (!cifsd_decode_negTokenTarg((char *)negblob, sz, conn))
+			conn->use_spnego = false;
+	}
+	return 0;
+}
+
 int smb2_sess_setup(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -1122,8 +1172,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int neg_blob_len;
-	struct preauth_session *p_sess = NULL;
-	bool binding_flags = false;
 
 	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
 	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
@@ -1150,15 +1198,13 @@ int smb2_sess_setup(struct cifsd_work *work)
 		/* Check for previous session */
 		prev_id = le64_to_cpu(req->PreviousSessionId);
 		if (prev_id && prev_id != sess->id)
-			destroy_previous_session(
-					le64_to_cpu(req->PreviousSessionId));
+			destroy_previous_session(prev_id);
 	} else {
 		sess = cifsd_session_lookup(conn,
-					le64_to_cpu(req->hdr.SessionId));
+				le64_to_cpu(req->hdr.SessionId));
 		if (!sess) {
 			rc = -ENOENT;
-			rsp->hdr.Status =
-				STATUS_USER_SESSION_DELETED;
+			rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
 			goto out_err;
 		}
 	}
@@ -1170,52 +1216,14 @@ int smb2_sess_setup(struct cifsd_work *work)
 	negblob = (NEGOTIATE_MESSAGE *)((char *)&req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
 
-	if (conn->use_spnego) {
-		rc = cifsd_decode_negTokenInit((char *)negblob,
-				le16_to_cpu(req->SecurityBufferLength), conn);
-		if (!rc) {
-			cifsd_debug("negTokenInit parse err %d\n", rc);
-			/* If failed, it might be negTokenTarg */
-			rc = cifsd_decode_negTokenTarg((char *)negblob,
-					le16_to_cpu(req->SecurityBufferLength),
-					conn);
-			if (!rc) {
-				cifsd_debug("negTokenTarg parse err %d\n",
-					rc);
-				conn->use_spnego = false;
-			}
-			rc = 0;
-		}
-
+	if (decode_negotiation_token(work, negblob) == 0) {
 		if (conn->mechToken)
 			negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
 	}
 
-	if (conn->dialect == SMB311_PROT_ID) {
-		__u8 *preauth_hashvalue;
-
-		if (p_sess)
-			preauth_hashvalue = p_sess->Preauth_HashValue;
-		else {
-			if (negblob->MessageType == NtLmNegotiate) {
-				if (!sess->Preauth_HashValue) {
-					sess->Preauth_HashValue =
-						kmalloc(PREAUTH_HASHVALUE_SIZE,
-						GFP_KERNEL);
-					if (!sess->Preauth_HashValue) {
-						rc = -ENOMEM;
-						goto out_err;
-					}
-				}
-				memcpy(sess->Preauth_HashValue,
-					conn->preauth_info->Preauth_HashValue,
-					PREAUTH_HASHVALUE_SIZE);
-			}
-			preauth_hashvalue = sess->Preauth_HashValue;
-		}
-		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
-			preauth_hashvalue);
-	}
+	rc = generate_preauth_hash(work, negblob);
+	if (rc)
+		goto out_err;
 
 	if (negblob->MessageType == NtLmNegotiate) {
 		CHALLENGE_MESSAGE *chgblob;
@@ -1358,7 +1366,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 			}
 
 			rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
-			sess->is_guest = true;
 		} else {
 			rc = cifsd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBufferLength),
@@ -1380,10 +1387,9 @@ int smb2_sess_setup(struct cifsd_work *work)
 			if (sess->state == SMB2_SESSION_VALID)
 				return 0;
 
-			if (!sess->sign && sess->is_guest == false &&
-				((req->SecurityMode &
-				SMB2_NEGOTIATE_SIGNING_REQUIRED_LE) ||
-				(conn->sign || server_conf.enforced_signing)))
+			if ((conn->sign || server_conf.enforced_signing) ||
+			     (req->SecurityMode &
+			      SMB2_NEGOTIATE_SIGNING_REQUIRED_LE))
 				sess->sign = true;
 
 			if (conn->vals->capabilities &
@@ -1425,9 +1431,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 		}
 
 		if (conn->ops->generate_signingkey) {
-			rc = conn->ops->generate_signingkey(
-					sess, binding_flags,
-					p_sess->Preauth_HashValue);
+			rc = conn->ops->generate_signingkey(sess);
 			if (rc) {
 				cifsd_debug("SMB3 signing key generation failed\n");
 				rsp->hdr.Status =
@@ -1449,7 +1453,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 
 		cifsd_conn_set_good(work);
 		sess->state = SMB2_SESSION_VALID;
-		kfree(sess->Preauth_HashValue);
+		cifsd_free(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
 	} else {
 		cifsd_err("Invalid phase\n");
