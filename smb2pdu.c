@@ -1106,15 +1106,16 @@ static int match_conn_by_dialect(struct cifsd_conn *conn, void *arg)
 static int alloc_preauth_hash(struct cifsd_session *sess,
 			      struct cifsd_conn *conn)
 {
-	if (!sess->Preauth_HashValue) {
-		sess->Preauth_HashValue = cifsd_alloc(PREAUTH_HASHVALUE_SIZE);
-		if (!sess->Preauth_HashValue)
-			return -ENOMEM;
+	if (sess->Preauth_HashValue)
+		return 0;
 
-		memcpy(sess->Preauth_HashValue,
-		       conn->preauth_info->Preauth_HashValue,
-		       PREAUTH_HASHVALUE_SIZE);
-	}
+	sess->Preauth_HashValue = cifsd_alloc(PREAUTH_HASHVALUE_SIZE);
+	if (!sess->Preauth_HashValue)
+		return -ENOMEM;
+
+	memcpy(sess->Preauth_HashValue,
+	       conn->preauth_info->Preauth_HashValue,
+	       PREAUTH_HASHVALUE_SIZE);
 	return 0;
 }
 
