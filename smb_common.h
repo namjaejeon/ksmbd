@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
@@ -97,8 +97,7 @@ struct smb_version_ops {
 	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
 	int (*check_sign_req)(struct cifsd_work *work);
 	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*generate_signingkey)(struct cifsd_session *sess, bool binding,
-		char *hash_value);
+	int (*generate_signingkey)(struct cifsd_session *sess);
 	int (*generate_encryptionkey)(struct cifsd_session *sess);
 	int (*is_transform_hdr)(void *buf);
 	int (*decrypt_req)(struct cifsd_work *work);

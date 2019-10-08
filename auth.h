@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
@@ -59,12 +59,8 @@ int cifsd_sign_smb3_pdu(struct cifsd_conn *conn,
 			int n_vec,
 			char *sig);
 
-int cifsd_gen_smb30_signingkey(struct cifsd_session *sess,
-			       bool binding,
-			       char *hash_value);
-int cifsd_gen_smb311_signingkey(struct cifsd_session *sess,
-				bool binding,
-				char *hash_value);
+int cifsd_gen_smb30_signingkey(struct cifsd_session *sess);
+int cifsd_gen_smb311_signingkey(struct cifsd_session *sess);
 int cifsd_gen_smb30_encryptionkey(struct cifsd_session *sess);
 int cifsd_gen_smb311_encryptionkey(struct cifsd_session *sess);
 

@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Some of the source code in this file came from fs/cifs/uniupr.h
  *   Copyright (c) International Business Machines  Corp., 2000,2002
  *
  * uniupr.h - Unicode compressed case ranges
  *
-*/
+ */
 #ifndef __CIFSD_UNIUPR_H
 #define __CIFSD_UNIUPR_H
 

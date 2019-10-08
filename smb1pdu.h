@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
@@ -28,7 +28,7 @@
 #define CIFS_SMB1_SIGNATURE_SIZE	8
 #define CIFS_SMB1_SESSKEY_SIZE		16
 
-#define SMB1_SERVER_CAPS 					\
+#define SMB1_SERVER_CAPS					\
 	(CAP_UNICODE | CAP_LARGE_FILES | CAP_EXTENDED_SECURITY |\
 	 CAP_NT_SMBS | CAP_STATUS32 | CAP_LOCK_AND_READ |	\
 	 CAP_NT_FIND | CAP_UNIX | CAP_LARGE_READ_X |		\
@@ -90,9 +90,11 @@
 #define SMBFLG_EXTD_LOCK 0x01   /* server supports lock-read write-unlock smb */
 #define SMBFLG_RCV_POSTED 0x02  /* obsolete */
 #define SMBFLG_RSVD 0x04
-#define SMBFLG_CASELESS 0x08    /* all pathnames treated as caseless (off
-				   implies case sensitive file handling
-				   request) */
+#define SMBFLG_CASELESS 0x08    /*
+				 * all pathnames treated as caseless (off
+				 * implies case sensitive file handling
+				 * request)
+				 */
 #define SMBFLG_CANONICAL_PATH_FORMAT 0x10       /* obsolete */
 #define SMBFLG_OLD_OPLOCK 0x20  /* obsolete */
 #define SMBFLG_OLD_OPLOCK_NOTIFY 0x40   /* obsolete */
@@ -101,8 +103,10 @@
 /*
  * SMB flag2 definitions
  */
-#define SMBFLG2_KNOWS_LONG_NAMES cpu_to_le16(1) /* can send long (non-8.3)
-						   path names in response */
+#define SMBFLG2_KNOWS_LONG_NAMES cpu_to_le16(1) /*
+						 * can send long (non-8.3)
+						 * path names in response
+						 */
 #define SMBFLG2_KNOWS_EAS cpu_to_le16(2)
 #define SMBFLG2_SECURITY_SIGNATURE cpu_to_le16(4)
 #define SMBFLG2_COMPRESSED (8)
@@ -256,8 +260,10 @@ typedef struct smb_com_write_req {
 	__le16 DataOffset;
 	__le32 OffsetHigh;
 	__le16 ByteCount;
-	__u8 Pad;		/* BB check for whether padded to DWORD
-				   boundary and optimum performance here */
+	__u8 Pad;		/*
+				 * BB check for whether padded to DWORD
+				 * boundary and optimum performance here
+				 */
 	char Data[0];
 } __attribute__((packed)) WRITE_REQ;
 
@@ -361,8 +367,10 @@ struct smb_com_session_setup_req {	/* request format */
 	unsigned char SecurityBlob[1];	/* followed by */
 	/* STRING NativeOS */
 	/* STRING NativeLanMan */
-} __attribute__((packed));	/* NTLM request format (with
-				   extended security */
+} __attribute__((packed));	/*
+				 * NTLM request format (with
+				 * extended security
+				 */
 
 struct smb_com_session_setup_req_no_secext {	/* request format */
 	struct smb_hdr hdr;	/* we will handle this :: wct = 13 */
@@ -399,8 +407,10 @@ struct smb_com_session_setup_resp {	/* default (NTLM) response format */
 	/*      unsigned char  * NativeOS;      */
 	/*      unsigned char  * NativeLanMan;  */
 	/*      unsigned char  * PrimaryDomain; */
-} __attribute__((packed));	/* NTLM response
-				(with or without extended sec) */
+} __attribute__((packed));	/*
+				 * NTLM response
+				 * (with or without extended sec)
+				 */
 
 struct smb_com_session_setup_old_resp { /* default (NTLM) response format */
 	struct smb_hdr hdr;	/* wct = 3 */
@@ -515,8 +525,10 @@ typedef struct smb_com_lock_rsp {
 #define TCON_EXTENDED_SECINFO   0x0008
 
 /* OptionalSupport bits */
-#define SMB_SUPPORT_SEARCH_BITS 0x0001  /* "must have" directory search bits
-					   (exclusive searches supported) */
+#define SMB_SUPPORT_SEARCH_BITS 0x0001  /*
+					 * "must have" directory search bits
+					 * (exclusive searches supported)
+					 */
 #define SMB_SHARE_IS_IN_DFS     0x0002
 #define SMB_CSC_MASK               0x000C
 /* CSC flags defined as follows */
@@ -711,8 +723,10 @@ typedef struct smb_com_open_req {       /* also handles create */
 #define ATTR_SPARSE    0x0200
 #define ATTR_REPARSE   0x0400
 #define ATTR_COMPRESSED 0x0800
-#define ATTR_OFFLINE    0x1000  /* ie file not immediately available -
-				   on offline storage */
+#define ATTR_OFFLINE    0x1000  /*
+				 * ie file not immediately available -
+				 * on offline storage
+				 */
 
 #define ATTR_NOT_CONTENT_INDEXED 0x2000
 #define ATTR_ENCRYPTED  0x4000
@@ -910,11 +924,13 @@ typedef struct smb_com_trans_rsp {
 #define SMB_QUERY_POSIX_FS_INFO     0x201
 #define SMB_QUERY_POSIX_WHO_AM_I    0x202
 #define SMB_REQUEST_TRANSPORT_ENCRYPTION 0x203
-#define SMB_QUERY_FS_PROXY          0x204 /* WAFS enabled. Returns structure
-					     FILE_SYSTEM__UNIX_INFO to tell
-					     whether new NTIOCTL available
-					     (0xACE) for WAN friendly SMB
-					     operations to be carried */
+#define SMB_QUERY_FS_PROXY          0x204 /*
+					   * WAFS enabled. Returns structure
+					   * FILE_SYSTEM__UNIX_INFO to tell
+					   * whether new NTIOCTL available
+					   * (0xACE) for WAN friendly SMB
+					   * operations to be carried
+					   */
 #define SMB_QUERY_LABEL_INFO        0x3ea
 #define SMB_QUERY_FS_QUOTA_INFO     0x3ee
 #define SMB_QUERY_FS_FULL_SIZE_INFO 0x3ef
@@ -1408,16 +1424,22 @@ typedef struct {
 #define CIFS_UNIX_XATTR_CAP             0x00000004 /* support new namespace   */
 #define CIFS_UNIX_EXTATTR_CAP           0x00000008 /* support chattr/chflag   */
 #define CIFS_UNIX_POSIX_PATHNAMES_CAP   0x00000010 /* Allow POSIX path chars  */
-#define CIFS_UNIX_POSIX_PATH_OPS_CAP    0x00000020 /* Allow new POSIX path based
-						      calls including posix open
-						      and posix unlink */
-#define CIFS_UNIX_LARGE_READ_CAP        0x00000040 /* support reads >128K (up
-						      to 0xFFFF00 */
+#define CIFS_UNIX_POSIX_PATH_OPS_CAP    0x00000020 /*
+						    * Allow new POSIX path based
+						    * calls including posix open
+						    * and posix unlink
+						    */
+#define CIFS_UNIX_LARGE_READ_CAP        0x00000040 /*
+						    * support reads >128K (up
+						    * to 0xFFFF00
+						    */
 #define CIFS_UNIX_LARGE_WRITE_CAP       0x00000080
 #define CIFS_UNIX_TRANSPORT_ENCRYPTION_CAP 0x00000100 /* can do SPNEGO crypt */
 #define CIFS_UNIX_TRANSPORT_ENCRYPTION_MANDATORY_CAP  0x00000200 /* must do  */
-#define CIFS_UNIX_PROXY_CAP             0x00000400 /* Proxy cap: 0xACE ioctl and
-						      QFS PROXY call */
+#define CIFS_UNIX_PROXY_CAP             0x00000400 /*
+						    * Proxy cap: 0xACE ioctl and
+						    * QFS PROXY call
+						    */
 #ifdef CONFIG_CIFS_POSIX
 /* presumably don't need the 0x20 POSIX_PATH_OPS_CAP since we never send
  * LockingX instead of posix locking call on unix sess (and we do not expect
@@ -1643,8 +1665,10 @@ struct smb_com_transaction2_sfi_rsp {
 	struct smb_hdr hdr;     /* wct = 10 + SetupCount */
 	struct trans2_resp t2;
 	__u16 ByteCount;
-	__u16 Reserved2;        /* parameter word reserved -
-				   present for infolevels > 100 */
+	__u16 Reserved2;        /*
+				 * parameter word reserved -
+				 * present for infolevels > 100
+				 */
 } __attribute__((packed));
 
 struct file_end_of_file_info {
@@ -1849,13 +1873,15 @@ typedef struct {
 	/* For undefined recommended transfer size return -1 in that field */
 	__le32 OptimalTransferSize;  /* bsize on some os, iosize on other os */
 	__le32 BlockSize;
-	/* The next three fields are in terms of the block size.
-	   (above). If block size is unknown, 4096 would be a
-	   reasonable block size for a server to report.
-	   Note that returning the blocks/blocksavail removes need
-	   to make a second call (to QFSInfo level 0x103 to get this info.
-	   UserBlockAvail is typically less than or equal to BlocksAvail,
-	   if no distinction is made return the same value in each */
+	/*
+	 * The next three fields are in terms of the block size.
+	 * (above). If block size is unknown, 4096 would be a
+	 * reasonable block size for a server to report.
+	 * Note that returning the blocks/blocksavail removes need
+	 * to make a second call (to QFSInfo level 0x103 to get this info.
+	 * UserBlockAvail is typically less than or equal to BlocksAvail,
+	 * if no distinction is made return the same value in each
+	 */
 	__le64 TotalBlocks;
 	__le64 BlocksAvail;       /* bfree */
 	__le64 UserBlocksAvail;   /* bavail */
@@ -1869,8 +1895,10 @@ typedef struct {
 
 struct file_allocation_info {
 	__le64 AllocationSize; /* Note old Samba srvr rounds this up too much */
-} __attribute__((packed));      /* size used on disk, for level 0x103 for set,
-				   0x105 for query */
+} __attribute__((packed));      /*
+				 * size used on disk, for level 0x103 for set,
+				 * 0x105 for query
+				 */
 typedef struct {
 	__le16 CreationDate; /* SMB Date see above */
 	__le16 CreationTime; /* SMB Time */
@@ -1919,8 +1947,10 @@ struct cifs_posix_acl { /* access conrol list  (ACL) */
 	__le16  access_entry_count;  /* access ACL - count of entries */
 	__le16  default_entry_count; /* default ACL - count of entries */
 	struct cifs_posix_ace ace_array[0];
-	/* followed by
-	   struct cifs_posix_ace default_ace_arraay[] */
+	/*
+	 * followed by
+	 * struct cifs_posix_ace default_ace_arraay[]
+	 */
 } __attribute__((packed));  /* level 0x204 */
 
 typedef struct smb_com_setattr_req {

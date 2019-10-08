@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0-or-later
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
@@ -42,7 +42,6 @@ struct cifsd_session {
 	bool				sign;
 	bool				enc;
 	bool				is_anonymous;
-	bool				is_guest;
 
 	int				state;
 	__u8				*Preauth_HashValue;

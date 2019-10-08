@@ -651,8 +651,8 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 	tinfo->Length = 0;
 	target_info_len += 4;
 
-	chgblob->TargetInfoArray.Length = chgblob->TargetInfoArray.MaximumLength =
-			cpu_to_le16(target_info_len);
+	chgblob->TargetInfoArray.Length = cpu_to_le16(target_info_len);
+	chgblob->TargetInfoArray.MaximumLength = cpu_to_le16(target_info_len);
 	blob_len += target_info_len;
 	kfree(name);
 	cifsd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
@@ -919,7 +919,7 @@ smb3signkey_ret:
 }
 
 static int generate_smb3signingkey(struct cifsd_session *sess,
-	const struct derivation *signing)
+				   const struct derivation *signing)
 {
 	int rc;
 	struct channel *chann;
@@ -951,9 +951,7 @@ static int generate_smb3signingkey(struct cifsd_session *sess,
 	return rc;
 }
 
-int cifsd_gen_smb30_signingkey(struct cifsd_session *sess,
-			       bool binding,
-			       char *hash_value)
+int cifsd_gen_smb30_signingkey(struct cifsd_session *sess)
 {
 	struct derivation d;
 
@@ -961,25 +959,20 @@ int cifsd_gen_smb30_signingkey(struct cifsd_session *sess,
 	d.label.iov_len = 12;
 	d.context.iov_base = "SmbSign";
 	d.context.iov_len = 8;
-	d.binding = binding;
+	d.binding = false;
 
 	return generate_smb3signingkey(sess, &d);
 }
 
-int cifsd_gen_smb311_signingkey(struct cifsd_session *sess,
-				bool binding,
-				char *hash_value)
+int cifsd_gen_smb311_signingkey(struct cifsd_session *sess)
 {
 	struct derivation d;
 
 	d.label.iov_base = "SMBSigningKey";
 	d.label.iov_len = 14;
-	if (binding)
-		d.context.iov_base = hash_value;
-	else
-		d.context.iov_base = sess->Preauth_HashValue;
+	d.context.iov_base = sess->Preauth_HashValue;
 	d.context.iov_len = 64;
-	d.binding = binding;
+	d.binding = false;
 
 	return generate_smb3signingkey(sess, &d);
 }

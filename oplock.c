@@ -16,8 +16,6 @@
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 
-bool durable_enable;
-
 static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
 
@@ -546,7 +544,8 @@ static struct oplock_info *same_client_has_lease(struct cifsd_inode *ci,
 					lease->state = lctx->req_state;
 			}
 
-			if (lctx->req_state && lease->state == SMB2_LEASE_NONE_LE)
+			if (lctx->req_state && lease->state ==
+					SMB2_LEASE_NONE_LE)
 				lease_none_upgrade(opinfo, lctx->req_state);
 		}
 		read_lock(&ci->m_lock);
@@ -933,7 +932,8 @@ static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
 		if (atomic_read(&opinfo->breaking_cnt)) {
 			int ret = 0;
 
-			ret = wait_event_interruptible_timeout(opinfo->oplock_brk,
+			ret = wait_event_interruptible_timeout(
+				opinfo->oplock_brk,
 				atomic_read(&opinfo->breaking_cnt) == 0,
 				OPLOCK_WAIT_TIME);
 			if (!ret)
@@ -1008,7 +1008,8 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 			struct lease *lease = brk_opinfo->o_lease;
 
 			if ((brk_opinfo->open_trunc == 1 &&
-				!(lease->state & SMB2_LEASE_WRITE_CACHING_LE)) ||
+				!(lease->state &
+					SMB2_LEASE_WRITE_CACHING_LE)) ||
 				lease->state == SMB2_LEASE_READ_CACHING_LE)
 				ack_required = 0;
 			else
