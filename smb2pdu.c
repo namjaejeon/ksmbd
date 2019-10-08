@@ -1188,8 +1188,6 @@ int smb2_sess_setup(struct cifsd_work *work)
 	}
 
 	if (conn->dialect == SMB311_PROT_ID) {
-		__u8 *preauth_hashvalue;
-
 		if (negblob->MessageType == NtLmNegotiate) {
 			if (!sess->Preauth_HashValue) {
 				sess->Preauth_HashValue =
@@ -1201,12 +1199,12 @@ int smb2_sess_setup(struct cifsd_work *work)
 				}
 			}
 			memcpy(sess->Preauth_HashValue,
-				conn->preauth_info->Preauth_HashValue,
-				PREAUTH_HASHVALUE_SIZE);
+			       conn->preauth_info->Preauth_HashValue,
+			       PREAUTH_HASHVALUE_SIZE);
 		}
-		preauth_hashvalue = sess->Preauth_HashValue;
-		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
-			preauth_hashvalue);
+		cifsd_gen_preauth_integrity_hash(conn,
+						REQUEST_BUF(work),
+						sess->Preauth_HashValue);
 	}
 
 	if (negblob->MessageType == NtLmNegotiate) {
