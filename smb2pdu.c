@@ -2442,10 +2442,13 @@ int smb2_open(struct cifsd_work *work)
 			if (rc < 0)
 				goto err_out1;
 		} else {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 			struct create_mxac_req *mxac_req =
 				(struct create_mxac_req *)context;
+
 			cifsd_debug("get query maximal access context (timestamp : %llu)\n",
 				le64_to_cpu(mxac_req->Timestamp));
+#endif
 			maximal_access = tcon->maximal_access;
 		}
 
