@@ -1089,20 +1089,6 @@ err_out:
 	return rc;
 }
 
-static int match_conn_by_dialect(struct cifsd_conn *conn, void *arg)
-{
-	struct cifsd_conn *curr = (struct cifsd_conn *)arg;
-
-	cifsd_debug("Connection.ClientGUID %*phN, Dialect %x\n",
-		SMB2_CLIENT_GUID_SIZE, conn->ClientGUID, conn->dialect);
-
-	if (!memcmp(conn->ClientGUID, curr->ClientGUID, SMB2_CLIENT_GUID_SIZE))
-		if (conn->dialect != curr->dialect)
-			return 1;
-
-	return 0;
-}
-
 static int alloc_preauth_hash(struct cifsd_session *sess,
 			      struct cifsd_conn *conn)
 {
@@ -1389,7 +1375,7 @@ static int ntlm_authenticate(struct cifsd_work *work)
 	}
 
 	if (conn->dialect > SMB20_PROT_ID) {
-		if (cifsd_tcp_for_each_conn(match_conn_by_dialect, conn)) {
+		if (!cifsd_conn_lookup_dialect(conn)) {
 			cifsd_err("fail to verify the dialect\n");
 			rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
 			return -EPERM;

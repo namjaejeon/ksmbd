@@ -78,20 +78,20 @@ struct cifsd_conn *cifsd_conn_alloc(void)
 	return conn;
 }
 
-int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
-			void *arg)
+bool cifsd_conn_lookup_dialect(struct cifsd_conn *c)
 {
 	struct cifsd_conn *t;
-	int ret = 0;
+	bool ret = false;
 
 	read_lock(&conn_list_lock);
-	list_for_each_entry(t, &conn_list, conns_list)
-		if (match(t, arg)) {
-			ret = 1;
-			break;
-		}
-	read_unlock(&conn_list_lock);
+	list_for_each_entry(t, &conn_list, conns_list) {
+		if (memcmp(t->ClientGUID, c->ClientGUID, SMB2_CLIENT_GUID_SIZE))
+			continue;
 
+		ret = true;
+		break;
+	}
+	read_unlock(&conn_list_lock);
 	return ret;
 }
 
