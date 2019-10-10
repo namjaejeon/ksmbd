@@ -125,7 +125,7 @@ static int register_wm_size_class(size_t sz)
 	return 0;
 }
 
-static struct wm_list* match_wm_list(size_t size)
+static struct wm_list *match_wm_list(size_t size)
 {
 	struct wm_list *l, *rl = NULL;
 
