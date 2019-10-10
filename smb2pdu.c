@@ -5306,8 +5306,7 @@ static int set_file_disposition_info(struct cifsd_file *fp,
 		if (S_ISDIR(inode->i_mode) &&
 				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY)
 			return -EBUSY;
-		else
-			cifsd_set_inode_pending_delete(fp);
+		cifsd_set_inode_pending_delete(fp);
 	} else {
 		cifsd_clear_inode_pending_delete(fp);
 	}
