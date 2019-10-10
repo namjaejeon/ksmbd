@@ -367,10 +367,7 @@ struct smb_com_session_setup_req {	/* request format */
 	unsigned char SecurityBlob[1];	/* followed by */
 	/* STRING NativeOS */
 	/* STRING NativeLanMan */
-} __packed;	/*
-				 * NTLM request format (with
-				 * extended security
-				 */
+} __packed;	/* NTLM request format (with extended security) */
 
 struct smb_com_session_setup_req_no_secext {	/* request format */
 	struct smb_hdr hdr;	/* we will handle this :: wct = 13 */
@@ -392,8 +389,7 @@ struct smb_com_session_setup_req_no_secext {	/* request format */
 	/* STRING PrimaryDomain */
 	/* STRING NativeOS */
 	/* STRING NativeLanMan */
-} __packed;	/* NTLM request format (without
-					extended security */
+} __packed;	/* NTLM request format (without extended security */
 
 struct smb_com_session_setup_resp {	/* default (NTLM) response format */
 	struct smb_hdr hdr;	/* wct = 4 */
@@ -407,10 +403,7 @@ struct smb_com_session_setup_resp {	/* default (NTLM) response format */
 	/*      unsigned char  * NativeOS;      */
 	/*      unsigned char  * NativeLanMan;  */
 	/*      unsigned char  * PrimaryDomain; */
-} __packed;	/*
-				 * NTLM response
-				 * (with or without extended sec)
-				 */
+} __packed;	/* NTLM response (with or without extended sec) */
 
 struct smb_com_session_setup_old_resp { /* default (NTLM) response format */
 	struct smb_hdr hdr;	/* wct = 3 */
@@ -950,9 +943,11 @@ struct trans2_resp {
 	__le16 DataDisplacement;
 	__u8 SetupCount;
 	__u8 Reserved1;
-	/* SetupWords[SetupCount];
-	 *  *         __u16 ByteCount;
-	 *   *                 __u16 Reserved2;*/
+	/*
+	 * SetupWords[SetupCount];
+	 * __u16 ByteCount;
+	 * __u16 Reserved2;
+	 */
 	/* data area follows */
 } __packed;
 
@@ -1895,10 +1890,8 @@ typedef struct {
 
 struct file_allocation_info {
 	__le64 AllocationSize; /* Note old Samba srvr rounds this up too much */
-} __packed;      /*
-				 * size used on disk, for level 0x103 for set,
-				 * 0x105 for query
-				 */
+} __packed;      /* size used on disk: 0x103 for set, 0x105 for query */
+
 typedef struct {
 	__le16 CreationDate; /* SMB Date see above */
 	__le16 CreationTime; /* SMB Time */
