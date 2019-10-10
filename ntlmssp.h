@@ -90,13 +90,13 @@ typedef struct _SECURITY_BUFFER {
 	__le16 Length;
 	__le16 MaximumLength;
 	__le32 BufferOffset;	/* offset to buffer */
-} __attribute__((packed)) SECURITY_BUFFER;
+} __packed SECURITY_BUFFER;
 
 typedef struct _TARGET_INFO {
 	__le16 Type;
 	__le16 Length;
 	__u8 Content[0];
-} __attribute__((packed)) TargetInfo;
+} __packed TargetInfo;
 
 typedef struct _NTLM_VERSION {
 	__u8  maj_version;
@@ -105,7 +105,7 @@ typedef struct _NTLM_VERSION {
 	__u8  reserved1;
 	__u16 reserved2;
 	__u8  curr_revision;
-} __attribute__((packed)) NTLM_VERSION;
+} __packed NTLM_VERSION;
 
 typedef struct _NEGOTIATE_MESSAGE {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
@@ -119,7 +119,7 @@ typedef struct _NEGOTIATE_MESSAGE {
 	 */
 	char DomainString[0];
 	/* followed by WorkstationString */
-} __attribute__((packed)) NEGOTIATE_MESSAGE, *PNEGOTIATE_MESSAGE;
+} __packed NEGOTIATE_MESSAGE, *PNEGOTIATE_MESSAGE;
 
 typedef struct _CHALLENGE_MESSAGE {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
@@ -133,7 +133,7 @@ typedef struct _CHALLENGE_MESSAGE {
 	 * SECURITY_BUFFER for version info not present since we
 	 * do not set the version is present flag
 	 */
-} __attribute__((packed)) CHALLENGE_MESSAGE, *PCHALLENGE_MESSAGE;
+} __packed CHALLENGE_MESSAGE, *PCHALLENGE_MESSAGE;
 
 typedef struct _AUTHENTICATE_MESSAGE {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
@@ -150,7 +150,7 @@ typedef struct _AUTHENTICATE_MESSAGE {
 	 * do not set the version is present flag
 	 */
 	char UserString[0];
-} __attribute__((packed)) AUTHENTICATE_MESSAGE, *PAUTHENTICATE_MESSAGE;
+} __packed AUTHENTICATE_MESSAGE, *PAUTHENTICATE_MESSAGE;
 
 struct ntlmv2_resp {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
@@ -160,7 +160,7 @@ struct ntlmv2_resp {
 	__u64  client_chal; /* random */
 	__u32  reserved2;
 	/* array of name entries could follow ending in minimum 4 byte struct */
-} __attribute__((packed));
+} __packed;
 
 /* per smb session structure/fields */
 struct ntlmssp_auth {
