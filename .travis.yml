@@ -44,6 +44,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_CIFS_SERVER_SMBDIRECT is not set' >> .config
+ - echo '# CONFIG_CIFS_SERVER_DEBUGGING is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile with latest Torvalds' kernel
@@ -54,6 +55,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo 'CONFIG_CIFS_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_CIFS_SERVER_SMBDIRECT=y' >> .config
+ - echo '# CONFIG_CIFS_SERVER_DEBUGGING is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
@@ -64,6 +66,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_CIFS_SERVER_SMBDIRECT is not set' >> .config
+ - echo '# CONFIG_CIFS_SERVER_DEBUGGING is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
@@ -74,6 +77,7 @@ script:
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_CIFS_SERVER_SMBDIRECT is not set' >> .config
+ - echo '# CONFIG_CIFS_SERVER_DEBUGGING is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
@@ -83,6 +87,7 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_CIFS_SERVER=m' >> .config
  - echo '# CONFIG_CIFS_INSECURE_SERVER is not set' >> .config
+ - echo '# CONFIG_CIFS_SERVER_DEBUGGING is not set' >> .config
  - echo 'CONFIG_CIFS_SERVER_SMBDIRECT=y' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/cifsd.ko
 
