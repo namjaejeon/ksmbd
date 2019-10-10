@@ -370,11 +370,10 @@ static void tcp_destroy_socket(struct socket *cifsd_socket)
 		return;
 
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
-	if (ret) {
+	if (ret)
 		cifsd_err("Failed to shutdown socket: %d\n", ret);
-	} else {
+	else
 		sock_release(cifsd_socket);
-	}
 }
 
 /**
