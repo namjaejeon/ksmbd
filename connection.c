@@ -138,8 +138,7 @@ int cifsd_conn_try_dequeue_request(struct cifsd_work *work)
 	}
 	spin_unlock(&conn->request_lock);
 
-	if (waitqueue_active(&conn->req_running_q))
-		wake_up_all(&conn->req_running_q);
+	wake_up_all(&conn->req_running_q);
 	return ret;
 }
 
