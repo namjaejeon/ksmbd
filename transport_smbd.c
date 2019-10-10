@@ -1087,19 +1087,21 @@ static int post_send_msg(struct smbd_transport *t,
 		msg->wr.wr_cqe = NULL;
 		msg->wr.send_flags = 0;
 		if (!list_empty(&send_ctx->msg_list)) {
-			struct smbd_sendmsg *last =
-					list_last_entry(&send_ctx->msg_list,
-						struct smbd_sendmsg, list);
+			struct smbd_sendmsg *last;
+
+			last = list_last_entry(&send_ctx->msg_list,
+					       struct smbd_sendmsg,
+					       list);
 			last->wr.next = &msg->wr;
 		}
 		list_add_tail(&msg->list, &send_ctx->msg_list);
 		send_ctx->wr_cnt++;
 		return 0;
-	} else {
-		msg->wr.wr_cqe = &msg->cqe;
-		msg->wr.send_flags = IB_SEND_SIGNALED;
-		return smbd_post_send(t, &msg->wr);
 	}
+
+	msg->wr.wr_cqe = &msg->cqe;
+	msg->wr.send_flags = IB_SEND_SIGNALED;
+	return smbd_post_send(t, &msg->wr);
 }
 
 static int smbd_post_send_data(struct smbd_transport *t,
