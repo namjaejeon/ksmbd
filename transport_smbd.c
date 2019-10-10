@@ -225,15 +225,13 @@ static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 	spin_lock_irqsave(&t->recvmsg_queue_lock, flags);
 	if (!list_empty(&t->recvmsg_queue)) {
 		recvmsg = list_first_entry(&t->recvmsg_queue,
-				struct smbd_recvmsg, list);
+					   struct smbd_recvmsg,
+					   list);
 		list_del(&recvmsg->list);
 		t->count_recvmsg_queue--;
-		spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
-		return recvmsg;
-	} else {
-		spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
-		return NULL;
 	}
+	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
+	return recvmsg;
 }
 
 static void put_recvmsg(struct smbd_transport *t,
