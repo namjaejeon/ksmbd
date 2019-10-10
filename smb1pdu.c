@@ -4508,8 +4508,7 @@ static int query_fs_info(struct cifsd_work *work)
 		/* query fs info device info response is 0 word and 8 bytes */
 		cifsd_debug("GOT SMB_QUERY_FS_DEVICE_INFO\n");
 		if (le16_to_cpu(req->MaxDataCount) < 8) {
-			cifsd_err("canno send query_fs_info repsonse as "
-					"client send unsufficient bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4525,9 +4524,7 @@ static int query_fs_info(struct cifsd_work *work)
 		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			cifsd_err("cannot send SMB_QUERY_FS_ATTRIBUTE_INFO  "
-					" repsonse as client send unsufficient"
-					" bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4545,9 +4542,7 @@ static int query_fs_info(struct cifsd_work *work)
 		uinfo = (FILE_SYSTEM_UNIX_INFO *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			cifsd_err("cannot send SMB_QUERY_CIFS_UNIX_INFO"
-					" repsonse as client send unsufficient"
-					" bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
