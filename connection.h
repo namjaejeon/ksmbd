@@ -150,8 +150,7 @@ void cifsd_conn_wait_idle(struct cifsd_conn *conn);
 
 struct cifsd_conn *cifsd_conn_alloc(void);
 void cifsd_conn_free(struct cifsd_conn *conn);
-int cifsd_tcp_for_each_conn(int (*match)(struct cifsd_conn *, void *),
-	void *arg);
+bool cifsd_conn_lookup_dialect(struct cifsd_conn *c);
 int cifsd_conn_write(struct cifsd_work *work);
 int cifsd_conn_rdma_read(struct cifsd_conn *conn,
 				void *buf, unsigned int buflen,

@@ -128,7 +128,7 @@ struct cifsd_file {
  * initialisation time (or not at all).
  */
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
-static void inline set_ctx_actor(struct dir_context *ctx,
+static inline void set_ctx_actor(struct dir_context *ctx,
 				 filldir_t actor)
 {
 	struct dir_context c = {
@@ -138,7 +138,7 @@ static void inline set_ctx_actor(struct dir_context *ctx,
 	memcpy(ctx, &c, sizeof(struct dir_context));
 }
 #else
-static void inline set_ctx_actor(struct dir_context *ctx,
+static inline void set_ctx_actor(struct dir_context *ctx,
 				 filldir_t actor)
 {
 	ctx->actor = actor;
