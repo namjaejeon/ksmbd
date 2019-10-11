@@ -4927,8 +4927,8 @@ static int smb2_rename(struct cifsd_file *fp,
 					xattr_stream_name,
 					NULL, 0, 0);
 		if (rc < 0) {
-			cifsd_err("failed to store stream name in xattr, rc :%d\n",
-					rc);
+			cifsd_err("failed to store stream name in xattr: %d\n",
+				   rc);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -5029,8 +5029,7 @@ static int smb2_create_link(struct cifsd_share_config *share,
 			rc = cifsd_vfs_remove_file(link_name);
 			if (rc) {
 				rc = -EINVAL;
-				cifsd_debug("cannot delete %s\n",
-						link_name);
+				cifsd_debug("cannot delete %s\n", link_name);
 				goto out;
 			}
 		}
@@ -7077,8 +7076,8 @@ static int smb20_oplock_break_ack(struct cifsd_work *work)
 	volatile_id = le64_to_cpu(req->VolatileFid);
 	persistent_id = le64_to_cpu(req->PersistentFid);
 	req_oplevel = req->OplockLevel;
-	cifsd_debug("SMB2_OPLOCK_BREAK v_id %llu, p_id %llu request oplock level %d\n",
-			volatile_id, persistent_id, req_oplevel);
+	cifsd_debug("v_id %llu, p_id %llu request oplock level %d\n",
+		    volatile_id, persistent_id, req_oplevel);
 
 	fp = cifsd_lookup_fd_slow(work, volatile_id, persistent_id);
 	if (!fp) {
@@ -7233,7 +7232,7 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 
 	if (check_lease_state(lease, req->LeaseState)) {
 		rsp->hdr.Status = STATUS_REQUEST_NOT_ACCEPTED;
-		cifsd_debug("req lease state : 0x%x,  expected lease state : 0x%x\n",
+		cifsd_debug("req lease state: 0x%x, expected state: 0x%x\n",
 				lease->new_state, req->LeaseState);
 		goto err_out;
 	}
@@ -7646,8 +7645,9 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 }
 
-static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf,
-				__le16 cipher_type)
+static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr,
+			       char *old_buf,
+			       __le16 cipher_type)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)old_buf;
 	unsigned int orig_len = get_rfc1002_len(old_buf);
