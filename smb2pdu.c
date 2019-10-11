@@ -1634,7 +1634,6 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
  */
 int smb2_tree_disconnect(struct cifsd_work *work)
 {
-	struct smb2_tree_disconnect_req *req = REQUEST_BUF(work);
 	struct smb2_tree_disconnect_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess = work->sess;
 	struct cifsd_tree_connect *tcon = work->tcon;
@@ -1645,7 +1644,11 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 	cifsd_debug("request\n");
 
 	if (!tcon) {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
+		struct smb2_tree_disconnect_req *req = REQUEST_BUF(work);
+
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
+#endif
 		rsp->hdr.Status = STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(work);
 		return 0;
@@ -1665,7 +1668,6 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 int smb2_session_logoff(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_logoff_req *req = REQUEST_BUF(work);
 	struct smb2_logoff_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess = work->sess;
 
@@ -1683,7 +1685,11 @@ int smb2_session_logoff(struct cifsd_work *work)
 	cifsd_conn_wait_idle(conn);
 
 	if (cifsd_tree_conn_session_logoff(sess)) {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
+		struct smb2_logoff_req *req = REQUEST_BUF(work);
+
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
+#endif
 		rsp->hdr.Status = STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(work);
 		return 0;
