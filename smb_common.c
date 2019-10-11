@@ -436,7 +436,7 @@ static int __smb2_negotiate(struct cifsd_conn *conn)
 #ifndef CONFIG_CIFS_INSECURE_SERVER
 int smb_handle_negotiate(struct cifsd_work *work)
 {
-	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
+	NEGOTIATE_RSP *neg_rsp = RESPONSE_BUF(work);
 
 	cifsd_err("Unsupported SMB protocol\n");
 	neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;
