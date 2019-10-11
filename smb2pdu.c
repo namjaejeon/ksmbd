@@ -2061,6 +2061,7 @@ static inline int check_context_err(void *ctx, char *str)
 static int smb2_create_truncate(struct path *path, bool is_stream)
 {
 	int rc = vfs_truncate(path, 0);
+
 	if (rc) {
 		cifsd_err("vfs_truncate failed, rc %d\n", rc);
 		return rc;
@@ -2071,7 +2072,7 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	if (rc == -EOPNOTSUPP)
 		rc = 0;
 	if (rc)
-		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
+		cifsd_debug("cifsd_vfs_truncate_xattr failed, rc %d\n", rc);
 	return rc;
 }
 
