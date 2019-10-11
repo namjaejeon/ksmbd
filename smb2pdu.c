@@ -35,6 +35,19 @@
 #include "mgmt/user_session.h"
 #include "mgmt/cifsd_ida.h"
 
+static void __wbuf(struct cifsd_work *work, void **req, void **rsp)
+{
+	if (work->next_smb2_rcv_hdr_off) {
+		*req = REQUEST_BUF_NEXT(work);
+		*rsp = RESPONSE_BUF_NEXT(work);
+	} else {
+		*req = REQUEST_BUF(work);
+		*rsp = RESPONSE_BUF(work);
+	}
+}
+
+#define WORK_BUFFERS(w, rq, rs)	__wbuf((w), (void **)&(rq), (void **)&(rs))
+
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	connection instance
@@ -2225,13 +2238,7 @@ int smb2_open(struct cifsd_work *work)
 	umode_t posix_mode = 0;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (req->hdr.NextCommand && !work->next_smb2_rcv_hdr_off &&
 			(req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
@@ -3382,13 +3389,7 @@ int smb2_query_dir(struct cifsd_work *work)
 	struct smb2_query_dir_private query_dir_private = {NULL, };
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	rc = verify_info_level(req->FileInformationClass);
 	if (rc) {
@@ -4613,13 +4614,7 @@ int smb2_query_info(struct cifsd_work *work)
 	int rc = 0;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	cifsd_debug("GOT query info request\n");
 
@@ -4708,13 +4703,7 @@ int smb2_close(struct cifsd_work *work)
 	int err = 0;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -5555,13 +5544,7 @@ int smb2_read(struct cifsd_work *work)
 	int err = 0;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -5814,13 +5797,7 @@ int smb2_write(struct cifsd_work *work)
 	int err = 0;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -7301,13 +7278,7 @@ int smb2_notify(struct cifsd_work *work)
 	struct smb2_notify_rsp *rsp, *rsp_org;
 
 	rsp_org = RESPONSE_BUF(work);
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
 		rsp->hdr.Status = STATUS_INTERNAL_ERROR;
@@ -7545,13 +7516,7 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	if (conn->dialect != SMB311_PROT_ID)
 		return;
 
-	if (work->next_smb2_rcv_hdr_off) {
-		req = REQUEST_BUF_NEXT(work);
-		rsp = RESPONSE_BUF_NEXT(work);
-	} else {
-		req = REQUEST_BUF(work);
-		rsp = RESPONSE_BUF(work);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
 		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
