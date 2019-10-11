@@ -571,7 +571,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
+	struct oplock_info *opinfo = REQUEST_BUF(work);
 
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
@@ -689,8 +689,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	struct smb2_oplock_break *rsp = NULL;
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct cifsd_conn *conn = work->conn;
-	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)REQUEST_BUF(work);
+	struct oplock_break_info *br_info = REQUEST_BUF(work);
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 
@@ -830,8 +829,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 {
 	struct smb2_lease_break *rsp = NULL;
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct lease_break_info *br_info =
-		(struct lease_break_info *)REQUEST_BUF(work);
+	struct lease_break_info *br_info = REQUEST_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	struct smb2_hdr *rsp_hdr;
 
