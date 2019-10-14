@@ -5603,8 +5603,8 @@ int smb2_read(struct cifsd_work *work)
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
 						nbytes, offset, mincount);
 
-	if (le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
-			le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1) {
+	if (req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
+			req->Channel == SMB2_CHANNEL_RDMA_V1) {
 		/* write data to the client using rdma channel */
 		remain_bytes = smb2_read_rdma_channel(work, req,
 						AUX_PAYLOAD(work), nbytes);
