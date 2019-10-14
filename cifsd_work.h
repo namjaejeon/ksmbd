@@ -85,10 +85,15 @@ struct cifsd_work {
 #define WORK_CLOSED(w)		((w)->state == CIFSD_WORK_CLOSED)
 #define WORK_ACTIVE(w)		((w)->state == CIFSD_WORK_ACTIVE)
 
-#define RESPONSE_BUF(w)		(void *)((w)->response_buf)
-#define RESPONSE_SZ(w)		((w)->response_sz)
+#define RESPONSE_BUF(w)		((void *)(w)->response_buf)
+#define REQUEST_BUF(w)		((void *)(w)->request_buf)
 
-#define REQUEST_BUF(w)		(void *)((w)->request_buf)
+#define RESPONSE_BUF_NEXT(w)	\
+	((void *)((w)->response_buf + (w)->next_smb2_rsp_hdr_off))
+#define REQUEST_BUF_NEXT(w)	\
+	((void *)((w)->request_buf + (w)->next_smb2_rcv_hdr_off))
+
+#define RESPONSE_SZ(w)		((w)->response_sz)
 
 #define INIT_AUX_PAYLOAD(w)	((w)->aux_payload_buf = NULL)
 #define HAS_AUX_PAYLOAD(w)	((w)->aux_payload_sz != 0)

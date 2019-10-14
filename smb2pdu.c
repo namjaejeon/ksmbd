@@ -35,6 +35,19 @@
 #include "mgmt/user_session.h"
 #include "mgmt/cifsd_ida.h"
 
+static void __wbuf(struct cifsd_work *work, void **req, void **rsp)
+{
+	if (work->next_smb2_rcv_hdr_off) {
+		*req = REQUEST_BUF_NEXT(work);
+		*rsp = RESPONSE_BUF_NEXT(work);
+	} else {
+		*req = REQUEST_BUF(work);
+		*rsp = RESPONSE_BUF(work);
+	}
+}
+
+#define WORK_BUFFERS(w, rq, rs)	__wbuf((w), (void **)&(rq), (void **)&(rs))
+
 /**
  * check_session_id() - check for valid session id in smb header
  * @conn:	connection instance
@@ -79,7 +92,7 @@ struct channel *lookup_chann_list(struct cifsd_session *sess)
  */
 int smb2_get_cifsd_tcon(struct cifsd_work *work)
 {
-	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *req_hdr = REQUEST_BUF(work);
 	int tree_id;
 
 	work->tcon = NULL;
@@ -111,14 +124,12 @@ int smb2_get_cifsd_tcon(struct cifsd_work *work)
  */
 void smb2_set_err_rsp(struct cifsd_work *work)
 {
-	char *rsp = RESPONSE_BUF(work);
 	struct smb2_err_rsp *err_rsp;
 
 	if (work->next_smb2_rcv_hdr_off)
-		err_rsp = (struct smb2_err_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
+		err_rsp = RESPONSE_BUF_NEXT(work);
 	else
-		err_rsp = (struct smb2_err_rsp *)rsp;
+		err_rsp = RESPONSE_BUF(work);
 
 	if (err_rsp->hdr.Status != STATUS_STOPPED_ON_SYMLINK) {
 		err_rsp->StructureSize = SMB2_ERROR_STRUCTURE_SIZE2_LE;
@@ -126,7 +137,7 @@ void smb2_set_err_rsp(struct cifsd_work *work)
 		err_rsp->Reserved = 0;
 		err_rsp->ByteCount = 0;
 		err_rsp->ErrorData[0] = 0;
-		inc_rfc1001_len(rsp, SMB2_ERROR_STRUCTURE_SIZE2);
+		inc_rfc1001_len(RESPONSE_BUF(work), SMB2_ERROR_STRUCTURE_SIZE2);
 	}
 }
 
@@ -138,7 +149,7 @@ void smb2_set_err_rsp(struct cifsd_work *work)
  */
 int is_smb2_neg_cmd(struct cifsd_work *work)
 {
-	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	/* is it SMB2 header ? */
 	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
@@ -162,7 +173,7 @@ int is_smb2_neg_cmd(struct cifsd_work *work)
  */
 int is_smb2_rsp(struct cifsd_work *work)
 {
-	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct smb2_hdr *hdr = RESPONSE_BUF(work);
 
 	/* is it SMB2 header ? */
 	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
@@ -183,7 +194,7 @@ int is_smb2_rsp(struct cifsd_work *work)
  */
 int get_smb2_cmd_val(struct cifsd_work *work)
 {
-	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *rcv_hdr = REQUEST_BUF(work);
 
 	if (work->next_smb2_rcv_hdr_off)
 		rcv_hdr = (struct smb2_hdr *)((char *)rcv_hdr
@@ -197,11 +208,10 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  */
 void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
-	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *) RESPONSE_BUF(work);
+	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
 
 	if (work->next_smb2_rcv_hdr_off)
-		rsp_hdr = (struct smb2_hdr *)((char *)rsp_hdr
-					+ work->next_smb2_rsp_hdr_off);
+		rsp_hdr = RESPONSE_BUF_NEXT(work);
 	rsp_hdr->Status = err;
 	smb2_set_err_rsp(work);
 }
@@ -225,7 +235,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 		conn->dialect <= SMB311_PROT_ID))
 		return -EINVAL;
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 
@@ -244,7 +254,7 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
+	rsp = RESPONSE_BUF(work);
 
 	WARN_ON(cifsd_conn_good(work));
 
@@ -284,8 +294,8 @@ int init_smb2_neg_rsp(struct cifsd_work *work)
  */
 static void smb2_set_rsp_credits(struct cifsd_work *work)
 {
-	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
-	struct smb2_hdr *hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct smb2_hdr *req_hdr = REQUEST_BUF(work);
+	struct smb2_hdr *hdr = RESPONSE_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	unsigned short credits_requested = le16_to_cpu(req_hdr->CreditRequest);
 	unsigned short credit_charge = 1, credits_granted = 0;
@@ -350,18 +360,12 @@ out:
  */
 static void init_chained_smb2_rsp(struct cifsd_work *work)
 {
-	struct smb2_hdr *req;
-	struct smb2_hdr *rsp;
+	struct smb2_hdr *req = REQUEST_BUF_NEXT(work);
+	struct smb2_hdr *rsp = RESPONSE_BUF_NEXT(work);
 	struct smb2_hdr *rsp_hdr;
 	struct smb2_hdr *rcv_hdr;
 	int next_hdr_offset = 0;
 	int len, new_len;
-
-
-	req = (struct smb2_hdr *)(REQUEST_BUF(work) +
-				  work->next_smb2_rcv_hdr_off);
-	rsp = (struct smb2_hdr *)(RESPONSE_BUF(work) +
-				  work->next_smb2_rsp_hdr_off);
 
 	/* Len of this response = updated RFC len - offset of previous cmd
 	 * in the compound rsp
@@ -380,9 +384,7 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 		work->compound_sid = le64_to_cpu(rsp->SessionId);
 	}
 
-	len = get_rfc1002_len(RESPONSE_BUF(work)) -
-			work->next_smb2_rsp_hdr_off;
-
+	len = get_rfc1002_len(RESPONSE_BUF(work)) - work->next_smb2_rsp_hdr_off;
 	next_hdr_offset = le32_to_cpu(req->NextCommand);
 
 	new_len = ALIGN(len, 8);
@@ -396,10 +398,8 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
 		      new_len, work->next_smb2_rcv_hdr_off,
 		      work->next_smb2_rsp_hdr_off);
 
-	rsp_hdr = (struct smb2_hdr *)(((char *)RESPONSE_BUF(work) +
-					work->next_smb2_rsp_hdr_off));
-	rcv_hdr = (struct smb2_hdr *)(((char *)REQUEST_BUF(work) +
-					work->next_smb2_rcv_hdr_off));
+	rsp_hdr = RESPONSE_BUF_NEXT(work);
+	rcv_hdr = REQUEST_BUF_NEXT(work);
 
 	if (!(rcv_hdr->Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
 		cifsd_debug("related flag should be set\n");
@@ -436,14 +436,13 @@ static void init_chained_smb2_rsp(struct cifsd_work *work)
  */
 bool is_chained_smb2_message(struct cifsd_work *work)
 {
-	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 	unsigned int len;
 
 	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
 		return false;
 
-	hdr = (struct smb2_hdr *)(REQUEST_BUF(work) +
-			work->next_smb2_rcv_hdr_off);
+	hdr = REQUEST_BUF_NEXT(work);
 	if (le32_to_cpu(hdr->NextCommand) > 0) {
 		cifsd_debug("got SMB2 chained command\n");
 		init_chained_smb2_rsp(work);
@@ -473,8 +472,8 @@ bool is_chained_smb2_message(struct cifsd_work *work)
  */
 int init_smb2_rsp_hdr(struct cifsd_work *work)
 {
-	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
-	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct smb2_hdr *rcv_hdr = REQUEST_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	int next_hdr_offset = 0;
 
@@ -526,7 +525,7 @@ int init_smb2_rsp_hdr(struct cifsd_work *work)
  */
 int smb2_allocate_rsp_buf(struct cifsd_work *work)
 {
-	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 	size_t small_sz = cifsd_small_buffer_size();
 	size_t large_sz = work->conn->vals->max_trans_size + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
@@ -538,7 +537,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
 	if (cmd == SMB2_QUERY_INFO_HE) {
 		struct smb2_query_info_req *req;
 
-		req = (struct smb2_query_info_req *)REQUEST_BUF(work);
+		req = REQUEST_BUF(work);
 		if (req->InfoType == SMB2_O_INFO_FILE &&
 			(req->FileInfoClass == FILE_FULL_EA_INFORMATION ||
 				req->FileInfoClass == FILE_ALL_INFORMATION))
@@ -571,7 +570,7 @@ int smb2_allocate_rsp_buf(struct cifsd_work *work)
  */
 int smb2_check_user_session(struct cifsd_work *work)
 {
-	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *req_hdr = REQUEST_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	unsigned int cmd = conn->ops->get_cmd_val(work);
 	unsigned long long sess_id;
@@ -656,7 +655,7 @@ int setup_async_work(struct cifsd_work *work, void (*fn)(void **), void **arg)
 	struct cifsd_conn *conn = work->conn;
 	int id;
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 	rsp_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
 
 	id = cifds_acquire_async_msg_id(conn->async_ida);
@@ -685,7 +684,7 @@ void smb2_send_interim_resp(struct cifsd_work *work, __le32 status)
 {
 	struct smb2_hdr *rsp_hdr;
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 	smb2_set_err_rsp(work);
 	rsp_hdr->Status = status;
 
@@ -955,15 +954,11 @@ static int deassemble_neg_contexts(struct cifsd_conn *conn,
 int smb2_handle_negotiate(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_negotiate_req *req;
-	struct smb2_negotiate_rsp *rsp;
+	struct smb2_negotiate_req *req = REQUEST_BUF(work);
+	struct smb2_negotiate_rsp *rsp = RESPONSE_BUF(work);
 	int rc = 0, err;
 
 	cifsd_debug("Received negotiate request\n");
-
-	req = (struct smb2_negotiate_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_negotiate_rsp *)RESPONSE_BUF(work);
-
 	conn->need_neg = false;
 	if (cifsd_conn_good(work)) {
 		cifsd_err("conn->tcp_status is already in CifsGood State\n");
@@ -1003,10 +998,11 @@ int smb2_handle_negotiate(struct cifsd_work *work)
 			goto err_out;
 		}
 
-		cifsd_gen_preauth_integrity_hash(conn, REQUEST_BUF(work),
-			conn->preauth_info->Preauth_HashValue);
+		cifsd_gen_preauth_integrity_hash(conn,
+				REQUEST_BUF(work),
+				conn->preauth_info->Preauth_HashValue);
 		rsp->NegotiateContextOffset =
-			cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
+				cpu_to_le32(OFFSET_OF_NEG_CONTEXT);
 		assemble_neg_contexts(conn, rsp);
 		break;
 	case SMB302_PROT_ID:
@@ -1135,7 +1131,7 @@ static int decode_negotiation_token(struct cifsd_work *work,
 	if (!conn->use_spnego)
 		return -EINVAL;
 
-	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
+	req = REQUEST_BUF(work);
 	sz = le16_to_cpu(req->SecurityBufferLength);
 
 	if (!cifsd_decode_negTokenInit((char *)negblob, sz, conn)) {
@@ -1148,16 +1144,13 @@ static int decode_negotiation_token(struct cifsd_work *work,
 static int ntlm_negotiate(struct cifsd_work *work,
 			  NEGOTIATE_MESSAGE *negblob)
 {
-	struct smb2_sess_setup_req *req;
-	struct smb2_sess_setup_rsp *rsp;
+	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
+	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	CHALLENGE_MESSAGE *chgblob;
 	unsigned char *spnego_blob;
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int sz, rc;
-
-	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("negotiate phase\n");
 	sz = le16_to_cpu(req->SecurityBufferLength);
@@ -1250,16 +1243,13 @@ static struct cifsd_user *session_user(struct cifsd_conn *conn,
 
 static int ntlm_authenticate(struct cifsd_work *work)
 {
-	struct smb2_sess_setup_req *req;
-	struct smb2_sess_setup_rsp *rsp;
+	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
+	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	struct cifsd_session *sess = work->sess;
 	struct channel *chann = NULL;
 	struct cifsd_user *user;
 	int sz, rc;
-
-	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("authenticate phase\n");
 	if (conn->use_spnego) {
@@ -1387,14 +1377,11 @@ static int ntlm_authenticate(struct cifsd_work *work)
 int smb2_sess_setup(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_sess_setup_req *req;
-	struct smb2_sess_setup_rsp *rsp;
+	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
+	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess;
 	NEGOTIATE_MESSAGE *negblob;
 	int rc = 0;
-
-	req = (struct smb2_sess_setup_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_sess_setup_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("Received request for session setup\n");
 
@@ -1496,16 +1483,13 @@ out_err:
 int smb2_tree_connect(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_tree_connect_req *req;
-	struct smb2_tree_connect_rsp *rsp;
+	struct smb2_tree_connect_req *req = REQUEST_BUF(work);
+	struct smb2_tree_connect_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess = work->sess;
 	char *treename = NULL, *name = NULL;
 	struct cifsd_tree_conn_status status;
 	struct cifsd_share_config *share;
 	int rc = -EINVAL;
-
-	req = (struct smb2_tree_connect_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_tree_connect_rsp *)RESPONSE_BUF(work);
 
 	treename = smb_strndup_from_utf16(req->Buffer,
 			le16_to_cpu(req->PathLength), true, conn->local_nls);
@@ -1663,13 +1647,9 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
  */
 int smb2_tree_disconnect(struct cifsd_work *work)
 {
-	struct smb2_tree_disconnect_req *req;
-	struct smb2_tree_disconnect_rsp *rsp;
+	struct smb2_tree_disconnect_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess = work->sess;
 	struct cifsd_tree_connect *tcon = work->tcon;
-
-	req = (struct smb2_tree_disconnect_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_tree_disconnect_rsp *)RESPONSE_BUF(work);
 
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
@@ -1677,7 +1657,11 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 	cifsd_debug("request\n");
 
 	if (!tcon) {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
+		struct smb2_tree_disconnect_req *req = REQUEST_BUF(work);
+
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
+#endif
 		rsp->hdr.Status = STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(work);
 		return 0;
@@ -1697,12 +1681,8 @@ int smb2_tree_disconnect(struct cifsd_work *work)
 int smb2_session_logoff(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_logoff_req *req;
-	struct smb2_logoff_rsp *rsp;
+	struct smb2_logoff_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess = work->sess;
-
-	req = (struct smb2_logoff_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_logoff_rsp *)RESPONSE_BUF(work);
 
 	rsp->StructureSize = cpu_to_le16(4);
 	inc_rfc1001_len(rsp, 4);
@@ -1718,7 +1698,11 @@ int smb2_session_logoff(struct cifsd_work *work)
 	cifsd_conn_wait_idle(conn);
 
 	if (cifsd_tree_conn_session_logoff(sess)) {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
+		struct smb2_logoff_req *req = REQUEST_BUF(work);
+
 		cifsd_debug("Invalid tid %d\n", req->hdr.Id.SyncId.TreeId);
+#endif
 		rsp->hdr.Status = STATUS_NETWORK_NAME_DELETED;
 		smb2_set_err_rsp(work);
 		return 0;
@@ -1743,14 +1727,11 @@ int smb2_session_logoff(struct cifsd_work *work)
  */
 static noinline int create_smb2_pipe(struct cifsd_work *work)
 {
-	struct smb2_create_rsp *rsp;
-	struct smb2_create_req *req;
+	struct smb2_create_rsp *rsp = RESPONSE_BUF(work);
+	struct smb2_create_req *req = REQUEST_BUF(work);
 	int id;
 	int err;
 	char *name;
-
-	rsp = (struct smb2_create_rsp *)RESPONSE_BUF(work);
-	req = (struct smb2_create_req *)REQUEST_BUF(work);
 
 	name = smb_strndup_from_utf16(req->Buffer, le16_to_cpu(req->NameLength),
 			1, work->conn->local_nls);
@@ -2061,6 +2042,7 @@ static inline int check_context_err(void *ctx, char *str)
 static int smb2_create_truncate(struct path *path, bool is_stream)
 {
 	int rc = vfs_truncate(path, 0);
+
 	if (rc) {
 		cifsd_err("vfs_truncate failed, rc %d\n", rc);
 		return rc;
@@ -2071,7 +2053,7 @@ static int smb2_create_truncate(struct path *path, bool is_stream)
 	if (rc == -EOPNOTSUPP)
 		rc = 0;
 	if (rc)
-		cifsd_debug("cifsd_vfs_truncate_xattr is failed, rc %d\n", rc);
+		cifsd_debug("cifsd_vfs_truncate_xattr failed, rc %d\n", rc);
 	return rc;
 }
 
@@ -2255,16 +2237,8 @@ int smb2_open(struct cifsd_work *work)
 	u64 time;
 	umode_t posix_mode = 0;
 
-	req = (struct smb2_create_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_create_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_create_req *)((char *)req +
-					work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_create_rsp *)((char *)rsp +
-					work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	if (req->hdr.NextCommand && !work->next_smb2_rcv_hdr_off &&
 			(req->hdr.Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
@@ -2442,10 +2416,13 @@ int smb2_open(struct cifsd_work *work)
 			if (rc < 0)
 				goto err_out1;
 		} else {
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 			struct create_mxac_req *mxac_req =
 				(struct create_mxac_req *)context;
+
 			cifsd_debug("get query maximal access context (timestamp : %llu)\n",
 				le64_to_cpu(mxac_req->Timestamp));
+#endif
 			maximal_access = tcon->maximal_access;
 		}
 
@@ -3411,16 +3388,8 @@ int smb2_query_dir(struct cifsd_work *work)
 	int buffer_sz;
 	struct smb2_query_dir_private query_dir_private = {NULL, };
 
-	req = (struct smb2_query_directory_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_query_directory_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_query_directory_req *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_query_directory_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	rc = verify_info_level(req->FileInformationClass);
 	if (rc) {
@@ -4644,16 +4613,8 @@ int smb2_query_info(struct cifsd_work *work)
 	struct smb2_query_info_rsp *rsp, *rsp_org;
 	int rc = 0;
 
-	req = (struct smb2_query_info_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_query_info_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_query_info_req *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_query_info_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	cifsd_debug("GOT query info request\n");
 
@@ -4705,11 +4666,8 @@ int smb2_query_info(struct cifsd_work *work)
 static noinline int smb2_close_pipe(struct cifsd_work *work)
 {
 	uint64_t id;
-
-	struct smb2_close_req *req =
-		(struct smb2_close_req *)REQUEST_BUF(work);
-	struct smb2_close_rsp *rsp =
-		(struct smb2_close_rsp *)RESPONSE_BUF(work);
+	struct smb2_close_req *req = REQUEST_BUF(work);
+	struct smb2_close_rsp *rsp = RESPONSE_BUF(work);
 
 	id = le64_to_cpu(req->VolatileFileId);
 	cifsd_session_rpc_close(work->sess, id);
@@ -4738,21 +4696,14 @@ int smb2_close(struct cifsd_work *work)
 {
 	unsigned int volatile_id = CIFSD_NO_FID;
 	uint64_t sess_id;
-	struct smb2_close_req *req =
-		(struct smb2_close_req *)REQUEST_BUF(work);
-	struct smb2_close_rsp *rsp =
-		(struct smb2_close_rsp *)RESPONSE_BUF(work);
+	struct smb2_close_req *req;
+	struct smb2_close_rsp *rsp;
 	struct smb2_close_rsp *rsp_org;
 	struct cifsd_conn *conn = work->conn;
 	int err = 0;
 
-	rsp_org = rsp;
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_close_req *)((char *)req +
-					work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_close_rsp *)((char *)rsp +
-					work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -4833,13 +4784,11 @@ out:
  */
 int smb2_echo(struct cifsd_work *work)
 {
-	struct smb2_echo_rsp *rsp =
-		(struct smb2_echo_rsp *)RESPONSE_BUF(work);
+	struct smb2_echo_rsp *rsp = RESPONSE_BUF(work);
 
 	rsp->StructureSize = cpu_to_le16(4);
 	rsp->Reserved = 0;
 	inc_rfc1001_len(rsp, 4);
-
 	return 0;
 }
 
@@ -4923,8 +4872,8 @@ static int smb2_rename(struct cifsd_file *fp,
 					xattr_stream_name,
 					NULL, 0, 0);
 		if (rc < 0) {
-			cifsd_err("failed to store stream name in xattr, rc :%d\n",
-					rc);
+			cifsd_err("failed to store stream name in xattr: %d\n",
+				   rc);
 			rc = -EINVAL;
 			goto out;
 		}
@@ -5025,8 +4974,7 @@ static int smb2_create_link(struct cifsd_share_config *share,
 			rc = cifsd_vfs_remove_file(link_name);
 			if (rc) {
 				rc = -EINVAL;
-				cifsd_debug("cannot delete %s\n",
-						link_name);
+				cifsd_debug("cannot delete %s\n", link_name);
 				goto out;
 			}
 		}
@@ -5117,7 +5065,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		}
 
 		generic_fillattr(inode, &stat);
-		fp->f_ci->m_fattr = le32_to_cpu(file_info->Attributes);
+		fp->f_ci->m_fattr = file_info->Attributes;
 		if (test_share_config_flag(share,
 				CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			rc = cifsd_vfs_setxattr(filp->f_path.dentry,
@@ -5426,21 +5374,19 @@ int smb2_set_info(struct cifsd_work *work)
 
 	cifsd_debug("Received set info request\n");
 
-	req = (struct smb2_set_info_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_set_info_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
+	rsp_org = RESPONSE_BUF(work);
 	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_set_info_req *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_set_info_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
+		req = REQUEST_BUF_NEXT(work);
+		rsp = RESPONSE_BUF_NEXT(work);
 		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
 			cifsd_debug("Compound request set FID = %u\n",
 					work->compound_fid);
 			id = work->compound_fid;
 			pid = work->compound_pfid;
 		}
+	} else {
+		req = REQUEST_BUF(work);
+		rsp = RESPONSE_BUF(work);
 	}
 
 	if (!HAS_FILE_ID(id)) {
@@ -5518,11 +5464,8 @@ static noinline int smb2_read_pipe(struct cifsd_work *work)
 	uint64_t id;
 	unsigned int read_len;
 	struct cifsd_rpc_command *rpc_resp;
-	struct smb2_read_req *req;
-	struct smb2_read_rsp *rsp;
-
-	req = (struct smb2_read_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_read_rsp *)RESPONSE_BUF(work);
+	struct smb2_read_req *req = REQUEST_BUF(work);
+	struct smb2_read_rsp *rsp = RESPONSE_BUF(work);
 
 	read_len = le32_to_cpu(req->Length);
 	data_buf = (char *)(rsp->Buffer);
@@ -5561,7 +5504,7 @@ static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
 	int err;
 
 	if (work->conn->dialect == SMB30_PROT_ID
-		&& le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1)
+			&& req->Channel != SMB2_CHANNEL_RDMA_V1)
 		return -EINVAL;
 
 	if (req->ReadChannelInfoOffset == 0
@@ -5569,7 +5512,7 @@ static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
 		return -EINVAL;
 
 	work->need_invalidate_rkey =
-		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+		(req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE);
 	work->remote_key = le32_to_cpu(desc->token);
 
 	err = cifsd_conn_rdma_write(work->conn,
@@ -5600,17 +5543,8 @@ int smb2_read(struct cifsd_work *work)
 	ssize_t nbytes = 0, remain_bytes = 0;
 	int err = 0;
 
-	req = (struct smb2_read_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_read_rsp *)RESPONSE_BUF(work);
-
-	rsp_org = rsp;
-
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_read_req *)((char *)req +
-					work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_read_rsp *)((char *)rsp +
-					work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -5669,8 +5603,8 @@ int smb2_read(struct cifsd_work *work)
 	cifsd_debug("nbytes %zu, offset %lld mincount %zu\n",
 						nbytes, offset, mincount);
 
-	if (le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
-			le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1) {
+	if (req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
+			req->Channel == SMB2_CHANNEL_RDMA_V1) {
 		/* write data to the client using rdma channel */
 		remain_bytes = smb2_read_rdma_channel(work, req,
 						AUX_PAYLOAD(work), nbytes);
@@ -5731,16 +5665,13 @@ out:
  */
 static noinline int smb2_write_pipe(struct cifsd_work *work)
 {
-	struct smb2_write_req *req;
-	struct smb2_write_rsp *rsp;
+	struct smb2_write_req *req = REQUEST_BUF(work);
+	struct smb2_write_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_rpc_command *rpc_resp;
 	uint64_t id = 0;
 	int err = 0, ret = 0;
 	char *data_buf;
 	size_t length;
-
-	req = (struct smb2_write_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_write_rsp *)RESPONSE_BUF(work);
 
 	length = le32_to_cpu(req->Length);
 	id = le64_to_cpu(req->VolatileFileId);
@@ -5808,8 +5739,8 @@ static ssize_t smb2_write_rdma_channel(struct cifsd_work *work,
 
 	desc = (struct smb2_buffer_desc_v1 *)&req->Buffer[0];
 
-	if (work->conn->dialect == SMB30_PROT_ID
-		&& le32_to_cpu(req->Channel != SMB2_CHANNEL_RDMA_V1))
+	if (work->conn->dialect == SMB30_PROT_ID &&
+			req->Channel != SMB2_CHANNEL_RDMA_V1)
 		return -EINVAL;
 
 	if (req->Length != 0 || req->DataOffset != 0)
@@ -5820,7 +5751,7 @@ static ssize_t smb2_write_rdma_channel(struct cifsd_work *work,
 		return -EINVAL;
 
 	work->need_invalidate_rkey =
-		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+		(req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE);
 	work->remote_key = le32_to_cpu(desc->token);
 
 	data_buf = cifsd_alloc_response(length);
@@ -5865,16 +5796,8 @@ int smb2_write(struct cifsd_work *work)
 	bool writethrough = false;
 	int err = 0;
 
-	req = (struct smb2_write_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_write_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_write_req *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_write_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
-	}
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   CIFSD_SHARE_FLAG_PIPE)) {
@@ -5896,8 +5819,8 @@ int smb2_write(struct cifsd_work *work)
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
 
-	if (le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1 &&
-		le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
+	if (req->Channel != SMB2_CHANNEL_RDMA_V1 &&
+			req->Channel != SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
 
 		if (le16_to_cpu(req->DataOffset) ==
 				(offsetof(struct smb2_write_req, Buffer) - 4)) {
@@ -5981,12 +5904,9 @@ out:
  */
 int smb2_flush(struct cifsd_work *work)
 {
-	struct smb2_flush_req *req;
-	struct smb2_flush_rsp *rsp;
+	struct smb2_flush_req *req = REQUEST_BUF(work);
+	struct smb2_flush_rsp *rsp = RESPONSE_BUF(work);
 	int err;
-
-	req = (struct smb2_flush_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_flush_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("SMB2_FLUSH called for fid %llu\n",
 			le64_to_cpu(req->VolatileFileId));
@@ -6020,7 +5940,7 @@ out:
 int smb2_cancel(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_hdr *hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
 	struct smb2_hdr *chdr;
 	struct cifsd_work *cancel_work = NULL;
 	struct list_head *tmp;
@@ -6037,7 +5957,7 @@ int smb2_cancel(struct cifsd_work *work)
 		list_for_each(tmp, command_list) {
 			cancel_work = list_entry(tmp, struct cifsd_work,
 					async_request_entry);
-			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+			chdr = REQUEST_BUF(cancel_work);
 
 			if (cancel_work->async_id !=
 					le64_to_cpu(hdr->Id.AsyncId))
@@ -6057,7 +5977,7 @@ int smb2_cancel(struct cifsd_work *work)
 		list_for_each(tmp, command_list) {
 			cancel_work = list_entry(tmp, struct cifsd_work,
 					request_entry);
-			chdr = (struct smb2_hdr *)REQUEST_BUF(cancel_work);
+			chdr = REQUEST_BUF(cancel_work);
 
 			if (chdr->MessageId != hdr->MessageId ||
 				cancel_work == work)
@@ -6148,8 +6068,8 @@ static inline bool lock_defer_pending(struct file_lock *fl)
  */
 int smb2_lock(struct cifsd_work *work)
 {
-	struct smb2_lock_req *req;
-	struct smb2_lock_rsp *rsp;
+	struct smb2_lock_req *req = REQUEST_BUF(work);
+	struct smb2_lock_rsp *rsp = RESPONSE_BUF(work);
 	struct smb2_lock_element *lock_ele;
 	struct cifsd_file *fp = NULL;
 	struct file_lock *flock = NULL;
@@ -6164,9 +6084,6 @@ int smb2_lock(struct cifsd_work *work)
 	LIST_HEAD(lock_list);
 	LIST_HEAD(rollback_list);
 	int prior_lock = 0;
-
-	req = (struct smb2_lock_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_lock_rsp *)RESPONSE_BUF(work);
 
 	cifsd_debug("Received lock request\n");
 	fp = cifsd_lookup_fd_slow(work,
@@ -6774,20 +6691,18 @@ int smb2_ioctl(struct cifsd_work *work)
 	struct cifsd_conn *conn = work->conn;
 	struct cifsd_rpc_command *rpc_resp;
 
-	req = (struct smb2_ioctl_req *)REQUEST_BUF(work);
-	rsp = (struct smb2_ioctl_rsp *)RESPONSE_BUF(work);
-	rsp_org = rsp;
-
+	rsp_org = RESPONSE_BUF(work);
 	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_ioctl_req *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_ioctl_rsp *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
+		req = REQUEST_BUF_NEXT(work);
+		rsp = RESPONSE_BUF_NEXT(work);
 		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
 			cifsd_debug("Compound request set FID = %u\n",
 					work->compound_fid);
 			id = work->compound_fid;
 		}
+	} else {
+		req = REQUEST_BUF(work);
+		rsp = RESPONSE_BUF(work);
 	}
 
 	if (!HAS_FILE_ID(id))
@@ -7059,8 +6974,8 @@ out:
  */
 static int smb20_oplock_break_ack(struct cifsd_work *work)
 {
-	struct smb2_oplock_break *req;
-	struct smb2_oplock_break *rsp;
+	struct smb2_oplock_break *req = REQUEST_BUF(work);
+	struct smb2_oplock_break *rsp = RESPONSE_BUF(work);
 	struct cifsd_file *fp;
 	struct oplock_info *opinfo = NULL;
 	int err = 0, ret = 0;
@@ -7068,13 +6983,11 @@ static int smb20_oplock_break_ack(struct cifsd_work *work)
 	char req_oplevel = 0, rsp_oplevel = 0;
 	unsigned int oplock_change_type;
 
-	req = (struct smb2_oplock_break *)REQUEST_BUF(work);
-	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
 	volatile_id = le64_to_cpu(req->VolatileFid);
 	persistent_id = le64_to_cpu(req->PersistentFid);
 	req_oplevel = req->OplockLevel;
-	cifsd_debug("SMB2_OPLOCK_BREAK v_id %llu, p_id %llu request oplock level %d\n",
-			volatile_id, persistent_id, req_oplevel);
+	cifsd_debug("v_id %llu, p_id %llu request oplock level %d\n",
+		    volatile_id, persistent_id, req_oplevel);
 
 	fp = cifsd_lookup_fd_slow(work, volatile_id, persistent_id);
 	if (!fp) {
@@ -7200,15 +7113,13 @@ static int check_lease_state(struct lease *lease, __le32 req_state)
 static int smb21_lease_break_ack(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_lease_ack *req, *rsp;
+	struct smb2_lease_ack *req = REQUEST_BUF(work);
+	struct smb2_lease_ack *rsp = RESPONSE_BUF(work);
 	struct oplock_info *opinfo;
 	int err = 0, ret = 0;
 	unsigned int lease_change_type;
 	__le32 lease_state;
 	struct lease *lease;
-
-	req = (struct smb2_lease_ack *)REQUEST_BUF(work);
-	rsp = (struct smb2_lease_ack *)RESPONSE_BUF(work);
 
 	cifsd_debug("smb21 lease break, lease state(0x%x)\n",
 			le32_to_cpu(req->LeaseState));
@@ -7229,7 +7140,7 @@ static int smb21_lease_break_ack(struct cifsd_work *work)
 
 	if (check_lease_state(lease, req->LeaseState)) {
 		rsp->hdr.Status = STATUS_REQUEST_NOT_ACCEPTED;
-		cifsd_debug("req lease state : 0x%x,  expected lease state : 0x%x\n",
+		cifsd_debug("req lease state: 0x%x, expected state: 0x%x\n",
 				lease->new_state, req->LeaseState);
 		goto err_out;
 	}
@@ -7326,12 +7237,9 @@ err_out:
  */
 int smb2_oplock_break(struct cifsd_work *work)
 {
-	struct smb2_oplock_break *req;
-	struct smb2_oplock_break *rsp;
+	struct smb2_oplock_break *req = REQUEST_BUF(work);
+	struct smb2_oplock_break *rsp = RESPONSE_BUF(work);
 	int err;
-
-	req = (struct smb2_oplock_break *)REQUEST_BUF(work);
-	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
 
 	switch (le16_to_cpu(req->StructureSize)) {
 	case OP_BREAK_STRUCT_SIZE_20:
@@ -7364,31 +7272,22 @@ err_out:
  *
  * Return:      0
  */
-int smb2_notify(struct cifsd_work *cifsd_work)
+int smb2_notify(struct cifsd_work *work)
 {
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp, *rsp_org;
 
-	req = (struct smb2_notify_req *)REQUEST_BUF(cifsd_work);
-	rsp = (struct smb2_notify_rsp *)RESPONSE_BUF(cifsd_work);
-	rsp_org = rsp;
+	rsp_org = RESPONSE_BUF(work);
+	WORK_BUFFERS(work, req, rsp);
 
-	if (cifsd_work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_notify_req *)((char *)req +
-			cifsd_work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_notify_rsp *)((char *)rsp +
-			cifsd_work->next_smb2_rsp_hdr_off);
-	}
-
-	if (cifsd_work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
+	if (work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {
 		rsp->hdr.Status = STATUS_INTERNAL_ERROR;
-		smb2_set_err_rsp(cifsd_work);
+		smb2_set_err_rsp(work);
 		return 0;
 	}
 
-	smb2_set_err_rsp(cifsd_work);
+	smb2_set_err_rsp(work);
 	rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
-
 	return 0;
 }
 
@@ -7400,7 +7299,7 @@ int smb2_notify(struct cifsd_work *cifsd_work)
  */
 int smb2_is_sign_req(struct cifsd_work *work, unsigned int command)
 {
-	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
 
 	if ((rcv_hdr2->Flags & SMB2_FLAGS_SIGNED) &&
 			command != SMB2_NEGOTIATE_HE &&
@@ -7424,7 +7323,7 @@ int smb2_is_sign_req(struct cifsd_work *work, unsigned int command)
  */
 int smb2_check_sign_req(struct cifsd_work *work)
 {
-	struct smb2_hdr *rcv_hdr2 = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[1];
@@ -7454,7 +7353,7 @@ int smb2_check_sign_req(struct cifsd_work *work)
  */
 void smb2_set_sign_rsp(struct cifsd_work *work)
 {
-	struct smb2_hdr *rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[2];
 	int n_vec = 1;
@@ -7495,10 +7394,9 @@ int smb3_check_sign_req(struct cifsd_work *work)
 	struct kvec iov[1];
 	size_t len;
 
-	hdr_org = hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	hdr_org = hdr = REQUEST_BUF(work);
 	if (work->next_smb2_rcv_hdr_off)
-		hdr = (struct smb2_hdr *)((char *)hdr_org +
-				work->next_smb2_rcv_hdr_off);
+		hdr = REQUEST_BUF_NEXT(work);
 
 	if (!hdr->NextCommand && !work->next_smb2_rcv_hdr_off)
 		len = be32_to_cpu(hdr_org->smb2_buf_length);
@@ -7548,7 +7446,7 @@ int smb3_check_sign_req(struct cifsd_work *work)
 void smb3_set_sign_rsp(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn;
-	struct smb2_hdr *req_hdr = (struct smb2_hdr *)REQUEST_BUF(work);
+	struct smb2_hdr *req_hdr;
 	struct smb2_hdr *hdr, *hdr_org;
 	struct channel *chann;
 	char signature[SMB2_CMACAES_SIZE];
@@ -7557,13 +7455,11 @@ void smb3_set_sign_rsp(struct cifsd_work *work)
 	size_t len;
 	char *signing_key;
 
-	hdr_org = hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	hdr_org = hdr = RESPONSE_BUF(work);
 	if (work->next_smb2_rsp_hdr_off)
-		hdr = (struct smb2_hdr *)((char *)hdr_org +
-				work->next_smb2_rsp_hdr_off);
+		hdr = RESPONSE_BUF_NEXT(work);
 
-	req_hdr = (struct smb2_hdr *)((char *)req_hdr +
-			work->next_smb2_rcv_hdr_off);
+	req_hdr = REQUEST_BUF_NEXT(work);
 
 	if (!work->next_smb2_rsp_hdr_off) {
 		len = get_rfc1002_len(hdr_org);
@@ -7615,18 +7511,12 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct cifsd_session *sess = work->sess;
-	struct smb2_hdr *req = (struct smb2_hdr *)REQUEST_BUF(work);
-	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct smb2_hdr *req, *rsp;
 
 	if (conn->dialect != SMB311_PROT_ID)
 		return;
 
-	if (work->next_smb2_rcv_hdr_off) {
-		req = (struct smb2_hdr *)((char *)req +
-				work->next_smb2_rcv_hdr_off);
-		rsp = (struct smb2_hdr *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
-	}
+	WORK_BUFFERS(work, req, rsp);
 
 	if (le16_to_cpu(req->Command) == SMB2_NEGOTIATE_HE)
 		cifsd_gen_preauth_integrity_hash(conn, (char *)rsp,
@@ -7642,8 +7532,9 @@ void smb3_preauth_hash_rsp(struct cifsd_work *work)
 	}
 }
 
-static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr, char *old_buf,
-				__le16 cipher_type)
+static void fill_transform_hdr(struct smb2_transform_hdr *tr_hdr,
+			       char *old_buf,
+			       __le16 cipher_type)
 {
 	struct smb2_hdr *hdr = (struct smb2_hdr *)old_buf;
 	unsigned int orig_len = get_rfc1002_len(old_buf);
@@ -7764,14 +7655,13 @@ int smb3_decrypt_req(struct cifsd_work *work)
 int smb3_final_sess_setup_resp(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
-	struct smb2_hdr *rsp = (struct smb2_hdr *)RESPONSE_BUF(work);
+	struct smb2_hdr *rsp = RESPONSE_BUF(work);
 
 	if (conn->dialect != SMB311_PROT_ID)
 		return 0;
 
 	if (work->next_smb2_rcv_hdr_off)
-		rsp = (struct smb2_hdr *)((char *)rsp +
-				work->next_smb2_rsp_hdr_off);
+		rsp = RESPONSE_BUF_NEXT(work);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
 		rsp->Status == STATUS_SUCCESS)
