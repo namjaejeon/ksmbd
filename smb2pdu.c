@@ -5512,7 +5512,7 @@ static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
 		return -EINVAL;
 
 	work->need_invalidate_rkey =
-		le32_to_cpu(req->Channel) == SMB2_CHANNEL_RDMA_V1_INVALIDATE;
+		(req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE);
 	work->remote_key = le32_to_cpu(desc->token);
 
 	err = cifsd_conn_rdma_write(work->conn,
