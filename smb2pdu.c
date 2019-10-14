@@ -5819,8 +5819,8 @@ int smb2_write(struct cifsd_work *work)
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
 
-	if (le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1 &&
-		le32_to_cpu(req->Channel) != SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
+	if (req->Channel != SMB2_CHANNEL_RDMA_V1 &&
+			req->Channel != SMB2_CHANNEL_RDMA_V1_INVALIDATE) {
 
 		if (le16_to_cpu(req->DataOffset) ==
 				(offsetof(struct smb2_write_req, Buffer) - 4)) {
