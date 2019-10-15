@@ -23,7 +23,9 @@
 #include "mgmt/user_session.h"
 #include "crypto_ctx.h"
 
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 int cifsd_debugging;
+#endif
 
 struct cifsd_server_config server_conf;
 
@@ -543,8 +545,10 @@ static void __exit cifsd_server_exit(void)
 	cifsd_release_inode_hash();
 }
 
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 module_param(cifsd_debugging, int, 0644);
 MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
+#endif
 
 MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
