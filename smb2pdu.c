@@ -6027,6 +6027,44 @@ out:
 	return fl;
 }
 
+static int smb2_set_flock_flags(struct file_lock *flock, int flags)
+{
+	int cmd = 0;
+
+	/* Checking for wrong flag combination during lock request*/
+	switch (flags) {
+	case SMB2_LOCKFLAG_SHARED:
+		cifsd_debug("received shared request\n");
+		cmd = F_SETLKW;
+		flock->fl_type = F_RDLCK;
+		flock->fl_flags |= FL_SLEEP;
+		break;
+	case SMB2_LOCKFLAG_EXCLUSIVE:
+		cifsd_debug("received exclusive request\n");
+		cmd = F_SETLKW;
+		flock->fl_type = F_WRLCK;
+		flock->fl_flags |= FL_SLEEP;
+		break;
+	case SMB2_LOCKFLAG_SHARED|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
+		cifsd_debug("received shared & fail immediately request\n");
+		cmd = F_SETLK;
+		flock->fl_type = F_RDLCK;
+		break;
+	case SMB2_LOCKFLAG_EXCLUSIVE|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
+		cifsd_debug("received exclusive & fail immediately request\n");
+		cmd = F_SETLK;
+		flock->fl_type = F_WRLCK;
+		break;
+	case SMB2_LOCKFLAG_UNLOCK:
+		cifsd_debug("received unlock request\n");
+		flock->fl_type = F_UNLCK;
+		cmd = 0;
+		break;
+	}
+
+	return cmd;
+}
+
 static struct cifsd_lock *smb2_lock_init(struct file_lock *flock,
 	unsigned int cmd, int flags, struct list_head *lock_list)
 {
@@ -6118,38 +6156,7 @@ int smb2_lock(struct cifsd_work *work)
 			goto out;
 		}
 
-		/* Checking for wrong flag combination during lock request*/
-		switch (flags) {
-		case SMB2_LOCKFLAG_SHARED:
-			cifsd_debug("received shared request\n");
-			cmd = F_SETLKW;
-			flock->fl_type = F_RDLCK;
-			flock->fl_flags |= FL_SLEEP;
-			break;
-		case SMB2_LOCKFLAG_EXCLUSIVE:
-			cifsd_debug("received exclusive request\n");
-			cmd = F_SETLKW;
-			flock->fl_type = F_WRLCK;
-			flock->fl_flags |= FL_SLEEP;
-			break;
-		case SMB2_LOCKFLAG_SHARED|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
-			cifsd_debug("received shared & fail immediately request\n");
-			cmd = F_SETLK;
-			flock->fl_type = F_RDLCK;
-			break;
-		case SMB2_LOCKFLAG_EXCLUSIVE|SMB2_LOCKFLAG_FAIL_IMMEDIATELY:
-			cifsd_debug("received exclusive & fail immediately request\n");
-			cmd = F_SETLK;
-			flock->fl_type = F_WRLCK;
-			break;
-		case SMB2_LOCKFLAG_UNLOCK:
-			cifsd_debug("received unlock request\n");
-			flock->fl_type = F_UNLCK;
-			cmd = 0;
-			break;
-		default:
-			flags = 0;
-		}
+		cmd = smb2_set_flock_flags(flock, flags);
 
 		flock->fl_start = le64_to_cpu(lock_ele[i].Offset);
 		if (flock->fl_start > OFFSET_MAX) {
