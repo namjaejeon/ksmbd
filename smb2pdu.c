@@ -194,11 +194,12 @@ int is_smb2_rsp(struct cifsd_work *work)
  */
 int get_smb2_cmd_val(struct cifsd_work *work)
 {
-	struct smb2_hdr *rcv_hdr = REQUEST_BUF(work);
+	struct smb2_hdr *rcv_hdr;
 
 	if (work->next_smb2_rcv_hdr_off)
-		rcv_hdr = (struct smb2_hdr *)((char *)rcv_hdr
-					+ work->next_smb2_rcv_hdr_off);
+		rcv_hdr = REQUEST_BUF_NEXT(work);
+	else
+		rcv_hdr = REQUEST_BUF(work);
 	return le16_to_cpu(rcv_hdr->Command);
 }
 
@@ -208,10 +209,12 @@ int get_smb2_cmd_val(struct cifsd_work *work)
  */
 void set_smb2_rsp_status(struct cifsd_work *work, __le32 err)
 {
-	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct smb2_hdr *rsp_hdr;
 
 	if (work->next_smb2_rcv_hdr_off)
 		rsp_hdr = RESPONSE_BUF_NEXT(work);
+	else
+		rsp_hdr = RESPONSE_BUF(work);
 	rsp_hdr->Status = err;
 	smb2_set_err_rsp(work);
 }
