@@ -6802,6 +6802,25 @@ static inline int fsctl_set_sparse(struct cifsd_work *work, uint64_t id,
 	return 0;
 }
 
+static int fsctl_request_resume_key(struct cifsd_work *work,
+	struct smb2_ioctl_req *req, struct resume_key_ioctl_rsp *key_rsp)
+{
+	struct cifsd_file *fp;
+
+	fp = cifsd_lookup_fd_slow(work,
+			le64_to_cpu(req->VolatileFileId),
+			le64_to_cpu(req->PersistentFileId));
+	if (!fp)
+		return -ENOENT;
+
+	memset(key_rsp, 0, sizeof(*key_rsp));
+	key_rsp->ResumeKey[0] = req->VolatileFileId;
+	key_rsp->ResumeKey[1] = req->PersistentFileId;
+	cifsd_fd_put(work, fp);
+
+	return 0;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6899,34 +6918,19 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_REQUEST_RESUME_KEY:
-	{
-		struct resume_key_ioctl_rsp *key_rsp;
-		struct cifsd_file *fp;
-
-		if (out_buf_len < sizeof(*key_rsp)) {
-			req->hdr.Status = STATUS_INVALID_PARAMETER;
+		if (out_buf_len < sizeof(struct resume_key_ioctl_rsp)) {
+			ret = -EINVAL;
 			goto out;
 		}
 
-		fp = cifsd_lookup_fd_slow(work,
-					le64_to_cpu(req->VolatileFileId),
-					le64_to_cpu(req->PersistentFileId));
-		if (!fp) {
-			ret = -ENOENT;
+		ret = fsctl_request_resume_key(work, req,
+			(struct resume_key_ioctl_rsp *)&rsp->Buffer[0]);
+		if (ret < 0)
 			goto out;
-		}
-
-		nbytes = sizeof(struct resume_key_ioctl_rsp);
-		key_rsp = (struct resume_key_ioctl_rsp *)&rsp->Buffer[0];
-		memset(key_rsp, 0, sizeof(*key_rsp));
-		key_rsp->ResumeKey[0] = req->VolatileFileId;
-		key_rsp->ResumeKey[1] = req->PersistentFileId;
-
 		rsp->PersistentFileId = req->PersistentFileId;
 		rsp->VolatileFileId = req->VolatileFileId;
-		cifsd_fd_put(work, fp);
+		nbytes = sizeof(struct resume_key_ioctl_rsp);
 		break;
-	}
 	case FSCTL_COPYCHUNK:
 	case FSCTL_COPYCHUNK_WRITE:
 		if (out_buf_len < sizeof(struct copychunk_ioctl_rsp)) {
