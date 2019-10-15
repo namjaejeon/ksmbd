@@ -6785,6 +6785,23 @@ out:
 	return nbytes;
 }
 
+static inline int fsctl_set_sparse(struct cifsd_work *work, uint64_t id,
+	struct file_sparse *sparse)
+{
+	struct cifsd_file *fp;
+
+	fp = cifsd_lookup_fd_fast(work, id);
+	if (!fp)
+		return -ENOENT;
+
+	if (sparse->SetSparse)
+		fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
+	else
+		fp->f_ci->m_fattr &= ~ATTR_SPARSE_FILE_LE;
+	cifsd_fd_put(work, fp);
+	return 0;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6925,21 +6942,12 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	case FSCTL_SET_SPARSE:
 	{
-		struct cifsd_file *fp;
-		struct file_sparse *sparse;
+		int ret;
 
-		fp = cifsd_lookup_fd_fast(work, id);
-		if (!fp) {
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+		ret = fsctl_set_sparse(work, id,
+			(struct file_sparse *)&req->Buffer[0]);
+		if (ret < 0)
 			goto out;
-		}
-
-		sparse = (struct file_sparse *)&req->Buffer[0];
-		if (sparse->SetSparse)
-			fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
-		else
-			fp->f_ci->m_fattr &= ~ATTR_SPARSE_FILE_LE;
-		cifsd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_SET_ZERO_DATA:
