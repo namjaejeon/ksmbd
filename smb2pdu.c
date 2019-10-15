@@ -6677,6 +6677,44 @@ static int query_iface_info_ioctl(struct cifsd_conn *conn,
 	return nbytes;
 }
 
+
+static int validate_negotiate_info(struct cifsd_conn *conn,
+	struct validate_negotiate_info_req *neg_req,
+	struct validate_negotiate_info_rsp *neg_rsp)
+{
+	int ret = 0;
+	int dialect;
+
+	dialect = cifsd_lookup_dialect_by_id(neg_req->Dialects,
+			neg_req->DialectCount);
+	if (dialect == BAD_PROT_ID || dialect != conn->dialect) {
+		ret = -EINVAL;
+		goto err_out;
+	}
+
+	if (strncmp(neg_req->Guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE)) {
+		ret = -EINVAL;
+		goto err_out;
+	}
+
+	if (le16_to_cpu(neg_req->SecurityMode) != conn->cli_sec_mode) {
+		ret = -EINVAL;
+		goto err_out;
+	}
+
+	if (le32_to_cpu(neg_req->Capabilities) != conn->cli_cap) {
+		ret = -EINVAL;
+		goto err_out;
+	}
+
+	neg_rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
+	memset(neg_rsp->Guid, 0, SMB2_CLIENT_GUID_SIZE);
+	neg_rsp->SecurityMode = cpu_to_le16(conn->srv_sec_mode);
+	neg_rsp->Dialect = cpu_to_le16(conn->dialect);
+err_out:
+	return ret;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6788,33 +6826,15 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
 	{
-		struct validate_negotiate_info_req *neg_req;
-		struct validate_negotiate_info_rsp *neg_rsp;
 		int ret;
 
-		neg_req = (struct validate_negotiate_info_req *)&req->Buffer[0];
-		ret = cifsd_lookup_dialect_by_id(neg_req->Dialects,
-						 neg_req->DialectCount);
-		if (ret == BAD_PROT_ID || ret != conn->dialect)
-			goto out;
-
-		if (strncmp(neg_req->Guid, conn->ClientGUID,
-				SMB2_CLIENT_GUID_SIZE))
-			goto out;
-
-		if (le16_to_cpu(neg_req->SecurityMode) != conn->cli_sec_mode)
-			goto out;
-
-		if (le32_to_cpu(neg_req->Capabilities) != conn->cli_cap)
+		ret = validate_negotiate_info(conn,
+			(struct validate_negotiate_info_req *)&req->Buffer[0],
+			(struct validate_negotiate_info_rsp *)&rsp->Buffer[0]);
+		if (ret < 0)
 			goto out;
 
 		nbytes = sizeof(struct validate_negotiate_info_rsp);
-		neg_rsp = (struct validate_negotiate_info_rsp *)&rsp->Buffer[0];
-		neg_rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
-		memset(neg_rsp->Guid, 0, SMB2_CLIENT_GUID_SIZE);
-		neg_rsp->SecurityMode = cpu_to_le16(conn->srv_sec_mode);
-		neg_rsp->Dialect = cpu_to_le16(conn->dialect);
-
 		rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
 		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
 		break;
