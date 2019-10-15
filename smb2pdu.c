@@ -6715,6 +6715,36 @@ err_out:
 	return ret;
 }
 
+static int query_allocated_ranges(struct cifsd_work *work, uint64_t id,
+	struct file_allocated_range_buffer *qar_req,
+	struct file_allocated_range_buffer *qar_rsp)
+{
+	struct cifsd_file *fp;
+	u64 start, length, ret_start = 0, ret_length = 0;
+	int ret = 0;
+
+	fp = cifsd_lookup_fd_fast(work, id);
+	if (!fp) {
+		ret = -ENOENT;
+		goto err_out;
+	}
+
+	start = le64_to_cpu(qar_req->file_offset);
+	length = le64_to_cpu(qar_req->length);
+
+	ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
+			&ret_length);
+	cifsd_fd_put(work, fp);
+	if (ret)
+		goto err_out;
+
+	qar_rsp->file_offset = cpu_to_le64(ret_start);
+	qar_rsp->length = cpu_to_le64(ret_length);
+
+err_out:
+	return ret;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6933,33 +6963,15 @@ int smb2_ioctl(struct cifsd_work *work)
 	}
 	case FSCTL_QUERY_ALLOCATED_RANGES:
 	{
-		struct file_allocated_range_buffer *qar_req, *qar_rsp;
-		struct cifsd_file *fp;
-		u64 start, length, ret_start = 0, ret_length = 0;
 		int ret;
 
-		fp = cifsd_lookup_fd_fast(work, id);
-		if (!fp) {
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
-			goto out;
-		}
-
-		qar_req =
-			(struct file_allocated_range_buffer *)&req->Buffer[0];
-		start = le64_to_cpu(qar_req->file_offset);
-		length = le64_to_cpu(qar_req->length);
-
-		ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
-				       &ret_length);
-		cifsd_fd_put(work, fp);
-		if (ret)
+		ret = query_allocated_ranges(work, id,
+			(struct file_allocated_range_buffer *)&req->Buffer[0],
+			(struct file_allocated_range_buffer *)&rsp->Buffer[0]);
+		if (ret < 0)
 			goto out;
 
-		if (ret_length)
-			nbytes = sizeof(struct file_allocated_range_buffer);
-		qar_rsp = (struct file_allocated_range_buffer *)&rsp->Buffer[0];
-		qar_rsp->file_offset = cpu_to_le64(ret_start);
-		qar_rsp->length = cpu_to_le64(ret_length);
+		nbytes = sizeof(struct file_allocated_range_buffer);
 		break;
 	}
 	default:
