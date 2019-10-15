@@ -6745,6 +6745,46 @@ err_out:
 	return ret;
 }
 
+static int pipe_transceive(struct cifsd_work *work, uint64_t id,
+	int out_buf_len, struct smb2_ioctl_req *req, struct smb2_ioctl_rsp *rsp)
+{
+	struct cifsd_rpc_command *rpc_resp;
+	char *data_buf = (char *)&req->Buffer[0];
+	int nbytes = 0;
+
+	rpc_resp = cifsd_rpc_ioctl(work->sess, id,
+			data_buf,
+			le32_to_cpu(req->InputCount));
+	if (rpc_resp) {
+		if (rpc_resp->flags == CIFSD_RPC_ENOTIMPLEMENTED) {
+			rsp->hdr.Status = STATUS_NOT_SUPPORTED;
+			goto out;
+		}
+
+		if (rpc_resp->flags != CIFSD_RPC_OK) {
+			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		nbytes = rpc_resp->payload_sz;
+		if (rpc_resp->payload_sz > out_buf_len) {
+			rsp->hdr.Status = STATUS_BUFFER_OVERFLOW;
+			nbytes = out_buf_len;
+		}
+
+		if (!rpc_resp->payload_sz) {
+			rsp->hdr.Status =
+				STATUS_UNEXPECTED_IO_ERROR;
+			goto out;
+		}
+
+		memcpy((char *)rsp->Buffer, rpc_resp->payload, nbytes);
+	}
+out:
+	cifsd_free(rpc_resp);
+	return nbytes;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -6757,10 +6797,8 @@ int smb2_ioctl(struct cifsd_work *work)
 	struct smb2_ioctl_rsp *rsp, *rsp_org;
 	int cnt_code, nbytes = 0;
 	int out_buf_len;
-	char *data_buf;
 	uint64_t id = CIFSD_NO_FID;
 	struct cifsd_conn *conn = work->conn;
-	struct cifsd_rpc_command *rpc_resp;
 
 	rsp_org = RESPONSE_BUF(work);
 	if (work->next_smb2_rcv_hdr_off) {
@@ -6787,7 +6825,6 @@ int smb2_ioctl(struct cifsd_work *work)
 	cnt_code = le32_to_cpu(req->CntCode);
 	out_buf_len = le32_to_cpu(req->MaxOutputResponse);
 	out_buf_len = min(CIFSD_IPC_MAX_PAYLOAD, out_buf_len);
-	data_buf = (char *)&req->Buffer[0];
 
 	switch (cnt_code) {
 	case FSCTL_DFS_GET_REFERRALS:
@@ -6815,45 +6852,16 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_PIPE_TRANSCEIVE:
+	{
 		/* @FIXME */
 		if (rsp->hdr.Id.SyncId.TreeId != 0) {
 			cifsd_debug("Not Pipe transceive\n");
 			goto out;
 		}
 
-		rpc_resp = cifsd_rpc_ioctl(work->sess, id,
-					   data_buf,
-					   le32_to_cpu(req->InputCount));
-		if (rpc_resp) {
-			if (rpc_resp->flags == CIFSD_RPC_ENOTIMPLEMENTED) {
-				rsp->hdr.Status = STATUS_NOT_SUPPORTED;
-				cifsd_free(rpc_resp);
-				goto out;
-			}
-
-			if (rpc_resp->flags != CIFSD_RPC_OK) {
-				rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-				cifsd_free(rpc_resp);
-				goto out;
-			}
-
-			nbytes = rpc_resp->payload_sz;
-			if (rpc_resp->payload_sz > out_buf_len) {
-				rsp->hdr.Status = STATUS_BUFFER_OVERFLOW;
-				nbytes = out_buf_len;
-			}
-
-			if (!rpc_resp->payload_sz) {
-				rsp->hdr.Status =
-					STATUS_UNEXPECTED_IO_ERROR;
-				cifsd_free(rpc_resp);
-				goto out;
-			}
-
-			memcpy((char *)rsp->Buffer, rpc_resp->payload, nbytes);
-			cifsd_free(rpc_resp);
-		}
+		nbytes = pipe_transceive(work, id, out_buf_len, req, rsp);
 		break;
+	}
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
 	{
 		int ret;
