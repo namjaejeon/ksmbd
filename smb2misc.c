@@ -390,15 +390,14 @@ static int smb2_validate_credit_charge(struct smb2_hdr *hdr)
 
 int cifsd_smb2_check_message(struct cifsd_work *work)
 {
-	char *buf = REQUEST_BUF(work);
-	struct smb2_pdu *pdu = (struct smb2_pdu *)buf;
+	struct smb2_pdu *pdu = REQUEST_BUF(work);
 	struct smb2_hdr *hdr = &pdu->hdr;
 	int command;
 	__u32 clc_len;  /* calculated length */
-	__u32 len = get_rfc1002_len(buf);
+	__u32 len = get_rfc1002_len(pdu);
 
 	if (work->next_smb2_rcv_hdr_off) {
-		pdu = (struct smb2_pdu *)(buf + work->next_smb2_rcv_hdr_off);
+		pdu = REQUEST_BUF_NEXT(work);
 		hdr = &pdu->hdr;
 	}
 
@@ -446,7 +445,6 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 
 	clc_len = smb2_calc_size(hdr);
 	if (len != clc_len) {
-		__u64 mid = le64_to_cpu(hdr->MessageId);
 		/* server can return one byte more due to implied bcc[0] */
 		if (clc_len == len + 1)
 			return 0;
@@ -467,12 +465,14 @@ int cifsd_smb2_check_message(struct cifsd_work *work)
 		if (clc_len < len) {
 			cifsd_debug(
 				"cli req padded more than expected. Length %d not %d for cmd:%d mid:%llu\n",
-					len, clc_len, command, mid);
+					len, clc_len, command,
+					le64_to_cpu(hdr->MessageId));
 			return 0;
 		}
 		cifsd_debug(
 			"cli req too short, len %d not %d. cmd:%d mid:%llu\n",
-				len, clc_len, command, mid);
+				len, clc_len, command,
+				le64_to_cpu(hdr->MessageId));
 
 		return 1;
 	}

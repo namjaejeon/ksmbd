@@ -30,6 +30,7 @@ extern int cifsd_caseless_search;
 #endif
 #endif
 
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 #define cifsd_debug(fmt, ...)					\
 	do {							\
 		if (cifsd_debugging)				\
@@ -38,6 +39,9 @@ extern int cifsd_caseless_search;
 				__LINE__,			\
 				##__VA_ARGS__);			\
 	} while (0)
+#else
+#define cifsd_debug(fmt, ...)
+#endif
 
 #define cifsd_info(fmt, ...)					\
 			pr_info(cifsd_pr_fmt(fmt), ##__VA_ARGS__)

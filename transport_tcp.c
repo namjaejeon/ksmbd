@@ -133,7 +133,7 @@ static struct kvec *get_conn_iovec(struct tcp_transport *t,
 		return t->iov;
 
 	/* not big enough -- allocate a new one and release the old */
-	new_iov = kmalloc(sizeof(*new_iov) * nr_segs, GFP_KERNEL);
+	new_iov = kmalloc_array(nr_segs, sizeof(*new_iov), GFP_KERNEL);
 	if (new_iov) {
 		kfree(t->iov);
 		t->iov = new_iov;
@@ -370,11 +370,10 @@ static void tcp_destroy_socket(struct socket *cifsd_socket)
 		return;
 
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
-	if (ret) {
+	if (ret)
 		cifsd_err("Failed to shutdown socket: %d\n", ret);
-	} else {
+	else
 		sock_release(cifsd_socket);
-	}
 }
 
 /**
