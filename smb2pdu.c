@@ -6421,7 +6421,7 @@ out2:
 	return 0;
 }
 
-static int smb2_ioctl_copychunk(struct cifsd_work *work,
+static int fsctl_copychunk(struct cifsd_work *work,
 				struct smb2_ioctl_req *req,
 				struct smb2_ioctl_rsp *rsp)
 {
@@ -6557,7 +6557,7 @@ static unsigned int idev_ipv4_address(struct in_device *idev)
 	return addr;
 }
 
-static int query_iface_info_ioctl(struct cifsd_conn *conn,
+static int fsctl_query_iface_info_ioctl(struct cifsd_conn *conn,
 				  struct smb2_ioctl_req *req,
 				  struct smb2_ioctl_rsp *rsp)
 {
@@ -6678,7 +6678,7 @@ static int query_iface_info_ioctl(struct cifsd_conn *conn,
 }
 
 
-static int validate_negotiate_info(struct cifsd_conn *conn,
+static int fsctl_validate_negotiate_info(struct cifsd_conn *conn,
 	struct validate_negotiate_info_req *neg_req,
 	struct validate_negotiate_info_rsp *neg_rsp)
 {
@@ -6715,7 +6715,7 @@ err_out:
 	return ret;
 }
 
-static int query_allocated_ranges(struct cifsd_work *work, uint64_t id,
+static int fsctl_query_allocated_ranges(struct cifsd_work *work, uint64_t id,
 	struct file_allocated_range_buffer *qar_req,
 	struct file_allocated_range_buffer *qar_rsp)
 {
@@ -6745,7 +6745,7 @@ err_out:
 	return ret;
 }
 
-static int pipe_transceive(struct cifsd_work *work, uint64_t id,
+static int fsctl_pipe_transceive(struct cifsd_work *work, uint64_t id,
 	int out_buf_len, struct smb2_ioctl_req *req, struct smb2_ioctl_rsp *rsp)
 {
 	struct cifsd_rpc_command *rpc_resp;
@@ -6859,14 +6859,14 @@ int smb2_ioctl(struct cifsd_work *work)
 			goto out;
 		}
 
-		nbytes = pipe_transceive(work, id, out_buf_len, req, rsp);
+		nbytes = fsctl_pipe_transceive(work, id, out_buf_len, req, rsp);
 		break;
 	}
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
 	{
 		int ret;
 
-		ret = validate_negotiate_info(conn,
+		ret = fsctl_validate_negotiate_info(conn,
 			(struct validate_negotiate_info_req *)&req->Buffer[0],
 			(struct validate_negotiate_info_rsp *)&rsp->Buffer[0]);
 		if (ret < 0)
@@ -6879,7 +6879,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	}
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
 	{
-		nbytes = query_iface_info_ioctl(conn, req, rsp);
+		nbytes = fsctl_query_iface_info_ioctl(conn, req, rsp);
 		if (nbytes < 0)
 			goto out;
 		break;
@@ -6921,7 +6921,7 @@ int smb2_ioctl(struct cifsd_work *work)
 		}
 
 		nbytes = sizeof(struct copychunk_ioctl_rsp);
-		smb2_ioctl_copychunk(work, req, rsp);
+		fsctl_copychunk(work, req, rsp);
 		break;
 	case FSCTL_SET_SPARSE:
 	{
@@ -6973,7 +6973,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	{
 		int ret;
 
-		ret = query_allocated_ranges(work, id,
+		ret = fsctl_query_allocated_ranges(work, id,
 			(struct file_allocated_range_buffer *)&req->Buffer[0],
 			(struct file_allocated_range_buffer *)&rsp->Buffer[0]);
 		if (ret < 0)
