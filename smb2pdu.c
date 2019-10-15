@@ -6816,6 +6816,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	int out_buf_len;
 	uint64_t id = CIFSD_NO_FID;
 	struct cifsd_conn *conn = work->conn;
+	int ret = 0;
 
 	rsp_org = RESPONSE_BUF(work);
 	if (work->next_smb2_rcv_hdr_off) {
@@ -6880,9 +6881,6 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
-	{
-		int ret;
-
 		ret = fsctl_validate_negotiate_info(conn,
 			(struct validate_negotiate_info_req *)&req->Buffer[0],
 			(struct validate_negotiate_info_rsp *)&rsp->Buffer[0]);
@@ -6893,7 +6891,6 @@ int smb2_ioctl(struct cifsd_work *work)
 		rsp->PersistentFileId = cpu_to_le64(SMB2_NO_FID);
 		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
 		break;
-	}
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
 	{
 		nbytes = fsctl_query_iface_info_ioctl(conn, req, rsp);
@@ -6915,7 +6912,7 @@ int smb2_ioctl(struct cifsd_work *work)
 					le64_to_cpu(req->VolatileFileId),
 					le64_to_cpu(req->PersistentFileId));
 		if (!fp) {
-			rsp->hdr.Status = STATUS_FILE_CLOSED;
+			ret = -ENOENT;
 			goto out;
 		}
 
@@ -6933,7 +6930,7 @@ int smb2_ioctl(struct cifsd_work *work)
 	case FSCTL_COPYCHUNK:
 	case FSCTL_COPYCHUNK_WRITE:
 		if (out_buf_len < sizeof(struct copychunk_ioctl_rsp)) {
-			req->hdr.Status = STATUS_INVALID_PARAMETER;
+			ret = -EINVAL;
 			goto out;
 		}
 
@@ -6941,28 +6938,23 @@ int smb2_ioctl(struct cifsd_work *work)
 		fsctl_copychunk(work, req, rsp);
 		break;
 	case FSCTL_SET_SPARSE:
-	{
-		int ret;
-
 		ret = fsctl_set_sparse(work, id,
 			(struct file_sparse *)&req->Buffer[0]);
 		if (ret < 0)
 			goto out;
 		break;
-	}
 	case FSCTL_SET_ZERO_DATA:
 	{
 		struct file_zero_data_information *zero_data;
 		struct cifsd_file *fp;
 		loff_t off, len;
-		int ret;
 
 		zero_data =
 			(struct file_zero_data_information *)&req->Buffer[0];
 
 		fp = cifsd_lookup_fd_fast(work, id);
 		if (!fp) {
-			rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+			ret = -ENOENT;
 			goto out;
 		}
 
@@ -6970,17 +6962,12 @@ int smb2_ioctl(struct cifsd_work *work)
 		len = le64_to_cpu(zero_data->BeyondFinalZero) - off;
 
 		ret = cifsd_vfs_zero_data(work, fp, off, len);
-		if (ret == -EACCES)
-			rsp->hdr.Status = STATUS_ACCESS_DENIED;
-		else if (ret < 0)
-			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		if (ret < 0)
+			goto out;
 		cifsd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_QUERY_ALLOCATED_RANGES:
-	{
-		int ret;
-
 		ret = fsctl_query_allocated_ranges(work, id,
 			(struct file_allocated_range_buffer *)&req->Buffer[0],
 			(struct file_allocated_range_buffer *)&rsp->Buffer[0]);
@@ -6989,7 +6976,6 @@ int smb2_ioctl(struct cifsd_work *work)
 
 		nbytes = sizeof(struct file_allocated_range_buffer);
 		break;
-	}
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
 				cnt_code);
@@ -7011,7 +6997,11 @@ int smb2_ioctl(struct cifsd_work *work)
 	return 0;
 
 out:
-	if (rsp->hdr.Status == 0)
+	if (ret == -EACCES)
+		rsp->hdr.Status = STATUS_ACCESS_DENIED;
+	else if (ret == -ENOENT)
+		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+	else if (ret < 0 || rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	smb2_set_err_rsp(work);
 	return 0;
