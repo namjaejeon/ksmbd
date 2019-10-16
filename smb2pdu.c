@@ -5831,8 +5831,7 @@ int smb2_write(struct cifsd_work *work)
 					get_rfc1002_len(req)) ||
 					(le16_to_cpu(req->DataOffset) +
 					 length > get_rfc1002_len(req))) {
-				cifsd_err("invalid write data offset %u, "
-						"smb_len %u\n",
+				cifsd_err("invalid write data offset %u, smb_len %u\n",
 						le16_to_cpu(req->DataOffset),
 						get_rfc1002_len(req));
 				err = -EINVAL;
