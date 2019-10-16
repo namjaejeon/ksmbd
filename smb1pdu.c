@@ -3717,7 +3717,11 @@ static int smb_readlink(struct cifsd_work *work, struct path *path)
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+		name_len = strlcpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
+#else
 		name_len = strscpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
+#endif
 		name_len++;     /* trailing null */
 	}
 
