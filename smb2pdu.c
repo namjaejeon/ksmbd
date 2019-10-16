@@ -6095,6 +6095,7 @@ static void smb2_remove_blocked_lock(void **argv)
 
 static inline bool lock_defer_pending(struct file_lock *fl)
 {
+	/* check pending lock waiters */
 	return waitqueue_active(&fl->fl_wait);
 }
 
