@@ -3807,10 +3807,10 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 		temp_fea->EA_flags = 0;
 		temp_fea->name_len = name_len;
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
-			strncpy(temp_fea->name, &name[XATTR_USER_PREFIX_LEN],
+			memcpy(temp_fea->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);
 		else
-			strncpy(temp_fea->name, name, name_len);
+			memcpy(temp_fea->name, name, name_len);
 
 		temp_fea->value_len = cpu_to_le16(value_len);
 		buf_free_len -= value_len;
