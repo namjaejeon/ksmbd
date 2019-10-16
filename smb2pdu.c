@@ -4512,9 +4512,9 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 		info->extended_info.version = cpu_to_le32(1);
 		info->extended_info.release = cpu_to_le32(1);
 		info->extended_info.rel_date = 0;
-		strncpy(info->extended_info.version_string,
+		memcpy(info->extended_info.version_string,
 			"1.1.0",
-			STRING_LENGTH);
+			strlen("1.1.0"));
 		rsp->OutputBufferLength = cpu_to_le32(64);
 		inc_rfc1001_len(rsp_org, 64);
 		fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
