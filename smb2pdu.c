@@ -3768,10 +3768,10 @@ static int smb2_get_ea(struct cifsd_work *work,
 
 		if (!strncmp(name, XATTR_USER_PREFIX,
 			XATTR_USER_PREFIX_LEN))
-			strncpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
+			memcpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);
 		else
-			strncpy(eainfo->name, name, name_len);
+			memcpy(eainfo->name, name, name_len);
 
 		eainfo->name[name_len] = '\0';
 		eainfo->EaValueLength = cpu_to_le16(value_len);
