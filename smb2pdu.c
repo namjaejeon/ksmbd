@@ -4748,7 +4748,7 @@ int smb2_close(struct cifsd_work *work)
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
 	}
-	cifsd_debug("volatile_id = %u \n", volatile_id);
+	cifsd_debug("volatile_id = %u\n", volatile_id);
 
 	err = cifsd_close_fd(work, volatile_id);
 	if (err)
