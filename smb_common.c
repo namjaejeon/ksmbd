@@ -378,8 +378,12 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 
 	p = strrchr(longname, '.');
 	if (p == longname) { /*name starts with a dot*/
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
 		strcpy(extension, "___");
 		extension[3] = '\0';
+#else
+		strscpy(extension, "___", strlen("___"));
+#endif
 	} else {
 		if (p != NULL) {
 			p++;
