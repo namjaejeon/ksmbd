@@ -3717,13 +3717,9 @@ static int smb_readlink(struct cifsd_work *work, struct path *path)
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
-		name_len = strnlen(buf, PATH_MAX);
+		name_len = strscpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
 		name_len++;     /* trailing null */
-		strncpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
 	}
-
-	name_len = min(name_len, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
-	buf[name_len] = 0x00;
 
 	rsp->hdr.WordCount = 10;
 	rsp->t2.TotalParameterCount = 2;
