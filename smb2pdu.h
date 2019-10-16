@@ -1182,7 +1182,7 @@ struct smb2_set_info_rsp {
 #define FS_TYPE_SUPPORT_SIZE   44
 struct fs_type_info {
 	char		*fs_name;
-	long int        magic_number;
+	long		magic_number;
 } __packed;
 
 struct smb2_oplock_break {
