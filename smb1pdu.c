@@ -2537,6 +2537,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	rsp->DirectoryFlag = S_ISDIR(stat.mode) ? 1 : 0;
 	if (extended_reply) {
 		struct inode *inode;
+
 		rsp->hdr.WordCount = 50;
 		memset(&ext_rsp->VolId, 0, 16);
 		if (fp) {
