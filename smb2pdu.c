@@ -3681,9 +3681,8 @@ static int smb2_get_ea(struct cifsd_work *work,
 	else {
 		/* need to send all EAs, if no specific EA is requested*/
 		if (le32_to_cpu(req->Flags) & SL_RETURN_SINGLE_ENTRY)
-			cifsd_debug("Ambiguous, all EAs are requested but "
-				"need to send single EA entry in rsp "
-				"flags 0x%x\n", le32_to_cpu(req->Flags));
+			cifsd_debug("All EAs are requested but need to send single EA entry in rsp flags 0x%x\n",
+				le32_to_cpu(req->Flags));
 	}
 
 	buf_free_len = work->response_sz -
