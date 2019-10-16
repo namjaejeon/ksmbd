@@ -4450,15 +4450,10 @@ static int query_fs_info(struct cifsd_work *work)
 	}
 
 	switch (info_level) {
-	FILE_SYSTEM_DEVICE_INFO *fdi;
-	FILE_SYSTEM_ATTRIBUTE_INFO *info;
-	FILE_SYSTEM_UNIX_INFO *uinfo;
-	FILE_SYSTEM_ALLOC_INFO *ainfo;
-	FILE_SYSTEM_VOL_INFO *vinfo;
-	FILE_SYSTEM_INFO *sinfo;
-	FILE_SYSTEM_POSIX_INFO *pinfo;
-
 	case SMB_INFO_ALLOCATION:
+	{
+		FILE_SYSTEM_ALLOC_INFO *ainfo;
+
 		cifsd_debug("GOT SMB_INFO_ALLOCATION\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(18);
 		ainfo = (FILE_SYSTEM_ALLOC_INFO *)(&rsp->Pad + 1);
@@ -4469,7 +4464,11 @@ static int query_fs_info(struct cifsd_work *work)
 		ainfo->TotalAllocationUnits = cpu_to_le32(stfs.f_blocks);
 		ainfo->FreeAllocationUnits = cpu_to_le32(stfs.f_bfree);
 		break;
+	}
 	case SMB_QUERY_FS_VOLUME_INFO:
+	{
+		FILE_SYSTEM_VOL_INFO *vinfo;
+
 		cifsd_debug("GOT SMB_QUERY_FS_VOLUME_INFO\n");
 		vinfo = (FILE_SYSTEM_VOL_INFO *)(&rsp->Pad + 1);
 		vinfo->VolumeCreationTime = 0;
@@ -4482,7 +4481,11 @@ static int query_fs_info(struct cifsd_work *work)
 		rsp->t2.TotalDataCount =
 			cpu_to_le16(sizeof(FILE_SYSTEM_VOL_INFO) + len - 2);
 		break;
+	}
 	case SMB_QUERY_FS_SIZE_INFO:
+	{
+		FILE_SYSTEM_INFO *sinfo;
+
 		cifsd_debug("GOT SMB_QUERY_FS_SIZE_INFO\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(24);
 		sinfo = (FILE_SYSTEM_INFO *)(&rsp->Pad + 1);
@@ -4492,7 +4495,11 @@ static int query_fs_info(struct cifsd_work *work)
 		sinfo->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
 		sinfo->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
 		break;
+	}
 	case SMB_QUERY_FS_DEVICE_INFO:
+	{
+		FILE_SYSTEM_DEVICE_INFO *fdi;
+
 		/* query fs info device info response is 0 word and 8 bytes */
 		cifsd_debug("GOT SMB_QUERY_FS_DEVICE_INFO\n");
 		if (le16_to_cpu(req->MaxDataCount) < 8) {
@@ -4506,7 +4513,11 @@ static int query_fs_info(struct cifsd_work *work)
 		fdi->DeviceType = FILE_DEVICE_DISK;
 		fdi->DeviceCharacteristics = 0x20;
 		break;
+	}
 	case SMB_QUERY_FS_ATTRIBUTE_INFO:
+	{
+		FILE_SYSTEM_ATTRIBUTE_INFO *info;
+
 		cifsd_debug("GOT SMB_QUERY_FS_ATTRIBUTE_INFO\n");
 		/* constant 12 bytes + variable filesystem name */
 		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)(&rsp->Pad + 1);
@@ -4524,7 +4535,11 @@ static int query_fs_info(struct cifsd_work *work)
 		info->FileSystemNameLen = 0;
 		rsp->t2.TotalDataCount = 12;
 		break;
+	}
 	case SMB_QUERY_CIFS_UNIX_INFO:
+	{
+		FILE_SYSTEM_UNIX_INFO *uinfo;
+
 		cifsd_debug("GOT SMB_QUERY_CIFS_UNIX_INFO\n");
 		/* constant 12 bytes + variable filesystem name */
 		uinfo = (FILE_SYSTEM_UNIX_INFO *)(&rsp->Pad + 1);
@@ -4539,7 +4554,11 @@ static int query_fs_info(struct cifsd_work *work)
 		uinfo->Capability = SMB_UNIX_CAPS;
 		rsp->t2.TotalDataCount = 12;
 		break;
+	}
 	case SMB_QUERY_POSIX_FS_INFO:
+	{
+		FILE_SYSTEM_POSIX_INFO *pinfo;
+
 		cifsd_debug("GOT SMB_QUERY_POSIX_FS_INFO\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(56);
 		pinfo = (FILE_SYSTEM_POSIX_INFO *)(&rsp->Pad + 1);
@@ -4552,6 +4571,7 @@ static int query_fs_info(struct cifsd_work *work)
 		pinfo->FreeFileNodes = cpu_to_le64(stfs.f_ffree);
 		pinfo->FileSysIdentifier = 0;
 		break;
+	}
 	default:
 		cifsd_err("info level %x not implemented\n", info_level);
 		rc = -EINVAL;
