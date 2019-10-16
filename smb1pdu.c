@@ -5682,8 +5682,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	d_info->wptr = (char *)(d_info->wptr) + next_entry_offset;
 	kfree(conv_name);
 
-	cifsd_debug("info_level : %d, buf_len :%d,"
-			" next_offset : %d, data_count : %d\n",
+	cifsd_debug("info_level : %d, buf_len :%d, next_offset : %d, data_count : %d\n",
 			info_level, d_info->out_buf_len,
 			next_entry_offset, d_info->data_count);
 	return 0;
