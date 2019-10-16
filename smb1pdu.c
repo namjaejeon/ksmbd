@@ -7090,8 +7090,7 @@ int smb_trans2(struct cifsd_work *work)
 	 *		MS-CIFS, SMB COM TRANSACTION
 	 */
 	if (req->SetupCount < 1) {
-		cifsd_err("Wrong setup count in SMB_TRANS2"
-				" - indicates wrong request\n");
+		cifsd_err("Wrong setup count in SMB_TRANS2 - indicates wrong request\n");
 		rsp_hdr->Status.CifsError = STATUS_UNSUCCESSFUL;
 		return -EINVAL;
 	}
