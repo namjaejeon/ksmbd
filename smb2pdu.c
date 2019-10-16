@@ -3135,8 +3135,7 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	d_info->wptr += next_entry_offset;
 	kfree(conv_name);
 
-	cifsd_debug("info_level : %d, buf_len :%d,"
-			" next_offset : %d, data_count : %d\n",
+	cifsd_debug("info_level : %d, buf_len :%d, next_offset : %d, data_count : %d\n",
 			info_level, d_info->out_buf_len,
 			next_entry_offset, d_info->data_count);
 
@@ -3682,9 +3681,8 @@ static int smb2_get_ea(struct cifsd_work *work,
 	else {
 		/* need to send all EAs, if no specific EA is requested*/
 		if (le32_to_cpu(req->Flags) & SL_RETURN_SINGLE_ENTRY)
-			cifsd_debug("Ambiguous, all EAs are requested but "
-				"need to send single EA entry in rsp "
-				"flags 0x%x\n", le32_to_cpu(req->Flags));
+			cifsd_debug("All EAs are requested but need to send single EA entry in rsp flags 0x%x\n",
+				le32_to_cpu(req->Flags));
 	}
 
 	buf_free_len = work->response_sz -
@@ -3770,10 +3768,10 @@ static int smb2_get_ea(struct cifsd_work *work,
 
 		if (!strncmp(name, XATTR_USER_PREFIX,
 			XATTR_USER_PREFIX_LEN))
-			strncpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
+			memcpy(eainfo->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);
 		else
-			strncpy(eainfo->name, name, name_len);
+			memcpy(eainfo->name, name, name_len);
 
 		eainfo->name[name_len] = '\0';
 		eainfo->EaValueLength = cpu_to_le16(value_len);
@@ -4514,9 +4512,9 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 		info->extended_info.version = cpu_to_le32(1);
 		info->extended_info.release = cpu_to_le32(1);
 		info->extended_info.rel_date = 0;
-		strncpy(info->extended_info.version_string,
+		memcpy(info->extended_info.version_string,
 			"1.1.0",
-			STRING_LENGTH);
+			strlen("1.1.0"));
 		rsp->OutputBufferLength = cpu_to_le32(64);
 		inc_rfc1001_len(rsp_org, 64);
 		fs_infoclass_size = FS_OBJECT_ID_INFORMATION_SIZE;
@@ -4750,7 +4748,7 @@ int smb2_close(struct cifsd_work *work)
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
 	}
-	cifsd_debug("volatile_id = %u \n", volatile_id);
+	cifsd_debug("volatile_id = %u\n", volatile_id);
 
 	err = cifsd_close_fd(work, volatile_id);
 	if (err)
@@ -5833,8 +5831,7 @@ int smb2_write(struct cifsd_work *work)
 					get_rfc1002_len(req)) ||
 					(le16_to_cpu(req->DataOffset) +
 					 length > get_rfc1002_len(req))) {
-				cifsd_err("invalid write data offset %u, "
-						"smb_len %u\n",
+				cifsd_err("invalid write data offset %u, smb_len %u\n",
 						le16_to_cpu(req->DataOffset),
 						get_rfc1002_len(req));
 				err = -EINVAL;
@@ -6098,6 +6095,7 @@ static void smb2_remove_blocked_lock(void **argv)
 
 static inline bool lock_defer_pending(struct file_lock *fl)
 {
+	/* check pending lock waiters */
 	return waitqueue_active(&fl->fl_wait);
 }
 
@@ -6315,8 +6313,7 @@ skip:
 			if (err == FILE_LOCK_DEFERRED) {
 				void **argv;
 
-				cifsd_debug("would have to wait for getting"
-						" lock\n");
+				cifsd_debug("would have to wait for getting lock\n");
 				list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
