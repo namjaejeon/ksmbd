@@ -731,7 +731,7 @@ int smb_rename(struct cifsd_work *work)
 	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(work);
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
-	char *abs_oldname, *abs_newname, *tmp_name = NULL;
+	char *abs_oldname, *abs_newname;
 	int oldname_len;
 	struct path path;
 	bool file_present = true;
@@ -762,23 +762,14 @@ int smb_rename(struct cifsd_work *work)
 		goto out;
 	}
 
-	tmp_name = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!tmp_name) {
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
-		rc = -ENOMEM;
-		goto out;
-	}
-	strncpy(tmp_name, abs_newname, PATH_MAX);
-	tmp_name[PATH_MAX - 1] = 0x00;
-
-	rc = cifsd_vfs_kern_path(tmp_name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(abs_newname, 0, &path, 1);
 	if (rc)
 		file_present = false;
 	else
 		path_put(&path);
 
 	if (file_present &&
-			strncmp(abs_oldname, tmp_name,
+			strncmp(abs_oldname, abs_newname,
 				strlen(abs_oldname))) {
 		rc = -EEXIST;
 		rsp->hdr.Status.CifsError =
@@ -796,7 +787,6 @@ int smb_rename(struct cifsd_work *work)
 	rsp->hdr.WordCount = 0;
 	rsp->ByteCount = 0;
 out:
-	kfree(tmp_name);
 	smb_put_name(abs_oldname);
 	smb_put_name(abs_newname);
 	return rc;
