@@ -6313,8 +6313,7 @@ skip:
 			if (err == FILE_LOCK_DEFERRED) {
 				void **argv;
 
-				cifsd_debug("would have to wait for getting"
-						" lock\n");
+				cifsd_debug("would have to wait for getting lock\n");
 				list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
