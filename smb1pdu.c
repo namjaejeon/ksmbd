@@ -3379,22 +3379,23 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	size = posix_acl_xattr_size(count);
 	if ((buflen == 0) || !local_acl) {
 		/* used to query ACL EA size */
-	} else if (size > buflen) {
+	} else if (size > buflen)
 		return -ERANGE;
-	} else /* buffer big enough */ {
+
+	/* buffer big enough */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-		struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
+	struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
 #endif
-		local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
-		for (i = 0; i < count; i++) {
+	local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
+	for (i = 0; i < count; i++) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-			cifs_convert_ace(&ace[i], pACE);
+		cifs_convert_ace(&ace[i], pACE);
 #else
-			cifs_convert_ace(&local_acl->a_entries[i], pACE);
+		cifs_convert_ace(&local_acl->a_entries[i], pACE);
 #endif
-			pACE++;
-		}
+		pACE++;
 	}
+
 	return size;
 }
 
