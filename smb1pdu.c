@@ -7134,7 +7134,7 @@ int smb_trans2(struct cifsd_work *work)
 	}
 
 	if (err) {
-		cifsd_debug("smb_trans2 failed with error %d\n", err);
+		cifsd_debug("%s failed with error %d\n", __func__, err);
 		if (err == -EBUSY)
 			rsp_hdr->Status.CifsError = STATUS_DELETE_PENDING;
 		return err;
