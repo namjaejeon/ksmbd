@@ -50,7 +50,7 @@ struct smbd_data_transfer {
 	__u8 buffer[];
 } __packed;
 
-#ifdef CONFIG_CIFSD_SMBDIRECT
+#ifdef CONFIG_CIFS_SERVER_SMBDIRECT
 int cifsd_smbd_init(void);
 int cifsd_smbd_destroy(void);
 #else

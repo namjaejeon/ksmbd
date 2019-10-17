@@ -225,15 +225,13 @@ static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 	spin_lock_irqsave(&t->recvmsg_queue_lock, flags);
 	if (!list_empty(&t->recvmsg_queue)) {
 		recvmsg = list_first_entry(&t->recvmsg_queue,
-				struct smbd_recvmsg, list);
+					   struct smbd_recvmsg,
+					   list);
 		list_del(&recvmsg->list);
 		t->count_recvmsg_queue--;
-		spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
-		return recvmsg;
-	} else {
-		spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
-		return NULL;
 	}
+	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
+	return recvmsg;
 }
 
 static void put_recvmsg(struct smbd_transport *t,
@@ -502,9 +500,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 				(struct smbd_data_transfer *) recvmsg->packet;
 		struct smb2_hdr *hdr = (struct smb2_hdr *) (recvmsg->packet
 				+ le32_to_cpu(req->data_offset) - 4);
-		cifsd_debug("CreditGranted: %u, CreditRequested: %u, "
-				"DataLength: %u, RemaingDataLength: %u, "
-				"SMB: %x, Command: %u\n",
+		cifsd_debug("CreditGranted: %u, CreditRequested: %u, DataLength: %u, RemaingDataLength: %u, SMB: %x, Command: %u\n",
 				le16_to_cpu(req->credits_granted),
 				le16_to_cpu(req->credits_requested),
 				req->data_length, req->remaining_data_length,
@@ -514,9 +510,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 	case SMBD_MSG_NEGOTIATE_REQ: {
 		struct smbd_negotiate_req *req =
 				(struct smbd_negotiate_req *)recvmsg->packet;
-		cifsd_debug("MinVersion: %u, MaxVersion: %u, "
-			"CreditRequested: %u, MaxSendSize: %u, "
-			"MaxRecvSize: %u, MaxFragmentedSize: %u\n",
+		cifsd_debug("MinVersion: %u, MaxVersion: %u, CreditRequested: %u, MaxSendSize: %u, MaxRecvSize: %u, MaxFragmentedSize: %u\n",
 			le16_to_cpu(req->min_version),
 			le16_to_cpu(req->max_version),
 			le16_to_cpu(req->credits_requested),
@@ -745,8 +739,7 @@ again:
 		spin_unlock_irq(&st->reassembly_queue_lock);
 
 		st->first_entry_offset = offset;
-		cifsd_debug("returning to thread data_read=%d "
-			"reassembly_data_length=%d first_entry_offset=%d\n",
+		cifsd_debug("returning to thread data_read=%d reassembly_data_length=%d first_entry_offset=%d\n",
 			data_read, st->reassembly_data_length,
 			st->first_entry_offset);
 read_rfc1002_done:
@@ -991,8 +984,7 @@ static int smbd_create_header(struct smbd_transport *t,
 	packet->remaining_data_length = cpu_to_le32(remaining_data_length);
 	packet->padding = 0;
 
-	cifsd_debug("credits_requested=%d credits_granted=%d "
-		"data_offset=%d data_length=%d remaining_data_length=%d\n",
+	cifsd_debug("credits_requested=%d credits_granted=%d data_offset=%d data_length=%d remaining_data_length=%d\n",
 		le16_to_cpu(packet->credits_requested),
 		le16_to_cpu(packet->credits_granted),
 		le32_to_cpu(packet->data_offset),
@@ -1089,19 +1081,21 @@ static int post_send_msg(struct smbd_transport *t,
 		msg->wr.wr_cqe = NULL;
 		msg->wr.send_flags = 0;
 		if (!list_empty(&send_ctx->msg_list)) {
-			struct smbd_sendmsg *last =
-					list_last_entry(&send_ctx->msg_list,
-						struct smbd_sendmsg, list);
+			struct smbd_sendmsg *last;
+
+			last = list_last_entry(&send_ctx->msg_list,
+					       struct smbd_sendmsg,
+					       list);
 			last->wr.next = &msg->wr;
 		}
 		list_add_tail(&msg->list, &send_ctx->msg_list);
 		send_ctx->wr_cnt++;
 		return 0;
-	} else {
-		msg->wr.wr_cqe = &msg->cqe;
-		msg->wr.send_flags = IB_SEND_SIGNALED;
-		return smbd_post_send(t, &msg->wr);
 	}
+
+	msg->wr.wr_cqe = &msg->cqe;
+	msg->wr.send_flags = IB_SEND_SIGNALED;
+	return smbd_post_send(t, &msg->wr);
 }
 
 static int smbd_post_send_data(struct smbd_transport *t,
@@ -1462,9 +1456,8 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 		break;
 	}
 	default:
-		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, "
-				"event=%s (%d)\n", cm_id,
-				rdma_event_msg(event->event), event->event);
+		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, event=%s (%d)\n",
+			cm_id, rdma_event_msg(event->event), event->event);
 		break;
 	}
 	return 0;
@@ -1671,47 +1664,36 @@ static int smbd_init_params(struct smbd_transport *t, struct ib_qp_cap *cap)
 	max_send_wrs = smbd_send_credit_target + max_rw_wrs;
 	if (max_send_wrs > device->attrs.max_cqe ||
 			max_send_wrs > device->attrs.max_qp_wr) {
-		cifsd_err(
-			"consider lowering send_credit_target = %d, or "
-			"max_outstanding_rw_ops = %d.\n"
-			"Possible CQE overrun, device "
-			"reporting max_cqe %d max_qp_wr %d\n",
-			smbd_send_credit_target,
-			smbd_max_outstanding_rw_ops,
-			device->attrs.max_cqe,
-			device->attrs.max_qp_wr);
+		cifsd_err("consider lowering send_credit_target = %d, or max_outstanding_rw_ops = %d\n",
+			smbd_send_credit_target, smbd_max_outstanding_rw_ops);
+		cifsd_err("Possible CQE overrun, device reporting max_cqe %d max_qp_wr %d\n",
+			device->attrs.max_cqe, device->attrs.max_qp_wr);
 		return -EINVAL;
 	}
 
 	if (smbd_receive_credit_max > device->attrs.max_cqe ||
 	    smbd_receive_credit_max > device->attrs.max_qp_wr) {
-		cifsd_err(
-			"consider lowering receive_credit_max = %d. "
-			"Possible CQE overrun, device "
-			"reporting max_cpe %d max_qp_wr %d\n",
-			smbd_receive_credit_max,
-			device->attrs.max_cqe,
-			device->attrs.max_qp_wr);
+		cifsd_err("consider lowering receive_credit_max = %d\n",
+			smbd_receive_credit_max);
+		cifsd_err("Possible CQE overrun, device reporting max_cpe %d max_qp_wr %d\n",
+			device->attrs.max_cqe, device->attrs.max_qp_wr);
 		return -EINVAL;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	if (device->attrs.max_send_sge < SMBD_MAX_SEND_SGES) {
-		cifsd_err(
-			"warning: device max_send_sge = %d too small\n",
+		cifsd_err("warning: device max_send_sge = %d too small\n",
 			device->attrs.max_send_sge);
 		return -EINVAL;
 	}
 	if (device->attrs.max_recv_sge < SMBD_MAX_RECV_SGES) {
-		cifsd_err(
-			"warning: device max_recv_sge = %d too small\n",
+		cifsd_err("warning: device max_recv_sge = %d too small\n",
 			device->attrs.max_recv_sge);
 		return -EINVAL;
 	}
 #else
 	if (device->attrs.max_sge < SMBD_MAX_SEND_SGES) {
-		cifsd_err(
-			"warning: device max_sge = %d too small\n",
+		cifsd_err("warning: device max_sge = %d too small\n",
 			device->attrs.max_sge);
 		return -EINVAL;
 	}
@@ -1932,8 +1914,7 @@ static int smbd_handle_connect_request(struct rdma_cm_id *new_cm_id)
 	struct smbd_transport *t;
 
 	if (!rdma_frwr_is_supported(&new_cm_id->device->attrs)) {
-		cifsd_err("Fast Registration Work Requests is not "
-			"supported. device capabilities=%llx",
+		cifsd_err("Fast Registration Work Requests is not supported. device capabilities=%llx\n",
 			new_cm_id->device->attrs.device_cap_flags);
 		return -EPROTONOSUPPORT;
 	}

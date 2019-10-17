@@ -378,8 +378,12 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 
 	p = strrchr(longname, '.');
 	if (p == longname) { /*name starts with a dot*/
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
 		strcpy(extension, "___");
 		extension[3] = '\0';
+#else
+		strscpy(extension, "___", strlen("___"));
+#endif
 	} else {
 		if (p != NULL) {
 			p++;
@@ -436,7 +440,7 @@ static int __smb2_negotiate(struct cifsd_conn *conn)
 #ifndef CONFIG_CIFS_INSECURE_SERVER
 int smb_handle_negotiate(struct cifsd_work *work)
 {
-	NEGOTIATE_RSP *neg_rsp = (NEGOTIATE_RSP *)RESPONSE_BUF(work);
+	NEGOTIATE_RSP *neg_rsp = RESPONSE_BUF(work);
 
 	cifsd_err("Unsupported SMB protocol\n");
 	neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;

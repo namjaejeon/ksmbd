@@ -1,13 +1,13 @@
 ifneq ($(KERNELRELEASE),)
 # For kernel build
 
-# CONFIG_CIFSD_SMBDIRECT is supported in the kernel above 4.12 version.
+# CONFIG_CIFS_SERVER_SMBDIRECT is supported in the kernel above 4.12 version.
 SMBDIRECT_SUPPORTED = $(shell [ $(VERSION) -gt 4 -o \( $(VERSION) -eq 4 -a \
 		      $(PATCHLEVEL) -gt 12 \) ] && echo y)
 
-ifeq "$(CONFIG_CIFSD_SMBDIRECT)" "y"
+ifeq "$(CONFIG_CIFS_SERVER_SMBDIRECT)" "y"
 ifneq "$(call SMBDIRECT_SUPPORTED)" "y"
-$(error CONFIG_CIFSD_SMBDIRECT is supported in the kernel above 4.12 version)
+$(error CONFIG_CIFS_SERVER_SMBDIRECT is supported in the kernel above 4.12 version)
 endif
 endif
 
@@ -22,7 +22,7 @@ cifsd-y :=	unicode.o auth.o vfs.o vfs_cache.o \
 
 cifsd-y +=	smb2pdu.o smb2ops.o smb2misc.o asn1.o smb1misc.o
 cifsd-$(CONFIG_CIFS_INSECURE_SERVER) += smb1pdu.o smb1ops.o
-cifsd-$(CONFIG_CIFSD_SMBDIRECT) += transport_smbd.o
+cifsd-$(CONFIG_CIFS_SERVER_SMBDIRECT) += transport_smbd.o
 else
 # For external module build
 EXTRA_FLAGS += -I$(PWD)
