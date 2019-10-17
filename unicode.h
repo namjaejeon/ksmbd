@@ -299,15 +299,15 @@ UniToupper(register wchar_t uc)
 	if (uc < sizeof(SmbUniUpperTable)) {
 		/* Latin characters */
 		return uc + SmbUniUpperTable[uc];	/* Use base tables */
-	} else {
-		rp = SmbUniUpperRange;	/* Use range tables */
-		while (rp->start) {
-			if (uc < rp->start)	/* Before start of range */
-				return uc;	/* Uppercase = input */
-			if (uc <= rp->end)	/* In range */
-				return uc + rp->table[uc - rp->start];
-			rp++;	/* Try next range */
-		}
+	}
+
+	rp = SmbUniUpperRange;	/* Use range tables */
+	while (rp->start) {
+		if (uc < rp->start)	/* Before start of range */
+			return uc;	/* Uppercase = input */
+		if (uc <= rp->end)	/* In range */
+			return uc + rp->table[uc - rp->start];
+		rp++;	/* Try next range */
 	}
 	return uc;		/* Past last range */
 }
@@ -341,15 +341,15 @@ UniTolower(register wchar_t uc)
 	if (uc < sizeof(CifsUniLowerTable)) {
 		/* Latin characters */
 		return uc + CifsUniLowerTable[uc];	/* Use base tables */
-	} else {
-		rp = CifsUniLowerRange;	/* Use range tables */
-		while (rp->start) {
-			if (uc < rp->start)	/* Before start of range */
-				return uc;	/* Uppercase = input */
-			if (uc <= rp->end)	/* In range */
-				return uc + rp->table[uc - rp->start];
-			rp++;	/* Try next range */
-		}
+	}
+
+	rp = CifsUniLowerRange;	/* Use range tables */
+	while (rp->start) {
+		if (uc < rp->start)	/* Before start of range */
+			return uc;	/* Uppercase = input */
+		if (uc <= rp->end)	/* In range */
+			return uc + rp->table[uc - rp->start];
+		rp++;	/* Try next range */
 	}
 	return uc;		/* Past last range */
 }
