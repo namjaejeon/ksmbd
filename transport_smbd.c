@@ -500,9 +500,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 				(struct smbd_data_transfer *) recvmsg->packet;
 		struct smb2_hdr *hdr = (struct smb2_hdr *) (recvmsg->packet
 				+ le32_to_cpu(req->data_offset) - 4);
-		cifsd_debug("CreditGranted: %u, CreditRequested: %u, "
-				"DataLength: %u, RemaingDataLength: %u, "
-				"SMB: %x, Command: %u\n",
+		cifsd_debug("CreditGranted: %u, CreditRequested: %u, DataLength: %u, RemaingDataLength: %u, SMB: %x, Command: %u\n",
 				le16_to_cpu(req->credits_granted),
 				le16_to_cpu(req->credits_requested),
 				req->data_length, req->remaining_data_length,
@@ -512,9 +510,7 @@ static int smbd_check_recvmsg(struct smbd_recvmsg *recvmsg)
 	case SMBD_MSG_NEGOTIATE_REQ: {
 		struct smbd_negotiate_req *req =
 				(struct smbd_negotiate_req *)recvmsg->packet;
-		cifsd_debug("MinVersion: %u, MaxVersion: %u, "
-			"CreditRequested: %u, MaxSendSize: %u, "
-			"MaxRecvSize: %u, MaxFragmentedSize: %u\n",
+		cifsd_debug("MinVersion: %u, MaxVersion: %u, CreditRequested: %u, MaxSendSize: %u, MaxRecvSize: %u, MaxFragmentedSize: %u\n",
 			le16_to_cpu(req->min_version),
 			le16_to_cpu(req->max_version),
 			le16_to_cpu(req->credits_requested),
