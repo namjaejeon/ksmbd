@@ -530,8 +530,8 @@ cifsd_ipc_tree_connect_request(struct cifsd_session *sess,
 	req->account_flags = sess->user->flags;
 	req->session_id = sess->id;
 	req->connect_id = tree_conn->id;
-	strncpy(req->account, user_name(sess->user), sizeof(req->account) - 1);
-	strncpy(req->share, share->name, sizeof(req->share) - 1);
+	memcpy(req->account, user_name(sess->user), sizeof(req->account) - 1);
+	memcpy(req->share, share->name, sizeof(req->share) - 1);
 	snprintf(req->peer_addr, sizeof(req->peer_addr), "%pIS", peer_addr);
 
 	if (peer_addr->sa_family == AF_INET6)
