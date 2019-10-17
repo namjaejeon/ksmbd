@@ -599,7 +599,7 @@ cifsd_ipc_share_config_request(const char *name)
 	msg->type = CIFSD_EVENT_SHARE_CONFIG_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = cifds_acquire_id(ida);
-	strncpy(req->share_name, name, sizeof(req->share_name) - 1);
+	memcpy(req->share_name, name, sizeof(req->share_name) - 1);
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
