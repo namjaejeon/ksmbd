@@ -27,10 +27,6 @@
 
 #define  UNIUPR_NOLOWER		/* Example to not expand lower case tables */
 
-#if defined(CONFIG_CIFS_SERVER) || defined(CONFIG_CIFS_SERVER_MODULE)
-#undef  UNIUPR_NOLOWER
-#endif
-
 /*
  * Windows maps these to the user defined 16 bit Unicode range since they are
  * reserved symbols (along with \ and /), otherwise illegal to store
