@@ -1456,9 +1456,8 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 		break;
 	}
 	default:
-		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, "
-				"event=%s (%d)\n", cm_id,
-				rdma_event_msg(event->event), event->event);
+		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, event=%s (%d)\n",
+			cm_id, rdma_event_msg(event->event), event->event);
 		break;
 	}
 	return 0;
