@@ -1664,47 +1664,36 @@ static int smbd_init_params(struct smbd_transport *t, struct ib_qp_cap *cap)
 	max_send_wrs = smbd_send_credit_target + max_rw_wrs;
 	if (max_send_wrs > device->attrs.max_cqe ||
 			max_send_wrs > device->attrs.max_qp_wr) {
-		cifsd_err(
-			"consider lowering send_credit_target = %d, or "
-			"max_outstanding_rw_ops = %d.\n"
-			"Possible CQE overrun, device "
-			"reporting max_cqe %d max_qp_wr %d\n",
-			smbd_send_credit_target,
-			smbd_max_outstanding_rw_ops,
-			device->attrs.max_cqe,
-			device->attrs.max_qp_wr);
+		cifsd_err("consider lowering send_credit_target = %d, or max_outstanding_rw_ops = %d\n",
+			smbd_send_credit_target, smbd_max_outstanding_rw_ops);
+		cifsd_err("Possible CQE overrun, device reporting max_cqe %d max_qp_wr %d\n",
+			device->attrs.max_cqe, device->attrs.max_qp_wr);
 		return -EINVAL;
 	}
 
 	if (smbd_receive_credit_max > device->attrs.max_cqe ||
 	    smbd_receive_credit_max > device->attrs.max_qp_wr) {
-		cifsd_err(
-			"consider lowering receive_credit_max = %d. "
-			"Possible CQE overrun, device "
-			"reporting max_cpe %d max_qp_wr %d\n",
-			smbd_receive_credit_max,
-			device->attrs.max_cqe,
-			device->attrs.max_qp_wr);
+		cifsd_err("consider lowering receive_credit_max = %d\n",
+			smbd_receive_credit_max);
+		cifsd_err("Possible CQE overrun, device reporting max_cpe %d max_qp_wr %d\n",
+			device->attrs.max_cqe, device->attrs.max_qp_wr);
 		return -EINVAL;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	if (device->attrs.max_send_sge < SMBD_MAX_SEND_SGES) {
-		cifsd_err(
-			"warning: device max_send_sge = %d too small\n",
+		cifsd_err("warning: device max_send_sge = %d too small\n",
 			device->attrs.max_send_sge);
 		return -EINVAL;
 	}
 	if (device->attrs.max_recv_sge < SMBD_MAX_RECV_SGES) {
-		cifsd_err(
-			"warning: device max_recv_sge = %d too small\n",
+		cifsd_err("warning: device max_recv_sge = %d too small\n",
 			device->attrs.max_recv_sge);
 		return -EINVAL;
 	}
 #else
 	if (device->attrs.max_sge < SMBD_MAX_SEND_SGES) {
-		cifsd_err(
-			"warning: device max_sge = %d too small\n",
+		cifsd_err("warning: device max_sge = %d too small\n",
 			device->attrs.max_sge);
 		return -EINVAL;
 	}
