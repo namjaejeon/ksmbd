@@ -6893,16 +6893,8 @@ int smb2_ioctl(struct cifsd_work *work)
 		break;
 	}
 	case FSCTL_PIPE_TRANSCEIVE:
-	{
-		/* @FIXME */
-		if (rsp->hdr.Id.SyncId.TreeId != 0) {
-			cifsd_debug("Not Pipe transceive\n");
-			goto out;
-		}
-
 		nbytes = fsctl_pipe_transceive(work, id, out_buf_len, req, rsp);
 		break;
-	}
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
 		ret = fsctl_validate_negotiate_info(conn,
 			(struct validate_negotiate_info_req *)&req->Buffer[0],
@@ -6915,12 +6907,10 @@ int smb2_ioctl(struct cifsd_work *work)
 		rsp->VolatileFileId = cpu_to_le64(SMB2_NO_FID);
 		break;
 	case FSCTL_QUERY_NETWORK_INTERFACE_INFO:
-	{
 		nbytes = fsctl_query_iface_info_ioctl(conn, req, rsp);
 		if (nbytes < 0)
 			goto out;
 		break;
-	}
 	case FSCTL_REQUEST_RESUME_KEY:
 		if (out_buf_len < sizeof(struct resume_key_ioctl_rsp)) {
 			ret = -EINVAL;
