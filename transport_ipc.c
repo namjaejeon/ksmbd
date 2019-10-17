@@ -578,7 +578,7 @@ int cifsd_ipc_logout_request(const char *account)
 
 	msg->type = CIFSD_EVENT_LOGOUT_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
-	strncpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
+	memcpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
 
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
