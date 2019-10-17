@@ -501,7 +501,7 @@ struct cifsd_login_response *cifsd_ipc_login_request(const char *account)
 	msg->type = CIFSD_EVENT_LOGIN_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = cifds_acquire_id(ida);
-	strncpy(req->account, account, sizeof(req->account) - 1);
+	memcpy(req->account, account, sizeof(req->account) - 1);
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
