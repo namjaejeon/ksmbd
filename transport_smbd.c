@@ -739,8 +739,7 @@ again:
 		spin_unlock_irq(&st->reassembly_queue_lock);
 
 		st->first_entry_offset = offset;
-		cifsd_debug("returning to thread data_read=%d "
-			"reassembly_data_length=%d first_entry_offset=%d\n",
+		cifsd_debug("returning to thread data_read=%d reassembly_data_length=%d first_entry_offset=%d\n",
 			data_read, st->reassembly_data_length,
 			st->first_entry_offset);
 read_rfc1002_done:
@@ -985,8 +984,7 @@ static int smbd_create_header(struct smbd_transport *t,
 	packet->remaining_data_length = cpu_to_le32(remaining_data_length);
 	packet->padding = 0;
 
-	cifsd_debug("credits_requested=%d credits_granted=%d "
-		"data_offset=%d data_length=%d remaining_data_length=%d\n",
+	cifsd_debug("credits_requested=%d credits_granted=%d data_offset=%d data_length=%d remaining_data_length=%d\n",
 		le16_to_cpu(packet->credits_requested),
 		le16_to_cpu(packet->credits_granted),
 		le32_to_cpu(packet->data_offset),
