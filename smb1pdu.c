@@ -3377,9 +3377,7 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	}
 
 	size = posix_acl_xattr_size(count);
-	if ((buflen == 0) || !local_acl) {
-		/* used to query ACL EA size */
-	} else if (size > buflen)
+	if ((buflen != 0) && local_acl && size > buflen)
 		return -ERANGE;
 
 	/* buffer big enough */
