@@ -1723,7 +1723,7 @@ static int __caseless_lookup(struct dir_context *ctx,
 	if (buf->used != namlen)
 		return 0;
 	if (!strncasecmp((char *)buf->private, name, namlen)) {
-		strncpy((char *)buf->private, name, namlen);
+		memcpy((char *)buf->private, name, namlen);
 		buf->dirent_count = 1;
 		return -EEXIST;
 	}
