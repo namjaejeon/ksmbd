@@ -7,7 +7,7 @@
  * Copyright (C) John H Terpstra              1996-2000
  * Copyright (C) Luke Kenneth Casson Leighton 1996-2000
  * Copyright (C) Paul Ashton                  1998-2000
-*/
+ */
 
 
 

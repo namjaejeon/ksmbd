@@ -501,7 +501,7 @@ struct cifsd_login_response *cifsd_ipc_login_request(const char *account)
 	msg->type = CIFSD_EVENT_LOGIN_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = cifds_acquire_id(ida);
-	strncpy(req->account, account, sizeof(req->account) - 1);
+	memcpy(req->account, account, sizeof(req->account) - 1);
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
@@ -530,8 +530,8 @@ cifsd_ipc_tree_connect_request(struct cifsd_session *sess,
 	req->account_flags = sess->user->flags;
 	req->session_id = sess->id;
 	req->connect_id = tree_conn->id;
-	strncpy(req->account, user_name(sess->user), sizeof(req->account) - 1);
-	strncpy(req->share, share->name, sizeof(req->share) - 1);
+	memcpy(req->account, user_name(sess->user), sizeof(req->account) - 1);
+	memcpy(req->share, share->name, sizeof(req->share) - 1);
 	snprintf(req->peer_addr, sizeof(req->peer_addr), "%pIS", peer_addr);
 
 	if (peer_addr->sa_family == AF_INET6)
@@ -578,7 +578,7 @@ int cifsd_ipc_logout_request(const char *account)
 
 	msg->type = CIFSD_EVENT_LOGOUT_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
-	strncpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
+	memcpy(req->account, account, CIFSD_REQ_MAX_ACCOUNT_NAME_SZ - 1);
 
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
@@ -599,7 +599,7 @@ cifsd_ipc_share_config_request(const char *name)
 	msg->type = CIFSD_EVENT_SHARE_CONFIG_REQUEST;
 	req = CIFSD_IPC_MSG_PAYLOAD(msg);
 	req->handle = cifds_acquire_id(ida);
-	strncpy(req->share_name, name, sizeof(req->share_name) - 1);
+	memcpy(req->share_name, name, sizeof(req->share_name) - 1);
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);

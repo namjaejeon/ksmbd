@@ -29,9 +29,20 @@ config CIFS_INSECURE_SERVER
 	  This enables deprecated insecure protocols dialects: SMB1/CIFS
 	  and SMB2.0
 
-config CIFSD_SMBDIRECT
+config CIFS_SERVER_SMBDIRECT
 	bool "Support for SMB Direct protocol"
 	depends on CIFS_SERVER && INFINIBAND && INFINIBAND_ADDR_TRANS
 	default n
+
 	help
 	  This enables SMB direct protocol for SMB 3.x
+
+config CIFS_SERVER_DEBUGGING
+	bool "Enable verbose debugging code"
+	depends on CIFS_SERVER
+	default n
+
+	help
+	  This adds a lot of debugging code, which is compiled out
+	  otherwise. Verbose debugging code increases the size of
+	  the kernel module quite considerably.

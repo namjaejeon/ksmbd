@@ -152,8 +152,10 @@ struct smb2_pdu {
 
 struct smb2_transform_hdr {
 	__be32 smb2_buf_length; /* big endian on wire */
-	/* length is only two or three bytes - with
-	   one or two byte type preceding it that MBZ */
+	/*
+	 * length is only two or three bytes - with
+	 * one or two byte type preceding it that MBZ
+	 */
 	__le32 ProtocolId;      /* 0xFD 'S' 'M' 'B' */
 	__u8   Signature[16];
 	__u8   Nonce[16];
@@ -1180,7 +1182,7 @@ struct smb2_set_info_rsp {
 #define FS_TYPE_SUPPORT_SIZE   44
 struct fs_type_info {
 	char		*fs_name;
-	long int        magic_number;
+	long		magic_number;
 } __packed;
 
 struct smb2_oplock_break {

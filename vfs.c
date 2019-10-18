@@ -161,10 +161,9 @@ int cifsd_vfs_create(struct cifsd_work *work,
 		cifsd_vfs_inherit_owner(work, d_inode(path.dentry),
 			d_inode(dentry));
 		cifsd_vfs_inherit_smack(work, path.dentry, dentry);
-	}
-	else
+	} else {
 		cifsd_err("File(%s): creation failed (err:%d)\n", name, err);
-
+	}
 	done_path_create(&path, dentry);
 	return err;
 }

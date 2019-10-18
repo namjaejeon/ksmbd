@@ -731,7 +731,7 @@ int smb_rename(struct cifsd_work *work)
 	RENAME_RSP *rsp = (RENAME_RSP *)RESPONSE_BUF(work);
 	struct cifsd_share_config *share = work->tcon->share_conf;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
-	char *abs_oldname, *abs_newname, *tmp_name = NULL;
+	char *abs_oldname, *abs_newname;
 	int oldname_len;
 	struct path path;
 	bool file_present = true;
@@ -762,23 +762,14 @@ int smb_rename(struct cifsd_work *work)
 		goto out;
 	}
 
-	tmp_name = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!tmp_name) {
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
-		rc = -ENOMEM;
-		goto out;
-	}
-	strncpy(tmp_name, abs_newname, PATH_MAX);
-	tmp_name[PATH_MAX - 1] = 0x00;
-
-	rc = cifsd_vfs_kern_path(tmp_name, 0, &path, 1);
+	rc = cifsd_vfs_kern_path(abs_newname, 0, &path, 1);
 	if (rc)
 		file_present = false;
 	else
 		path_put(&path);
 
 	if (file_present &&
-			strncmp(abs_oldname, tmp_name,
+			strncmp(abs_oldname, abs_newname,
 				strlen(abs_oldname))) {
 		rc = -EEXIST;
 		rsp->hdr.Status.CifsError =
@@ -796,7 +787,6 @@ int smb_rename(struct cifsd_work *work)
 	rsp->hdr.WordCount = 0;
 	rsp->ByteCount = 0;
 out:
-	kfree(tmp_name);
 	smb_put_name(abs_oldname);
 	smb_put_name(abs_newname);
 	return rc;
@@ -2547,6 +2537,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 	rsp->DirectoryFlag = S_ISDIR(stat.mode) ? 1 : 0;
 	if (extended_reply) {
 		struct inode *inode;
+
 		rsp->hdr.WordCount = 50;
 		memset(&ext_rsp->VolId, 0, 16);
 		if (fp) {
@@ -3386,24 +3377,23 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	}
 
 	size = posix_acl_xattr_size(count);
-	if ((buflen == 0) || !local_acl) {
-		/* used to query ACL EA size */
-	} else if (size > buflen) {
+	if ((buflen != 0) && local_acl && size > buflen)
 		return -ERANGE;
-	} else /* buffer big enough */ {
+
+	/* buffer big enough */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-		struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
+	struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
 #endif
-		local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
-		for (i = 0; i < count; i++) {
+	local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
+	for (i = 0; i < count; i++) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
-			cifs_convert_ace(&ace[i], pACE);
+		cifs_convert_ace(&ace[i], pACE);
 #else
-			cifs_convert_ace(&local_acl->a_entries[i], pACE);
+		cifs_convert_ace(&local_acl->a_entries[i], pACE);
 #endif
-			pACE++;
-		}
+		pACE++;
 	}
+
 	return size;
 }
 
@@ -3725,13 +3715,13 @@ static int smb_readlink(struct cifsd_work *work, struct path *path)
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
-		name_len = strnlen(buf, PATH_MAX);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
+		name_len = strlcpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
+#else
+		name_len = strscpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
+#endif
 		name_len++;     /* trailing null */
-		strncpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
 	}
-
-	name_len = min(name_len, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
-	buf[name_len] = 0x00;
 
 	rsp->hdr.WordCount = 10;
 	rsp->t2.TotalParameterCount = 2;
@@ -3819,10 +3809,10 @@ static int smb_get_ea(struct cifsd_work *work, struct path *path)
 		temp_fea->EA_flags = 0;
 		temp_fea->name_len = name_len;
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
-			strncpy(temp_fea->name, &name[XATTR_USER_PREFIX_LEN],
+			memcpy(temp_fea->name, &name[XATTR_USER_PREFIX_LEN],
 					name_len);
 		else
-			strncpy(temp_fea->name, name, name_len);
+			memcpy(temp_fea->name, name, name_len);
 
 		temp_fea->value_len = cpu_to_le16(value_len);
 		buf_free_len -= value_len;
@@ -4462,15 +4452,10 @@ static int query_fs_info(struct cifsd_work *work)
 	}
 
 	switch (info_level) {
-	FILE_SYSTEM_DEVICE_INFO *fdi;
-	FILE_SYSTEM_ATTRIBUTE_INFO *info;
-	FILE_SYSTEM_UNIX_INFO *uinfo;
-	FILE_SYSTEM_ALLOC_INFO *ainfo;
-	FILE_SYSTEM_VOL_INFO *vinfo;
-	FILE_SYSTEM_INFO *sinfo;
-	FILE_SYSTEM_POSIX_INFO *pinfo;
-
 	case SMB_INFO_ALLOCATION:
+	{
+		FILE_SYSTEM_ALLOC_INFO *ainfo;
+
 		cifsd_debug("GOT SMB_INFO_ALLOCATION\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(18);
 		ainfo = (FILE_SYSTEM_ALLOC_INFO *)(&rsp->Pad + 1);
@@ -4481,7 +4466,11 @@ static int query_fs_info(struct cifsd_work *work)
 		ainfo->TotalAllocationUnits = cpu_to_le32(stfs.f_blocks);
 		ainfo->FreeAllocationUnits = cpu_to_le32(stfs.f_bfree);
 		break;
+	}
 	case SMB_QUERY_FS_VOLUME_INFO:
+	{
+		FILE_SYSTEM_VOL_INFO *vinfo;
+
 		cifsd_debug("GOT SMB_QUERY_FS_VOLUME_INFO\n");
 		vinfo = (FILE_SYSTEM_VOL_INFO *)(&rsp->Pad + 1);
 		vinfo->VolumeCreationTime = 0;
@@ -4494,7 +4483,11 @@ static int query_fs_info(struct cifsd_work *work)
 		rsp->t2.TotalDataCount =
 			cpu_to_le16(sizeof(FILE_SYSTEM_VOL_INFO) + len - 2);
 		break;
+	}
 	case SMB_QUERY_FS_SIZE_INFO:
+	{
+		FILE_SYSTEM_INFO *sinfo;
+
 		cifsd_debug("GOT SMB_QUERY_FS_SIZE_INFO\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(24);
 		sinfo = (FILE_SYSTEM_INFO *)(&rsp->Pad + 1);
@@ -4504,12 +4497,15 @@ static int query_fs_info(struct cifsd_work *work)
 		sinfo->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
 		sinfo->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
 		break;
+	}
 	case SMB_QUERY_FS_DEVICE_INFO:
+	{
+		FILE_SYSTEM_DEVICE_INFO *fdi;
+
 		/* query fs info device info response is 0 word and 8 bytes */
 		cifsd_debug("GOT SMB_QUERY_FS_DEVICE_INFO\n");
 		if (le16_to_cpu(req->MaxDataCount) < 8) {
-			cifsd_err("canno send query_fs_info repsonse as "
-					"client send unsufficient bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4519,15 +4515,17 @@ static int query_fs_info(struct cifsd_work *work)
 		fdi->DeviceType = FILE_DEVICE_DISK;
 		fdi->DeviceCharacteristics = 0x20;
 		break;
+	}
 	case SMB_QUERY_FS_ATTRIBUTE_INFO:
+	{
+		FILE_SYSTEM_ATTRIBUTE_INFO *info;
+
 		cifsd_debug("GOT SMB_QUERY_FS_ATTRIBUTE_INFO\n");
 		/* constant 12 bytes + variable filesystem name */
 		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			cifsd_err("cannot send SMB_QUERY_FS_ATTRIBUTE_INFO  "
-					" repsonse as client send unsufficient"
-					" bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4539,15 +4537,17 @@ static int query_fs_info(struct cifsd_work *work)
 		info->FileSystemNameLen = 0;
 		rsp->t2.TotalDataCount = 12;
 		break;
+	}
 	case SMB_QUERY_CIFS_UNIX_INFO:
+	{
+		FILE_SYSTEM_UNIX_INFO *uinfo;
+
 		cifsd_debug("GOT SMB_QUERY_CIFS_UNIX_INFO\n");
 		/* constant 12 bytes + variable filesystem name */
 		uinfo = (FILE_SYSTEM_UNIX_INFO *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			cifsd_err("cannot send SMB_QUERY_CIFS_UNIX_INFO"
-					" repsonse as client send unsufficient"
-					" bytes\n");
+			cifsd_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4556,7 +4556,11 @@ static int query_fs_info(struct cifsd_work *work)
 		uinfo->Capability = SMB_UNIX_CAPS;
 		rsp->t2.TotalDataCount = 12;
 		break;
+	}
 	case SMB_QUERY_POSIX_FS_INFO:
+	{
+		FILE_SYSTEM_POSIX_INFO *pinfo;
+
 		cifsd_debug("GOT SMB_QUERY_POSIX_FS_INFO\n");
 		rsp->t2.TotalDataCount = cpu_to_le16(56);
 		pinfo = (FILE_SYSTEM_POSIX_INFO *)(&rsp->Pad + 1);
@@ -4569,6 +4573,7 @@ static int query_fs_info(struct cifsd_work *work)
 		pinfo->FreeFileNodes = cpu_to_le64(stfs.f_ffree);
 		pinfo->FileSysIdentifier = 0;
 		break;
+	}
 	default:
 		cifsd_err("info level %x not implemented\n", info_level);
 		rc = -EINVAL;
@@ -5675,8 +5680,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 	d_info->wptr = (char *)(d_info->wptr) + next_entry_offset;
 	kfree(conv_name);
 
-	cifsd_debug("info_level : %d, buf_len :%d,"
-			" next_offset : %d, data_count : %d\n",
+	cifsd_debug("info_level : %d, buf_len :%d, next_offset : %d, data_count : %d\n",
 			info_level, d_info->out_buf_len,
 			next_entry_offset, d_info->data_count);
 	return 0;
@@ -7084,8 +7088,7 @@ int smb_trans2(struct cifsd_work *work)
 	 *		MS-CIFS, SMB COM TRANSACTION
 	 */
 	if (req->SetupCount < 1) {
-		cifsd_err("Wrong setup count in SMB_TRANS2"
-				" - indicates wrong request\n");
+		cifsd_err("Wrong setup count in SMB_TRANS2 - indicates wrong request\n");
 		rsp_hdr->Status.CifsError = STATUS_UNSUCCESSFUL;
 		return -EINVAL;
 	}
@@ -7129,7 +7132,7 @@ int smb_trans2(struct cifsd_work *work)
 	}
 
 	if (err) {
-		cifsd_debug("smb_trans2 failed with error %d\n", err);
+		cifsd_debug("%s failed with error %d\n", __func__, err);
 		if (err == -EBUSY)
 			rsp_hdr->Status.CifsError = STATUS_DELETE_PENDING;
 		return err;

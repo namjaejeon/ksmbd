@@ -571,7 +571,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr;
 	LOCK_REQ *req;
-	struct oplock_info *opinfo = (struct oplock_info *)REQUEST_BUF(work);
+	struct oplock_info *opinfo = REQUEST_BUF(work);
 
 	if (conn->ops->allocate_rsp_buf(work)) {
 		cifsd_err("smb_allocate_rsp_buf failed! ");
@@ -580,7 +580,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	}
 
 	/* Init response header */
-	rsp_hdr = (struct smb_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 	/* wct is 8 for locking andx(18) */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
 	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn)
@@ -601,7 +601,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	rsp_hdr->WordCount = 8;
 
 	/* Init locking request */
-	req = (LOCK_REQ *)RESPONSE_BUF(work);
+	req = RESPONSE_BUF(work);
 
 	req->AndXCommand = 0xFF;
 	req->AndXReserved = 0;
@@ -689,8 +689,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	struct smb2_oplock_break *rsp = NULL;
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct cifsd_conn *conn = work->conn;
-	struct oplock_break_info *br_info =
-		(struct oplock_break_info *)REQUEST_BUF(work);
+	struct oplock_break_info *br_info = REQUEST_BUF(work);
 	struct smb2_hdr *rsp_hdr;
 	struct cifsd_file *fp;
 
@@ -707,7 +706,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
@@ -723,7 +722,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	memset(rsp_hdr->Signature, 0, 16);
 
 
-	rsp = (struct smb2_oplock_break *)RESPONSE_BUF(work);
+	rsp = RESPONSE_BUF(work);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -830,8 +829,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 {
 	struct smb2_lease_break *rsp = NULL;
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct lease_break_info *br_info =
-		(struct lease_break_info *)REQUEST_BUF(work);
+	struct lease_break_info *br_info = REQUEST_BUF(work);
 	struct cifsd_conn *conn = work->conn;
 	struct smb2_hdr *rsp_hdr;
 
@@ -841,7 +839,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = (struct smb2_hdr *)RESPONSE_BUF(work);
+	rsp_hdr = RESPONSE_BUF(work);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
@@ -856,7 +854,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = (struct smb2_lease_break *)RESPONSE_BUF(work);
+	rsp = RESPONSE_BUF(work);
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Reserved = 0;
 	rsp->Flags = 0;
