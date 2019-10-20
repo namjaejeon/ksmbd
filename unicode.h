@@ -27,10 +27,6 @@
 
 #define  UNIUPR_NOLOWER		/* Example to not expand lower case tables */
 
-#if defined(CONFIG_CIFS_SERVER) || defined(CONFIG_CIFS_SERVER_MODULE)
-#undef  UNIUPR_NOLOWER
-#endif
-
 /*
  * Windows maps these to the user defined 16 bit Unicode range since they are
  * reserved symbols (along with \ and /), otherwise illegal to store
@@ -67,7 +63,8 @@ extern const struct UniCaseRange CifsUniLowerRange[];
 
 #ifdef __KERNEL__
 int smb1_utf16_name_length(const __le16 *from, int maxbytes);
-int smb_strtoUTF16(__le16 *, const char *, int, const struct nls_table *);
+int smb_strtoUTF16(__le16 *to, const char *from, int len,
+	const struct nls_table *codepage);
 char *smb_strndup_from_utf16(const char *src, const int maxlen,
 		const bool is_unicode,
 		const struct nls_table *codepage);
@@ -302,15 +299,15 @@ UniToupper(register wchar_t uc)
 	if (uc < sizeof(SmbUniUpperTable)) {
 		/* Latin characters */
 		return uc + SmbUniUpperTable[uc];	/* Use base tables */
-	} else {
-		rp = SmbUniUpperRange;	/* Use range tables */
-		while (rp->start) {
-			if (uc < rp->start)	/* Before start of range */
-				return uc;	/* Uppercase = input */
-			if (uc <= rp->end)	/* In range */
-				return uc + rp->table[uc - rp->start];
-			rp++;	/* Try next range */
-		}
+	}
+
+	rp = SmbUniUpperRange;	/* Use range tables */
+	while (rp->start) {
+		if (uc < rp->start)	/* Before start of range */
+			return uc;	/* Uppercase = input */
+		if (uc <= rp->end)	/* In range */
+			return uc + rp->table[uc - rp->start];
+		rp++;	/* Try next range */
 	}
 	return uc;		/* Past last range */
 }
@@ -344,15 +341,15 @@ UniTolower(register wchar_t uc)
 	if (uc < sizeof(CifsUniLowerTable)) {
 		/* Latin characters */
 		return uc + CifsUniLowerTable[uc];	/* Use base tables */
-	} else {
-		rp = CifsUniLowerRange;	/* Use range tables */
-		while (rp->start) {
-			if (uc < rp->start)	/* Before start of range */
-				return uc;	/* Uppercase = input */
-			if (uc <= rp->end)	/* In range */
-				return uc + rp->table[uc - rp->start];
-			rp++;	/* Try next range */
-		}
+	}
+
+	rp = CifsUniLowerRange;	/* Use range tables */
+	while (rp->start) {
+		if (uc < rp->start)	/* Before start of range */
+			return uc;	/* Uppercase = input */
+		if (uc <= rp->end)	/* In range */
+			return uc + rp->table[uc - rp->start];
+		rp++;	/* Try next range */
 	}
 	return uc;		/* Past last range */
 }
