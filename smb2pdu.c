@@ -5460,29 +5460,39 @@ err_out:
  */
 static noinline int smb2_read_pipe(struct cifsd_work *work)
 {
-	int nbytes = 0;
-	char *data_buf;
+	int nbytes = 0, err;
 	uint64_t id;
-	unsigned int read_len;
 	struct cifsd_rpc_command *rpc_resp;
 	struct smb2_read_req *req = REQUEST_BUF(work);
 	struct smb2_read_rsp *rsp = RESPONSE_BUF(work);
 
-	read_len = le32_to_cpu(req->Length);
-	data_buf = (char *)(rsp->Buffer);
 	id = le64_to_cpu(req->VolatileFileId);
 
+	inc_rfc1001_len(rsp, 16);
 	rpc_resp = cifsd_rpc_read(work->sess, id);
 	if (rpc_resp) {
 		if (rpc_resp->flags != CIFSD_RPC_OK) {
-			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
-			smb2_set_err_rsp(work);
-			cifsd_free(rpc_resp);
-			return -EINVAL;
+			err = -EINVAL;
+			goto out;
 		}
 
-		memcpy(data_buf, rpc_resp->payload, rpc_resp->payload_sz);
+		if (server_conf.flags & CIFSD_GLOBAL_FLAG_CACHE_RBUF)
+			work->aux_payload_buf =
+				cifsd_find_buffer(rpc_resp->payload_sz);
+		else
+			work->aux_payload_buf =
+				cifsd_alloc_response(rpc_resp->payload_sz);
+		if (!work->aux_payload_buf) {
+			err = -ENOMEM;
+			goto out;
+		}
+
+		memcpy(work->aux_payload_buf, rpc_resp->payload,
+			rpc_resp->payload_sz);
+
 		nbytes = rpc_resp->payload_sz;
+		work->resp_hdr_sz = get_rfc1002_len(rsp) + 4;
+		work->aux_payload_sz = nbytes;
 		cifsd_free(rpc_resp);
 	}
 
@@ -5492,8 +5502,14 @@ static noinline int smb2_read_pipe(struct cifsd_work *work)
 	rsp->DataLength = cpu_to_le32(nbytes);
 	rsp->DataRemaining = 0;
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(rsp, 16 + nbytes);
+	inc_rfc1001_len(rsp, nbytes);
 	return 0;
+
+out:
+	rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+	smb2_set_err_rsp(work);
+	cifsd_free(rpc_resp);
+	return err;
 }
 
 static ssize_t smb2_read_rdma_channel(struct cifsd_work *work,
