@@ -928,6 +928,27 @@ static int smbd_flush_send_list(struct smbd_transport *t,
 	return ret;
 }
 
+static int wait_for_credits(struct smbd_transport *t, wait_queue_head_t *waitq,
+				atomic_t *credits)
+{
+	int ret;
+
+	do {
+		if (atomic_dec_return(credits) >= 0)
+			return 0;
+
+		atomic_inc(credits);
+		ret = wait_event_interruptible(*waitq,
+				atomic_read(credits) > 0 ||
+				t->status != SMBD_CS_CONNECTED);
+
+		if (t->status != SMBD_CS_CONNECTED)
+			return -ENOTCONN;
+		else if (ret < 0)
+			return ret;
+	} while (true);
+}
+
 static int wait_for_send_credits(struct smbd_transport *t,
 				struct smbd_send_ctx *send_ctx)
 {
@@ -940,20 +961,7 @@ static int wait_for_send_credits(struct smbd_transport *t,
 			return ret;
 	}
 
-	/* Wait for send credits. A SMBD packet needs one credit */
-	ret = wait_event_interruptible(t->wait_send_credits,
-				atomic_read(&t->send_credits) > 0 ||
-				t->status != SMBD_CS_CONNECTED);
-	if (ret)
-		return ret;
-
-	if (t->status != SMBD_CS_CONNECTED) {
-		cifsd_err("disconnected not sending\n");
-		return -ENOTCONN;
-	}
-
-	atomic_dec(&t->send_credits);
-	return 0;
+	return wait_for_credits(t, &t->wait_send_credits, &t->send_credits);
 }
 
 static int smbd_create_header(struct smbd_transport *t,
@@ -1293,26 +1301,6 @@ static void write_done(struct ib_cq *cq, struct ib_wc *wc)
 	read_write_done(cq, wc, DMA_TO_DEVICE);
 }
 
-static int wait_for_avail_rw_ops(struct smbd_transport *t)
-{
-	int ret;
-
-	do {
-		if (atomic_dec_return(&t->rw_avail_ops) >= 0)
-			return 0;
-
-		atomic_inc(&t->rw_avail_ops);
-		ret = wait_event_interruptible(t->wait_rw_avail_ops,
-				atomic_read(&t->rw_avail_ops) > 0 ||
-				t->status != SMBD_CS_CONNECTED);
-
-		if (t->status != SMBD_CS_CONNECTED)
-			return -ENOTCONN;
-		else if (ret < 0)
-			return ret;
-	} while (true);
-}
-
 static int smbd_rdma_xmit(struct smbd_transport *t, void *buf, int buf_len,
 			u32 remote_key, u64 remote_offset, u32 remote_len,
 			bool is_read)
@@ -1322,7 +1310,7 @@ static int smbd_rdma_xmit(struct smbd_transport *t, void *buf, int buf_len,
 	DECLARE_COMPLETION_ONSTACK(completion);
 	struct ib_send_wr *first_wr = NULL;
 
-	ret = wait_for_avail_rw_ops(t);
+	ret = wait_for_credits(t, &t->wait_rw_avail_ops, &t->rw_avail_ops);
 	if (ret < 0)
 		return ret;
 
