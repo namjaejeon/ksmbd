@@ -86,8 +86,6 @@ static struct smbd_listener {
 
 enum smbd_status {
 	SMBD_CS_NEW = 0,
-	SMBD_CS_CLIENT_ACCEPTED,
-	SMBD_CS_NEGOTIATED,
 	SMBD_CS_CONNECTED,
 	SMBD_CS_DISCONNECTING,
 	SMBD_CS_DISCONNECTED,
@@ -153,6 +151,8 @@ struct smbd_transport {
 	struct delayed_work	post_recv_credits_work;
 	struct work_struct	send_immediate_work;
 	struct work_struct	disconnect_work;
+
+	bool			negotiation_requested;
 };
 
 #define CIFSD_TRANS(t)	((struct cifsd_transport *)&((t)->transport))
@@ -324,8 +324,7 @@ static void smbd_disconnect_rdma_work(struct work_struct *work)
 	struct smbd_transport *t =
 		container_of(work, struct smbd_transport, disconnect_work);
 
-	if (t->status >= SMBD_CS_CLIENT_ACCEPTED
-			&& t->status <= SMBD_CS_CONNECTED) {
+	if (t->status == SMBD_CS_CONNECTED) {
 		t->status = SMBD_CS_DISCONNECTING;
 		rdma_disconnect(t->cm_id);
 	}
@@ -562,7 +561,7 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 
 	switch (recvmsg->type) {
 	case SMBD_MSG_NEGOTIATE_REQ:
-		t->status = SMBD_CS_NEGOTIATED;
+		t->negotiation_requested = true;
 		t->full_packet_received = true;
 		wake_up_interruptible(&t->wait_status);
 		break;
@@ -1438,7 +1437,7 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 
 	switch (event->event) {
 	case RDMA_CM_EVENT_ESTABLISHED: {
-		t->status = SMBD_CS_CLIENT_ACCEPTED;
+		t->status = SMBD_CS_CONNECTED;
 		wake_up_interruptible(&t->wait_status);
 		break;
 	}
@@ -1571,14 +1570,17 @@ static int smbd_accept_client(struct smbd_transport *t)
 	conn_param.flow_control = 0;
 
 	ret = rdma_accept(t->cm_id, &conn_param);
-	if (ret)
+	if (ret) {
+		cifsd_err("error at rdma_accept: %d\n", ret);
 		return ret;
+	}
 
 	wait_event_interruptible(t->wait_status, t->status != SMBD_CS_NEW);
-	if (t->status != SMBD_CS_CLIENT_ACCEPTED)
+	if (t->status != SMBD_CS_CONNECTED)
 		return -ENOTCONN;
 	return 0;
 }
+
 static int smbd_negotiate(struct smbd_transport *t)
 {
 	int ret;
@@ -1596,7 +1598,7 @@ static int smbd_negotiate(struct smbd_transport *t)
 		goto out;
 	}
 
-	cifsd_debug("Accept client\n");
+	t->negotiation_requested = false;
 	ret = smbd_accept_client(t);
 	if (ret) {
 		cifsd_err("Can't accept client\n");
@@ -1607,11 +1609,11 @@ static int smbd_negotiate(struct smbd_transport *t)
 
 	cifsd_debug("Waiting for SMBD negotiate request\n");
 	ret = wait_event_interruptible_timeout(t->wait_status,
-			t->status == SMBD_CS_NEGOTIATED ||
+			t->negotiation_requested ||
 			t->status == SMBD_CS_DISCONNECTED,
 			SMBD_NEGOTIATE_TIMEOUT * HZ);
-	if (ret <= 0) {
-		ret = ret ?: -ETIMEDOUT;
+	if (ret <= 0 || t->status == SMBD_CS_DISCONNECTED) {
+		ret = ret < 0 ? ret : -ETIMEDOUT;
 		goto out;
 	}
 
