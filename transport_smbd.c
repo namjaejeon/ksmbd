@@ -919,6 +919,7 @@ static int smbd_flush_send_list(struct smbd_transport *t,
 			send_ctx->need_invalidate_rkey, send_ctx->remote_key);
 	} else {
 		atomic_add(send_ctx->wr_cnt, &t->send_credits);
+		wake_up(&t->wait_send_credits);
 		list_for_each_entry_safe(first, last, &send_ctx->msg_list,
 				list) {
 			smbd_free_sendmsg(t, first);
