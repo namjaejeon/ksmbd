@@ -1817,7 +1817,7 @@ skip:
 		return rsp->AndXCommand; /* More processing required */
 	}
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
-
+	cifsd_fd_put(work, fp);
 	return err;
 
 out:
@@ -1845,6 +1845,7 @@ out:
 		kfree(smb_lock);
 	}
 
+	cifsd_fd_put(work, fp);
 	cifsd_err("failed in taking lock\n");
 	return err;
 }
@@ -2177,6 +2178,7 @@ int smb_nt_create_andx(struct cifsd_work *work)
 			memset(&rsp->hdr.WordCount, 0, 3);
 			return -EINVAL;
 		}
+		cifsd_fd_put(work, fp);
 	}
 
 	/* here allocated +2 (UNI '\0') length for both ASCII & UNI
@@ -2840,6 +2842,7 @@ int smb_read_andx(struct cifsd_work *work)
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 out:
+	cifsd_fd_put(work, fp);
 	if (err)
 		rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
 	return err;
@@ -2887,6 +2890,7 @@ int smb_write(struct cifsd_work *work)
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
 
+	cifsd_fd_put(work, fp);
 	if (!err) {
 		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 		return 0;
@@ -3042,6 +3046,7 @@ int smb_write_andx(struct cifsd_work *work)
 	rsp->ByteCount = 0;
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
 
+	cifsd_fd_put(work, fp);
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
@@ -6150,6 +6155,7 @@ static int find_next(struct cifsd_work *work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 		params_count + 1 + data_alignment_offset));
 	kfree(pathname);
+	cifsd_fd_put(work, dir_fp);
 	return 0;
 
 err_out:
@@ -6166,6 +6172,7 @@ err_out:
 		rsp->hdr.Status.CifsError =
 			STATUS_UNEXPECTED_IO_ERROR;
 
+	cifsd_fd_put(work, dir_fp);
 	kfree(pathname);
 	return 0;
 }
@@ -6219,6 +6226,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 	err = cifsd_vfs_truncate(work, NULL, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		cifsd_fd_put(work, fp);
 		return err;
 	}
 
@@ -6245,6 +6253,7 @@ out:
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	cifsd_fd_put(work, fp);
 
 	return 0;
 }
@@ -6282,6 +6291,7 @@ static int smb_set_file_size_finfo(struct cifsd_work *work)
 	err = cifsd_vfs_truncate(work, NULL, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		cifsd_fd_put(work, fp);
 		return err;
 	}
 
@@ -6305,6 +6315,7 @@ static int smb_set_file_size_finfo(struct cifsd_work *work)
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	cifsd_fd_put(work, fp);
 
 	return 0;
 }
@@ -6639,6 +6650,7 @@ static int query_file_info(struct cifsd_work *work)
 	}
 
 err_out:
+	cifsd_fd_put(work, fp);
 	return rc;
 }
 
@@ -6713,7 +6725,7 @@ static int smb_set_dispostion(struct cifsd_work *work)
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	char *disp_info;
 	struct cifsd_file *fp;
-
+	int ret = 0;
 
 	req = (struct smb_com_transaction2_sfi_req *)REQUEST_BUF(work);
 	rsp = (struct smb_com_transaction2_sfi_rsp *)RESPONSE_BUF(work);
@@ -6730,18 +6742,21 @@ static int smb_set_dispostion(struct cifsd_work *work)
 	if (*disp_info) {
 		if (!fp->is_nt_open) {
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
-			return -EPERM;
+			ret = -EPERM;
+			goto err_out;
 		}
 
 		if (!(FP_INODE(fp)->i_mode & 0222)) {
 			rsp->hdr.Status.CifsError = STATUS_CANNOT_DELETE;
-			return -EPERM;
+			ret = -EPERM;
+			goto err_out;
 		}
 
 		if (S_ISDIR(FP_INODE(fp)->i_mode) &&
 				cifsd_vfs_empty_dir(fp) == -ENOTEMPTY) {
 			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
-			return -ENOTEMPTY;
+			ret = -ENOTEMPTY;
+			goto err_out;
 		}
 
 		cifsd_set_inode_pending_delete(fp);
@@ -6769,7 +6784,9 @@ static int smb_set_dispostion(struct cifsd_work *work)
 	inc_rfc1001_len(&rsp->hdr,
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 
-	return 0;
+err_out:
+	cifsd_fd_put(work, fp);
+	return ret;
 }
 
 /**
@@ -6879,6 +6896,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 		rc = cifsd_vfs_truncate(work, NULL, fp, 0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+			cifsd_fd_put(work, fp);
 			return rc;
 		}
 	}
@@ -6887,6 +6905,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 	if (IS_ERR(newname)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
+		cifsd_fd_put(work, fp);
 		return PTR_ERR(newname);
 	}
 
@@ -6918,6 +6937,7 @@ static int smb_fileinfo_rename(struct cifsd_work *work)
 			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
 
 out:
+	cifsd_fd_put(work, fp);
 	kfree(newname);
 	return rc;
 }
@@ -7410,6 +7430,7 @@ int smb_unlink(struct cifsd_work *work)
 		rsp->ByteCount = 0;
 	}
 
+	cifsd_fd_put(work, fp);
 	smb_put_name(name);
 	return err;
 }
