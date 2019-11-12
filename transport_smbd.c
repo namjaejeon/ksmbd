@@ -84,6 +84,9 @@ static struct smbd_listener {
 	struct rdma_cm_id	*cm_id;
 } smbd_listener;
 
+
+struct workqueue_struct *smbd_wq;
+
 enum smbd_status {
 	SMBD_CS_NEW = 0,
 	SMBD_CS_CONNECTED,
@@ -110,9 +113,25 @@ struct smbd_transport {
 	int			max_fragmented_recv_size;
 	int			max_rdma_rw_size;
 
+	spinlock_t		reassembly_queue_lock;
+	struct list_head	reassembly_queue;
+	int			reassembly_data_length;
+	int			reassembly_queue_length;
+	int			first_entry_offset;
+	wait_queue_head_t	wait_reassembly_queue;
+
+	spinlock_t		receive_credit_lock;
+	int			recv_credits;
+	int			count_avail_recvmsg;
 	int			recv_credit_max;
 	int			recv_credit_target;
-	atomic_t		recv_credits;
+
+	spinlock_t		recvmsg_queue_lock;
+	struct list_head	recvmsg_queue;
+
+	spinlock_t		empty_recvmsg_queue_lock;
+	struct list_head	empty_recvmsg_queue;
+
 	int			send_credit_target;
 	atomic_t		send_credits;
 	spinlock_t		lock_new_recv_credits;
@@ -127,27 +146,11 @@ struct smbd_transport {
 	mempool_t		*recvmsg_mempool;
 	struct kmem_cache	*recvmsg_cache;
 
-	spinlock_t		recvmsg_queue_lock;
-	struct list_head	recvmsg_queue;
-	int			count_recvmsg_queue;
-
-	spinlock_t		reassembly_queue_lock;
-	struct list_head	reassembly_queue;
-	int			reassembly_data_length;
-	int			reassembly_queue_length;
-	int			first_entry_offset;
-	wait_queue_head_t	wait_reassembly_queue;
-
-	spinlock_t		empty_recvmsg_queue_lock;
-	struct list_head	empty_recvmsg_queue;
-	int			count_empty_recvmsg_queue;
-
 	wait_queue_head_t	wait_send_payload_pending;
 	atomic_t		send_payload_pending;
 	wait_queue_head_t	wait_send_pending;
 	atomic_t		send_pending;
 
-	struct workqueue_struct	*workqueue;
 	struct delayed_work	post_recv_credits_work;
 	struct work_struct	send_immediate_work;
 	struct work_struct	disconnect_work;
@@ -217,6 +220,13 @@ static inline void *smbd_recvmsg_payload(struct smbd_recvmsg *recvmsg)
 	return (void *)recvmsg->packet;
 }
 
+static inline bool is_receive_credit_post_required(int receive_credits,
+			int avail_recvmsg_count)
+{
+	return receive_credits <= (smbd_receive_credit_max >> 3) &&
+		avail_recvmsg_count >= (receive_credits >> 2);
+}
+
 static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 {
 	struct smbd_recvmsg *recvmsg = NULL;
@@ -228,7 +238,6 @@ static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 					   struct smbd_recvmsg,
 					   list);
 		list_del(&recvmsg->list);
-		t->count_recvmsg_queue--;
 	}
 	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
 	return recvmsg;
@@ -244,11 +253,8 @@ static void put_recvmsg(struct smbd_transport *t,
 
 	spin_lock_irqsave(&t->recvmsg_queue_lock, flags);
 	list_add(&recvmsg->list, &t->recvmsg_queue);
-	t->count_recvmsg_queue++;
 	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
 
-	if (t->status == SMBD_CS_CONNECTED)
-		mod_delayed_work(t->workqueue, &t->post_recv_credits_work, 0);
 }
 
 static struct smbd_recvmsg *get_empty_recvmsg(struct smbd_transport *t)
@@ -262,14 +268,12 @@ static struct smbd_recvmsg *get_empty_recvmsg(struct smbd_transport *t)
 			&t->empty_recvmsg_queue,
 			struct smbd_recvmsg, list);
 		list_del(&recvmsg->list);
-		t->count_empty_recvmsg_queue--;
 	}
 	spin_unlock_irqrestore(&t->empty_recvmsg_queue_lock, flags);
-
 	return recvmsg;
 }
 
-static void __put_empty_recvmsg(struct smbd_transport *t,
+static void put_empty_recvmsg(struct smbd_transport *t,
 			struct smbd_recvmsg *recvmsg)
 {
 	ib_dma_unmap_single(t->cm_id->device, recvmsg->sge.addr,
@@ -277,17 +281,7 @@ static void __put_empty_recvmsg(struct smbd_transport *t,
 
 	spin_lock(&t->empty_recvmsg_queue_lock);
 	list_add_tail(&recvmsg->list, &t->empty_recvmsg_queue);
-	t->count_empty_recvmsg_queue++;
 	spin_unlock(&t->empty_recvmsg_queue_lock);
-}
-
-static void put_empty_recvmsg(struct smbd_transport *t,
-			struct smbd_recvmsg *recvmsg)
-{
-	__put_empty_recvmsg(t, recvmsg);
-	if (t->status == SMBD_CS_CONNECTED)
-		queue_delayed_work(t->workqueue, &t->post_recv_credits_work,
-				10 * HZ);
 }
 
 static void enqueue_reassembly(struct smbd_transport *t,
@@ -332,7 +326,7 @@ static void smbd_disconnect_rdma_work(struct work_struct *work)
 
 static void smbd_disconnect_rdma_connection(struct smbd_transport *t)
 {
-	queue_work(t->workqueue, &t->disconnect_work);
+	queue_work(smbd_wq, &t->disconnect_work);
 }
 
 static void smbd_send_immediate_work(struct work_struct *work)
@@ -343,7 +337,6 @@ static void smbd_send_immediate_work(struct work_struct *work)
 	if (t->status != SMBD_CS_CONNECTED)
 		return;
 
-	cifsd_debug("send an empty message\n");
 	smbd_post_send_data(t, NULL, NULL, 0, 0);
 }
 
@@ -351,7 +344,6 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 {
 	struct smbd_transport *t;
 	struct cifsd_conn *conn;
-	char name[80];
 
 	t = kzalloc(sizeof(*t), GFP_KERNEL);
 	if (!t)
@@ -363,10 +355,6 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	t->status = SMBD_CS_NEW;
 	init_waitqueue_head(&t->wait_status);
 
-	spin_lock_init(&t->recvmsg_queue_lock);
-	INIT_LIST_HEAD(&t->recvmsg_queue);
-	t->count_recvmsg_queue = 0;
-
 	spin_lock_init(&t->reassembly_queue_lock);
 	INIT_LIST_HEAD(&t->reassembly_queue);
 	t->reassembly_data_length = 0;
@@ -375,9 +363,12 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	init_waitqueue_head(&t->wait_send_credits);
 	init_waitqueue_head(&t->wait_rw_avail_ops);
 
+	spin_lock_init(&t->receive_credit_lock);
+	spin_lock_init(&t->recvmsg_queue_lock);
+	INIT_LIST_HEAD(&t->recvmsg_queue);
+
 	spin_lock_init(&t->empty_recvmsg_queue_lock);
 	INIT_LIST_HEAD(&t->empty_recvmsg_queue);
-	t->count_empty_recvmsg_queue = 0;
 
 	init_waitqueue_head(&t->wait_send_payload_pending);
 	atomic_set(&t->send_payload_pending, 0);
@@ -390,11 +381,6 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	INIT_WORK(&t->send_immediate_work, smbd_send_immediate_work);
 	INIT_WORK(&t->disconnect_work, smbd_disconnect_rdma_work);
 
-	snprintf(name, sizeof(name), "smbd_%p", t);
-	t->workqueue = create_workqueue(name);
-	if (!t->workqueue)
-		goto err;
-
 	conn = cifsd_conn_alloc();
 	if (!conn)
 		goto err;
@@ -403,8 +389,6 @@ static struct smbd_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	CIFSD_TRANS(t)->ops = &cifsd_smbd_transport_ops;
 	return t;
 err:
-	if (t->workqueue)
-		destroy_workqueue(t->workqueue);
 	kfree(t);
 	return NULL;
 }
@@ -455,7 +439,6 @@ static void free_transport(struct smbd_transport *t)
 	if (t->cm_id)
 		rdma_destroy_id(t->cm_id);
 
-	destroy_workqueue(t->workqueue);
 	smbd_destroy_pools(t);
 	cifsd_conn_free(CIFSD_TRANS(t)->conn);
 	kfree(t);
@@ -548,7 +531,7 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 				wc->opcode);
 			smbd_disconnect_rdma_connection(t);
 		}
-		__put_empty_recvmsg(t, recvmsg);
+		put_empty_recvmsg(t, recvmsg);
 		return;
 	}
 
@@ -569,6 +552,7 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 		struct smbd_data_transfer *data_transfer =
 			(struct smbd_data_transfer *)recvmsg->packet;
 		int data_length = le32_to_cpu(data_transfer->data_length);
+		int avail_recvmsg_count, receive_credits;
 
 		if (data_length) {
 			if (t->full_packet_received)
@@ -581,10 +565,20 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 
 			enqueue_reassembly(t, recvmsg, data_length);
 			wake_up_interruptible(&t->wait_reassembly_queue);
-		} else
+
+			spin_lock(&t->receive_credit_lock);
+			receive_credits = --(t->recv_credits);
+			avail_recvmsg_count = t->count_avail_recvmsg;
+			spin_unlock(&t->receive_credit_lock);
+		} else {
 			put_empty_recvmsg(t, recvmsg);
 
-		atomic_dec(&t->recv_credits);
+			spin_lock(&t->receive_credit_lock);
+			receive_credits = --(t->recv_credits);
+			avail_recvmsg_count = ++(t->count_avail_recvmsg);
+			spin_unlock(&t->receive_credit_lock);
+		}
+
 		t->recv_credit_target =
 				le16_to_cpu(data_transfer->credits_requested);
 		atomic_add(le16_to_cpu(data_transfer->credits_granted),
@@ -592,10 +586,15 @@ static void recv_done(struct ib_cq *cq, struct ib_wc *wc)
 
 		if (le16_to_cpu(data_transfer->flags) &
 				SMB_DIRECT_RESPONSE_REQUESTED)
-			queue_work(t->workqueue, &t->send_immediate_work);
+			queue_work(smbd_wq, &t->send_immediate_work);
 
 		if (atomic_read(&t->send_credits) > 0)
 			wake_up_interruptible(&t->wait_send_credits);
+
+		if (is_receive_credit_post_required(receive_credits,
+					avail_recvmsg_count))
+			mod_delayed_work(smbd_wq,
+					&t->post_recv_credits_work, 0);
 		break;
 	}
 	default:
@@ -737,6 +736,16 @@ again:
 		st->reassembly_queue_length -= queue_removed;
 		spin_unlock_irq(&st->reassembly_queue_lock);
 
+		spin_lock(&st->receive_credit_lock);
+		st->count_avail_recvmsg += queue_removed;
+		if (is_receive_credit_post_required(st->recv_credits,
+					st->count_avail_recvmsg)) {
+			spin_unlock(&st->receive_credit_lock);
+			mod_delayed_work(smbd_wq,
+					&st->post_recv_credits_work, 0);
+		} else
+			spin_unlock(&st->receive_credit_lock);
+
 		st->first_entry_offset = offset;
 		cifsd_debug("returning to thread data_read=%d reassembly_data_length=%d first_entry_offset=%d\n",
 			data_read, st->reassembly_data_length,
@@ -761,12 +770,15 @@ static void smbd_post_recv_credits(struct work_struct *work)
 	struct smbd_transport *t = container_of(work, struct smbd_transport,
 					post_recv_credits_work.work);
 	struct smbd_recvmsg *recvmsg;
-	int credits;
+	int receive_credits, credits = 0;
 	int ret;
 	int use_free = 1;
 
-	credits = 0;
-	if (t->recv_credit_target > atomic_read(&t->recv_credits)) {
+	spin_lock(&t->receive_credit_lock);
+	receive_credits = t->recv_credits;
+	spin_unlock(&t->receive_credit_lock);
+
+	if (receive_credits < t->recv_credit_target) {
 		while (true) {
 			if (use_free)
 				recvmsg = get_free_recvmsg(t);
@@ -793,14 +805,17 @@ static void smbd_post_recv_credits(struct work_struct *work)
 		}
 	}
 
+	spin_lock(&t->receive_credit_lock);
+	t->recv_credits += credits;
+	t->count_avail_recvmsg -= credits;
+	spin_unlock(&t->receive_credit_lock);
+
 	spin_lock(&t->lock_new_recv_credits);
 	t->new_recv_credits += credits;
 	spin_unlock(&t->lock_new_recv_credits);
 
-	atomic_add(credits, &t->recv_credits);
-
 	if (credits)
-		queue_work(t->workqueue, &t->send_immediate_work);
+		queue_work(smbd_wq, &t->send_immediate_work);
 }
 
 static void send_done(struct ib_cq *cq, struct ib_wc *wc)
@@ -955,7 +970,7 @@ static int wait_for_send_credits(struct smbd_transport *t,
 	int ret;
 
 	if (send_ctx && (send_ctx->wr_cnt >= 16 ||
-			atomic_read(&t->send_credits) <= 0)) {
+			atomic_read(&t->send_credits) <= 1)) {
 		ret = smbd_flush_send_list(t, send_ctx, false);
 		if (ret)
 			return ret;
@@ -1068,7 +1083,7 @@ static int get_mapped_sg_list(struct ib_device *device, void *buf, int size,
 	return ib_dma_map_sg(device, sg_list, npages, dir);
 }
 
-static int post_send_msg(struct smbd_transport *t,
+static int post_sendmsg(struct smbd_transport *t,
 			struct smbd_send_ctx *send_ctx,
 			struct smbd_sendmsg *msg)
 {
@@ -1157,10 +1172,9 @@ static int smbd_post_send_data(struct smbd_transport *t,
 		}
 	}
 
-	ret = post_send_msg(t, send_ctx, msg);
+	ret = post_sendmsg(t, send_ctx, msg);
 	if (ret)
 		goto err;
-
 	return 0;
 err:
 	smbd_free_sendmsg(t, msg);
@@ -1444,8 +1458,9 @@ static int smbd_cm_handler(struct rdma_cm_id *cm_id,
 		break;
 	}
 	default:
-		cifsd_debug("Unexpected RDMA CM event. cm_id=%p, event=%s (%d)\n",
-			cm_id, rdma_event_msg(event->event), event->event);
+		cifsd_err("Unexpected RDMA CM event. cm_id=%p, event=%s (%d)\n",
+				cm_id, rdma_event_msg(event->event),
+				event->event);
 		break;
 	}
 	return 0;
@@ -1514,7 +1529,7 @@ static int smbd_send_negotiate_response(struct smbd_transport *t, int failed)
 	sendmsg->sge[0].length = sizeof(*resp);
 	sendmsg->sge[0].lkey = t->pd->local_dma_lkey;
 
-	ret = post_send_msg(t, NULL, sendmsg);
+	ret = post_sendmsg(t, NULL, sendmsg);
 	if (ret) {
 		smbd_free_sendmsg(t, sendmsg);
 		return ret;
@@ -1690,10 +1705,12 @@ static int smbd_init_params(struct smbd_transport *t, struct ib_qp_cap *cap)
 	}
 #endif
 
+	t->recv_credits = 0;
+	t->count_avail_recvmsg = 0;
+
 	t->recv_credit_max = smbd_receive_credit_max;
 	t->recv_credit_target = 10;
 	t->new_recv_credits = 0;
-	atomic_set(&t->recv_credits, 0);
 
 	t->send_credit_target = smbd_send_credit_target;
 	atomic_set(&t->send_credits, 0);
@@ -1776,8 +1793,8 @@ static int smbd_create_pools(struct smbd_transport *t)
 			goto err;
 		recvmsg->transport = t;
 		list_add(&recvmsg->list, &t->recvmsg_queue);
-		t->count_recvmsg_queue++;
 	}
+	t->count_avail_recvmsg = t->recv_credit_max;
 
 	return 0;
 err:
@@ -1994,8 +2011,21 @@ int cifsd_smbd_init(void)
 	int ret;
 
 	smbd_listener.cm_id = NULL;
+
+	/* When a client is running out of send credits, the credits are
+	 * granted by the server's sending a packet using this queue.
+	 * This avoids the situation that a clients cannot send packets
+	 * for lack of credits
+	 */
+	smbd_wq = alloc_workqueue("cifsd-smbd-wq",
+				WQ_HIGHPRI|WQ_MEM_RECLAIM, 0);
+	if (!smbd_wq)
+		return -ENOMEM;
+
 	ret = smbd_listen(SMBD_PORT);
 	if (ret) {
+		destroy_workqueue(smbd_wq);
+		smbd_wq = NULL;
 		cifsd_err("Can't listen: %d\n", ret);
 		return ret;
 	}
@@ -2009,6 +2039,12 @@ int cifsd_smbd_destroy(void)
 	if (smbd_listener.cm_id)
 		rdma_destroy_id(smbd_listener.cm_id);
 	smbd_listener.cm_id = NULL;
+
+	if (smbd_wq) {
+		flush_workqueue(smbd_wq);
+		destroy_workqueue(smbd_wq);
+		smbd_wq = NULL;
+	}
 	return 0;
 }
 
