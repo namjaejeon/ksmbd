@@ -230,46 +230,42 @@ static inline bool is_receive_credit_post_required(int receive_credits,
 static struct smbd_recvmsg *get_free_recvmsg(struct smbd_transport *t)
 {
 	struct smbd_recvmsg *recvmsg = NULL;
-	unsigned long flags;
 
-	spin_lock_irqsave(&t->recvmsg_queue_lock, flags);
+	spin_lock(&t->recvmsg_queue_lock);
 	if (!list_empty(&t->recvmsg_queue)) {
 		recvmsg = list_first_entry(&t->recvmsg_queue,
 					   struct smbd_recvmsg,
 					   list);
 		list_del(&recvmsg->list);
 	}
-	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
+	spin_unlock(&t->recvmsg_queue_lock);
 	return recvmsg;
 }
 
 static void put_recvmsg(struct smbd_transport *t,
 				struct smbd_recvmsg *recvmsg)
 {
-	unsigned long flags;
-
 	ib_dma_unmap_single(t->cm_id->device, recvmsg->sge.addr,
 			recvmsg->sge.length, DMA_FROM_DEVICE);
 
-	spin_lock_irqsave(&t->recvmsg_queue_lock, flags);
+	spin_lock(&t->recvmsg_queue_lock);
 	list_add(&recvmsg->list, &t->recvmsg_queue);
-	spin_unlock_irqrestore(&t->recvmsg_queue_lock, flags);
+	spin_unlock(&t->recvmsg_queue_lock);
 
 }
 
 static struct smbd_recvmsg *get_empty_recvmsg(struct smbd_transport *t)
 {
 	struct smbd_recvmsg *recvmsg = NULL;
-	unsigned long flags;
 
-	spin_lock_irqsave(&t->empty_recvmsg_queue_lock, flags);
+	spin_lock(&t->empty_recvmsg_queue_lock);
 	if (!list_empty(&t->empty_recvmsg_queue)) {
 		recvmsg = list_first_entry(
 			&t->empty_recvmsg_queue,
 			struct smbd_recvmsg, list);
 		list_del(&recvmsg->list);
 	}
-	spin_unlock_irqrestore(&t->empty_recvmsg_queue_lock, flags);
+	spin_unlock(&t->empty_recvmsg_queue_lock);
 	return recvmsg;
 }
 
@@ -396,7 +392,6 @@ err:
 static void free_transport(struct smbd_transport *t)
 {
 	struct smbd_recvmsg *recvmsg;
-	unsigned long flags;
 
 	wake_up_interruptible(&t->wait_send_credits);
 
@@ -417,16 +412,15 @@ static void free_transport(struct smbd_transport *t)
 
 	cifsd_debug("drain the reassembly queue\n");
 	do {
-		spin_lock_irqsave(&t->reassembly_queue_lock, flags);
+		spin_lock(&t->reassembly_queue_lock);
 		recvmsg = get_first_reassembly(t);
 		if (recvmsg) {
 			list_del(&recvmsg->list);
-			spin_unlock_irqrestore(
-				&t->reassembly_queue_lock, flags);
+			spin_unlock(
+				&t->reassembly_queue_lock);
 			put_recvmsg(t, recvmsg);
 		} else
-			spin_unlock_irqrestore(&t->reassembly_queue_lock,
-					flags);
+			spin_unlock(&t->reassembly_queue_lock);
 	} while (recvmsg);
 	t->reassembly_data_length = 0;
 
