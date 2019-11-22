@@ -1150,7 +1150,7 @@ static int ntlm_negotiate(struct cifsd_work *work,
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	CHALLENGE_MESSAGE *chgblob;
-	unsigned char *spnego_blob;
+	unsigned char *spnego_blob = NULL;
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int sz, rc;

@@ -6190,7 +6190,7 @@ static int smb_set_alloc_size(struct cifsd_work *work)
 	struct smb_com_transaction2_sfi_rsp *rsp;
 	struct file_allocation_info *allocinfo;
 	struct kstat stat;
-	struct cifsd_file *fp;
+	struct cifsd_file *fp = NULL;
 	loff_t newsize;
 	int err = 0;
 
