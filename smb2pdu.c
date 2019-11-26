@@ -2729,8 +2729,9 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-	fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
-		le32_to_cpu(req->FileAttributes)));
+	if (req->FileAttributes || fp->f_ci->m_fattr == 0)
+		fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+			le32_to_cpu(req->FileAttributes)));
 
 	if (!created)
 		smb2_update_xattrs(tcon, &path, fp);
