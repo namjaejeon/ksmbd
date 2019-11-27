@@ -18,6 +18,7 @@
 
 /* @FIXME rework this code */
 
+#ifdef CONFIG_CIFS_SERVER_DEBUGGING
 /**
  * dump_smb_msg() - print smb packet for debugging
  * @buf:		smb packet
@@ -61,6 +62,7 @@ void dump_smb_msg(void *buf, int smb_buf_length)
 	}
 	pr_cont(" | %s\n", debug_line);
 }
+#endif
 
 /**
  * match_pattern() - compare a string with a pattern which might include

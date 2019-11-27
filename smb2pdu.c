@@ -1150,7 +1150,7 @@ static int ntlm_negotiate(struct cifsd_work *work,
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	CHALLENGE_MESSAGE *chgblob;
-	unsigned char *spnego_blob;
+	unsigned char *spnego_blob = NULL;
 	u16 spnego_blob_len;
 	char *neg_blob;
 	int sz, rc;
@@ -2729,8 +2729,9 @@ int smb2_open(struct cifsd_work *work)
 	}
 
 	fp->create_time = cifs_UnixTimeToNT(from_kern_timespec(stat.ctime));
-	fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
-		le32_to_cpu(req->FileAttributes)));
+	if (req->FileAttributes || fp->f_ci->m_fattr == 0)
+		fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
+			le32_to_cpu(req->FileAttributes)));
 
 	if (!created)
 		smb2_update_xattrs(tcon, &path, fp);
@@ -6809,17 +6810,32 @@ static inline int fsctl_set_sparse(struct cifsd_work *work, uint64_t id,
 	struct file_sparse *sparse)
 {
 	struct cifsd_file *fp;
+	int ret = 0;
+	__le32 old_fattr;
 
 	fp = cifsd_lookup_fd_fast(work, id);
 	if (!fp)
 		return -ENOENT;
 
+	old_fattr = fp->f_ci->m_fattr;
 	if (sparse->SetSparse)
 		fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
 	else
 		fp->f_ci->m_fattr &= ~ATTR_SPARSE_FILE_LE;
+
+	if (fp->f_ci->m_fattr != old_fattr &&
+			test_share_config_flag(work->tcon->share_conf,
+				CIFSD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+		ret = cifsd_vfs_setxattr(fp->filp->f_path.dentry,
+				XATTR_NAME_FILE_ATTRIBUTE,
+				(void *)&fp->f_ci->m_fattr,
+				FILE_ATTRIBUTE_LEN, 0);
+		if (ret)
+			fp->f_ci->m_fattr = old_fattr;
+	}
+
 	cifsd_fd_put(work, fp);
-	return 0;
+	return ret;
 }
 
 static int fsctl_request_resume_key(struct cifsd_work *work,
