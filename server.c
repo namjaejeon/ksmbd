@@ -551,7 +551,7 @@ MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
 #endif
 
 MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
-MODULE_VERSION("2.0.2");
+MODULE_VERSION(CIFSD_VERSION);
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: arc4");
