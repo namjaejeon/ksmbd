@@ -14,7 +14,7 @@
 #include "vfs_cache.h"
 #include "smberr.h"
 
-#define CIFSD_VERSION	"2.0.2"
+#define CIFSD_VERSION	"2.0.3"
 
 /* @FIXME clean up this code */
 
