@@ -14,6 +14,13 @@
 #define CIFS_HMAC_MD5_HASH_SIZE	(16)
 #define CIFS_NTHASH_SIZE	(16)
 
+/*
+ * Size of the ntlm client response
+ */
+#define CIFS_AUTH_RESP_SIZE		24
+#define CIFS_SMB1_SIGNATURE_SIZE	8
+#define CIFS_SMB1_SESSKEY_SIZE		16
+
 struct cifsd_session;
 struct cifsd_conn;
 struct kvec;

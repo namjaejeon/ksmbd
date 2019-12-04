@@ -5,8 +5,12 @@
  */
 
 #include "smb_common.h"
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+#include "smb1pdu.h"
+#endif
 #include "server.h"
 #include "misc.h"
+#include "smbstatus.h"
 /* @FIXME */
 #include "connection.h"
 #include "cifsd_work.h"
@@ -142,12 +146,19 @@ int cifsd_verify_smb_message(struct cifsd_work *work)
 {
 	struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
 
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		cifsd_debug("got SMB2 command\n");
 		return cifsd_smb2_check_message(work);
 	}
 
 	return cifsd_smb1_check_message(work);
+#else
+	if (smb2_hdr->ProtocolId != SMB2_PROTO_NUMBER)
+		return 1;
+
+	return cifsd_smb2_check_message(work);
+#endif
 }
 
 /**
@@ -274,6 +285,7 @@ void cifsd_init_smb2_server_common(struct cifsd_conn *conn)
 		init_smb2_1_server(conn);
 }
 
+#define SMB_COM_NEGOTIATE	0x72
 int cifsd_init_smb_server(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
@@ -284,12 +296,15 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 		return 0;
 
 	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	if (proto == SMB1_PROTO_NUMBER) {
-		if (init_smb1_server(conn) == -ENOTSUPP)
-			cifsd_init_smb2_server_common(conn);
+		init_smb1_server(conn);
 	} else {
 		cifsd_init_smb2_server_common(conn);
 	}
+#else
+	cifsd_init_smb2_server_common(conn);
+#endif
 
 	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
 		conn->need_neg = false;

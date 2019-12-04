@@ -7,10 +7,6 @@
 #ifndef __CIFSD_SMB1PDU_H
 #define __CIFSD_SMB1PDU_H
 
-#include "glob.h"
-#include "nterr.h"
-#include "smbstatus.h"
-
 #define MAX_CIFS_HDR_SIZE 0x58
 
 /* @FIXME rework this code */
@@ -184,36 +180,6 @@
 /* Action bits */
 #define GUEST_LOGIN 1
 
-struct smb_hdr {
-	__be32 smb_buf_length;
-	__u8 Protocol[4];
-	__u8 Command;
-	union {
-		struct {
-			__u8 ErrorClass;
-			__u8 Reserved;
-			__le16 Error;
-		} __packed DosError;
-		__le32 CifsError;
-	} __packed Status;
-	__u8 Flags;
-	__le16 Flags2;          /* note: le */
-	__le16 PidHigh;
-	union {
-		struct {
-			__le32 SequenceNumber;  /* le */
-			__u32 Reserved; /* zero */
-		} __packed Sequence;
-		__u8 SecuritySignature[8];      /* le */
-	} __packed Signature;
-	__u8 pad[2];
-	__le16 Tid;
-	__le16 Pid;
-	__le16 Uid;
-	__le16 Mid;
-	__u8 WordCount;
-} __packed;
-
 typedef struct smb_com_read_req {
 	struct smb_hdr hdr;     /* wct = 12 */
 	__u8 AndXCommand;
@@ -311,39 +277,6 @@ typedef struct smb_com_rename_rsp {
 	struct smb_hdr hdr;     /* wct = 0 */
 	__u16 ByteCount;        /* bct = 0 */
 } __packed RENAME_RSP;
-
-typedef struct negotiate_rsp {
-	struct smb_hdr hdr;     /* wct = 17 */
-	__le16 DialectIndex; /* 0xFFFF = no dialect acceptable */
-	__u8 SecurityMode;
-	__le16 MaxMpxCount;
-	__le16 MaxNumberVcs;
-	__le32 MaxBufferSize;
-	__le32 MaxRawSize;
-	__le32 SessionKey;
-	__le32 Capabilities;    /* see below */
-	__le32 SystemTimeLow;
-	__le32 SystemTimeHigh;
-	__le16 ServerTimeZone;
-	__u8 EncryptionKeyLength;
-	__u16 ByteCount;
-	union {
-		unsigned char EncryptionKey[8]; /* cap extended security off */
-		/* followed by Domain name - if extended security is off */
-		/* followed by 16 bytes of server GUID */
-		/* then security blob if cap_extended_security negotiated */
-		struct {
-			unsigned char GUID[SMB1_CLIENT_GUID_SIZE];
-			unsigned char SecurityBlob[1];
-		} __packed extended_response;
-	} __packed u;
-} __packed NEGOTIATE_RSP;
-
-typedef struct negotiate_req {
-	struct smb_hdr hdr;     /* wct = 0 */
-	__le16 ByteCount;
-	unsigned char DialectsArray[1];
-} __packed NEGOTIATE_REQ;
 
 /* SecurityMode bits */
 #define SECMODE_USER          0x01      /* off indicates share level security */
@@ -692,45 +625,8 @@ typedef struct smb_com_open_req {       /* also handles create */
 	char fileName[1];
 } __packed OPEN_REQ;
 
-/* Responses when opening a file. */
-#define F_SUPERSEDED 0
-#define F_OPENED 1
-#define F_CREATED 2
-#define F_OVERWRITTEN 3
-
 /* open response for CreateAction shifted left */
 #define CIFS_CREATE_ACTION 0x20000 /* file created */
-
-/*
- * File Attribute flags
- */
-#define ATTR_READONLY  0x0001
-#define ATTR_HIDDEN    0x0002
-#define ATTR_SYSTEM    0x0004
-#define ATTR_VOLUME    0x0008
-#define ATTR_DIRECTORY 0x0010
-#define ATTR_ARCHIVE   0x0020
-#define ATTR_DEVICE    0x0040
-#define ATTR_NORMAL    0x0080
-#define ATTR_TEMPORARY 0x0100
-#define ATTR_SPARSE    0x0200
-#define ATTR_REPARSE   0x0400
-#define ATTR_COMPRESSED 0x0800
-#define ATTR_OFFLINE    0x1000  /*
-				 * ie file not immediately available -
-				 * on offline storage
-				 */
-
-#define ATTR_NOT_CONTENT_INDEXED 0x2000
-#define ATTR_ENCRYPTED  0x4000
-#define ATTR_POSIX_SEMANTICS 0x01000000
-#define ATTR_BACKUP_SEMANTICS 0x02000000
-#define ATTR_DELETE_ON_CLOSE 0x04000000
-#define ATTR_SEQUENTIAL_SCAN 0x08000000
-#define ATTR_RANDOM_ACCESS   0x10000000
-#define ATTR_NO_BUFFERING    0x20000000
-#define ATTR_WRITE_THROUGH   0x80000000
-
 
 /* Basic file attributes */
 #define SMB_FILE_ATTRIBUTE_NORMAL	0x0000
@@ -1118,11 +1014,6 @@ struct file_internal_info {
 #define FILE_DEVICE_VIRTUAL_DISK        0x00000024
 #define FILE_DEVICE_NETWORK_REDIRECTOR  0x00000028
 
-typedef struct {
-	__le32 DeviceType;
-	__le32 DeviceCharacteristics;
-} __packed FILE_SYSTEM_DEVICE_INFO; /* device info level 0x104 */
-
 /* Filesystem Attributes. */
 #define FILE_CASE_SENSITIVE_SEARCH      0x00000001
 #define FILE_CASE_PRESERVED_NAMES       0x00000002
@@ -1213,13 +1104,6 @@ typedef struct {
 #define SMB_FIND_FILE_ID_FULL_DIR_INFO    0x105
 #define SMB_FIND_FILE_ID_BOTH_DIR_INFO    0x106
 #define SMB_FIND_FILE_UNIX                0x202
-
-typedef struct {
-	__le32 Attributes;
-	__le32 MaxPathNameComponentLength;
-	__le32 FileSystemNameLen;
-	__le16 FileSystemName[1]; /* do not have to save this - get subset? */
-} __packed FILE_SYSTEM_ATTRIBUTE_INFO;
 
 typedef struct smb_com_transaction2_qpi_req {
 	struct smb_hdr hdr;     /* wct = 14+ */
@@ -1533,98 +1417,6 @@ typedef struct {
 
 typedef struct {
 	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le64 CreationTime;
-	__le64 LastAccessTime;
-	__le64 LastWriteTime;
-	__le64 ChangeTime;
-	__le64 EndOfFile;
-	__le64 AllocationSize;
-	__le32 ExtFileAttributes;
-	__le32 FileNameLength;
-	char FileName[1];
-} __packed FILE_DIRECTORY_INFO;   /* level 0x101 FF resp data */
-
-
-typedef struct {
-	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le32 FileNameLength;
-	char FileName[1];
-} __packed FILE_NAMES_INFO;   /* level 0xc FF resp data */
-
-typedef struct {
-	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le64 CreationTime;
-	__le64 LastAccessTime;
-	__le64 LastWriteTime;
-	__le64 ChangeTime;
-	__le64 EndOfFile;
-	__le64 AllocationSize;
-	__le32 ExtFileAttributes;
-	__le32 FileNameLength;
-	__le32 EaSize;
-	char FileName[1];
-} __packed FILE_FULL_DIRECTORY_INFO; /* level 0x102 FF resp */
-
-typedef struct {
-	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le64 CreationTime;
-	__le64 LastAccessTime;
-	__le64 LastWriteTime;
-	__le64 ChangeTime;
-	__le64 EndOfFile;
-	__le64 AllocationSize;
-	__le32 ExtFileAttributes;
-	__le32 FileNameLength;
-	__le32 EaSize; /* length of the xattrs */
-	__u8   ShortNameLength;
-	__u8   Reserved;
-	__u8   ShortName[24];
-	char FileName[1];
-} __packed FILE_BOTH_DIRECTORY_INFO; /* level 0x104 FFrsp data */
-
-typedef struct {
-	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le64 CreationTime;
-	__le64 LastAccessTime;
-	__le64 LastWriteTime;
-	__le64 ChangeTime;
-	__le64 EndOfFile;
-	__le64 AllocationSize;
-	__le32 ExtFileAttributes;
-	__le32 FileNameLength;
-	__le32 EaSize; /* length of the xattrs */
-	__u8   ShortNameLength;
-	__u8   Reserved;
-	__u8   ShortName[24];
-	__le16 Reserved2;
-	__le64 UniqueId;
-	char FileName[1];
-} __packed FILE_ID_BOTH_DIRECTORY_INFO;
-
-typedef struct {
-	__le32 NextEntryOffset;
-	__u32 FileIndex;
-	__le64 CreationTime;
-	__le64 LastAccessTime;
-	__le64 LastWriteTime;
-	__le64 ChangeTime;
-	__le64 EndOfFile;
-	__le64 AllocationSize;
-	__le32 ExtFileAttributes;
-	__le32 FileNameLength;
-	__le32 EaSize; /* EA size */
-	__le32 Reserved;
-	__le64 UniqueId; /* inode num - le since Samba puts ino in low 32 bit*/
-	char FileName[1];
-} __packed FILE_ID_FULL_DIR_INFO; /* level 0x105 FF rsp data */
-
-typedef struct {
-	__le32 NextEntryOffset;
 	__u32 ResumeKey; /* as with FileIndex - no need to convert */
 	FILE_UNIX_BASIC_INFO basic;
 	char FileName[1];
@@ -1834,37 +1626,6 @@ typedef struct {
 } __packed FILE_SYSTEM_ALLOC_INFO;
 
 typedef struct {
-	__le64 VolumeCreationTime;
-	__le32 SerialNumber;
-	__le32 VolumeLabelSize;
-	__le16 Reserved;
-	__le16 VolumeLabel[1];
-} __packed FILE_SYSTEM_VOL_INFO;
-
-typedef struct {
-	__le64 TotalAllocationUnits;
-	__le64 FreeAllocationUnits;
-	__le32 SectorsPerAllocationUnit;
-	__le32 BytesPerSector;
-} __packed FILE_SYSTEM_INFO;     /* size info, level 0x103 */
-
-#define EXTENDED_INFO_MAGIC 0x43667364		/* Cfsd */
-#define STRING_LENGTH 28
-
-struct fs_extended_info {
-		__le32 magic;
-		__le32 version;
-		__le32 release;
-		__u64 rel_date;
-		char	version_string[STRING_LENGTH];
-} __packed;
-
-struct object_id_info {
-		char objid[16];
-		struct fs_extended_info extended_info;
-} __packed;
-
-typedef struct {
 	/* For undefined recommended transfer size return -1 in that field */
 	__le32 OptimalTransferSize;  /* bsize on some os, iosize on other os */
 	__le32 BlockSize;
@@ -1961,14 +1722,7 @@ typedef struct smb_com_setattr_rsp {
 	__u16 ByteCount;        /* bct = 0 */
 } __packed SETATTR_RSP;
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
 extern int init_smb1_server(struct cifsd_conn *conn);
-#else
-static inline int init_smb1_server(struct cifsd_conn *conn)
-{
-	return -ENOTSUPP;
-}
-#endif
 
 /* function prototypes */
 extern int init_smb_rsp_hdr(struct cifsd_work *work);

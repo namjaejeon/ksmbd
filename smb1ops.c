@@ -5,11 +5,11 @@
  */
 
 #include <linux/slab.h>
-#include "glob.h"
-#include "smb1pdu.h"
 
+#include "glob.h"
 #include "connection.h"
 #include "smb_common.h"
+#include "smb1pdu.h"
 
 static struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,

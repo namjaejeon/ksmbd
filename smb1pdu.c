@@ -11,7 +11,6 @@
 #include <linux/vmalloc.h>
 
 #include "glob.h"
-#include "smb1pdu.h"
 #include "oplock.h"
 #include "buffer_pool.h"
 #include "connection.h"
@@ -24,6 +23,8 @@
 #include "asn1.h"
 #include "server.h"
 #include "smb_common.h"
+#include "smb1pdu.h"
+#include "smbstatus.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"

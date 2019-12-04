@@ -7,9 +7,9 @@
 #include "glob.h"
 #include "asn1.h"
 #include "nterr.h"
-#include "smb1pdu.h"
 #include "cifsd_work.h"
 #include "smb_common.h"
+#include "smb1pdu.h"
 #include "mgmt/user_session.h"
 
 /**
