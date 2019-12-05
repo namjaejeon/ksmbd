@@ -86,71 +86,62 @@ enum av_field_type {
 /* OpenGroup and to make the code more closely match the standard in */
 /* appearance */
 
-typedef struct _SECURITY_BUFFER {
+struct security_buffer {
 	__le16 Length;
 	__le16 MaximumLength;
 	__le32 BufferOffset;	/* offset to buffer */
-} __packed SECURITY_BUFFER;
+} __packed;
 
-typedef struct _TARGET_INFO {
+struct target_info {
 	__le16 Type;
 	__le16 Length;
 	__u8 Content[0];
-} __packed TargetInfo;
+} __packed;
 
-typedef struct _NTLM_VERSION {
-	__u8  maj_version;
-	__u8  min_version;
-	__u16 build_number;
-	__u8  reserved1;
-	__u16 reserved2;
-	__u8  curr_revision;
-} __packed NTLM_VERSION;
-
-typedef struct _NEGOTIATE_MESSAGE {
+struct negotiate_message {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
 	__le32 MessageType;     /* NtLmNegotiate = 1 */
 	__le32 NegotiateFlags;
-	SECURITY_BUFFER DomainName;	/* RFC 1001 style and ASCII */
-	SECURITY_BUFFER WorkstationName;	/* RFC 1001 and ASCII */
+	struct security_buffer DomainName;	/* RFC 1001 style and ASCII */
+	struct security_buffer WorkstationName;	/* RFC 1001 and ASCII */
 	/*
-	 * SECURITY_BUFFER for version info not present since we
+	 * struct security_buffer for version info not present since we
 	 * do not set the version is present flag
 	 */
 	char DomainString[0];
 	/* followed by WorkstationString */
-} __packed NEGOTIATE_MESSAGE, *PNEGOTIATE_MESSAGE;
+} __packed;
 
-typedef struct _CHALLENGE_MESSAGE {
+struct challenge_message {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
 	__le32 MessageType;   /* NtLmChallenge = 2 */
-	SECURITY_BUFFER TargetName;
+	struct security_buffer TargetName;
 	__le32 NegotiateFlags;
 	__u8 Challenge[CIFS_CRYPTO_KEY_SIZE];
 	__u8 Reserved[8];
-	SECURITY_BUFFER TargetInfoArray;
+	struct security_buffer TargetInfoArray;
 	/*
-	 * SECURITY_BUFFER for version info not present since we
+	 * struct security_buffer for version info not present since we
 	 * do not set the version is present flag
 	 */
-} __packed CHALLENGE_MESSAGE, *PCHALLENGE_MESSAGE;
+} __packed;
 
-typedef struct _AUTHENTICATE_MESSAGE {
+struct authenticate_message {
 	__u8 Signature[sizeof(NTLMSSP_SIGNATURE)];
 	__le32 MessageType;  /* NtLmsAuthenticate = 3 */
-	SECURITY_BUFFER LmChallengeResponse;
-	SECURITY_BUFFER NtChallengeResponse;
-	SECURITY_BUFFER DomainName;
-	SECURITY_BUFFER UserName;
-	SECURITY_BUFFER WorkstationName;
-	SECURITY_BUFFER SessionKey;
+	struct security_buffer LmChallengeResponse;
+	struct security_buffer NtChallengeResponse;
+	struct security_buffer DomainName;
+	struct security_buffer UserName;
+	struct security_buffer WorkstationName;
+	struct security_buffer SessionKey;
 	__le32 NegotiateFlags;
 	/*
-	 * SECURITY_BUFFER for version info not present since we
+	 * struct security_buffer for version info not present since we
 	 * do not set the version is present flag
 	 */
 	char UserString[0];
-} __packed AUTHENTICATE_MESSAGE, *PAUTHENTICATE_MESSAGE;
+} __packed;
 
 struct ntlmv2_resp {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];

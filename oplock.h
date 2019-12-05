@@ -72,7 +72,9 @@ struct oplock_info {
 	atomic_t		refcount;
 	__u16                   Tid;
 	bool			is_lease;
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	bool			is_smb2;
+#endif
 	bool			open_trunc;	/* truncate on open */
 	struct lease		*o_lease;
 	struct list_head        interim_list;

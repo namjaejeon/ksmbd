@@ -28,6 +28,7 @@
 #include "time_wrappers.h"
 #include "server.h"
 #include "smb_common.h"
+#include "smbstatus.h"
 #include "cifsd_work.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
@@ -1105,7 +1106,7 @@ static int alloc_preauth_hash(struct cifsd_session *sess,
 }
 
 static int generate_preauth_hash(struct cifsd_work *work,
-				 NEGOTIATE_MESSAGE *negblob)
+				 struct negotiate_message *negblob)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct cifsd_session *sess = work->sess;
@@ -1125,7 +1126,7 @@ static int generate_preauth_hash(struct cifsd_work *work,
 }
 
 static int decode_negotiation_token(struct cifsd_work *work,
-				    NEGOTIATE_MESSAGE *negblob)
+				    struct negotiate_message *negblob)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct smb2_sess_setup_req *req;
@@ -1145,11 +1146,11 @@ static int decode_negotiation_token(struct cifsd_work *work,
 }
 
 static int ntlm_negotiate(struct cifsd_work *work,
-			  NEGOTIATE_MESSAGE *negblob)
+			  struct negotiate_message *negblob)
 {
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
-	CHALLENGE_MESSAGE *chgblob;
+	struct challenge_message *chgblob;
 	unsigned char *spnego_blob = NULL;
 	u16 spnego_blob_len;
 	char *neg_blob;
@@ -1162,8 +1163,9 @@ static int ntlm_negotiate(struct cifsd_work *work,
 		return rc;
 
 	sz = le16_to_cpu(rsp->SecurityBufferOffset);
-	chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId + sz);
-	memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
+	chgblob =
+		(struct challenge_message *)((char *)&rsp->hdr.ProtocolId + sz);
+	memset(chgblob, 0, sizeof(struct challenge_message));
 
 	if (!work->conn->use_spnego) {
 		sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
@@ -1174,14 +1176,14 @@ static int ntlm_negotiate(struct cifsd_work *work,
 		return 0;
 	}
 
-	sz = sizeof(struct _NEGOTIATE_MESSAGE);
+	sz = sizeof(struct negotiate_message);
 	sz += (strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
 
 	neg_blob = kzalloc(sz, GFP_KERNEL);
 	if (!neg_blob)
 		return -ENOMEM;
 
-	chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+	chgblob = (struct challenge_message *)neg_blob;
 	sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
 	if (sz < 0) {
 		rc = -ENOMEM;
@@ -1207,22 +1209,23 @@ out:
 	return rc;
 }
 
-static AUTHENTICATE_MESSAGE *user_authblob(struct cifsd_conn *conn,
+static struct authenticate_message *user_authblob(struct cifsd_conn *conn,
 					   struct smb2_sess_setup_req *req)
 {
 	int sz;
 
 	if (conn->use_spnego && conn->mechToken)
-		return (AUTHENTICATE_MESSAGE *)conn->mechToken;
+		return (struct authenticate_message *)conn->mechToken;
 
 	sz = le16_to_cpu(req->SecurityBufferOffset);
-	return (AUTHENTICATE_MESSAGE *)((char *)&req->hdr.ProtocolId + sz);
+	return (struct authenticate_message *)((char *)&req->hdr.ProtocolId
+					       + sz);
 }
 
 static struct cifsd_user *session_user(struct cifsd_conn *conn,
 				       struct smb2_sess_setup_req *req)
 {
-	AUTHENTICATE_MESSAGE *authblob;
+	struct authenticate_message *authblob;
 	struct cifsd_user *user;
 	char *name;
 	int sz;
@@ -1303,7 +1306,7 @@ static int ntlm_authenticate(struct cifsd_work *work)
 
 		rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
 	} else {
-		AUTHENTICATE_MESSAGE *authblob;
+		struct authenticate_message *authblob;
 
 		authblob = user_authblob(conn, req);
 		sz = le16_to_cpu(req->SecurityBufferLength);
@@ -1383,7 +1386,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess;
-	NEGOTIATE_MESSAGE *negblob;
+	struct negotiate_message *negblob;
 	int rc = 0;
 
 	cifsd_debug("Received request for session setup\n");
@@ -1423,12 +1426,12 @@ int smb2_sess_setup(struct cifsd_work *work)
 	if (sess->state == SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
 
-	negblob = (NEGOTIATE_MESSAGE *)((char *)&req->hdr.ProtocolId +
+	negblob = (struct negotiate_message *)((char *)&req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (decode_negotiation_token(work, negblob) == 0) {
 		if (conn->mechToken)
-			negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
+			negblob = (struct negotiate_message *)conn->mechToken;
 	}
 
 	rc = generate_preauth_hash(work, negblob);
@@ -2910,17 +2913,17 @@ static int readdir_info_level_struct_sz(int info_level)
 {
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
-		return sizeof(FILE_FULL_DIRECTORY_INFO);
+		return sizeof(struct file_full_directory_info);
 	case FILE_BOTH_DIRECTORY_INFORMATION:
-		return sizeof(FILE_BOTH_DIRECTORY_INFO);
+		return sizeof(struct file_both_directory_info);
 	case FILE_DIRECTORY_INFORMATION:
-		return sizeof(FILE_DIRECTORY_INFO);
+		return sizeof(struct file_directory_info);
 	case FILE_NAMES_INFORMATION:
-		return sizeof(FILE_NAMES_INFO);
+		return sizeof(struct file_names_info);
 	case FILEID_FULL_DIRECTORY_INFORMATION:
-		return sizeof(FILE_ID_FULL_DIR_INFO);
+		return sizeof(struct file_id_full_dir_info);
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
-		return sizeof(FILE_ID_BOTH_DIRECTORY_INFO);
+		return sizeof(struct file_id_both_directory_info);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -2931,9 +2934,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+		struct file_full_directory_info *ffdinfo;
 
-		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->rptr;
+		ffdinfo = (struct file_full_directory_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(ffdinfo->NextEntryOffset);
 		d_info->name = ffdinfo->FileName;
 		d_info->name_len = le32_to_cpu(ffdinfo->FileNameLength);
@@ -2941,9 +2944,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+		struct file_both_directory_info *fbdinfo;
 
-		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->rptr;
+		fbdinfo = (struct file_both_directory_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fbdinfo->NextEntryOffset);
 		d_info->name = fbdinfo->FileName;
 		d_info->name_len = le32_to_cpu(fbdinfo->FileNameLength);
@@ -2951,9 +2954,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILE_DIRECTORY_INFORMATION:
 	{
-		FILE_DIRECTORY_INFO *fdinfo;
+		struct file_directory_info *fdinfo;
 
-		fdinfo = (FILE_DIRECTORY_INFO *)d_info->rptr;
+		fdinfo = (struct file_directory_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fdinfo->NextEntryOffset);
 		d_info->name = fdinfo->FileName;
 		d_info->name_len = le32_to_cpu(fdinfo->FileNameLength);
@@ -2961,9 +2964,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILE_NAMES_INFORMATION:
 	{
-		FILE_NAMES_INFO *fninfo;
+		struct file_names_info *fninfo;
 
-		fninfo = (FILE_NAMES_INFO *)d_info->rptr;
+		fninfo = (struct file_names_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fninfo->NextEntryOffset);
 		d_info->name = fninfo->FileName;
 		d_info->name_len = le32_to_cpu(fninfo->FileNameLength);
@@ -2971,9 +2974,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_FULL_DIR_INFO *dinfo;
+		struct file_id_full_dir_info *dinfo;
 
-		dinfo = (FILE_ID_FULL_DIR_INFO *)d_info->rptr;
+		dinfo = (struct file_id_full_dir_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(dinfo->NextEntryOffset);
 		d_info->name = dinfo->FileName;
 		d_info->name_len = le32_to_cpu(dinfo->FileNameLength);
@@ -2981,9 +2984,9 @@ static int dentry_name(struct cifsd_dir_info *d_info, int info_level)
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+		struct file_id_both_directory_info *fibdinfo;
 
-		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->rptr;
+		fibdinfo = (struct file_id_both_directory_info *)d_info->rptr;
 		d_info->rptr += le32_to_cpu(fibdinfo->NextEntryOffset);
 		d_info->name = fibdinfo->FileName;
 		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
@@ -3047,9 +3050,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+		struct file_full_directory_info *ffdinfo;
 
-		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)kstat;
+		ffdinfo = (struct file_full_directory_info *)kstat;
 		ffdinfo->FileNameLength = cpu_to_le32(conv_len);
 		ffdinfo->EaSize = 0;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
@@ -3060,9 +3063,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+		struct file_both_directory_info *fbdinfo;
 
-		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)kstat;
+		fbdinfo = (struct file_both_directory_info *)kstat;
 		fbdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fbdinfo->EaSize = 0;
 		fbdinfo->ShortNameLength = 0;
@@ -3075,9 +3078,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILE_DIRECTORY_INFORMATION:
 	{
-		FILE_DIRECTORY_INFO *fdinfo;
+		struct file_directory_info *fdinfo;
 
-		fdinfo = (FILE_DIRECTORY_INFO *)kstat;
+		fdinfo = (struct file_directory_info *)kstat;
 		fdinfo->FileNameLength = cpu_to_le32(conv_len);
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
 			fdinfo->ExtFileAttributes |= ATTR_HIDDEN_LE;
@@ -3087,9 +3090,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILE_NAMES_INFORMATION:
 	{
-		FILE_NAMES_INFO *fninfo;
+		struct file_names_info *fninfo;
 
-		fninfo = (FILE_NAMES_INFO *)kstat;
+		fninfo = (struct file_names_info *)kstat;
 		fninfo->FileNameLength = cpu_to_le32(conv_len);
 		memcpy(fninfo->FileName, conv_name, conv_len);
 		fninfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -3097,9 +3100,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_FULL_DIR_INFO *dinfo;
+		struct file_id_full_dir_info *dinfo;
 
-		dinfo = (FILE_ID_FULL_DIR_INFO *)kstat;
+		dinfo = (struct file_id_full_dir_info *)kstat;
 		dinfo->FileNameLength = cpu_to_le32(conv_len);
 		dinfo->EaSize = 0;
 		dinfo->Reserved = 0;
@@ -3112,9 +3115,9 @@ static int smb2_populate_readdir_entry(struct cifsd_conn *conn,
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+		struct file_id_both_directory_info *fibdinfo;
 
-		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)kstat;
+		fibdinfo = (struct file_id_both_directory_info *)kstat;
 		fibdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fibdinfo->EaSize = 0;
 		fibdinfo->UniqueId = cpu_to_le64(cifsd_kstat->kstat->ino);
@@ -3244,9 +3247,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	switch (info_level) {
 	case FILE_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_FULL_DIRECTORY_INFO *ffdinfo;
+		struct file_full_directory_info *ffdinfo;
 
-		ffdinfo = (FILE_FULL_DIRECTORY_INFO *)d_info->wptr;
+		ffdinfo = (struct file_full_directory_info *)d_info->wptr;
 		memcpy(ffdinfo->FileName, d_info->name, d_info->name_len);
 		ffdinfo->FileName[d_info->name_len] = 0x00;
 		ffdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3255,9 +3258,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILE_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_BOTH_DIRECTORY_INFO *fbdinfo;
+		struct file_both_directory_info *fbdinfo;
 
-		fbdinfo = (FILE_BOTH_DIRECTORY_INFO *)d_info->wptr;
+		fbdinfo = (struct file_both_directory_info *)d_info->wptr;
 		memcpy(fbdinfo->FileName, d_info->name, d_info->name_len);
 		fbdinfo->FileName[d_info->name_len] = 0x00;
 		fbdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3266,9 +3269,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILE_DIRECTORY_INFORMATION:
 	{
-		FILE_DIRECTORY_INFO *fdinfo;
+		struct file_directory_info *fdinfo;
 
-		fdinfo = (FILE_DIRECTORY_INFO *)d_info->wptr;
+		fdinfo = (struct file_directory_info *)d_info->wptr;
 		memcpy(fdinfo->FileName, d_info->name, d_info->name_len);
 		fdinfo->FileName[d_info->name_len] = 0x00;
 		fdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3277,9 +3280,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILE_NAMES_INFORMATION:
 	{
-		FILE_NAMES_INFO *fninfo;
+		struct file_names_info *fninfo;
 
-		fninfo = (FILE_NAMES_INFO *)d_info->wptr;
+		fninfo = (struct file_names_info *)d_info->wptr;
 		memcpy(fninfo->FileName, d_info->name, d_info->name_len);
 		fninfo->FileName[d_info->name_len] = 0x00;
 		fninfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3288,9 +3291,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_FULL_DIR_INFO *dinfo;
+		struct file_id_full_dir_info *dinfo;
 
-		dinfo = (FILE_ID_FULL_DIR_INFO *)d_info->wptr;
+		dinfo = (struct file_id_full_dir_info *)d_info->wptr;
 		memcpy(dinfo->FileName, d_info->name, d_info->name_len);
 		dinfo->FileName[d_info->name_len] = 0x00;
 		dinfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3299,9 +3302,9 @@ static int reserve_populate_dentry(struct cifsd_dir_info *d_info,
 	}
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 	{
-		FILE_ID_BOTH_DIRECTORY_INFO *fibdinfo;
+		struct file_id_both_directory_info *fibdinfo;
 
-		fibdinfo = (FILE_ID_BOTH_DIRECTORY_INFO *)d_info->wptr;
+		fibdinfo = (struct file_id_both_directory_info *)d_info->wptr;
 		memcpy(fibdinfo->FileName, d_info->name, d_info->name_len);
 		fibdinfo->FileName[d_info->name_len] = 0x00;
 		fibdinfo->FileNameLength = cpu_to_le32(d_info->name_len);
@@ -3512,7 +3515,7 @@ int smb2_query_dir(struct cifsd_work *work)
 		rsp->Buffer[0] = 0;
 		inc_rfc1001_len(rsp_org, 9);
 	} else {
-		((FILE_DIRECTORY_INFO *)
+		((struct file_directory_info *)
 		((char *)rsp->Buffer + d_info.last_entry_offset))
 		->NextEntryOffset = 0;
 
@@ -4407,9 +4410,9 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	switch (fsinfoclass) {
 	case FS_DEVICE_INFORMATION:
 	{
-		FILE_SYSTEM_DEVICE_INFO *info;
+		struct filesystem_device_info *info;
 
-		info = (FILE_SYSTEM_DEVICE_INFO *)rsp->Buffer;
+		info = (struct filesystem_device_info *)rsp->Buffer;
 
 		info->DeviceType = cpu_to_le32(stfs.f_type);
 		info->DeviceCharacteristics = cpu_to_le32(0x00000020);
@@ -4420,17 +4423,17 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_ATTRIBUTE_INFORMATION:
 	{
-		FILE_SYSTEM_ATTRIBUTE_INFO *info;
+		struct filesystem_attribute_info *info;
 		size_t sz;
 
-		info = (FILE_SYSTEM_ATTRIBUTE_INFO *)rsp->Buffer;
+		info = (struct filesystem_attribute_info *)rsp->Buffer;
 		info->Attributes = cpu_to_le32(0x0001006f);
 		info->MaxPathNameComponentLength = cpu_to_le32(stfs.f_namelen);
 		len = smbConvertToUTF16((__le16 *)info->FileSystemName,
 					"NTFS", PATH_MAX, conn->local_nls, 0);
 		len = len * 2;
 		info->FileSystemNameLen = cpu_to_le32(len);
-		sz = sizeof(FILE_SYSTEM_ATTRIBUTE_INFO) - 2 + len;
+		sz = sizeof(struct filesystem_attribute_info) - 2 + len;
 		rsp->OutputBufferLength = cpu_to_le32(sz);
 		inc_rfc1001_len(rsp_org, sz);
 		fs_infoclass_size = FS_ATTRIBUTE_INFORMATION_SIZE;
@@ -4438,10 +4441,10 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_VOLUME_INFORMATION:
 	{
-		FILE_SYSTEM_VOL_INFO *info;
+		struct filesystem_vol_info *info;
 		size_t sz;
 
-		info = (FILE_SYSTEM_VOL_INFO *)(rsp->Buffer);
+		info = (struct filesystem_vol_info *)(rsp->Buffer);
 		info->VolumeCreationTime = 0;
 		/* Taking dummy value of serial number*/
 		info->SerialNumber = cpu_to_le32(0xbc3ac512);
@@ -4451,7 +4454,7 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 		len = len * 2;
 		info->VolumeLabelSize = cpu_to_le32(len);
 		info->Reserved = 0;
-		sz = sizeof(FILE_SYSTEM_VOL_INFO) - 2 + len;
+		sz = sizeof(struct filesystem_vol_info) - 2 + len;
 		rsp->OutputBufferLength = cpu_to_le32(sz);
 		inc_rfc1001_len(rsp_org, sz);
 		fs_infoclass_size = FS_VOLUME_INFORMATION_SIZE;
@@ -4459,10 +4462,10 @@ static int smb2_get_info_filesystem(struct cifsd_work *work,
 	}
 	case FS_SIZE_INFORMATION:
 	{
-		FILE_SYSTEM_INFO *info;
+		struct filesystem_info *info;
 		unsigned short logical_sector_size;
 
-		info = (FILE_SYSTEM_INFO *)(rsp->Buffer);
+		info = (struct filesystem_info *)(rsp->Buffer);
 		logical_sector_size =
 			cifsd_vfs_logical_sector_size(d_inode(path.dentry));
 

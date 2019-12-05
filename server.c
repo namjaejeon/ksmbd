@@ -17,6 +17,7 @@
 
 #include "server.h"
 #include "smb_common.h"
+#include "smbstatus.h"
 #include "buffer_pool.h"
 #include "connection.h"
 #include "transport_ipc.h"

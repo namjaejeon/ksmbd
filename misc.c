@@ -16,54 +16,6 @@
 
 #include "mgmt/share_config.h"
 
-/* @FIXME rework this code */
-
-#ifdef CONFIG_CIFS_SERVER_DEBUGGING
-/**
- * dump_smb_msg() - print smb packet for debugging
- * @buf:		smb packet
- * @smb_buf_length:	packet print length
- *
- */
-void dump_smb_msg(void *buf, int smb_buf_length)
-{
-	int i, j;
-	char debug_line[33];
-	unsigned char *buffer = buf;
-
-	if (likely(cifsd_debugging != 2))
-		return;
-
-	for (i = 0, j = 0; i < smb_buf_length; i++, j++) {
-		if (i % 16 == 0) {
-			/* have reached the beginning of line */
-			pr_err("%04x ", i);
-			pr_cont("| ");
-			j = 0;
-		}
-
-		pr_cont("%02x ", buffer[i]);
-		debug_line[2 * j] = ' ';
-		if (isprint(buffer[i]))
-			debug_line[1 + (2 * j)] = buffer[i];
-		else
-			debug_line[1 + (2 * j)] = '_';
-
-		if (i % 16 == 15) {
-			/* reached end of line, time to print ascii */
-			debug_line[32] = 0;
-			pr_cont(" | %s\n", debug_line);
-		}
-	}
-	for (; j < 16; j++) {
-		pr_cont("   ");
-		debug_line[2 * j] = ' ';
-		debug_line[1 + (2 * j)] = ' ';
-	}
-	pr_cont(" | %s\n", debug_line);
-}
-#endif
-
 /**
  * match_pattern() - compare a string with a pattern which might include
  * wildcard '*' and '?'

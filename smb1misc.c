@@ -7,9 +7,9 @@
 #include "glob.h"
 #include "asn1.h"
 #include "nterr.h"
-#include "smb1pdu.h"
 #include "cifsd_work.h"
 #include "smb_common.h"
+#include "smb1pdu.h"
 #include "mgmt/user_session.h"
 
 /**
@@ -208,7 +208,7 @@ static int smb1_get_data_len(struct smb_hdr *hdr)
 	switch (hdr->Command) {
 	case SMB_COM_WRITE_ANDX:
 	{
-		WRITE_REQ *req = (WRITE_REQ *)hdr;
+		struct smb_com_write_req *req = (struct smb_com_write_req *)hdr;
 
 		data_len = le16_to_cpu(req->DataLengthLow);
 		data_len |= (le16_to_cpu(req->DataLengthHigh) << 16);
@@ -217,7 +217,7 @@ static int smb1_get_data_len(struct smb_hdr *hdr)
 	}
 	case SMB_COM_TRANSACTION:
 	{
-		TRANS_REQ *req = (TRANS_REQ *)hdr;
+		struct smb_com_trans_req *req = (struct smb_com_trans_req *)hdr;
 
 		data_len = le16_to_cpu(req->DataOffset) +
 			le16_to_cpu(req->DataCount);
@@ -225,7 +225,8 @@ static int smb1_get_data_len(struct smb_hdr *hdr)
 	}
 	case SMB_COM_TRANSACTION2:
 	{
-		struct smb_trans2_req *req = (struct smb_trans2_req *)hdr;
+		struct smb_com_trans2_req *req =
+				(struct smb_com_trans2_req *)hdr;
 
 		data_len = le16_to_cpu(req->DataOffset) +
 			le16_to_cpu(req->DataCount);

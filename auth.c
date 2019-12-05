@@ -483,7 +483,7 @@ out:
  *
  * Return:	0 on success, error number on error
  */
-int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
+int cifsd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 				   int blob_len,
 				   struct cifsd_session *sess)
 {
@@ -492,7 +492,7 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
 	unsigned short nt_len;
 	int ret;
 
-	if (blob_len < sizeof(AUTHENTICATE_MESSAGE)) {
+	if (blob_len < sizeof(struct authenticate_message)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
@@ -546,11 +546,11 @@ int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
  * @sess:    session of connection
  *
  */
-int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
+int cifsd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
 				  int blob_len,
 				  struct cifsd_session *sess)
 {
-	if (blob_len < sizeof(NEGOTIATE_MESSAGE)) {
+	if (blob_len < sizeof(struct negotiate_message)) {
 		cifsd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
@@ -573,10 +573,11 @@ int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
  * @sess:    session of connection
  *
  */
-unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-						struct cifsd_session *sess)
+unsigned int
+cifsd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
+		struct cifsd_session *sess)
 {
-	TargetInfo *tinfo;
+	struct target_info *tinfo;
 	wchar_t *name;
 	__u8 *target_name;
 	unsigned int len, flags, blob_off, blob_len, type, target_info_len = 0;
@@ -616,7 +617,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 			sess->conn->local_nls);
 	len = UNICODE_LEN(len);
 
-	blob_off = sizeof(CHALLENGE_MESSAGE);
+	blob_off = sizeof(struct challenge_message);
 	blob_len = blob_off + len;
 
 	chgblob->TargetName.Length = cpu_to_le16(len);
@@ -633,7 +634,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 
 	target_name = (__u8 *)chgblob + blob_off;
 	memcpy(target_name, name, len);
-	tinfo = (TargetInfo *)(target_name + len);
+	tinfo = (struct target_info *)(target_name + len);
 
 	chgblob->TargetInfoArray.Length = 0;
 	/* Add target info list for NetBIOS/DNS settings */
@@ -642,7 +643,7 @@ unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
 		tinfo->Type = cpu_to_le16(type);
 		tinfo->Length = cpu_to_le16(len);
 		memcpy(tinfo->Content, name, len);
-		tinfo = (TargetInfo *)((char *)tinfo + 4 + len);
+		tinfo = (struct target_info *)((char *)tinfo + 4 + len);
 		target_info_len += 4 + len;
 	}
 

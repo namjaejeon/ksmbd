@@ -57,6 +57,9 @@ static struct crypto_aead *alloc_aead(int id)
 		break;
 	}
 
+	if (IS_ERR(tfm))
+		return NULL;
+
 	return tfm;
 }
 
@@ -86,7 +89,7 @@ static struct shash_desc *alloc_shash_desc(int id)
 		break;
 	}
 
-	if (!tfm)
+	if (IS_ERR(tfm))
 		return NULL;
 
 	shash = kzalloc(sizeof(*shash) + crypto_shash_descsize(tfm),
@@ -109,7 +112,7 @@ static struct blkcipher_desc *alloc_blk_desc(int id)
 		break;
 	}
 
-	if (!tfm)
+	if (IS_ERR(tfm))
 		return NULL;
 
 	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
