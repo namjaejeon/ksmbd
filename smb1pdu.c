@@ -3069,6 +3069,7 @@ int smb_write_andx(struct cifsd_work *work)
 	return 0;
 
 out:
+	cifsd_fd_put(work, fp);
 	if (err == -ENOSPC || err == -EFBIG)
 		rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
 	else
