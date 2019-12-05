@@ -1000,7 +1000,7 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 	struct smb_com_session_setup_resp *rsp)
 {
 	struct cifsd_conn *conn = sess->conn;
-	NEGOTIATE_MESSAGE *negblob;
+	struct negotiate_message *negblob;
 	char *neg_blob;
 	int err = 0, neg_blob_len;
 	unsigned char *spnego_blob;
@@ -1014,7 +1014,7 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 	/* adjust pdu length. data added 6 bytes */
 	inc_rfc1001_len(&rsp->hdr, 8);
 
-	negblob = (NEGOTIATE_MESSAGE *)req->SecurityBlob;
+	negblob = (struct negotiate_message *)req->SecurityBlob;
 	err = cifsd_decode_negTokenInit((char *)negblob,
 			le16_to_cpu(req->SecurityBlobLength), conn);
 	if (!err) {
@@ -1031,10 +1031,10 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 	}
 
 	if (conn->mechToken)
-		negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
+		negblob = (struct negotiate_message *)conn->mechToken;
 
 	if (negblob->MessageType == NtLmNegotiate) {
-		CHALLENGE_MESSAGE *chgblob;
+		struct challenge_message *chgblob;
 
 		cifsd_debug("negotiate phase\n");
 		err = cifsd_decode_ntlmssp_neg_blob(negblob,
@@ -1043,20 +1043,20 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		if (err)
 			goto out_err;
 
-		chgblob = (CHALLENGE_MESSAGE *)rsp->SecurityBlob;
-		memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
+		chgblob = (struct challenge_message *)rsp->SecurityBlob;
+		memset(chgblob, 0, sizeof(struct challenge_message));
 
 		if (conn->use_spnego) {
 			int sz;
 
-			sz = sizeof(struct _NEGOTIATE_MESSAGE) +
+			sz = sizeof(struct negotiate_message) +
 				(strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
 			neg_blob = kmalloc(sz, GFP_KERNEL);
 			if (!neg_blob) {
 				err = -ENOMEM;
 				goto out_err;
 			}
-			chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+			chgblob = (struct challenge_message *)neg_blob;
 			neg_blob_len = cifsd_build_ntlmssp_challenge_blob(
 					chgblob,
 					sess);
@@ -1100,14 +1100,16 @@ static int build_sess_rsp_extsec(struct cifsd_session *sess,
 		inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
 		rsp->ByteCount = rsp->SecurityBlobLength;
 	} else if (negblob->MessageType == NtLmAuthenticate) {
-		AUTHENTICATE_MESSAGE *authblob;
+		struct authenticate_message *authblob;
 		char *username;
 
 		cifsd_debug("authenticate phase\n");
 		if (conn->use_spnego && conn->mechToken)
-			authblob = (AUTHENTICATE_MESSAGE *)conn->mechToken;
+			authblob =
+				(struct authenticate_message *)conn->mechToken;
 		else
-			authblob = (AUTHENTICATE_MESSAGE *)req->SecurityBlob;
+			authblob = (struct authenticate_message *)
+						req->SecurityBlob;
 
 		username = smb_strndup_from_utf16((const char *)authblob +
 				authblob->UserName.BufferOffset,

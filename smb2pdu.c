@@ -1106,7 +1106,7 @@ static int alloc_preauth_hash(struct cifsd_session *sess,
 }
 
 static int generate_preauth_hash(struct cifsd_work *work,
-				 NEGOTIATE_MESSAGE *negblob)
+				 struct negotiate_message *negblob)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct cifsd_session *sess = work->sess;
@@ -1126,7 +1126,7 @@ static int generate_preauth_hash(struct cifsd_work *work,
 }
 
 static int decode_negotiation_token(struct cifsd_work *work,
-				    NEGOTIATE_MESSAGE *negblob)
+				    struct negotiate_message *negblob)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct smb2_sess_setup_req *req;
@@ -1146,11 +1146,11 @@ static int decode_negotiation_token(struct cifsd_work *work,
 }
 
 static int ntlm_negotiate(struct cifsd_work *work,
-			  NEGOTIATE_MESSAGE *negblob)
+			  struct negotiate_message *negblob)
 {
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
-	CHALLENGE_MESSAGE *chgblob;
+	struct challenge_message *chgblob;
 	unsigned char *spnego_blob = NULL;
 	u16 spnego_blob_len;
 	char *neg_blob;
@@ -1163,8 +1163,9 @@ static int ntlm_negotiate(struct cifsd_work *work,
 		return rc;
 
 	sz = le16_to_cpu(rsp->SecurityBufferOffset);
-	chgblob = (CHALLENGE_MESSAGE *)((char *)&rsp->hdr.ProtocolId + sz);
-	memset(chgblob, 0, sizeof(CHALLENGE_MESSAGE));
+	chgblob =
+		(struct challenge_message *)((char *)&rsp->hdr.ProtocolId + sz);
+	memset(chgblob, 0, sizeof(struct challenge_message));
 
 	if (!work->conn->use_spnego) {
 		sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
@@ -1175,14 +1176,14 @@ static int ntlm_negotiate(struct cifsd_work *work,
 		return 0;
 	}
 
-	sz = sizeof(struct _NEGOTIATE_MESSAGE);
+	sz = sizeof(struct negotiate_message);
 	sz += (strlen(cifsd_netbios_name()) * 2 + 1 + 4) * 6;
 
 	neg_blob = kzalloc(sz, GFP_KERNEL);
 	if (!neg_blob)
 		return -ENOMEM;
 
-	chgblob = (CHALLENGE_MESSAGE *)neg_blob;
+	chgblob = (struct challenge_message *)neg_blob;
 	sz = cifsd_build_ntlmssp_challenge_blob(chgblob, work->sess);
 	if (sz < 0) {
 		rc = -ENOMEM;
@@ -1208,22 +1209,23 @@ out:
 	return rc;
 }
 
-static AUTHENTICATE_MESSAGE *user_authblob(struct cifsd_conn *conn,
+static struct authenticate_message *user_authblob(struct cifsd_conn *conn,
 					   struct smb2_sess_setup_req *req)
 {
 	int sz;
 
 	if (conn->use_spnego && conn->mechToken)
-		return (AUTHENTICATE_MESSAGE *)conn->mechToken;
+		return (struct authenticate_message *)conn->mechToken;
 
 	sz = le16_to_cpu(req->SecurityBufferOffset);
-	return (AUTHENTICATE_MESSAGE *)((char *)&req->hdr.ProtocolId + sz);
+	return (struct authenticate_message *)((char *)&req->hdr.ProtocolId
+					       + sz);
 }
 
 static struct cifsd_user *session_user(struct cifsd_conn *conn,
 				       struct smb2_sess_setup_req *req)
 {
-	AUTHENTICATE_MESSAGE *authblob;
+	struct authenticate_message *authblob;
 	struct cifsd_user *user;
 	char *name;
 	int sz;
@@ -1304,7 +1306,7 @@ static int ntlm_authenticate(struct cifsd_work *work)
 
 		rsp->SessionFlags = SMB2_SESSION_FLAG_IS_GUEST_LE;
 	} else {
-		AUTHENTICATE_MESSAGE *authblob;
+		struct authenticate_message *authblob;
 
 		authblob = user_authblob(conn, req);
 		sz = le16_to_cpu(req->SecurityBufferLength);
@@ -1384,7 +1386,7 @@ int smb2_sess_setup(struct cifsd_work *work)
 	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
 	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
 	struct cifsd_session *sess;
-	NEGOTIATE_MESSAGE *negblob;
+	struct negotiate_message *negblob;
 	int rc = 0;
 
 	cifsd_debug("Received request for session setup\n");
@@ -1424,12 +1426,12 @@ int smb2_sess_setup(struct cifsd_work *work)
 	if (sess->state == SMB2_SESSION_EXPIRED)
 		sess->state = SMB2_SESSION_IN_PROGRESS;
 
-	negblob = (NEGOTIATE_MESSAGE *)((char *)&req->hdr.ProtocolId +
+	negblob = (struct negotiate_message *)((char *)&req->hdr.ProtocolId +
 			le16_to_cpu(req->SecurityBufferOffset));
 
 	if (decode_negotiation_token(work, negblob) == 0) {
 		if (conn->mechToken)
-			negblob = (NEGOTIATE_MESSAGE *)conn->mechToken;
+			negblob = (struct negotiate_message *)conn->mechToken;
 	}
 
 	rc = generate_preauth_hash(work, negblob);
