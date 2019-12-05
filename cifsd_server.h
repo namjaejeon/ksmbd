@@ -14,7 +14,7 @@
 #define CIFSD_GENL_VERSION		0x01
 
 #ifndef ____cifsd_align
-#define ____cifsd_align		__attribute__((__aligned__(4)))
+#define ____cifsd_align		__aligned(4)
 #endif
 
 #define CIFSD_REQ_MAX_ACCOUNT_NAME_SZ	48
