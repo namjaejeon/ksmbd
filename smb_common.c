@@ -269,9 +269,9 @@ int cifsd_negotiate_smb_dialect(void *buf)
 
 	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
 	if (proto == SMB1_PROTO_NUMBER) {
-		NEGOTIATE_REQ *req;
+		struct smb_negotiate_req *req;
 
-		req = (NEGOTIATE_REQ *)buf;
+		req = (struct smb_negotiate_req *)buf;
 		return cifsd_lookup_dialect_by_name(req->DialectsArray,
 						    req->ByteCount);
 	}
@@ -455,7 +455,7 @@ static int __smb2_negotiate(struct cifsd_conn *conn)
 #ifndef CONFIG_CIFS_INSECURE_SERVER
 int smb_handle_negotiate(struct cifsd_work *work)
 {
-	NEGOTIATE_RSP *neg_rsp = RESPONSE_BUF(work);
+	struct smb_negotiate_rsp *neg_rsp = RESPONSE_BUF(work);
 
 	cifsd_err("Unsupported SMB protocol\n");
 	neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;

@@ -629,7 +629,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
 	struct cifsd_conn *conn = work->conn;
 	struct smb_hdr *rsp_hdr;
-	LOCK_REQ *req;
+	struct smb_com_lock_req *req;
 	struct oplock_info *opinfo = REQUEST_BUF(work);
 
 	if (conn->ops->allocate_rsp_buf(work)) {

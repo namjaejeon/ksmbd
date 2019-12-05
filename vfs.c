@@ -1819,7 +1819,7 @@ out:
  */
 void *cifsd_vfs_init_kstat(char **p, struct cifsd_kstat *cifsd_kstat)
 {
-	FILE_DIRECTORY_INFO *info = (FILE_DIRECTORY_INFO *)(*p);
+	struct file_directory_info *info = (struct file_directory_info *)(*p);
 	u64 time;
 
 	info->FileIndex = 0;

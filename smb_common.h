@@ -145,13 +145,13 @@ struct smb_hdr {
 	__u8 WordCount;
 } __packed;
 
-typedef struct negotiate_req {
+struct smb_negotiate_req {
 	struct smb_hdr hdr;     /* wct = 0 */
 	__le16 ByteCount;
 	unsigned char DialectsArray[1];
-} __packed NEGOTIATE_REQ;
+} __packed;
 
-typedef struct negotiate_rsp {
+struct smb_negotiate_rsp {
 	struct smb_hdr hdr;     /* wct = 17 */
 	__le16 DialectIndex; /* 0xFFFF = no dialect acceptable */
 	__u8 SecurityMode;
@@ -176,34 +176,34 @@ typedef struct negotiate_rsp {
 			unsigned char SecurityBlob[1];
 		} __packed extended_response;
 	} __packed u;
-} __packed NEGOTIATE_RSP;
+} __packed;
 
-typedef struct {
+struct filesystem_attribute_info {
 	__le32 Attributes;
 	__le32 MaxPathNameComponentLength;
 	__le32 FileSystemNameLen;
 	__le16 FileSystemName[1]; /* do not have to save this - get subset? */
-} __packed FILE_SYSTEM_ATTRIBUTE_INFO;
+} __packed;
 
-typedef struct {
+struct filesystem_device_info {
 	__le32 DeviceType;
 	__le32 DeviceCharacteristics;
-} __packed FILE_SYSTEM_DEVICE_INFO; /* device info level 0x104 */
+} __packed; /* device info level 0x104 */
 
-typedef struct {
+struct filesystem_vol_info {
 	__le64 VolumeCreationTime;
 	__le32 SerialNumber;
 	__le32 VolumeLabelSize;
 	__le16 Reserved;
 	__le16 VolumeLabel[1];
-} __packed FILE_SYSTEM_VOL_INFO;
+} __packed;
 
-typedef struct {
+struct filesystem_info {
 	__le64 TotalAllocationUnits;
 	__le64 FreeAllocationUnits;
 	__le32 SectorsPerAllocationUnit;
 	__le32 BytesPerSector;
-} __packed FILE_SYSTEM_INFO;     /* size info, level 0x103 */
+} __packed;     /* size info, level 0x103 */
 
 #define EXTENDED_INFO_MAGIC 0x43667364	/* Cfsd */
 #define STRING_LENGTH 28
@@ -221,7 +221,7 @@ struct object_id_info {
 	struct fs_extended_info extended_info;
 } __packed;
 
-typedef struct {
+struct file_directory_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
@@ -233,16 +233,16 @@ typedef struct {
 	__le32 ExtFileAttributes;
 	__le32 FileNameLength;
 	char FileName[1];
-} __packed FILE_DIRECTORY_INFO;   /* level 0x101 FF resp data */
+} __packed;   /* level 0x101 FF resp data */
 
-typedef struct {
+struct file_names_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le32 FileNameLength;
 	char FileName[1];
-} __packed FILE_NAMES_INFO;   /* level 0xc FF resp data */
+} __packed;   /* level 0xc FF resp data */
 
-typedef struct {
+struct file_full_directory_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
@@ -255,9 +255,9 @@ typedef struct {
 	__le32 FileNameLength;
 	__le32 EaSize;
 	char FileName[1];
-} __packed FILE_FULL_DIRECTORY_INFO; /* level 0x102 FF resp */
+} __packed; /* level 0x102 FF resp */
 
-typedef struct {
+struct file_both_directory_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
@@ -273,9 +273,9 @@ typedef struct {
 	__u8   Reserved;
 	__u8   ShortName[24];
 	char FileName[1];
-} __packed FILE_BOTH_DIRECTORY_INFO; /* level 0x104 FFrsp data */
+} __packed; /* level 0x104 FFrsp data */
 
-typedef struct {
+struct file_id_both_directory_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
@@ -293,9 +293,9 @@ typedef struct {
 	__le16 Reserved2;
 	__le64 UniqueId;
 	char FileName[1];
-} __packed FILE_ID_BOTH_DIRECTORY_INFO;
+} __packed;
 
-typedef struct {
+struct file_id_full_dir_info {
 	__le32 NextEntryOffset;
 	__u32 FileIndex;
 	__le64 CreationTime;
@@ -310,7 +310,7 @@ typedef struct {
 	__le32 Reserved;
 	__le64 UniqueId; /* inode num - le since Samba puts ino in low 32 bit*/
 	char FileName[1];
-} __packed FILE_ID_FULL_DIR_INFO; /* level 0x105 FF rsp data */
+} __packed; /* level 0x105 FF rsp data */
 
 struct smb_version_values {
 	char		*version_string;
