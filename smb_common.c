@@ -297,11 +297,10 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 
 	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
 #ifdef CONFIG_CIFS_INSECURE_SERVER
-	if (proto == SMB1_PROTO_NUMBER) {
+	if (proto == SMB1_PROTO_NUMBER)
 		init_smb1_server(conn);
-	} else {
+	else
 		cifsd_init_smb2_server_common(conn);
-	}
 #else
 	cifsd_init_smb2_server_common(conn);
 #endif
