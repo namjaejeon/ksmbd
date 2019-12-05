@@ -5328,9 +5328,8 @@ static int smb2_set_info_file(struct cifsd_work *work,
 
 	case FILE_LINK_INFORMATION:
 		return smb2_create_link(work->tcon->share_conf,
-					(struct smb2_file_link_info *)buf,
-					fp->filp,
-					work->sess->conn->local_nls);
+			(struct smb2_file_link_info *)buf, fp->filp,
+				work->sess->conn->local_nls);
 
 	case FILE_DISPOSITION_INFORMATION:
 		return set_file_disposition_info(fp, buf);
