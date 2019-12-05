@@ -234,11 +234,6 @@ static int __init_smb1_session(struct cifsd_session *sess)
 	sess->id = id;
 	return 0;
 }
-#else
-static int __init_smb1_session(struct cifsd_session *sess)
-{
-	return -EINVAL;
-}
 #endif
 
 static int __init_smb2_session(struct cifsd_session *sess)
@@ -271,9 +266,11 @@ static struct cifsd_session *__session_create(int protocol)
 	sess->sequence_number = 1;
 
 	switch (protocol) {
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	case CIFDS_SESSION_FLAG_SMB1:
 		ret = __init_smb1_session(sess);
 		break;
+#endif
 	case CIFDS_SESSION_FLAG_SMB2:
 		ret = __init_smb2_session(sess);
 		break;

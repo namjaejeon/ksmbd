@@ -11,8 +11,6 @@ struct nls_table;
 struct kstat;
 struct cifsd_file;
 
-void dump_smb_msg(void *buf, int smb_buf_length);
-
 int match_pattern(const char *str, const char *pattern);
 
 int cifsd_validate_filename(char *filename);

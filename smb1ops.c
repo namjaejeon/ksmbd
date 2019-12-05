@@ -5,11 +5,11 @@
  */
 
 #include <linux/slab.h>
-#include "glob.h"
-#include "smb1pdu.h"
 
+#include "glob.h"
 #include "connection.h"
 #include "smb_common.h"
+#include "smb1pdu.h"
 
 static struct smb_version_values smb1_server_values = {
 	.version_string = SMB1_VERSION_STRING,
@@ -24,7 +24,7 @@ static struct smb_version_values smb1_server_values = {
 	.unlock_lock_type = 0,
 	.header_size = sizeof(struct smb_hdr),
 	.max_header_size = MAX_CIFS_HDR_SIZE,
-	.read_rsp_size = sizeof(READ_RSP),
+	.read_rsp_size = sizeof(struct smb_com_read_rsp),
 	.lock_cmd = cpu_to_le16(SMB_COM_LOCKING_ANDX),
 	.cap_unix = CAP_UNIX,
 	.cap_nt_find = CAP_NT_SMBS | CAP_NT_FIND,

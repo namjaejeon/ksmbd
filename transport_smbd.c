@@ -32,6 +32,7 @@
 #include "glob.h"
 #include "connection.h"
 #include "smb_common.h"
+#include "smbstatus.h"
 #include "buffer_pool.h"
 #include "transport_smbd.h"
 
