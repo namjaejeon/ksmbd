@@ -14,6 +14,13 @@
 #define CIFS_HMAC_MD5_HASH_SIZE	(16)
 #define CIFS_NTHASH_SIZE	(16)
 
+/*
+ * Size of the ntlm client response
+ */
+#define CIFS_AUTH_RESP_SIZE		24
+#define CIFS_SMB1_SIGNATURE_SIZE	8
+#define CIFS_SMB1_SESSKEY_SIZE		16
+
 struct cifsd_session;
 struct cifsd_conn;
 struct kvec;
@@ -33,16 +40,17 @@ int cifsd_auth_ntlmv2(struct cifsd_session *sess,
 		      int blen,
 		      char *domain_name);
 
-int cifsd_decode_ntlmssp_auth_blob(AUTHENTICATE_MESSAGE *authblob,
+int cifsd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 				   int blob_len,
 				   struct cifsd_session *sess);
 
-int cifsd_decode_ntlmssp_neg_blob(NEGOTIATE_MESSAGE *negblob,
+int cifsd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
 				  int blob_len,
 				  struct cifsd_session *sess);
 
-unsigned int cifsd_build_ntlmssp_challenge_blob(CHALLENGE_MESSAGE *chgblob,
-						struct cifsd_session *sess);
+unsigned int
+cifsd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
+		struct cifsd_session *sess);
 
 int cifsd_sign_smb1_pdu(struct cifsd_session *sess,
 			struct kvec *iov,

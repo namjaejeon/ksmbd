@@ -11,6 +11,9 @@
 #include "server.h"
 #include "buffer_pool.h"
 #include "smb_common.h"
+#ifdef CONFIG_CIFS_INSECURE_SERVER
+#include "smb1pdu.h"
+#endif
 #include "mgmt/cifsd_ida.h"
 #include "connection.h"
 #include "transport_tcp.h"
@@ -99,6 +102,7 @@ void cifsd_conn_enqueue_request(struct cifsd_work *work)
 {
 	struct cifsd_conn *conn = work->conn;
 	struct list_head *requests_queue = NULL;
+#ifdef CONFIG_CIFS_INSECURE_SERVER
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
 
 	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
@@ -110,6 +114,12 @@ void cifsd_conn_enqueue_request(struct cifsd_work *work)
 		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
 			requests_queue = &conn->requests;
 	}
+#else
+	if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
+		requests_queue = &conn->requests;
+		work->syncronous = true;
+	}
+#endif
 
 	if (requests_queue) {
 		atomic_inc(&conn->req_running);
