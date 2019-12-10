@@ -1298,6 +1298,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 	ssize_t xattr_len;
 	char *buf;
 
+	*xattr_buf = NULL;
 	xattr_len = cifsd_vfs_xattr_len(dentry, xattr_name);
 	if (xattr_len < 0)
 		return xattr_len;
@@ -1307,8 +1308,10 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 		return -ENOMEM;
 
 	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf, xattr_len);
-	if (xattr_len)
+	if (xattr_len > 0)
 		*xattr_buf = buf;
+	else
+		kfree(buf);
 	return xattr_len;
 }
 
