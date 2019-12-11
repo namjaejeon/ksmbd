@@ -201,8 +201,11 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 			 struct cifsd_file *fp,
 			 loff_t off,
 			 loff_t len);
+
+struct file_allocated_range_buffer;
 int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
-		     u64 *out_start, u64 *out_length);
+			struct file_allocated_range_buffer *ranges,
+			int in_count, int *out_count);
 int cifsd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
 unsigned short cifsd_vfs_logical_sector_size(struct inode *inode);
 void cifsd_vfs_smb2_sector_size(struct inode *inode,
