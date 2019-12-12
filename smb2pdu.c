@@ -5098,7 +5098,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		rc = setattr_prepare(dentry, &attrs);
 #else
 		rc = inode_change_ok(inode, &attrs);
