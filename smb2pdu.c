@@ -3801,6 +3801,8 @@ static int smb2_get_ea(struct cifsd_work *work,
 	prev_eainfo->NextEntryOffset = 0;
 done:
 	rc = 0;
+	if (rsp_data_cnt == 0)
+		rsp->hdr.Status = STATUS_NO_EAS_ON_FILE;
 	rsp->OutputBufferLength = cpu_to_le32(rsp_data_cnt);
 	inc_rfc1001_len(rsp_org, rsp_data_cnt);
 out:
