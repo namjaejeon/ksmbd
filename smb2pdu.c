@@ -1964,6 +1964,10 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 	int rc = 0;
 	int next = 0;
 
+	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+	if (!attr_name)
+		return -ENOMEM;
+
 	do {
 		if (!eabuf->EaNameLength)
 			goto next;
@@ -1976,10 +1980,6 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 		if (eabuf->EaNameLength >
 				(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN))
 			return -EINVAL;
-
-		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
-		if (!attr_name)
-			return -ENOMEM;
 
 		memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
 		memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->name,
@@ -2001,7 +2001,6 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 				if (rc < 0) {
 					cifsd_debug("remove xattr failed(%d)\n",
 						rc);
-					kfree(attr_name);
 					break;
 				}
 			}
@@ -2014,17 +2013,16 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 			if (rc < 0) {
 				cifsd_debug("cifsd_vfs_setxattr is failed(%d)\n",
 					rc);
-				kfree(attr_name);
 				break;
 			}
 		}
 
-		kfree(attr_name);
 next:
 		next = le32_to_cpu(eabuf->NextEntryOffset);
 		eabuf = (struct smb2_ea_info *)((char *)eabuf + next);
 	} while (next != 0);
 
+	kfree(attr_name);
 	return rc;
 }
 
@@ -3803,6 +3801,8 @@ static int smb2_get_ea(struct cifsd_work *work,
 	prev_eainfo->NextEntryOffset = 0;
 done:
 	rc = 0;
+	if (rsp_data_cnt == 0)
+		rsp->hdr.Status = STATUS_NO_EAS_ON_FILE;
 	rsp->OutputBufferLength = cpu_to_le32(rsp_data_cnt);
 	inc_rfc1001_len(rsp_org, rsp_data_cnt);
 out:
@@ -6738,31 +6738,30 @@ err_out:
 
 static int fsctl_query_allocated_ranges(struct cifsd_work *work, uint64_t id,
 	struct file_allocated_range_buffer *qar_req,
-	struct file_allocated_range_buffer *qar_rsp)
+	struct file_allocated_range_buffer *qar_rsp,
+	int in_count, int *out_count)
 {
 	struct cifsd_file *fp;
-	u64 start, length, ret_start = 0, ret_length = 0;
+	u64 start, length;
 	int ret = 0;
 
+	*out_count = 0;
+	if (in_count == 0)
+		return -EINVAL;
+
 	fp = cifsd_lookup_fd_fast(work, id);
-	if (!fp) {
-		ret = -ENOENT;
-		goto err_out;
-	}
+	if (!fp)
+		return -ENOENT;
 
 	start = le64_to_cpu(qar_req->file_offset);
 	length = le64_to_cpu(qar_req->length);
 
-	ret = cifsd_vfs_fiemap(fp, start, length, &ret_start,
-			&ret_length);
+	ret = cifsd_vfs_fiemap(fp, start, length,
+			qar_rsp, in_count, out_count);
+	if (ret && ret != -E2BIG)
+		*out_count = 0;
+
 	cifsd_fd_put(work, fp);
-	if (ret)
-		goto err_out;
-
-	qar_rsp->file_offset = cpu_to_le64(ret_start);
-	qar_rsp->length = cpu_to_le64(ret_length);
-
-err_out:
 	return ret;
 }
 
@@ -7000,11 +6999,17 @@ int smb2_ioctl(struct cifsd_work *work)
 	case FSCTL_QUERY_ALLOCATED_RANGES:
 		ret = fsctl_query_allocated_ranges(work, id,
 			(struct file_allocated_range_buffer *)&req->Buffer[0],
-			(struct file_allocated_range_buffer *)&rsp->Buffer[0]);
-		if (ret < 0)
+			(struct file_allocated_range_buffer *)&rsp->Buffer[0],
+			out_buf_len /
+			sizeof(struct file_allocated_range_buffer), &nbytes);
+		if (ret == -E2BIG) {
+			rsp->hdr.Status = STATUS_BUFFER_OVERFLOW;
+		} else if (ret < 0) {
+			nbytes = 0;
 			goto out;
+		}
 
-		nbytes = sizeof(struct file_allocated_range_buffer);
+		nbytes *= sizeof(struct file_allocated_range_buffer);
 		break;
 	default:
 		cifsd_debug("not implemented yet ioctl command 0x%x\n",
