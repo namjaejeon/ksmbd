@@ -20,17 +20,7 @@ static inline u64 cifs_UnixTimeToNT(struct timespec t)
 	return (u64) t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
 }
 
-static inline struct timespec cifs_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec ts;
-	u64 t;
-
-	/* Subtract the NTFS time offset, then convert to 1s intervals. */
-	t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
-	ts.tv_nsec = do_div(t, 10000000) * 100;
-	ts.tv_sec = t;
-	return ts;
-}
+struct timespec cifs_NTtimeToUnix(__le64 ntutc);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
 static inline struct timespec64 to_kern_timespec(struct timespec ts)
