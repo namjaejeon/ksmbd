@@ -52,6 +52,32 @@ static inline void cifsd_tcp_reuseaddr(struct socket *sock)
 		(char *)&val, sizeof(val));
 }
 
+static inline void cifsd_tcp_rev_timeout(struct socket *sock, unsigned int sec)
+{
+	struct timeval tv = { .tv_sec = sec, .tv_usec = 0 };
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+	kernel_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO_OLD, (char *)&tv,
+			  sizeof(tv));
+#else
+	kernel_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,
+			  sizeof(tv));
+#endif
+}
+
+static inline void cifsd_tcp_snd_timeout(struct socket *sock, unsigned int sec)
+{
+	struct timeval tv = { .tv_sec = sec, .tv_usec = 0 };
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
+	kernel_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO_OLD, (char *)&tv,
+			  sizeof(tv));
+#else
+	kernel_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv,
+			  sizeof(tv));
+#endif
+}
+
 static struct tcp_transport *alloc_transport(struct socket *client_sk)
 {
 	struct tcp_transport *t;
@@ -368,6 +394,10 @@ static void tcp_destroy_socket(struct socket *cifsd_socket)
 
 	if (!cifsd_socket)
 		return;
+
+	/* set zero to timeout */
+	cifsd_tcp_rev_timeout(cifsd_socket, 0);
+	cifsd_tcp_snd_timeout(cifsd_socket, 0);
 
 	ret = kernel_sock_shutdown(cifsd_socket, SHUT_RDWR);
 	if (ret)
