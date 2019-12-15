@@ -435,8 +435,12 @@ static ssize_t kill_server_store(struct class *class,
 		return len;
 
 	cifsd_err("kill command received\n");
+	mutex_lock(&ctrl_lock);
 	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
-	server_queue_ctrl_reset_work();
+	__module_get(THIS_MODULE);
+	server_ctrl_handle_reset(NULL);
+	module_put(THIS_MODULE);
+	mutex_unlock(&ctrl_lock);
 	return len;
 }
 
