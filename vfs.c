@@ -1298,6 +1298,7 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 	ssize_t xattr_len;
 	char *buf;
 
+	*xattr_buf = NULL;
 	xattr_len = cifsd_vfs_xattr_len(dentry, xattr_name);
 	if (xattr_len < 0)
 		return xattr_len;
@@ -1307,8 +1308,10 @@ ssize_t cifsd_vfs_getxattr(struct dentry *dentry,
 		return -ENOMEM;
 
 	xattr_len = vfs_getxattr(dentry, xattr_name, (void *)buf, xattr_len);
-	if (xattr_len)
+	if (xattr_len > 0)
 		*xattr_buf = buf;
+	else
+		kfree(buf);
 	return xattr_len;
 }
 
@@ -1474,13 +1477,17 @@ int cifsd_vfs_zero_data(struct cifsd_work *work,
 }
 
 int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
-	u64 *out_start, u64 *out_length)
+	struct file_allocated_range_buffer *ranges,
+	int in_count, int *out_count)
 {
 	struct inode *inode = FP_INODE(fp);
 	struct super_block *sb = inode->i_sb;
 	struct fiemap_extent_info fieinfo = { 0, };
-	u64 maxbytes = (u64) sb->s_maxbytes;
-	int ret;
+	u64 maxbytes = (u64) sb->s_maxbytes, extent_len;
+	int ret = 0;
+	struct file_allocated_range_buffer *range;
+	struct fiemap_extent *extents;
+	int i, range_idx;
 
 	if (!inode->i_op->fiemap)
 		return -EOPNOTSUPP;
@@ -1488,24 +1495,74 @@ int cifsd_vfs_fiemap(struct cifsd_file *fp, u64 start, u64 length,
 	if (start > maxbytes)
 		return -EFBIG;
 
-	fieinfo.fi_extents_start = kzalloc(sizeof(struct fiemap_extent),
-		GFP_KERNEL);
-	if (!fieinfo.fi_extents_start)
-		return -ENOMEM;
-
 	/*
 	 * Shrink request scope to what the fs can actually handle.
 	 */
 	if (length > maxbytes || (maxbytes - length) < start)
 		length = maxbytes - start;
 
-	fieinfo.fi_extents_max = 1;
+	fieinfo.fi_extents_max = 32;
+	fieinfo.fi_extents_start = kmalloc_array(fieinfo.fi_extents_max,
+				sizeof(struct fiemap_extent), GFP_KERNEL);
+	if (!fieinfo.fi_extents_start)
+		return -ENOMEM;
 
-	ret = inode->i_op->fiemap(inode, &fieinfo, start, length);
-	if (!ret && fieinfo.fi_extents_start->fe_flags) {
-		*out_start = fieinfo.fi_extents_start->fe_logical;
-		*out_length = fieinfo.fi_extents_start->fe_length;
+	range_idx = 0;
+	range = ranges + range_idx;
+	range->file_offset = cpu_to_le64(start);
+	range->length = 0;
+
+	while (length > 0) {
+		ret = inode->i_op->fiemap(inode, &fieinfo, start, length);
+		if (ret)
+			goto out;
+
+		extents = (struct fiemap_extent *)(fieinfo.fi_extents_start);
+		for (i = 0; i < fieinfo.fi_extents_mapped; i++) {
+			if (extents[i].fe_logical <=
+					le64_to_cpu(range->file_offset) +
+					le64_to_cpu(range->length)) {
+				extent_len =
+					extents[i].fe_length - (
+					le64_to_cpu(range->file_offset) -
+					extents[i].fe_logical);
+				range->length += cpu_to_le64(extent_len);
+			} else {
+				/* skip this increment if the range is
+				 * not initialized
+				 */
+				if (range->length)
+					range_idx++;
+				if (range_idx >= in_count) {
+					*out_count = range_idx;
+					ret = -E2BIG;
+					goto out;
+				}
+				range = ranges + range_idx;
+				range->file_offset =
+					cpu_to_le64(extents[i].fe_logical);
+				extent_len = extents[i].fe_length;
+				range->length = cpu_to_le64(extent_len);
+			}
+
+			if ((extents[i].fe_flags & FIEMAP_EXTENT_LAST) ||
+				extent_len >= length) {
+				if (extent_len > length) {
+					u64 last_len =
+						le64_to_cpu(range->length) -
+						(extent_len - length);
+					range->length = cpu_to_le64(last_len);
+				}
+				*out_count = range_idx + 1;
+				goto out;
+			}
+			length -= extent_len;
+			start += length;
+		}
+
 	}
+
+out:
 	kfree(fieinfo.fi_extents_start);
 	return ret;
 }
