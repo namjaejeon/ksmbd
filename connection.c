@@ -409,7 +409,7 @@ again:
 
 		task = conn->transport->handler;
 		if (task)
-			cifsd_err("Stop session handler %s/%d\n",
+			cifsd_debug("Stop session handler %s/%d\n",
 				  task->comm,
 				  task_pid_nr(task));
 		conn->status = CIFSD_SESS_EXITING;
@@ -417,7 +417,7 @@ again:
 	read_unlock(&conn_list_lock);
 
 	if (!list_empty(&conn_list)) {
-		schedule_timeout_interruptible(CIFSD_TCP_RECV_TIMEOUT / 2);
+		schedule_timeout_interruptible(HZ/10); /* 100ms */
 		goto again;
 	}
 }
