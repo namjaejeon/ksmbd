@@ -2164,17 +2164,8 @@ static int smb2_creat(struct cifsd_work *work,
 	umode_t mode;
 	int rc;
 
-	if (!(open_flags & O_CREAT)) {
-		smb2_set_err_rsp(work);
-		if (test_tree_conn_flag(tcon,
-					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
-			cifsd_debug("File does not exist\n");
-			return -EBADF;
-		}
-
-		cifsd_debug("User does not have write permission\n");
-		return -EACCES;
-	}
+	if (!(open_flags & O_CREAT))
+		return -EBADF;
 
 	cifsd_debug("file does not exist, so creating\n");
 	if (is_dir == true) {
@@ -2554,11 +2545,16 @@ int smb2_open(struct cifsd_work *work)
 		file_present = cifsd_close_inode_fds(work,
 						     d_inode(path.dentry));
 
-	if (test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE))
-		open_flags = smb2_create_open_flags(file_present,
-			req->DesiredAccess, req->CreateDisposition);
-	else
-		open_flags = O_RDONLY;
+	open_flags = smb2_create_open_flags(file_present,
+		req->DesiredAccess, req->CreateDisposition);
+
+	if (!test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+		if (open_flags & (O_CREAT | O_RDWR | O_WRONLY)) {
+			cifsd_debug("User does not have write permission\n");
+			rc = -EACCES;
+			goto err_out;
+		}
+	}
 
 	/*create file if not present */
 	if (!file_present) {
