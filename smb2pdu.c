@@ -2475,6 +2475,13 @@ int smb2_open(struct cifsd_work *work)
 				rc = -EACCES;
 				goto err_out;
 			}
+
+			if (!test_tree_conn_flag(tcon,
+			    CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+				cifsd_debug("User does not have write permission\n");
+				rc = -EACCES;
+				goto err_out;
+			}
 		}
 	} else {
 		/*
@@ -5332,6 +5339,11 @@ static int smb2_set_info_file(struct cifsd_work *work,
 				work->sess->conn->local_nls);
 
 	case FILE_DISPOSITION_INFORMATION:
+		if (!test_tree_conn_flag(work->tcon,
+		    CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+			cifsd_debug("User does not have write permission\n");
+			return -EACCES;
+		}
 		return set_file_disposition_info(fp, buf);
 
 	case FILE_FULL_EA_INFORMATION:
