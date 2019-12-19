@@ -5042,13 +5042,13 @@ static int set_file_basic_info(struct cifsd_file *fp,
 	}
 
 	if (file_info->LastAccessTime) {
-		attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
+		attrs.ia_atime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->LastAccessTime));
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
 	if (file_info->ChangeTime) {
-		temp_attrs.ia_ctime = to_kern_timespec(cifs_NTtimeToUnix(
+		temp_attrs.ia_ctime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->ChangeTime));
 		attrs.ia_ctime = temp_attrs.ia_ctime;
 		attrs.ia_valid |= ATTR_CTIME;
@@ -5056,7 +5056,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		temp_attrs.ia_ctime = inode->i_ctime;
 
 	if (file_info->LastWriteTime) {
-		attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
+		attrs.ia_mtime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->LastWriteTime));
 		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 	}

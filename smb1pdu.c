@@ -3946,7 +3946,7 @@ static int query_path_info(struct cifsd_work *work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		infos = (struct file_info_standard *)(ptr + 4);
-		unix_to_dos_time(cifs_NTtimeToUnix(create_time),
+		unix_to_dos_time(cifsd_NTtimeToUnix(create_time),
 			&infos->CreationDate, &infos->CreationTime);
 		unix_to_dos_time(from_kern_timespec(st.atime),
 				&infos->LastAccessDate,
@@ -5518,7 +5518,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 
 		fsinfo = (struct find_info_standard *)(d_info->wptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(
+			cifsd_NTtimeToUnix(
 				cpu_to_le64(cifsd_kstat->create_time)),
 			&fsinfo->CreationTime,
 			&fsinfo->CreationDate);
@@ -5544,7 +5544,7 @@ static int smb_populate_readdir_entry(struct cifsd_conn *conn,
 
 		fesize = (struct find_info_query_ea_size *)(d_info->wptr);
 		unix_to_dos_time(
-			cifs_NTtimeToUnix(
+			cifsd_NTtimeToUnix(
 				cpu_to_le64(cifsd_kstat->create_time)),
 			&fesize->CreationTime,
 			&fesize->CreationDate);
