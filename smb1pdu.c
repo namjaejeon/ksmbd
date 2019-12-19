@@ -2846,6 +2846,7 @@ int smb_read_andx(struct cifsd_work *work)
 	if (req->AndXCommand != 0xFF) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
+		cifsd_fd_put(work, fp);
 		return rsp->AndXCommand; /* More processing required */
 	}
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
