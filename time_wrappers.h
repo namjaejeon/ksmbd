@@ -20,7 +20,7 @@ static inline u64 cifs_UnixTimeToNT(struct timespec t)
 	return (u64) t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
 }
 
-struct timespec cifs_NTtimeToUnix(__le64 ntutc);
+struct timespec cifsd_NTtimeToUnix(__le64 ntutc);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 18, 0)
 static inline struct timespec64 to_kern_timespec(struct timespec ts)
