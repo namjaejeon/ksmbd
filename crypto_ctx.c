@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/sched.h>
+#include <linux/version.h>
 
 #include "crypto_ctx.h"
 #include "buffer_pool.h"
@@ -22,6 +23,7 @@ struct crypto_ctx_list {
 
 static struct crypto_ctx_list ctx_list;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 static inline void free_blk(struct blkcipher_desc *desc)
 {
 	if (desc) {
@@ -29,6 +31,7 @@ static inline void free_blk(struct blkcipher_desc *desc)
 		kfree(desc);
 	}
 }
+#endif
 
 static inline void free_aead(struct crypto_aead *aead)
 {
@@ -101,6 +104,7 @@ static struct shash_desc *alloc_shash_desc(int id)
 	return shash;
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 static struct blkcipher_desc *alloc_blk_desc(int id)
 {
 	struct crypto_blkcipher *tfm = NULL;
@@ -122,6 +126,7 @@ static struct blkcipher_desc *alloc_blk_desc(int id)
 		desc->tfm = tfm;
 	return desc;
 }
+#endif
 
 static struct cifsd_crypto_ctx *ctx_alloc(void)
 {
@@ -136,8 +141,10 @@ static void ctx_free(struct cifsd_crypto_ctx *ctx)
 		free_shash(ctx->desc[i]);
 	for (i = 0; i < CRYPTO_AEAD_MAX; i++)
 		free_aead(ctx->ccmaes[i]);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 	for (i = 0; i < CRYPTO_BLK_MAX; i++)
 		free_blk(ctx->blk_desc[i]);
+#endif
 	cifsd_free(ctx);
 }
 
@@ -274,6 +281,7 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ccm(void)
 	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_CCM);
 }
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
 static struct cifsd_crypto_ctx *____crypto_blk_ctx_find(int id)
 {
 	struct cifsd_crypto_ctx *ctx;
@@ -296,6 +304,7 @@ struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ecbdes(void)
 {
 	return ____crypto_blk_ctx_find(CRYPTO_BLK_ECBDES);
 }
+#endif
 
 void cifsd_crypto_destroy(void)
 {
