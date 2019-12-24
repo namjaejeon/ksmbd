@@ -19,6 +19,11 @@
 #include "auth.h"
 #include "glob.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+#include <linux/fips.h>
+#include <crypto/des.h>
+#endif
+
 #include "server.h"
 #include "smb_common.h"
 #include "connection.h"
@@ -66,6 +71,26 @@ str_to_key(unsigned char *str, unsigned char *key)
 		key[i] = (key[i] << 1);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
+static int
+smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
+{
+	unsigned char key2[8];
+	struct des_ctx ctx;
+
+	str_to_key(key, key2);
+
+	if (fips_enabled) {
+		cifsd_debug("FIPS compliance enabled: DES not permitted\n");
+		return -ENOENT;
+	}
+
+	des_expand_key(&ctx, key2, DES_KEY_SIZE);
+	des_encrypt(&ctx, out, in);
+	memzero_explicit(&ctx, sizeof(ctx));
+	return 0;
+}
+#else
 static int
 smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 {
@@ -93,6 +118,7 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 	cifsd_release_crypto_ctx(ctx);
 	return rc;
 }
+#endif
 
 static int cifsd_enc_p24(unsigned char *p21,
 			 const unsigned char *c8,

@@ -2164,17 +2164,8 @@ static int smb2_creat(struct cifsd_work *work,
 	umode_t mode;
 	int rc;
 
-	if (!(open_flags & O_CREAT)) {
-		smb2_set_err_rsp(work);
-		if (test_tree_conn_flag(tcon,
-					CIFSD_TREE_CONN_FLAG_WRITABLE)) {
-			cifsd_debug("File does not exist\n");
-			return -EBADF;
-		}
-
-		cifsd_debug("User does not have write permission\n");
-		return -EACCES;
-	}
+	if (!(open_flags & O_CREAT))
+		return -EBADF;
 
 	cifsd_debug("file does not exist, so creating\n");
 	if (is_dir == true) {
@@ -2475,6 +2466,13 @@ int smb2_open(struct cifsd_work *work)
 				rc = -EACCES;
 				goto err_out;
 			}
+
+			if (!test_tree_conn_flag(tcon,
+			    CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+				cifsd_debug("User does not have write permission\n");
+				rc = -EACCES;
+				goto err_out;
+			}
 		}
 	} else {
 		/*
@@ -2547,11 +2545,16 @@ int smb2_open(struct cifsd_work *work)
 		file_present = cifsd_close_inode_fds(work,
 						     d_inode(path.dentry));
 
-	if (test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE))
-		open_flags = smb2_create_open_flags(file_present,
-			req->DesiredAccess, req->CreateDisposition);
-	else
-		open_flags = O_RDONLY;
+	open_flags = smb2_create_open_flags(file_present,
+		req->DesiredAccess, req->CreateDisposition);
+
+	if (!test_tree_conn_flag(tcon, CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+		if (open_flags & (O_CREAT | O_RDWR | O_WRONLY)) {
+			cifsd_debug("User does not have write permission\n");
+			rc = -EACCES;
+			goto err_out;
+		}
+	}
 
 	/*create file if not present */
 	if (!file_present) {
@@ -5039,13 +5042,13 @@ static int set_file_basic_info(struct cifsd_file *fp,
 	}
 
 	if (file_info->LastAccessTime) {
-		attrs.ia_atime = to_kern_timespec(cifs_NTtimeToUnix(
+		attrs.ia_atime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->LastAccessTime));
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
 	if (file_info->ChangeTime) {
-		temp_attrs.ia_ctime = to_kern_timespec(cifs_NTtimeToUnix(
+		temp_attrs.ia_ctime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->ChangeTime));
 		attrs.ia_ctime = temp_attrs.ia_ctime;
 		attrs.ia_valid |= ATTR_CTIME;
@@ -5053,7 +5056,7 @@ static int set_file_basic_info(struct cifsd_file *fp,
 		temp_attrs.ia_ctime = inode->i_ctime;
 
 	if (file_info->LastWriteTime) {
-		attrs.ia_mtime = to_kern_timespec(cifs_NTtimeToUnix(
+		attrs.ia_mtime = to_kern_timespec(cifsd_NTtimeToUnix(
 					file_info->LastWriteTime));
 		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
 	}
@@ -5332,6 +5335,11 @@ static int smb2_set_info_file(struct cifsd_work *work,
 				work->sess->conn->local_nls);
 
 	case FILE_DISPOSITION_INFORMATION:
+		if (!test_tree_conn_flag(work->tcon,
+		    CIFSD_TREE_CONN_FLAG_WRITABLE)) {
+			cifsd_debug("User does not have write permission\n");
+			return -EACCES;
+		}
 		return set_file_disposition_info(fp, buf);
 
 	case FILE_FULL_EA_INFORMATION:

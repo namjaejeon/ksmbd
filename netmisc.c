@@ -611,7 +611,7 @@ ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode)
  * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
  * into Unix UTC (based 1970-01-01, in seconds).
  */
-struct timespec cifs_NTtimeToUnix(__le64 ntutc)
+struct timespec cifsd_NTtimeToUnix(__le64 ntutc)
 {
 	struct timespec ts;
 
