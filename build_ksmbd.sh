@@ -75,7 +75,7 @@ function patch_fs_config
 	fi
 }
 
-function kcifsd_module_make
+function ksmbd_module_make
 {
 	echo "Running cifsd make"
 
@@ -93,7 +93,7 @@ function kcifsd_module_make
 	fi
 }
 
-function kcifsd_module_install
+function ksmbd_module_install
 {
 	echo "Running cifsd install"
 
@@ -134,7 +134,7 @@ function kcifsd_module_install
 	cd "$KERNEL_SRC"/fs/cifsd
 }
 
-function kcifsd_module_clean
+function ksmbd_module_clean
 {
 	echo "Running cifsd clean"
 
@@ -151,24 +151,24 @@ function main
 
 	case $1 in
 		clean)
-			kcifsd_module_clean
+			ksmbd_module_clean
 			exit 0
 			;;
 		install)
-			kcifsd_module_make
-			kcifsd_module_install
+			ksmbd_module_make
+			ksmbd_module_install
 			exit 0
 			;;
 		make)
-			kcifsd_module_make
+			ksmbd_module_make
 			exit 0
 			;;
 		help)
-			echo "Usage: build_kcifsd.sh [clean | make | install]"
+			echo "Usage: build_ksmbd.sh [clean | make | install]"
 			exit 0
 			;;
 		*)
-			kcifsd_module_make
+			ksmbd_module_make
 			exit 0
 			;;
 	esac

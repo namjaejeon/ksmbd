@@ -216,7 +216,7 @@ static int cifsd_tcp_new_connection(struct socket *client_sk)
 #endif
 	CIFSD_TRANS(t)->handler = kthread_run(cifsd_conn_handler_loop,
 					CIFSD_TRANS(t)->conn,
-					"kcifsd:%u", cifsd_tcp_get_port(csin));
+					"ksmbd:%u", cifsd_tcp_get_port(csin));
 	if (IS_ERR(CIFSD_TRANS(t)->handler)) {
 		cifsd_err("cannot start conn thread\n");
 		rc = PTR_ERR(CIFSD_TRANS(t)->handler);
@@ -271,9 +271,9 @@ static int cifsd_kthread_fn(void *p)
 /**
  * cifsd_create_cifsd_kthread() - start forker thread
  *
- * start forker thread(kcifsd/0) at module init time to listen
+ * start forker thread(ksmbd/0) at module init time to listen
  * on port 445 for new SMB connection requests. It creates per connection
- * server threads(kcifsd/x)
+ * server threads(ksmbd/x)
  *
  * Return:	0 on success or error number
  */
@@ -283,7 +283,7 @@ static int cifsd_tcp_run_kthread(struct interface *iface)
 	struct task_struct *kthread;
 
 	kthread = kthread_run(cifsd_kthread_fn, (void *)iface,
-		"kcifsd-%s", iface->name);
+		"ksmbd-%s", iface->name);
 	if (IS_ERR(kthread)) {
 		rc = PTR_ERR(kthread);
 		return rc;
@@ -407,7 +407,7 @@ static void tcp_destroy_socket(struct socket *cifsd_socket)
 }
 
 /**
- * create_socket - create socket for kcifsd/0
+ * create_socket - create socket for ksmbd/0
  *
  * Return:	Returns a task_struct or ERR_PTR
  */

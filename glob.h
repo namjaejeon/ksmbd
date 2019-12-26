@@ -26,9 +26,9 @@ extern int cifsd_caseless_search;
 
 #ifndef cifsd_pr_fmt
 #ifdef SUBMOD_NAME
-#define cifsd_pr_fmt(fmt)	"kcifsd: " SUBMOD_NAME ": " fmt
+#define cifsd_pr_fmt(fmt)	"ksmbd: " SUBMOD_NAME ": " fmt
 #else
-#define cifsd_pr_fmt(fmt)	"kcifsd: " fmt
+#define cifsd_pr_fmt(fmt)	"ksmbd: " fmt
 #endif
 #endif
 

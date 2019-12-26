@@ -135,18 +135,18 @@ build your kernel
 
 ```
                |--- ...
-       --------|--- kcifsd/3 - Client 3
-       |-------|--- kcifsd/2 - Client 2
+       --------|--- ksmbd/3 - Client 3
+       |-------|--- ksmbd/2 - Client 2
        |       |         _____________________________________________________
        |       |        |- Client 1                                           |
-<--- Socket ---|--- kcifsd/1   <<= Authentication : NTLM/NTLM2, Kerberos(TODO)|
+<--- Socket ---|--- ksmbd/1   <<= Authentication : NTLM/NTLM2, Kerberos(TODO)|
        |       |      | |      <<= SMB : SMB1, SMB2, SMB2.1, SMB3, SMB3.0.2,  |
        |       |      | |                SMB3.1.1                             |
        |       |      | |_____________________________________________________|
        |       |      |
        |       |      |--- VFS --- Local Filesystem
        |       |
-KERNEL |--- kcifsd/0(forker kthread)
+KERNEL |--- ksmbd/0(forker kthread)
 ---------------||---------------------------------------------------------------
 USER           ||
                || communication using NETLINK

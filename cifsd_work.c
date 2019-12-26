@@ -69,7 +69,7 @@ int cifsd_work_pool_init(void)
 
 int cifsd_workqueue_init(void)
 {
-	cifsd_wq = alloc_workqueue("kcifsd-io", 0, 0);
+	cifsd_wq = alloc_workqueue("ksmbd-io", 0, 0);
 	if (!cifsd_wq)
 		return -EINVAL;
 	return 0;

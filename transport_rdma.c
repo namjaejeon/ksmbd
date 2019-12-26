@@ -1944,7 +1944,7 @@ static int smb_direct_handle_connect_request(struct rdma_cm_id *new_cm_id)
 		return -ENOMEM;
 
 	CIFSD_TRANS(t)->handler = kthread_run(cifsd_conn_handler_loop,
-			CIFSD_TRANS(t)->conn, "kcifsd:r%u", SMB_DIRECT_PORT);
+			CIFSD_TRANS(t)->conn, "ksmbd:r%u", SMB_DIRECT_PORT);
 	if (IS_ERR(CIFSD_TRANS(t)->handler)) {
 		int ret = PTR_ERR(CIFSD_TRANS(t)->handler);
 
