@@ -4,13 +4,13 @@
  *   Copyright (C) 2018, LG Electronics.
  */
 
-#ifndef __CIFSD_TRANSPORT_SMBD_H__
-#define __CIFSD_TRANSPORT_SMBD_H__
+#ifndef __CIFSD_TRANSPORT_RDMA_H__
+#define __CIFSD_TRANSPORT_RDMA_H__
 
-#define SMBD_PORT	5445
+#define SMB_DIRECT_PORT	5445
 
-/* SMBD negotiation request packet [MS-SMBD] 2.2.1 */
-struct smbd_negotiate_req {
+/* SMB DIRECT negotiation request packet [MS-SMBD] 2.2.1 */
+struct smb_direct_negotiate_req {
 	__le16 min_version;
 	__le16 max_version;
 	__le16 reserved;
@@ -20,8 +20,8 @@ struct smbd_negotiate_req {
 	__le32 max_fragmented_size;
 } __packed;
 
-/* SMBD negotiation response packet [MS-SMBD] 2.2.2 */
-struct smbd_negotiate_resp {
+/* SMB DIRECT negotiation response packet [MS-SMBD] 2.2.2 */
+struct smb_direct_negotiate_resp {
 	__le16 min_version;
 	__le16 max_version;
 	__le16 negotiated_version;
@@ -37,8 +37,8 @@ struct smbd_negotiate_resp {
 
 #define SMB_DIRECT_RESPONSE_REQUESTED 0x0001
 
-/* SMBD data transfer packet with payload [MS-SMBD] 2.2.3 */
-struct smbd_data_transfer {
+/* SMB DIRECT data transfer packet with payload [MS-SMBD] 2.2.3 */
+struct smb_direct_data_transfer {
 	__le16 credits_requested;
 	__le16 credits_granted;
 	__le16 flags;
@@ -51,11 +51,11 @@ struct smbd_data_transfer {
 } __packed;
 
 #ifdef CONFIG_CIFS_SERVER_SMBDIRECT
-int cifsd_smbd_init(void);
-int cifsd_smbd_destroy(void);
+int smbd_rdma_init(void);
+int smbd_rdma_destroy(void);
 #else
-static inline int cifsd_smbd_init(void) { return 0; }
-static inline int cifsd_smbd_destroy(void) { return 0; }
+static inline int smbd_rdma_init(void) { return 0; }
+static inline int smbd_rdma_destroy(void) { return 0; }
 #endif
 
-#endif /* __CIFSD_TRANSPORT_SMBD_H__ */
+#endif /* __CIFSD_TRANSPORT_RDMA_H__ */
