@@ -12,7 +12,7 @@
 
 #include "../glob.h"  /* FIXME */
 
-struct cifsd_share_config {
+struct smbd_share_config {
 	char			*name;
 	char			*path;
 
@@ -33,7 +33,7 @@ struct cifsd_share_config {
 	unsigned short		force_gid;
 };
 
-static inline int share_config_create_mode(struct cifsd_share_config *share,
+static inline int share_config_create_mode(struct smbd_share_config *share,
 	umode_t posix_mode)
 {
 	if (!share->force_create_mode) {
@@ -45,7 +45,7 @@ static inline int share_config_create_mode(struct cifsd_share_config *share,
 	return share->force_create_mode & share->create_mask;
 }
 
-static inline int share_config_directory_mode(struct cifsd_share_config *share,
+static inline int share_config_directory_mode(struct smbd_share_config *share,
 	umode_t posix_mode)
 {
 	if (!share->force_directory_mode) {
@@ -58,24 +58,24 @@ static inline int share_config_directory_mode(struct cifsd_share_config *share,
 	return share->force_directory_mode & share->directory_mask;
 }
 
-static inline int test_share_config_flag(struct cifsd_share_config *share,
+static inline int test_share_config_flag(struct smbd_share_config *share,
 					 int flag)
 {
 	return share->flags & flag;
 }
 
-extern void __cifsd_share_config_put(struct cifsd_share_config *share);
+extern void __smbd_share_config_put(struct smbd_share_config *share);
 
-static inline void cifsd_share_config_put(struct cifsd_share_config *share)
+static inline void smbd_share_config_put(struct smbd_share_config *share)
 {
 	if (!atomic_dec_and_test(&share->refcount))
 		return;
-	__cifsd_share_config_put(share);
+	__smbd_share_config_put(share);
 }
 
-struct cifsd_share_config *cifsd_share_config_get(char *name);
-bool cifsd_share_veto_filename(struct cifsd_share_config *share,
+struct smbd_share_config *smbd_share_config_get(char *name);
+bool smbd_share_veto_filename(struct smbd_share_config *share,
 			       const char *filename);
-void cifsd_share_configs_cleanup(void);
+void smbd_share_configs_cleanup(void);
 
 #endif /* __SHARE_CONFIG_MANAGEMENT_H__ */

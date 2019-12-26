@@ -3,28 +3,28 @@
  *   Copyright (C) 2019 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFSD_WORK_H__
-#define __CIFSD_WORK_H__
+#ifndef __SMBD_WORK_H__
+#define __SMBD_WORK_H__
 
 #include <linux/ctype.h>
 #include <linux/workqueue.h>
 
-struct cifsd_conn;
-struct cifsd_session;
-struct cifsd_tree_connect;
+struct smbd_conn;
+struct smbd_session;
+struct smbd_tree_connect;
 
 enum {
-	CIFSD_WORK_ACTIVE = 0,
-	CIFSD_WORK_CANCELLED,
-	CIFSD_WORK_CLOSED,
+	SMBD_WORK_ACTIVE = 0,
+	SMBD_WORK_CANCELLED,
+	SMBD_WORK_CLOSED,
 };
 
 /* one of these for every pending CIFS request at the connection */
-struct cifsd_work {
+struct smbd_work {
 	/* Server corresponding to this mid */
-	struct cifsd_conn               *conn;
-	struct cifsd_session            *sess;
-	struct cifsd_tree_connect       *tcon;
+	struct smbd_conn               *conn;
+	struct smbd_session            *sess;
+	struct smbd_tree_connect       *tcon;
 
 	/* Pointer to received SMB header */
 	char                            *request_buf;
@@ -62,7 +62,7 @@ struct cifsd_work {
 	bool                            send_no_response:1;
 	/* Request is encrypted */
 	bool                            encrypted:1;
-	/* Is this SYNC or ASYNC cifsd_work */
+	/* Is this SYNC or ASYNC smbd_work */
 	bool                            syncronous:1;
 	bool                            need_invalidate_rkey:1;
 
@@ -81,9 +81,9 @@ struct cifsd_work {
 	struct list_head                interim_entry;
 };
 
-#define WORK_CANCELLED(w)	((w)->state == CIFSD_WORK_CANCELLED)
-#define WORK_CLOSED(w)		((w)->state == CIFSD_WORK_CLOSED)
-#define WORK_ACTIVE(w)		((w)->state == CIFSD_WORK_ACTIVE)
+#define WORK_CANCELLED(w)	((w)->state == SMBD_WORK_CANCELLED)
+#define WORK_CLOSED(w)		((w)->state == SMBD_WORK_CLOSED)
+#define WORK_ACTIVE(w)		((w)->state == SMBD_WORK_ACTIVE)
 
 #define RESPONSE_BUF(w)		((void *)(w)->response_buf)
 #define REQUEST_BUF(w)		((void *)(w)->request_buf)
@@ -104,14 +104,14 @@ struct cifsd_work {
 #define HAS_TRANSFORM_BUF(w)	((w)->tr_buf != NULL)
 #define TRANSFORM_BUF(w)	(void *)((w)->tr_buf)
 
-struct cifsd_work *cifsd_alloc_work_struct(void);
-void cifsd_free_work_struct(struct cifsd_work *work);
+struct smbd_work *smbd_alloc_work_struct(void);
+void smbd_free_work_struct(struct smbd_work *work);
 
-void cifsd_work_pool_destroy(void);
-int cifsd_work_pool_init(void);
+void smbd_work_pool_destroy(void);
+int smbd_work_pool_init(void);
 
-int cifsd_workqueue_init(void);
-void cifsd_workqueue_destroy(void);
-bool cifsd_queue_work(struct cifsd_work *work);
+int smbd_workqueue_init(void);
+void smbd_workqueue_destroy(void);
+bool smbd_queue_work(struct smbd_work *work);
 
-#endif /* __CIFSD_WORK_H__ */
+#endif /* __SMBD_WORK_H__ */

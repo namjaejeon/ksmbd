@@ -21,8 +21,8 @@
 #define	FILE_GENERIC_WRITE	0x120116
 #define	FILE_GENERIC_EXECUTE	0X1200a0
 
-#define CIFSD_START_FID		0
-#define CIFSD_NO_FID		(UINT_MAX)
+#define SMBD_START_FID		0
+#define SMBD_NO_FID		(UINT_MAX)
 #define SMB2_NO_FID		(0xFFFFFFFFFFFFFFFFULL)
 
 #define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
@@ -34,10 +34,10 @@
 		fp->cdoption != FILE_OVERWRITE_LE && \
 		fp->cdoption != FILE_SUPERSEDE_LE))
 
-struct cifsd_conn;
-struct cifsd_session;
+struct smbd_conn;
+struct smbd_session;
 
-struct cifsd_lock {
+struct smbd_lock {
 	struct file_lock *fl;
 	struct list_head glist;
 	struct list_head llist;
@@ -54,7 +54,7 @@ struct stream {
 	ssize_t size;
 };
 
-struct cifsd_inode {
+struct smbd_inode {
 	rwlock_t			m_lock;
 	atomic_t			m_count;
 	atomic_t			op_count;
@@ -67,7 +67,7 @@ struct cifsd_inode {
 	__le32				m_fattr;
 };
 
-struct cifsd_file {
+struct smbd_file {
 	struct file			*filp;
 	char				*filename;
 	unsigned int			persistent_id;
@@ -75,11 +75,11 @@ struct cifsd_file {
 
 	spinlock_t			f_lock;
 
-	struct cifsd_inode		*f_ci;
-	struct cifsd_inode		*f_parent_ci;
+	struct smbd_inode		*f_ci;
+	struct smbd_inode		*f_parent_ci;
 	struct oplock_info __rcu	*f_opinfo;
-	struct cifsd_conn		*conn;
-	struct cifsd_tree_connect	*tcon;
+	struct smbd_conn		*conn;
+	struct smbd_tree_connect	*tcon;
 
 	atomic_t			refcount;
 	__le32				daccess;
@@ -105,7 +105,7 @@ struct cifsd_file {
 
 	int				durable_timeout;
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	/* for SMB1 */
 	int				pid;
 
@@ -117,7 +117,7 @@ struct cifsd_file {
 	int				dirent_offset;
 #endif
 	/* if ls is happening on directory, below is valid*/
-	struct cifsd_readdir_data	readdir_data;
+	struct smbd_readdir_data	readdir_data;
 	int				dot_dotdot[2];
 };
 
@@ -145,9 +145,9 @@ static inline void set_ctx_actor(struct dir_context *ctx,
 }
 #endif
 
-#define CIFSD_NR_OPEN_DEFAULT BITS_PER_LONG
+#define SMBD_NR_OPEN_DEFAULT BITS_PER_LONG
 
-struct cifsd_file_table {
+struct smbd_file_table {
 	rwlock_t		lock;
 	struct idr		*idr;
 };
@@ -156,75 +156,75 @@ static inline bool HAS_FILE_ID(unsigned long long req)
 {
 	unsigned int id = (unsigned int)req;
 
-	return id < CIFSD_NO_FID;
+	return id < SMBD_NO_FID;
 }
 
-static inline bool cifsd_stream_fd(struct cifsd_file *fp)
+static inline bool smbd_stream_fd(struct smbd_file *fp)
 {
 	return fp->stream.name != NULL;
 }
 
-int cifsd_init_file_table(struct cifsd_file_table *ft);
-void cifsd_destroy_file_table(struct cifsd_file_table *ft);
+int smbd_init_file_table(struct smbd_file_table *ft);
+void smbd_destroy_file_table(struct smbd_file_table *ft);
 
-int cifsd_close_fd(struct cifsd_work *work, unsigned int id);
+int smbd_close_fd(struct smbd_work *work, unsigned int id);
 
-struct cifsd_file *cifsd_lookup_fd_fast(struct cifsd_work *work,
+struct smbd_file *smbd_lookup_fd_fast(struct smbd_work *work,
 					unsigned int id);
-struct cifsd_file *cifsd_lookup_foreign_fd(struct cifsd_work *work,
+struct smbd_file *smbd_lookup_foreign_fd(struct smbd_work *work,
 					   unsigned int id);
-struct cifsd_file *cifsd_lookup_fd_slow(struct cifsd_work *work,
+struct smbd_file *smbd_lookup_fd_slow(struct smbd_work *work,
 					unsigned int id,
 					unsigned int pid);
 
-void cifsd_fd_put(struct cifsd_work *work, struct cifsd_file *fp);
+void smbd_fd_put(struct smbd_work *work, struct smbd_file *fp);
 
-int cifsd_close_fd_app_id(struct cifsd_work *work, char *app_id);
-struct cifsd_file *cifsd_lookup_durable_fd(unsigned long long id);
-struct cifsd_file *cifsd_lookup_fd_cguid(char *cguid);
-struct cifsd_file *cifsd_lookup_fd_filename(struct cifsd_work *work,
+int smbd_close_fd_app_id(struct smbd_work *work, char *app_id);
+struct smbd_file *smbd_lookup_durable_fd(unsigned long long id);
+struct smbd_file *smbd_lookup_fd_cguid(char *cguid);
+struct smbd_file *smbd_lookup_fd_filename(struct smbd_work *work,
 					    char *filename);
-struct cifsd_file *cifsd_lookup_fd_inode(struct inode *inode);
+struct smbd_file *smbd_lookup_fd_inode(struct inode *inode);
 
-unsigned int cifsd_open_durable_fd(struct cifsd_file *fp);
+unsigned int smbd_open_durable_fd(struct smbd_file *fp);
 
-struct cifsd_file *cifsd_open_fd(struct cifsd_work *work,
+struct smbd_file *smbd_open_fd(struct smbd_work *work,
 				 struct file *filp);
 
-void cifsd_close_tree_conn_fds(struct cifsd_work *work);
-void cifsd_close_session_fds(struct cifsd_work *work);
+void smbd_close_tree_conn_fds(struct smbd_work *work);
+void smbd_close_session_fds(struct smbd_work *work);
 
-int cifsd_close_inode_fds(struct cifsd_work *work, struct inode *inode);
+int smbd_close_inode_fds(struct smbd_work *work, struct inode *inode);
 
-int cifsd_reopen_durable_fd(struct cifsd_work *work,
-			    struct cifsd_file *fp);
+int smbd_reopen_durable_fd(struct smbd_work *work,
+			    struct smbd_file *fp);
 
-int cifsd_init_global_file_table(void);
-void cifsd_free_global_file_table(void);
+int smbd_init_global_file_table(void);
+void smbd_free_global_file_table(void);
 
-int cifsd_file_table_flush(struct cifsd_work *work);
+int smbd_file_table_flush(struct smbd_work *work);
 
-void cifsd_set_fd_limit(unsigned long limit);
+void smbd_set_fd_limit(unsigned long limit);
 
 /*
  * INODE hash
  */
 
-int __init cifsd_inode_hash_init(void);
-void __exit cifsd_release_inode_hash(void);
+int __init smbd_inode_hash_init(void);
+void __exit smbd_release_inode_hash(void);
 
-enum CIFSD_INODE_STATUS {
-	CIFSD_INODE_STATUS_OK,
-	CIFSD_INODE_STATUS_UNKNOWN,
-	CIFSD_INODE_STATUS_PENDING_DELETE,
+enum SMBD_INODE_STATUS {
+	SMBD_INODE_STATUS_OK,
+	SMBD_INODE_STATUS_UNKNOWN,
+	SMBD_INODE_STATUS_PENDING_DELETE,
 };
 
-int cifsd_query_inode_status(struct inode *inode);
+int smbd_query_inode_status(struct inode *inode);
 
-bool cifsd_inode_pending_delete(struct cifsd_file *fp);
-void cifsd_set_inode_pending_delete(struct cifsd_file *fp);
-void cifsd_clear_inode_pending_delete(struct cifsd_file *fp);
+bool smbd_inode_pending_delete(struct smbd_file *fp);
+void smbd_set_inode_pending_delete(struct smbd_file *fp);
+void smbd_clear_inode_pending_delete(struct smbd_file *fp);
 
-void cifsd_fd_set_delete_on_close(struct cifsd_file *fp,
+void smbd_fd_set_delete_on_close(struct smbd_file *fp,
 				  int file_info);
 #endif /* __VFS_CACHE_H__ */

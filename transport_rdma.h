@@ -4,8 +4,8 @@
  *   Copyright (C) 2018, LG Electronics.
  */
 
-#ifndef __CIFSD_TRANSPORT_RDMA_H__
-#define __CIFSD_TRANSPORT_RDMA_H__
+#ifndef __SMBD_TRANSPORT_RDMA_H__
+#define __SMBD_TRANSPORT_RDMA_H__
 
 #define SMB_DIRECT_PORT	5445
 
@@ -50,7 +50,7 @@ struct smb_direct_data_transfer {
 	__u8 buffer[];
 } __packed;
 
-#ifdef CONFIG_CIFS_SERVER_SMBDIRECT
+#ifdef CONFIG_SMB_SERVER_SMBDIRECT
 int smbd_rdma_init(void);
 int smbd_rdma_destroy(void);
 #else
@@ -58,4 +58,4 @@ static inline int smbd_rdma_init(void) { return 0; }
 static inline int smbd_rdma_destroy(void) { return 0; }
 #endif
 
-#endif /* __CIFSD_TRANSPORT_RDMA_H__ */
+#endif /* __SMBD_TRANSPORT_RDMA_H__ */

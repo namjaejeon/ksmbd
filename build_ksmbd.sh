@@ -10,7 +10,7 @@ COMP_FLAGS=''
 
 function is_module
 {
-	local ok=$(cat "$KERNEL_SRC"/.config | grep "CONFIG_CIFS_SERVER=m")
+	local ok=$(cat "$KERNEL_SRC"/.config | grep "CONFIG_SMB_SERVER=m")
 
 	if [ "z$ok" == "z" ]; then
 		echo "1"
@@ -23,28 +23,28 @@ function is_module
 
 function patch_fs_config
 {
-	local ok=$(pwd |  grep -c "fs/cifsd")
+	local ok=$(pwd |  grep -c "fs/smbd")
 	if [ "z$ok" != "z1" ]; then
-		echo "ERROR: please ``cd`` to fs/cifsd"
+		echo "ERROR: please ``cd`` to fs/smbd"
 		exit 1
 	fi
 
-	KERNEL_SRC=$(pwd | sed -e 's/fs\/cifsd//')
+	KERNEL_SRC=$(pwd | sed -e 's/fs\/smbd//')
 	if [ ! -f "$KERNEL_SRC"/fs/Kconfig ]; then
-		echo "ERROR: please ``cd`` to fs/cifsd"
+		echo "ERROR: please ``cd`` to fs/smbd"
 		exit 1
 	fi
 
-	ok=$(cat "$KERNEL_SRC"/fs/Makefile | grep cifsd)
+	ok=$(cat "$KERNEL_SRC"/fs/Makefile | grep smbd)
 	if [ "z$ok" == "z" ]; then
-		echo 'obj-$(CONFIG_CIFS_SERVER)	+= cifsd/' \
+		echo 'obj-$(CONFIG_SMB_SERVER)	+= smbd/' \
 			>> "$KERNEL_SRC"/fs/Makefile
 	fi
 
-	ok=$(cat "$KERNEL_SRC"/fs/Kconfig | grep cifsd)
+	ok=$(cat "$KERNEL_SRC"/fs/Kconfig | grep smbd)
 	if [ "z$ok" == "z" ]; then
 		ok=$(cat "$KERNEL_SRC"/fs/Kconfig \
-			| sed -e 's/fs\/cifs\/Kconfig/fs\/cifs\/Kconfig\"\nsource \"fs\/cifsd\/Kconfig/' \
+			| sed -e 's/fs\/cifs\/Kconfig/fs\/cifs\/Kconfig\"\nsource \"fs\/smbd\/Kconfig/' \
 			> "$KERNEL_SRC"/fs/Kconfig.new)
 		if [ $? != 0 ]; then
 			exit 1
@@ -63,11 +63,11 @@ function patch_fs_config
 
 	ok=$(is_module)
 	if [ "z$ok" == "z1" ]; then
-		ok=$(echo "CONFIG_CIFS_SERVER=m" >> "$KERNEL_SRC"/.config)
+		ok=$(echo "CONFIG_SMB_SERVER=m" >> "$KERNEL_SRC"/.config)
 		if [ $? != 0 ]; then
 			exit 1
 		fi
-		ok=$(echo "CONFIG_CIFS_INSECURE_SERVER=y" \
+		ok=$(echo "CONFIG_SMB_INSECURE_SERVER=y" \
 			>> "$KERNEL_SRC"/.config)
 		if [ $? != 0 ]; then
 			exit 1
@@ -77,16 +77,16 @@ function patch_fs_config
 
 function ksmbd_module_make
 {
-	echo "Running cifsd make"
+	echo "Running smbd make"
 
-	local c="make "$COMP_FLAGS" -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd"
+	local c="make "$COMP_FLAGS" -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/smbd"
 
-	rm cifsd.ko
+	rm smbd.ko
 
 	cd "$KERNEL_SRC"
 	echo $c
 	$c
-	cd "$KERNEL_SRC"/fs/cifsd
+	cd "$KERNEL_SRC"/fs/smbd
 
 	if [ $? != 0 ]; then
 		exit 1
@@ -95,52 +95,52 @@ function ksmbd_module_make
 
 function ksmbd_module_install
 {
-	echo "Running cifsd install"
+	echo "Running smbd install"
 
-	local ok=$(lsmod | grep -c cifsd)
+	local ok=$(lsmod | grep -c smbd)
 	if [ "z$ok" == "z1" ]; then
-		sudo rmmod cifsd
+		sudo rmmod smbd
 		if [ $? -ne 0 ]; then
-			echo "ERROR: unable to rmmod cifsd"
+			echo "ERROR: unable to rmmod smbd"
 			exit 1
 		fi
 	fi
 
 	ok=$(is_module)
 	if [ "z$ok" == "z1" ]; then
-		echo "It doesn't look like CIFS_SERVER is as a kernel module"
+		echo "It doesn't look like SMB_SERVER is as a kernel module"
 		exit 1
 	fi
 
-	if [ ! -f "$KERNEL_SRC"/fs/cifsd/cifsd.ko ]; then
-		echo "ERROR: cifsd.ko was not found"
+	if [ ! -f "$KERNEL_SRC"/fs/smbd/smbd.ko ]; then
+		echo "ERROR: smbd.ko was not found"
 		exit 1
 	fi
 
 	cd "$KERNEL_SRC"
-	if [ -f "/lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko*" ]; then
-		sudo rm /lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko*
-		sudo cp "$KERNEL_SRC"/fs/cifsd/cifsd.ko \
-			/lib/modules/$(uname -r)/kernel/fs/cifsd/cifsd.ko
+	if [ -f "/lib/modules/$(uname -r)/kernel/fs/smbd/smbd.ko*" ]; then
+		sudo rm /lib/modules/$(uname -r)/kernel/fs/smbd/smbd.ko*
+		sudo cp "$KERNEL_SRC"/fs/smbd/smbd.ko \
+			/lib/modules/$(uname -r)/kernel/fs/smbd/smbd.ko
 
 		local VER=$(make kernelrelease)
 		sudo depmod -A $VER
 	else
-		sudo make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/ \
+		sudo make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/smbd/ \
 			modules_install
 		local VER=$(make kernelrelease)
 		sudo depmod -A $VER
 	fi
-	cd "$KERNEL_SRC"/fs/cifsd
+	cd "$KERNEL_SRC"/fs/smbd
 }
 
 function ksmbd_module_clean
 {
-	echo "Running cifsd clean"
+	echo "Running smbd clean"
 
 	cd "$KERNEL_SRC"
-	make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/cifsd/ clean
-	cd "$KERNEL_SRC"/fs/cifsd
+	make -C "$KERNEL_SRC" M="$KERNEL_SRC"/fs/smbd/ clean
+	cd "$KERNEL_SRC"/fs/smbd
 }
 
 function main

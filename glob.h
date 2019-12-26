@@ -4,8 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFSD_GLOB_H
-#define __CIFSD_GLOB_H
+#ifndef __SMBD_GLOB_H
+#define __SMBD_GLOB_H
 
 #include <linux/ctype.h>
 #include <linux/version.h>
@@ -14,42 +14,42 @@
 #include "vfs_cache.h"
 #include "smberr.h"
 
-#define CIFSD_VERSION	"2.0.6"
+#define SMBD_VERSION	"2.0.6"
 
 /* @FIXME clean up this code */
 
-extern int cifsd_debugging;
-extern int cifsd_caseless_search;
+extern int smbd_debugging;
+extern int smbd_caseless_search;
 
 #define DATA_STREAM	1
 #define DIR_STREAM	2
 
-#ifndef cifsd_pr_fmt
+#ifndef smbd_pr_fmt
 #ifdef SUBMOD_NAME
-#define cifsd_pr_fmt(fmt)	"ksmbd: " SUBMOD_NAME ": " fmt
+#define smbd_pr_fmt(fmt)	"ksmbd: " SUBMOD_NAME ": " fmt
 #else
-#define cifsd_pr_fmt(fmt)	"ksmbd: " fmt
+#define smbd_pr_fmt(fmt)	"ksmbd: " fmt
 #endif
 #endif
 
-#ifdef CONFIG_CIFS_SERVER_DEBUGGING
-#define cifsd_debug(fmt, ...)					\
+#ifdef CONFIG_SMB_SERVER_DEBUGGING
+#define smbd_debug(fmt, ...)					\
 	do {							\
-		if (cifsd_debugging)				\
-			pr_info(cifsd_pr_fmt("%s:%d: " fmt),	\
+		if (smbd_debugging)				\
+			pr_info(smbd_pr_fmt("%s:%d: " fmt),	\
 				__func__,			\
 				__LINE__,			\
 				##__VA_ARGS__);			\
 	} while (0)
 #else
-#define cifsd_debug(fmt, ...)
+#define smbd_debug(fmt, ...)
 #endif
 
-#define cifsd_info(fmt, ...)					\
-			pr_info(cifsd_pr_fmt(fmt), ##__VA_ARGS__)
+#define smbd_info(fmt, ...)					\
+			pr_info(smbd_pr_fmt(fmt), ##__VA_ARGS__)
 
-#define cifsd_err(fmt, ...)					\
-			pr_err(cifsd_pr_fmt("%s:%d: " fmt),	\
+#define smbd_err(fmt, ...)					\
+			pr_err(smbd_pr_fmt("%s:%d: " fmt),	\
 				__func__,			\
 				__LINE__,			\
 				##__VA_ARGS__)
@@ -60,6 +60,6 @@ extern int cifsd_caseless_search;
 /* @FIXME clean up this code */
 /* @FIXME clean up this code */
 
-/* cifsd misc functions */
+/* smbd misc functions */
 extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
-#endif /* __CIFSD_GLOB_H */
+#endif /* __SMBD_GLOB_H */

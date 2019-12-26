@@ -4,8 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFSD_SMB1PDU_H
-#define __CIFSD_SMB1PDU_H
+#ifndef __SMB1PDU_H
+#define __SMB1PDU_H
 
 #define MAX_CIFS_HDR_SIZE 0x58
 
@@ -1661,47 +1661,47 @@ struct smb_com_setattr_rsp {
 	__u16 ByteCount;        /* bct = 0 */
 } __packed;
 
-extern int init_smb1_server(struct cifsd_conn *conn);
+extern int init_smb1_server(struct smbd_conn *conn);
 
 /* function prototypes */
-extern int init_smb_rsp_hdr(struct cifsd_work *work);
-extern int get_smb_cmd_val(struct cifsd_work *work);
-extern void set_smb_rsp_status(struct cifsd_work *work, __le32 err);
-extern int smb_allocate_rsp_buf(struct cifsd_work *work);
-extern int smb1_is_sign_req(struct cifsd_work *work, unsigned int command);
-extern int smb1_check_sign_req(struct cifsd_work *work);
-extern void smb1_set_sign_rsp(struct cifsd_work *work);
-extern int smb_check_user_session(struct cifsd_work *work);
-extern int smb_get_cifsd_tcon(struct cifsd_work *work);
-extern int cifsd_smb1_check_message(struct cifsd_work *work);
+extern int init_smb_rsp_hdr(struct smbd_work *work);
+extern int get_smb_cmd_val(struct smbd_work *work);
+extern void set_smb_rsp_status(struct smbd_work *work, __le32 err);
+extern int smb_allocate_rsp_buf(struct smbd_work *work);
+extern int smb1_is_sign_req(struct smbd_work *work, unsigned int command);
+extern int smb1_check_sign_req(struct smbd_work *work);
+extern void smb1_set_sign_rsp(struct smbd_work *work);
+extern int smb_check_user_session(struct smbd_work *work);
+extern int smb_get_smbd_tcon(struct smbd_work *work);
+extern int smbd_smb1_check_message(struct smbd_work *work);
 
 /* smb1 command handlers */
-extern int smb_rename(struct cifsd_work *work);
-extern int smb_negotiate_request(struct cifsd_work *work);
-extern int smb_handle_negotiate(struct cifsd_work *work);
-extern int smb_session_setup_andx(struct cifsd_work *work);
-extern int smb_tree_connect_andx(struct cifsd_work *work);
-extern int smb_trans2(struct cifsd_work *work);
-extern int smb_nt_create_andx(struct cifsd_work *work);
-extern int smb_trans(struct cifsd_work *work);
-extern int smb_locking_andx(struct cifsd_work *work);
-extern int smb_close(struct cifsd_work *work);
-extern int smb_read_andx(struct cifsd_work *work);
-extern int smb_tree_disconnect(struct cifsd_work *work);
-extern int smb_session_disconnect(struct cifsd_work *work);
-extern int smb_write_andx(struct cifsd_work *work);
-extern int smb_echo(struct cifsd_work *work);
-extern int smb_flush(struct cifsd_work *work);
-extern int smb_mkdir(struct cifsd_work *work);
-extern int smb_rmdir(struct cifsd_work *work);
-extern int smb_unlink(struct cifsd_work *work);
-extern int smb_nt_cancel(struct cifsd_work *work);
-extern int smb_nt_rename(struct cifsd_work *work);
-extern int smb_query_info(struct cifsd_work *work);
-extern int smb_closedir(struct cifsd_work *work);
-extern int smb_open_andx(struct cifsd_work *work);
-extern int smb_write(struct cifsd_work *work);
-extern int smb_setattr(struct cifsd_work *work);
-extern int smb_checkdir(struct cifsd_work *work);
-extern int smb_process_exit(struct cifsd_work *work);
-#endif /* __CIFSD_SMB1PDU_H */
+extern int smb_rename(struct smbd_work *work);
+extern int smb_negotiate_request(struct smbd_work *work);
+extern int smb_handle_negotiate(struct smbd_work *work);
+extern int smb_session_setup_andx(struct smbd_work *work);
+extern int smb_tree_connect_andx(struct smbd_work *work);
+extern int smb_trans2(struct smbd_work *work);
+extern int smb_nt_create_andx(struct smbd_work *work);
+extern int smb_trans(struct smbd_work *work);
+extern int smb_locking_andx(struct smbd_work *work);
+extern int smb_close(struct smbd_work *work);
+extern int smb_read_andx(struct smbd_work *work);
+extern int smb_tree_disconnect(struct smbd_work *work);
+extern int smb_session_disconnect(struct smbd_work *work);
+extern int smb_write_andx(struct smbd_work *work);
+extern int smb_echo(struct smbd_work *work);
+extern int smb_flush(struct smbd_work *work);
+extern int smb_mkdir(struct smbd_work *work);
+extern int smb_rmdir(struct smbd_work *work);
+extern int smb_unlink(struct smbd_work *work);
+extern int smb_nt_cancel(struct smbd_work *work);
+extern int smb_nt_rename(struct smbd_work *work);
+extern int smb_query_info(struct smbd_work *work);
+extern int smb_closedir(struct smbd_work *work);
+extern int smb_open_andx(struct smbd_work *work);
+extern int smb_write(struct smbd_work *work);
+extern int smb_setattr(struct smbd_work *work);
+extern int smb_checkdir(struct smbd_work *work);
+extern int smb_process_exit(struct smbd_work *work);
+#endif /* __SMB1PDU_H */
