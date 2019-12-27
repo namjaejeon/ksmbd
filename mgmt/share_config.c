@@ -13,13 +13,13 @@
 #include "share_config.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
-#include "../cifsd_server.h" /* FIXME */
+#include "../smbd_server.h" /* FIXME */
 
 #define SHARE_HASH_BITS		3
 static DEFINE_HASHTABLE(shares_table, SHARE_HASH_BITS);
 static DECLARE_RWSEM(shares_table_lock);
 
-struct cifsd_veto_pattern {
+struct smbd_veto_pattern {
 	char			*pattern;
 	struct list_head	list;
 };
@@ -29,13 +29,13 @@ static unsigned int share_name_hash(char *name)
 	return jhash(name, strlen(name), 0);
 }
 
-static void kill_share(struct cifsd_share_config *share)
+static void kill_share(struct smbd_share_config *share)
 {
 	while (!list_empty(&share->veto_list)) {
-		struct cifsd_veto_pattern *p;
+		struct smbd_veto_pattern *p;
 
 		p = list_entry(share->veto_list.next,
-			       struct cifsd_veto_pattern,
+			       struct smbd_veto_pattern,
 			       list);
 		list_del(&p->list);
 		kfree(p->pattern);
@@ -51,14 +51,14 @@ static void kill_share(struct cifsd_share_config *share)
 
 static void deferred_share_free(struct work_struct *work)
 {
-	struct cifsd_share_config *share = container_of(work,
-					       struct cifsd_share_config,
+	struct smbd_share_config *share = container_of(work,
+					       struct smbd_share_config,
 					       free_work);
 
 	kill_share(share);
 }
 
-void __cifsd_share_config_put(struct cifsd_share_config *share)
+void __smbd_share_config_put(struct smbd_share_config *share)
 {
 	down_write(&shares_table_lock);
 	hash_del(&share->hlist);
@@ -67,17 +67,17 @@ void __cifsd_share_config_put(struct cifsd_share_config *share)
 	schedule_work(&share->free_work);
 }
 
-static struct cifsd_share_config *
-__get_share_config(struct cifsd_share_config *share)
+static struct smbd_share_config *
+__get_share_config(struct smbd_share_config *share)
 {
 	if (!atomic_inc_not_zero(&share->refcount))
 		return NULL;
 	return share;
 }
 
-static struct cifsd_share_config *__share_lookup(char *name)
+static struct smbd_share_config *__share_lookup(char *name)
 {
-	struct cifsd_share_config *share;
+	struct smbd_share_config *share;
 	unsigned int key = share_name_hash(name);
 
 	hash_for_each_possible(shares_table, share, hlist, key) {
@@ -87,7 +87,7 @@ static struct cifsd_share_config *__share_lookup(char *name)
 	return NULL;
 }
 
-static int parse_veto_list(struct cifsd_share_config *share,
+static int parse_veto_list(struct smbd_share_config *share,
 			   char *veto_list,
 			   int veto_list_sz)
 {
@@ -97,9 +97,9 @@ static int parse_veto_list(struct cifsd_share_config *share,
 		return 0;
 
 	while (veto_list_sz > 0) {
-		struct cifsd_veto_pattern *p;
+		struct smbd_veto_pattern *p;
 
-		p = cifsd_alloc(sizeof(struct cifsd_veto_pattern));
+		p = smbd_alloc(sizeof(struct smbd_veto_pattern));
 		if (!p)
 			return -ENOMEM;
 
@@ -109,7 +109,7 @@ static int parse_veto_list(struct cifsd_share_config *share,
 
 		p->pattern = kstrdup(veto_list, GFP_KERNEL);
 		if (!p->pattern) {
-			cifsd_free(p);
+			smbd_free(p);
 			return -ENOMEM;
 		}
 
@@ -122,21 +122,21 @@ static int parse_veto_list(struct cifsd_share_config *share,
 	return 0;
 }
 
-static struct cifsd_share_config *share_config_request(char *name)
+static struct smbd_share_config *share_config_request(char *name)
 {
-	struct cifsd_share_config_response *resp;
-	struct cifsd_share_config *share = NULL;
-	struct cifsd_share_config *lookup;
+	struct smbd_share_config_response *resp;
+	struct smbd_share_config *share = NULL;
+	struct smbd_share_config *lookup;
 	int ret;
 
-	resp = cifsd_ipc_share_config_request(name);
+	resp = smbd_ipc_share_config_request(name);
 	if (!resp)
 		return NULL;
 
-	if (resp->flags == CIFSD_SHARE_FLAG_INVALID)
+	if (resp->flags == SMBD_SHARE_FLAG_INVALID)
 		goto out;
 
-	share = cifsd_alloc(sizeof(struct cifsd_share_config));
+	share = smbd_alloc(sizeof(struct smbd_share_config));
 	if (!share)
 		goto out;
 
@@ -146,8 +146,8 @@ static struct cifsd_share_config *share_config_request(char *name)
 	INIT_LIST_HEAD(&share->veto_list);
 	share->name = kstrdup(name, GFP_KERNEL);
 
-	if (!test_share_config_flag(share, CIFSD_SHARE_FLAG_PIPE)) {
-		share->path = kstrdup(CIFSD_SHARE_CONFIG_PATH(resp),
+	if (!test_share_config_flag(share, SMBD_SHARE_FLAG_PIPE)) {
+		share->path = kstrdup(SMBD_SHARE_CONFIG_PATH(resp),
 				      GFP_KERNEL);
 		if (share->path)
 			share->path_sz = strlen(share->path);
@@ -158,7 +158,7 @@ static struct cifsd_share_config *share_config_request(char *name)
 		share->force_uid = resp->force_uid;
 		share->force_gid = resp->force_gid;
 		ret = parse_veto_list(share,
-				      CIFSD_SHARE_CONFIG_VETO_LIST(resp),
+				      SMBD_SHARE_CONFIG_VETO_LIST(resp),
 				      resp->veto_list_sz);
 		if (!ret && share->path) {
 			ret = kern_path(share->path, 0, &share->vfs_path);
@@ -188,7 +188,7 @@ static struct cifsd_share_config *share_config_request(char *name)
 	up_write(&shares_table_lock);
 
 out:
-	cifsd_free(resp);
+	smbd_free(resp);
 	return share;
 }
 
@@ -200,9 +200,9 @@ static void strtolower(char *share_name)
 	}
 }
 
-struct cifsd_share_config *cifsd_share_config_get(char *name)
+struct smbd_share_config *smbd_share_config_get(char *name)
 {
-	struct cifsd_share_config *share;
+	struct smbd_share_config *share;
 
 	strtolower(name);
 
@@ -217,10 +217,10 @@ struct cifsd_share_config *cifsd_share_config_get(char *name)
 	return share_config_request(name);
 }
 
-bool cifsd_share_veto_filename(struct cifsd_share_config *share,
+bool smbd_share_veto_filename(struct smbd_share_config *share,
 			       const char *filename)
 {
-	struct cifsd_veto_pattern *p;
+	struct smbd_veto_pattern *p;
 
 	list_for_each_entry(p, &share->veto_list, list) {
 		if (match_wildcard(p->pattern, filename))
@@ -229,9 +229,9 @@ bool cifsd_share_veto_filename(struct cifsd_share_config *share,
 	return false;
 }
 
-void cifsd_share_configs_cleanup(void)
+void smbd_share_configs_cleanup(void)
 {
-	struct cifsd_share_config *share;
+	struct smbd_share_config *share;
 	struct hlist_node *tmp;
 	int i;
 

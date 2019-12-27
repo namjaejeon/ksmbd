@@ -1,5 +1,5 @@
-config CIFS_SERVER
-	tristate "CIFS server support"
+config SMB_SERVER
+	tristate "SMB server support"
 	depends on INET
 	select NLS
 	select NLS_UTF8
@@ -19,9 +19,9 @@ config CIFS_SERVER
 	help
 	  This config provides support for in-kernel CIFS/SMB3 server.
 
-config CIFS_INSECURE_SERVER
+config SMB_INSECURE_SERVER
         bool "Support for insecure SMB1/CIFS and SMB2.0 protocols"
-        depends on CIFS_SERVER && INET
+        depends on SMB_SERVER && INET
         select NLS
 	default n
 
@@ -29,17 +29,17 @@ config CIFS_INSECURE_SERVER
 	  This enables deprecated insecure protocols dialects: SMB1/CIFS
 	  and SMB2.0
 
-config CIFS_SERVER_SMBDIRECT
+config SMB_SERVER_SMBDIRECT
 	bool "Support for SMB Direct protocol"
-	depends on CIFS_SERVER && INFINIBAND && INFINIBAND_ADDR_TRANS
+	depends on SMB_SERVER && INFINIBAND && INFINIBAND_ADDR_TRANS
 	default n
 
 	help
 	  This enables SMB direct protocol for SMB 3.x
 
-config CIFS_SERVER_DEBUGGING
+config SMB_SERVER_DEBUGGING
 	bool "Enable verbose debugging code"
-	depends on CIFS_SERVER
+	depends on SMB_SERVER
 	default n
 
 	help

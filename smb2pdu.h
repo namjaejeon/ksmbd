@@ -4,8 +4,8 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#ifndef _SMB2PDU_SERVER_H
-#define _SMB2PDU_SERVER_H
+#ifndef _SMB2PDU_H
+#define _SMB2PDU_H
 
 #include "ntlmssp.h"
 
@@ -83,7 +83,7 @@
 #define SMB3_SIGN_KEY_SIZE		16
 
 #define CIFS_CLIENT_CHALLENGE_SIZE	8
-#define CIFS_SERVER_CHALLENGE_SIZE	8
+#define SMB_SERVER_CHALLENGE_SIZE	8
 
 /* SMB2 Max Credits */
 #define SMB2_MAX_CREDITS		8192
@@ -1485,69 +1485,69 @@ struct create_ea_buf_req {
 
 /* functions */
 
-extern int init_smb2_0_server(struct cifsd_conn *conn);
-extern void init_smb2_1_server(struct cifsd_conn *conn);
-extern void init_smb3_0_server(struct cifsd_conn *conn);
-extern void init_smb3_02_server(struct cifsd_conn *conn);
-extern int init_smb3_11_server(struct cifsd_conn *conn);
+extern int init_smb2_0_server(struct smbd_conn *conn);
+extern void init_smb2_1_server(struct smbd_conn *conn);
+extern void init_smb3_0_server(struct smbd_conn *conn);
+extern void init_smb3_02_server(struct smbd_conn *conn);
+extern int init_smb3_11_server(struct smbd_conn *conn);
 
 extern void init_smb2_max_read_size(unsigned int sz);
 extern void init_smb2_max_write_size(unsigned int sz);
 extern void init_smb2_max_trans_size(unsigned int sz);
 
-extern int is_smb2_neg_cmd(struct cifsd_work *work);
-extern int is_smb2_rsp(struct cifsd_work *work);
+extern int is_smb2_neg_cmd(struct smbd_work *work);
+extern int is_smb2_rsp(struct smbd_work *work);
 
-extern int get_smb2_cmd_val(struct cifsd_work *work);
-extern void set_smb2_rsp_status(struct cifsd_work *work, __le32 err);
-extern int init_smb2_rsp_hdr(struct cifsd_work *work);
-extern int smb2_allocate_rsp_buf(struct cifsd_work *work);
-extern bool is_chained_smb2_message(struct cifsd_work *work);
-extern int init_smb2_neg_rsp(struct cifsd_work *work);
-extern void smb2_set_err_rsp(struct cifsd_work *work);
-extern int smb2_check_user_session(struct cifsd_work *work);
-extern int smb2_get_cifsd_tcon(struct cifsd_work *work);
-extern int smb2_is_sign_req(struct cifsd_work *work, unsigned int command);
-extern int smb2_check_sign_req(struct cifsd_work *work);
-extern void smb2_set_sign_rsp(struct cifsd_work *work);
-extern int smb3_check_sign_req(struct cifsd_work *work);
-extern void smb3_set_sign_rsp(struct cifsd_work *work);
+extern int get_smb2_cmd_val(struct smbd_work *work);
+extern void set_smb2_rsp_status(struct smbd_work *work, __le32 err);
+extern int init_smb2_rsp_hdr(struct smbd_work *work);
+extern int smb2_allocate_rsp_buf(struct smbd_work *work);
+extern bool is_chained_smb2_message(struct smbd_work *work);
+extern int init_smb2_neg_rsp(struct smbd_work *work);
+extern void smb2_set_err_rsp(struct smbd_work *work);
+extern int smb2_check_user_session(struct smbd_work *work);
+extern int smb2_get_smbd_tcon(struct smbd_work *work);
+extern int smb2_is_sign_req(struct smbd_work *work, unsigned int command);
+extern int smb2_check_sign_req(struct smbd_work *work);
+extern void smb2_set_sign_rsp(struct smbd_work *work);
+extern int smb3_check_sign_req(struct smbd_work *work);
+extern void smb3_set_sign_rsp(struct smbd_work *work);
 extern int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
 	__le16 dialects_count);
 extern struct file_lock *smb_flock_init(struct file *f);
-extern int setup_async_work(struct cifsd_work *work, void (*fn)(void **),
+extern int setup_async_work(struct smbd_work *work, void (*fn)(void **),
 	void **arg);
-extern void smb2_send_interim_resp(struct cifsd_work *work, __le32 status);
-extern struct channel *lookup_chann_list(struct cifsd_session *sess);
-extern void smb3_preauth_hash_rsp(struct cifsd_work *work);
+extern void smb2_send_interim_resp(struct smbd_work *work, __le32 status);
+extern struct channel *lookup_chann_list(struct smbd_session *sess);
+extern void smb3_preauth_hash_rsp(struct smbd_work *work);
 extern int smb3_is_transform_hdr(void *buf);
-extern int smb3_decrypt_req(struct cifsd_work *work);
-extern int smb3_encrypt_resp(struct cifsd_work *work);
-extern int smb3_final_sess_setup_resp(struct cifsd_work *work);
+extern int smb3_decrypt_req(struct smbd_work *work);
+extern int smb3_encrypt_resp(struct smbd_work *work);
+extern int smb3_final_sess_setup_resp(struct smbd_work *work);
 
 /* smb2 misc functions */
-extern int cifsd_smb2_check_message(struct cifsd_work *work);
+extern int smbd_smb2_check_message(struct smbd_work *work);
 
 /* smb2 command handlers */
-extern int smb2_handle_negotiate(struct cifsd_work *work);
-extern int smb2_negotiate_request(struct cifsd_work *work);
-extern int smb2_sess_setup(struct cifsd_work *work);
-extern int smb2_tree_connect(struct cifsd_work *work);
-extern int smb2_tree_disconnect(struct cifsd_work *work);
-extern int smb2_session_logoff(struct cifsd_work *work);
-extern int smb2_open(struct cifsd_work *work);
-extern int smb2_query_info(struct cifsd_work *work);
-extern int smb2_query_dir(struct cifsd_work *work);
-extern int smb2_close(struct cifsd_work *work);
-extern int smb2_echo(struct cifsd_work *work);
-extern int smb2_set_info(struct cifsd_work *work);
-extern int smb2_read(struct cifsd_work *work);
-extern int smb2_write(struct cifsd_work *work);
-extern int smb2_flush(struct cifsd_work *work);
-extern int smb2_cancel(struct cifsd_work *work);
-extern int smb2_lock(struct cifsd_work *work);
-extern int smb2_ioctl(struct cifsd_work *work);
-extern int smb2_oplock_break(struct cifsd_work *work);
-extern int smb2_notify(struct cifsd_work *cifsd_work);
+extern int smb2_handle_negotiate(struct smbd_work *work);
+extern int smb2_negotiate_request(struct smbd_work *work);
+extern int smb2_sess_setup(struct smbd_work *work);
+extern int smb2_tree_connect(struct smbd_work *work);
+extern int smb2_tree_disconnect(struct smbd_work *work);
+extern int smb2_session_logoff(struct smbd_work *work);
+extern int smb2_open(struct smbd_work *work);
+extern int smb2_query_info(struct smbd_work *work);
+extern int smb2_query_dir(struct smbd_work *work);
+extern int smb2_close(struct smbd_work *work);
+extern int smb2_echo(struct smbd_work *work);
+extern int smb2_set_info(struct smbd_work *work);
+extern int smb2_read(struct smbd_work *work);
+extern int smb2_write(struct smbd_work *work);
+extern int smb2_flush(struct smbd_work *work);
+extern int smb2_cancel(struct smbd_work *work);
+extern int smb2_lock(struct smbd_work *work);
+extern int smb2_ioctl(struct smbd_work *work);
+extern int smb2_oplock_break(struct smbd_work *work);
+extern int smb2_notify(struct smbd_work *smbd_work);
 
-#endif				/* _SMB2PDU_SERVER_H */
+#endif	/* _SMB2PDU_H */

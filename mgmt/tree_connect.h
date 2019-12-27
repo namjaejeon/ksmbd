@@ -8,17 +8,17 @@
 
 #include <linux/hashtable.h>
 
-#include "../cifsd_server.h" /* FIXME */
+#include "../smbd_server.h" /* FIXME */
 
-struct cifsd_share_config;
-struct cifsd_user;
+struct smbd_share_config;
+struct smbd_user;
 
-struct cifsd_tree_connect {
+struct smbd_tree_connect {
 	int				id;
 
 	unsigned int			flags;
-	struct cifsd_share_config	*share_conf;
-	struct cifsd_user		*user;
+	struct smbd_share_config	*share_conf;
+	struct smbd_user		*user;
 
 	struct list_head		list;
 
@@ -26,31 +26,31 @@ struct cifsd_tree_connect {
 	bool				posix_extensions;
 };
 
-struct cifsd_tree_conn_status {
+struct smbd_tree_conn_status {
 	unsigned int			ret;
-	struct cifsd_tree_connect	*tree_conn;
+	struct smbd_tree_connect	*tree_conn;
 };
 
-static inline int test_tree_conn_flag(struct cifsd_tree_connect *tree_conn,
+static inline int test_tree_conn_flag(struct smbd_tree_connect *tree_conn,
 				      int flag)
 {
 	return tree_conn->flags & flag;
 }
 
-struct cifsd_session;
+struct smbd_session;
 
-struct cifsd_tree_conn_status
-cifsd_tree_conn_connect(struct cifsd_session *sess, char *share_name);
+struct smbd_tree_conn_status
+smbd_tree_conn_connect(struct smbd_session *sess, char *share_name);
 
-int cifsd_tree_conn_disconnect(struct cifsd_session *sess,
-			       struct cifsd_tree_connect *tree_conn);
+int smbd_tree_conn_disconnect(struct smbd_session *sess,
+			       struct smbd_tree_connect *tree_conn);
 
-struct cifsd_tree_connect *cifsd_tree_conn_lookup(struct cifsd_session *sess,
+struct smbd_tree_connect *smbd_tree_conn_lookup(struct smbd_session *sess,
 						  unsigned int id);
 
-struct cifsd_share_config *cifsd_tree_conn_share(struct cifsd_session *sess,
+struct smbd_share_config *smbd_tree_conn_share(struct smbd_session *sess,
 						 unsigned int id);
 
-int cifsd_tree_conn_session_logoff(struct cifsd_session *sess);
+int smbd_tree_conn_session_logoff(struct smbd_session *sess);
 
 #endif /* __TREE_CONNECT_MANAGEMENT_H__ */

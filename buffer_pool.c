@@ -14,7 +14,7 @@
 #include "glob.h"
 #include "buffer_pool.h"
 #include "connection.h"
-#include "mgmt/cifsd_ida.h"
+#include "mgmt/smbd_ida.h"
 
 static struct kmem_cache *filp_cache;
 
@@ -75,12 +75,12 @@ static inline void __free(void *addr)
 		kfree(addr);
 }
 
-void *cifsd_alloc(size_t size)
+void *smbd_alloc(size_t size)
 {
 	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
 }
 
-void cifsd_free(void *ptr)
+void smbd_free(void *ptr)
 {
 	__free(ptr);
 }
@@ -208,7 +208,7 @@ static void release_wm(struct wm *wm, struct wm_list *wm_list)
 
 	wm_list->avail_wm--;
 	spin_unlock(&wm_list->wm_lock);
-	cifsd_free(wm);
+	smbd_free(wm);
 }
 
 static void wm_list_free(struct wm_list *l)
@@ -234,27 +234,27 @@ static void wm_lists_destroy(void)
 	}
 }
 
-void cifsd_free_request(void *addr)
+void smbd_free_request(void *addr)
 {
 	__free(addr);
 }
 
-void *cifsd_alloc_request(size_t size)
+void *smbd_alloc_request(size_t size)
 {
 	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
 }
 
-void cifsd_free_response(void *buffer)
+void smbd_free_response(void *buffer)
 {
 	__free(buffer);
 }
 
-void *cifsd_alloc_response(size_t size)
+void *smbd_alloc_response(size_t size)
 {
 	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
 }
 
-void *cifsd_find_buffer(size_t size)
+void *smbd_find_buffer(size_t size)
 {
 	struct wm *wm;
 
@@ -266,7 +266,7 @@ void *cifsd_find_buffer(size_t size)
 	return NULL;
 }
 
-void cifsd_release_buffer(void *buffer)
+void smbd_release_buffer(void *buffer)
 {
 	struct wm_list *wm_list;
 	struct wm *wm;
@@ -281,43 +281,43 @@ void cifsd_release_buffer(void *buffer)
 		release_wm(wm, wm_list);
 }
 
-void *cifsd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
+void *smbd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 {
 	size_t sz = min(old_sz, new_sz);
 	void *nptr;
 
-	nptr = cifsd_alloc_response(new_sz);
+	nptr = smbd_alloc_response(new_sz);
 	if (!nptr)
 		return ptr;
 	memcpy(nptr, ptr, sz);
-	cifsd_free_response(ptr);
+	smbd_free_response(ptr);
 	return nptr;
 }
 
-void cifsd_free_file_struct(void *filp)
+void smbd_free_file_struct(void *filp)
 {
 	kmem_cache_free(filp_cache, filp);
 }
 
-void *cifsd_alloc_file_struct(void)
+void *smbd_alloc_file_struct(void)
 {
 	return kmem_cache_zalloc(filp_cache, GFP_KERNEL);
 }
 
-void cifsd_destroy_buffer_pools(void)
+void smbd_destroy_buffer_pools(void)
 {
 	wm_lists_destroy();
-	cifsd_work_pool_destroy();
+	smbd_work_pool_destroy();
 	kmem_cache_destroy(filp_cache);
 }
 
-int cifsd_init_buffer_pools(void)
+int smbd_init_buffer_pools(void)
 {
-	if (cifsd_work_pool_init())
+	if (smbd_work_pool_init())
 		goto out;
 
-	filp_cache = kmem_cache_create("cifsd_file_cache",
-					sizeof(struct cifsd_file), 0,
+	filp_cache = kmem_cache_create("smbd_file_cache",
+					sizeof(struct smbd_file), 0,
 					SLAB_HWCACHE_ALIGN, NULL);
 	if (!filp_cache)
 		goto out;
@@ -325,7 +325,7 @@ int cifsd_init_buffer_pools(void)
 	return 0;
 
 out:
-	cifsd_err("failed to allocate memory\n");
-	cifsd_destroy_buffer_pools();
+	smbd_err("failed to allocate memory\n");
+	smbd_destroy_buffer_pools();
 	return -ENOMEM;
 }

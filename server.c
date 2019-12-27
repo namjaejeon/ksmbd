@@ -24,11 +24,11 @@
 #include "mgmt/user_session.h"
 #include "crypto_ctx.h"
 
-#ifdef CONFIG_CIFS_SERVER_DEBUGGING
-int cifsd_debugging;
+#ifdef CONFIG_SMB_SERVER_DEBUGGING
+int smbd_debugging;
 #endif
 
-struct cifsd_server_config server_conf;
+struct smbd_server_config server_conf;
 
 enum SERVER_CTRL_TYPE {
 	SERVER_CTRL_TYPE_INIT,
@@ -57,47 +57,47 @@ static int ___server_conf_set(int idx, char *val)
 	return 0;
 }
 
-int cifsd_set_netbios_name(char *v)
+int smbd_set_netbios_name(char *v)
 {
 	return ___server_conf_set(SERVER_CONF_NETBIOS_NAME, v);
 }
 
-int cifsd_set_server_string(char *v)
+int smbd_set_server_string(char *v)
 {
 	return ___server_conf_set(SERVER_CONF_SERVER_STRING, v);
 }
 
-int cifsd_set_work_group(char *v)
+int smbd_set_work_group(char *v)
 {
 	return ___server_conf_set(SERVER_CONF_WORK_GROUP, v);
 }
 
-char *cifsd_netbios_name(void)
+char *smbd_netbios_name(void)
 {
 	return server_conf.conf[SERVER_CONF_NETBIOS_NAME];
 }
 
-char *cifsd_server_string(void)
+char *smbd_server_string(void)
 {
 	return server_conf.conf[SERVER_CONF_SERVER_STRING];
 }
 
-char *cifsd_work_group(void)
+char *smbd_work_group(void)
 {
 	return server_conf.conf[SERVER_CONF_WORK_GROUP];
 }
 
 /**
  * check_conn_state() - check state of server thread connection
- * @cifsd_work:     smb work containing server thread information
+ * @smbd_work:     smb work containing server thread information
  *
  * Return:	0 on valid connection, otherwise 1 to reconnect
  */
-static inline int check_conn_state(struct cifsd_work *work)
+static inline int check_conn_state(struct smbd_work *work)
 {
 	struct smb_hdr *rsp_hdr;
 
-	if (cifsd_conn_exiting(work) || cifsd_conn_need_reconnect(work)) {
+	if (smbd_conn_exiting(work) || smbd_conn_need_reconnect(work)) {
 		rsp_hdr = RESPONSE_BUF(work);
 		rsp_hdr->Status.CifsError = STATUS_CONNECTION_DISCONNECTED;
 		return 1;
@@ -110,8 +110,8 @@ static inline int check_conn_state(struct cifsd_work *work)
 #define TCP_HANDLER_CONTINUE	0
 #define TCP_HANDLER_ABORT	1
 
-static int __process_request(struct cifsd_work *work,
-			     struct cifsd_conn *conn,
+static int __process_request(struct smbd_work *work,
+			     struct smbd_conn *conn,
 			     unsigned int *cmd)
 {
 	struct smb_version_cmds *cmds;
@@ -121,7 +121,7 @@ static int __process_request(struct cifsd_work *work,
 	if (check_conn_state(work))
 		return TCP_HANDLER_CONTINUE;
 
-	if (cifsd_verify_smb_message(work)) {
+	if (smbd_verify_smb_message(work)) {
 		work->send_no_response = 1;
 		return TCP_HANDLER_ABORT;
 	}
@@ -137,7 +137,7 @@ andx_again:
 
 	cmds = &conn->cmds[command];
 	if (!cmds->proc) {
-		cifsd_err("*** not implemented yet cmd = %x\n", command);
+		smbd_err("*** not implemented yet cmd = %x\n", command);
 		conn->ops->set_rsp_status(work, STATUS_NOT_IMPLEMENTED);
 		return TCP_HANDLER_CONTINUE;
 	}
@@ -154,7 +154,7 @@ andx_again:
 	ret = cmds->proc(work);
 
 	if (ret < 0)
-		cifsd_debug("Failed to process %u [%d]\n", command, ret);
+		smbd_debug("Failed to process %u [%d]\n", command, ret);
 	/* AndX commands - chained request can return positive values */
 	else if (ret > 0) {
 		command = ret;
@@ -167,8 +167,8 @@ andx_again:
 	return TCP_HANDLER_CONTINUE;
 }
 
-static void __handle_cifsd_work(struct cifsd_work *work,
-				struct cifsd_conn *conn)
+static void __handle_smbd_work(struct smbd_work *work,
+				struct smbd_conn *conn)
 {
 	unsigned int command = 0;
 	int rc;
@@ -202,7 +202,7 @@ static void __handle_cifsd_work(struct cifsd_work *work,
 					STATUS_USER_SESSION_DELETED);
 			goto send;
 		} else if (rc > 0) {
-			rc = conn->ops->get_cifsd_tcon(work);
+			rc = conn->ops->get_smbd_tcon(work);
 			if (rc < 0) {
 				conn->ops->set_rsp_status(work,
 					STATUS_NETWORK_NAME_DELETED);
@@ -232,43 +232,43 @@ send:
 		conn->ops->is_sign_req(work, command))))
 		conn->ops->set_sign_rsp(work);
 
-	cifsd_conn_write(work);
+	smbd_conn_write(work);
 }
 
 /**
- * handle_cifsd_work() - process pending smb work requests
- * @cifsd_work:	smb work containing request command buffer
+ * handle_smbd_work() - process pending smb work requests
+ * @smbd_work:	smb work containing request command buffer
  *
  * called by kworker threads to processing remaining smb work requests
  */
-static void handle_cifsd_work(struct work_struct *wk)
+static void handle_smbd_work(struct work_struct *wk)
 {
-	struct cifsd_work *work = container_of(wk, struct cifsd_work, work);
-	struct cifsd_conn *conn = work->conn;
+	struct smbd_work *work = container_of(wk, struct smbd_work, work);
+	struct smbd_conn *conn = work->conn;
 
 	atomic64_inc(&conn->stats.request_served);
 
-	__handle_cifsd_work(work, conn);
+	__handle_smbd_work(work, conn);
 
-	cifsd_conn_try_dequeue_request(work);
-	cifsd_free_work_struct(work);
+	smbd_conn_try_dequeue_request(work);
+	smbd_free_work_struct(work);
 	atomic_dec(&conn->r_count);
 }
 
 /**
- * queue_cifsd_work() - queue a smb request to worker thread queue
+ * queue_smbd_work() - queue a smb request to worker thread queue
  *		for proccessing smb command and sending response
  * @conn:	connection instance
  *
  * read remaining data from socket create and submit work.
  */
-static int queue_cifsd_work(struct cifsd_conn *conn)
+static int queue_smbd_work(struct smbd_conn *conn)
 {
-	struct cifsd_work *work;
+	struct smbd_work *work;
 
-	work = cifsd_alloc_work_struct();
+	work = smbd_alloc_work_struct();
 	if (!work) {
-		cifsd_err("allocation for work failed\n");
+		smbd_err("allocation for work failed\n");
 		return -ENOMEM;
 	}
 
@@ -276,40 +276,40 @@ static int queue_cifsd_work(struct cifsd_conn *conn)
 	work->request_buf = conn->request_buf;
 	conn->request_buf = NULL;
 
-	if (cifsd_init_smb_server(work)) {
-		cifsd_free_work_struct(work);
+	if (smbd_init_smb_server(work)) {
+		smbd_free_work_struct(work);
 		return -EINVAL;
 	}
 
-	cifsd_conn_enqueue_request(work);
+	smbd_conn_enqueue_request(work);
 	atomic_inc(&conn->r_count);
 	/* update activity on connection */
 	conn->last_active = jiffies;
-	INIT_WORK(&work->work, handle_cifsd_work);
-	cifsd_queue_work(work);
+	INIT_WORK(&work->work, handle_smbd_work);
+	smbd_queue_work(work);
 	return 0;
 }
 
-static int cifsd_server_process_request(struct cifsd_conn *conn)
+static int smbd_server_process_request(struct smbd_conn *conn)
 {
-	return queue_cifsd_work(conn);
+	return queue_smbd_work(conn);
 }
 
-static int cifsd_server_terminate_conn(struct cifsd_conn *conn)
+static int smbd_server_terminate_conn(struct smbd_conn *conn)
 {
-	cifsd_sessions_deregister(conn);
+	smbd_sessions_deregister(conn);
 	destroy_lease_table(conn);
 	return 0;
 }
 
-static void cifsd_server_tcp_callbacks_init(void)
+static void smbd_server_tcp_callbacks_init(void)
 {
-	struct cifsd_conn_ops ops;
+	struct smbd_conn_ops ops;
 
-	ops.process_fn = cifsd_server_process_request;
-	ops.terminate_fn = cifsd_server_terminate_conn;
+	ops.process_fn = smbd_server_process_request;
+	ops.terminate_fn = smbd_server_terminate_conn;
 
-	cifsd_conn_init_server_callbacks(&ops);
+	smbd_conn_init_server_callbacks(&ops);
 }
 
 static void server_conf_free(void)
@@ -326,8 +326,8 @@ static int server_conf_init(void)
 {
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
 	server_conf.enforced_signing = 0;
-	server_conf.min_protocol = cifsd_min_protocol();
-	server_conf.max_protocol = cifsd_max_protocol();
+	server_conf.min_protocol = smbd_min_protocol();
+	server_conf.max_protocol = smbd_max_protocol();
 	return 0;
 }
 
@@ -335,7 +335,7 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 {
 	int ret;
 
-	ret = cifsd_conn_transport_init();
+	ret = smbd_conn_transport_init();
 	if (ret) {
 		server_queue_ctrl_reset_work();
 		return;
@@ -346,8 +346,8 @@ static void server_ctrl_handle_init(struct server_ctrl_struct *ctrl)
 
 static void server_ctrl_handle_reset(struct server_ctrl_struct *ctrl)
 {
-	cifsd_ipc_soft_reset();
-	cifsd_conn_transport_destroy();
+	smbd_ipc_soft_reset();
+	smbd_conn_transport_destroy();
 	server_conf_free();
 	server_conf_init();
 	WRITE_ONCE(server_conf.state, SERVER_STATE_STARTING_UP);
@@ -434,7 +434,7 @@ static ssize_t kill_server_store(struct class *class,
 	if (!sysfs_streq(buf, "hard"))
 		return len;
 
-	cifsd_err("kill command received\n");
+	smbd_err("kill command received\n");
 	mutex_lock(&ctrl_lock);
 	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
 	__module_get(THIS_MODULE);
@@ -448,115 +448,115 @@ static ssize_t kill_server_store(struct class *class,
 static CLASS_ATTR_RO(stats);
 static CLASS_ATTR_WO(kill_server);
 
-static struct attribute *cifsd_control_class_attrs[] = {
+static struct attribute *smbd_control_class_attrs[] = {
 	&class_attr_stats.attr,
 	&class_attr_kill_server.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(cifsd_control_class);
+ATTRIBUTE_GROUPS(smbd_control_class);
 
-static struct class cifsd_control_class = {
-	.name		= "cifsd-control",
+static struct class smbd_control_class = {
+	.name		= "smbd-control",
 	.owner		= THIS_MODULE,
-	.class_groups	= cifsd_control_class_groups,
+	.class_groups	= smbd_control_class_groups,
 };
 #else
-static struct class_attribute cifsd_control_class_attrs[] = {
+static struct class_attribute smbd_control_class_attrs[] = {
 	__ATTR_RO(stats),
 	__ATTR_WO(kill_server),
 	__ATTR_NULL,
 };
 
-static struct class cifsd_control_class = {
-	.name		= "cifsd-control",
+static struct class smbd_control_class = {
+	.name		= "smbd-control",
 	.owner		= THIS_MODULE,
-	.class_attrs	= cifsd_control_class_attrs,
+	.class_attrs	= smbd_control_class_attrs,
 };
 #endif
 
-static int cifsd_server_shutdown(void)
+static int smbd_server_shutdown(void)
 {
 	WRITE_ONCE(server_conf.state, SERVER_STATE_SHUTTING_DOWN);
 
-	class_unregister(&cifsd_control_class);
-	cifsd_workqueue_destroy();
-	cifsd_ipc_release();
-	cifsd_conn_transport_destroy();
-	cifsd_free_session_table();
-	cifsd_crypto_destroy();
-	cifsd_free_global_file_table();
+	class_unregister(&smbd_control_class);
+	smbd_workqueue_destroy();
+	smbd_ipc_release();
+	smbd_conn_transport_destroy();
+	smbd_free_session_table();
+	smbd_crypto_destroy();
+	smbd_free_global_file_table();
 	destroy_lease_table(NULL);
-	cifsd_destroy_buffer_pools();
+	smbd_destroy_buffer_pools();
 	server_conf_free();
 	return 0;
 }
 
-static int __init cifsd_server_init(void)
+static int __init smbd_server_init(void)
 {
 	int ret;
 
-	ret = class_register(&cifsd_control_class);
+	ret = class_register(&smbd_control_class);
 	if (ret) {
-		cifsd_err("Unable to register cifsd-control class\n");
+		smbd_err("Unable to register smbd-control class\n");
 		return ret;
 	}
 
-	cifsd_server_tcp_callbacks_init();
+	smbd_server_tcp_callbacks_init();
 
 	ret = server_conf_init();
 	if (ret)
 		return ret;
 
-	ret = cifsd_init_buffer_pools();
+	ret = smbd_init_buffer_pools();
 	if (ret)
 		return ret;
 
-	ret = cifsd_init_session_table();
+	ret = smbd_init_session_table();
 	if (ret)
 		goto error;
 
-	ret = cifsd_ipc_init();
+	ret = smbd_ipc_init();
 	if (ret)
 		goto error;
 
-	ret = cifsd_init_global_file_table();
+	ret = smbd_init_global_file_table();
 	if (ret)
 		goto error;
 
-	ret = cifsd_inode_hash_init();
+	ret = smbd_inode_hash_init();
 	if (ret)
 		goto error;
 
-	ret = cifsd_crypto_create();
+	ret = smbd_crypto_create();
 	if (ret)
 		goto error;
 
-	ret = cifsd_workqueue_init();
+	ret = smbd_workqueue_init();
 	if (ret)
 		goto error;
 	return 0;
 
 error:
-	cifsd_server_shutdown();
+	smbd_server_shutdown();
 	return ret;
 }
 
 /**
  * exit_smb_server() - shutdown forker thread and free memory at module exit
  */
-static void __exit cifsd_server_exit(void)
+static void __exit smbd_server_exit(void)
 {
-	cifsd_server_shutdown();
-	cifsd_release_inode_hash();
+	smbd_server_shutdown();
+	smbd_release_inode_hash();
 }
 
-#ifdef CONFIG_CIFS_SERVER_DEBUGGING
-module_param(cifsd_debugging, int, 0644);
-MODULE_PARM_DESC(cifsd_debugging, "Enable/disable CIFSD debugging output");
+#ifdef CONFIG_SMB_SERVER_DEBUGGING
+module_param(smbd_debugging, int, 0644);
+MODULE_PARM_DESC(smbd_debugging, "Enable/disable SMBD debugging output");
 #endif
 
 MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
-MODULE_VERSION(CIFSD_VERSION);
+MODULE_VERSION(SMBD_VERSION);
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");
 MODULE_SOFTDEP("pre: arc4");
@@ -573,5 +573,5 @@ MODULE_SOFTDEP("pre: sha512");
 MODULE_SOFTDEP("pre: aead2");
 MODULE_SOFTDEP("pre: ccm");
 MODULE_SOFTDEP("pre: gcm");
-module_init(cifsd_server_init)
-module_exit(cifsd_server_exit)
+module_init(smbd_server_init)
+module_exit(smbd_server_exit)

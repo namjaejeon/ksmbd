@@ -15,9 +15,9 @@
 #define SERVER_CONF_SERVER_STRING	1
 #define SERVER_CONF_WORK_GROUP		2
 
-extern int cifsd_debugging;
+extern int smbd_debugging;
 
-struct cifsd_server_config {
+struct smbd_server_config {
 	unsigned int		flags;
 	unsigned int		state;
 	short			signing;
@@ -32,22 +32,22 @@ struct cifsd_server_config {
 	char			*conf[SERVER_CONF_WORK_GROUP + 1];
 };
 
-extern struct cifsd_server_config server_conf;
+extern struct smbd_server_config server_conf;
 
-int cifsd_set_netbios_name(char *v);
-int cifsd_set_server_string(char *v);
-int cifsd_set_work_group(char *v);
+int smbd_set_netbios_name(char *v);
+int smbd_set_server_string(char *v);
+int smbd_set_work_group(char *v);
 
-char *cifsd_netbios_name(void);
-char *cifsd_server_string(void);
-char *cifsd_work_group(void);
+char *smbd_netbios_name(void);
+char *smbd_server_string(void);
+char *smbd_work_group(void);
 
-static inline int cifsd_server_running(void)
+static inline int smbd_server_running(void)
 {
 	return READ_ONCE(server_conf.state) == SERVER_STATE_RUNNING;
 }
 
-static inline int cifsd_server_configurable(void)
+static inline int smbd_server_configurable(void)
 {
 	return READ_ONCE(server_conf.state) < SERVER_STATE_RESETTING;
 }
