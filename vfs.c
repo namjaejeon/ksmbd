@@ -676,7 +676,7 @@ int smbd_vfs_setattr(struct smbd_work *work, const char *name,
 
 	attrs->ia_valid |= ATTR_CTIME;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock(inode);
 	err = notify_change(dentry, attrs, NULL);
 	inode_unlock(inode);
@@ -934,7 +934,7 @@ int smbd_vfs_remove_file(char *name)
 	if (!d_inode(dir))
 		goto out;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
 	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
@@ -964,7 +964,7 @@ int smbd_vfs_remove_file(char *name)
 
 	dput(dentry);
 out_err:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
 #else
 	mutex_unlock(&d_inode(dir)->i_mutex);
@@ -1582,7 +1582,7 @@ int smbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 	int err = 0;
 
 	dget(dentry);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
 	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
@@ -1598,7 +1598,7 @@ int smbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 		err = vfs_unlink(d_inode(dir), dentry, NULL);
 
 out:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
 #else
 	mutex_unlock(&d_inode(dir)->i_mutex);
