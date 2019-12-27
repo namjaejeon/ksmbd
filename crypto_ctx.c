@@ -128,12 +128,12 @@ static struct blkcipher_desc *alloc_blk_desc(int id)
 }
 #endif
 
-static struct cifsd_crypto_ctx *ctx_alloc(void)
+static struct smbd_crypto_ctx *ctx_alloc(void)
 {
-	return cifsd_alloc(sizeof(struct cifsd_crypto_ctx));
+	return smbd_alloc(sizeof(struct smbd_crypto_ctx));
 }
 
-static void ctx_free(struct cifsd_crypto_ctx *ctx)
+static void ctx_free(struct smbd_crypto_ctx *ctx)
 {
 	int i;
 
@@ -145,18 +145,18 @@ static void ctx_free(struct cifsd_crypto_ctx *ctx)
 	for (i = 0; i < CRYPTO_BLK_MAX; i++)
 		free_blk(ctx->blk_desc[i]);
 #endif
-	cifsd_free(ctx);
+	smbd_free(ctx);
 }
 
-static struct cifsd_crypto_ctx *cifsd_find_crypto_ctx(void)
+static struct smbd_crypto_ctx *smbd_find_crypto_ctx(void)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	while (1) {
 		spin_lock(&ctx_list.ctx_lock);
 		if (!list_empty(&ctx_list.idle_ctx)) {
 			ctx = list_entry(ctx_list.idle_ctx.next,
-					  struct cifsd_crypto_ctx,
+					  struct smbd_crypto_ctx,
 					  list);
 			list_del(&ctx->list);
 			spin_unlock(&ctx_list.ctx_lock);
@@ -187,7 +187,7 @@ static struct cifsd_crypto_ctx *cifsd_find_crypto_ctx(void)
 	return ctx;
 }
 
-void cifsd_release_crypto_ctx(struct cifsd_crypto_ctx *ctx)
+void smbd_release_crypto_ctx(struct smbd_crypto_ctx *ctx)
 {
 	if (!ctx)
 		return;
@@ -205,123 +205,123 @@ void cifsd_release_crypto_ctx(struct cifsd_crypto_ctx *ctx)
 	ctx_free(ctx);
 }
 
-static struct cifsd_crypto_ctx *____crypto_shash_ctx_find(int id)
+static struct smbd_crypto_ctx *____crypto_shash_ctx_find(int id)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	if (id >= CRYPTO_SHASH_MAX)
 		return NULL;
 
-	ctx = cifsd_find_crypto_ctx();
+	ctx = smbd_find_crypto_ctx();
 	if (ctx->desc[id])
 		return ctx;
 
 	ctx->desc[id] = alloc_shash_desc(id);
 	if (ctx->desc[id])
 		return ctx;
-	cifsd_release_crypto_ctx(ctx);
+	smbd_release_crypto_ctx(ctx);
 	return NULL;
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_hmacmd5(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_hmacmd5(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_HMACMD5);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_hmacsha256(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_hmacsha256(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_HMACSHA256);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_cmacaes(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_cmacaes(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_CMACAES);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_sha512(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_sha512(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_SHA512);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md4(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_md4(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_MD4);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_md5(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_md5(void)
 {
 	return ____crypto_shash_ctx_find(CRYPTO_SHASH_MD5);
 }
 
-static struct cifsd_crypto_ctx *____crypto_aead_ctx_find(int id)
+static struct smbd_crypto_ctx *____crypto_aead_ctx_find(int id)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	if (id >= CRYPTO_AEAD_MAX)
 		return NULL;
 
-	ctx = cifsd_find_crypto_ctx();
+	ctx = smbd_find_crypto_ctx();
 	if (ctx->ccmaes[id])
 		return ctx;
 
 	ctx->ccmaes[id] = alloc_aead(id);
 	if (ctx->ccmaes[id])
 		return ctx;
-	cifsd_release_crypto_ctx(ctx);
+	smbd_release_crypto_ctx(ctx);
 	return NULL;
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_gcm(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_gcm(void)
 {
 	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_GCM);
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ccm(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_ccm(void)
 {
 	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_CCM);
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-static struct cifsd_crypto_ctx *____crypto_blk_ctx_find(int id)
+static struct smbd_crypto_ctx *____crypto_blk_ctx_find(int id)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	if (id >= CRYPTO_BLK_MAX)
 		return NULL;
 
-	ctx = cifsd_find_crypto_ctx();
+	ctx = smbd_find_crypto_ctx();
 	if (ctx->blk_desc[id])
 		return ctx;
 
 	ctx->blk_desc[id] = alloc_blk_desc(id);
 	if (ctx->blk_desc[id])
 		return ctx;
-	cifsd_release_crypto_ctx(ctx);
+	smbd_release_crypto_ctx(ctx);
 	return NULL;
 }
 
-struct cifsd_crypto_ctx *cifsd_crypto_ctx_find_ecbdes(void)
+struct smbd_crypto_ctx *smbd_crypto_ctx_find_ecbdes(void)
 {
 	return ____crypto_blk_ctx_find(CRYPTO_BLK_ECBDES);
 }
 #endif
 
-void cifsd_crypto_destroy(void)
+void smbd_crypto_destroy(void)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	while (!list_empty(&ctx_list.idle_ctx)) {
 		ctx = list_entry(ctx_list.idle_ctx.next,
-				 struct cifsd_crypto_ctx,
+				 struct smbd_crypto_ctx,
 				 list);
 		list_del(&ctx->list);
 		ctx_free(ctx);
 	}
 }
 
-int cifsd_crypto_create(void)
+int smbd_crypto_create(void)
 {
-	struct cifsd_crypto_ctx *ctx;
+	struct smbd_crypto_ctx *ctx;
 
 	spin_lock_init(&ctx_list.ctx_lock);
 	INIT_LIST_HEAD(&ctx_list.idle_ctx);

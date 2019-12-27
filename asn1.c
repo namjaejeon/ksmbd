@@ -338,8 +338,8 @@ compare_oid(unsigned long *oid1, unsigned int oid1len,
 /* BB check for endian conversion issues here */
 
 int
-cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
-		    struct cifsd_conn *conn)
+smbd_decode_negTokenInit(unsigned char *security_blob, int length,
+		    struct smbd_conn *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
@@ -347,17 +347,17 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 	unsigned long *oid = NULL;
 	unsigned int cls, con, tag, oidlen, rc, mechTokenlen;
 
-	cifsd_debug("Received SecBlob: length %d\n", length);
+	smbd_debug("Received SecBlob: length %d\n", length);
 
 	asn1_open(&ctx, security_blob, length);
 
 	/* GSSAPI header */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit header\n");
+		smbd_debug("Error decoding negTokenInit header\n");
 		return 0;
 	} else if ((cls != ASN1_APL) || (con != ASN1_CON)
 		   || (tag != ASN1_EOC)) {
-		cifsd_debug("cls = %d con = %d tag = %d\n", cls, con, tag);
+		smbd_debug("cls = %d con = %d tag = %d\n", cls, con, tag);
 		return 0;
 	}
 
@@ -378,39 +378,39 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 
 	/* SPNEGO OID not present or garbled -- bail out */
 	if (!rc) {
-		cifsd_debug("Error decoding negTokenInit header\n");
+		smbd_debug("Error decoding negTokenInit header\n");
 		return 0;
 	}
 
 	/* SPNEGO */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit\n");
+		smbd_debug("Error decoding negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_EOC)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* negTokenInit */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit\n");
+		smbd_debug("Error decoding negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_CON)
 		   || (tag != ASN1_SEQ)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* sequence */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
+		smbd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_EOC)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
@@ -418,11 +418,11 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 	/* sequence of */
 	if (asn1_header_decode
 	    (&ctx, &sequence_end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
+		smbd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_CON)
 		   || (tag != ASN1_SEQ)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
@@ -431,7 +431,7 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 	while (!asn1_eoc_decode(&ctx, sequence_end)) {
 		rc = asn1_header_decode(&ctx, &end, &cls, &con, &tag);
 		if (!rc) {
-			cifsd_debug("Error decoding negTokenInit hdr exit2\n");
+			smbd_debug("Error decoding negTokenInit hdr exit2\n");
 			return 0;
 		}
 		if ((tag == ASN1_OJI) && (con == ASN1_PRI)) {
@@ -453,28 +453,28 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 				kfree(oid);
 			}
 		} else {
-			cifsd_debug("Should be an oid what is going on?\n");
+			smbd_debug("Should be an oid what is going on?\n");
 		}
 	}
 
 	/* sequence */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
+		smbd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_INT)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* sequence of */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding 2nd part of negTokenInit\n");
+		smbd_debug("Error decoding 2nd part of negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_PRI)
 		   || (tag != ASN1_OTS)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
@@ -482,7 +482,7 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 	mechTokenlen = ctx.end - ctx.pointer;
 	conn->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
 	if (!conn->mechToken) {
-		cifsd_err("memory allocation error\n");
+		smbd_err("memory allocation error\n");
 		return 0;
 	}
 
@@ -493,56 +493,56 @@ cifsd_decode_negTokenInit(unsigned char *security_blob, int length,
 }
 
 int
-cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
-		    struct cifsd_conn *conn)
+smbd_decode_negTokenTarg(unsigned char *security_blob, int length,
+		    struct smbd_conn *conn)
 {
 	struct asn1_ctx ctx;
 	unsigned char *end;
 	unsigned int cls, con, tag, mechTokenlen;
 
-	cifsd_debug("Received Auth SecBlob: length %d\n", length);
+	smbd_debug("Received Auth SecBlob: length %d\n", length);
 
 	asn1_open(&ctx, security_blob, length);
 
 	/* GSSAPI header */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit header\n");
+		smbd_debug("Error decoding negTokenInit header\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_BOL)) {
-		cifsd_debug("cls = %d con = %d tag = %d\n", cls, con, tag);
+		smbd_debug("cls = %d con = %d tag = %d\n", cls, con, tag);
 		return 0;
 	}
 
 	/* SPNEGO */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit\n");
+		smbd_debug("Error decoding negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_CON)
 		   || (tag != ASN1_SEQ)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 0\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* negTokenTarg */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit\n");
+		smbd_debug("Error decoding negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_CTX) || (con != ASN1_CON)
 		   || (tag != ASN1_INT)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
 
 	/* negTokenTarg */
 	if (asn1_header_decode(&ctx, &end, &cls, &con, &tag) == 0) {
-		cifsd_debug("Error decoding negTokenInit\n");
+		smbd_debug("Error decoding negTokenInit\n");
 		return 0;
 	} else if ((cls != ASN1_UNI) || (con != ASN1_PRI)
 		   || (tag != ASN1_OTS)) {
-		cifsd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
+		smbd_debug("cls = %d con = %d tag = %d end = %p (%d) exit 1\n",
 			 cls, con, tag, end, *end);
 		return 0;
 	}
@@ -550,7 +550,7 @@ cifsd_decode_negTokenTarg(unsigned char *security_blob, int length,
 	mechTokenlen = ctx.end - ctx.pointer;
 	conn->mechToken = kmalloc(mechTokenlen + 1, GFP_KERNEL);
 	if (!conn->mechToken) {
-		cifsd_err("memory allocation error\n");
+		smbd_err("memory allocation error\n");
 		return 0;
 	}
 

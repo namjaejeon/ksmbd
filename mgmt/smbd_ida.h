@@ -3,18 +3,18 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFDS_IDA_MANAGEMENT_H__
-#define __CIFDS_IDA_MANAGEMENT_H__
+#ifndef __SMBD_IDA_MANAGEMENT_H__
+#define __SMBD_IDA_MANAGEMENT_H__
 
 #include <linux/slab.h>
 #include <linux/idr.h>
 
-struct cifsd_ida {
+struct smbd_ida {
 	struct ida	map;
 };
 
-struct cifsd_ida *cifsd_ida_alloc(void);
-void cifsd_ida_free(struct cifsd_ida *ida);
+struct smbd_ida *smbd_ida_alloc(void);
+void smbd_ida_free(struct smbd_ida *ida);
 
 /*
  * 2.2.1.6.7 TID Generation
@@ -23,8 +23,8 @@ void cifsd_ida_free(struct cifsd_ida *ida);
  *    The value 0xFFFF is used to specify all TIDs or no TID,
  *    depending upon the context in which it is used.
  */
-int cifds_acquire_smb1_tid(struct cifsd_ida *ida);
-int cifds_acquire_smb2_tid(struct cifsd_ida *ida);
+int smbd_acquire_smb1_tid(struct smbd_ida *ida);
+int smbd_acquire_smb2_tid(struct smbd_ida *ida);
 
 /*
  * 2.2.1.6.8 UID Generation
@@ -33,11 +33,11 @@ int cifds_acquire_smb2_tid(struct cifsd_ida *ida);
  *    valid UID.<21> All other possible values for a UID, excluding
  *    zero (0x0000), are valid.
  */
-int cifds_acquire_smb1_uid(struct cifsd_ida *ida);
-int cifds_acquire_smb2_uid(struct cifsd_ida *ida);
-int cifds_acquire_async_msg_id(struct cifsd_ida *ida);
+int smbd_acquire_smb1_uid(struct smbd_ida *ida);
+int smbd_acquire_smb2_uid(struct smbd_ida *ida);
+int smbd_acquire_async_msg_id(struct smbd_ida *ida);
 
-int cifds_acquire_id(struct cifsd_ida *ida);
+int smbd_acquire_id(struct smbd_ida *ida);
 
-void cifds_release_id(struct cifsd_ida *ida, int id);
-#endif /* __CIFSD_IDA_MANAGEMENT_H__ */
+void smbd_release_id(struct smbd_ida *ida, int id);
+#endif /* __SMBD_IDA_MANAGEMENT_H__ */

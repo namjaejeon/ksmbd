@@ -12,7 +12,7 @@
 #include "nterr.h"
 #include "smb2pdu.h"
 
-/* cifsd's Specific ERRNO */
+/* smbd's Specific ERRNO */
 #define ESHARE			50000
 
 #define SMB1_PROT		0
@@ -340,67 +340,67 @@ struct smb_version_values {
 };
 
 struct smb_version_ops {
-	int (*get_cmd_val)(struct cifsd_work *swork);
-	int (*init_rsp_hdr)(struct cifsd_work *swork);
-	void (*set_rsp_status)(struct cifsd_work *swork, __le32 err);
-	int (*allocate_rsp_buf)(struct cifsd_work *work);
-	int (*check_user_session)(struct cifsd_work *work);
-	int (*get_cifsd_tcon)(struct cifsd_work *work);
-	int (*is_sign_req)(struct cifsd_work *work, unsigned int command);
-	int (*check_sign_req)(struct cifsd_work *work);
-	void (*set_sign_rsp)(struct cifsd_work *work);
-	int (*generate_signingkey)(struct cifsd_session *sess);
-	int (*generate_encryptionkey)(struct cifsd_session *sess);
+	int (*get_cmd_val)(struct smbd_work *swork);
+	int (*init_rsp_hdr)(struct smbd_work *swork);
+	void (*set_rsp_status)(struct smbd_work *swork, __le32 err);
+	int (*allocate_rsp_buf)(struct smbd_work *work);
+	int (*check_user_session)(struct smbd_work *work);
+	int (*get_smbd_tcon)(struct smbd_work *work);
+	int (*is_sign_req)(struct smbd_work *work, unsigned int command);
+	int (*check_sign_req)(struct smbd_work *work);
+	void (*set_sign_rsp)(struct smbd_work *work);
+	int (*generate_signingkey)(struct smbd_session *sess);
+	int (*generate_encryptionkey)(struct smbd_session *sess);
 	int (*is_transform_hdr)(void *buf);
-	int (*decrypt_req)(struct cifsd_work *work);
-	int (*encrypt_resp)(struct cifsd_work *work);
+	int (*decrypt_req)(struct smbd_work *work);
+	int (*encrypt_resp)(struct smbd_work *work);
 };
 
 struct smb_version_cmds {
-	int (*proc)(struct cifsd_work *swork);
+	int (*proc)(struct smbd_work *swork);
 };
 
 
 
-int cifsd_min_protocol(void);
-int cifsd_max_protocol(void);
+int smbd_min_protocol(void);
+int smbd_max_protocol(void);
 
-int cifsd_lookup_protocol_idx(char *str);
+int smbd_lookup_protocol_idx(char *str);
 
-int cifsd_verify_smb_message(struct cifsd_work *work);
-bool cifsd_smb_request(struct cifsd_conn *conn);
+int smbd_verify_smb_message(struct smbd_work *work);
+bool smbd_smb_request(struct smbd_conn *conn);
 
-int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count);
+int smbd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count);
 
-int cifsd_negotiate_smb_dialect(void *buf);
-int cifsd_init_smb_server(struct cifsd_work *work);
+int smbd_negotiate_smb_dialect(void *buf);
+int smbd_init_smb_server(struct smbd_work *work);
 
-bool cifsd_pdu_size_has_room(unsigned int pdu);
+bool smbd_pdu_size_has_room(unsigned int pdu);
 
-struct cifsd_kstat;
-int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
+struct smbd_kstat;
+int smbd_populate_dot_dotdot_entries(struct smbd_conn *conn,
 				      int info_level,
-				      struct cifsd_file *dir,
-				      struct cifsd_dir_info *d_info,
+				      struct smbd_file *dir,
+				      struct smbd_dir_info *d_info,
 				      char *search_pattern,
-				      int (*fn)(struct cifsd_conn *,
+				      int (*fn)(struct smbd_conn *,
 						int,
-						struct cifsd_dir_info *,
-						struct cifsd_kstat *));
+						struct smbd_dir_info *,
+						struct smbd_kstat *));
 
-int cifsd_extract_shortname(struct cifsd_conn *conn,
+int smbd_extract_shortname(struct smbd_conn *conn,
 			    const char *longname,
 			    char *shortname);
 
-void cifsd_init_smb2_server_common(struct cifsd_conn *conn);
-int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command);
+void smbd_init_smb2_server_common(struct smbd_conn *conn);
+int smbd_smb_negotiate_common(struct smbd_work *work, unsigned int command);
 
-int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp);
+int smbd_smb_check_shared_mode(struct file *filp, struct smbd_file *curr_fp);
 
-unsigned int cifsd_small_buffer_size(void);
-unsigned int cifsd_server_side_copy_max_chunk_count(void);
-unsigned int cifsd_server_side_copy_max_chunk_size(void);
-unsigned int cifsd_server_side_copy_max_total_size(void);
+unsigned int smbd_small_buffer_size(void);
+unsigned int smbd_server_side_copy_max_chunk_count(void);
+unsigned int smbd_server_side_copy_max_chunk_size(void);
+unsigned int smbd_server_side_copy_max_total_size(void);
 bool is_asterisk(char *p);
 
 static inline unsigned int get_rfc1002_len(void *buf)

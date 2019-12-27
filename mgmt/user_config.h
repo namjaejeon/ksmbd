@@ -7,9 +7,9 @@
 #define __USER_CONFIG_MANAGEMENT_H__
 
 #include "../glob.h"  /* FIXME */
-#include "../cifsd_server.h" /* FIXME */
+#include "../smbd_server.h" /* FIXME */
 
-struct cifsd_user {
+struct smbd_user {
 	unsigned short		flags;
 
 	unsigned int		uid;
@@ -21,46 +21,46 @@ struct cifsd_user {
 	char			*passkey;
 };
 
-static inline bool user_guest(struct cifsd_user *user)
+static inline bool user_guest(struct smbd_user *user)
 {
-	return user->flags & CIFSD_USER_FLAG_GUEST_ACCOUNT;
+	return user->flags & SMBD_USER_FLAG_GUEST_ACCOUNT;
 }
 
-static inline void set_user_flag(struct cifsd_user *user, int flag)
+static inline void set_user_flag(struct smbd_user *user, int flag)
 {
 	user->flags |= flag;
 }
 
-static inline int test_user_flag(struct cifsd_user *user, int flag)
+static inline int test_user_flag(struct smbd_user *user, int flag)
 {
 	return user->flags & flag;
 }
 
-static inline void set_user_guest(struct cifsd_user *user)
+static inline void set_user_guest(struct smbd_user *user)
 {
 }
 
-static inline char *user_passkey(struct cifsd_user *user)
+static inline char *user_passkey(struct smbd_user *user)
 {
 	return user->passkey;
 }
 
-static inline char *user_name(struct cifsd_user *user)
+static inline char *user_name(struct smbd_user *user)
 {
 	return user->name;
 }
 
-static inline unsigned int user_uid(struct cifsd_user *user)
+static inline unsigned int user_uid(struct smbd_user *user)
 {
 	return user->uid;
 }
 
-static inline unsigned int user_gid(struct cifsd_user *user)
+static inline unsigned int user_gid(struct smbd_user *user)
 {
 	return user->gid;
 }
 
-struct cifsd_user *cifsd_alloc_user(const char *account);
-void cifsd_free_user(struct cifsd_user *user);
-int cifsd_anonymous_user(struct cifsd_user *user);
+struct smbd_user *smbd_alloc_user(const char *account);
+void smbd_free_user(struct smbd_user *user);
+int smbd_anonymous_user(struct smbd_user *user);
 #endif /* __USER_CONFIG_MANAGEMENT_H__ */

@@ -5,8 +5,8 @@
  *   Modified by Namjae Jeon (linkinjeon@gmail.com)
  */
 
-#ifndef _CIFSACL_H
-#define _CIFSACL_H
+#ifndef _SMBACL_H
+#define _SMBACL_H
 
 #define NUM_AUTHS (6)	/* number of authority fields */
 #define SID_MAX_SUB_AUTHORITIES (15) /* max number of sub authority fields */
@@ -49,9 +49,9 @@
  * Security Descriptor length containing DACL with 3 ACEs (one each for
  * owner, group and world).
  */
-#define DEFAULT_SEC_DESC_LEN (sizeof(struct cifs_ntsd) + \
-			      sizeof(struct cifs_acl) + \
-			      (sizeof(struct cifs_ace) * 3))
+#define DEFAULT_SEC_DESC_LEN (sizeof(struct smb_ntsd) + \
+			      sizeof(struct smb_acl) + \
+			      (sizeof(struct smb_ace) * 3))
 
 /*
  * Maximum size of a string representation of a SID:
@@ -71,7 +71,7 @@
 #define SID_STRING_BASE_SIZE (2 + 3 + 15 + 1)
 #define SID_STRING_SUBAUTH_SIZE (11) /* size of a single subauth string */
 
-struct cifs_ntsd {
+struct smb_ntsd {
 	__le16 revision; /* revision level */
 	__le16 type;
 	__le32 osidoffset;
@@ -80,34 +80,34 @@ struct cifs_ntsd {
 	__le32 dacloffset;
 } __packed;
 
-struct cifs_sid {
+struct smb_sid {
 	__u8 revision; /* revision level */
 	__u8 num_subauth;
 	__u8 authority[NUM_AUTHS];
 	__le32 sub_auth[SID_MAX_SUB_AUTHORITIES]; /* sub_auth[num_subauth] */
 } __packed;
 
-/* size of a struct cifs_sid, sans sub_auth array */
+/* size of a struct smb_sid, sans sub_auth array */
 #define CIFS_SID_BASE_SIZE (1 + 1 + NUM_AUTHS)
 
-struct cifs_acl {
+struct smb_acl {
 	__le16 revision; /* revision level */
 	__le16 size;
 	__le32 num_aces;
 } __packed;
 
-struct cifs_ace {
+struct smb_ace {
 	__u8 type;
 	__u8 flags;
 	__le16 size;
 	__le32 access_req;
-	struct cifs_sid sid; /* ie UUID of user or group who gets these perms */
+	struct smb_sid sid; /* ie UUID of user or group who gets these perms */
 } __packed;
 
-struct cifsd_fattr {
+struct smbd_fattr {
 	kuid_t	cf_uid;
 	kgid_t	cf_gid;
 	umode_t	cf_mode;
 };
 
-#endif /* _CIFSACL_H */
+#endif /* _SMBACL_H */
