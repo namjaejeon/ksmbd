@@ -158,7 +158,7 @@ USER           ||
                |
                |------ smb.conf(config file)
                |
-               |------ cifspwd.db(user account/password file)
+               |------ smbdpwd.db(user account/password file)
                             ^
   smbuseradd ---------------|
 
