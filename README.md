@@ -160,6 +160,6 @@ USER           ||
                |
                |------ cifspwd.db(user account/password file)
                             ^
-  cifsadmin ----------------|
+  smbuseradd ---------------|
 
 ```
