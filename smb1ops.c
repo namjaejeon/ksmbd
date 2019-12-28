@@ -42,7 +42,7 @@ static struct smb_version_ops smb1_server_ops = {
 	.is_sign_req = smb1_is_sign_req,
 	.check_sign_req = smb1_check_sign_req,
 	.set_sign_rsp = smb1_set_sign_rsp,
-	.get_cifsd_tcon = smb_get_cifsd_tcon,
+	.get_smbd_tcon = smb_get_smbd_tcon,
 };
 
 static struct smb_version_cmds smb1_server_cmds[256] = {
@@ -80,7 +80,7 @@ static struct smb_version_cmds smb1_server_cmds[256] = {
  *			command dispatcher
  * @conn:	connection instance
  */
-int init_smb1_server(struct cifsd_conn *conn)
+int init_smb1_server(struct smbd_conn *conn)
 {
 	if (!conn)
 		return -EINVAL;

@@ -3,58 +3,58 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#ifndef __CIFSD_TRANSPORT_IPC_H__
-#define __CIFSD_TRANSPORT_IPC_H__
+#ifndef __SMBD_TRANSPORT_IPC_H__
+#define __SMBD_TRANSPORT_IPC_H__
 
 #include <linux/wait.h>
-#include "cifsd_server.h"  /* FIXME */
+#include "smbd_server.h"  /* FIXME */
 
-#define CIFSD_IPC_MAX_PAYLOAD	4096
+#define SMBD_IPC_MAX_PAYLOAD	4096
 
-struct cifsd_login_response *
-cifsd_ipc_login_request(const char *account);
+struct smbd_login_response *
+smbd_ipc_login_request(const char *account);
 
-struct cifsd_session;
-struct cifsd_share_config;
-struct cifsd_tree_connect;
+struct smbd_session;
+struct smbd_share_config;
+struct smbd_tree_connect;
 struct sockaddr;
 
-struct cifsd_tree_connect_response *
-cifsd_ipc_tree_connect_request(struct cifsd_session *sess,
-			       struct cifsd_share_config *share,
-			       struct cifsd_tree_connect *tree_conn,
+struct smbd_tree_connect_response *
+smbd_ipc_tree_connect_request(struct smbd_session *sess,
+			       struct smbd_share_config *share,
+			       struct smbd_tree_connect *tree_conn,
 			       struct sockaddr *peer_addr);
 
-int cifsd_ipc_tree_disconnect_request(unsigned long long session_id,
+int smbd_ipc_tree_disconnect_request(unsigned long long session_id,
 				      unsigned long long connect_id);
-int cifsd_ipc_logout_request(const char *account);
+int smbd_ipc_logout_request(const char *account);
 
-struct cifsd_share_config_response *
-cifsd_ipc_share_config_request(const char *name);
+struct smbd_share_config_response *
+smbd_ipc_share_config_request(const char *name);
 
-int cifsd_ipc_id_alloc(void);
-void cifsd_rpc_id_free(int handle);
+int smbd_ipc_id_alloc(void);
+void smbd_rpc_id_free(int handle);
 
-struct cifsd_rpc_command *cifsd_rpc_open(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_open(struct smbd_session *sess,
 					 int handle);
-struct cifsd_rpc_command *cifsd_rpc_close(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_close(struct smbd_session *sess,
 					  int handle);
 
-struct cifsd_rpc_command *cifsd_rpc_write(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_write(struct smbd_session *sess,
 					  int handle,
 					  void *payload,
 					  size_t payload_sz);
-struct cifsd_rpc_command *cifsd_rpc_read(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_read(struct smbd_session *sess,
 					 int handle);
-struct cifsd_rpc_command *cifsd_rpc_ioctl(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_ioctl(struct smbd_session *sess,
 					  int handle,
 					  void *payload,
 					  size_t payload_sz);
-struct cifsd_rpc_command *cifsd_rpc_rap(struct cifsd_session *sess,
+struct smbd_rpc_command *smbd_rpc_rap(struct smbd_session *sess,
 					  void *payload,
 					  size_t payload_sz);
 
-void cifsd_ipc_release(void);
-void cifsd_ipc_soft_reset(void);
-int cifsd_ipc_init(void);
-#endif /* __CIFSD_TRANSPORT_IPC_H__ */
+void smbd_ipc_release(void);
+void smbd_ipc_soft_reset(void);
+int smbd_ipc_init(void);
+#endif /* __SMBD_TRANSPORT_IPC_H__ */

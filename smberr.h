@@ -6,8 +6,8 @@
  *   See Error Codes section of the SNIA CIFS Specification
  *   for more information
  */
-#ifndef __CIFSD_SMBERR_H
-#define __CIFSD_SMBERR_H
+#ifndef __SMBD_SMBERR_H
+#define __SMBD_SMBERR_H
 
 #define SUCCESS	0x00	/* The request was successful. */
 #define ERRDOS	0x01	/* Error is from the core DOS operating system set */
@@ -232,4 +232,4 @@
 #define ERRnetlogonNotStarted	2455
 #define ERRnosupport		0xFFFF
 
-#endif /* __CIFSD_SMBERR_H */
+#endif /* __SMBD_SMBERR_H */

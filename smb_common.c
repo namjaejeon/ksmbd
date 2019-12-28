@@ -5,7 +5,7 @@
  */
 
 #include "smb_common.h"
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 #include "smb1pdu.h"
 #endif
 #include "server.h"
@@ -13,7 +13,7 @@
 #include "smbstatus.h"
 /* @FIXME */
 #include "connection.h"
-#include "cifsd_work.h"
+#include "smbd_work.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
@@ -22,10 +22,10 @@ static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";
 #define PERIOD '.'
 #define mangle(V) ((char)(basechars[(V) % MANGLE_BASE]))
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
-#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
+#ifdef CONFIG_SMB_INSECURE_SERVER
+#define SMBD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb_hdr))
 #else
-#define CIFSD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
+#define SMBD_MIN_SUPPORTED_HEADER_SIZE	(sizeof(struct smb2_hdr))
 #endif
 
 LIST_HEAD(global_lock_list);
@@ -38,7 +38,7 @@ struct smb_protocol {
 };
 
 static struct smb_protocol smb_protos[] = {
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	{
 		SMB1_PROT,
 		"\2NT LM 0.12",
@@ -84,48 +84,48 @@ static struct smb_protocol smb_protos[] = {
 	},
 };
 
-unsigned int cifsd_small_buffer_size(void)
+unsigned int smbd_small_buffer_size(void)
 {
 	return 448;
 }
 
-unsigned int cifsd_server_side_copy_max_chunk_count(void)
+unsigned int smbd_server_side_copy_max_chunk_count(void)
 {
 	return 256;
 }
 
-unsigned int cifsd_server_side_copy_max_chunk_size(void)
+unsigned int smbd_server_side_copy_max_chunk_size(void)
 {
 	return (2U << 30) - 1;
 }
 
-unsigned int cifsd_server_side_copy_max_total_size(void)
+unsigned int smbd_server_side_copy_max_total_size(void)
 {
 	return (2U << 30) - 1;
 }
 
-inline int cifsd_min_protocol(void)
+inline int smbd_min_protocol(void)
 {
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	return SMB1_PROT;
 #else
 	return SMB2_PROT;
 #endif
 }
 
-inline int cifsd_max_protocol(void)
+inline int smbd_max_protocol(void)
 {
 	return SMB311_PROT;
 }
 
-int cifsd_lookup_protocol_idx(char *str)
+int smbd_lookup_protocol_idx(char *str)
 {
 	int offt = ARRAY_SIZE(smb_protos) - 1;
 	int len = strlen(str);
 
 	while (offt >= 0) {
 		if (!strncmp(str, smb_protos[offt].prot, len)) {
-			cifsd_debug("selected %s dialect idx = %d\n",
+			smbd_debug("selected %s dialect idx = %d\n",
 					smb_protos[offt].prot, offt);
 			return smb_protos[offt].index;
 		}
@@ -142,20 +142,20 @@ int cifsd_lookup_protocol_idx(char *str)
  *
  * Return:      0 on success, otherwise 1
  */
-int cifsd_verify_smb_message(struct cifsd_work *work)
+int smbd_verify_smb_message(struct smbd_work *work)
 {
 	struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
 
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
-		cifsd_debug("got SMB2 command\n");
-		return cifsd_smb2_check_message(work);
+		smbd_debug("got SMB2 command\n");
+		return smbd_smb2_check_message(work);
 	}
 
-	return cifsd_smb1_check_message(work);
+	return smbd_smb1_check_message(work);
 #else
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER)
-		return cifsd_smb2_check_message(work);
+		return smbd_smb2_check_message(work);
 
 	return 0;
 #endif
@@ -168,7 +168,7 @@ int cifsd_verify_smb_message(struct cifsd_work *work)
  *
  * Return:      true on success, otherwise false
  */
-bool cifsd_smb_request(struct cifsd_conn *conn)
+bool smbd_smb_request(struct smbd_conn *conn)
 {
 	int type = *(char *)conn->request_buf;
 
@@ -177,10 +177,10 @@ bool cifsd_smb_request(struct cifsd_conn *conn)
 		/* Regular SMB request */
 		return true;
 	case RFC1002_SESSION_KEEP_ALIVE:
-		cifsd_debug("RFC 1002 session keep alive\n");
+		smbd_debug("RFC 1002 session keep alive\n");
 		break;
 	default:
-		cifsd_debug("RFC 1002 unknown request type 0x%x\n", type);
+		smbd_debug("RFC 1002 unknown request type 0x%x\n", type);
 	}
 
 	return false;
@@ -199,7 +199,7 @@ static char *next_dialect(char *dialect, int *next_off)
 	return dialect;
 }
 
-static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
+static int smbd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 {
 	int i, seq_num, bcount, next;
 	char *dialect;
@@ -211,10 +211,10 @@ static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 		bcount = le16_to_cpu(byte_count);
 		do {
 			dialect = next_dialect(dialect, &next);
-			cifsd_debug("client requested dialect %s\n", dialect);
+			smbd_debug("client requested dialect %s\n", dialect);
 			if (!strcmp(dialect, smb_protos[i].name)) {
 				if (supported_protocol(smb_protos[i].index)) {
-					cifsd_debug("selected %s dialect\n",
+					smbd_debug("selected %s dialect\n",
 							smb_protos[i].name);
 					if (smb_protos[i].index == SMB1_PROT)
 						return seq_num;
@@ -229,7 +229,7 @@ static int cifsd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 	return BAD_PROT_ID;
 }
 
-int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
+int smbd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 {
 	int i;
 	int count;
@@ -237,14 +237,14 @@ int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 	for (i = ARRAY_SIZE(smb_protos) - 1; i >= 0; i--) {
 		count = le16_to_cpu(dialects_count);
 		while (--count >= 0) {
-			cifsd_debug("client requested dialect 0x%x\n",
+			smbd_debug("client requested dialect 0x%x\n",
 				le16_to_cpu(cli_dialects[count]));
 			if (le16_to_cpu(cli_dialects[count]) !=
 					smb_protos[i].prot_id)
 				continue;
 
 			if (supported_protocol(smb_protos[i].index)) {
-				cifsd_debug("selected %s dialect\n",
+				smbd_debug("selected %s dialect\n",
 					smb_protos[i].name);
 				return smb_protos[i].prot_id;
 			}
@@ -254,7 +254,7 @@ int cifsd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 	return BAD_PROT_ID;
 }
 
-int cifsd_negotiate_smb_dialect(void *buf)
+int smbd_negotiate_smb_dialect(void *buf)
 {
 	__le32 proto;
 
@@ -263,7 +263,7 @@ int cifsd_negotiate_smb_dialect(void *buf)
 		struct smb2_negotiate_req *req;
 
 		req = (struct smb2_negotiate_req *)buf;
-		return cifsd_lookup_dialect_by_id(req->Dialects,
+		return smbd_lookup_dialect_by_id(req->Dialects,
 						  req->DialectCount);
 	}
 
@@ -272,23 +272,23 @@ int cifsd_negotiate_smb_dialect(void *buf)
 		struct smb_negotiate_req *req;
 
 		req = (struct smb_negotiate_req *)buf;
-		return cifsd_lookup_dialect_by_name(req->DialectsArray,
+		return smbd_lookup_dialect_by_name(req->DialectsArray,
 						    req->ByteCount);
 	}
 
 	return BAD_PROT_ID;
 }
 
-void cifsd_init_smb2_server_common(struct cifsd_conn *conn)
+void smbd_init_smb2_server_common(struct smbd_conn *conn)
 {
 	if (init_smb2_0_server(conn) == -ENOTSUPP)
 		init_smb2_1_server(conn);
 }
 
 #define SMB_COM_NEGOTIATE	0x72
-int cifsd_init_smb_server(struct cifsd_work *work)
+int smbd_init_smb_server(struct smbd_work *work)
 {
-	struct cifsd_conn *conn = work->conn;
+	struct smbd_conn *conn = work->conn;
 	void *buf = REQUEST_BUF(work);
 	__le32 proto;
 
@@ -296,13 +296,13 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 		return 0;
 
 	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
-#ifdef CONFIG_CIFS_INSECURE_SERVER
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	if (proto == SMB1_PROTO_NUMBER)
 		init_smb1_server(conn);
 	else
-		cifsd_init_smb2_server_common(conn);
+		smbd_init_smb2_server_common(conn);
 #else
-	cifsd_init_smb2_server_common(conn);
+	smbd_init_smb2_server_common(conn);
 #endif
 
 	if (conn->ops->get_cmd_val(work) != SMB_COM_NEGOTIATE)
@@ -310,26 +310,26 @@ int cifsd_init_smb_server(struct cifsd_work *work)
 	return 0;
 }
 
-bool cifsd_pdu_size_has_room(unsigned int pdu)
+bool smbd_pdu_size_has_room(unsigned int pdu)
 {
-	return (pdu >= CIFSD_MIN_SUPPORTED_HEADER_SIZE - 4);
+	return (pdu >= SMBD_MIN_SUPPORTED_HEADER_SIZE - 4);
 }
 
-int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
+int smbd_populate_dot_dotdot_entries(struct smbd_conn *conn,
 				      int info_level,
-				      struct cifsd_file *dir,
-				      struct cifsd_dir_info *d_info,
+				      struct smbd_file *dir,
+				      struct smbd_dir_info *d_info,
 				      char *search_pattern,
-				      int (*fn)(struct cifsd_conn *,
+				      int (*fn)(struct smbd_conn *,
 						int,
-						struct cifsd_dir_info *,
-						struct cifsd_kstat *))
+						struct smbd_dir_info *,
+						struct smbd_kstat *))
 {
 	int i, rc = 0;
 
 	for (i = 0; i < 2; i++) {
 		struct kstat kstat;
-		struct cifsd_kstat cifsd_kstat;
+		struct smbd_kstat smbd_kstat;
 
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */
 			if (i == 0) {
@@ -346,9 +346,9 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 			}
 
 			generic_fillattr(PARENT_INODE(dir), &kstat);
-			cifsd_kstat.file_attributes = ATTR_DIRECTORY_LE;
-			cifsd_kstat.kstat = &kstat;
-			rc = fn(conn, info_level, d_info, &cifsd_kstat);
+			smbd_kstat.file_attributes = ATTR_DIRECTORY_LE;
+			smbd_kstat.kstat = &kstat;
+			rc = fn(conn, info_level, d_info, &smbd_kstat);
 			if (rc)
 				break;
 			if (d_info->out_buf_len <= 0)
@@ -362,7 +362,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
 }
 
 /**
- * cifsd_extract_shortname() - get shortname from long filename
+ * smbd_extract_shortname() - get shortname from long filename
  * @conn:	connection instance
  * @longname:	source long filename
  * @shortname:	destination short filename
@@ -371,7 +371,7 @@ int cifsd_populate_dot_dotdot_entries(struct cifsd_conn *conn,
  * TODO: Though this function comforms the restriction of 8.3 Filename spec,
  * but the result is different with Windows 7's one. need to check.
  */
-int cifsd_extract_shortname(struct cifsd_conn *conn,
+int smbd_extract_shortname(struct smbd_conn *conn,
 			    const char *longname,
 			    char *shortname)
 {
@@ -445,36 +445,36 @@ int cifsd_extract_shortname(struct cifsd_conn *conn,
 	return len;
 }
 
-static int __smb2_negotiate(struct cifsd_conn *conn)
+static int __smb2_negotiate(struct smbd_conn *conn)
 {
 	return (conn->dialect >= SMB20_PROT_ID &&
 			conn->dialect <= SMB311_PROT_ID);
 }
 
-#ifndef CONFIG_CIFS_INSECURE_SERVER
-int smb_handle_negotiate(struct cifsd_work *work)
+#ifndef CONFIG_SMB_INSECURE_SERVER
+int smb_handle_negotiate(struct smbd_work *work)
 {
 	struct smb_negotiate_rsp *neg_rsp = RESPONSE_BUF(work);
 
-	cifsd_err("Unsupported SMB protocol\n");
+	smbd_err("Unsupported SMB protocol\n");
 	neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;
 	return -EINVAL;
 }
 #endif
 
-int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
+int smbd_smb_negotiate_common(struct smbd_work *work, unsigned int command)
 {
-	struct cifsd_conn *conn = work->conn;
+	struct smbd_conn *conn = work->conn;
 	int ret;
 
-	conn->dialect = cifsd_negotiate_smb_dialect(REQUEST_BUF(work));
-	cifsd_debug("conn->dialect 0x%x\n", conn->dialect);
+	conn->dialect = smbd_negotiate_smb_dialect(REQUEST_BUF(work));
+	smbd_debug("conn->dialect 0x%x\n", conn->dialect);
 
 	if (command == SMB2_NEGOTIATE_HE) {
 		struct smb2_hdr *smb2_hdr = REQUEST_BUF(work);
 
 		if (smb2_hdr->ProtocolId != SMB2_PROTO_NUMBER) {
-			cifsd_debug("Downgrade to SMB1 negotiation\n");
+			smbd_debug("Downgrade to SMB1 negotiation\n");
 			command = SMB_COM_NEGOTIATE;
 		}
 	}
@@ -488,15 +488,15 @@ int cifsd_smb_negotiate_common(struct cifsd_work *work, unsigned int command)
 	if (command == SMB_COM_NEGOTIATE) {
 		if (__smb2_negotiate(conn)) {
 			conn->need_neg = true;
-			cifsd_init_smb2_server_common(conn);
+			smbd_init_smb2_server_common(conn);
 			init_smb2_neg_rsp(work);
-			cifsd_debug("Upgrade to SMB2 negotiation\n");
+			smbd_debug("Upgrade to SMB2 negotiation\n");
 			return 0;
 		}
 		return smb_handle_negotiate(work);
 	}
 
-	cifsd_err("Unknown SMB negotiation command: %u\n", command);
+	smbd_err("Unknown SMB negotiation command: %u\n", command);
 	return -EINVAL;
 }
 
@@ -519,18 +519,18 @@ static const char * const shared_mode_errors[] = {
 };
 
 static void smb_shared_mode_error(int error,
-				  struct cifsd_file *prev_fp,
-				  struct cifsd_file *curr_fp)
+				  struct smbd_file *prev_fp,
+				  struct smbd_file *curr_fp)
 {
-	cifsd_debug("%s\n", shared_mode_errors[error]);
-	cifsd_debug("Current mode: 0x%x Desired mode: 0x%x\n",
+	smbd_debug("%s\n", shared_mode_errors[error]);
+	smbd_debug("Current mode: 0x%x Desired mode: 0x%x\n",
 		  prev_fp->saccess, curr_fp->daccess);
 }
 
-int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
+int smbd_smb_check_shared_mode(struct file *filp, struct smbd_file *curr_fp)
 {
 	int rc = 0;
-	struct cifsd_file *prev_fp;
+	struct smbd_file *prev_fp;
 	struct list_head *cur;
 
 	/*
@@ -539,14 +539,14 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 	 */
 	read_lock(&curr_fp->f_ci->m_lock);
 	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
-		prev_fp = list_entry(cur, struct cifsd_file, node);
+		prev_fp = list_entry(cur, struct smbd_file, node);
 		if (file_inode(filp) != FP_INODE(prev_fp))
 			continue;
 
 		if (filp == prev_fp->filp)
 			continue;
 
-		if (cifsd_stream_fd(prev_fp) && cifsd_stream_fd(curr_fp))
+		if (smbd_stream_fd(prev_fp) && smbd_stream_fd(curr_fp))
 			if (strcmp(prev_fp->stream.name, curr_fp->stream.name))
 				continue;
 
@@ -573,7 +573,7 @@ int cifsd_smb_check_shared_mode(struct file *filp, struct cifsd_file *curr_fp)
 		 * Only check FILE_SHARE_DELETE if stream opened and
 		 * normal file opened.
 		 */
-		if (cifsd_stream_fd(prev_fp) && !cifsd_stream_fd(curr_fp))
+		if (smbd_stream_fd(prev_fp) && !smbd_stream_fd(curr_fp))
 			continue;
 
 		if (!(prev_fp->saccess & (FILE_SHARE_READ_LE)) &&
