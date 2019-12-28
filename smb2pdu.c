@@ -3159,7 +3159,7 @@ static void lock_dir(struct smbd_file *dir_fp)
 {
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
 #else
 	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
@@ -3170,7 +3170,7 @@ static void unlock_dir(struct smbd_file *dir_fp)
 {
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
 #else
 	mutex_unlock(&d_inode(dir)->i_mutex);
@@ -5092,7 +5092,9 @@ static int set_file_basic_info(struct smbd_file *fp,
 	attrs.ia_valid |= ATTR_CTIME;
 
 	if (attrs.ia_valid) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) && \
+		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37))) || \
+		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 		struct dentry *dentry = filp->f_path.dentry;
 		struct inode *inode = d_inode(dentry);
 #else
@@ -5101,7 +5103,9 @@ static int set_file_basic_info(struct smbd_file *fp,
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37)
+#if ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) && \
+		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37))) || \
+		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 		rc = setattr_prepare(dentry, &attrs);
 #else
 		rc = inode_change_ok(inode, &attrs);
