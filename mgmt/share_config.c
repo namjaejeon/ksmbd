@@ -163,6 +163,8 @@ static struct smbd_share_config *share_config_request(char *name)
 		if (!ret && share->path) {
 			ret = kern_path(share->path, 0, &share->vfs_path);
 			if (ret) {
+				smbd_debug("failed to access '%s'\n",
+					share->path);
 				/* Avoid put_path() */
 				kfree(share->path);
 				share->path = NULL;
