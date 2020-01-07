@@ -2041,24 +2041,6 @@ static inline int check_context_err(void *ctx, char *str)
 	return 0;
 }
 
-static int smb2_create_truncate(struct path *path, bool is_stream)
-{
-	int rc = vfs_truncate(path, 0);
-
-	if (rc) {
-		smbd_err("vfs_truncate failed, rc %d\n", rc);
-		return rc;
-	}
-
-	/* Don't truncate stream names on stream name */
-	rc = smbd_vfs_truncate_xattr(path->dentry, is_stream);
-	if (rc == -EOPNOTSUPP)
-		rc = 0;
-	if (rc)
-		smbd_debug("smbd_vfs_truncate_xattr failed, rc %d\n", rc);
-	return rc;
-}
-
 static noinline int smb2_set_stream_name_xattr(struct path *path,
 					       struct smbd_file *fp,
 					       char *stream_name,
@@ -2092,6 +2074,64 @@ static noinline int smb2_set_stream_name_xattr(struct path *path,
 		smbd_err("Failed to store XATTR stream name :%d\n", rc);
 	return 0;
 }
+
+static int smb2_remove_smb_xattrs(struct dentry *dentry)
+{
+	char *name, *xattr_list = NULL;
+	ssize_t xattr_list_len;
+	int err = 0;
+
+	xattr_list_len = smbd_vfs_listxattr(dentry, &xattr_list);
+	if (xattr_list_len < 0) {
+		goto out;
+	} else if (!xattr_list_len) {
+		smbd_debug("empty xattr in the file\n");
+		goto out;
+	}
+
+	for (name = xattr_list; name - xattr_list < xattr_list_len;
+			name += strlen(name) + 1) {
+		smbd_debug("%s, len %zd\n", name, strlen(name));
+
+		if (strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN) &&
+			strncmp(&name[XATTR_USER_PREFIX_LEN],
+				CREATION_TIME_PREFIX,
+				CREATION_TIME_PREFIX_LEN) &&
+			strncmp(&name[XATTR_USER_PREFIX_LEN],
+				FILE_ATTRIBUTE_PREFIX,
+				FILE_ATTRIBUTE_PREFIX_LEN) &&
+			strncmp(&name[XATTR_USER_PREFIX_LEN],
+				STREAM_PREFIX,
+				STREAM_PREFIX_LEN))
+			continue;
+
+		err = smbd_vfs_remove_xattr(dentry, name);
+		if (err)
+			smbd_debug("remove xattr failed : %s\n", name);
+	}
+out:
+	smbd_vfs_xattr_free(xattr_list);
+	return err;
+}
+
+static int smb2_create_truncate(struct path *path)
+{
+	int rc = vfs_truncate(path, 0);
+
+	if (rc) {
+		smbd_err("vfs_truncate failed, rc %d\n", rc);
+		return rc;
+	}
+
+	rc = smb2_remove_smb_xattrs(path->dentry);
+	if (rc == -EOPNOTSUPP)
+		rc = 0;
+	if (rc)
+		smbd_debug("smbd_truncate_stream_name_xattr failed, rc %d\n",
+				rc);
+	return rc;
+}
+
 
 static void smb2_new_xattrs(struct smbd_tree_connect *tcon,
 			    struct path *path,
@@ -2680,7 +2720,7 @@ int smb2_open(struct smbd_work *work)
 		smbd_fd_set_delete_on_close(fp, file_info);
 
 	if (need_truncate) {
-		rc = smb2_create_truncate(&path, stream_name != NULL);
+		rc = smb2_create_truncate(&path);
 		if (rc)
 			goto err_out;
 	}
