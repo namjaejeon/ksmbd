@@ -18,7 +18,7 @@ before_script:
  - sudo apt-get install linux-headers-$(uname -r)
  - sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev
  - sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
- - git clone --branch=cifsd-tools-next https://github.com/cifsd-team/cifsd-tools
+ - git clone --branch=cifsd-tools-next https://github.com/cifsd-team/smbd-tools
  - git clone https://github.com/cifsd-team/cifsd-test-result
  - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
  - export PATH=/usr/local/lib:$PATH
@@ -92,12 +92,12 @@ script:
  - make -j$((`nproc`+1)) fs/smbd/smbd.ko
 
  # Run xfstests testsuite
- - cd ../cifsd
+ - cd ../smbd
  - make > /dev/null
  - sudo make install > /dev/null
  - sudo modprobe smbd
  - sudo modprobe cifs
- - cd cifsd-tools
+ - cd smbd-tools
  - ./autogen.sh > /dev/null
  - ./configure > /dev/null
  - make -j$((`nproc`+1)) > /dev/null
