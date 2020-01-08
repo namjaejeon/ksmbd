@@ -2057,7 +2057,7 @@ static int create_andx_pipe(struct smbd_work *work)
 	fid = rc;
 
 	rsp->hdr.WordCount = 42;
-	rsp->AndXCommand = cpu_to_le16(0xff);
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
 	rsp->OplockLevel = 0;
 	rsp->Fid = cpu_to_le16(fid);
