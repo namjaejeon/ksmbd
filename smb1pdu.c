@@ -500,7 +500,7 @@ int smb_tree_connect_andx(struct smbd_work *work)
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(rsp_hdr));
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		/* More processing required */
@@ -984,7 +984,7 @@ no_password_check:
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -1171,7 +1171,7 @@ no_password_check:
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -1819,7 +1819,7 @@ skip:
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -2057,7 +2057,7 @@ static int create_andx_pipe(struct smbd_work *work)
 	fid = rc;
 
 	rsp->hdr.WordCount = 42;
-	rsp->AndXCommand = cpu_to_le16(0xff);
+	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
 	rsp->OplockLevel = 0;
 	rsp->Fid = cpu_to_le16(fid);
@@ -2615,7 +2615,7 @@ out:
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -2741,7 +2741,7 @@ static int smb_read_andx_pipe(struct smbd_work *work)
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -2843,7 +2843,7 @@ int smb_read_andx(struct smbd_work *work)
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		smbd_fd_put(work, fp);
@@ -2961,7 +2961,7 @@ static int smb_write_andx_pipe(struct smbd_work *work)
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -3060,7 +3060,7 @@ int smb_write_andx(struct smbd_work *work)
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
@@ -6118,7 +6118,8 @@ static int find_next(struct smbd_work *work)
 			continue;
 		}
 
-		smbd_debug("filename string = %s\n", d_info.name);
+		smbd_debug("filename string = %.*s\n",
+				d_info.name_len, d_info.name);
 		rc = smb_populate_readdir_entry(conn,
 			req_params->InformationLevel, &d_info, &smbd_kstat);
 		if (rc)
@@ -7932,7 +7933,7 @@ out:
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
-	if (req->AndXCommand != 0xFF) {
+	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
 		return rsp->AndXCommand; /* More processing required */
