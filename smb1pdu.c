@@ -6118,7 +6118,8 @@ static int find_next(struct smbd_work *work)
 			continue;
 		}
 
-		smbd_debug("filename string = %s\n", d_info.name);
+		smbd_debug("filename string = %.*s\n",
+				d_info.name_len, d_info.name);
 		rc = smb_populate_readdir_entry(conn,
 			req_params->InformationLevel, &d_info, &smbd_kstat);
 		if (rc)
