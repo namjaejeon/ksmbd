@@ -14,7 +14,7 @@
 #include "vfs_cache.h"
 #include "smberr.h"
 
-#define SMBD_VERSION	"3.0.1"
+#define SMBD_VERSION	"3.0.2"
 
 /* @FIXME clean up this code */
 
