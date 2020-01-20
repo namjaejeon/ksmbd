@@ -414,18 +414,18 @@ static void tcp_destroy_socket(struct socket *smbd_socket)
 static int create_socket(struct interface *iface)
 {
 	int ret;
-	struct sockaddr_in sin;
+	struct sockaddr_in6 sin6;
 	struct socket *smbd_socket;
 
-	ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP, &smbd_socket);
+	ret = sock_create(PF_INET6, SOCK_STREAM, IPPROTO_TCP, &smbd_socket);
 	if (ret) {
 		smbd_err("Can't create socket: %d\n", ret);
 		goto out_error;
 	}
 
-	sin.sin_addr.s_addr = htonl(INADDR_ANY);
-	sin.sin_family = PF_INET;
-	sin.sin_port = htons(server_conf.tcp_port);
+	sin6.sin6_family = PF_INET6;
+	sin6.sin6_addr = in6addr_any;
+	sin6.sin6_port = htons(server_conf.tcp_port);
 
 	smbd_tcp_nodelay(smbd_socket);
 	smbd_tcp_reuseaddr(smbd_socket);
@@ -440,7 +440,7 @@ static int create_socket(struct interface *iface)
 		goto out_error;
 	}
 
-	ret = kernel_bind(smbd_socket, (struct sockaddr *)&sin, sizeof(sin));
+	ret = kernel_bind(smbd_socket, (struct sockaddr *)&sin6, sizeof(sin6));
 	if (ret) {
 		smbd_err("Failed to bind socket: %d\n", ret);
 		goto out_error;
