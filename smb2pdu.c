@@ -601,9 +601,22 @@ int smb2_check_user_session(struct smbd_work *work)
 	return -EINVAL;
 }
 
-static void destroy_previous_session(uint64_t id)
+static void destroy_previous_session(struct smbd_user *user, uint64_t id)
 {
-	smbd_session_destroy(smbd_session_lookup_slowpath(id));
+	struct smbd_session *prev_sess = smbd_session_lookup_slowpath(id);
+	struct smbd_user *prev_user;
+
+	if (!prev_sess)
+		return;
+
+	prev_user = prev_sess->user;
+
+	if (strcmp(user->name, prev_user->name) ||
+	    user->passkey_sz != prev_user->passkey_sz ||
+	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
+		return;
+
+	smbd_session_destroy(prev_sess);
 }
 
 /**
@@ -1255,6 +1268,7 @@ static int ntlm_authenticate(struct smbd_work *work)
 	struct smbd_session *sess = work->sess;
 	struct channel *chann = NULL;
 	struct smbd_user *user;
+	uint64_t prev_id;
 	int sz, rc;
 
 	smbd_debug("authenticate phase\n");
@@ -1283,6 +1297,11 @@ static int ntlm_authenticate(struct smbd_work *work)
 		rsp->hdr.Status = STATUS_LOGON_FAILURE;
 		return -EINVAL;
 	}
+
+	/* Check for previous session */
+	prev_id = le64_to_cpu(req->PreviousSessionId);
+	if (prev_id && prev_id != sess->id)
+		destroy_previous_session(user, prev_id);
 
 	if (sess->state == SMB2_SESSION_VALID) {
 		/*
@@ -1398,8 +1417,6 @@ int smb2_sess_setup(struct smbd_work *work)
 	inc_rfc1001_len(rsp, 9);
 
 	if (!req->hdr.SessionId) {
-		uint64_t prev_id;
-
 		sess = smbd_smb2_session_create();
 		if (!sess) {
 			rc = -ENOMEM;
@@ -1407,11 +1424,6 @@ int smb2_sess_setup(struct smbd_work *work)
 		}
 		rsp->hdr.SessionId = cpu_to_le64(sess->id);
 		smbd_session_register(conn, sess);
-
-		/* Check for previous session */
-		prev_id = le64_to_cpu(req->PreviousSessionId);
-		if (prev_id && prev_id != sess->id)
-			destroy_previous_session(prev_id);
 	} else {
 		sess = smbd_session_lookup(conn,
 				le64_to_cpu(req->hdr.SessionId));
