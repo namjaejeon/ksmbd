@@ -157,9 +157,12 @@ void smbd_session_destroy(struct smbd_session *sess)
 	smbd_release_id(session_ida, sess->id);
 
 	list_del(&sess->sessions_entry);
-	down_write(&sessions_table_lock);
-	hash_del(&sess->hlist);
-	up_write(&sessions_table_lock);
+
+	if (IS_SMB2(sess->conn)) {
+		down_write(&sessions_table_lock);
+		hash_del(&sess->hlist);
+		up_write(&sessions_table_lock);
+	}
 
 	smbd_ida_free(sess->tree_conn_ida);
 	smbd_free(sess);
@@ -286,9 +289,11 @@ static struct smbd_session *__session_create(int protocol)
 	if (!sess->tree_conn_ida)
 		goto error;
 
-	down_read(&sessions_table_lock);
-	hash_add(sessions_table, &sess->hlist, sess->id);
-	up_read(&sessions_table_lock);
+	if (protocol == CIFDS_SESSION_FLAG_SMB2) {
+		down_read(&sessions_table_lock);
+		hash_add(sessions_table, &sess->hlist, sess->id);
+		up_read(&sessions_table_lock);
+	}
 	return sess;
 
 error:
