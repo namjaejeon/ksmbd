@@ -16,7 +16,7 @@
 #include <linux/nls.h>
 
 #include "smb_common.h"
-#include "smbd_work.h"
+#include "ksmbd_work.h"
 
 #define SMBD_SOCKET_BACKLOG		16
 

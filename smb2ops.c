@@ -12,7 +12,7 @@
 #include "connection.h"
 #include "smb_common.h"
 #include "server.h"
-#include "smbd_server.h"
+#include "ksmbd_server.h"
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 static struct smb_version_values smb20_server_values = {

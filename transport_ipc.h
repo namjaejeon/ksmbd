@@ -7,7 +7,7 @@
 #define __SMBD_TRANSPORT_IPC_H__
 
 #include <linux/wait.h>
-#include "smbd_server.h"  /* FIXME */
+#include "ksmbd_server.h"  /* FIXME */
 
 #define SMBD_IPC_MAX_PAYLOAD	4096
 

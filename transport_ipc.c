@@ -24,7 +24,7 @@
 #include "mgmt/share_config.h"
 #include "mgmt/user_session.h"
 #include "mgmt/tree_connect.h"
-#include "mgmt/smbd_ida.h"
+#include "mgmt/ksmbd_ida.h"
 #include "connection.h"
 #include "transport_tcp.h"
 

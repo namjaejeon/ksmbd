@@ -13,7 +13,7 @@
 #include "share_config.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
-#include "../smbd_server.h" /* FIXME */
+#include "../ksmbd_server.h" /* FIXME */
 
 #define SHARE_HASH_BITS		3
 static DEFINE_HASHTABLE(shares_table, SHARE_HASH_BITS);

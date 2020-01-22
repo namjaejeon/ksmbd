@@ -3,7 +3,7 @@
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
-#include "smbd_ida.h"
+#include "ksmbd_ida.h"
 
 struct smbd_ida *smbd_ida_alloc(void)
 {

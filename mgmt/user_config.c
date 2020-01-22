@@ -8,7 +8,7 @@
 #include "user_config.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
-#include "../smbd_server.h" /* FIXME */
+#include "../ksmbd_server.h" /* FIXME */
 
 struct smbd_user *smbd_alloc_user(const char *account)
 {

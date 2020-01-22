@@ -7,14 +7,14 @@
 #include <linux/slab.h>
 #include <linux/rwsem.h>
 
-#include "smbd_ida.h"
+#include "ksmbd_ida.h"
 #include "user_session.h"
 #include "user_config.h"
 #include "tree_connect.h"
 #include "../transport_ipc.h"
 #include "../connection.h"
 #include "../buffer_pool.h"
-#include "../smbd_server.h" /* FIXME */
+#include "../ksmbd_server.h" /* FIXME */
 #include "../vfs_cache.h"
 
 static struct smbd_ida *session_ida;

@@ -14,7 +14,7 @@
 #include "glob.h"
 #include "buffer_pool.h"
 #include "connection.h"
-#include "mgmt/smbd_ida.h"
+#include "mgmt/ksmbd_ida.h"
 
 static struct kmem_cache *filp_cache;
 

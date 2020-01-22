@@ -6,7 +6,7 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 
-#include "../smbd_server.h" /* FIXME */
+#include "../ksmbd_server.h" /* FIXME */
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
 #include "../connection.h"

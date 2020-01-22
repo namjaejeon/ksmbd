@@ -10,12 +10,12 @@
 
 #include "server.h"
 #include "connection.h"
-#include "smbd_work.h"
+#include "ksmbd_work.h"
 #include "buffer_pool.h"
-#include "mgmt/smbd_ida.h"
+#include "mgmt/ksmbd_ida.h"
 
 /* @FIXME */
-#include "smbd_server.h"
+#include "ksmbd_server.h"
 
 static struct kmem_cache *work_cache;
 static struct workqueue_struct *smbd_wq;

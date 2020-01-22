@@ -7,7 +7,7 @@
 #define __USER_CONFIG_MANAGEMENT_H__
 
 #include "../glob.h"  /* FIXME */
-#include "../smbd_server.h" /* FIXME */
+#include "../ksmbd_server.h" /* FIXME */
 
 struct smbd_user {
 	unsigned short		flags;

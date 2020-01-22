@@ -14,7 +14,7 @@
 #ifdef CONFIG_SMB_INSECURE_SERVER
 #include "smb1pdu.h"
 #endif
-#include "mgmt/smbd_ida.h"
+#include "mgmt/ksmbd_ida.h"
 #include "connection.h"
 #include "transport_tcp.h"
 #include "transport_rdma.h"

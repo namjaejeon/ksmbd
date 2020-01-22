@@ -13,7 +13,7 @@
 #include "smbstatus.h"
 /* @FIXME */
 #include "connection.h"
-#include "smbd_work.h"
+#include "ksmbd_work.h"
 
 /*for shortname implementation */
 static const char basechars[43] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_-!@#$%";

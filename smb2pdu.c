@@ -29,12 +29,12 @@
 #include "server.h"
 #include "smb_common.h"
 #include "smbstatus.h"
-#include "smbd_work.h"
+#include "ksmbd_work.h"
 #include "mgmt/user_config.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
-#include "mgmt/smbd_ida.h"
+#include "mgmt/ksmbd_ida.h"
 
 static void __wbuf(struct smbd_work *work, void **req, void **rsp)
 {
