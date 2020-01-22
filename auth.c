@@ -49,7 +49,7 @@ static char NEGOTIATE_GSS_HEADER[AUTH_GSS_LENGTH] = {
 	0x72, 0x65
 };
 
-void smbd_copy_gss_neg_header(void *buf)
+void ksmbd_copy_gss_neg_header(void *buf)
 {
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
 }
@@ -81,7 +81,7 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 	str_to_key(key, key2);
 
 	if (fips_enabled) {
-		smbd_debug("FIPS compliance enabled: DES not permitted\n");
+		ksmbd_debug("FIPS compliance enabled: DES not permitted\n");
 		return -ENOENT;
 	}
 
@@ -97,13 +97,13 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 	int rc;
 	unsigned char key2[8];
 	struct scatterlist sgin, sgout;
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
 	str_to_key(key, key2);
 
-	ctx = smbd_crypto_ctx_find_ecbdes();
+	ctx = ksmbd_crypto_ctx_find_ecbdes();
 	if (!ctx) {
-		smbd_debug("could not allocate des crypto API\n");
+		ksmbd_debug("could not allocate des crypto API\n");
 		return -EINVAL;
 	}
 
@@ -114,13 +114,13 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 
 	rc = crypto_blkcipher_encrypt(CRYPTO_ECBDES(ctx), &sgout, &sgin, 8);
 	if (rc)
-		smbd_debug("could not encrypt crypt key rc: %d\n", rc);
-	smbd_release_crypto_ctx(ctx);
+		ksmbd_debug("could not encrypt crypt key rc: %d\n", rc);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 #endif
 
-static int smbd_enc_p24(unsigned char *p21,
+static int ksmbd_enc_p24(unsigned char *p21,
 			 const unsigned char *c8,
 			 unsigned char *p24)
 {
@@ -137,94 +137,94 @@ static int smbd_enc_p24(unsigned char *p21,
 }
 
 /* produce a md4 message digest from data of length n bytes */
-static int smbd_enc_md4(unsigned char *md4_hash,
+static int ksmbd_enc_md4(unsigned char *md4_hash,
 			 unsigned char *link_str,
 			 int link_len)
 {
 	int rc;
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
-	ctx = smbd_crypto_ctx_find_md4();
+	ctx = ksmbd_crypto_ctx_find_md4();
 	if (!ctx) {
-		smbd_debug("Crypto md4 allocation error\n");
+		ksmbd_debug("Crypto md4 allocation error\n");
 		return -EINVAL;
 	}
 
 	rc = crypto_shash_init(CRYPTO_MD4(ctx));
 	if (rc) {
-		smbd_debug("Could not init md4 shash\n");
+		ksmbd_debug("Could not init md4 shash\n");
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_MD4(ctx), link_str, link_len);
 	if (rc) {
-		smbd_debug("Could not update with link_str\n");
+		ksmbd_debug("Could not update with link_str\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(CRYPTO_MD4(ctx), md4_hash);
 	if (rc)
-		smbd_debug("Could not generate md4 hash\n");
+		ksmbd_debug("Could not generate md4 hash\n");
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
-static int smbd_enc_update_sess_key(unsigned char *md5_hash,
+static int ksmbd_enc_update_sess_key(unsigned char *md5_hash,
 				     char *nonce,
 				     char *server_challenge,
 				     int len)
 {
 	int rc;
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
-	ctx = smbd_crypto_ctx_find_md5();
+	ctx = ksmbd_crypto_ctx_find_md5();
 	if (!ctx) {
-		smbd_debug("Crypto md5 allocation error\n");
+		ksmbd_debug("Crypto md5 allocation error\n");
 		return -EINVAL;
 	}
 
 	rc = crypto_shash_init(CRYPTO_MD5(ctx));
 	if (rc) {
-		smbd_debug("Could not init md5 shash\n");
+		ksmbd_debug("Could not init md5 shash\n");
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_MD5(ctx), server_challenge, len);
 	if (rc) {
-		smbd_debug("Could not update with challenge\n");
+		ksmbd_debug("Could not update with challenge\n");
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_MD5(ctx), nonce, len);
 	if (rc) {
-		smbd_debug("Could not update with nonce\n");
+		ksmbd_debug("Could not update with nonce\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(CRYPTO_MD5(ctx), md5_hash);
 	if (rc)
-		smbd_debug("Could not generate md5 hash\n");
+		ksmbd_debug("Could not generate md5 hash\n");
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
 /**
- * smbd_gen_sess_key() - function to generate session key
+ * ksmbd_gen_sess_key() - function to generate session key
  * @sess:	session of connection
  * @hash:	source hash value to be used for find session key
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-static int smbd_gen_sess_key(struct smbd_session *sess,
+static int ksmbd_gen_sess_key(struct ksmbd_session *sess,
 			      char *hash,
 			      char *hmac)
 {
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
 
-	ctx = smbd_crypto_ctx_find_hmacmd5();
+	ctx = ksmbd_crypto_ctx_find_hmacmd5();
 	if (!ctx)
 		goto out;
 
@@ -232,13 +232,13 @@ static int smbd_gen_sess_key(struct smbd_session *sess,
 				 hash,
 				 CIFS_HMAC_MD5_HASH_SIZE);
 	if (rc) {
-		smbd_debug("hmacmd5 set key fail error %d\n", rc);
+		ksmbd_debug("hmacmd5 set key fail error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(CRYPTO_HMACMD5(ctx));
 	if (rc) {
-		smbd_debug("could not init hmacmd5 error %d\n", rc);
+		ksmbd_debug("could not init hmacmd5 error %d\n", rc);
 		goto out;
 	}
 
@@ -246,32 +246,32 @@ static int smbd_gen_sess_key(struct smbd_session *sess,
 				 hmac,
 				 SMB2_NTLMV2_SESSKEY_SIZE);
 	if (rc) {
-		smbd_debug("Could not update with response error %d\n", rc);
+		ksmbd_debug("Could not update with response error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_final(CRYPTO_HMACMD5(ctx), sess->sess_key);
 	if (rc) {
-		smbd_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		ksmbd_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto out;
 	}
 
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
-static int calc_ntlmv2_hash(struct smbd_session *sess, char *ntlmv2_hash,
+static int calc_ntlmv2_hash(struct ksmbd_session *sess, char *ntlmv2_hash,
 	char *dname)
 {
 	int ret = -EINVAL, len;
 	wchar_t *domain = NULL;
 	__le16 *uniname = NULL;
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
-	ctx = smbd_crypto_ctx_find_hmacmd5();
+	ctx = ksmbd_crypto_ctx_find_hmacmd5();
 	if (!ctx) {
-		smbd_debug("can't generate ntlmv2 hash\n");
+		ksmbd_debug("can't generate ntlmv2 hash\n");
 		goto out;
 	}
 
@@ -279,13 +279,13 @@ static int calc_ntlmv2_hash(struct smbd_session *sess, char *ntlmv2_hash,
 				  user_passkey(sess->user),
 				  CIFS_ENCPWD_SIZE);
 	if (ret) {
-		smbd_debug("Could not set NT Hash as a key\n");
+		ksmbd_debug("Could not set NT Hash as a key\n");
 		goto out;
 	}
 
 	ret = crypto_shash_init(CRYPTO_HMACMD5(ctx));
 	if (ret) {
-		smbd_debug("could not init hmacmd5\n");
+		ksmbd_debug("could not init hmacmd5\n");
 		goto out;
 	}
 
@@ -307,7 +307,7 @@ static int calc_ntlmv2_hash(struct smbd_session *sess, char *ntlmv2_hash,
 				  (char *)uniname,
 				  UNICODE_LEN(len));
 	if (ret) {
-		smbd_debug("Could not update with user\n");
+		ksmbd_debug("Could not update with user\n");
 		goto out;
 	}
 
@@ -315,7 +315,7 @@ static int calc_ntlmv2_hash(struct smbd_session *sess, char *ntlmv2_hash,
 	len = strlen(dname);
 	domain = kzalloc(2 + UNICODE_LEN(len), GFP_KERNEL);
 	if (!domain) {
-		smbd_debug("memory allocation failed\n");
+		ksmbd_debug("memory allocation failed\n");
 		ret = -ENOMEM;
 		goto out;
 	}
@@ -327,29 +327,29 @@ static int calc_ntlmv2_hash(struct smbd_session *sess, char *ntlmv2_hash,
 				  (char *)domain,
 				  UNICODE_LEN(len));
 	if (ret) {
-		smbd_debug("Could not update with domain\n");
+		ksmbd_debug("Could not update with domain\n");
 		goto out;
 	}
 
 	ret = crypto_shash_final(CRYPTO_HMACMD5(ctx), ntlmv2_hash);
 out:
 	if (ret)
-		smbd_debug("Could not generate md5 hash\n");
+		ksmbd_debug("Could not generate md5 hash\n");
 	kfree(uniname);
 	kfree(domain);
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return ret;
 }
 
 /**
- * smbd_auth_ntlm() - NTLM authentication handler
+ * ksmbd_auth_ntlm() - NTLM authentication handler
  * @sess:	session of connection
  * @pw_buf:	NTLM challenge response
  * @passkey:	user password
  *
  * Return:	0 on success, error number on error
  */
-int smbd_auth_ntlm(struct smbd_session *sess, char *pw_buf)
+int ksmbd_auth_ntlm(struct ksmbd_session *sess, char *pw_buf)
 {
 	int rc;
 	unsigned char p21[21];
@@ -357,13 +357,13 @@ int smbd_auth_ntlm(struct smbd_session *sess, char *pw_buf)
 
 	memset(p21, '\0', 21);
 	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
-	rc = smbd_enc_p24(p21, sess->ntlmssp.cryptkey, key);
+	rc = ksmbd_enc_p24(p21, sess->ntlmssp.cryptkey, key);
 	if (rc) {
-		smbd_err("password processing failed\n");
+		ksmbd_err("password processing failed\n");
 		return rc;
 	}
 
-	smbd_enc_md4(sess->sess_key,
+	ksmbd_enc_md4(sess->sess_key,
 			user_passkey(sess->user),
 			CIFS_SMB1_SESSKEY_SIZE);
 	memcpy(sess->sess_key + CIFS_SMB1_SESSKEY_SIZE, key,
@@ -371,16 +371,16 @@ int smbd_auth_ntlm(struct smbd_session *sess, char *pw_buf)
 	sess->sequence_number = 1;
 
 	if (strncmp(pw_buf, key, CIFS_AUTH_RESP_SIZE) != 0) {
-		smbd_debug("ntlmv1 authentication failed\n");
+		ksmbd_debug("ntlmv1 authentication failed\n");
 		rc = -EINVAL;
 	} else
-		smbd_debug("ntlmv1 authentication pass\n");
+		ksmbd_debug("ntlmv1 authentication pass\n");
 
 	return rc;
 }
 
 /**
- * smbd_auth_ntlmv2() - NTLMv2 authentication handler
+ * ksmbd_auth_ntlmv2() - NTLMv2 authentication handler
  * @sess:	session of connection
  * @ntlmv2:		NTLMv2 challenge response
  * @blen:		NTLMv2 blob length
@@ -388,26 +388,26 @@ int smbd_auth_ntlm(struct smbd_session *sess, char *pw_buf)
  *
  * Return:	0 on success, error number on error
  */
-int smbd_auth_ntlmv2(struct smbd_session *sess,
+int ksmbd_auth_ntlmv2(struct ksmbd_session *sess,
 		      struct ntlmv2_resp *ntlmv2,
 		      int blen,
 		      char *domain_name)
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 	char *construct = NULL;
 	int rc = -EINVAL, len;
 
-	ctx = smbd_crypto_ctx_find_hmacmd5();
+	ctx = ksmbd_crypto_ctx_find_hmacmd5();
 	if (!ctx) {
-		smbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		ksmbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
 	rc = calc_ntlmv2_hash(sess, ntlmv2_hash, domain_name);
 	if (rc) {
-		smbd_debug("could not get v2 hash rc %d\n", rc);
+		ksmbd_debug("could not get v2 hash rc %d\n", rc);
 		goto out;
 	}
 
@@ -415,20 +415,20 @@ int smbd_auth_ntlmv2(struct smbd_session *sess,
 				 ntlmv2_hash,
 				 CIFS_HMAC_MD5_HASH_SIZE);
 	if (rc) {
-		smbd_debug("Could not set NTLMV2 Hash as a key\n");
+		ksmbd_debug("Could not set NTLMV2 Hash as a key\n");
 		goto out;
 	}
 
 	rc = crypto_shash_init(CRYPTO_HMACMD5(ctx));
 	if (rc) {
-		smbd_debug("Could not init hmacmd5\n");
+		ksmbd_debug("Could not init hmacmd5\n");
 		goto out;
 	}
 
 	len = CIFS_CRYPTO_KEY_SIZE + blen;
 	construct = kzalloc(len, GFP_KERNEL);
 	if (!construct) {
-		smbd_debug("Memory allocation failed\n");
+		ksmbd_debug("Memory allocation failed\n");
 		rc = -ENOMEM;
 		goto out;
 	}
@@ -439,38 +439,38 @@ int smbd_auth_ntlmv2(struct smbd_session *sess,
 
 	rc = crypto_shash_update(CRYPTO_HMACMD5(ctx), construct, len);
 	if (rc) {
-		smbd_debug("Could not update with response\n");
+		ksmbd_debug("Could not update with response\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(CRYPTO_HMACMD5(ctx), ntlmv2_rsp);
 	if (rc) {
-		smbd_debug("Could not generate md5 hash\n");
+		ksmbd_debug("Could not generate md5 hash\n");
 		goto out;
 	}
 
-	rc = smbd_gen_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
+	rc = ksmbd_gen_sess_key(sess, ntlmv2_hash, ntlmv2_rsp);
 	if (rc) {
-		smbd_debug("Could not generate sess key\n");
+		ksmbd_debug("Could not generate sess key\n");
 		goto out;
 	}
 
 	rc = memcmp(ntlmv2->ntlmv2_hash, ntlmv2_rsp, CIFS_HMAC_MD5_HASH_SIZE);
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	kfree(construct);
 	return rc;
 }
 
 /**
- * __smbd_auth_ntlmv2() - NTLM2(extended security) authentication handler
+ * __ksmbd_auth_ntlmv2() - NTLM2(extended security) authentication handler
  * @sess:	session of connection
  * @client_nonce:	client nonce from LM response.
  * @ntlm_resp:		ntlm response data from client.
  *
  * Return:	0 on success, error number on error
  */
-static int __smbd_auth_ntlmv2(struct smbd_session *sess,
+static int __ksmbd_auth_ntlmv2(struct ksmbd_session *sess,
 			       char *client_nonce,
 			       char *ntlm_resp)
 {
@@ -479,19 +479,19 @@ static int __smbd_auth_ntlmv2(struct smbd_session *sess,
 	unsigned char p21[21];
 	char key[CIFS_AUTH_RESP_SIZE];
 
-	rc = smbd_enc_update_sess_key(sess_key,
+	rc = ksmbd_enc_update_sess_key(sess_key,
 				       client_nonce,
 				       (char *)sess->ntlmssp.cryptkey, 8);
 	if (rc) {
-		smbd_err("password processing failed\n");
+		ksmbd_err("password processing failed\n");
 		goto out;
 	}
 
 	memset(p21, '\0', 21);
 	memcpy(p21, user_passkey(sess->user), CIFS_NTHASH_SIZE);
-	rc = smbd_enc_p24(p21, sess_key, key);
+	rc = ksmbd_enc_p24(p21, sess_key, key);
 	if (rc) {
-		smbd_err("password processing failed\n");
+		ksmbd_err("password processing failed\n");
 		goto out;
 	}
 
@@ -501,7 +501,7 @@ out:
 }
 
 /**
- * smbd_decode_ntlmssp_auth_blob() - helper function to construct
+ * ksmbd_decode_ntlmssp_auth_blob() - helper function to construct
  * authenticate blob
  * @authblob:	authenticate blob source pointer
  * @usr:	user details
@@ -509,9 +509,9 @@ out:
  *
  * Return:	0 on success, error number on error
  */
-int smbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
+int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 				   int blob_len,
-				   struct smbd_session *sess)
+				   struct ksmbd_session *sess)
 {
 	char *domain_name;
 	unsigned int lm_off, nt_off;
@@ -519,12 +519,12 @@ int smbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 	int ret;
 
 	if (blob_len < sizeof(struct authenticate_message)) {
-		smbd_debug("negotiate blob len %d too small\n", blob_len);
+		ksmbd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
 
 	if (memcmp(authblob->Signature, "NTLMSSP", 8)) {
-		smbd_debug("blob signature incorrect %s\n",
+		ksmbd_debug("blob signature incorrect %s\n",
 				authblob->Signature);
 		return -EINVAL;
 	}
@@ -537,10 +537,10 @@ int smbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 	if (nt_len == CIFS_AUTH_RESP_SIZE) {
 		if (le32_to_cpu(authblob->NegotiateFlags)
 			& NTLMSSP_NEGOTIATE_EXTENDED_SEC)
-			return __smbd_auth_ntlmv2(sess, (char *)authblob +
+			return __ksmbd_auth_ntlmv2(sess, (char *)authblob +
 				lm_off, (char *)authblob + nt_off);
 		else
-			return smbd_auth_ntlm(sess, (char *)authblob +
+			return ksmbd_auth_ntlm(sess, (char *)authblob +
 				nt_off);
 	}
 
@@ -554,9 +554,9 @@ int smbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 		return PTR_ERR(domain_name);
 
 	/* process NTLMv2 authentication */
-	smbd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
+	ksmbd_debug("decode_ntlmssp_authenticate_blob dname%s\n",
 			domain_name);
-	ret = smbd_auth_ntlmv2(sess,
+	ret = ksmbd_auth_ntlmv2(sess,
 			(struct ntlmv2_resp *)((char *)authblob + nt_off),
 			nt_len - CIFS_ENCPWD_SIZE,
 			domain_name);
@@ -565,24 +565,24 @@ int smbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 }
 
 /**
- * smbd_decode_ntlmssp_neg_blob() - helper function to construct
+ * ksmbd_decode_ntlmssp_neg_blob() - helper function to construct
  * negotiate blob
  * @negblob: negotiate blob source pointer
  * @rsp:     response header pointer to be updated
  * @sess:    session of connection
  *
  */
-int smbd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
+int ksmbd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
 				  int blob_len,
-				  struct smbd_session *sess)
+				  struct ksmbd_session *sess)
 {
 	if (blob_len < sizeof(struct negotiate_message)) {
-		smbd_debug("negotiate blob len %d too small\n", blob_len);
+		ksmbd_debug("negotiate blob len %d too small\n", blob_len);
 		return -EINVAL;
 	}
 
 	if (memcmp(negblob->Signature, "NTLMSSP", 8)) {
-		smbd_debug("blob signature incorrect %s\n",
+		ksmbd_debug("blob signature incorrect %s\n",
 				negblob->Signature);
 		return -EINVAL;
 	}
@@ -592,7 +592,7 @@ int smbd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
 }
 
 /**
- * smbd_build_ntlmssp_challenge_blob() - helper function to construct
+ * ksmbd_build_ntlmssp_challenge_blob() - helper function to construct
  * challenge blob
  * @chgblob: challenge blob source pointer to initialize
  * @rsp:     response header pointer to be updated
@@ -600,8 +600,8 @@ int smbd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
  *
  */
 unsigned int
-smbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
-		struct smbd_session *sess)
+ksmbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
+		struct ksmbd_session *sess)
 {
 	struct target_info *tinfo;
 	wchar_t *name;
@@ -634,12 +634,12 @@ smbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
-	len = strlen(smbd_netbios_name());
+	len = strlen(ksmbd_netbios_name());
 	name = kmalloc(2 + (len * 2), GFP_KERNEL);
 	if (!name)
 		return -ENOMEM;
 
-	len = smb_strtoUTF16((__le16 *)name, smbd_netbios_name(), len,
+	len = smb_strtoUTF16((__le16 *)name, ksmbd_netbios_name(), len,
 			sess->conn->local_nls);
 	len = UNICODE_LEN(len);
 
@@ -682,43 +682,43 @@ smbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
 	chgblob->TargetInfoArray.MaximumLength = cpu_to_le16(target_info_len);
 	blob_len += target_info_len;
 	kfree(name);
-	smbd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
+	ksmbd_debug("NTLMSSP SecurityBufferLength %d\n", blob_len);
 	return blob_len;
 }
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 /**
- * smbd_sign_smb1_pdu() - function to generate SMB1 packet signing
+ * ksmbd_sign_smb1_pdu() - function to generate SMB1 packet signing
  * @sess:	session of connection
  * @iov:        buffer iov array
  * @n_vec:	number of iovecs
  * @sig:        signature value generated for client request packet
  *
  */
-int smbd_sign_smb1_pdu(struct smbd_session *sess,
+int ksmbd_sign_smb1_pdu(struct ksmbd_session *sess,
 			struct kvec *iov,
 			int n_vec,
 			char *sig)
 {
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
 	int i;
 
-	ctx = smbd_crypto_ctx_find_md5();
+	ctx = ksmbd_crypto_ctx_find_md5();
 	if (!ctx) {
-		smbd_debug("could not crypto alloc md5 rc %d\n", rc);
+		ksmbd_debug("could not crypto alloc md5 rc %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_init(CRYPTO_MD5(ctx));
 	if (rc) {
-		smbd_debug("md5 init error %d\n", rc);
+		ksmbd_debug("md5 init error %d\n", rc);
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_MD5(ctx), sess->sess_key, 40);
 	if (rc) {
-		smbd_debug("md5 update error %d\n", rc);
+		ksmbd_debug("md5 update error %d\n", rc);
 		goto out;
 	}
 
@@ -727,21 +727,21 @@ int smbd_sign_smb1_pdu(struct smbd_session *sess,
 					 iov[i].iov_base,
 					 iov[i].iov_len);
 		if (rc) {
-			smbd_debug("md5 update error %d\n", rc);
+			ksmbd_debug("md5 update error %d\n", rc);
 			goto out;
 		}
 	}
 
 	rc = crypto_shash_final(CRYPTO_MD5(ctx), sig);
 	if (rc)
-		smbd_debug("md5 generation error %d\n", rc);
+		ksmbd_debug("md5 generation error %d\n", rc);
 
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 #else
-int smbd_sign_smb1_pdu(struct smbd_session *sess,
+int ksmbd_sign_smb1_pdu(struct ksmbd_session *sess,
 			struct kvec *iov,
 			int n_vec,
 			char *sig)
@@ -751,7 +751,7 @@ int smbd_sign_smb1_pdu(struct smbd_session *sess,
 #endif
 
 /**
- * smbd_sign_smb2_pdu() - function to generate packet signing
+ * ksmbd_sign_smb2_pdu() - function to generate packet signing
  * @conn:	connection
  * @key:	signing key
  * @iov:        buffer iov array
@@ -759,19 +759,19 @@ int smbd_sign_smb1_pdu(struct smbd_session *sess,
  * @sig:	signature value generated for client request packet
  *
  */
-int smbd_sign_smb2_pdu(struct smbd_conn *conn,
+int ksmbd_sign_smb2_pdu(struct ksmbd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
 			char *sig)
 {
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
 	int i;
 
-	ctx = smbd_crypto_ctx_find_hmacsha256();
+	ctx = ksmbd_crypto_ctx_find_hmacsha256();
 	if (!ctx) {
-		smbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		ksmbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto out;
 	}
 
@@ -783,7 +783,7 @@ int smbd_sign_smb2_pdu(struct smbd_conn *conn,
 
 	rc = crypto_shash_init(CRYPTO_HMACSHA256(ctx));
 	if (rc) {
-		smbd_debug("hmacsha256 init error %d\n", rc);
+		ksmbd_debug("hmacsha256 init error %d\n", rc);
 		goto out;
 	}
 
@@ -792,21 +792,21 @@ int smbd_sign_smb2_pdu(struct smbd_conn *conn,
 					 iov[i].iov_base,
 					 iov[i].iov_len);
 		if (rc) {
-			smbd_debug("hmacsha256 update error %d\n", rc);
+			ksmbd_debug("hmacsha256 update error %d\n", rc);
 			goto out;
 		}
 	}
 
 	rc = crypto_shash_final(CRYPTO_HMACSHA256(ctx), sig);
 	if (rc)
-		smbd_debug("hmacsha256 generation error %d\n", rc);
+		ksmbd_debug("hmacsha256 generation error %d\n", rc);
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
 /**
- * smbd_sign_smb3_pdu() - function to generate packet signing
+ * ksmbd_sign_smb3_pdu() - function to generate packet signing
  * @conn:	connection
  * @key:	signing key
  * @iov:        buffer iov array
@@ -814,19 +814,19 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int smbd_sign_smb3_pdu(struct smbd_conn *conn,
+int ksmbd_sign_smb3_pdu(struct ksmbd_conn *conn,
 			char *key,
 			struct kvec *iov,
 			int n_vec,
 			char *sig)
 {
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
 	int i;
 
-	ctx = smbd_crypto_ctx_find_cmacaes();
+	ctx = ksmbd_crypto_ctx_find_cmacaes();
 	if (!ctx) {
-		smbd_debug("could not crypto alloc cmac rc %d\n", rc);
+		ksmbd_debug("could not crypto alloc cmac rc %d\n", rc);
 		goto out;
 	}
 
@@ -838,7 +838,7 @@ int smbd_sign_smb3_pdu(struct smbd_conn *conn,
 
 	rc = crypto_shash_init(CRYPTO_CMACAES(ctx));
 	if (rc) {
-		smbd_debug("cmaces init error %d\n", rc);
+		ksmbd_debug("cmaces init error %d\n", rc);
 		goto out;
 	}
 
@@ -847,16 +847,16 @@ int smbd_sign_smb3_pdu(struct smbd_conn *conn,
 					 iov[i].iov_base,
 					 iov[i].iov_len);
 		if (rc) {
-			smbd_debug("cmaces update error %d\n", rc);
+			ksmbd_debug("cmaces update error %d\n", rc);
 			goto out;
 		}
 	}
 
 	rc = crypto_shash_final(CRYPTO_CMACAES(ctx), sig);
 	if (rc)
-		smbd_debug("cmaces generation error %d\n", rc);
+		ksmbd_debug("cmaces generation error %d\n", rc);
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
@@ -866,7 +866,7 @@ struct derivation {
 	bool binding;
 };
 
-static int generate_key(struct smbd_session *sess, struct kvec label,
+static int generate_key(struct ksmbd_session *sess, struct kvec label,
 	struct kvec context, __u8 *key, unsigned int key_size)
 {
 	unsigned char zero = 0x0;
@@ -875,14 +875,14 @@ static int generate_key(struct smbd_session *sess, struct kvec label,
 	int rc = -EINVAL;
 	unsigned char prfhash[SMB2_HMACSHA256_SIZE];
 	unsigned char *hashptr = prfhash;
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
 	memset(prfhash, 0x0, SMB2_HMACSHA256_SIZE);
 	memset(key, 0x0, key_size);
 
-	ctx = smbd_crypto_ctx_find_hmacsha256();
+	ctx = ksmbd_crypto_ctx_find_hmacsha256();
 	if (!ctx) {
-		smbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
+		ksmbd_debug("could not crypto alloc hmacmd5 rc %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
@@ -894,13 +894,13 @@ static int generate_key(struct smbd_session *sess, struct kvec label,
 
 	rc = crypto_shash_init(CRYPTO_HMACSHA256(ctx));
 	if (rc) {
-		smbd_debug("hmacsha256 init error %d\n", rc);
+		ksmbd_debug("hmacsha256 init error %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(CRYPTO_HMACSHA256(ctx), i, 4);
 	if (rc) {
-		smbd_debug("could not update with n\n");
+		ksmbd_debug("could not update with n\n");
 		goto smb3signkey_ret;
 	}
 
@@ -908,13 +908,13 @@ static int generate_key(struct smbd_session *sess, struct kvec label,
 				 label.iov_base,
 				 label.iov_len);
 	if (rc) {
-		smbd_debug("could not update with label\n");
+		ksmbd_debug("could not update with label\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(CRYPTO_HMACSHA256(ctx), &zero, 1);
 	if (rc) {
-		smbd_debug("could not update with zero\n");
+		ksmbd_debug("could not update with zero\n");
 		goto smb3signkey_ret;
 	}
 
@@ -922,30 +922,30 @@ static int generate_key(struct smbd_session *sess, struct kvec label,
 				 context.iov_base,
 				 context.iov_len);
 	if (rc) {
-		smbd_debug("could not update with context\n");
+		ksmbd_debug("could not update with context\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_update(CRYPTO_HMACSHA256(ctx), L, 4);
 	if (rc) {
-		smbd_debug("could not update with L\n");
+		ksmbd_debug("could not update with L\n");
 		goto smb3signkey_ret;
 	}
 
 	rc = crypto_shash_final(CRYPTO_HMACSHA256(ctx), hashptr);
 	if (rc) {
-		smbd_debug("Could not generate hmacmd5 hash error %d\n", rc);
+		ksmbd_debug("Could not generate hmacmd5 hash error %d\n", rc);
 		goto smb3signkey_ret;
 	}
 
 	memcpy(key, hashptr, key_size);
 
 smb3signkey_ret:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
-static int generate_smb3signingkey(struct smbd_session *sess,
+static int generate_smb3signingkey(struct ksmbd_session *sess,
 				   const struct derivation *signing)
 {
 	int rc;
@@ -969,16 +969,16 @@ static int generate_smb3signingkey(struct smbd_session *sess,
 	if (!(sess->conn->dialect >= SMB30_PROT_ID && signing->binding))
 		memcpy(chann->smb3signingkey, key, SMB3_SIGN_KEY_SIZE);
 
-	smbd_debug("dumping generated AES signing keys\n");
-	smbd_debug("Session Id    %llu\n", sess->id);
-	smbd_debug("Session Key   %*ph\n",
+	ksmbd_debug("dumping generated AES signing keys\n");
+	ksmbd_debug("Session Id    %llu\n", sess->id);
+	ksmbd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
-	smbd_debug("Signing Key   %*ph\n",
+	ksmbd_debug("Signing Key   %*ph\n",
 			SMB3_SIGN_KEY_SIZE, key);
 	return rc;
 }
 
-int smbd_gen_smb30_signingkey(struct smbd_session *sess)
+int ksmbd_gen_smb30_signingkey(struct ksmbd_session *sess)
 {
 	struct derivation d;
 
@@ -991,7 +991,7 @@ int smbd_gen_smb30_signingkey(struct smbd_session *sess)
 	return generate_smb3signingkey(sess, &d);
 }
 
-int smbd_gen_smb311_signingkey(struct smbd_session *sess)
+int ksmbd_gen_smb311_signingkey(struct ksmbd_session *sess)
 {
 	struct derivation d;
 
@@ -1009,7 +1009,7 @@ struct derivation_twin {
 	struct derivation decryption;
 };
 
-static int generate_smb3encryptionkey(struct smbd_session *sess,
+static int generate_smb3encryptionkey(struct ksmbd_session *sess,
 	const struct derivation_twin *ptwin)
 {
 	int rc;
@@ -1026,18 +1026,18 @@ static int generate_smb3encryptionkey(struct smbd_session *sess,
 	if (rc)
 		return rc;
 
-	smbd_debug("dumping generated AES encryption keys\n");
-	smbd_debug("Session Id    %llu\n", sess->id);
-	smbd_debug("Session Key   %*ph\n",
+	ksmbd_debug("dumping generated AES encryption keys\n");
+	ksmbd_debug("Session Id    %llu\n", sess->id);
+	ksmbd_debug("Session Key   %*ph\n",
 			SMB2_NTLMV2_SESSKEY_SIZE, sess->sess_key);
-	smbd_debug("ServerIn Key  %*ph\n",
+	ksmbd_debug("ServerIn Key  %*ph\n",
 			SMB3_SIGN_KEY_SIZE, sess->smb3encryptionkey);
-	smbd_debug("ServerOut Key %*ph\n",
+	ksmbd_debug("ServerOut Key %*ph\n",
 			SMB3_SIGN_KEY_SIZE, sess->smb3decryptionkey);
 	return rc;
 }
 
-int smbd_gen_smb30_encryptionkey(struct smbd_session *sess)
+int ksmbd_gen_smb30_encryptionkey(struct ksmbd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;
@@ -1057,7 +1057,7 @@ int smbd_gen_smb30_encryptionkey(struct smbd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int smbd_gen_smb311_encryptionkey(struct smbd_session *sess)
+int ksmbd_gen_smb311_encryptionkey(struct ksmbd_session *sess)
 {
 	struct derivation_twin twin;
 	struct derivation *d;
@@ -1077,7 +1077,7 @@ int smbd_gen_smb311_encryptionkey(struct smbd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int smbd_gen_preauth_integrity_hash(struct smbd_conn *conn,
+int ksmbd_gen_preauth_integrity_hash(struct ksmbd_conn *conn,
 				     char *buf,
 				     __u8 *pi_hash)
 {
@@ -1085,13 +1085,13 @@ int smbd_gen_preauth_integrity_hash(struct smbd_conn *conn,
 	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)buf;
 	char *all_bytes_msg = (char *)&rcv_hdr->ProtocolId;
 	int msg_size = be32_to_cpu(rcv_hdr->smb2_buf_length);
-	struct smbd_crypto_ctx *ctx = NULL;
+	struct ksmbd_crypto_ctx *ctx = NULL;
 
 	if (conn->preauth_info->Preauth_HashId ==
 			SMB2_PREAUTH_INTEGRITY_SHA512) {
-		ctx = smbd_crypto_ctx_find_sha512();
+		ctx = ksmbd_crypto_ctx_find_sha512();
 		if (!ctx) {
-			smbd_debug("could not alloc sha512 rc %d\n", rc);
+			ksmbd_debug("could not alloc sha512 rc %d\n", rc);
 			goto out;
 		}
 	} else
@@ -1099,41 +1099,41 @@ int smbd_gen_preauth_integrity_hash(struct smbd_conn *conn,
 
 	rc = crypto_shash_init(CRYPTO_SHA512(ctx));
 	if (rc) {
-		smbd_debug("could not init shashn");
+		ksmbd_debug("could not init shashn");
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_SHA512(ctx), pi_hash, 64);
 	if (rc) {
-		smbd_debug("could not update with n\n");
+		ksmbd_debug("could not update with n\n");
 		goto out;
 	}
 
 	rc = crypto_shash_update(CRYPTO_SHA512(ctx), all_bytes_msg, msg_size);
 	if (rc) {
-		smbd_debug("could not update with n\n");
+		ksmbd_debug("could not update with n\n");
 		goto out;
 	}
 
 	rc = crypto_shash_final(CRYPTO_SHA512(ctx), pi_hash);
 	if (rc) {
-		smbd_debug("Could not generate hash err : %d\n", rc);
+		ksmbd_debug("Could not generate hash err : %d\n", rc);
 		goto out;
 	}
 out:
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
 
-static int smbd_get_encryption_key(struct smbd_conn *conn,
+static int ksmbd_get_encryption_key(struct ksmbd_conn *conn,
 				    __u64 ses_id,
 				    int enc,
 				    u8 *key)
 {
-	struct smbd_session *sess;
+	struct ksmbd_session *sess;
 	u8 *ses_enc_key;
 
-	sess = smbd_session_lookup(conn, ses_id);
+	sess = ksmbd_session_lookup(conn, ses_id);
 	if (!sess)
 		return 1;
 
@@ -1145,7 +1145,7 @@ static int smbd_get_encryption_key(struct smbd_conn *conn,
 }
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static struct scatterlist *smbd_init_sg(struct kvec *iov,
+static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 					 unsigned int nvec,
 					 u8 *sign)
 {
@@ -1163,7 +1163,7 @@ static struct scatterlist *smbd_init_sg(struct kvec *iov,
 	return sg;
 }
 #else
-static struct scatterlist *smbd_init_sg(struct kvec *iov,
+static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 					 unsigned int nvec,
 					 u8 *sign)
 {
@@ -1184,7 +1184,7 @@ static struct scatterlist *smbd_init_sg(struct kvec *iov,
 }
 #endif
 
-int smbd_crypt_message(struct smbd_conn *conn,
+int ksmbd_crypt_message(struct ksmbd_conn *conn,
 			struct kvec *iov,
 			unsigned int nvec,
 			int enc)
@@ -1204,23 +1204,23 @@ int smbd_crypt_message(struct smbd_conn *conn,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
 	struct scatterlist assoc;
 #endif
-	struct smbd_crypto_ctx *ctx;
+	struct ksmbd_crypto_ctx *ctx;
 
-	rc = smbd_get_encryption_key(conn,
+	rc = ksmbd_get_encryption_key(conn,
 				      le64_to_cpu(tr_hdr->SessionId),
 				      enc,
 				      key);
 	if (rc) {
-		smbd_err("Could not get %scryption key\n", enc ? "en" : "de");
+		ksmbd_err("Could not get %scryption key\n", enc ? "en" : "de");
 		return 0;
 	}
 
 	if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
-		ctx = smbd_crypto_ctx_find_gcm();
+		ctx = ksmbd_crypto_ctx_find_gcm();
 	else
-		ctx = smbd_crypto_ctx_find_ccm();
+		ctx = ksmbd_crypto_ctx_find_ccm();
 	if (!ctx) {
-		smbd_err("crypto alloc failed\n");
+		ksmbd_err("crypto alloc failed\n");
 		return -EINVAL;
 	}
 
@@ -1231,19 +1231,19 @@ int smbd_crypt_message(struct smbd_conn *conn,
 
 	rc = crypto_aead_setkey(tfm, key, SMB3_SIGN_KEY_SIZE);
 	if (rc) {
-		smbd_err("Failed to set aead key %d\n", rc);
+		ksmbd_err("Failed to set aead key %d\n", rc);
 		return rc;
 	}
 
 	rc = crypto_aead_setauthsize(tfm, SMB2_SIGNATURE_SIZE);
 	if (rc) {
-		smbd_err("Failed to set authsize %d\n", rc);
+		ksmbd_err("Failed to set authsize %d\n", rc);
 		return rc;
 	}
 
 	req = aead_request_alloc(tfm, GFP_KERNEL);
 	if (!req) {
-		smbd_err("Failed to alloc aead request\n");
+		ksmbd_err("Failed to alloc aead request\n");
 		return -ENOMEM;
 	}
 
@@ -1256,9 +1256,9 @@ int smbd_crypt_message(struct smbd_conn *conn,
 	sg_init_one(&assoc, iov[0].iov_base + 24, assoc_data_len);
 #endif
 
-	sg = smbd_init_sg(iov, nvec, sign);
+	sg = ksmbd_init_sg(iov, nvec, sign);
 	if (!sg) {
-		smbd_err("Failed to init sg\n");
+		ksmbd_err("Failed to init sg\n");
 		rc = -ENOMEM;
 		goto free_req;
 	}
@@ -1266,7 +1266,7 @@ int smbd_crypt_message(struct smbd_conn *conn,
 	iv_len = crypto_aead_ivsize(tfm);
 	iv = kzalloc(iv_len, GFP_KERNEL);
 	if (!iv) {
-		smbd_err("Failed to alloc IV\n");
+		ksmbd_err("Failed to alloc IV\n");
 		rc = -ENOMEM;
 		goto free_sg;
 	}
@@ -1299,6 +1299,6 @@ free_sg:
 	kfree(sg);
 free_req:
 	kfree(req);
-	smbd_release_crypto_ctx(ctx);
+	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }

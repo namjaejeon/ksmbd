@@ -11,18 +11,18 @@ $(error CONFIG_SMB_SERVER_SMBDIRECT is supported in the kernel above 4.12 versio
 endif
 endif
 
-obj-$(CONFIG_SMB_SERVER) += smbd.o
+obj-$(CONFIG_SMB_SERVER) += ksmbd.o
 
-smbd-y :=	unicode.o auth.o vfs.o vfs_cache.o \
+ksmbd-y :=	unicode.o auth.o vfs.o vfs_cache.o \
 		misc.o oplock.o netmisc.o \
-		mgmt/smbd_ida.o mgmt/user_config.o mgmt/share_config.o \
+		mgmt/ksmbd_ida.o mgmt/user_config.o mgmt/share_config.o \
 		mgmt/tree_connect.o mgmt/user_session.o smb_common.o \
 		buffer_pool.o transport_tcp.o transport_ipc.o server.o \
-		connection.o crypto_ctx.o smbd_work.o
+		connection.o crypto_ctx.o ksmbd_work.o
 
-smbd-y +=	smb2pdu.o smb2ops.o smb2misc.o asn1.o
-smbd-$(CONFIG_SMB_INSECURE_SERVER) += smb1pdu.o smb1ops.o smb1misc.o
-smbd-$(CONFIG_SMB_SERVER_SMBDIRECT) += transport_rdma.o
+ksmbd-y +=	smb2pdu.o smb2ops.o smb2misc.o asn1.o
+ksmbd-$(CONFIG_SMB_INSECURE_SERVER) += smb1pdu.o smb1ops.o smb1misc.o
+ksmbd-$(CONFIG_SMB_SERVER_SMBDIRECT) += transport_rdma.o
 else
 # For external module build
 EXTRA_FLAGS += -I$(PWD)
@@ -39,13 +39,13 @@ all:
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
-install: smbd.ko
-	rm -f ${MDIR}/kernel/fs/smbd/smbd.ko
-	install -m644 -b -D smbd.ko ${MDIR}/kernel/fs/smbd/smbd.ko
+install: ksmbd.ko
+	rm -f ${MDIR}/kernel/fs/ksmbd/ksmbd.ko
+	install -m644 -b -D ksmbd.ko ${MDIR}/kernel/fs/ksmbd/ksmbd.ko
 	depmod -a
 
 uninstall:
-	rm -rf ${MDIR}/kernel/fs/smbd
+	rm -rf ${MDIR}/kernel/fs/ksmbd
 	depmod -a
 endif
 
