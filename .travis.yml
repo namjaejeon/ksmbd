@@ -28,74 +28,74 @@ before_script:
  - sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-dev
 
 script:
- # Copy smbd source to kernel
+ # Copy ksmbd source to kernel
  - mv linux-stable ../
  - mv linux ../
- - mkdir ../linux-stable/fs/smbd
- - cp -ar * ../linux-stable/fs/smbd/
- - mkdir ../linux/fs/smbd
- - cp -ar * ../linux/fs/smbd/
+ - mkdir ../linux-stable/fs/ksmbd
+ - cp -ar * ../linux-stable/fs/ksmbd/
+ - mkdir ../linux/fs/ksmbd
+ - cp -ar * ../linux/fs/ksmbd/
 
  # Compile with 4.1 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += smbd/' >> fs/Makefile
- - echo 'source "fs/smbd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
- - make -j$((`nproc`+1)) fs/smbd/smbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += smbd/' >> fs/Makefile
- - echo 'source "fs/smbd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
- - make -j$((`nproc`+1)) fs/smbd/smbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += smbd/' >> fs/Makefile
- - echo 'source "fs/smbd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
- - make -j$((`nproc`+1)) fs/smbd/smbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += smbd/' >> fs/Makefile
- - echo 'source "fs/smbd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
- - make -j$((`nproc`+1)) fs/smbd/smbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += smbd/' >> fs/Makefile
- - echo 'source "fs/smbd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - make -j$((`nproc`+1)) fs/smbd/smbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Run xfstests testsuite
  - cd ../smbd
  - make > /dev/null
  - sudo make install > /dev/null
- - sudo modprobe smbd
+ - sudo modprobe ksmbd
  - sudo modprobe cifs
  - cd smbd-tools
  - ./autogen.sh > /dev/null
