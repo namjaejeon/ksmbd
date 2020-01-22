@@ -18,7 +18,7 @@ before_script:
  - sudo apt-get install linux-headers-$(uname -r)
  - sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev
  - sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
- - git clone --branch=smbd-tools-next https://github.com/cifsd-team/smbd-tools
+ - git clone --branch=ksmbd-tools-next https://github.com/cifsd-team/ksmbd-tools
  - git clone https://github.com/cifsd-team/cifsd-test-result
  - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
  - export PATH=/usr/local/lib:$PATH
@@ -92,26 +92,26 @@ script:
  - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Run xfstests testsuite
- - cd ../smbd
+ - cd ../ksmbd
  - make > /dev/null
  - sudo make install > /dev/null
  - sudo modprobe ksmbd
  - sudo modprobe cifs
- - cd smbd-tools
+ - cd ksmbd-tools
  - ./autogen.sh > /dev/null
  - ./configure > /dev/null
  - make -j$((`nproc`+1)) > /dev/null
  - sudo make install > /dev/null
  - cd ..
- - sudo mkdir -p /etc/smbd/
+ - sudo mkdir -p /etc/ksmbd/
  - sudo mkdir -p /mnt/1
  - sudo mkdir -p /mnt/2
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
  - sudo mkdir -p /mnt/test3
- - smbuseradd -i ./smbdpwd.db -a testuser -p 1234
+ - smbuseradd -i ./ksmbdpwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
- - usmbd -n --c=./smb.conf --u=./smbdpwd.db&
+ - usmbd -n --c=./smb.conf --u=./ksmbdpwd.db&
  - ps -ax | grep smbd
  - cd cifsd-test-result/testsuites/
  - tar xzvf xfstests-cifsd.tgz > /dev/null
@@ -197,7 +197,7 @@ script:
  - sudo ./check generic/248
  - sudo ./check generic/249
  - sudo ./check generic/257
-# - sudo ./check generic/263 #fail, It may be smbd issue
+# - sudo ./check generic/263 #fail, It may be ksmbd issue
 # - sudo ./check generic/285 #fail, It may be cifs client issue on 4.15 kernel
  - sed -e "s/<< 20/<< 10/g" tests/generic/286 > tests/generic/286.new
  - mv tests/generic/286.new tests/generic/286
