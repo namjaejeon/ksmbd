@@ -561,7 +561,8 @@ static void __file_dentry_ctime(struct ksmbd_work *work,
 	 * if "store dos attributes" conf is not yes,
 	 * create time = change time
 	 */
-	time = ksmbd_UnixTimeToNT(from_kern_timespec(ksmbd_kstat->kstat->ctime));
+	time = ksmbd_UnixTimeToNT(from_kern_timespec(
+			ksmbd_kstat->kstat->ctime));
 	ksmbd_kstat->create_time = time;
 
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -1846,24 +1847,24 @@ out:
 void *ksmbd_vfs_init_kstat(char **p, struct ksmbd_kstat *ksmbd_kstat)
 {
 	struct file_directory_info *info = (struct file_directory_info *)(*p);
+	struct kstat *kstat = ksmbd_kstat->kstat;
 	u64 time;
 
 	info->FileIndex = 0;
 	info->CreationTime = cpu_to_le64(ksmbd_kstat->create_time);
-	time = ksmbd_UnixTimeToNT(from_kern_timespec(ksmbd_kstat->kstat->atime));
+	time = ksmbd_UnixTimeToNT(from_kern_timespec(kstat->atime));
 	info->LastAccessTime = cpu_to_le64(time);
-	time = ksmbd_UnixTimeToNT(from_kern_timespec(ksmbd_kstat->kstat->mtime));
+	time = ksmbd_UnixTimeToNT(from_kern_timespec(kstat->mtime));
 	info->LastWriteTime = cpu_to_le64(time);
-	time = ksmbd_UnixTimeToNT(from_kern_timespec(ksmbd_kstat->kstat->ctime));
+	time = ksmbd_UnixTimeToNT(from_kern_timespec(kstat->ctime));
 	info->ChangeTime = cpu_to_le64(time);
 
 	if (ksmbd_kstat->file_attributes & ATTR_DIRECTORY_LE) {
 		info->EndOfFile = 0;
 		info->AllocationSize = 0;
 	} else {
-		info->EndOfFile = cpu_to_le64(ksmbd_kstat->kstat->size);
-		info->AllocationSize =
-			cpu_to_le64(ksmbd_kstat->kstat->blocks << 9);
+		info->EndOfFile = cpu_to_le64(kstat->size);
+		info->AllocationSize = cpu_to_le64(kstat->blocks << 9);
 	}
 	info->ExtFileAttributes = ksmbd_kstat->file_attributes;
 
