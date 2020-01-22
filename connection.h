@@ -176,43 +176,43 @@ void smbd_conn_transport_destroy(void);
  * This is a hack. We will move status to a proper place once we land
  * a multi-sessions support.
  */
-static inline bool smbd_conn_good(struct smbd_conn *conn)
+static inline bool smbd_conn_good(struct smbd_work *work)
 {
-	return conn->status == SMBD_SESS_GOOD;
+	return work->conn->status == SMBD_SESS_GOOD;
 }
 
-static inline bool smbd_conn_need_negotiate(struct smbd_conn *conn)
+static inline bool smbd_conn_need_negotiate(struct smbd_work *work)
 {
-	return conn->status == SMBD_SESS_NEED_NEGOTIATE;
+	return work->conn->status == SMBD_SESS_NEED_NEGOTIATE;
 }
 
-static inline bool smbd_conn_need_reconnect(struct smbd_conn *conn)
+static inline bool smbd_conn_need_reconnect(struct smbd_work *work)
 {
-	return conn->status == SMBD_SESS_NEED_RECONNECT;
+	return work->conn->status == SMBD_SESS_NEED_RECONNECT;
 }
 
-static inline bool smbd_conn_exiting(struct smbd_conn *conn)
+static inline bool smbd_conn_exiting(struct smbd_work *work)
 {
-	return conn->status == SMBD_SESS_EXITING;
+	return work->conn->status == SMBD_SESS_EXITING;
 }
 
-static inline void smbd_conn_set_good(struct smbd_conn *conn)
+static inline void smbd_conn_set_good(struct smbd_work *work)
 {
-	conn->status = SMBD_SESS_GOOD;
+	work->conn->status = SMBD_SESS_GOOD;
 }
 
-static inline void smbd_conn_set_need_negotiate(struct smbd_conn *conn)
+static inline void smbd_conn_set_need_negotiate(struct smbd_work *work)
 {
-	conn->status = SMBD_SESS_NEED_NEGOTIATE;
+	work->conn->status = SMBD_SESS_NEED_NEGOTIATE;
 }
 
-static inline void smbd_conn_set_need_reconnect(struct smbd_conn *conn)
+static inline void smbd_conn_set_need_reconnect(struct smbd_work *work)
 {
-	conn->status = SMBD_SESS_NEED_RECONNECT;
+	work->conn->status = SMBD_SESS_NEED_RECONNECT;
 }
 
-static inline void smbd_conn_set_exiting(struct smbd_conn *conn)
+static inline void smbd_conn_set_exiting(struct smbd_work *work)
 {
-	conn->status = SMBD_SESS_EXITING;
+	work->conn->status = SMBD_SESS_EXITING;
 }
 #endif /* __CONNECTION_H__ */

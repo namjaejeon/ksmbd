@@ -260,7 +260,7 @@ int init_smb2_neg_rsp(struct smbd_work *work)
 
 	rsp = RESPONSE_BUF(work);
 
-	WARN_ON(smbd_conn_good(conn));
+	WARN_ON(smbd_conn_good(work));
 
 	rsp->StructureSize = cpu_to_le16(65);
 	smbd_debug("conn->dialect 0x%x\n", conn->dialect);
@@ -288,7 +288,7 @@ int init_smb2_neg_rsp(struct smbd_work *work)
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
 	conn->use_spnego = true;
 
-	smbd_conn_set_need_negotiate(conn);
+	smbd_conn_set_need_negotiate(work);
 	return 0;
 }
 
@@ -589,7 +589,7 @@ int smb2_check_user_session(struct smbd_work *work)
 			cmd == SMB2_SESSION_SETUP_HE)
 		return 0;
 
-	if (!smbd_conn_good(conn))
+	if (!smbd_conn_good(work))
 		return -EINVAL;
 
 	sess_id = le64_to_cpu(req_hdr->SessionId);
@@ -616,7 +616,7 @@ static void destroy_previous_session(struct smbd_user *user, uint64_t id)
 	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
 		return;
 
-	smbd_conn_set_exiting(prev_sess->conn);
+	smbd_session_destroy(prev_sess);
 }
 
 /**
@@ -977,7 +977,7 @@ int smb2_handle_negotiate(struct smbd_work *work)
 
 	smbd_debug("Received negotiate request\n");
 	conn->need_neg = false;
-	if (smbd_conn_good(conn)) {
+	if (smbd_conn_good(work)) {
 		smbd_err("conn->tcp_status is already in CifsGood State\n");
 		work->send_no_response = 1;
 		return rc;
@@ -1093,7 +1093,7 @@ int smb2_handle_negotiate(struct smbd_work *work)
 	}
 
 	conn->srv_sec_mode = le16_to_cpu(rsp->SecurityMode);
-	smbd_conn_set_need_negotiate(conn);
+	smbd_conn_set_need_negotiate(work);
 
 err_out:
 	if (rc < 0)
@@ -1468,7 +1468,7 @@ int smb2_sess_setup(struct smbd_work *work)
 		if (rc)
 			goto out_err;
 
-		smbd_conn_set_good(conn);
+		smbd_conn_set_good(work);
 		sess->state = SMB2_SESSION_VALID;
 		smbd_free(sess->Preauth_HashValue);
 		sess->Preauth_HashValue = NULL;
@@ -1709,7 +1709,7 @@ int smb2_session_logoff(struct smbd_work *work)
 	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	smbd_conn_set_need_reconnect(conn);
+	smbd_conn_set_need_reconnect(work);
 	smbd_close_session_fds(work);
 	smbd_conn_wait_idle(conn);
 
@@ -1731,7 +1731,7 @@ int smb2_session_logoff(struct smbd_work *work)
 	sess->user = NULL;
 
 	/* let start_tcp_sess free connection info now */
-	smbd_conn_set_need_negotiate(conn);
+	smbd_conn_set_need_negotiate(work);
 	return 0;
 }
 

@@ -248,7 +248,7 @@ int smb_check_user_session(struct smbd_work *work)
 	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
 		return 0;
 
-	if (!smbd_conn_good(conn))
+	if (!smbd_conn_good(work))
 		return -EINVAL;
 
 	if (list_empty(&conn->sessions)) {
@@ -311,7 +311,7 @@ int smb_session_disconnect(struct smbd_work *work)
 	WARN_ON(sess->conn != conn);
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	smbd_conn_set_need_reconnect(conn);
+	smbd_conn_set_need_reconnect(work);
 
 	smbd_free_user(sess->user);
 	sess->user = NULL;
@@ -323,7 +323,7 @@ int smb_session_disconnect(struct smbd_work *work)
 	work->sess = NULL;
 
 	/* let start_tcp_sess free conn info now */
-	smbd_conn_set_exiting(conn);
+	smbd_conn_set_exiting(work);
 	return 0;
 }
 
@@ -559,7 +559,7 @@ out_err:
 
 	/* Clean session if there is no tree attached */
 	if (!sess || list_empty(&sess->tree_conn_list))
-		smbd_conn_set_exiting(conn);
+		smbd_conn_set_exiting(work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + le16_to_cpu(rsp->ByteCount) +
 		extra_byte));
 	return -EINVAL;
@@ -812,7 +812,7 @@ int smb_handle_negotiate(struct smbd_work *work)
 	__le64 time;
 	int rc = 0;
 
-	WARN_ON(smbd_conn_good(conn));
+	WARN_ON(smbd_conn_good(work));
 
 	if (conn->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;
@@ -876,7 +876,7 @@ int smb_handle_negotiate(struct smbd_work *work)
 
 	/* Null terminated domain name in unicode */
 
-	smbd_conn_set_need_negotiate(conn);
+	smbd_conn_set_need_negotiate(work);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later
 	 */
@@ -1247,7 +1247,7 @@ int smb_session_setup_andx(struct smbd_work *work)
 		goto out_err;
 
 	work->sess = sess;
-	smbd_conn_set_good(conn);
+	smbd_conn_set_good(work);
 	return 0;
 
 out_err:

@@ -97,8 +97,7 @@ static inline int check_conn_state(struct smbd_work *work)
 {
 	struct smb_hdr *rsp_hdr;
 
-	if (smbd_conn_exiting(work->conn) ||
-	    smbd_conn_need_reconnect(work->conn)) {
+	if (smbd_conn_exiting(work) || smbd_conn_need_reconnect(work)) {
 		rsp_hdr = RESPONSE_BUF(work);
 		rsp_hdr->Status.CifsError = STATUS_CONNECTION_DISCONNECTED;
 		return 1;
