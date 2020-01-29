@@ -3973,7 +3973,7 @@ static int get_file_all_info(struct ksmbd_work *work,
 				FILE_GENERIC_READ_LE |
 				FILE_MAXIMAL_ACCESS_LE |
 				FILE_GENERIC_ALL_LE))) {
-		ksmbd_err("no right to read the attributes : 0x%x\n",
+		ksmbd_debug("no right to read the attributes : 0x%x\n",
 				fp->daccess);
 		return -EACCES;
 	}
