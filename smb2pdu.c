@@ -5656,7 +5656,8 @@ int smb2_read(struct ksmbd_work *work)
 		offset, length);
 
 	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
-		work->aux_payload_buf = ksmbd_find_buffer(length);
+		work->aux_payload_buf =
+			ksmbd_find_buffer(conn->vals->max_read_size);
 	else
 		work->aux_payload_buf = ksmbd_alloc_response(length);
 	if (!work->aux_payload_buf) {
