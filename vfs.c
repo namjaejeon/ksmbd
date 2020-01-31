@@ -1702,12 +1702,13 @@ static int __dir_empty(struct dir_context *ctx,
 int ksmbd_vfs_empty_dir(struct ksmbd_file *fp)
 {
 	int err;
+	struct ksmbd_readdir_data readdir_data;
 
-	set_ctx_actor(&fp->readdir_data.ctx, __dir_empty);
-	fp->readdir_data.dirent_count	= 0;
+	set_ctx_actor(&readdir_data.ctx, __dir_empty);
+	readdir_data.dirent_count = 0;
 
-	err = ksmbd_vfs_readdir(fp->filp, &fp->readdir_data);
-	if (fp->readdir_data.dirent_count > 2)
+	err = ksmbd_vfs_readdir(fp->filp, &readdir_data);
+	if (readdir_data.dirent_count > 2)
 		err = -ENOTEMPTY;
 	else
 		err = 0;
