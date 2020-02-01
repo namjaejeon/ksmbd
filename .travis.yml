@@ -109,9 +109,9 @@ script:
  - sudo mkdir -p /mnt/test1
  - sudo mkdir -p /mnt/test2
  - sudo mkdir -p /mnt/test3
- - smbuseradd -i ./ksmbdpwd.db -a testuser -p 1234
+ - ksmbd.adduser -i ./ksmbdpwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
- - usmbd -n --c=./smb.conf --u=./ksmbdpwd.db&
+ - ksmbd.mountd -n --c=./smb.conf --u=./ksmbdpwd.db&
  - ps -ax | grep smbd
  - cd cifsd-test-result/testsuites/
  - tar xzvf xfstests-cifsd.tgz > /dev/null
