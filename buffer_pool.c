@@ -240,7 +240,7 @@ void ksmbd_free_request(void *addr)
 
 void *ksmbd_alloc_request(size_t size)
 {
-	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
+	return __alloc(size, GFP_KERNEL);
 }
 
 void ksmbd_free_response(void *buffer)
