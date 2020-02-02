@@ -48,7 +48,7 @@ static inline void ksmbd_tcp_reuseaddr(struct socket *sock)
 {
 	int val = 1;
 
-	kernel_setsockopt(sock, SOL_TCP, SO_REUSEADDR,
+	kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR,
 		(char *)&val, sizeof(val));
 }
 
@@ -579,6 +579,8 @@ int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 
 		rtnl_lock();
 		for_each_netdev(&init_net, netdev) {
+			if (netdev->priv_flags & IFF_BRIDGE_PORT)
+				continue;
 			if (alloc_iface(kstrdup(netdev->name, GFP_KERNEL)))
 				return -ENOMEM;
 		}
