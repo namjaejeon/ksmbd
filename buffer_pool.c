@@ -53,7 +53,7 @@ static inline void *__alloc(size_t size, gfp_t flags)
 	 * OOM killer and no allocation failure warnings as we have a fallback.
 	 */
 	if (size > PAGE_SIZE)
-		kmalloc_flags |= __GFP_NOWARN;
+		kmalloc_flags |= __GFP_NOWARN | __GFP_NORETRY;
 
 	ret = kmalloc(size, kmalloc_flags);
 
@@ -101,13 +101,14 @@ static int register_wm_size_class(size_t sz)
 {
 	struct wm_list *l, *nl;
 
-	nl = __alloc(sizeof(struct wm_list), GFP_KERNEL | __GFP_ZERO);
+	nl = __alloc(sizeof(struct wm_list), GFP_KERNEL);
 	if (!nl)
 		return -ENOMEM;
 
 	nl->sz = sz;
 	spin_lock_init(&nl->wm_lock);
 	INIT_LIST_HEAD(&nl->idle_wm);
+	INIT_LIST_HEAD(&nl->list);
 	init_waitqueue_head(&nl->wm_wait);
 	nl->avail_wm = 0;
 
@@ -140,7 +141,7 @@ static struct wm_list *match_wm_list(size_t size)
 	return rl;
 }
 
-static struct wm *find_wm(size_t size, gfp_t flags)
+static struct wm *find_wm(size_t size)
 {
 	struct wm_list *wm_list;
 	struct wm *wm;
@@ -176,7 +177,7 @@ static struct wm *find_wm(size_t size, gfp_t flags)
 		wm_list->avail_wm++;
 		spin_unlock(&wm_list->wm_lock);
 
-		wm = wm_alloc(size, flags);
+		wm = wm_alloc(size, GFP_KERNEL);
 		if (!wm) {
 			spin_lock(&wm_list->wm_lock);
 			wm_list->avail_wm--;
@@ -188,8 +189,6 @@ static struct wm *find_wm(size_t size, gfp_t flags)
 		break;
 	}
 
-	if (flags & __GFP_ZERO)
-		memset(wm->buffer, 0x00, wm->sz);
 	return wm;
 }
 
@@ -241,7 +240,7 @@ void ksmbd_free_request(void *addr)
 
 void *ksmbd_alloc_request(size_t size)
 {
-	return __alloc(size, GFP_KERNEL | __GFP_ZERO);
+	return __alloc(size, GFP_KERNEL);
 }
 
 void ksmbd_free_response(void *buffer)
@@ -258,7 +257,7 @@ void *ksmbd_find_buffer(size_t size)
 {
 	struct wm *wm;
 
-	wm = find_wm(size, GFP_KERNEL | __GFP_ZERO);
+	wm = find_wm(size);
 
 	WARN_ON(!wm);
 	if (wm)
