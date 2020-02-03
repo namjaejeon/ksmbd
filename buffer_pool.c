@@ -53,7 +53,7 @@ static inline void *__alloc(size_t size, gfp_t flags)
 	 * OOM killer and no allocation failure warnings as we have a fallback.
 	 */
 	if (size > PAGE_SIZE)
-		kmalloc_flags |= __GFP_NOWARN;
+		kmalloc_flags |= __GFP_NOWARN | __GFP_NORETRY;
 
 	ret = kmalloc(size, kmalloc_flags);
 
