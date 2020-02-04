@@ -155,7 +155,7 @@ script:
  - mv tests/generic/075.new tests/generic/075
  - sudo ./check generic/075
  - sudo ./check generic/080
-# - sudo ./check generic/084 #fail, It may be cifs client issue on 4.15 kernel
+ - sudo ./check generic/084
 # - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
 # - mv tests/generic/091.new tests/generic/091
 # - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
@@ -205,7 +205,7 @@ script:
  - sudo ./check generic/308
  - sudo ./check generic/309
  - sudo ./check generic/315
-# - sudo ./check generic/323 #fail, It may be cifs client issue on 4.15 kernel
+ - sudo ./check generic/323
  - sudo ./check generic/337
  - sudo ./check generic/340
  - sudo ./check generic/345
@@ -229,7 +229,7 @@ script:
  - sudo ./check generic/469
 # - time_wait sudo ./check generic/476 (timeover > 10m)
 # - sudo ./check generic/490 #fail, It may be cifs client issue on 5.0 kernel 
-# - sudo ./check generic/504 #fail, It may be cifs client issue on 4.15 kernel
+ - sudo ./check generic/504
 #
 #
 #
