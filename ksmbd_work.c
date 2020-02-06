@@ -86,3 +86,33 @@ bool ksmbd_queue_work(struct ksmbd_work *work)
 {
 	return queue_work(ksmbd_wq, &work->work);
 }
+
+void ksmbd_work_write_lock(struct ksmbd_work *work)
+{
+	struct smb2_hdr *hdr = REQUEST_BUF(work);
+
+	work->write_locked = true;
+	if (!hdr->NextCommand &&
+	    (hdr->Command == SMB2_READ_HE ||
+	     hdr->Command == SMB2_QUERY_DIRECTORY_HE ||
+	     hdr->Command == SMB2_QUERY_INFO_HE ||
+	     hdr->Command == SMB2_OPLOCK_BREAK_HE ||
+	     hdr->Command == SMB2_ECHO_HE))
+		work->write_locked = false;
+}
+
+void ksmbd_request_lock(struct ksmbd_work *work)
+{
+	if (work->write_locked)
+		down_write(&work->conn->srv_rwsem);
+	else
+		down_read(&work->conn->srv_rwsem);
+}
+
+void ksmbd_request_unlock(struct ksmbd_work *work)
+{
+	if (work->write_locked)
+		up_write(&work->conn->srv_rwsem);
+	else
+		up_read(&work->conn->srv_rwsem);
+}

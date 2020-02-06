@@ -65,6 +65,7 @@ struct ksmbd_work {
 	/* Is this SYNC or ASYNC ksmbd_work */
 	bool                            syncronous:1;
 	bool                            need_invalidate_rkey:1;
+	bool				write_locked:1;
 
 	unsigned int                    remote_key;
 	/* cancel works */
@@ -113,5 +114,8 @@ int ksmbd_work_pool_init(void);
 int ksmbd_workqueue_init(void);
 void ksmbd_workqueue_destroy(void);
 bool ksmbd_queue_work(struct ksmbd_work *work);
+void ksmbd_work_write_lock(struct ksmbd_work *work);
+void ksmbd_request_lock(struct ksmbd_work *work);
+void ksmbd_request_unlock(struct ksmbd_work *work);
 
 #endif /* __KSMBD_WORK_H__ */
