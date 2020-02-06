@@ -1399,6 +1399,10 @@ int ksmbd_vfs_zero_data(struct ksmbd_work *work,
 			 loff_t len)
 {
 	smb_break_all_levII_oplock(work, fp, 1);
+	if (fp->f_ci->m_fattr & ATTR_SPARSE_FILE_LE)
+		return vfs_fallocate(fp->filp,
+			FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, off, len);
+
 	return vfs_fallocate(fp->filp, FALLOC_FL_ZERO_RANGE, off, len);
 }
 
