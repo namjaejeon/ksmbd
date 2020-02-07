@@ -4485,7 +4485,6 @@ static int smb2_get_info_filesystem(struct ksmbd_work *work,
 		size_t sz;
 
 		info = (struct filesystem_attribute_info *)rsp->Buffer;
-		info->Attributes = cpu_to_le32(0x0001006f);
 		info->Attributes = cpu_to_le32(FILE_SUPPORTS_OBJECT_IDS |
 					       FILE_PERSISTENT_ACLS |
 					       FILE_UNICODE_ON_DISK |
