@@ -723,13 +723,14 @@ static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 
 	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 
-	if (server_conf.share_fake_fscaps & FILE_SUPPORTS_SPARSE_FILES)
-		attr |= ATTR_SPARSE;
-
 	if (S_ISDIR(stat->mode))
 		attr = ATTR_DIRECTORY;
-	else
+	else {
 		attr &= ~(ATTR_DIRECTORY);
+		if (S_ISREG(stat->mode) && (server_conf.share_fake_fscaps &
+				FILE_SUPPORTS_SPARSE_FILES))
+			attr |= ATTR_SPARSE;
+	}
 
 	return attr;
 }
