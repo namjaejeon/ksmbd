@@ -181,7 +181,6 @@ static void ksmbd_conn_lock(struct ksmbd_work *work)
 	if (!hdr->NextCommand &&
 	    (hdr->Command == SMB2_READ_HE ||
 	     hdr->Command == SMB2_QUERY_DIRECTORY_HE ||
-	     hdr->Command == SMB2_QUERY_INFO_HE ||
 	     hdr->Command == SMB2_ECHO_HE))
 		down_read(&conn->srv_rwsem);
 	else {
