@@ -1355,9 +1355,7 @@ int smb_grant_oplock(struct ksmbd_work *work,
 	}
 
 	list_add(&work->interim_entry, &prev_opinfo->interim_list);
-	ksmbd_request_unlock(work);
 	err = oplock_break(prev_opinfo);
-	ksmbd_request_lock(work);
 	opinfo_put(prev_opinfo);
 	if (err == -ENOENT)
 		goto set_lev;

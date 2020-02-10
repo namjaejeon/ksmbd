@@ -63,6 +63,7 @@ struct lease {
 struct oplock_info {
 	struct ksmbd_conn	*conn;
 	struct ksmbd_session	*sess;
+	struct ksmbd_work	*work;
 	struct ksmbd_file	*o_fp;
 	int                     level;
 	int                     op_state;
