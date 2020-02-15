@@ -153,7 +153,7 @@ script:
  - sudo ./check generic/074
  - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/075 > tests/generic/075.new
  - mv tests/generic/075.new tests/generic/075
- - sudo ./check generic/075
+# - sudo ./check generic/075
  - sudo ./check generic/080
  - sudo ./check generic/084
 # - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
@@ -169,7 +169,7 @@ script:
  - sudo ./check generic/109
  - sed -e "s/expr 10/expr 5/" -e "s/numops1=1000/numops1=100/" -e "s/numops2=10000/numops2=1000/" tests/generic/112 > tests/generic/112.new
  - mv tests/generic/112.new tests/generic/112
- - sudo ./check generic/112
+# - sudo ./check generic/112
  - sudo ./check generic/113
 # - time_wait sudo ./check generic/117 (timeover > 10m)
  - sudo ./check generic/124
@@ -226,7 +226,7 @@ script:
  - mv tests/generic/464.new tests/generic/464
  - sudo ./check generic/464
  - sudo ./check generic/465
- - sudo ./check generic/469
+# - sudo ./check generic/469
 # - time_wait sudo ./check generic/476 (timeover > 10m)
 # - sudo ./check generic/490 #fail, It may be cifs client issue on 5.0 kernel 
  - sudo ./check generic/504
