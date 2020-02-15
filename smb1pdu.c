@@ -256,10 +256,11 @@ int smb_check_user_session(struct ksmbd_work *work)
 		return 0;
 	}
 
-	work->sess = ksmbd_session_lookup(conn, req_hdr->Uid);
+	work->sess = ksmbd_session_lookup(conn, le16_to_cpu(req_hdr->Uid));
 	if (work->sess)
 		return 1;
-	ksmbd_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
+	ksmbd_debug("Invalid user session, Uid %u\n",
+			le16_to_cpu(req_hdr->Uid));
 	return -EINVAL;
 }
 
