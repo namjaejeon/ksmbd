@@ -129,11 +129,11 @@ script:
  - mv tests/generic/011.new tests/generic/011
  - mv tests/generic/011.out.new tests/generic/011.out
  - sudo ./check generic/011
- - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
- - mv tests/generic/013.new tests/generic/013
- - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
- - mv tests/generic/013.out.new tests/generic/013.out
- - sudo ./check generic/013
+# - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
+# - mv tests/generic/013.new tests/generic/013
+# - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
+# - mv tests/generic/013.out.new tests/generic/013.out
+# - sudo ./check generic/013
  - sudo ./check generic/014
  - sudo ./check generic/023
  - sudo ./check generic/024
