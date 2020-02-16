@@ -1089,7 +1089,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 				goto out_err;
 			}
 
-			rsp->SecurityBlobLength = neg_blob_len;
+			rsp->SecurityBlobLength = cpu_to_le16(neg_blob_len);
 		}
 
 		rsp->hdr.Status.CifsError = STATUS_MORE_PROCESSING_REQUIRED;
@@ -1112,8 +1112,8 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 						req->SecurityBlob;
 
 		username = smb_strndup_from_utf16((const char *)authblob +
-				authblob->UserName.BufferOffset,
-				authblob->UserName.Length, true,
+				le32_to_cpu(authblob->UserName.BufferOffset),
+				le16_to_cpu(authblob->UserName.Length), true,
 				conn->local_nls);
 
 		if (IS_ERR(username)) {
@@ -1133,7 +1133,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 		}
 
 		if (user_guest(sess->user)) {
-			rsp->Action = GUEST_LOGIN;
+			rsp->Action = cpu_to_le16(GUEST_LOGIN);
 			goto no_password_check;
 		}
 
@@ -1159,7 +1159,7 @@ no_password_check:
 			rsp->SecurityBlobLength =
 				cpu_to_le16(spnego_blob_len);
 			kfree(spnego_blob);
-			inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
+			inc_rfc1001_len(rsp, spnego_blob_len);
 			rsp->ByteCount = rsp->SecurityBlobLength;
 		}
 	} else {
