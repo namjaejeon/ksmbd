@@ -2425,8 +2425,7 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out1;
 	}
 
-	if (!req->DesiredAccess ||
-			!(req->DesiredAccess & DESIRED_ACCESS_MASK)) {
+	if (!(req->DesiredAccess & DESIRED_ACCESS_MASK)) {
 		ksmbd_err("Invalid disired access : 0x%x\n",
 			le32_to_cpu(req->DesiredAccess));
 		rc = -EACCES;
