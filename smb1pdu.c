@@ -4016,8 +4016,8 @@ static int query_path_info(struct ksmbd_work *work)
 		standard_info = (struct file_standard_info *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			del_pending;
+		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st) -
+			del_pending);
 		standard_info->DeletePending = del_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
@@ -4179,8 +4179,8 @@ static int query_path_info(struct ksmbd_work *work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			del_pending;
+		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st) -
+			del_pending);
 		ainfo->DeletePending = del_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
@@ -6466,8 +6466,8 @@ static int query_file_info(struct ksmbd_work *work)
 		standard_info = (struct file_standard_info *)(ptr + 4);
 		standard_info->AllocationSize = cpu_to_le64(st.blocks << 9);
 		standard_info->EndOfFile = cpu_to_le64(st.size);
-		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			delete_pending;
+		standard_info->NumberOfLinks = cpu_to_le32(get_nlink(&st) -
+			delete_pending);
 		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
@@ -6657,8 +6657,8 @@ static int query_file_info(struct ksmbd_work *work)
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
-		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st)) -
-			delete_pending;
+		ainfo->NumberOfLinks = cpu_to_le32(get_nlink(&st) -
+			delete_pending);
 		ainfo->DeletePending = delete_pending;
 		ainfo->Directory = S_ISDIR(st.mode) ? 1 : 0;
 		ainfo->Pad2 = 0;
