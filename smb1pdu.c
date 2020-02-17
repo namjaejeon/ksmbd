@@ -4202,7 +4202,7 @@ static int query_path_info(struct ksmbd_work *work)
 		rsp->t2.ParameterCount = cpu_to_le16(2);
 		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = total_count;
+		rsp->t2.DataCount = cpu_to_le16(total_count);
 		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
@@ -6451,7 +6451,8 @@ static int query_file_info(struct ksmbd_work *work)
 		rsp->t2.ParameterCount = cpu_to_le16(2);
 		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_standard_info);
+		rsp->t2.DataCount =
+			cpu_to_le16(sizeof(struct file_standard_info));
 		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
