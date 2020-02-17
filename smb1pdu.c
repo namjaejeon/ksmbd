@@ -2004,10 +2004,10 @@ int smb_trans(struct ksmbd_work *work)
 resp_out:
 
 	rsp->hdr.WordCount = 10;
-	rsp->TotalParameterCount = param_len;
+	rsp->TotalParameterCount = cpu_to_le16(param_len);
 	rsp->TotalDataCount = cpu_to_le16(nbytes);
 	rsp->Reserved = 0;
-	rsp->ParameterCount = param_len;
+	rsp->ParameterCount = cpu_to_le16(param_len);
 	rsp->ParameterOffset = cpu_to_le16(56);
 	rsp->ParameterDisplacement = 0;
 	rsp->DataCount = cpu_to_le16(nbytes);
