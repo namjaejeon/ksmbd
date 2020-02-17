@@ -3960,7 +3960,7 @@ static int query_path_info(struct ksmbd_work *work)
 		infos->DataSize = cpu_to_le32(st.size);
 		infos->AllocationSize = cpu_to_le32(st.blocks << 9);
 		infos->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_ARCHIVE;
+					ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		infos->EASize = 0;
 
 		rsp_hdr->WordCount = 10;
@@ -6653,7 +6653,7 @@ static int query_file_info(struct ksmbd_work *work)
 		time = ksmbd_UnixTimeToNT(from_kern_timespec(st.ctime));
 		ainfo->ChangeTime = cpu_to_le64(time);
 		ainfo->Attributes = cpu_to_le32(S_ISDIR(st.mode) ?
-				ATTR_DIRECTORY : ATTR_ARCHIVE);
+				ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE);
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
