@@ -581,9 +581,9 @@ int smb2_check_user_session(struct ksmbd_work *work)
 
 	work->sess = NULL;
 	/*
-	 * ECHO, KEEP_ALIVE, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command does not
-	 * require a session id, so no need to validate user session's for these
-	 * commands.
+	 * SMB2_ECHO, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command do not
+	 * require a session id, so no need to validate user session's for
+	 * these commands.
 	 */
 	if (cmd == SMB2_ECHO_HE || cmd == SMB2_NEGOTIATE_HE ||
 			cmd == SMB2_SESSION_SETUP_HE)
