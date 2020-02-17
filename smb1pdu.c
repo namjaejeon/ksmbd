@@ -3751,7 +3751,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = rsp->t2.TotalDataCount;
-	rsp->t2.DataOffset = 60;
+	rsp->t2.DataOffset = cpu_to_le16(60);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
@@ -4002,7 +4002,7 @@ static int query_path_info(struct ksmbd_work *work)
 		rsp->t2.ParameterDisplacement = 0;
 		rsp->t2.DataCount =
 			cpu_to_le16(sizeof(struct file_standard_info));
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
@@ -5948,8 +5948,8 @@ static int find_first(struct ksmbd_work *work)
 		cpu_to_le16(sizeof(struct smb_com_trans2_rsp) - 4);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(d_info.data_count);
-	rsp->t2.DataOffset = sizeof(struct smb_com_trans2_rsp) +
-		cpu_to_le16(params_count) + data_alignment_offset - 4;
+	rsp->t2.DataOffset = cpu_to_le16(sizeof(struct smb_com_trans2_rsp) +
+		params_count + data_alignment_offset - 4);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
