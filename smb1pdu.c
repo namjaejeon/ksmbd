@@ -6446,7 +6446,8 @@ static int query_file_info(struct ksmbd_work *work)
 		delete_pending = ksmbd_inode_pending_delete(fp);
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = cpu_to_le16(2);
-		rsp->t2.TotalDataCount = sizeof(struct file_standard_info);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_standard_info));
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = cpu_to_le16(2);
 		rsp->t2.ParameterOffset = cpu_to_le16(56);
@@ -6521,7 +6522,8 @@ static int query_file_info(struct ksmbd_work *work)
 		ksmbd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = cpu_to_le16(2);
-		rsp->t2.TotalDataCount = sizeof(struct file_ea_info);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_ea_info));
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = cpu_to_le16(2);
 		rsp->t2.ParameterOffset = cpu_to_le16(56);
