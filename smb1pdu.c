@@ -3560,19 +3560,19 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 10;
-	rsp->t2.TotalParameterCount = 2;
+	rsp->t2.TotalParameterCount = cpu_to_le16(2);
 	rsp->t2.TotalDataCount = cpu_to_le16(rsp_data_cnt);
 	rsp->t2.Reserved = 0;
-	rsp->t2.ParameterCount = 2;
-	rsp->t2.ParameterOffset = 56;
+	rsp->t2.ParameterCount = cpu_to_le16(2);
+	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = rsp->t2.TotalDataCount;
-	rsp->t2.DataOffset = 60;
+	rsp->t2.DataOffset = cpu_to_le16(60);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->ByteCount = cpu_to_le16(rsp_data_cnt + 5);
-	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 
 	if (buf)
 		ksmbd_free(buf);
@@ -3744,11 +3744,11 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	}
 
 	rsp->hdr.WordCount = 10;
-	rsp->t2.TotalParameterCount = 2;
+	rsp->t2.TotalParameterCount = cpu_to_le16(2);
 	rsp->t2.TotalDataCount = cpu_to_le16(name_len);
 	rsp->t2.Reserved = 0;
-	rsp->t2.ParameterCount = 2;
-	rsp->t2.ParameterOffset = 56;
+	rsp->t2.ParameterCount = cpu_to_le16(2);
+	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = rsp->t2.TotalDataCount;
 	rsp->t2.DataOffset = 60;
@@ -3756,7 +3756,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->ByteCount = cpu_to_le16(name_len + 5);
-	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 
 out:
 	kfree(buf);
@@ -4969,8 +4969,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 	/* 2 for parameter count + 1 pad1*/
 	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Pad = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + 3));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 out:
 	if (rc)
@@ -5053,7 +5052,7 @@ done:
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
 	rsp->ByteCount = cpu_to_le16(3);
-	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 + 3));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 	smb_put_name(name);
 	return 0;
@@ -6159,7 +6158,8 @@ static int find_next(struct ksmbd_work *work)
 	rsp->t2.TotalDataCount = cpu_to_le16(d_info.data_count);
 	rsp->t2.Reserved = 0;
 	rsp->t2.ParameterCount = cpu_to_le16(params_count);
-	rsp->t2.ParameterOffset = sizeof(struct smb_com_trans_rsp) - 4;
+	rsp->t2.ParameterOffset =
+		cpu_to_le16(sizeof(struct smb_com_trans_rsp) - 4);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(d_info.data_count);
 	rsp->t2.DataOffset = cpu_to_le16(sizeof(struct smb_com_trans_rsp) +
