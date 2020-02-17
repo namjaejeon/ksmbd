@@ -2667,7 +2667,8 @@ int smb_close(struct ksmbd_work *work)
 	 * TODO: linux cifs client does not send LastWriteTime,
 	 * need to check if windows client use this field
 	 */
-	if ((req->LastWriteTime > 0) && (req->LastWriteTime < 0xFFFFFFFF))
+	if (req->LastWriteTime > 0 &&
+	    le16_to_cpu(req->LastWriteTime) < 0xFFFFFFFF)
 		ksmbd_info("need to set last modified time before close\n");
 
 	err = ksmbd_close_fd(work, req->FileID);
@@ -3845,19 +3846,19 @@ static int smb_get_ea(struct ksmbd_work *work, struct path *path)
 
 done:
 	rsp->hdr.WordCount = 10;
-	rsp->t2.TotalParameterCount = 2;
+	rsp->t2.TotalParameterCount = cpu_to_le16(2);
 	rsp->t2.TotalDataCount = cpu_to_le16(rsp_data_cnt);
 	rsp->t2.Reserved = 0;
-	rsp->t2.ParameterCount = 2;
-	rsp->t2.ParameterOffset = 56;
+	rsp->t2.ParameterCount = cpu_to_le16(2);
+	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = rsp->t2.TotalDataCount;
-	rsp->t2.DataOffset = 60;
+	rsp->t2.DataOffset = cpu_to_le16(60);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->ByteCount = cpu_to_le16(rsp_data_cnt + 5);
-	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 out:
 	ksmbd_vfs_xattr_free(xattr_list);
 	return rc;
@@ -3932,7 +3933,7 @@ static int query_path_info(struct ksmbd_work *work)
 		rc = 0;
 	}
 
-	switch (req_params->InformationLevel) {
+	switch (le16_to_cpu(req_params->InformationLevel)) {
 	case SMB_INFO_STANDARD:
 	{
 		struct file_info_standard *infos;
@@ -3963,20 +3964,20 @@ static int query_path_info(struct ksmbd_work *work)
 		infos->EASize = 0;
 
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = 22;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount = cpu_to_le16(22);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 22;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(22);
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		rsp->ByteCount = 27;
+		rsp->ByteCount = cpu_to_le16(27);
 		rsp->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_STANDARD_INFO:
@@ -3992,19 +3993,22 @@ static int query_path_info(struct ksmbd_work *work)
 			del_pending = 0;
 
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_standard_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_standard_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_standard_info);
+		rsp->t2.DataCount =
+			cpu_to_le16(sizeof(struct file_standard_info));
 		rsp->t2.DataOffset = 60;
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_standard_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_standard_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -4016,7 +4020,7 @@ static int query_path_info(struct ksmbd_work *work)
 			del_pending;
 		standard_info->DeletePending = del_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_BASIC_INFO:
@@ -4025,19 +4029,21 @@ static int query_path_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_basic_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_basic_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_basic_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_basic_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_basic_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_basic_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -4051,9 +4057,9 @@ static int query_path_info(struct ksmbd_work *work)
 		time = ksmbd_UnixTimeToNT(from_kern_timespec(st.ctime));
 		basic_info->ChangeTime = cpu_to_le64(time);
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-					 ATTR_DIRECTORY : ATTR_ARCHIVE;
+					 ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		basic_info->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_EA_INFO:
@@ -4062,26 +4068,28 @@ static int query_path_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_ea_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_ea_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_ea_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_ea_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_ea_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_ea_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		ea_info = (struct file_ea_info *)(ptr + 4);
 		ea_info->EaSize = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_NAME_INFO:
@@ -4110,21 +4118,21 @@ static int query_path_info(struct ksmbd_work *work)
 		name_info->FileNameLength = cpu_to_le32(uni_filename_len);
 
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = uni_filename_len + 4;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount = cpu_to_le16(uni_filename_len + 4);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = uni_filename_len + 4;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(uni_filename_len + 4);
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + uni_filename_len + 4 + 3;
+		rsp->ByteCount = cpu_to_le16(2 + uni_filename_len + 4 + 3);
 		rsp->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_ALL_INFO:
@@ -4167,7 +4175,7 @@ static int query_path_info(struct ksmbd_work *work)
 		time = ksmbd_UnixTimeToNT(from_kern_timespec(st.ctime));
 		ainfo->ChangeTime = cpu_to_le64(time);
 		ainfo->Attributes = S_ISDIR(st.mode) ?
-					ATTR_DIRECTORY : ATTR_ARCHIVE;
+					ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		ainfo->Pad1 = 0;
 		ainfo->AllocationSize = cpu_to_le64(st.blocks << 9);
 		ainfo->EndOfFile = cpu_to_le64(st.size);
@@ -4187,44 +4195,45 @@ static int query_path_info(struct ksmbd_work *work)
 		total_count += uni_filename_len;
 
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
 		/* add unicode name length of name */
-		rsp->t2.TotalDataCount = total_count;
+		rsp->t2.TotalDataCount = cpu_to_le16(total_count);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
 		rsp->t2.DataCount = total_count;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/* 2 for parameter count + 72 data count +
 		 * filename length + 3 pad (1pad1 + 2 pad2)
 		 */
-		rsp->ByteCount = 5 + total_count;
+		rsp->ByteCount = cpu_to_le16(5 + total_count);
 		rsp->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_ALT_NAME_INFO:
 	{
 		struct alt_name_info *alt_name_info;
 		char *base;
+		int filename_len;
 
 		ksmbd_debug("SMB_QUERY_ALT_NAME_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 25;
+		rsp->ByteCount = cpu_to_le16(25);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -4236,15 +4245,14 @@ static int query_path_info(struct ksmbd_work *work)
 			base = name;
 		else
 			base += 1;
-		alt_name_info->FileNameLength =
-				ksmbd_extract_shortname(conn,
-						base,
-						alt_name_info->FileName);
-		rsp->t2.TotalDataCount = 4 + alt_name_info->FileNameLength;
-		rsp->t2.DataCount = 4 + alt_name_info->FileNameLength;
 
-		inc_rfc1001_len(rsp_hdr, (4 + alt_name_info->FileNameLength
-			+ rsp->ByteCount));
+		filename_len = ksmbd_extract_shortname(conn, base,
+					alt_name_info->FileName);
+		alt_name_info->FileNameLength = cpu_to_le32(filename_len);
+		rsp->t2.TotalDataCount = cpu_to_le16(4 + filename_len);
+		rsp->t2.DataCount = cpu_to_le16(4 + filename_len);
+
+		inc_rfc1001_len(rsp_hdr, (4 + filename_len + 25));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -4254,21 +4262,21 @@ static int query_path_info(struct ksmbd_work *work)
 		ksmbd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
 		rsp->t2.TotalParameterCount = 0;
-		rsp->t2.TotalDataCount = 100;
+		rsp->t2.TotalDataCount = cpu_to_le16(100);
 		rsp->t2.Reserved = 0;
 		rsp->t2.ParameterCount = 0;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 100;
-		rsp->t2.DataOffset = 56;
+		rsp->t2.DataCount = cpu_to_le16(100);
+		rsp->t2.DataOffset = cpu_to_le16(56);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		rsp->ByteCount = 101; /* 100 data count + 1pad */
+		rsp->ByteCount = cpu_to_le16(101); /* 100 data count + 1pad */
 		rsp->Pad = 0;
 		unix_info = (struct file_unix_basic_info *)(&rsp->Pad + 1);
 		init_unix_info(unix_info, &st);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, (10 * 2 + 101));
 		break;
 	}
 	case SMB_QUERY_FILE_INTERNAL_INFO:
@@ -4277,24 +4285,24 @@ static int query_path_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_INTERNAL_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = 8;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount = cpu_to_le16(8);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = 8;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(8);
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
-		rsp->ByteCount = 13;
+		rsp->ByteCount = cpu_to_le16(13);
 		rsp->Pad = 0;
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		iinfo = (struct file_internal_info *) (ptr + 4);
 		iinfo->UniqueId = cpu_to_le64(st.ino);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, (10 * 2 + 13));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_LINK:
@@ -4317,7 +4325,7 @@ static int query_path_info(struct ksmbd_work *work)
 		break;
 	default:
 		ksmbd_err("query path info not implemnted for %x\n",
-				req_params->InformationLevel);
+				le16_to_cpu(req_params->InformationLevel));
 		rc = -EINVAL;
 		goto err_out;
 	}
@@ -4344,17 +4352,17 @@ static void create_trans2_reply(struct ksmbd_work *work, __u16 count)
 	rsp->t2.TotalDataCount = cpu_to_le16(count);
 	rsp->t2.Reserved = 0;
 	rsp->t2.ParameterCount = 0;
-	rsp->t2.ParameterOffset = 56;
+	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(count);
-	rsp->t2.DataOffset = 56;
+	rsp->t2.DataOffset = cpu_to_le16(56);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 
-	rsp->ByteCount = count + 1;
+	rsp->ByteCount = cpu_to_le16(count + 1);
 	rsp->Pad = 0;
-	inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(rsp_hdr, 10 * 2 + (count + 1));
 }
 
 /**
@@ -4396,7 +4404,7 @@ static int set_fs_info(struct ksmbd_work *work)
 		return -EINVAL;
 	}
 
-	create_trans2_reply(work, rsp->t2.TotalDataCount);
+	create_trans2_reply(work, le16_to_cpu(rsp->t2.TotalDataCount));
 	return 0;
 }
 
@@ -4445,7 +4453,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		 */
 	}
 
-	info_level = req_params->InformationLevel;
+	info_level = le16_to_cpu(req_params->InformationLevel);
 
 	tree_conn = ksmbd_tree_conn_lookup(work->sess,
 					   le16_to_cpu(req_hdr->Tid));
@@ -4528,10 +4536,10 @@ static int query_fs_info(struct ksmbd_work *work)
 			goto err_out;
 		}
 
-		rsp->t2.TotalDataCount = 18;
+		rsp->t2.TotalDataCount = cpu_to_le16(18);
 		fdi = (struct filesystem_device_info *)(&rsp->Pad + 1);
 		fdi->DeviceType = FILE_DEVICE_DISK;
-		fdi->DeviceCharacteristics = 0x20;
+		fdi->DeviceCharacteristics = cpu_to_le32(0x20);
 		break;
 	}
 	case SMB_QUERY_FS_ATTRIBUTE_INFO:
@@ -4548,12 +4556,12 @@ static int query_fs_info(struct ksmbd_work *work)
 			goto err_out;
 		}
 
-		info->Attributes = FILE_CASE_PRESERVED_NAMES |
+		info->Attributes = cpu_to_le32(FILE_CASE_PRESERVED_NAMES |
 				   FILE_CASE_SENSITIVE_SEARCH |
-				   FILE_VOLUME_QUOTAS;
+				   FILE_VOLUME_QUOTAS);
 		info->MaxPathNameComponentLength = stfs.f_namelen;
 		info->FileSystemNameLen = 0;
-		rsp->t2.TotalDataCount = 12;
+		rsp->t2.TotalDataCount = cpu_to_le16(12);
 		break;
 	}
 	case SMB_QUERY_CIFS_UNIX_INFO:
@@ -4569,10 +4577,12 @@ static int query_fs_info(struct ksmbd_work *work)
 			rc = -EINVAL;
 			goto err_out;
 		}
-		uinfo->MajorVersionNumber = CIFS_UNIX_MAJOR_VERSION;
-		uinfo->MinorVersionNumber = CIFS_UNIX_MINOR_VERSION;
-		uinfo->Capability = SMB_UNIX_CAPS;
-		rsp->t2.TotalDataCount = 12;
+		uinfo->MajorVersionNumber =
+			cpu_to_le16(CIFS_UNIX_MAJOR_VERSION);
+		uinfo->MinorVersionNumber =
+			cpu_to_le16(CIFS_UNIX_MINOR_VERSION);
+		uinfo->Capability = cpu_to_le64(SMB_UNIX_CAPS);
+		rsp->t2.TotalDataCount = cpu_to_le16(12);
 		break;
 	}
 	case SMB_QUERY_POSIX_FS_INFO:
@@ -4598,7 +4608,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-	create_trans2_reply(work, rsp->t2.TotalDataCount);
+	create_trans2_reply(work, le16_to_cpu(rsp->t2.TotalDataCount));
 
 err_out:
 	path_put(&path);
@@ -4824,7 +4834,7 @@ prepare_rsp:
 		goto free_path;
 	}
 
-	psx_rsp->OplockFlags = oplock_rsp;
+	psx_rsp->OplockFlags = cpu_to_le16(oplock_rsp);
 	psx_rsp->Fid = fp != NULL ? fp->volatile_id : 0;
 
 	if (file_present) {
@@ -4874,10 +4884,10 @@ prepare_rsp:
 	pSMB_rsp->t2.Reserved1 = 0;
 
 	/* 2 for parameter count + 112 data count + 3 pad (1 pad1 + 2 pad2)*/
-	pSMB_rsp->ByteCount = 117;
+	pSMB_rsp->ByteCount = cpu_to_le16(117);
 	pSMB_rsp->Reserved2 = 0;
 	inc_rfc1001_len(&pSMB_rsp->hdr,
-			(pSMB_rsp->hdr.WordCount * 2 + pSMB_rsp->ByteCount));
+			(pSMB_rsp->hdr.WordCount * 2 + 117));
 
 free_path:
 	path_put(&path);
@@ -4957,10 +4967,10 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 2 for parameter count + 1 pad1*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Pad = 0;
 	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+			(rsp->hdr.WordCount * 2 + 3));
 
 out:
 	if (rc)
@@ -5042,9 +5052,8 @@ done:
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	rsp->ByteCount = cpu_to_le16(3);
+	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 + 3));
 
 	smb_put_name(name);
 	return 0;
@@ -5100,9 +5109,8 @@ static int smb_set_unix_pathinfo(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	rsp->ByteCount = cpu_to_le16(3);
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 out:
 	smb_put_name(name);
@@ -5192,10 +5200,9 @@ static int smb_set_ea(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 2 for parameter count + 1 pad1*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Pad = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 out:
 	smb_put_name(fname);
@@ -5251,9 +5258,8 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 2 for parameter count + 1 pad1*/
-	rsp->ByteCount = 3;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	rsp->ByteCount = cpu_to_le16(3);
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 	smb_put_name(name);
 	return 0;
@@ -5306,9 +5312,8 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
-	rsp->ByteCount = 3;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	rsp->ByteCount = cpu_to_le16(3);
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 out:
 	smb_put_name(newname);
 	smb_put_name(oldname);
@@ -5372,9 +5377,8 @@ static int smb_creat_symlink(struct ksmbd_work *work)
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
-	rsp->ByteCount = 3;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	rsp->ByteCount = cpu_to_le16(3);
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 	kfree(name);
 	smb_put_name(symname);
 	return err;
@@ -5534,7 +5538,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn,
 		fsinfo->AllocationSize =
 			cpu_to_le32(ksmbd_kstat->kstat->blocks << 9);
 		fsinfo->Attributes = S_ISDIR(ksmbd_kstat->kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_ARCHIVE;
+			ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		fsinfo->FileNameLength = cpu_to_le16(conv_len);
 		memcpy(fsinfo->FileName, conv_name, conv_len);
 
@@ -5562,7 +5566,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn,
 		fesize->AllocationSize =
 			cpu_to_le32(ksmbd_kstat->kstat->blocks << 9);
 		fesize->Attributes = S_ISDIR(ksmbd_kstat->kstat->mode) ?
-			ATTR_DIRECTORY : ATTR_ARCHIVE;
+			ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		fesize->EASize = 0;
 		fesize->FileNameLength = (__u8)(conv_len);
 		memcpy(fesize->FileName, conv_name, conv_len);
@@ -5768,7 +5772,7 @@ static int find_first(struct ksmbd_work *work)
 	int header_size;
 
 	req_params = (struct smb_com_trans2_ffirst_req_params *)
-		(REQUEST_BUF(work) + req->ParameterOffset + 4);
+		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
 	dirpath = smb_get_dir_name(share, req_params->FileName, PATH_MAX,
 			work, &srch_ptr);
 	if (IS_ERR(dirpath)) {
@@ -5830,11 +5834,11 @@ static int find_first(struct ksmbd_work *work)
 	/* reserve dot and dotdot entries in head of buffer in first response */
 	if (!*srch_ptr || is_asterisk(srch_ptr)) {
 		rc = ksmbd_populate_dot_dotdot_entries(conn,
-						req_params->InformationLevel,
-						dir_fp,
-						&d_info,
-						srch_ptr,
-						smb_populate_readdir_entry);
+				le16_to_cpu(req_params->InformationLevel),
+				dir_fp,
+				&d_info,
+				srch_ptr,
+				smb_populate_readdir_entry);
 		if (rc)
 			goto err_out;
 	}
@@ -5901,9 +5905,9 @@ static int find_first(struct ksmbd_work *work)
 
 		if (match_pattern(d_info.name, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
-						req_params->InformationLevel,
-						&d_info,
-						&ksmbd_kstat);
+				le16_to_cpu(req_params->InformationLevel),
+				&d_info,
+				&ksmbd_kstat);
 			if (rc)
 				goto err_out;
 		}
@@ -5937,21 +5941,22 @@ static int find_first(struct ksmbd_work *work)
 	params->EAErrorOffset = cpu_to_le16(0);
 
 	rsp_hdr->WordCount = 0x0A;
-	rsp->t2.TotalParameterCount = params_count;
+	rsp->t2.TotalParameterCount = cpu_to_le16(params_count);
 	rsp->t2.TotalDataCount = cpu_to_le16(d_info.data_count);
 	rsp->t2.Reserved = 0;
-	rsp->t2.ParameterCount = params_count;
-	rsp->t2.ParameterOffset = sizeof(struct smb_com_trans2_rsp) - 4;
+	rsp->t2.ParameterCount = cpu_to_le16(params_count);
+	rsp->t2.ParameterOffset =
+		cpu_to_le16(sizeof(struct smb_com_trans2_rsp) - 4);
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(d_info.data_count);
-	rsp->t2.DataOffset = sizeof(struct smb_com_trans2_rsp) + params_count +
-		data_alignment_offset - 4;
+	rsp->t2.DataOffset = sizeof(struct smb_com_trans2_rsp) +
+		cpu_to_le16(params_count) + data_alignment_offset - 4;
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->Pad = 0;
-	rsp->ByteCount = cpu_to_le16(d_info.data_count) +
-		params_count + 1 /*pad*/ + data_alignment_offset;
+	rsp->ByteCount = cpu_to_le16(d_info.data_count +
+		params_count + 1 /*pad*/ + data_alignment_offset);
 	memset((char *)rsp + sizeof(struct smb_com_trans2_rsp) + params_count,
 			'\0', 2);
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
@@ -6122,7 +6127,8 @@ static int find_next(struct ksmbd_work *work)
 		ksmbd_debug("filename string = %.*s\n",
 				d_info.name_len, d_info.name);
 		rc = smb_populate_readdir_entry(conn,
-			req_params->InformationLevel, &d_info, &ksmbd_kstat);
+			le16_to_cpu(req_params->InformationLevel), &d_info,
+			&ksmbd_kstat);
 		if (rc)
 			goto err_out;
 
@@ -6156,14 +6162,14 @@ static int find_next(struct ksmbd_work *work)
 	rsp->t2.ParameterOffset = sizeof(struct smb_com_trans_rsp) - 4;
 	rsp->t2.ParameterDisplacement = 0;
 	rsp->t2.DataCount = cpu_to_le16(d_info.data_count);
-	rsp->t2.DataOffset = sizeof(struct smb_com_trans_rsp) +
-		cpu_to_le16(params_count) + data_alignment_offset - 4;
+	rsp->t2.DataOffset = cpu_to_le16(sizeof(struct smb_com_trans_rsp) +
+		params_count + data_alignment_offset - 4);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	rsp->Pad = 0;
-	rsp->ByteCount = cpu_to_le16(d_info.data_count) + params_count + 1 +
-		data_alignment_offset;
+	rsp->ByteCount = cpu_to_le16(d_info.data_count + params_count + 1 +
+		data_alignment_offset);
 	memset((char *)rsp + sizeof(struct smb_com_trans_rsp) +
 		cpu_to_le16(params_count), '\0', data_alignment_offset);
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
@@ -6263,10 +6269,9 @@ out:
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 	ksmbd_fd_put(work, fp);
 
 	return 0;
@@ -6325,10 +6330,9 @@ static int smb_set_file_size_finfo(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 	ksmbd_fd_put(work, fp);
 
 	return 0;
@@ -6353,40 +6357,41 @@ static int query_file_info_pipe(struct ksmbd_work *work)
 	req_params = (struct smb_trans2_qfi_req_params *)(REQUEST_BUF(work) +
 			le16_to_cpu(req->ParameterOffset) + 4);
 
-	if (req_params->InformationLevel != SMB_QUERY_FILE_STANDARD_INFO) {
+	if (le16_to_cpu(req_params->InformationLevel) !=
+	    SMB_QUERY_FILE_STANDARD_INFO) {
 		ksmbd_err("query file info for info %u not supported\n",
-				req_params->InformationLevel);
+				le16_to_cpu(req_params->InformationLevel));
 		rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
 		return -EOPNOTSUPP;
 	}
 
 	ksmbd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 	rsp_hdr->WordCount = 10;
-	rsp->t2.TotalParameterCount = 2;
-	rsp->t2.TotalDataCount = sizeof(struct file_standard_info);
+	rsp->t2.TotalParameterCount = cpu_to_le16(2);
+	rsp->t2.TotalDataCount = cpu_to_le16(sizeof(struct file_standard_info));
 	rsp->t2.Reserved = 0;
-	rsp->t2.ParameterCount = 2;
-	rsp->t2.ParameterOffset = 56;
+	rsp->t2.ParameterCount = cpu_to_le16(2);
+	rsp->t2.ParameterOffset = cpu_to_le16(56);
 	rsp->t2.ParameterDisplacement = 0;
-	rsp->t2.DataCount = sizeof(struct file_standard_info);
-	rsp->t2.DataOffset = 60;
+	rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_standard_info));
+	rsp->t2.DataOffset = cpu_to_le16(60);
 	rsp->t2.DataDisplacement = 0;
 	rsp->t2.SetupCount = 0;
 	rsp->t2.Reserved1 = 0;
 	/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-	rsp->ByteCount = 2 + sizeof(struct file_standard_info) + 3;
+	rsp->ByteCount = cpu_to_le16(2 + sizeof(struct file_standard_info) + 3);
 	rsp->Pad = 0;
 	/* lets set EA info */
 	ptr = (char *)&rsp->Pad + 1;
 	memset(ptr, 0, 4);
 	standard_info = (struct file_standard_info *)(ptr + 4);
-	standard_info->AllocationSize = 4096;
+	standard_info->AllocationSize = cpu_to_le64(4096);
 	standard_info->EndOfFile = 0;
-	standard_info->NumberOfLinks = 1;
+	standard_info->NumberOfLinks = cpu_to_le32(1);
 	standard_info->DeletePending = 0;
 	standard_info->Directory = 0;
 	standard_info->DeletePending = 1;
-	inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 
 	return 0;
 }
@@ -6407,7 +6412,6 @@ static int query_file_info(struct ksmbd_work *work)
 	struct smb_trans2_qfi_req_params *req_params;
 	struct ksmbd_file *fp;
 	struct kstat st;
-	__u16 fid;
 	char *ptr;
 	int rc = 0;
 	u64 time;
@@ -6421,10 +6425,9 @@ static int query_file_info(struct ksmbd_work *work)
 		return query_file_info_pipe(work);
 	}
 
-	fid = le16_to_cpu(req_params->Fid);
-	fp = ksmbd_lookup_fd_fast(work, fid);
+	fp = ksmbd_lookup_fd_fast(work, req_params->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", fid);
+		ksmbd_err("failed to get filp for fid %u\n", req_params->Fid);
 		rsp_hdr->Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		rc = -EIO;
 		goto err_out;
@@ -6432,7 +6435,7 @@ static int query_file_info(struct ksmbd_work *work)
 
 	generic_fillattr(FP_INODE(fp), &st);
 
-	switch (req_params->InformationLevel) {
+	switch (le16_to_cpu(req_params->InformationLevel)) {
 
 	case SMB_QUERY_FILE_STANDARD_INFO:
 	{
@@ -6442,19 +6445,20 @@ static int query_file_info(struct ksmbd_work *work)
 		ksmbd_debug("SMB_QUERY_FILE_STANDARD_INFO\n");
 		delete_pending = ksmbd_inode_pending_delete(fp);
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
 		rsp->t2.TotalDataCount = sizeof(struct file_standard_info);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
 		rsp->t2.DataCount = sizeof(struct file_standard_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_standard_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_standard_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -6466,7 +6470,7 @@ static int query_file_info(struct ksmbd_work *work)
 			delete_pending;
 		standard_info->DeletePending = delete_pending;
 		standard_info->Directory = S_ISDIR(st.mode) ? 1 : 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_BASIC_INFO:
@@ -6475,19 +6479,21 @@ static int query_file_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_BASIC_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_basic_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_basic_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_basic_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_basic_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_basic_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_basic_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -6502,9 +6508,9 @@ static int query_file_info(struct ksmbd_work *work)
 		time = ksmbd_UnixTimeToNT(from_kern_timespec(st.ctime));
 		basic_info->ChangeTime = cpu_to_le64(time);
 		basic_info->Attributes = S_ISDIR(st.mode) ?
-			ATTR_DIRECTORY : ATTR_ARCHIVE;
+			ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
 		basic_info->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_EA_INFO:
@@ -6513,26 +6519,27 @@ static int query_file_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_EA_INFO\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
 		rsp->t2.TotalDataCount = sizeof(struct file_ea_info);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_ea_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_ea_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_ea_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_ea_info) + 3);
 		rsp->Pad = 0;
 		/* lets set EA info */
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		ea_info = (struct file_ea_info *)(ptr + 4);
 		ea_info->EaSize = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_UNIX_BASIC:
@@ -6541,26 +6548,30 @@ static int query_file_info(struct ksmbd_work *work)
 
 		ksmbd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_unix_basic_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_unix_basic_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_unix_basic_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount =
+			cpu_to_le16(sizeof(struct file_unix_basic_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_unix_basic_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_unix_basic_info)
+				+ 3);
 		rsp->Pad = 0;
 		/* lets set unix info info */
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		uinfo = (struct file_unix_basic_info *)(ptr + 4);
 		init_unix_info(uinfo, &st);
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_NAME_INFO:
@@ -6589,21 +6600,21 @@ static int query_file_info(struct ksmbd_work *work)
 		name_info->FileNameLength = cpu_to_le32(uni_filename_len);
 
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = uni_filename_len + 4;
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount = cpu_to_le16(uni_filename_len + 4);
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = uni_filename_len + 4;
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(uni_filename_len + 4);
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + uni_filename_len + 4 + 3;
+		rsp->ByteCount = cpu_to_le16(2 + uni_filename_len + 4 + 3);
 		rsp->Pad = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	case SMB_QUERY_FILE_ALL_INFO:
@@ -6614,19 +6625,21 @@ static int query_file_info(struct ksmbd_work *work)
 		ksmbd_debug("SMB_QUERY_FILE_UNIX_BASIC\n");
 		delete_pending = ksmbd_inode_pending_delete(fp);
 		rsp_hdr->WordCount = 10;
-		rsp->t2.TotalParameterCount = 2;
-		rsp->t2.TotalDataCount = sizeof(struct file_all_info);
+		rsp->t2.TotalParameterCount = cpu_to_le16(2);
+		rsp->t2.TotalDataCount =
+			cpu_to_le16(sizeof(struct file_all_info));
 		rsp->t2.Reserved = 0;
-		rsp->t2.ParameterCount = 2;
-		rsp->t2.ParameterOffset = 56;
+		rsp->t2.ParameterCount = cpu_to_le16(2);
+		rsp->t2.ParameterOffset = cpu_to_le16(56);
 		rsp->t2.ParameterDisplacement = 0;
-		rsp->t2.DataCount = sizeof(struct file_all_info);
-		rsp->t2.DataOffset = 60;
+		rsp->t2.DataCount = cpu_to_le16(sizeof(struct file_all_info));
+		rsp->t2.DataOffset = cpu_to_le16(60);
 		rsp->t2.DataDisplacement = 0;
 		rsp->t2.SetupCount = 0;
 		rsp->t2.Reserved1 = 0;
 		/*2 for parameter count & 3 pad (1pad1 + 2 pad2)*/
-		rsp->ByteCount = 2 + sizeof(struct file_all_info) + 3;
+		rsp->ByteCount =
+			cpu_to_le16(2 + sizeof(struct file_all_info) + 3);
 		rsp->Pad = 0;
 		/* lets set all info info */
 		ptr = (char *)&rsp->Pad + 1;
@@ -6651,12 +6664,12 @@ static int query_file_info(struct ksmbd_work *work)
 		ainfo->Pad2 = 0;
 		ainfo->EASize = 0;
 		ainfo->FileNameLength = 0;
-		inc_rfc1001_len(rsp_hdr, (10 * 2 + rsp->ByteCount));
+		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
 	default:
 		ksmbd_err("query path info not implemnted for %x\n",
-				req_params->InformationLevel);
+				le16_to_cpu(req_params->InformationLevel));
 		rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
 		rc = -EINVAL;
 		goto err_out;
@@ -6711,10 +6724,10 @@ static int smb_set_unix_fileinfo(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+			rsp->hdr.WordCount * 2 + le16_to_cpu(rsp->ByteCount));
 
 out:
 	if (err) {
@@ -6789,10 +6802,10 @@ static int smb_set_dispostion(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+			rsp->hdr.WordCount * 2 + 3);
 
 err_out:
 	ksmbd_fd_put(work, fp);
@@ -6866,10 +6879,10 @@ done:
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+			rsp->hdr.WordCount * 2 + 3);
 
 	return 0;
 }
@@ -6941,10 +6954,9 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 3 pad (1 pad1 + 2 pad2)*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Reserved2 = 0;
-	inc_rfc1001_len(&rsp->hdr,
-			(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 out:
 	ksmbd_fd_put(work, fp);
@@ -7112,7 +7124,7 @@ int smb_trans2(struct ksmbd_work *work)
 	struct smb_com_trans2_req *req = REQUEST_BUF(work);
 	struct smb_hdr *rsp_hdr = RESPONSE_BUF(work);
 	int err = 0;
-	u16 sub_command = req->SubCommand;
+	u16 sub_command = le16_to_cpu(req->SubCommand);
 
 	/* at least one setup word for TRANS2 command
 	 *		MS-CIFS, SMB COM TRANSACTION
@@ -7610,7 +7622,7 @@ int smb_query_info(struct ksmbd_work *work)
 		rsp->reserved[i] = 0;
 
 	rsp->ByteCount = 0;
-	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2);
 	return err;
 }
 
@@ -7903,8 +7915,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	rsp->Action = cpu_to_le16(file_info);
 	rsp->Reserved = 0;
 	rsp->ByteCount = 0;
-	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2 +
-		le16_to_cpu(rsp->ByteCount)));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2);
 
 free_path:
 	path_put(&path);
