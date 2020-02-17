@@ -256,10 +256,11 @@ int smb_check_user_session(struct ksmbd_work *work)
 		return 0;
 	}
 
-	work->sess = ksmbd_session_lookup(conn, req_hdr->Uid);
+	work->sess = ksmbd_session_lookup(conn, le16_to_cpu(req_hdr->Uid));
 	if (work->sess)
 		return 1;
-	ksmbd_debug("Invalid user session, Uid %u\n", req_hdr->Uid);
+	ksmbd_debug("Invalid user session, Uid %u\n",
+			le16_to_cpu(req_hdr->Uid));
 	return -EINVAL;
 }
 
@@ -5920,7 +5921,7 @@ static int find_first(struct ksmbd_work *work)
 
 	params = (struct smb_com_trans2_ffirst_rsp_parms *)((char *)rsp +
 			sizeof(struct smb_com_trans2_rsp));
-	params->SearchHandle = cpu_to_le16(dir_fp->volatile_id);
+	params->SearchHandle = dir_fp->volatile_id;
 	params->SearchCount = cpu_to_le16(d_info.num_entry);
 	params->LastNameOffset = cpu_to_le16(d_info.last_entry_offset);
 
@@ -6009,7 +6010,7 @@ static int find_next(struct ksmbd_work *work)
 
 	req_params = (struct smb_com_trans2_fnext_req_params *)
 		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
-	sid = cpu_to_le16(req_params->SearchHandle);
+	sid = req_params->SearchHandle;
 
 	/*Currently no usage of ResumeFilename*/
 	name = req_params->ResumeFileName;
