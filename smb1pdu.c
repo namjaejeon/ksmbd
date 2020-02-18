@@ -2672,7 +2672,7 @@ int smb_close(struct ksmbd_work *work)
 	 * need to check if windows client use this field
 	 */
 	if (req->LastWriteTime > 0 &&
-	    le16_to_cpu(req->LastWriteTime) < 0xFFFFFFFF)
+	    le32_to_cpu(req->LastWriteTime) < 0xFFFFFFFF)
 		ksmbd_info("need to set last modified time before close\n");
 
 	err = ksmbd_close_fd(work, req->FileID);
