@@ -411,8 +411,10 @@ static struct ksmbd_file *__ksmbd_lookup_fd(struct ksmbd_file_table *ft,
 	}
 	read_unlock(&ft->lock);
 
-	if (unclaimed)
+	if (fp && unclaimed) {
+		atomic_dec(&fp->refcount);
 		return NULL;
+	}
 	return fp;
 }
 
