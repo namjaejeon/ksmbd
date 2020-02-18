@@ -211,7 +211,8 @@ static char *andx_request_buffer(char *buf, int command)
 	struct andx_block *next;
 
 	while (andx_ptr->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
-		next = (struct andx_block *)(buf + 4 + andx_ptr->AndXOffset);
+		next = (struct andx_block *)
+			(buf + 4 + le16_to_cpu(andx_ptr->AndXOffset));
 		if (andx_ptr->AndXCommand == command)
 			return (char *)next;
 		andx_ptr = next;
@@ -487,7 +488,7 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	rsp->OptionalSupport = cpu_to_le16((SMB_SUPPORT_SEARCH_BITS |
 				SMB_CSC_NO_CACHING | SMB_UNIQUE_FILE_NAME));
 
-	rsp->MaximalShareAccessRights = cpu_to_le16((FILE_READ_RIGHTS |
+	rsp->MaximalShareAccessRights = cpu_to_le32((FILE_READ_RIGHTS |
 					FILE_EXEC_RIGHTS | FILE_WRITE_RIGHTS));
 	rsp->GuestMaximalShareAccessRights = 0;
 
@@ -496,7 +497,8 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	/* For each extra andx response, we have to add 1 byte,
 	 * for wc and 2 bytes for byte count
 	 */
-	inc_rfc1001_len(rsp_hdr, (7 * 2 + rsp->ByteCount + extra_byte));
+	inc_rfc1001_len(rsp_hdr,
+		7 * 2 + le16_to_cpu(rsp->ByteCount) + extra_byte);
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
@@ -810,7 +812,7 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 	struct smb_negotiate_rsp *neg_rsp = RESPONSE_BUF(work);
-	__le64 time;
+	__u64 time;
 	int rc = 0;
 
 	WARN_ON(ksmbd_conn_good(work));
@@ -1098,7 +1100,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 		 * Note: here total size -1 is done as an adjustment
 		 * for 0 size blob.
 		 */
-		inc_rfc1001_len(rsp, rsp->SecurityBlobLength);
+		inc_rfc1001_len(rsp, le16_to_cpu(rsp->SecurityBlobLength));
 		rsp->ByteCount = rsp->SecurityBlobLength;
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		struct authenticate_message *authblob;
@@ -1549,7 +1551,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE) {
 		ksmbd_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
 		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-		rsp->hdr.Status.DosError.Error = ERRnoatomiclocks;
+		rsp->hdr.Status.DosError.Error = cpu_to_le16(ERRnoatomiclocks);
 		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
 		goto out;
 	}
@@ -1964,7 +1966,7 @@ int smb_trans(struct ksmbd_work *work)
 		}
 	}
 
-	id = le16_to_cpu(pipe_req->fid);
+	id = pipe_req->fid;
 	switch (subcommand) {
 	case TRANSACT_DCERPCCMD:
 
@@ -2018,7 +2020,7 @@ resp_out:
 	/* Adding 1 for Pad */
 	rsp->ByteCount = cpu_to_le16(nbytes + 1 + param_len);
 	rsp->Pad = 0;
-	inc_rfc1001_len(&rsp->hdr, (10 * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 
 out:
 	smb_put_name(name);
@@ -2061,7 +2063,7 @@ static int create_andx_pipe(struct ksmbd_work *work)
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 	rsp->AndXReserved = 0;
 	rsp->OplockLevel = 0;
-	rsp->Fid = cpu_to_le16(fid);
+	rsp->Fid = fid;
 	rsp->CreateAction = cpu_to_le32(1);
 	rsp->CreationTime = 0;
 	rsp->LastAccessTime = 0;
@@ -2069,7 +2071,7 @@ static int create_andx_pipe(struct ksmbd_work *work)
 	rsp->ChangeTime = 0;
 	rsp->FileAttributes = cpu_to_le32(ATTR_NORMAL);
 	rsp->AllocationSize = cpu_to_le64(0);
-	rsp->EndOfFile = cpu_to_le16(0);
+	rsp->EndOfFile = 0;
 	rsp->FileType = cpu_to_le16(2);
 	rsp->DeviceState = cpu_to_le16(0x05ff);
 	rsp->DirectoryFlag = 0;
@@ -2077,7 +2079,7 @@ static int create_andx_pipe(struct ksmbd_work *work)
 	rsp->MaxAccess = cpu_to_le32(FILE_GENERIC_ALL);
 	rsp->GuestAccess = cpu_to_le32(FILE_GENERIC_READ);
 	rsp->ByteCount = 0;
-	inc_rfc1001_len(&rsp->hdr, (100 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, 100);
 
 out:
 	switch (rc) {
@@ -2293,7 +2295,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
 					SMBFLG2_ERR_STATUS)) {
 			rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-			rsp->hdr.Status.DosError.Error = ERRfilexists;
+			rsp->hdr.Status.DosError.Error =
+				cpu_to_le16(ERRfilexists);
 		} else
 			rsp->hdr.Status.CifsError =
 				STATUS_OBJECT_NAME_COLLISION;
@@ -2332,7 +2335,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
 						SMBFLG2_ERR_STATUS)) {
 				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-				rsp->hdr.Status.DosError.Error = ERRfilexists;
+				rsp->hdr.Status.DosError.Error =
+					cpu_to_le16(ERRfilexists);
 			} else if (open_flags == -EINVAL)
 				rsp->hdr.Status.CifsError =
 					STATUS_INVALID_PARAMETER;
@@ -2557,12 +2561,12 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			ext_rsp->fid = inode->i_ino;
 			if (S_ISDIR(inode->i_mode) ||
 			    (fp->filp->f_mode & FMODE_WRITE))
-				ext_rsp->MaxAccess = FILE_GENERIC_ALL;
+				ext_rsp->MaxAccess = FILE_GENERIC_ALL_LE;
 			else
-				ext_rsp->MaxAccess = FILE_GENERIC_READ|
-						     FILE_EXECUTE;
+				ext_rsp->MaxAccess = FILE_GENERIC_READ_LE |
+						     FILE_EXECUTE_LE;
 		} else {
-			ext_rsp->MaxAccess = FILE_GENERIC_ALL;
+			ext_rsp->MaxAccess = FILE_GENERIC_ALL_LE;
 			ext_rsp->fid = 0;
 		}
 
@@ -2615,7 +2619,7 @@ out:
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2742,7 +2746,7 @@ static int smb_read_andx_pipe(struct ksmbd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2844,7 +2848,7 @@ int smb_read_andx(struct ksmbd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -2962,7 +2966,7 @@ static int smb_write_andx_pipe(struct ksmbd_work *work)
 
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -3061,7 +3065,7 @@ int smb_write_andx(struct ksmbd_work *work)
 	ksmbd_fd_put(work, fp);
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
-	rsp->AndXOffset = get_rfc1002_len(&rsp->hdr);
+	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
 		rsp->AndXCommand = req->AndXCommand;
@@ -3099,7 +3103,7 @@ int smb_echo(struct ksmbd_work *work)
 	if (le16_to_cpu(req->EchoCount) > 1)
 		work->multiRsp = 1;
 
-	data_count = cpu_to_le16(req->ByteCount);
+	data_count = le16_to_cpu(req->ByteCount);
 	/* send echo response to server */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 1;
@@ -3662,10 +3666,9 @@ static int smb_set_acl(struct ksmbd_work *work)
 	rsp->t2.Reserved1 = 0;
 
 	/* 2 for parameter count + 1 pad1*/
-	rsp->ByteCount = 3;
+	rsp->ByteCount = cpu_to_le16(3);
 	rsp->Pad = 0;
-	inc_rfc1001_len(&rsp->hdr,
-		(rsp->hdr.WordCount * 2 + rsp->ByteCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
 out:
 	if (buf)
@@ -4519,7 +4522,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		sinfo = (struct filesystem_info *)(&rsp->Pad + 1);
 		sinfo->BytesPerSector = cpu_to_le32(512);
 		sinfo->SectorsPerAllocationUnit =
-		cpu_to_le32(stfs.f_bsize/le16_to_cpu(sinfo->BytesPerSector));
+			cpu_to_le32(stfs.f_bsize/sinfo->BytesPerSector);
 		sinfo->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
 		sinfo->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
 		break;
@@ -4538,7 +4541,7 @@ static int query_fs_info(struct ksmbd_work *work)
 
 		rsp->t2.TotalDataCount = cpu_to_le16(18);
 		fdi = (struct filesystem_device_info *)(&rsp->Pad + 1);
-		fdi->DeviceType = FILE_DEVICE_DISK;
+		fdi->DeviceType = cpu_to_le32(FILE_DEVICE_DISK);
 		fdi->DeviceCharacteristics = cpu_to_le32(0x20);
 		break;
 	}
@@ -4559,7 +4562,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		info->Attributes = cpu_to_le32(FILE_CASE_PRESERVED_NAMES |
 				   FILE_CASE_SENSITIVE_SEARCH |
 				   FILE_VOLUME_QUOTAS);
-		info->MaxPathNameComponentLength = stfs.f_namelen;
+		info->MaxPathNameComponentLength = cpu_to_le32(stfs.f_namelen);
 		info->FileSystemNameLen = 0;
 		rsp->t2.TotalDataCount = cpu_to_le16(12);
 		break;
@@ -4844,7 +4847,7 @@ prepare_rsp:
 			file_info = F_OVERWRITTEN;
 	} else
 		file_info = F_CREATED;
-	psx_rsp->CreateAction = cpu_to_le16(file_info);
+	psx_rsp->CreateAction = cpu_to_le32(file_info);
 
 	if (rsp_info_level != SMB_QUERY_FILE_UNIX_BASIC) {
 		ksmbd_debug("returning null information level response");
@@ -6171,7 +6174,7 @@ static int find_next(struct ksmbd_work *work)
 	rsp->ByteCount = cpu_to_le16(d_info.data_count + params_count + 1 +
 		data_alignment_offset);
 	memset((char *)rsp + sizeof(struct smb_com_trans_rsp) +
-		cpu_to_le16(params_count), '\0', data_alignment_offset);
+		params_count, '\0', data_alignment_offset);
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 		params_count + 1 + data_alignment_offset));
 	kfree(pathname);
@@ -7214,7 +7217,8 @@ int smb_mkdir(struct ksmbd_work *work)
 			if (!(((struct smb_hdr *)REQUEST_BUF(work))->Flags2 &
 						SMBFLG2_ERR_STATUS)) {
 				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-				rsp->hdr.Status.DosError.Error = ERRnoaccess;
+				rsp->hdr.Status.DosError.Error =
+					cpu_to_le16(ERRnoaccess);
 			} else
 				rsp->hdr.Status.CifsError =
 					STATUS_OBJECT_NAME_COLLISION;
@@ -7740,7 +7744,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	if ((le32_to_cpu(req->Mode) & SMBOPEN_SHARING_MODE) >
 			SMBOPEN_DENY_NONE) {
 		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-		rsp->hdr.Status.DosError.Error = ERRbadaccess;
+		rsp->hdr.Status.DosError.Error = cpu_to_le16(ERRbadaccess);
 		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
 
 		memset(&rsp->hdr.WordCount, 0, 3);
@@ -7767,7 +7771,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	else
 		generic_fillattr(d_inode(path.dentry), &stat);
 
-	oplock_flags = le32_to_cpu(req->OpenFlags) &
+	oplock_flags = le16_to_cpu(req->OpenFlags) &
 		(REQ_OPLOCK | REQ_BATCHOPLOCK);
 
 	open_flags = convert_open_flags(file_present, le16_to_cpu(req->Mode),
@@ -7984,7 +7988,7 @@ int smb_setattr(struct ksmbd_work *work)
 	}
 
 	err = ksmbd_vfs_kern_path(name, 0, &path,
-		le16_to_cpu(req->hdr.Flags) & SMBFLG_CASELESS);
+		req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
 		ksmbd_debug("look up failed err %d\n", err);
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -8059,7 +8063,7 @@ int smb1_check_sign_req(struct ksmbd_work *work)
 	memcpy(signature_req, rcv_hdr1->Signature.SecuritySignature,
 			CIFS_SMB1_SIGNATURE_SIZE);
 	rcv_hdr1->Signature.Sequence.SequenceNumber =
-		++work->sess->sequence_number;
+		cpu_to_le16(++work->sess->sequence_number);
 	rcv_hdr1->Signature.Sequence.Reserved = 0;
 
 	iov[0].iov_base = rcv_hdr1->Protocol;
