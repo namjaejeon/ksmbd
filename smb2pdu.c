@@ -193,7 +193,7 @@ int is_smb2_rsp(struct ksmbd_work *work)
  *
  * Return:      smb2 request command value
  */
-int get_smb2_cmd_val(struct ksmbd_work *work)
+uint16_t get_smb2_cmd_val(struct ksmbd_work *work)
 {
 	struct smb2_hdr *rcv_hdr;
 
@@ -581,9 +581,9 @@ int smb2_check_user_session(struct ksmbd_work *work)
 
 	work->sess = NULL;
 	/*
-	 * ECHO, KEEP_ALIVE, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command does not
-	 * require a session id, so no need to validate user session's for these
-	 * commands.
+	 * SMB2_ECHO, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command do not
+	 * require a session id, so no need to validate user session's for
+	 * these commands.
 	 */
 	if (cmd == SMB2_ECHO_HE || cmd == SMB2_NEGOTIATE_HE ||
 			cmd == SMB2_SESSION_SETUP_HE)
@@ -7069,9 +7069,9 @@ int smb2_ioctl(struct ksmbd_work *work)
 		len = le64_to_cpu(zero_data->BeyondFinalZero) - off;
 
 		ret = ksmbd_vfs_zero_data(work, fp, off, len);
+		ksmbd_fd_put(work, fp);
 		if (ret < 0)
 			goto out;
-		ksmbd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_QUERY_ALLOCATED_RANGES:
