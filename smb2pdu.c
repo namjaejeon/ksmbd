@@ -843,11 +843,11 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 	}
 }
 
-static int
+static __le32
 decode_preauth_ctxt(struct ksmbd_conn *conn,
 	struct smb2_preauth_neg_context *pneg_ctxt)
 {
-	int err = STATUS_NO_PREAUTH_INTEGRITY_HASH_OVERLAP;
+	__le32 err = STATUS_NO_PREAUTH_INTEGRITY_HASH_OVERLAP;
 
 	if (pneg_ctxt->HashAlgorithms ==
 			SMB2_PREAUTH_INTEGRITY_SHA512) {
@@ -904,10 +904,11 @@ static int decode_compress_ctxt(struct ksmbd_conn *conn,
 		((algo_cnt - 1) * 2);
 }
 
-static int deassemble_neg_contexts(struct ksmbd_conn *conn,
+static __le32 deassemble_neg_contexts(struct ksmbd_conn *conn,
 				   struct smb2_negotiate_req *req)
 {
-	int i = 0, status = 0;
+	int i = 0;
+	__le32 status = 0;
 	/* +4 is to account for the RFC1001 len field */
 	char *pneg_ctxt = (char *)req +
 			le32_to_cpu(req->NegotiateContextOffset) + 4;
@@ -977,7 +978,8 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 	struct ksmbd_conn *conn = work->conn;
 	struct smb2_negotiate_req *req = REQUEST_BUF(work);
 	struct smb2_negotiate_rsp *rsp = RESPONSE_BUF(work);
-	int rc = 0, err;
+	int rc = 0;
+	__le32 status;
 
 	ksmbd_debug("Received negotiate request\n");
 	conn->need_neg = false;
@@ -1005,10 +1007,11 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		}
 
-		err = deassemble_neg_contexts(conn, req);
-		if (err != STATUS_SUCCESS) {
-			ksmbd_err("deassemble_neg_contexts error(0x%x)\n", err);
-			rsp->hdr.Status = err;
+		status = deassemble_neg_contexts(conn, req);
+		if (status != STATUS_SUCCESS) {
+			ksmbd_err("deassemble_neg_contexts error(0x%x)\n",
+					status);
+			rsp->hdr.Status = status;
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -7217,9 +7220,6 @@ static int smb20_oplock_break_ack(struct ksmbd_work *work)
 				opinfo->level, rsp_oplevel);
 	}
 
-	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&opinfo->oplock_q);
-
 	if (ret < 0) {
 		rsp->hdr.Status = err;
 		goto err_out;
@@ -7227,6 +7227,9 @@ static int smb20_oplock_break_ack(struct ksmbd_work *work)
 
 	opinfo_put(opinfo);
 	ksmbd_fd_put(work, fp);
+	opinfo->op_state = OPLOCK_STATE_NONE;
+	wake_up_interruptible(&opinfo->oplock_q);
+
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
 	rsp->Reserved = 0;
@@ -7239,6 +7242,8 @@ static int smb20_oplock_break_ack(struct ksmbd_work *work)
 err_out:
 	opinfo_put(opinfo);
 	ksmbd_fd_put(work, fp);
+	opinfo->op_state = OPLOCK_STATE_NONE;
+	wake_up_interruptible(&opinfo->oplock_q);
 	smb2_set_err_rsp(work);
 	return 0;
 }
@@ -7360,9 +7365,9 @@ static int smb21_lease_break_ack(struct ksmbd_work *work)
 
 	lease_state = lease->state;
 	atomic_dec(&opinfo->breaking_cnt);
+	opinfo_put(opinfo);
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&opinfo->oplock_q);
-	opinfo_put(opinfo);
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
@@ -7379,6 +7384,9 @@ static int smb21_lease_break_ack(struct ksmbd_work *work)
 	return 0;
 
 err_out:
+	opinfo_put(opinfo);
+	opinfo->op_state = OPLOCK_STATE_NONE;
+	wake_up_interruptible(&opinfo->oplock_q);
 	smb2_set_err_rsp(work);
 	return 0;
 }
