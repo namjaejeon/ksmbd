@@ -4654,9 +4654,28 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 {
 	struct ksmbd_file *fp;
 	int rc = 0;
-	struct smb_ntsd *pntsd;
+	struct smb_ntsd *pntsd = (struct smb_ntsd *)rsp->Buffer;
 	__u32 secdesclen;
 	unsigned int id = KSMBD_NO_FID, pid = KSMBD_NO_FID;
+	int addition_info = le32_to_cpu(req->AdditionalInformation);
+
+	if (addition_info & ~(OWNER_SECINFO | GROUP_SECINFO | DACL_SECINFO)) {
+		ksmbd_debug("Unsupported addition info: 0x%x)\n",
+			addition_info);
+
+		pntsd->revision = cpu_to_le16(1);
+		pntsd->type = cpu_to_le16(0x9000);
+		pntsd->osidoffset = 0;
+		pntsd->gsidoffset = 0;
+		pntsd->sacloffset = 0;
+		pntsd->dacloffset = 0;
+
+		secdesclen = sizeof(struct smb_ntsd);
+		rsp->OutputBufferLength = cpu_to_le32(secdesclen);
+		inc_rfc1001_len(rsp_org, secdesclen);
+
+		return 0;
+	}
 
 	if (work->next_smb2_rcv_hdr_off) {
 		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
@@ -4675,8 +4694,6 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	fp = ksmbd_lookup_fd_slow(work, id, pid);
 	if (!fp)
 		return -ENOENT;
-
-	pntsd = (struct smb_ntsd *)rsp->Buffer;
 
 	rc = build_sec_desc(pntsd, &secdesclen, FP_INODE(fp)->i_mode);
 	ksmbd_fd_put(work, fp);
@@ -5453,11 +5470,18 @@ static int smb2_set_info_sec(struct ksmbd_file *fp,
 	struct smb_fattr fattr;
 	int rc;
 
+	if (addition_info != DACL_SECINFO) {
+		ksmbd_debug("Unsupported addition info: 0x%x)\n",
+			addition_info);
+		return -EOPNOTSUPP;
+	}
+
+	fattr.cf_mode = 0;
 	rc = parse_sec_desc(pntsd, buf_len, &fattr);
 	if (rc)
 		return rc;
 
-	inode->i_mode |= fattr.cf_mode;
+	inode->i_mode |= fattr.cf_mode & 07777;
 	mark_inode_dirty(inode);
 
 	return 0;

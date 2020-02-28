@@ -275,11 +275,6 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 			ppace[i] = (struct smb_ace *) (acl_base + acl_size);
 			if ((compare_sids(&(ppace[i]->sid),
 					  &sid_unix_NFS_mode) == 0)) {
-				/*
-				 * Full permissions are:
-				 * 07777 = S_ISUID | S_ISGID | S_ISVTX |
-				 *         S_IRWXU | S_IRWXG | S_IRWXO
-				 */
 				fattr->cf_mode =
 					le32_to_cpu(ppace[i]->sid.sub_auth[2]);
 				break;
