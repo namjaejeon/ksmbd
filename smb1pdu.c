@@ -30,6 +30,8 @@
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 
+static int smb1_oplock_enable = false;
+
 /* Default: allocation roundup size = 1048576 */
 static unsigned int alloc_roundup_size = 1048576;
 
@@ -2440,7 +2442,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
-	if (test_share_config_flag(work->tcon->share_conf,
+	if (smb1_oplock_enable &&
+	    test_share_config_flag(work->tcon->share_conf,
 			KSMBD_SHARE_FLAG_OPLOCKS) &&
 		!S_ISDIR(file_inode(fp->filp)->i_mode) && oplock_flags) {
 		/* Client cannot request levelII oplock directly */
@@ -4826,7 +4829,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 	fp->filename = name;
 	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
-	if (test_share_config_flag(work->tcon->share_conf,
+	if (smb1_oplock_enable &&
+	    test_share_config_flag(work->tcon->share_conf,
 			KSMBD_SHARE_FLAG_OPLOCKS) &&
 		!S_ISDIR(file_inode(fp->filp)->i_mode)) {
 		/* Client cannot request levelII oplock directly */
@@ -7841,7 +7845,8 @@ int smb_open_andx(struct ksmbd_work *work)
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
-	if (test_share_config_flag(work->tcon->share_conf,
+	if (smb1_oplock_enable &&
+	    test_share_config_flag(work->tcon->share_conf,
 			KSMBD_SHARE_FLAG_OPLOCKS) &&
 		!S_ISDIR(file_inode(fp->filp)->i_mode) &&
 		oplock_flags) {
