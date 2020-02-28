@@ -421,6 +421,7 @@ int build_sec_desc(struct smb_ntsd *pntsd, __u32 *secdesclen, umode_t nmode)
 	pntsd->dacloffset = cpu_to_le32(dacloffset);
 	pntsd->sacloffset = 0;
 	pntsd->type = ACCESS_ALLOWED;
+	pntsd->revision = cpu_to_le16(1);
 
 	owner_sid_ptr = (struct smb_sid *)((char *)pntsd + sidsoffset);
 	smb_copy_sid(owner_sid_ptr, &sid_unix_NFS_users);
