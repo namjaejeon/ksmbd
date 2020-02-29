@@ -3086,7 +3086,6 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn,
 	if (!conv_name)
 		return -ENOMEM;
 
-	conv_len -= 2;
 	/* Somehow the name has only terminating NULL bytes */
 	if (conv_len < 0) {
 		kfree(conv_name);
