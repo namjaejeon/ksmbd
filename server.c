@@ -112,10 +112,10 @@ static inline int check_conn_state(struct ksmbd_work *work)
 
 static int __process_request(struct ksmbd_work *work,
 			     struct ksmbd_conn *conn,
-			     unsigned int *cmd)
+			     uint16_t *cmd)
 {
 	struct smb_version_cmds *cmds;
-	unsigned int command;
+	uint16_t command;
 	int ret;
 
 	if (check_conn_state(work))
@@ -146,7 +146,7 @@ andx_again:
 		conn->ops->is_sign_req(work, command)) {
 		ret = conn->ops->check_sign_req(work);
 		if (!ret) {
-			conn->ops->set_rsp_status(work, STATUS_DATA_ERROR);
+			conn->ops->set_rsp_status(work, STATUS_ACCESS_DENIED);
 			return TCP_HANDLER_CONTINUE;
 		}
 	}
@@ -170,7 +170,7 @@ andx_again:
 static void __handle_ksmbd_work(struct ksmbd_work *work,
 				struct ksmbd_conn *conn)
 {
-	unsigned int command = 0;
+	uint16_t command = 0;
 	int rc;
 
 	if (conn->ops->allocate_rsp_buf(work))
