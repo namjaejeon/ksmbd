@@ -6987,6 +6987,36 @@ static int fsctl_request_resume_key(struct ksmbd_work *work,
 	return 0;
 }
 
+static int
+parse_reparse_symlink(struct ksmbd_conn *conn,
+		struct reparse_symlink_data_buffer *symlink_buf,
+		u32 plen, char **target_path)
+{
+	unsigned int sub_len;
+	unsigned int sub_offset;
+
+	/* We handle Symbolic Link reparse tag here. See: MS-FSCC 2.1.2.4 */
+
+	sub_offset = le16_to_cpu(symlink_buf->SubstituteNameOffset);
+	sub_len = le16_to_cpu(symlink_buf->SubstituteNameLength);
+	if (sub_offset + 20 > plen ||
+			sub_offset + sub_len + 20 > plen) {
+		cifs_dbg(VFS, "srv returned malformed symlink buffer\n");
+		return -EIO;
+	}
+
+	*target_path = smb_strndup_from_utf16(
+			symlink_buf->PathBuffer + sub_offset,
+			sub_len, true, conn->local_nls);
+	if (!(*target_path))
+		return -ENOMEM;
+
+	convert_delimiter(*target_path, '/');
+	ksmbd_debug("%s: target path: %s\n", __func__, *target_path);
+
+	return 0;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -7141,6 +7171,34 @@ int smb2_ioctl(struct ksmbd_work *work)
 		}
 
 		nbytes *= sizeof(struct file_allocated_range_buffer);
+		break;
+	case FSCTL_SET_REPARSE_POINT:
+	{
+		struct reparse_data_buffer *buf = &req->Buffer[0];
+		struct ksmbd_file *fp;
+		loff_t off, len;
+
+		fp = ksmbd_lookup_fd_fast(work, id);
+		if (!fp) {
+			ret = -ENOENT;
+			goto out;
+		}
+
+		switch (le32_to_cpu(buf->ReparseTag)) {
+		case IO_REPARSE_TAG_SYMLINK:
+			ret = parse_reparse_symlink(conn,
+				(struct reparse_symlink_data_buffer *)buf,
+					plen, target_path);
+		default:
+			ksmbd_err("srv returned unknown symlink buffer "
+					"tag:0x%08x\n", le32_to_cpu(buf->ReparseTag));
+			ret = -EOPNOTSUPP;
+		}
+
+		ksmbd_fd_put(work, fp);
+		break;
+	}
+	case FSCTL_GET_REPARSE_POINT:
 		break;
 	default:
 		ksmbd_debug("not implemented yet ioctl command 0x%x\n",
