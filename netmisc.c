@@ -587,7 +587,7 @@ static const struct {
 	ERRDOS, ERRinvlevel, 0x007c0001}, };
 
 void
-ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode)
+ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode)
 {
 	int i;
 
@@ -597,23 +597,29 @@ ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode)
 		return;
 	}
 	for (i = 0; ntstatus_to_dos_map[i].ntstatus; i++) {
-		if (ntstatus == ntstatus_to_dos_map[i].ntstatus) {
+		if (le32_to_cpu(ntstatus) == ntstatus_to_dos_map[i].ntstatus) {
 			*eclass = ntstatus_to_dos_map[i].dos_class;
-			*ecode = ntstatus_to_dos_map[i].dos_code;
+			*ecode = cpu_to_le16(ntstatus_to_dos_map[i].dos_code);
 			return;
 		}
 	}
 	*eclass = ERRHRD;
-	*ecode = ERRgeneral;
+	*ecode = cpu_to_le16(ERRgeneral);
 }
 
 /*
  * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
  * into Unix UTC (based 1970-01-01, in seconds).
  */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
 struct timespec ksmbd_NTtimeToUnix(__le64 ntutc)
 {
 	struct timespec ts;
+#else
+struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
+{
+	struct timespec64 ts;
+#endif
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
 	s64 t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;

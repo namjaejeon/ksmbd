@@ -14,7 +14,7 @@
 #include "vfs_cache.h"
 #include "smberr.h"
 
-#define KSMBD_VERSION	"3.1.4"
+#define KSMBD_VERSION	"3.1.5"
 
 /* @FIXME clean up this code */
 
@@ -61,5 +61,5 @@ extern int ksmbd_caseless_search;
 /* @FIXME clean up this code */
 
 /* ksmbd misc functions */
-extern void ntstatus_to_dos(__u32 ntstatus, __u8 *eclass, __u16 *ecode);
+extern void ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode);
 #endif /* __KSMBD_GLOB_H */
