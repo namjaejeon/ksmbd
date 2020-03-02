@@ -735,6 +735,7 @@ int ksmbd_vfs_getattr(struct ksmbd_work *work, uint64_t fid,
 	return err;
 }
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
 /**
  * ksmbd_vfs_symlink() - vfs helper for creating smb symlink
  * @name:	source file name
@@ -760,6 +761,19 @@ int ksmbd_vfs_symlink(const char *name, const char *symname)
 		ksmbd_debug("failed to create symlink, err %d\n", err);
 
 	done_path_create(&path, dentry);
+
+	return err;
+}
+#endif
+
+int ksmbd_vfs_create_symlink(struct ksmbd_file *fp, const char *target)
+{
+	struct dentry *dentry = fp->filp->f_path.dentry;
+	int err;
+
+	err = vfs_symlink(d_inode(dentry->d_parent), dentry, target);
+	if (err && (err != -EEXIST || err != -ENOSPC))
+		ksmbd_debug("failed to create symlink, err %d\n", err);
 
 	return err;
 }

@@ -207,6 +207,7 @@ int ksmbd_vfs_fiemap(struct ksmbd_file *fp, u64 start, u64 length,
 			struct file_allocated_range_buffer *ranges,
 			int in_count, int *out_count);
 int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
+int ksmbd_vfs_create_symlink(struct ksmbd_file *fp, const char *target);
 unsigned short ksmbd_vfs_logical_sector_size(struct inode *inode);
 void ksmbd_vfs_smb2_sector_size(struct inode *inode,
 				struct ksmbd_fs_sector_size *fs_ss);
