@@ -319,7 +319,7 @@ static void smb2_set_rsp_credits(struct ksmbd_work *work)
 
 	total_credits = conn->total_credits;
 	if (total_credits >= conn->max_credits) {
-		ksmbd_debug("Total credits overflow: %d\n", total_credits);
+		ksmbd_err("Total credits overflow: %d\n", total_credits);
 		total_credits = conn->max_credits;
 	}
 
@@ -339,23 +339,20 @@ static void smb2_set_rsp_credits(struct ksmbd_work *work)
 		 */
 		if ((total_credits + credits_granted) > min_credits)
 			credits_granted = min_credits -	total_credits;
-
+		/*
+		 * TODO: Need to adjuct CreditRequest value according to
+		 * current cpu load
+		 */
 	} else if (total_credits == 0) {
 		credits_granted = 1;
 	}
 
 	conn->total_credits += credits_granted;
+	work->credits_granted += credits_granted;
 out:
 	ksmbd_debug("credits: requested[%d] granted[%d] total_granted[%d]\n",
 			credits_requested, credits_granted,
 			conn->total_credits);
-	/*
-	 * TODO: Need to adjuct CreditRequest value according to
-	 * current cpu load
-	 */
-
-	/* set number of credits granted in SMB2 hdr */
-	hdr->CreditRequest = hdr->CreditCharge = cpu_to_le16(credits_granted);
 }
 
 /**
@@ -413,7 +410,7 @@ static void init_chained_smb2_rsp(struct ksmbd_work *work)
 	memset((char *)rsp_hdr + 4, 0, sizeof(struct smb2_hdr) + 2);
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
+	rsp_hdr->CreditCharge = rcv_hdr->CreditCharge;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -452,6 +449,7 @@ bool is_chained_smb2_message(struct ksmbd_work *work)
 		init_chained_smb2_rsp(work);
 		return true;
 	} else if (work->next_smb2_rcv_hdr_off) {
+		struct smb2_hdr *rsp_hdr = RESPONSE_BUF_NEXT(work);
 		/*
 		 * This is last request in chained command,
 		 * align response to 8 byte
@@ -464,6 +462,9 @@ bool is_chained_smb2_message(struct ksmbd_work *work)
 			if (HAS_AUX_PAYLOAD(work))
 				work->aux_payload_sz += len;
 		}
+
+		/* Update CreditRequest in last request */
+		rsp_hdr->CreditRequest = work->credits_granted;
 	}
 	return false;
 }
@@ -487,7 +488,7 @@ int init_smb2_rsp_hdr(struct ksmbd_work *work)
 	rsp_hdr->smb2_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn));
 	rsp_hdr->ProtocolId = rcv_hdr->ProtocolId;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-	rsp_hdr->CreditRequest = rcv_hdr->CreditRequest;
+	rsp_hdr->CreditCharge = rcv_hdr->CreditCharge;
 	rsp_hdr->Command = rcv_hdr->Command;
 
 	/*
@@ -512,6 +513,10 @@ int init_smb2_rsp_hdr(struct ksmbd_work *work)
 	smb2_set_rsp_credits(work);
 	spin_unlock(&conn->credits_lock);
 
+	if (!next_hdr_offset) {
+		/* set number of credits granted in SMB2 hdr */
+		rsp_hdr->CreditRequest = work->credits_granted;
+	}
 	work->syncronous = true;
 	if (work->async_id) {
 		ksmbd_release_id(conn->async_ida, work->async_id);
