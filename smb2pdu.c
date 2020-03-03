@@ -6999,7 +6999,7 @@ static int parse_reparse_symlink(struct ksmbd_conn *conn,
 	sub_len = le16_to_cpu(symlink_buf->SubstituteNameLength);
 	if (sub_offset + 20 > plen ||
 			sub_offset + sub_len + 20 > plen) {
-		ksmbd_debug("srv returned malformed symlink buffer\n");
+		ksmbd_err("srv returned malformed symlink buffer\n");
 		return -EIO;
 	}
 
@@ -7193,7 +7193,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 	{
 		struct reparse_data_buffer *buf =
 			(struct reparse_data_buffer *)&req->Buffer[0];
-		unsigned int plen = le32_to_cpu(req->OutputCount);
+		unsigned int plen = le32_to_cpu(req->InputCount);
 		struct ksmbd_file *fp;
 		char **target_path = NULL;
 

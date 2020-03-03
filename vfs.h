@@ -136,6 +136,7 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, uint64_t fid, uint64_t p_id);
 int ksmbd_vfs_remove_file(char *name);
 int ksmbd_vfs_link(const char *oldname, const char *newname);
 int ksmbd_vfs_symlink(const char *name, const char *symname);
+int ksmbd_vfs_create_symlink(struct ksmbd_file *fp, const char *target);
 int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp);
 
 int ksmbd_vfs_fp_rename(struct ksmbd_file *fp, char *newname);
@@ -207,7 +208,6 @@ int ksmbd_vfs_fiemap(struct ksmbd_file *fp, u64 start, u64 length,
 			struct file_allocated_range_buffer *ranges,
 			int in_count, int *out_count);
 int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry);
-int ksmbd_vfs_create_symlink(struct ksmbd_file *fp, const char *target);
 unsigned short ksmbd_vfs_logical_sector_size(struct inode *inode);
 void ksmbd_vfs_smb2_sector_size(struct inode *inode,
 				struct ksmbd_fs_sector_size *fs_ss);
