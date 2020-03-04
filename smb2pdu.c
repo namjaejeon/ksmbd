@@ -2216,7 +2216,7 @@ static int smb2_creat(struct ksmbd_work *work,
 		      char *name,
 		      int open_flags,
 		      umode_t posix_mode,
-		      bool is_dir)
+		      __le32 create_option)
 {
 	struct ksmbd_tree_connect *tcon = work->tcon;
 	struct ksmbd_share_config *share = tcon->share_conf;
@@ -2227,7 +2227,13 @@ static int smb2_creat(struct ksmbd_work *work,
 		return -EBADF;
 
 	ksmbd_debug("file does not exist, so creating\n");
-	if (is_dir == true) {
+	if (create_option & FILE_OPEN_REPARSE_POINT_LE) {
+		ksmbd_debug("creating symlink\n");
+
+		rc = ksmbd_vfs_symlink("", name);
+		if (rc)
+			return -EIO;
+	} else if (create_option & FILE_DIRECTORY_FILE_LE) {
 		ksmbd_debug("creating directory\n");
 
 		mode = share_config_directory_mode(share, posix_mode);
@@ -2617,7 +2623,7 @@ int smb2_open(struct ksmbd_work *work)
 	/*create file if not present */
 	if (!file_present) {
 		rc = smb2_creat(work, &path, name, open_flags, posix_mode,
-			req->CreateOptions & FILE_DIRECTORY_FILE_LE);
+			req->CreateOptions);
 		if (rc)
 			goto err_out;
 
@@ -7011,7 +7017,7 @@ static int parse_reparse_symlink(struct ksmbd_conn *conn,
 		return -ENOMEM;
 
 	ksmbd_conv_path_to_unix(target);
-	ksmbd_debug("%s: target path: %s\n", target);
+	ksmbd_debug("target path: %s\n", target);
 	*target_path = target;
 
 	return 0;
@@ -7235,7 +7241,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		ret = ksmbd_vfs_create_symlink(fp, target_path);
+		ret = ksmbd_vfs_update_symlink(fp, target_path);
 		ksmbd_fd_put(work, fp);
 		if (ret)
 			goto out;	
