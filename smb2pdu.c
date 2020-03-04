@@ -6992,6 +6992,7 @@ static int parse_reparse_symlink(struct ksmbd_conn *conn,
 		unsigned int plen, char **target_path)
 {
 	unsigned int sub_len, sub_offset;
+	char *target;
 
 	/* We handle Symbolic Link reparse tag here. See: MS-FSCC 2.1.2.4 */
 
@@ -7003,14 +7004,15 @@ static int parse_reparse_symlink(struct ksmbd_conn *conn,
 		return -EIO;
 	}
 
-	*target_path = smb_strndup_from_utf16(
+	target = smb_strndup_from_utf16(
 			symlink_buf->PathBuffer + sub_offset,
 			sub_len, true, conn->local_nls);
-	if (!(*target_path))
+	if (IS_ERR(target_path))
 		return -ENOMEM;
 
-	ksmbd_conv_path_to_unix(*target_path);
-	ksmbd_debug("%s: target path: %s\n", __func__, *target_path);
+	ksmbd_conv_path_to_unix(target);
+	ksmbd_debug("%s: target path: %s\n", target);
+	*target_path = target;
 
 	return 0;
 }
@@ -7195,7 +7197,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			(struct reparse_data_buffer *)&req->Buffer[0];
 		unsigned int plen = le32_to_cpu(req->InputCount);
 		struct ksmbd_file *fp;
-		char **target_path = NULL;
+		char *target_path = NULL;
 
 		if (plen < sizeof(struct reparse_data_buffer)) {
 			ksmbd_err("reparse buffer is too small. Must be "
@@ -7216,7 +7218,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 		case IO_REPARSE_TAG_SYMLINK:
 			ret = parse_reparse_symlink(conn,
 				(struct reparse_symlink_data_buffer *)buf,
-					plen, target_path);
+					plen, &target_path);
 			break;
 		default:
 			ksmbd_err("srv returned unknown symlink buffer tag:0x%08x\n",
@@ -7233,7 +7235,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		ret = ksmbd_vfs_create_symlink(fp, *target_path);
+		ret = ksmbd_vfs_create_symlink(fp, target_path);
 		ksmbd_fd_put(work, fp);
 		if (ret)
 			goto out;	
