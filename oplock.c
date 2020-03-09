@@ -792,9 +792,9 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	if (!br_info->open_trunc &&
 			(br_info->level == SMB2_OPLOCK_LEVEL_BATCH ||
 			br_info->level == SMB2_OPLOCK_LEVEL_EXCLUSIVE))
-		rsp->OplockLevel = 1;
+		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_II;
 	else
-		rsp->OplockLevel = 0;
+		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_NONE;
 	rsp->Reserved = 0;
 	rsp->Reserved2 = 0;
 	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
