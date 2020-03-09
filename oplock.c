@@ -681,6 +681,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 
 	ksmbd_conn_write(work);
 	ksmbd_free_work_struct(work);
+	atomic_dec(&conn->r_count);
 }
 
 /**
@@ -706,6 +707,7 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 	if (ack_required) {
 		int rc;
 
+		atomic_inc(&conn->r_count);
 		INIT_WORK(&work->work, __smb1_oplock_break_noti);
 		ksmbd_queue_work(work);
 
@@ -726,6 +728,7 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 			opinfo->op_state = OPLOCK_STATE_NONE;
 		}
 	} else {
+		atomic_inc(&conn->r_count);
 		__smb1_oplock_break_noti(&work->work);
 		if (opinfo->level == OPLOCK_READ)
 			opinfo->level = OPLOCK_NONE;
