@@ -695,7 +695,6 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 {
 	struct ksmbd_conn *conn = opinfo->conn;
-	int ret = 0;
 	struct ksmbd_work *work = ksmbd_alloc_work_struct();
 
 	if (!work)
@@ -733,7 +732,7 @@ static int smb1_oplock_break_noti(struct oplock_info *opinfo, int ack_required)
 		if (opinfo->level == OPLOCK_READ)
 			opinfo->level = OPLOCK_NONE;
 	}
-	return ret;
+	return 0;
 }
 #endif
 
