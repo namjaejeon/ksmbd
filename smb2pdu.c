@@ -268,7 +268,7 @@ int init_smb2_neg_rsp(struct ksmbd_work *work)
 	/* Not setting conn guid rsp->ServerGUID, as it
 	 * not used by client for identifying connection
 	 */
-	rsp->Capabilities = 0;
+	rsp->Capabilities = cpu_to_le32(conn->vals->capabilities);
 	/* Default Max Message Size till SMB2.0, 64K*/
 	rsp->MaxTransactSize = cpu_to_le32(conn->vals->max_trans_size);
 	rsp->MaxReadSize = cpu_to_le32(conn->vals->max_read_size);
@@ -1065,7 +1065,11 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 		init_smb2_1_server(conn);
 		break;
 	case SMB20_PROT_ID:
-		ksmbd_init_smb2_server_common(conn);
+		rc = init_smb2_0_server(conn);
+		if (rc) {
+			rsp->hdr.Status = STATUS_NOT_SUPPORTED;
+			goto err_out;
+		}
 		break;
 	case SMB2X_PROT_ID:
 	case BAD_PROT_ID:
