@@ -1325,7 +1325,7 @@ static int ntlm_authenticate(struct ksmbd_work *work)
 			spnego_blob_len);
 		rsp->SecurityBufferLength = cpu_to_le16(spnego_blob_len);
 		kfree(spnego_blob);
-		inc_rfc1001_len(rsp, le16_to_cpu(rsp->SecurityBufferLength));
+		inc_rfc1001_len(rsp, spnego_blob_len - 1);
 	}
 
 	user = session_user(conn, req);
