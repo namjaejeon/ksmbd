@@ -1226,7 +1226,7 @@ static int ntlm_negotiate(struct ksmbd_work *work,
 		return 0;
 	}
 
-	sz = sizeof(struct negotiate_message);
+	sz = sizeof(struct challenge_message);
 	sz += (strlen(ksmbd_netbios_name()) * 2 + 1 + 4) * 6;
 
 	neg_blob = kzalloc(sz, GFP_KERNEL);
