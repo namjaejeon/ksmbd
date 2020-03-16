@@ -776,7 +776,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
-	rsp_hdr->Command = cpu_to_le16(0x12);
+	rsp_hdr->Command = SMB2_OPLOCK_BREAK;
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = cpu_to_le64(-1);
@@ -913,7 +913,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
-	rsp_hdr->Command = cpu_to_le16(0x12);
+	rsp_hdr->Command = SMB2_OPLOCK_BREAK;
 	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR);
 	rsp_hdr->NextCommand = 0;
 	rsp_hdr->MessageId = cpu_to_le64(-1);
