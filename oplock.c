@@ -953,7 +953,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_break_lease_noti(struct oplock_info *opinfo, int ack_required)
+static int smb2_lease_break_noti(struct oplock_info *opinfo, int ack_required)
 {
 	struct ksmbd_conn *conn = opinfo->conn;
 	struct list_head *tmp, *t;
@@ -1085,7 +1085,7 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 			else
 				ack_required = 1;
 
-			err = smb2_break_lease_noti(brk_opinfo, ack_required);
+			err = smb2_lease_break_noti(brk_opinfo, ack_required);
 		} else {
 			/* break oplock */
 			if (brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
@@ -1112,7 +1112,7 @@ static int oplock_break(struct oplock_info *brk_opinfo)
 		else
 			ack_required = 1;
 
-		err = smb2_break_lease_noti(brk_opinfo, ack_required);
+		err = smb2_lease_break_noti(brk_opinfo, ack_required);
 	} else {
 		/* break oplock */
 		if (brk_opinfo->level == SMB2_OPLOCK_LEVEL_BATCH ||
