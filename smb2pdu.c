@@ -7471,7 +7471,8 @@ static int smb21_lease_break_ack(struct ksmbd_work *work)
 
 err_out:
 	opinfo_put(opinfo);
-	opinfo->op_state = OPLOCK_STATE_NONE;
+	if (opinfo)
+		opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&opinfo->oplock_q);
 	smb2_set_err_rsp(work);
 	return 0;
