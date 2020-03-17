@@ -628,7 +628,9 @@ static int wait_for_oplock_break(struct oplock_info *opinfo, int req_op_level)
 
 static void wake_up_oplock_break(struct oplock_info *opinfo)
 {
-	clear_and_wake_up_bit(0, &opinfo->pending_break);
+	clear_bit_unlock(0, &opinfo->pending_break);
+	smp_mb__after_atomic();
+	wake_up_bit(&opinfo->pending_break, 0);
 }
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
