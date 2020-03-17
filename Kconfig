@@ -34,7 +34,7 @@ config SMB_SERVER
 
 	  cifsd kernel server includes support for auto-negotiation,
 	  Secure negotiate, Pre-authentication integrity, oplock/lease,
-	  compouding, multi-credit, packet signing, RDMA(smbdirect),
+	  compound requests, multi-credit, packet signing, RDMA(smbdirect),
 	  smb3 encryption, copy-offload, secure per-user session
 	  establishment via NTLM or NTLMv2.
 
