@@ -448,6 +448,7 @@ struct smb_version_ops {
 	int (*init_rsp_hdr)(struct ksmbd_work *swork);
 	void (*set_rsp_status)(struct ksmbd_work *swork, __le32 err);
 	int (*allocate_rsp_buf)(struct ksmbd_work *work);
+	int (*set_rsp_credits)(struct ksmbd_work *work);
 	int (*check_user_session)(struct ksmbd_work *work);
 	int (*get_ksmbd_tcon)(struct ksmbd_work *work);
 	int (*is_sign_req)(struct ksmbd_work *work, unsigned int command);
@@ -482,7 +483,7 @@ int ksmbd_init_smb_server(struct ksmbd_work *work);
 bool ksmbd_pdu_size_has_room(unsigned int pdu);
 
 struct ksmbd_kstat;
-int ksmbd_populate_dot_dotdot_entries(struct ksmbd_conn *conn,
+int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work,
 				      int info_level,
 				      struct ksmbd_file *dir,
 				      struct ksmbd_dir_info *d_info,
@@ -496,7 +497,6 @@ int ksmbd_extract_shortname(struct ksmbd_conn *conn,
 			    const char *longname,
 			    char *shortname);
 
-void ksmbd_init_smb2_server_common(struct ksmbd_conn *conn);
 int ksmbd_smb_negotiate_common(struct ksmbd_work *work, unsigned int command);
 
 int ksmbd_smb_check_shared_mode(struct file *filp, struct ksmbd_file *curr_fp);
