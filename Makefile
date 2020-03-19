@@ -1,3 +1,7 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# Makefile for Linux SMB3 kernel server
+#
 ifneq ($(KERNELRELEASE),)
 # For kernel build
 
