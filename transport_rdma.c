@@ -479,6 +479,7 @@ static void smb_direct_free_sendmsg(struct smb_direct_transport *t,
 static int smb_direct_check_recvmsg(struct smb_direct_recvmsg *recvmsg)
 {
 	switch (recvmsg->type) {
+#ifdef CONFIG_SMB_SERVER_DEBUGGING
 	case SMB_DIRECT_MSG_DATA_TRANSFER: {
 		struct smb_direct_data_transfer *req =
 			(struct smb_direct_data_transfer *) recvmsg->packet;
@@ -491,6 +492,7 @@ static int smb_direct_check_recvmsg(struct smb_direct_recvmsg *recvmsg)
 				hdr->ProtocolId, hdr->Command);
 		break;
 	}
+#endif
 	case SMB_DIRECT_MSG_NEGOTIATE_REQ: {
 		struct smb_direct_negotiate_req *req =
 			(struct smb_direct_negotiate_req *)recvmsg->packet;
