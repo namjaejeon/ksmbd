@@ -205,7 +205,7 @@ script:
  - sudo ./check generic/308
  - sudo ./check generic/309
  - sudo ./check generic/315
- - sudo ./check generic/323
+# - sudo ./check generic/323
  - sudo ./check generic/337
  - sudo ./check generic/340
  - sudo ./check generic/345
