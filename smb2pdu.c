@@ -7385,7 +7385,7 @@ static int smb21_lease_break_ack(struct ksmbd_work *work)
 	if (check_lease_state(lease, req->LeaseState)) {
 		rsp->hdr.Status = STATUS_REQUEST_NOT_ACCEPTED;
 		ksmbd_debug("req lease state: 0x%x, expected state: 0x%x\n",
-				lease->new_state, req->LeaseState);
+				req->LeaseState, lease->new_state);
 		goto err_out;
 	}
 
@@ -7449,10 +7449,11 @@ static int smb21_lease_break_ack(struct ksmbd_work *work)
 	}
 
 	lease_state = lease->state;
-	atomic_dec(&opinfo->breaking_cnt);
-	opinfo_put(opinfo);
 	opinfo->op_state = OPLOCK_STATE_NONE;
 	wake_up_interruptible(&opinfo->oplock_q);
+	atomic_dec(&opinfo->breaking_cnt);
+	wake_up_interruptible(&opinfo->oplock_brk);
+	opinfo_put(opinfo);
 
 	if (ret < 0) {
 		rsp->hdr.Status = err;
