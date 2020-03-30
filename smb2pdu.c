@@ -5099,7 +5099,8 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_create_link(struct ksmbd_share_config *share,
+static int smb2_create_link(struct ksmbd_session *session,
+			    struct ksmbd_share_config *share,
 			    struct smb2_file_link_info *file_info,
 			    struct file *filp,
 			    struct nls_table *local_nls)
@@ -5108,6 +5109,7 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 	struct path path;
 	bool file_present = true;
 	int rc;
+	const struct cred *saved_cred = NULL;
 
 	ksmbd_debug("setting FILE_LINK_INFORMATION\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5120,6 +5122,12 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 				  local_nls);
 	if (IS_ERR(link_name) || S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = -EINVAL;
+		goto out;
+	}
+
+	saved_cred = ksmbd_override_fsids(session, share);
+	if (IS_ERR_OR_NULL(saved_cred)) {
+		rc = -ENOMEM;
 		goto out;
 	}
 
@@ -5158,6 +5166,7 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 	if (rc)
 		rc = -EINVAL;
 out:
+	ksmbd_revert_fsids(saved_cred);
 	if (!IS_ERR(link_name))
 		smb2_put_name(link_name);
 	kfree(pathname);
@@ -5502,7 +5511,7 @@ static int smb2_set_info_file(struct ksmbd_work *work,
 		return set_rename_info(work, fp, buf);
 
 	case FILE_LINK_INFORMATION:
-		return smb2_create_link(work->tcon->share_conf,
+		return smb2_create_link(work->sess, work->tcon->share_conf,
 			(struct smb2_file_link_info *)buf, fp->filp,
 				work->sess->conn->local_nls);
 
