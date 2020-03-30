@@ -341,6 +341,9 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 {
 	int ret = 0;
 
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
+
 	if (!ksmbd_ipc_validate_version(info))
 		return -EINVAL;
 
@@ -391,6 +394,9 @@ static int handle_generic_event(struct sk_buff *skb, struct genl_info *info)
 	void *payload;
 	int sz;
 	int type = info->genlhdr->cmd;
+
+	if (!netlink_capable(skb, CAP_NET_ADMIN))
+		return -EPERM;
 
 	if (type >= KSMBD_EVENT_MAX) {
 		WARN_ON(1);
