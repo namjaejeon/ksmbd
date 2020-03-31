@@ -624,6 +624,8 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 
 	/* change it to absolute unix name */
 	ksmbd_conv_path_to_unix(name);
+	ksmbd_strip_last_slash(name);
+
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
 
@@ -685,6 +687,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 
 	/* change it to absolute unix name */
 	ksmbd_conv_path_to_unix(name);
+	ksmbd_strip_last_slash(name);
 
 	pattern_pos = strrchr(name, '/');
 

@@ -207,6 +207,16 @@ void ksmbd_conv_path_to_unix(char *path)
 	strreplace(path, '\\', '/');
 }
 
+void ksmbd_strip_last_slash(char *path)
+{
+	int len = strlen(path);
+
+	while (len && path[len - 1] == '/') {
+		path[len - 1] = '\0';
+		len--;
+	}
+}
+
 void ksmbd_conv_path_to_windows(char *path)
 {
 	strreplace(path, '/', '\\');
