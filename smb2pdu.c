@@ -670,6 +670,7 @@ smb2_get_name(struct ksmbd_share_config *share,
 
 	/* change it to absolute unix name */
 	ksmbd_conv_path_to_unix(name);
+	ksmbd_strip_last_slash(name);
 
 	unixname = convert_to_unix_name(share, name);
 	kfree(name);
@@ -2575,8 +2576,13 @@ int smb2_open(struct ksmbd_work *work)
 			if (rc) { /* Case for broken link ?*/
 				rc = ksmbd_vfs_kern_path(name, 0, &path, 1);
 			}
-		} else
+		} else {
 			rc = ksmbd_vfs_kern_path(name, 0, &path, 1);
+			if (!rc && d_is_symlink(path.dentry)) {
+				rc = -EACCES;
+				goto err_out1;
+			}
+		}
 	}
 
 	if (rc) {
