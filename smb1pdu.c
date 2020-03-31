@@ -2152,6 +2152,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 	int share_ret;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -2278,7 +2279,10 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		goto out;
 	}
 
-	err = ksmbd_vfs_kern_path(conv_name, 0, &path,
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
+	err = ksmbd_vfs_kern_path(conv_name, flags, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
@@ -2286,6 +2290,14 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		ksmbd_debug("can not get linux path for %s, err = %d\n",
 				conv_name, err);
 	} else {
+		if (!test_share_config_flag(share,
+			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+			if (d_is_symlink(path.dentry)) {
+				err = -EACCES;
+				goto out;
+			}
+		}
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
@@ -3907,6 +3919,7 @@ static int query_path_info(struct ksmbd_work *work)
 	int rc;
 	char *ptr;
 	__u64 create_time = 0, time;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE)) {
@@ -3924,12 +3937,24 @@ static int query_path_info(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = ksmbd_vfs_kern_path(name, 0, &path, 0);
+
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
+	rc = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (rc) {
-		rsp_hdr->Status.CifsError = STATUS_OBJECT_NAME_NOT_FOUND;
-		ksmbd_debug("cannot get linux path for %s, err %d\n",
+		rsp_hdr->Status.CifsError =
+				STATUS_OBJECT_NAME_NOT_FOUND;
+		ksmbd_err("cannot get linux path for %s, err %d\n",
 				name, rc);
 		goto out;
+	}
+
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+		if (d_is_symlink(path.dentry)) {
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			goto out;
+		}
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
@@ -4727,6 +4752,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	name = smb_get_name(share, pSMB_req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(name)) {
@@ -4735,12 +4761,22 @@ static int smb_posix_open(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, 0, &path, 0);
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
+	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
 		file_present = false;
 		ksmbd_debug("cannot get linux path for %s, err = %d\n",
 				name, err);
 	} else {
+		if (!test_share_config_flag(share,
+			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+			if (d_is_symlink(path.dentry)) {
+				err = -EACCES;
+				goto free_path;
+			}
+		}
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
@@ -5792,6 +5828,7 @@ static int find_first(struct ksmbd_work *work)
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
 	int header_size;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	req_params = (struct smb_com_trans2_ffirst_req_params *)
 		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
@@ -5803,13 +5840,26 @@ static int find_first(struct ksmbd_work *work)
 		goto err_out;
 	}
 
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
 	ksmbd_debug("complete dir path = %s\n",  dirpath);
-	rc = ksmbd_vfs_kern_path(dirpath, LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+	rc = ksmbd_vfs_kern_path(dirpath, flags | LOOKUP_DIRECTORY,
 			&path, 0);
 	if (rc < 0) {
+		rsp_hdr->Status.CifsError =
+				STATUS_OBJECT_NAME_NOT_FOUND;
+
 		ksmbd_debug("cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
 		goto err_out;
+	}
+
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+		if (d_is_symlink(path.dentry)) {
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			goto err_out;
+		}
 	}
 
 	dir_fp = ksmbd_vfs_dentry_open(work, &path, O_RDONLY, 0, 1);
@@ -7589,15 +7639,25 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	struct path path;
 	char *name;
 	int err;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(name))
 		return STATUS_OBJECT_NAME_INVALID;
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 0);
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
+	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
 		ksmbd_err("look up failed err %d\n", err);
 		smb_put_name(name);
+
+		if (!test_share_config_flag(share,
+			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+			if (d_is_symlink(path.dentry))
+				return STATUS_ACCESS_DENIED;
+		}
 		return STATUS_OBJECT_NAME_NOT_FOUND;
 	}
 
@@ -7757,6 +7817,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE, share_ret;
+	unsigned int flags = LOOKUP_FOLLOW;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 
@@ -7784,11 +7845,19 @@ int smb_open_andx(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, 0, &path,
+	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = 0;
+
+	err = ksmbd_vfs_kern_path(name, flags, &path,
 			req->hdr.Flags & SMBFLG_CASELESS);
-	if (err)
+	if (err) {
+		if (!test_share_config_flag(share,
+			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+			err = -EACCES;
+			goto out;
+		}
 		file_present = false;
-	else
+	} else
 		generic_fillattr(d_inode(path.dentry), &stat);
 
 	oplock_flags = le16_to_cpu(req->OpenFlags) &
@@ -7959,6 +8028,8 @@ out:
 		else if (err == -ENOENT)
 			rsp->hdr.Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
+		else if (err == -EACCES)
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status.CifsError =
 				STATUS_UNEXPECTED_IO_ERROR;
