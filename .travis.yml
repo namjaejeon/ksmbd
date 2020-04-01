@@ -111,9 +111,9 @@ script:
  - sudo mkdir -p /etc/ksmbd/
  - sudo mkdir -p /mnt/1
  - sudo mkdir -p /mnt/2
- - sudo mkdir -p /mnt/test1
- - sudo mkdir -p /mnt/test2
- - sudo mkdir -p /mnt/test3
+ - sudo mkdir -m 777 -p /mnt/test1
+ - sudo mkdir -m 777 -p /mnt/test2
+ - sudo mkdir -m 777 -p /mnt/test3
  - ksmbd.adduser -i ./ksmbdpwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - ksmbd.mountd -n --c=./smb.conf --u=./ksmbdpwd.db&
