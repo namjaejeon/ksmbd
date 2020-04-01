@@ -1656,7 +1656,8 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 		oflags |= O_RDWR;
 	else if (access & FILE_READ_DATA_LE  || access & FILE_GENERIC_READ_LE)
 		oflags |= O_RDONLY;
-	else if (access & FILE_WRITE_DATA_LE || access & FILE_GENERIC_WRITE_LE)
+	else if (access & FILE_WRITE_DATA_LE || access & FILE_DELETE_LE ||
+			access & FILE_GENERIC_WRITE_LE)
 		oflags |= O_WRONLY;
 	else
 		oflags |= O_RDONLY;
@@ -2319,6 +2320,7 @@ int smb2_open(struct ksmbd_work *work)
 	int share_ret, need_truncate = 0;
 	u64 time;
 	umode_t posix_mode = 0;
+	const struct cred *saved_cred = NULL;
 
 	rsp_org = RESPONSE_BUF(work);
 	WORK_BUFFERS(work, req, rsp);
@@ -2539,6 +2541,13 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
+	saved_cred = ksmbd_override_fsids(work->sess, work->tcon->share_conf);
+	if (IS_ERR_OR_NULL(saved_cred)) {
+		ksmbd_debug("failed to override fsids\n");
+		rc = -ENOMEM;
+		goto err_out;
+	}
+
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 		/*
 		 * On delete request, instead of following up, need to
@@ -2586,6 +2595,10 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 	if (rc) {
+		if (rc == -EACCES) {
+			ksmbd_debug("User does not have right permission\n");
+			goto err_out;
+		}
 		ksmbd_debug("can not get linux path for %s, rc = %d\n",
 				name, rc);
 		rc = 0;
@@ -2670,6 +2683,13 @@ int smb2_open(struct ksmbd_work *work)
 				rc = 0;
 			else if (rc)
 				goto err_out;
+		}
+	} else {
+		if (ksmbd_vfs_inode_permission(path.dentry,
+				open_flags & O_ACCMODE,
+				req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+			rc = -EACCES;
+			goto err_out;
 		}
 	}
 
@@ -2972,6 +2992,7 @@ reconnected:
 err_out:
 	if (file_present || created)
 		path_put(&path);
+	ksmbd_revert_fsids(saved_cred);
 err_out1:
 	if (rc) {
 		if (rc == -EINVAL)
@@ -2996,6 +3017,8 @@ err_out1:
 			rsp->hdr.Status = STATUS_OBJECT_NAME_COLLISION;
 		else if (rc == -EMFILE)
 			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
+		else if (rc == -EACCES)
+			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
@@ -4946,7 +4969,7 @@ int smb2_echo(struct ksmbd_work *work)
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_rename(struct ksmbd_file *fp,
+static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
 		       struct smb2_file_rename_info *file_info,
 		       struct nls_table *local_nls)
 {
@@ -4956,6 +4979,7 @@ static int smb2_rename(struct ksmbd_file *fp,
 	struct path path;
 	bool file_present = true;
 	int rc;
+	const struct cred *saved_cred = NULL;
 
 	ksmbd_debug("setting FILE_RENAME_INFO\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -4986,6 +5010,11 @@ static int smb2_rename(struct ksmbd_file *fp,
 		goto out;
 	}
 
+	saved_cred = ksmbd_override_fsids(session, share);
+	if (IS_ERR_OR_NULL(saved_cred)) {
+		rc = -ENOMEM;
+		goto out;
+	}
 	if (strchr(new_name, ':')) {
 		int s_type;
 		char *xattr_stream_name, *stream_name = NULL;
@@ -5055,6 +5084,7 @@ static int smb2_rename(struct ksmbd_file *fp,
 
 	rc = ksmbd_vfs_fp_rename(fp, new_name);
 out:
+	ksmbd_revert_fsids(saved_cred);
 	kfree(pathname);
 	if (!IS_ERR(new_name))
 		smb2_put_name(new_name);
@@ -5069,7 +5099,8 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_create_link(struct ksmbd_share_config *share,
+static int smb2_create_link(struct ksmbd_session *session,
+			    struct ksmbd_share_config *share,
 			    struct smb2_file_link_info *file_info,
 			    struct file *filp,
 			    struct nls_table *local_nls)
@@ -5078,6 +5109,7 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 	struct path path;
 	bool file_present = true;
 	int rc;
+	const struct cred *saved_cred = NULL;
 
 	ksmbd_debug("setting FILE_LINK_INFORMATION\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5090,6 +5122,12 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 				  local_nls);
 	if (IS_ERR(link_name) || S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = -EINVAL;
+		goto out;
+	}
+
+	saved_cred = ksmbd_override_fsids(session, share);
+	if (IS_ERR_OR_NULL(saved_cred)) {
+		rc = -ENOMEM;
 		goto out;
 	}
 
@@ -5128,10 +5166,19 @@ static int smb2_create_link(struct ksmbd_share_config *share,
 	if (rc)
 		rc = -EINVAL;
 out:
+	ksmbd_revert_fsids(saved_cred);
 	if (!IS_ERR(link_name))
 		smb2_put_name(link_name);
 	kfree(pathname);
 	return rc;
+}
+
+static bool is_attributes_write_allowed(struct ksmbd_file *fp)
+{
+	return fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
+				FILE_GENERIC_WRITE_LE |
+				FILE_MAXIMAL_ACCESS_LE |
+				FILE_GENERIC_ALL_LE);
 }
 
 static int set_file_basic_info(struct ksmbd_file *fp,
@@ -5145,13 +5192,8 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	struct inode *inode;
 	int rc;
 
-	if (!(fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
-				FILE_GENERIC_WRITE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
-		ksmbd_err("Not permitted to write attrs: 0x%x\n", fp->daccess);
+	if (!is_attributes_write_allowed(fp))
 		return -EACCES;
-	}
 
 	file_info = (struct smb2_file_all_info *)buf;
 	attrs.ia_valid = 0;
@@ -5263,6 +5305,9 @@ static int set_file_allocation_info(struct ksmbd_work *work,
 	struct inode *inode;
 	int rc;
 
+	if (!is_attributes_write_allowed(fp))
+		return -EACCES;
+
 	file_alloc_info = (struct smb2_file_alloc_info *)buf;
 	alloc_blks = (le64_to_cpu(file_alloc_info->AllocationSize) + 511) >> 9;
 	inode = file_inode(fp->filp);
@@ -5304,6 +5349,9 @@ static int set_end_of_file_info(struct ksmbd_work *work,
 	loff_t newsize;
 	struct inode *inode;
 	int rc;
+
+	if (!is_attributes_write_allowed(fp))
+		return -EACCES;
 
 	file_eof_info = (struct smb2_file_eof_info *)buf;
 	newsize = le64_to_cpu(file_eof_info->EndOfFile);
@@ -5355,7 +5403,7 @@ static int set_rename_info(struct ksmbd_work *work,
 		}
 	}
 next:
-	return smb2_rename(fp,
+	return smb2_rename(work->sess, fp,
 			   (struct smb2_file_rename_info *)buf,
 			   work->sess->conn->local_nls);
 }
@@ -5463,7 +5511,7 @@ static int smb2_set_info_file(struct ksmbd_work *work,
 		return set_rename_info(work, fp, buf);
 
 	case FILE_LINK_INFORMATION:
-		return smb2_create_link(work->tcon->share_conf,
+		return smb2_create_link(work->sess, work->tcon->share_conf,
 			(struct smb2_file_link_info *)buf, fp->filp,
 				work->sess->conn->local_nls);
 
