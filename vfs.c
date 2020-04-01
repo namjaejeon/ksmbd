@@ -61,22 +61,6 @@ static void roolback_path_modification(char *filename)
 	}
 }
 
-static void ksmbd_vfs_inode_uid_gid(struct ksmbd_work *work,
-				    struct inode *inode)
-{
-	struct ksmbd_share_config *share = work->tcon->share_conf;
-	unsigned int uid = user_uid(work->sess->user);
-	unsigned int gid = user_gid(work->sess->user);
-
-	if (share->force_uid != 0)
-		uid = share->force_uid;
-	if (share->force_gid != 0)
-		gid = share->force_gid;
-
-	i_uid_write(inode, uid);
-	i_gid_write(inode, gid);
-}
-
 static void ksmbd_vfs_inherit_owner(struct ksmbd_work *work,
 				    struct inode *parent_inode,
 				    struct inode *inode)
@@ -129,6 +113,42 @@ out:
 	ksmbd_vfs_xattr_free(xattr_list);
 }
 
+int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
+{
+	int mask;
+
+	mask = 0;
+	acc_mode &= O_ACCMODE;
+
+	if (acc_mode == O_RDONLY)
+		mask = MAY_READ;
+	else if (acc_mode == O_WRONLY)
+		mask = MAY_WRITE;
+	else if (acc_mode == O_RDWR)
+		mask = MAY_READ | MAY_WRITE;
+
+	if (inode_permission(d_inode(dentry),
+				MAY_OPEN | mask)) {
+		ksmbd_debug("User does not have right permission\n");
+		return -EACCES;
+	}
+
+	if (delete) {
+		struct dentry *parent;
+
+		parent = dget_parent(dentry);
+		if (!parent)
+			return -EINVAL;
+
+		if (inode_permission(d_inode(parent), MAY_WRITE)) {
+			dput(parent);
+			return -EACCES;
+		}
+		dput(parent);
+	}
+	return 0;
+}
+
 /**
  * ksmbd_vfs_create() - vfs helper for smb create file
  * @work:	work
@@ -157,7 +177,6 @@ int ksmbd_vfs_create(struct ksmbd_work *work,
 	mode |= S_IFREG;
 	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
 	if (!err) {
-		ksmbd_vfs_inode_uid_gid(work, d_inode(dentry));
 		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry),
 			d_inode(dentry));
 		ksmbd_vfs_inherit_smack(work, path.dentry, dentry);
@@ -196,7 +215,6 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work,
 	mode |= S_IFDIR;
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
 	if (!err) {
-		ksmbd_vfs_inode_uid_gid(work, d_inode(dentry));
 		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry),
 			d_inode(dentry));
 		ksmbd_vfs_inherit_smack(work, path.dentry, dentry);
