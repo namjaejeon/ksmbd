@@ -5682,9 +5682,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn,
 			ksmbd_vfs_init_kstat(&d_info->wptr, ksmbd_kstat);
 		fbdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fbdinfo->EaSize = 0;
-		fbdinfo->ShortNameLength = ksmbd_extract_shortname(conn,
-							d_info->name,
-							fbdinfo->ShortName);
+		fbdinfo->ShortNameLength = 0;
 		fbdinfo->Reserved = 0;
 		memcpy(fbdinfo->FileName, conv_name, conv_len);
 		fbdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
@@ -5718,9 +5716,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn,
 			ksmbd_vfs_init_kstat(&d_info->wptr, ksmbd_kstat);
 		fibdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fibdinfo->EaSize = 0;
-		fibdinfo->ShortNameLength = ksmbd_extract_shortname(conn,
-							d_info->name,
-							fibdinfo->ShortName);
+		fibdinfo->ShortNameLength = 0;
 		fibdinfo->Reserved = 0;
 		fibdinfo->Reserved2 = 0;
 		fibdinfo->UniqueId = cpu_to_le64(ksmbd_kstat->kstat->ino);
