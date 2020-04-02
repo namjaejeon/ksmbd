@@ -2573,8 +2573,6 @@ int smb2_open(struct ksmbd_work *work)
 			}
 		}
 	} else {
-
-
 		if (test_share_config_flag(work->tcon->share_conf,
 					KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 			/*
@@ -3017,8 +3015,6 @@ err_out1:
 			rsp->hdr.Status = STATUS_OBJECT_NAME_COLLISION;
 		else if (rc == -EMFILE)
 			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
-		else if (rc == -EACCES)
-			rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
