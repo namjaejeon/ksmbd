@@ -44,7 +44,6 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
@@ -56,7 +55,6 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
@@ -68,7 +66,6 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
@@ -80,7 +77,6 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
@@ -91,7 +87,6 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
