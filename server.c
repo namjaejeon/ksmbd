@@ -458,8 +458,9 @@ static ssize_t kill_server_store(struct class *class,
 	return len;
 }
 
-char *debug_type_strings[] = {"smb", "auth", "vfs", "oplock", "ipc",
-			      "conn", "rdma"};
+static const char * const debug_type_strings[] = {"smb", "auth", "vfs",
+						"oplock", "ipc", "conn",
+						"rdma"};
 
 static ssize_t debug_show(struct class *class,
 			  struct class_attribute *attr,
@@ -468,7 +469,7 @@ static ssize_t debug_show(struct class *class,
 	ssize_t sz = 0;
 	int i, pos = 0;
 
-	for (i = 0; i < 7; i++) {
+	for (i = 0; i < ARRAY_SIZE(debug_type_strings); i++) {
 		if ((ksmbd_debug_types >> i) & 1) {
 			pos = scnprintf(buf + sz,
 					PAGE_SIZE - sz,
@@ -494,12 +495,12 @@ static ssize_t debug_store(struct class *class,
 {
 	int i;
 
-	for (i = 0; i < 7; i++) {
+	for (i = 0; i < ARRAY_SIZE(debug_type_strings); i++) {
 		if (sysfs_streq(buf, "all")) {
-			if (ksmbd_debug_types == ALL)
+			if (ksmbd_debug_types == KSMBD_DEBUG_ALL)
 				ksmbd_debug_types = 0;
 			else
-				ksmbd_debug_types = ALL;
+				ksmbd_debug_types = KSMBD_DEBUG_ALL;
 			break;
 		}
 
