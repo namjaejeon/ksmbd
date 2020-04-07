@@ -5007,7 +5007,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = ksmbd_vfs_remove_file(name);
+	rc = ksmbd_vfs_remove_file(work, name);
 	if (rc < 0)
 		goto out;
 
@@ -7466,7 +7466,7 @@ int smb_rmdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_remove_file(name);
+	err = ksmbd_vfs_remove_file(work, name);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
@@ -7513,7 +7513,8 @@ int smb_unlink(struct ksmbd_work *work)
 	if (fp)
 		err = -ESHARE;
 	else
-		err = ksmbd_vfs_remove_file(name);
+		err = ksmbd_vfs_remove_file(work, name);
+
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =
