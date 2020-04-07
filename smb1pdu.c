@@ -802,7 +802,7 @@ int smb_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = ksmbd_vfs_rename_slowpath(abs_oldname, abs_newname);
+	rc = ksmbd_vfs_rename_slowpath(work, abs_oldname, abs_newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -7011,7 +7011,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 
 	ksmbd_debug(SMB, "rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = ksmbd_vfs_fp_rename(fp, newname);
+	rc = ksmbd_vfs_fp_rename(work, fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
