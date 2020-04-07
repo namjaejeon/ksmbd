@@ -5355,9 +5355,14 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "oldname %s, newname %s\n", oldname, newname);
 
-	err = ksmbd_vfs_link(oldname, newname);
-	if (err < 0)
-		rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
+	err = ksmbd_vfs_link(work, oldname, newname);
+	if (err < 0) {
+		if (err == -EACCES)
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
+		goto out;
+	}
 
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 10;
@@ -7617,8 +7622,10 @@ int smb_nt_rename(struct ksmbd_work *work)
 			oldname, newname, oldname_len,
 			is_smbreq_unicode(&req->hdr));
 
-	err = ksmbd_vfs_link(oldname, newname);
-	if (err < 0)
+	err = ksmbd_vfs_link(work, oldname, newname);
+	if (err == -EACCES)
+		rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
+	else if (err < 0)
 		rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
 
 	smb_put_name(newname);
