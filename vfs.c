@@ -1366,7 +1366,8 @@ int ksmbd_vfs_setxattr(struct dentry *dentry,
 }
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
-int ksmbd_vfs_fsetxattr(const char *filename,
+int ksmbd_vfs_fsetxattr(struct ksmbd_work *work,
+			const char *filename,
 			const char *attr_name,
 			const void *attr_value,
 			size_t attr_size,
@@ -1375,8 +1376,12 @@ int ksmbd_vfs_fsetxattr(const char *filename,
 	struct path path;
 	int err;
 
+	if (ksmbd_override_fsids(work))
+		return -ENOMEM;
+
 	err = kern_path(filename, 0, &path);
 	if (err) {
+		ksmbd_revert_fsids(work);
 		ksmbd_debug(VFS, "cannot get linux path %s, err %d\n",
 				filename, err);
 		return err;
@@ -1389,6 +1394,7 @@ int ksmbd_vfs_fsetxattr(const char *filename,
 	if (err)
 		ksmbd_debug(VFS, "setxattr failed, err %d\n", err);
 	path_put(&path);
+	ksmbd_revert_fsids(work);
 	return err;
 }
 #endif

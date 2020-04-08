@@ -3687,11 +3687,13 @@ static int smb_set_acl(struct ksmbd_work *work)
 
 	value_len = rc;
 	if (acl_type == ACL_TYPE_ACCESS) {
-		rc = ksmbd_vfs_fsetxattr(fname,
+		rc = ksmbd_vfs_fsetxattr(work,
+					 fname,
 					 XATTR_NAME_POSIX_ACL_ACCESS,
 					 buf, value_len, 0);
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
-		rc = ksmbd_vfs_fsetxattr(fname,
+		rc = ksmbd_vfs_fsetxattr(work,
+					 fname,
 					 XATTR_NAME_POSIX_ACL_DEFAULT,
 					 buf, value_len, 0);
 	}
@@ -5269,7 +5271,7 @@ static int smb_set_ea(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "name: <%s>, name_len %u, value_len %u\n",
 			ea->name, ea->name_len, le16_to_cpu(ea->value_len));
 
-		rc = ksmbd_vfs_fsetxattr(fname, attr_name, value,
+		rc = ksmbd_vfs_fsetxattr(work, fname, attr_name, value,
 					le16_to_cpu(ea->value_len),
 					0);
 		if (rc < 0) {

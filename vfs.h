@@ -181,7 +181,8 @@ int ksmbd_vfs_setxattr(struct dentry *dentry,
 		       size_t attr_size,
 		       int flags);
 
-int ksmbd_vfs_fsetxattr(const char *filename,
+int ksmbd_vfs_fsetxattr(struct ksmbd_work *work,
+			const char *filename,
 			const char *attr_name,
 			const void *attr_value,
 			size_t attr_size,
