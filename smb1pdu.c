@@ -7713,6 +7713,9 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work))
+		return STATUS_NO_MEMORY;
+
 	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
 		ksmbd_err("look up failed err %d\n", err);
@@ -7727,6 +7730,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	}
 
 	generic_fillattr(d_inode(path.dentry), st);
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return 0;
 }
