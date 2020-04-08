@@ -4780,6 +4780,12 @@ static int smb_posix_open(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		pSMB_rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		smb_put_name(name);
+		return -ENOMEM;
+	}
+
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
@@ -4788,6 +4794,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 		file_present = false;
 		ksmbd_debug(SMB, "cannot get linux path for %s, err = %d\n",
 				name, err);
+		if (err == -EACCES)
+			goto out;
 	} else {
 		if (!test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
@@ -4876,6 +4884,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 			ksmbd_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
+	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+					posix_open_flags & O_ACCMODE, false)) {
+		err = -EACCES;
+		goto free_path;
 	}
 
 	fp = ksmbd_vfs_dentry_open(work, &path, posix_open_flags,
@@ -4997,6 +5009,7 @@ out:
 
 	if (err && fp)
 		ksmbd_close_fd(work, fp->volatile_id);
+	ksmbd_revert_fsids(work);
 	return err;
 }
 
