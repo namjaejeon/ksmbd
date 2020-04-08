@@ -2280,16 +2280,23 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
 		err = PTR_ERR(conv_name);
-		goto out;
+		goto out1;
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		err = -ENOMEM;
+		goto out1;
+	}
+
 	err = ksmbd_vfs_kern_path(conv_name, flags, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
+		if (err == -EACCES)
+			goto out;
 		file_present = false;
 		ksmbd_debug(SMB, "can not get linux path for %s, err = %d\n",
 				conv_name, err);
@@ -2377,6 +2384,12 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			goto out;
 		}
 	} else {
+		if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+				open_flags & O_ACCMODE, false)) {
+			err = -EACCES;
+			goto free_path;
+		}
+
 		if (file_present && S_ISFIFO(stat.mode))
 			open_flags |= O_NONBLOCK;
 
@@ -2609,6 +2622,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 free_path:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
+out1:
 	switch (err) {
 	case 0:
 		break;
