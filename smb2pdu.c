@@ -2337,7 +2337,6 @@ int smb2_open(struct ksmbd_work *work)
 	int share_ret, need_truncate = 0;
 	u64 time;
 	umode_t posix_mode = 0;
-	const struct cred *saved_cred = NULL;
 
 	rsp_org = RESPONSE_BUF(work);
 	WORK_BUFFERS(work, req, rsp);
@@ -2558,11 +2557,9 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
-	saved_cred = ksmbd_override_fsids(work->sess, work->tcon->share_conf);
-	if (IS_ERR_OR_NULL(saved_cred)) {
-		ksmbd_debug(SMB, "failed to override fsids\n");
+	if (ksmbd_override_fsids(work)) {
 		rc = -ENOMEM;
-		goto err_out;
+		goto err_out1;
 	}
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
@@ -3013,7 +3010,7 @@ reconnected:
 err_out:
 	if (file_present || created)
 		path_put(&path);
-	ksmbd_revert_fsids(saved_cred);
+	ksmbd_revert_fsids(work);
 err_out1:
 	if (rc) {
 		if (rc == -EINVAL)
@@ -4991,7 +4988,7 @@ int smb2_echo(struct ksmbd_work *work)
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
+static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		       struct smb2_file_rename_info *file_info,
 		       struct nls_table *local_nls)
 {
@@ -5001,7 +4998,6 @@ static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
 	struct path path;
 	bool file_present = true;
 	int rc;
-	const struct cred *saved_cred = NULL;
 
 	ksmbd_debug(SMB, "setting FILE_RENAME_INFO\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5032,11 +5028,6 @@ static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
 		goto out;
 	}
 
-	saved_cred = ksmbd_override_fsids(session, share);
-	if (IS_ERR_OR_NULL(saved_cred)) {
-		rc = -ENOMEM;
-		goto out;
-	}
 	if (strchr(new_name, ':')) {
 		int s_type;
 		char *xattr_stream_name, *stream_name = NULL;
@@ -5085,7 +5076,7 @@ static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = ksmbd_vfs_remove_file(new_name);
+			rc = ksmbd_vfs_remove_file(work, new_name);
 			if (rc) {
 				if (rc != -ENOTEMPTY)
 					rc = -EINVAL;
@@ -5105,9 +5096,8 @@ static int smb2_rename(struct ksmbd_session *session, struct ksmbd_file *fp,
 		}
 	}
 
-	rc = ksmbd_vfs_fp_rename(fp, new_name);
+	rc = ksmbd_vfs_fp_rename(work, fp, new_name);
 out:
-	ksmbd_revert_fsids(saved_cred);
 	kfree(pathname);
 	if (!IS_ERR(new_name))
 		smb2_put_name(new_name);
@@ -5122,7 +5112,7 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-static int smb2_create_link(struct ksmbd_session *session,
+static int smb2_create_link(struct ksmbd_work *work,
 			    struct ksmbd_share_config *share,
 			    struct smb2_file_link_info *file_info,
 			    struct file *filp,
@@ -5132,7 +5122,6 @@ static int smb2_create_link(struct ksmbd_session *session,
 	struct path path;
 	bool file_present = true;
 	int rc;
-	const struct cred *saved_cred = NULL;
 
 	ksmbd_debug(SMB, "setting FILE_LINK_INFORMATION\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5145,12 +5134,6 @@ static int smb2_create_link(struct ksmbd_session *session,
 				  local_nls);
 	if (IS_ERR(link_name) || S_ISDIR(file_inode(filp)->i_mode)) {
 		rc = -EINVAL;
-		goto out;
-	}
-
-	saved_cred = ksmbd_override_fsids(session, share);
-	if (IS_ERR_OR_NULL(saved_cred)) {
-		rc = -ENOMEM;
 		goto out;
 	}
 
@@ -5170,7 +5153,7 @@ static int smb2_create_link(struct ksmbd_session *session,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = ksmbd_vfs_remove_file(link_name);
+			rc = ksmbd_vfs_remove_file(work, link_name);
 			if (rc) {
 				rc = -EINVAL;
 				ksmbd_debug(SMB, "cannot delete %s\n",
@@ -5186,11 +5169,10 @@ static int smb2_create_link(struct ksmbd_session *session,
 		}
 	}
 
-	rc = ksmbd_vfs_link(target_name, link_name);
+	rc = ksmbd_vfs_link(work, target_name, link_name);
 	if (rc)
 		rc = -EINVAL;
 out:
-	ksmbd_revert_fsids(saved_cred);
 	if (!IS_ERR(link_name))
 		smb2_put_name(link_name);
 	kfree(pathname);
@@ -5430,7 +5412,7 @@ static int set_rename_info(struct ksmbd_work *work,
 		}
 	}
 next:
-	return smb2_rename(work->sess, fp,
+	return smb2_rename(work, fp,
 			   (struct smb2_file_rename_info *)buf,
 			   work->sess->conn->local_nls);
 }
@@ -5538,7 +5520,7 @@ static int smb2_set_info_file(struct ksmbd_work *work,
 		return set_rename_info(work, fp, buf);
 
 	case FILE_LINK_INFORMATION:
-		return smb2_create_link(work->sess, work->tcon->share_conf,
+		return smb2_create_link(work, work->tcon->share_conf,
 			(struct smb2_file_link_info *)buf, fp->filp,
 				work->sess->conn->local_nls);
 

@@ -802,7 +802,7 @@ int smb_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = ksmbd_vfs_rename_slowpath(abs_oldname, abs_newname);
+	rc = ksmbd_vfs_rename_slowpath(work, abs_oldname, abs_newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -2280,16 +2280,23 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
 		err = PTR_ERR(conv_name);
-		goto out;
+		goto out1;
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		err = -ENOMEM;
+		goto out1;
+	}
+
 	err = ksmbd_vfs_kern_path(conv_name, flags, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
+		if (err == -EACCES)
+			goto out;
 		file_present = false;
 		ksmbd_debug(SMB, "can not get linux path for %s, err = %d\n",
 				conv_name, err);
@@ -2298,7 +2305,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 			if (d_is_symlink(path.dentry)) {
 				err = -EACCES;
-				goto out;
+				goto free_path;
 			}
 		}
 
@@ -2377,6 +2384,12 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			goto out;
 		}
 	} else {
+		if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+				open_flags & O_ACCMODE, false)) {
+			err = -EACCES;
+			goto free_path;
+		}
+
 		if (file_present && S_ISFIFO(stat.mode))
 			open_flags |= O_NONBLOCK;
 
@@ -2609,6 +2622,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 free_path:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
+out1:
 	switch (err) {
 	case 0:
 		break;
@@ -3672,11 +3687,13 @@ static int smb_set_acl(struct ksmbd_work *work)
 
 	value_len = rc;
 	if (acl_type == ACL_TYPE_ACCESS) {
-		rc = ksmbd_vfs_fsetxattr(fname,
+		rc = ksmbd_vfs_fsetxattr(work,
+					 fname,
 					 XATTR_NAME_POSIX_ACL_ACCESS,
 					 buf, value_len, 0);
 	} else if (acl_type == ACL_TYPE_DEFAULT) {
-		rc = ksmbd_vfs_fsetxattr(fname,
+		rc = ksmbd_vfs_fsetxattr(work,
+					 fname,
 					 XATTR_NAME_POSIX_ACL_DEFAULT,
 					 buf, value_len, 0);
 	}
@@ -3945,11 +3962,20 @@ static int query_path_info(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	rc = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (rc) {
-		rsp_hdr->Status.CifsError =
-				STATUS_OBJECT_NAME_NOT_FOUND;
-		ksmbd_err("cannot get linux path for %s, err %d\n",
+		if (rc == -EACCES)
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp_hdr->Status.CifsError =
+					STATUS_OBJECT_NAME_NOT_FOUND;
+		ksmbd_debug(SMB, "cannot get linux path for %s, err %d\n",
 				name, rc);
 		goto out;
 	}
@@ -4385,6 +4411,7 @@ static int query_path_info(struct ksmbd_work *work)
 err_out:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return rc;
 }
@@ -4516,8 +4543,12 @@ static int query_fs_info(struct ksmbd_work *work)
 	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_PIPE))
 		return -ENOENT;
 
+	if (ksmbd_override_fsids(work))
+		return -ENOMEM;
+
 	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
+		ksmbd_revert_fsids(work);
 		ksmbd_err("cannot create vfs path\n");
 		return rc;
 	}
@@ -4664,6 +4695,7 @@ static int query_fs_info(struct ksmbd_work *work)
 
 err_out:
 	path_put(&path);
+	ksmbd_revert_fsids(work);
 	return rc;
 }
 
@@ -4765,6 +4797,12 @@ static int smb_posix_open(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		pSMB_rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		smb_put_name(name);
+		return -ENOMEM;
+	}
+
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
@@ -4773,6 +4811,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 		file_present = false;
 		ksmbd_debug(SMB, "cannot get linux path for %s, err = %d\n",
 				name, err);
+		if (err == -EACCES)
+			goto out;
 	} else {
 		if (!test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
@@ -4861,6 +4901,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 			ksmbd_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
+	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+					posix_open_flags & O_ACCMODE, false)) {
+		err = -EACCES;
+		goto free_path;
 	}
 
 	fp = ksmbd_vfs_dentry_open(work, &path, posix_open_flags,
@@ -4982,6 +5026,7 @@ out:
 
 	if (err && fp)
 		ksmbd_close_fd(work, fp->volatile_id);
+	ksmbd_revert_fsids(work);
 	return err;
 }
 
@@ -5007,7 +5052,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = ksmbd_vfs_remove_file(name);
+	rc = ksmbd_vfs_remove_file(work, name);
 	if (rc < 0)
 		goto out;
 
@@ -5231,7 +5276,7 @@ static int smb_set_ea(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "name: <%s>, name_len %u, value_len %u\n",
 			ea->name, ea->name_len, le16_to_cpu(ea->value_len));
 
-		rc = ksmbd_vfs_fsetxattr(fname, attr_name, value,
+		rc = ksmbd_vfs_fsetxattr(work, fname, attr_name, value,
 					le16_to_cpu(ea->value_len),
 					0);
 		if (rc < 0) {
@@ -5355,9 +5400,14 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "oldname %s, newname %s\n", oldname, newname);
 
-	err = ksmbd_vfs_link(oldname, newname);
-	if (err < 0)
-		rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
+	err = ksmbd_vfs_link(work, oldname, newname);
+	if (err < 0) {
+		if (err == -EACCES)
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
+		goto out;
+	}
 
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 10;
@@ -5413,7 +5463,7 @@ static int smb_creat_symlink(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "name %s, symname %s\n", name, symname);
 
-	err = ksmbd_vfs_symlink(name, symname);
+	err = ksmbd_vfs_symlink(work, name, symname);
 	if (err < 0) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
@@ -5830,6 +5880,11 @@ static int find_first(struct ksmbd_work *work)
 	int header_size;
 	unsigned int flags = LOOKUP_FOLLOW;
 
+	if (ksmbd_override_fsids(work)) {
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	req_params = (struct smb_com_trans2_ffirst_req_params *)
 		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
 	dirpath = smb_get_dir_name(share, req_params->FileName, PATH_MAX,
@@ -5847,12 +5902,21 @@ static int find_first(struct ksmbd_work *work)
 	rc = ksmbd_vfs_kern_path(dirpath, flags | LOOKUP_DIRECTORY,
 			&path, 0);
 	if (rc < 0) {
-		rsp_hdr->Status.CifsError =
+		if (rc == -EACCES)
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp_hdr->Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
-
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
 		goto err_out;
+	} else {
+		if (ksmbd_vfs_inode_permission(path.dentry,
+				O_RDONLY, false)) {
+			rc = -EACCES;
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			goto err_out;
+		}
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
@@ -6036,6 +6100,7 @@ static int find_first(struct ksmbd_work *work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 				params_count + 1 + data_alignment_offset));
 	kfree(srch_ptr);
+	ksmbd_revert_fsids(work);
 	return 0;
 
 err_out:
@@ -6052,6 +6117,7 @@ err_out:
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
+	ksmbd_revert_fsids(work);
 	return 0;
 }
 
@@ -7011,7 +7077,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 
 	ksmbd_debug(SMB, "rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = ksmbd_vfs_fp_rename(fp, newname);
+	rc = ksmbd_vfs_fp_rename(work, fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
@@ -7466,7 +7532,7 @@ int smb_rmdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_remove_file(name);
+	err = ksmbd_vfs_remove_file(work, name);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
@@ -7513,13 +7579,16 @@ int smb_unlink(struct ksmbd_work *work)
 	if (fp)
 		err = -ESHARE;
 	else
-		err = ksmbd_vfs_remove_file(name);
+		err = ksmbd_vfs_remove_file(work, name);
+
 	if (err) {
 		if (err == -EISDIR)
 			rsp->hdr.Status.CifsError =
 				STATUS_FILE_IS_A_DIRECTORY;
 		else if (err == -ESHARE)
 			rsp->hdr.Status.CifsError = STATUS_SHARING_VIOLATION;
+		else if (err == -EACCES)
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
@@ -7616,8 +7685,10 @@ int smb_nt_rename(struct ksmbd_work *work)
 			oldname, newname, oldname_len,
 			is_smbreq_unicode(&req->hdr));
 
-	err = ksmbd_vfs_link(oldname, newname);
-	if (err < 0)
+	err = ksmbd_vfs_link(work, oldname, newname);
+	if (err == -EACCES)
+		rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
+	else if (err < 0)
 		rsp->hdr.Status.CifsError = STATUS_NOT_SAME_DEVICE;
 
 	smb_put_name(newname);
@@ -7649,6 +7720,9 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work))
+		return STATUS_NO_MEMORY;
+
 	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
 		ksmbd_err("look up failed err %d\n", err);
@@ -7663,6 +7737,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	}
 
 	generic_fillattr(d_inode(path.dentry), st);
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return 0;
 }
@@ -7850,10 +7925,16 @@ int smb_open_andx(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_kern_path(name, flags, &path,
 			req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
-		if (!test_share_config_flag(share,
+		if (err == -EACCES || !test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 			err = -EACCES;
 			goto out;
@@ -7903,6 +7984,10 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto out;
 		}
 		generic_fillattr(d_inode(path.dentry), &stat);
+	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+			open_flags & O_ACCMODE, false)) {
+		err = -EACCES;
+		goto free_path;
 	}
 
 	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
@@ -8019,6 +8104,7 @@ int smb_open_andx(struct ksmbd_work *work)
 free_path:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
 	if (err) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
