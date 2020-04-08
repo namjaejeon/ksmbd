@@ -3960,11 +3960,20 @@ static int query_path_info(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	rc = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (rc) {
-		rsp_hdr->Status.CifsError =
-				STATUS_OBJECT_NAME_NOT_FOUND;
-		ksmbd_err("cannot get linux path for %s, err %d\n",
+		if (rc == -EACCES)
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp_hdr->Status.CifsError =
+					STATUS_OBJECT_NAME_NOT_FOUND;
+		ksmbd_debug(SMB, "cannot get linux path for %s, err %d\n",
 				name, rc);
 		goto out;
 	}
@@ -4400,6 +4409,7 @@ static int query_path_info(struct ksmbd_work *work)
 err_out:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return rc;
 }
