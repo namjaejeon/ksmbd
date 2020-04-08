@@ -5863,6 +5863,11 @@ static int find_first(struct ksmbd_work *work)
 	int header_size;
 	unsigned int flags = LOOKUP_FOLLOW;
 
+	if (ksmbd_override_fsids(work)) {
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	req_params = (struct smb_com_trans2_ffirst_req_params *)
 		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
 	dirpath = smb_get_dir_name(share, req_params->FileName, PATH_MAX,
@@ -5880,12 +5885,21 @@ static int find_first(struct ksmbd_work *work)
 	rc = ksmbd_vfs_kern_path(dirpath, flags | LOOKUP_DIRECTORY,
 			&path, 0);
 	if (rc < 0) {
-		rsp_hdr->Status.CifsError =
+		if (rc == -EACCES)
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+		else
+			rsp_hdr->Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
-
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
 		goto err_out;
+	} else {
+		if (ksmbd_vfs_inode_permission(path.dentry,
+				O_RDONLY, false)) {
+			rc = -EACCES;
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			goto err_out;
+		}
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
@@ -6069,6 +6083,7 @@ static int find_first(struct ksmbd_work *work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 				params_count + 1 + data_alignment_offset));
 	kfree(srch_ptr);
+	ksmbd_revert_fsids(work);
 	return 0;
 
 err_out:
@@ -6085,6 +6100,7 @@ err_out:
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
+	ksmbd_revert_fsids(work);
 	return 0;
 }
 
