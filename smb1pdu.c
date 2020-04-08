@@ -7570,6 +7570,8 @@ int smb_unlink(struct ksmbd_work *work)
 				STATUS_FILE_IS_A_DIRECTORY;
 		else if (err == -ESHARE)
 			rsp->hdr.Status.CifsError = STATUS_SHARING_VIOLATION;
+		else if (err == -EACCES)
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
