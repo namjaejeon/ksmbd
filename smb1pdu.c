@@ -4543,8 +4543,12 @@ static int query_fs_info(struct ksmbd_work *work)
 	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_PIPE))
 		return -ENOENT;
 
+	if (ksmbd_override_fsids(work))
+		return -ENOMEM;
+
 	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
+		ksmbd_revert_fsids(work);
 		ksmbd_err("cannot create vfs path\n");
 		return rc;
 	}
@@ -4691,6 +4695,7 @@ static int query_fs_info(struct ksmbd_work *work)
 
 err_out:
 	path_put(&path);
+	ksmbd_revert_fsids(work);
 	return rc;
 }
 
