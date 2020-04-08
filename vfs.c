@@ -649,9 +649,13 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 	int err = 0;
 	struct ksmbd_file *fp = NULL;
 
+	if (ksmbd_override_fsids(work))
+		return -ENOMEM;
+
 	if (name) {
 		err = kern_path(name, 0, &path);
 		if (err) {
+			ksmbd_revert_fsids(work);
 			ksmbd_debug(VFS, "lookup failed for %s, err = %d\n",
 					name, err);
 			return -ENOENT;
@@ -662,6 +666,7 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 
 		fp = ksmbd_lookup_fd_fast(work, fid);
 		if (!fp) {
+			ksmbd_revert_fsids(work);
 			ksmbd_err("failed to get filp for fid %llu\n", fid);
 			return -ENOENT;
 		}
@@ -669,6 +674,11 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 		filp = fp->filp;
 		dentry = filp->f_path.dentry;
 		inode = d_inode(dentry);
+	}
+
+	if (ksmbd_vfs_inode_permission(dentry, O_WRONLY, false)) {
+		err = -EACCES;
+		goto out;
 	}
 
 	/* no need to update mode of symlink */
@@ -719,6 +729,7 @@ out:
 	if (name)
 		path_put(&path);
 	ksmbd_fd_put(work, fp);
+	ksmbd_revert_fsids(work);
 	return err;
 }
 
