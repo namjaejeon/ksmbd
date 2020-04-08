@@ -2305,7 +2305,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 			if (d_is_symlink(path.dentry)) {
 				err = -EACCES;
-				goto out;
+				goto free_path;
 			}
 		}
 
