@@ -5418,7 +5418,7 @@ static int smb_creat_symlink(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "name %s, symname %s\n", name, symname);
 
-	err = ksmbd_vfs_symlink(name, symname);
+	err = ksmbd_vfs_symlink(work, name, symname);
 	if (err < 0) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = STATUS_DISK_FULL;

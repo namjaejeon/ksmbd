@@ -774,14 +774,19 @@ int ksmbd_vfs_getattr(struct ksmbd_work *work, uint64_t fid,
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_symlink(const char *name, const char *symname)
+int ksmbd_vfs_symlink(struct ksmbd_work *work,
+		const char *name, const char *symname)
 {
 	struct path path;
 	struct dentry *dentry;
 	int err;
 
+	if (ksmbd_override_fsids(work))
+		return -ENOMEM;
+
 	dentry = kern_path_create(AT_FDCWD, symname, &path, 0);
 	if (IS_ERR(dentry)) {
+		ksmbd_revert_fsids(work);
 		err = PTR_ERR(dentry);
 		ksmbd_err("path create failed for %s, err %d\n", name, err);
 		return err;
@@ -792,7 +797,7 @@ int ksmbd_vfs_symlink(const char *name, const char *symname)
 		ksmbd_debug(VFS, "failed to create symlink, err %d\n", err);
 
 	done_path_create(&path, dentry);
-
+	ksmbd_revert_fsids(work);
 	return err;
 }
 
