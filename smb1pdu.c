@@ -7886,10 +7886,16 @@ int smb_open_andx(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_kern_path(name, flags, &path,
 			req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
-		if (!test_share_config_flag(share,
+		if (err == -EACCES || !test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 			err = -EACCES;
 			goto out;
@@ -7939,6 +7945,10 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto out;
 		}
 		generic_fillattr(d_inode(path.dentry), &stat);
+	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
+			open_flags & O_ACCMODE, false)) {
+		err = -EACCES;
+		goto free_path;
 	}
 
 	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
@@ -8055,6 +8065,7 @@ int smb_open_andx(struct ksmbd_work *work)
 free_path:
 	path_put(&path);
 out:
+	ksmbd_revert_fsids(work);
 	if (err) {
 		if (err == -ENOSPC)
 			rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
