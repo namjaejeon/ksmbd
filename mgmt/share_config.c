@@ -9,8 +9,11 @@
 #include <linux/rwsem.h>
 #include <linux/parser.h>
 #include <linux/namei.h>
+#include <linux/sched.h>
 
 #include "share_config.h"
+#include "user_config.h"
+#include "user_session.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
 #include "../ksmbd_server.h" /* FIXME */
@@ -163,7 +166,7 @@ static struct ksmbd_share_config *share_config_request(char *name)
 		if (!ret && share->path) {
 			ret = kern_path(share->path, 0, &share->vfs_path);
 			if (ret) {
-				ksmbd_debug("failed to access '%s'\n",
+				ksmbd_debug(SMB, "failed to access '%s'\n",
 					share->path);
 				/* Avoid put_path() */
 				kfree(share->path);
