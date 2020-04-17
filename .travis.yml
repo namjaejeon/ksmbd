@@ -44,7 +44,7 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
+ - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile with latest Torvalds' kernel
@@ -55,7 +55,7 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
+ - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
@@ -66,7 +66,7 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
+ - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
@@ -77,7 +77,7 @@ script:
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
+ - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
@@ -87,8 +87,8 @@ script:
  - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_DEBUGGING is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
+ - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Run xfstests testsuite
@@ -106,9 +106,9 @@ script:
  - sudo mkdir -p /etc/ksmbd/
  - sudo mkdir -p /mnt/1
  - sudo mkdir -p /mnt/2
- - sudo mkdir -p /mnt/test1
- - sudo mkdir -p /mnt/test2
- - sudo mkdir -p /mnt/test3
+ - sudo mkdir -m 777 -p /mnt/test1
+ - sudo mkdir -m 777 -p /mnt/test2
+ - sudo mkdir -m 777 -p /mnt/test3
  - ksmbd.adduser -i ./ksmbdpwd.db -a testuser -p 1234
  - cp cifsd-test-result/testsuites/smb.conf .
  - ksmbd.mountd -n --c=./smb.conf --u=./ksmbdpwd.db&
@@ -129,11 +129,11 @@ script:
  - mv tests/generic/011.new tests/generic/011
  - mv tests/generic/011.out.new tests/generic/011.out
  - sudo ./check generic/011
-# - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
-# - mv tests/generic/013.new tests/generic/013
-# - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
-# - mv tests/generic/013.out.new tests/generic/013.out
-# - sudo ./check generic/013
+ - sed -e s/count=1000/count=100/ -e s/procs=20/procs=10/ tests/generic/013 > tests/generic/013.new
+ - mv tests/generic/013.new tests/generic/013
+ - sed -e "s/-p 20/-p 10/" tests/generic/013.out > tests/generic/013.out.new
+ - mv tests/generic/013.out.new tests/generic/013.out
+ - sudo ./check generic/013
  - sudo ./check generic/014
  - sudo ./check generic/023
  - sudo ./check generic/024
@@ -156,10 +156,10 @@ script:
 # - sudo ./check generic/075
  - sudo ./check generic/080
  - sudo ./check generic/084
-# - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
-# - mv tests/generic/091.new tests/generic/091
-# - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
-# - mv tests/generic/091.out.new tests/generic/091.out
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091 > tests/generic/091.new
+ - mv tests/generic/091.new tests/generic/091
+ - sed -e "s/-N 10000/-N 900/" -e "s/-l 500000/-l 5000/" tests/generic/091.out > tests/generic/091.out.new
+ - mv tests/generic/091.out.new tests/generic/091.out
 # - sudo ./check generic/091
  - sudo ./check generic/095
  - sudo ./check generic/098
@@ -198,7 +198,7 @@ script:
  - sudo ./check generic/249
  - sudo ./check generic/257
 # - sudo ./check generic/263 #fail, It may be ksmbd issue
-# - sudo ./check generic/285 #fail, It may be cifs client issue on 4.15 kernel
+ - sudo ./check generic/285 #fail, It may be cifs client issue on 4.15 kernel
  - sed -e "s/<< 20/<< 10/g" tests/generic/286 > tests/generic/286.new
  - mv tests/generic/286.new tests/generic/286
  - sudo ./check generic/286
@@ -228,7 +228,7 @@ script:
  - sudo ./check generic/465
 # - sudo ./check generic/469
 # - time_wait sudo ./check generic/476 (timeover > 10m)
-# - sudo ./check generic/490 #fail, It may be cifs client issue on 5.0 kernel 
+ - sudo ./check generic/490 #fail, It may be cifs client issue on 5.0 kernel
  - sudo ./check generic/504
 #
 #
@@ -327,7 +327,19 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-padding
  - sudo rm -rf /mnt/test3/*
  # smb2 streams test
- - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.dir
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.io
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.sharemodes
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.rename
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.rename2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.create-disposition
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.attributes
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.delete
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.zero-byte
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.basefile-rename-with-open-stream
  - sudo rm -rf /mnt/test3/*
  # smb2 create test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.gentest
@@ -426,3 +438,25 @@ script:
 # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.contend
 # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.context
 # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.truncate
+ # smb2 leases test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.request
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.nobreakself
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen2
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade3
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.break
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.oplock
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.multibreak
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking2
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking3
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking4
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking5
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking6
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.lock1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.complex1
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.timeout
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.unlink

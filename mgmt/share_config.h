@@ -33,6 +33,9 @@ struct ksmbd_share_config {
 	unsigned short		force_gid;
 };
 
+#define KSMBD_SHARE_INVALID_UID	((__u16)-1)
+#define KSMBD_SHARE_INVALID_GID	((__u16)-1)
+
 static inline int share_config_create_mode(struct ksmbd_share_config *share,
 	umode_t posix_mode)
 {
