@@ -1860,6 +1860,7 @@ int smb2_check_durable_oplock(struct ksmbd_file *fp,
 		}
 	}
 out:
-	opinfo_put(opinfo);
+	if (opinfo)
+		opinfo_put(opinfo);
 	return ret;
 }
