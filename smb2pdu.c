@@ -1044,6 +1044,7 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 		if (!conn->preauth_info) {
 			rc = -ENOMEM;
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+			goto err_out;
 		}
 
 		status = deassemble_neg_contexts(conn, req);
@@ -2043,8 +2044,10 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, struct path *path)
 				le32_to_cpu(eabuf->NextEntryOffset));
 
 		if (eabuf->EaNameLength >
-				(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN))
-			return -EINVAL;
+				(XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN)) {
+			rc = -EINVAL;
+			break;
+		}
 
 		memcpy(attr_name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN);
 		memcpy(&attr_name[XATTR_USER_PREFIX_LEN], eabuf->name,
@@ -3045,6 +3048,9 @@ err_out1:
 		smb2_set_err_rsp(work);
 		ksmbd_debug(SMB, "Error response: %x\n", rsp->hdr.Status);
 	}
+
+	if (lc)
+		kfree(lc);
 
 	return 0;
 }
@@ -7642,8 +7648,8 @@ int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
 		return 1;
 
 	/* send session setup auth phase signed response */
-	if (work->sess->sign && command == SMB2_SESSION_SETUP_HE &&
-		work->sess)
+	if (work->sess && work->sess->sign &&
+		command == SMB2_SESSION_SETUP_HE)
 		return 1;
 
 	return 0;
