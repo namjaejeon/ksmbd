@@ -3052,8 +3052,7 @@ err_out1:
 		ksmbd_debug(SMB, "Error response: %x\n", rsp->hdr.Status);
 	}
 
-	if (lc)
-		kfree(lc);
+	kfree(lc);
 
 	return 0;
 }
