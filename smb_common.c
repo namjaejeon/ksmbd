@@ -454,7 +454,7 @@ static int __smb2_negotiate(struct ksmbd_conn *conn)
 }
 
 #ifndef CONFIG_SMB_INSECURE_SERVER
-int smb_handle_negotiate(struct ksmbd_work *work)
+static int smb_handle_negotiate(struct ksmbd_work *work)
 {
 	struct smb_negotiate_rsp *neg_rsp = RESPONSE_BUF(work);
 
