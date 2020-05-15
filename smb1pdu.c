@@ -847,6 +847,8 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 		server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY) {
 		conn->sign = true;
 		neg_rsp->SecurityMode |= SECMODE_SIGN_ENABLED;
+		if (server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY)
+			neg_rsp->SecurityMode |= SECMODE_SIGN_REQUIRED;
 	}
 	neg_rsp->MaxMpxCount = cpu_to_le16(SMB1_MAX_MPX_COUNT);
 	neg_rsp->MaxNumberVcs = cpu_to_le16(SMB1_MAX_VCS);
