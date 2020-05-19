@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@kernel.org>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -133,7 +133,7 @@ andx_again:
 
 	cmds = &conn->cmds[command];
 	if (!cmds->proc) {
-		ksmbd_err("*** not implemented yet cmd = %x\n", command);
+		ksmbd_debug(SMB, "*** not implemented yet cmd = %x\n", command);
 		conn->ops->set_rsp_status(work, STATUS_NOT_IMPLEMENTED);
 		return TCP_HANDLER_CONTINUE;
 	}
@@ -448,7 +448,7 @@ static ssize_t kill_server_store(struct class *class,
 	if (!sysfs_streq(buf, "hard"))
 		return len;
 
-	ksmbd_err("kill command received\n");
+	ksmbd_info("kill command received\n");
 	mutex_lock(&ctrl_lock);
 	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
 	__module_get(THIS_MODULE);
@@ -625,7 +625,7 @@ static void __exit ksmbd_server_exit(void)
 	ksmbd_release_inode_hash();
 }
 
-MODULE_AUTHOR("Namjae Jeon <linkinjeon@gmail.com>");
+MODULE_AUTHOR("Namjae Jeon <linkinjeon@kernel.org>");
 MODULE_VERSION(KSMBD_VERSION);
 MODULE_DESCRIPTION("Linux kernel CIFS/SMB SERVER");
 MODULE_LICENSE("GPL");

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@kernel.org>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -213,6 +213,7 @@ struct smb2_negotiate_req {
 
 /* SecurityMode flags */
 #define SMB2_NEGOTIATE_SIGNING_ENABLED_LE	cpu_to_le16(0x0001)
+#define SMB2_NEGOTIATE_SIGNING_REQUIRED		0x0002
 #define SMB2_NEGOTIATE_SIGNING_REQUIRED_LE	cpu_to_le16(0x0002)
 /* Capabilities flags */
 #define SMB2_GLOBAL_CAP_DFS		0x00000001
@@ -521,10 +522,10 @@ struct smb2_tree_disconnect_rsp {
 					FILE_GENERIC_ALL_LE)
 
 /* Impersonation Levels */
-#define IL_ANONYMOUS		cpu_to_le32(0x00000000)
-#define IL_IDENTIFICATION	cpu_to_le32(0x00000001)
-#define IL_IMPERSONATION	cpu_to_le32(0x00000002)
-#define IL_DELEGATE		cpu_to_le32(0x00000003)
+#define IL_ANONYMOUS_LE		cpu_to_le32(0x00000000)
+#define IL_IDENTIFICATION_LE	cpu_to_le32(0x00000001)
+#define IL_IMPERSONATION_LE	cpu_to_le32(0x00000002)
+#define IL_DELEGATE_LE		cpu_to_le32(0x00000003)
 
 /* Create Context Values */
 #define SMB2_CREATE_EA_BUFFER			"ExtA" /* extended attributes */
@@ -873,16 +874,16 @@ struct validate_negotiate_info_rsp {
 } __packed;
 
 struct smb_sockaddr_in {
-	__le16 Port;
-	__le32 IPv4address;
+	__be16 Port;
+	__be32 IPv4address;
 	__u8 Reserved[8];
 } __packed;
 
 struct smb_sockaddr_in6 {
-	__le16 Port;
-	__le32 FlowInfo;
+	__be16 Port;
+	__be32 FlowInfo;
 	__u8 IPv6address[16];
-	__le32 ScopeId;
+	__be32 ScopeId;
 } __packed;
 
 #define INTERNETWORK	0x0002

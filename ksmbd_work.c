@@ -38,7 +38,8 @@ struct ksmbd_work *ksmbd_alloc_work_struct(void)
 void ksmbd_free_work_struct(struct ksmbd_work *work)
 {
 	WARN_ON(work->saved_cred_level != 0);
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_TBUF)
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_TBUF &&
+			work->set_trans_buf)
 		ksmbd_release_buffer(RESPONSE_BUF(work));
 	else
 		ksmbd_free_response(RESPONSE_BUF(work));

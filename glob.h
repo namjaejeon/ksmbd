@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
- *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@kernel.org>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -14,7 +14,7 @@
 #include "vfs_cache.h"
 #include "smberr.h"
 
-#define KSMBD_VERSION	"3.1.8"
+#define KSMBD_VERSION	"3.1.9"
 
 /* @FIXME clean up this code */
 
@@ -64,10 +64,9 @@ extern int ksmbd_caseless_search;
 
 #define UNICODE_LEN(x)		((x) * 2)
 
-/* @FIXME clean up this code */
-/* @FIXME clean up this code */
-/* @FIXME clean up this code */
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
 /* ksmbd misc functions */
 extern void ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode);
+#endif
 #endif /* __KSMBD_GLOB_H */

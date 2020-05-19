@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   Copyright (C) 2016 Namjae Jeon <linkinjeon@gmail.com>
+ *   Copyright (C) 2016 Namjae Jeon <linkinjeon@kernel.org>
  *   Copyright (C) 2018 Samsung Electronics Co., Ltd.
  */
 
@@ -1491,10 +1491,11 @@ int ksmbd_vfs_fiemap(struct ksmbd_file *fp, u64 start, u64 length,
 		length = maxbytes - start;
 
 	fieinfo.fi_extents_max = 32;
-	fieinfo.fi_extents_start = kmalloc_array(fieinfo.fi_extents_max,
-				sizeof(struct fiemap_extent), GFP_KERNEL);
-	if (!fieinfo.fi_extents_start)
+	extents = kmalloc_array(fieinfo.fi_extents_max,
+			sizeof(struct fiemap_extent), GFP_KERNEL);
+	if (!extents)
 		return -ENOMEM;
+	fieinfo.fi_extents_start = (struct fiemap_extent __user *)extents;
 
 	range_idx = 0;
 	range = ranges + range_idx;
@@ -1516,7 +1517,6 @@ int ksmbd_vfs_fiemap(struct ksmbd_file *fp, u64 start, u64 length,
 			goto out;
 		}
 
-		extents = (struct fiemap_extent *)(fieinfo.fi_extents_start);
 		for (i = 0; i < fieinfo.fi_extents_mapped; i++) {
 			if (extents[i].fe_logical <=
 					le64_to_cpu(range->file_offset) +
@@ -1574,7 +1574,7 @@ int ksmbd_vfs_fiemap(struct ksmbd_file *fp, u64 start, u64 length,
 	}
 
 out:
-	kfree(fieinfo.fi_extents_start);
+	kfree(extents);
 	return ret;
 }
 
@@ -1765,7 +1765,9 @@ static int __dir_empty(struct dir_context *ctx,
 int ksmbd_vfs_empty_dir(struct ksmbd_file *fp)
 {
 	int err;
-	struct ksmbd_readdir_data readdir_data = {0};
+	struct ksmbd_readdir_data readdir_data;
+
+	memset(&readdir_data, 0, sizeof(struct ksmbd_readdir_data));
 
 	set_ctx_actor(&readdir_data.ctx, __dir_empty);
 	readdir_data.dirent_count = 0;
