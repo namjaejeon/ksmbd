@@ -847,6 +847,8 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 		server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY) {
 		conn->sign = true;
 		neg_rsp->SecurityMode |= SECMODE_SIGN_ENABLED;
+		if (server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY)
+			neg_rsp->SecurityMode |= SECMODE_SIGN_REQUIRED;
 	}
 	neg_rsp->MaxMpxCount = cpu_to_le16(SMB1_MAX_MPX_COUNT);
 	neg_rsp->MaxNumberVcs = cpu_to_le16(SMB1_MAX_VCS);
@@ -5953,6 +5955,9 @@ static int find_first(struct ksmbd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
+	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+	if (!d_info.smb1_name)
+		goto err_out;
 	d_info.wptr = (char *)((char *)rsp + sizeof(struct smb_com_trans2_rsp) +
 			params_count + data_alignment_offset);
 
@@ -6016,7 +6021,14 @@ static int find_first(struct ksmbd_work *work)
 			continue;
 
 		ksmbd_kstat.kstat = &kstat;
-		d_info.name = de->name;
+
+		if (de->namelen > NAME_MAX) {
+			ksmbd_err("filename length exceeds 255 bytes.\n");
+			continue;
+		}
+		memcpy(d_info.smb1_name, de->name, de->namelen);
+		d_info.smb1_name[de->namelen] = '\0';
+		d_info.name = (const char *)d_info.smb1_name;
 		d_info.name_len = de->namelen;
 		rc = ksmbd_vfs_readdir_name(work,
 					    &ksmbd_kstat,
@@ -6102,6 +6114,7 @@ static int find_first(struct ksmbd_work *work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 				params_count + 1 + data_alignment_offset));
 	kfree(srch_ptr);
+	kfree(d_info.smb1_name);
 	ksmbd_revert_fsids(work);
 	return 0;
 
@@ -6119,6 +6132,7 @@ err_out:
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
+	kfree(d_info.smb1_name);
 	ksmbd_revert_fsids(work);
 	return 0;
 }
@@ -6196,6 +6210,9 @@ static int find_next(struct ksmbd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
+	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+	if (!d_info.smb1_name)
+		goto err_out;
 	d_info.wptr = (char *)((char *)rsp + sizeof(struct smb_com_trans2_rsp) +
 			params_count + data_alignment_offset);
 
@@ -6246,7 +6263,14 @@ static int find_next(struct ksmbd_work *work)
 			continue;
 
 		ksmbd_kstat.kstat = &kstat;
-		d_info.name = de->name;
+
+		if (de->namelen > NAME_MAX) {
+			ksmbd_err("filename length exceeds 255 bytes.\n");
+			continue;
+		}
+		memcpy(d_info.smb1_name, de->name, de->namelen);
+		d_info.smb1_name[de->namelen] = '\0';
+		d_info.name = (const char *)d_info.smb1_name;
 		d_info.name_len = de->namelen;
 		rc = ksmbd_vfs_readdir_name(work,
 					    &ksmbd_kstat,
@@ -6319,6 +6343,7 @@ static int find_next(struct ksmbd_work *work)
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 		params_count + 1 + data_alignment_offset));
 	kfree(pathname);
+	kfree(d_info.smb1_name);
 	ksmbd_fd_put(work, dir_fp);
 	return 0;
 
@@ -6337,6 +6362,7 @@ err_out:
 			STATUS_UNEXPECTED_IO_ERROR;
 
 	ksmbd_fd_put(work, dir_fp);
+	kfree(d_info.smb1_name);
 	kfree(pathname);
 	return 0;
 }
