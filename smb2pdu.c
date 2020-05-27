@@ -286,6 +286,8 @@ int init_smb2_neg_rsp(struct ksmbd_work *work)
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
+	if (server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY)
+		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED_LE;
 	conn->use_spnego = true;
 
 	ksmbd_conn_set_need_negotiate(work);
