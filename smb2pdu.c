@@ -7655,9 +7655,9 @@ int smb2_notify(struct ksmbd_work *work)
  * smb2_is_sign_req() - handler for checking packet signing status
  * @work:smb work containing notify command buffer
  *
- * Return:	1 if packed is signed, 0 otherwise
+ * Return:	true if packed is signed, false otherwise
  */
-int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
+bool smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
 {
 	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
 
@@ -7665,12 +7665,7 @@ int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
 			command != SMB2_NEGOTIATE_HE &&
 			command != SMB2_SESSION_SETUP_HE &&
 			command != SMB2_OPLOCK_BREAK_HE)
-		return 1;
-
-	/* send session setup auth phase signed response */
-	if (work->sess && work->sess->sign &&
-		command == SMB2_SESSION_SETUP_HE)
-		return 1;
+		return true;
 
 	return 0;
 }
@@ -7683,23 +7678,36 @@ int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
  */
 int smb2_check_sign_req(struct ksmbd_work *work)
 {
-	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
+	struct smb2_hdr *hdr, *hdr_org;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[1];
+	size_t len;
 
-	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
-	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = REQUEST_BUF(work);
+	if (work->next_smb2_rcv_hdr_off)
+		hdr = REQUEST_BUF_NEXT(work);
 
-	iov[0].iov_base = (char *)&rcv_hdr2->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+	if (!hdr->NextCommand && !work->next_smb2_rcv_hdr_off)
+		len = be32_to_cpu(hdr_org->smb2_buf_length);
+	else if (hdr->NextCommand)
+		len = le32_to_cpu(hdr->NextCommand);
+	else
+		len = be32_to_cpu(hdr_org->smb2_buf_length) -
+			work->next_smb2_rcv_hdr_off;
+
+	memcpy(signature_req, hdr->Signature, SMB2_SIGNATURE_SIZE);
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
+	iov[0].iov_len = len;
 
 	if (ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, 1,
 		signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
-		ksmbd_debug(SMB, "bad smb2 signature\n");
+		ksmbd_err("bad smb2 signature\n");
 		return 0;
 	}
 
@@ -7713,16 +7721,36 @@ int smb2_check_sign_req(struct ksmbd_work *work)
  */
 void smb2_set_sign_rsp(struct ksmbd_work *work)
 {
-	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct smb2_hdr *hdr, *hdr_org;
+	struct smb2_hdr *req_hdr;
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[2];
+	size_t len;
 	int n_vec = 1;
 
-	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
-	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = RESPONSE_BUF(work);
+	if (work->next_smb2_rsp_hdr_off)
+		hdr = RESPONSE_BUF_NEXT(work);
 
-	iov[0].iov_base = (char *)&rsp_hdr->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
+	req_hdr = REQUEST_BUF_NEXT(work);
+
+	if (!work->next_smb2_rsp_hdr_off) {
+		len = get_rfc1002_len(hdr_org);
+		if (req_hdr->NextCommand)
+			len = ALIGN(len, 8);
+	} else {
+		len = get_rfc1002_len(hdr_org) - work->next_smb2_rsp_hdr_off;
+		len = ALIGN(len, 8);
+	}
+
+	if (req_hdr->NextCommand)
+		hdr->NextCommand = cpu_to_le32(len);
+
+	hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
+	iov[0].iov_len = len;
 
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);
@@ -7734,7 +7762,7 @@ void smb2_set_sign_rsp(struct ksmbd_work *work)
 
 	if (!ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, n_vec,
 		signature))
-		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
 
 /**
@@ -7791,7 +7819,7 @@ int smb3_check_sign_req(struct ksmbd_work *work)
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
-		ksmbd_debug(SMB, "bad smb2 signature\n");
+		ksmbd_err("bad smb2 signature\n");
 		return 0;
 	}
 
@@ -8012,19 +8040,19 @@ int smb3_decrypt_req(struct ksmbd_work *work)
 	return rc;
 }
 
-int smb3_final_sess_setup_resp(struct ksmbd_work *work)
+bool smb3_11_final_sess_setup_resp(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 	struct smb2_hdr *rsp = RESPONSE_BUF(work);
 
 	if (conn->dialect != SMB311_PROT_ID)
-		return 0;
+		return false;
 
 	if (work->next_smb2_rcv_hdr_off)
 		rsp = RESPONSE_BUF_NEXT(work);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
 		rsp->Status == STATUS_SUCCESS)
-		return 1;
-	return 0;
+		return true;
+	return false;
 }
