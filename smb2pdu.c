@@ -5748,12 +5748,8 @@ static noinline int smb2_read_pipe(struct ksmbd_work *work)
 			goto out;
 		}
 
-		if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
-			work->aux_payload_buf =
-				ksmbd_find_buffer(rpc_resp->payload_sz);
-		else
-			work->aux_payload_buf =
-				ksmbd_alloc_response(rpc_resp->payload_sz);
+		work->aux_payload_buf =
+			ksmbd_alloc_response(rpc_resp->payload_sz);
 		if (!work->aux_payload_buf) {
 			err = -ENOMEM;
 			goto out;
@@ -5862,11 +5858,13 @@ int smb2_read(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
 		work->aux_payload_buf =
 			ksmbd_find_buffer(conn->vals->max_read_size);
-	else
+		work->set_read_buf = true;
+	} else {
 		work->aux_payload_buf = ksmbd_alloc_response(length);
+	}
 	if (!work->aux_payload_buf) {
 		err = nbytes;
 		goto out;
