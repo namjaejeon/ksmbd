@@ -7437,7 +7437,7 @@ static void smb20_oplock_break_ack(struct ksmbd_work *work)
 	opinfo_put(opinfo);
 	ksmbd_fd_put(work, fp);
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&opinfo->oplock_q);
+	wake_up_interruptible_all(&opinfo->oplock_q);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
@@ -7574,9 +7574,9 @@ static void smb21_lease_break_ack(struct ksmbd_work *work)
 
 	lease_state = lease->state;
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&opinfo->oplock_q);
+	wake_up_interruptible_all(&opinfo->oplock_q);
 	atomic_dec(&opinfo->breaking_cnt);
-	wake_up_interruptible(&opinfo->oplock_brk);
+	wake_up_interruptible_all(&opinfo->oplock_brk);
 	opinfo_put(opinfo);
 
 	if (ret < 0) {
