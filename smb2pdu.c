@@ -847,8 +847,8 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 	rsp->NegotiateContextCount = cpu_to_le16(neg_ctxt_cnt);
 	inc_rfc1001_len(rsp,
 		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
-	/* Add 2 to size to round to 8 byte boundary */
-	pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
+	/* Round to 8 byte boundary */
+	pneg_ctxt += round_up(sizeof(struct smb2_preauth_neg_context), 8);
 
 	if (conn->cipher_type) {
 		ksmbd_debug(SMB,
@@ -858,9 +858,12 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 			conn->cipher_type);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
 		inc_rfc1001_len(rsp,
-			2 + sizeof(struct smb2_encryption_neg_context));
-		/* Add 2 to size to round to 8 byte boundary */
-		pneg_ctxt += sizeof(struct smb2_encryption_neg_context) + 2;
+			round_up(sizeof(struct smb2_encryption_neg_context),
+				 8));
+		/* Round to 8 byte boundary */
+		pneg_ctxt +=
+			round_up(sizeof(struct smb2_encryption_neg_context),
+				 8);
 	}
 
 	if (conn->compress_algorithm) {
@@ -870,8 +873,10 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
 					conn->compress_algorithm);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 + sizeof(struct smb2_compression_ctx));
-		pneg_ctxt += sizeof(struct smb2_compression_ctx) + 2;
+		inc_rfc1001_len(rsp,
+			round_up(sizeof(struct smb2_compression_ctx), 8));
+		/* Round to 8 byte boundary */
+		pneg_ctxt += round_up(sizeof(struct smb2_compression_ctx), 8);
 	}
 
 	if (conn->posix_ext_supported) {
@@ -879,8 +884,9 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 			"assemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
 		build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 +
-			sizeof(struct smb2_posix_neg_context));
+		inc_rfc1001_len(rsp,
+				round_up(sizeof(struct smb2_posix_neg_context),
+					 8));
 	}
 }
 
