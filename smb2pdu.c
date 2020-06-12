@@ -324,7 +324,7 @@ static int smb2_consume_credit_charge(struct ksmbd_work *work,
 
 	if (sz > SMB2_MAX_BUFFER_SIZE && credit_charge > 1) {
 		/* Compute credit charge from response size */
-		rsp_credits = (sz - 1) / SMB2_MAX_BUFFER_SIZE + 1;
+		rsp_credits = DIV_ROUND_UP(sz, SMB2_MAX_BUFFER_SIZE);
 		if (credit_charge < rsp_credits) {
 			ksmbd_err("The calculated credit number is greater than the CreditCharge\n");
 			return -EINVAL;
