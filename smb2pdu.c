@@ -5876,7 +5876,8 @@ int smb2_read(struct ksmbd_work *work)
 	if (length > conn->vals->max_read_size) {
 		ksmbd_debug(SMB, "limiting read size to max size(%u)\n",
 			    conn->vals->max_read_size);
-		length = conn->vals->max_read_size;
+		err = -EINVAL;
+		goto out;
 	}
 
 	ksmbd_debug(SMB, "filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
@@ -6141,6 +6142,13 @@ int smb2_write(struct ksmbd_work *work)
 
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
+
+	if (length > work->conn->vals->max_write_size) {
+		ksmbd_debug(SMB, "limiting write size to max size(%u)\n",
+			    work->conn->vals->max_write_size);
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
