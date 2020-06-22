@@ -5861,6 +5861,14 @@ int smb2_read(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
+	if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
+			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
+			     FILE_GENERIC_ALL_LE))) {
+		ksmbd_err("Not permitted to read : 0x%x\n", fp->daccess);
+		err = -EACCES;
+		goto out;
+	}
+
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
@@ -6121,6 +6129,14 @@ int smb2_write(struct ksmbd_work *work)
 	if (!fp) {
 		rsp->hdr.Status = STATUS_FILE_CLOSED;
 		return -ENOENT;
+	}
+
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
+			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
+			     FILE_GENERIC_ALL_LE))) {
+		ksmbd_err("Not permitted to write : 0x%x\n", fp->daccess);
+		err = -EACCES;
+		goto out;
 	}
 
 	offset = le64_to_cpu(req->Offset);
