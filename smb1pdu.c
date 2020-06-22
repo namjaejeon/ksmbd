@@ -159,9 +159,9 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 {
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
-	size_t small_sz = ksmbd_small_buffer_size();
+	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
 	size_t large_sz = work->conn->vals->max_read_size + MAX_CIFS_HDR_SIZE;
-	size_t sz = small_sz;
+	size_t sz = MAX_CIFS_SMALL_BUFFER_SIZE;
 
 	if (cmd == SMB_COM_TRANSACTION2) {
 		struct smb_com_trans2_qpi_req *req = REQUEST_BUF(work);
@@ -190,7 +190,7 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 		 */
 		resp_size = sizeof(struct smb_com_echo_rsp) +
 			le16_to_cpu(req->ByteCount) - 1;
-		if (resp_size > ksmbd_small_buffer_size())
+		if (resp_size > MAX_CIFS_SMALL_BUFFER_SIZE)
 			sz = large_sz;
 	}
 
@@ -2753,10 +2753,10 @@ static int smb_read_andx_pipe(struct ksmbd_work *work)
 	char *data_buf;
 	int ret = 0, nbytes = 0;
 	unsigned int count;
-	unsigned int rsp_buflen = ksmbd_small_buffer_size() -
+	unsigned int rsp_buflen = MAX_CIFS_SMALL_BUFFER_SIZE -
 		sizeof(struct smb_com_read_rsp);
 
-	rsp_buflen = min((unsigned int)(ksmbd_small_buffer_size() -
+	rsp_buflen = min((unsigned int)(MAX_CIFS_SMALL_BUFFER_SIZE -
 				sizeof(struct smb_com_read_rsp)), rsp_buflen);
 
 	count = min_t(unsigned int, le16_to_cpu(req->MaxCount), rsp_buflen);
