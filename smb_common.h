@@ -46,6 +46,7 @@
 #define SMB_ECHO_INTERVAL	(60*HZ)
 
 #define CIFS_DEFAULT_IOSIZE	(64 * 1024)
+#define MAX_CIFS_SMALL_BUFFER_SIZE 448 /* big enough for most */
 
 extern struct list_head global_lock_list;
 
@@ -451,7 +452,7 @@ struct smb_version_ops {
 	int (*set_rsp_credits)(struct ksmbd_work *work);
 	int (*check_user_session)(struct ksmbd_work *work);
 	int (*get_ksmbd_tcon)(struct ksmbd_work *work);
-	int (*is_sign_req)(struct ksmbd_work *work, unsigned int command);
+	bool (*is_sign_req)(struct ksmbd_work *work, unsigned int command);
 	int (*check_sign_req)(struct ksmbd_work *work);
 	void (*set_sign_rsp)(struct ksmbd_work *work);
 	int (*generate_signingkey)(struct ksmbd_session *sess);
@@ -503,7 +504,6 @@ int ksmbd_smb_check_shared_mode(struct file *filp, struct ksmbd_file *curr_fp);
 int ksmbd_override_fsids(struct ksmbd_work *work);
 void ksmbd_revert_fsids(struct ksmbd_work *work);
 
-unsigned int ksmbd_small_buffer_size(void);
 unsigned int ksmbd_server_side_copy_max_chunk_count(void);
 unsigned int ksmbd_server_side_copy_max_chunk_size(void);
 unsigned int ksmbd_server_side_copy_max_total_size(void);

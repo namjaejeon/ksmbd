@@ -286,6 +286,8 @@ int init_smb2_neg_rsp(struct ksmbd_work *work)
 		sizeof(struct smb2_hdr) - sizeof(rsp->Buffer) +
 		AUTH_GSS_LENGTH);
 	rsp->SecurityMode = SMB2_NEGOTIATE_SIGNING_ENABLED_LE;
+	if (server_conf.signing == KSMBD_CONFIG_OPT_MANDATORY)
+		rsp->SecurityMode |= SMB2_NEGOTIATE_SIGNING_REQUIRED_LE;
 	conn->use_spnego = true;
 
 	ksmbd_conn_set_need_negotiate(work);
@@ -320,9 +322,9 @@ static int smb2_consume_credit_charge(struct ksmbd_work *work,
 		break;
 	}
 
-	if (sz > 65536 && credit_charge > 1) {
+	if (sz > SMB2_MAX_BUFFER_SIZE && credit_charge > 1) {
 		/* Compute credit charge from response size */
-		rsp_credits = (sz - 1) / 65536 + 1;
+		rsp_credits = DIV_ROUND_UP(sz, SMB2_MAX_BUFFER_SIZE);
 		if (credit_charge < rsp_credits) {
 			ksmbd_err("The calculated credit number is greater than the CreditCharge\n");
 			return -EINVAL;
@@ -558,7 +560,7 @@ int init_smb2_rsp_hdr(struct ksmbd_work *work)
 int smb2_allocate_rsp_buf(struct ksmbd_work *work)
 {
 	struct smb2_hdr *hdr = REQUEST_BUF(work);
-	size_t small_sz = ksmbd_small_buffer_size();
+	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
 	size_t large_sz = work->conn->vals->max_trans_size + MAX_SMB2_HDR_SIZE;
 	size_t sz = small_sz;
 	int cmd = le16_to_cpu(hdr->Command);
@@ -845,8 +847,8 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 	rsp->NegotiateContextCount = cpu_to_le16(neg_ctxt_cnt);
 	inc_rfc1001_len(rsp,
 		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
-	/* Add 2 to size to round to 8 byte boundary */
-	pneg_ctxt += sizeof(struct smb2_preauth_neg_context) + 2;
+	/* Round to 8 byte boundary */
+	pneg_ctxt += round_up(sizeof(struct smb2_preauth_neg_context), 8);
 
 	if (conn->cipher_type) {
 		ksmbd_debug(SMB,
@@ -856,9 +858,12 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 			conn->cipher_type);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
 		inc_rfc1001_len(rsp,
-			2 + sizeof(struct smb2_encryption_neg_context));
-		/* Add 2 to size to round to 8 byte boundary */
-		pneg_ctxt += sizeof(struct smb2_encryption_neg_context) + 2;
+			round_up(sizeof(struct smb2_encryption_neg_context),
+				 8));
+		/* Round to 8 byte boundary */
+		pneg_ctxt +=
+			round_up(sizeof(struct smb2_encryption_neg_context),
+				 8);
 	}
 
 	if (conn->compress_algorithm) {
@@ -868,8 +873,10 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
 					conn->compress_algorithm);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 + sizeof(struct smb2_compression_ctx));
-		pneg_ctxt += sizeof(struct smb2_compression_ctx) + 2;
+		inc_rfc1001_len(rsp,
+			round_up(sizeof(struct smb2_compression_ctx), 8));
+		/* Round to 8 byte boundary */
+		pneg_ctxt += round_up(sizeof(struct smb2_compression_ctx), 8);
 	}
 
 	if (conn->posix_ext_supported) {
@@ -877,8 +884,9 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 			"assemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
 		build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp, 2 +
-			sizeof(struct smb2_posix_neg_context));
+		inc_rfc1001_len(rsp,
+				round_up(sizeof(struct smb2_posix_neg_context),
+					 8));
 	}
 }
 
@@ -1603,12 +1611,16 @@ int smb2_tree_connect(struct ksmbd_work *work)
 	} else {
 		rsp->ShareType = SMB2_SHARE_TYPE_DISK;
 		rsp->MaximalAccess = FILE_READ_DATA_LE | FILE_READ_EA_LE |
-			FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE |
-			FILE_WRITE_EA_LE | FILE_EXECUTE_LE |
-			FILE_DELETE_CHILD_LE | FILE_READ_ATTRIBUTES_LE |
-			FILE_WRITE_ATTRIBUTES_LE | FILE_DELETE_LE |
-			FILE_READ_CONTROL_LE | FILE_WRITE_DAC_LE |
-			FILE_WRITE_OWNER_LE | FILE_SYNCHRONIZE_LE;
+			FILE_EXECUTE_LE | FILE_READ_ATTRIBUTES_LE;
+		if (test_tree_conn_flag(status.tree_conn,
+					KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+			rsp->MaximalAccess |= FILE_WRITE_DATA_LE |
+				FILE_APPEND_DATA_LE | FILE_WRITE_EA_LE |
+				FILE_DELETE_CHILD_LE | FILE_DELETE_LE |
+				FILE_WRITE_ATTRIBUTES_LE | FILE_DELETE_LE |
+				FILE_READ_CONTROL_LE | FILE_WRITE_DAC_LE |
+				FILE_WRITE_OWNER_LE | FILE_SYNCHRONIZE_LE;
+		}
 	}
 
 	status.tree_conn->maximal_access = le32_to_cpu(rsp->MaximalAccess);
@@ -2685,7 +2697,7 @@ int smb2_open(struct ksmbd_work *work)
 		req->DesiredAccess, req->CreateDisposition);
 
 	if (!test_tree_conn_flag(tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
-		if (open_flags & (O_CREAT | O_RDWR | O_WRONLY)) {
+		if (open_flags & O_CREAT) {
 			ksmbd_debug(SMB,
 				"User does not have write permission\n");
 			rc = -EACCES;
@@ -5560,6 +5572,12 @@ static int smb2_set_info_file(struct ksmbd_work *work,
 		return set_end_of_file_info(work, fp, buf);
 
 	case FILE_RENAME_INFORMATION:
+		if (!test_tree_conn_flag(work->tcon,
+		    KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+			ksmbd_debug(SMB,
+				"User does not have write permission\n");
+			return -EACCES;
+		}
 		return set_rename_info(work, fp, buf);
 
 	case FILE_LINK_INFORMATION:
@@ -5746,12 +5764,8 @@ static noinline int smb2_read_pipe(struct ksmbd_work *work)
 			goto out;
 		}
 
-		if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
-			work->aux_payload_buf =
-				ksmbd_find_buffer(rpc_resp->payload_sz);
-		else
-			work->aux_payload_buf =
-				ksmbd_alloc_response(rpc_resp->payload_sz);
+		work->aux_payload_buf =
+			ksmbd_alloc_response(rpc_resp->payload_sz);
 		if (!work->aux_payload_buf) {
 			err = -ENOMEM;
 			goto out;
@@ -5847,6 +5861,14 @@ int smb2_read(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
+	if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
+			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
+			     FILE_GENERIC_ALL_LE))) {
+		ksmbd_err("Not permitted to read : 0x%x\n", fp->daccess);
+		err = -EACCES;
+		goto out;
+	}
+
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
 	mincount = le32_to_cpu(req->MinimumCount);
@@ -5854,17 +5876,20 @@ int smb2_read(struct ksmbd_work *work)
 	if (length > conn->vals->max_read_size) {
 		ksmbd_debug(SMB, "limiting read size to max size(%u)\n",
 			    conn->vals->max_read_size);
-		length = conn->vals->max_read_size;
+		err = -EINVAL;
+		goto out;
 	}
 
 	ksmbd_debug(SMB, "filename %s, offset %lld, len %zu\n", FP_FILENAME(fp),
 		offset, length);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
 		work->aux_payload_buf =
 			ksmbd_find_buffer(conn->vals->max_read_size);
-	else
+		work->set_read_buf = true;
+	} else {
 		work->aux_payload_buf = ksmbd_alloc_response(length);
+	}
 	if (!work->aux_payload_buf) {
 		err = nbytes;
 		goto out;
@@ -6076,7 +6101,7 @@ int smb2_write(struct ksmbd_work *work)
 {
 	struct smb2_write_req *req;
 	struct smb2_write_rsp *rsp, *rsp_org;
-	struct ksmbd_file *fp;
+	struct ksmbd_file *fp = NULL;
 	loff_t offset;
 	size_t length;
 	ssize_t nbytes;
@@ -6093,6 +6118,12 @@ int smb2_write(struct ksmbd_work *work)
 		return smb2_write_pipe(work);
 	}
 
+	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+		ksmbd_debug(SMB, "User does not have write permission\n");
+		err = -EACCES;
+		goto out;
+	}
+
 	fp = ksmbd_lookup_fd_slow(work,
 				le64_to_cpu(req->VolatileFileId),
 				le64_to_cpu(req->PersistentFileId));
@@ -6101,8 +6132,23 @@ int smb2_write(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
+			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
+			     FILE_GENERIC_ALL_LE))) {
+		ksmbd_err("Not permitted to write : 0x%x\n", fp->daccess);
+		err = -EACCES;
+		goto out;
+	}
+
 	offset = le64_to_cpu(req->Offset);
 	length = le32_to_cpu(req->Length);
+
+	if (length > work->conn->vals->max_write_size) {
+		ksmbd_debug(SMB, "limiting write size to max size(%u)\n",
+			    work->conn->vals->max_write_size);
+		err = -EINVAL;
+		goto out;
+	}
 
 	if (le32_to_cpu(req->Flags) & SMB2_WRITEFLAG_WRITE_THROUGH)
 		writethrough = true;
@@ -7245,6 +7291,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 		break;
 	case FSCTL_COPYCHUNK:
 	case FSCTL_COPYCHUNK_WRITE:
+		if (!test_tree_conn_flag(work->tcon,
+		    KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+			ksmbd_debug(SMB,
+				"User does not have write permission\n");
+			ret = -EACCES;
+			goto out;
+		}
+
 		if (out_buf_len < sizeof(struct copychunk_ioctl_rsp)) {
 			ret = -EINVAL;
 			goto out;
@@ -7264,6 +7318,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 		struct file_zero_data_information *zero_data;
 		struct ksmbd_file *fp;
 		loff_t off, len;
+
+		if (!test_tree_conn_flag(work->tcon,
+		    KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+			ksmbd_debug(SMB,
+				"User does not have write permission\n");
+			ret = -EACCES;
+			goto out;
+		}
 
 		zero_data =
 			(struct file_zero_data_information *)&req->Buffer[0];
@@ -7435,7 +7497,7 @@ static void smb20_oplock_break_ack(struct ksmbd_work *work)
 	opinfo_put(opinfo);
 	ksmbd_fd_put(work, fp);
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&opinfo->oplock_q);
+	wake_up_interruptible_all(&opinfo->oplock_q);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	rsp->OplockLevel = rsp_oplevel;
@@ -7572,9 +7634,9 @@ static void smb21_lease_break_ack(struct ksmbd_work *work)
 
 	lease_state = lease->state;
 	opinfo->op_state = OPLOCK_STATE_NONE;
-	wake_up_interruptible(&opinfo->oplock_q);
+	wake_up_interruptible_all(&opinfo->oplock_q);
 	atomic_dec(&opinfo->breaking_cnt);
-	wake_up_interruptible(&opinfo->oplock_brk);
+	wake_up_interruptible_all(&opinfo->oplock_brk);
 	opinfo_put(opinfo);
 
 	if (ret < 0) {
@@ -7653,9 +7715,9 @@ int smb2_notify(struct ksmbd_work *work)
  * smb2_is_sign_req() - handler for checking packet signing status
  * @work:smb work containing notify command buffer
  *
- * Return:	1 if packed is signed, 0 otherwise
+ * Return:	true if packed is signed, false otherwise
  */
-int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
+bool smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
 {
 	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
 
@@ -7663,12 +7725,7 @@ int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
 			command != SMB2_NEGOTIATE_HE &&
 			command != SMB2_SESSION_SETUP_HE &&
 			command != SMB2_OPLOCK_BREAK_HE)
-		return 1;
-
-	/* send session setup auth phase signed response */
-	if (work->sess && work->sess->sign &&
-		command == SMB2_SESSION_SETUP_HE)
-		return 1;
+		return true;
 
 	return 0;
 }
@@ -7681,23 +7738,36 @@ int smb2_is_sign_req(struct ksmbd_work *work, unsigned int command)
  */
 int smb2_check_sign_req(struct ksmbd_work *work)
 {
-	struct smb2_hdr *rcv_hdr2 = REQUEST_BUF(work);
+	struct smb2_hdr *hdr, *hdr_org;
 	char signature_req[SMB2_SIGNATURE_SIZE];
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[1];
+	size_t len;
 
-	memcpy(signature_req, rcv_hdr2->Signature, SMB2_SIGNATURE_SIZE);
-	memset(rcv_hdr2->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = REQUEST_BUF(work);
+	if (work->next_smb2_rcv_hdr_off)
+		hdr = REQUEST_BUF_NEXT(work);
 
-	iov[0].iov_base = (char *)&rcv_hdr2->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rcv_hdr2->smb2_buf_length);
+	if (!hdr->NextCommand && !work->next_smb2_rcv_hdr_off)
+		len = be32_to_cpu(hdr_org->smb2_buf_length);
+	else if (hdr->NextCommand)
+		len = le32_to_cpu(hdr->NextCommand);
+	else
+		len = be32_to_cpu(hdr_org->smb2_buf_length) -
+			work->next_smb2_rcv_hdr_off;
+
+	memcpy(signature_req, hdr->Signature, SMB2_SIGNATURE_SIZE);
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
+	iov[0].iov_len = len;
 
 	if (ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, 1,
 		signature))
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
-		ksmbd_debug(SMB, "bad smb2 signature\n");
+		ksmbd_err("bad smb2 signature\n");
 		return 0;
 	}
 
@@ -7711,16 +7781,36 @@ int smb2_check_sign_req(struct ksmbd_work *work)
  */
 void smb2_set_sign_rsp(struct ksmbd_work *work)
 {
-	struct smb2_hdr *rsp_hdr = RESPONSE_BUF(work);
+	struct smb2_hdr *hdr, *hdr_org;
+	struct smb2_hdr *req_hdr;
 	char signature[SMB2_HMACSHA256_SIZE];
 	struct kvec iov[2];
+	size_t len;
 	int n_vec = 1;
 
-	rsp_hdr->Flags |= SMB2_FLAGS_SIGNED;
-	memset(rsp_hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	hdr_org = hdr = RESPONSE_BUF(work);
+	if (work->next_smb2_rsp_hdr_off)
+		hdr = RESPONSE_BUF_NEXT(work);
 
-	iov[0].iov_base = (char *)&rsp_hdr->ProtocolId;
-	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb2_buf_length);
+	req_hdr = REQUEST_BUF_NEXT(work);
+
+	if (!work->next_smb2_rsp_hdr_off) {
+		len = get_rfc1002_len(hdr_org);
+		if (req_hdr->NextCommand)
+			len = ALIGN(len, 8);
+	} else {
+		len = get_rfc1002_len(hdr_org) - work->next_smb2_rsp_hdr_off;
+		len = ALIGN(len, 8);
+	}
+
+	if (req_hdr->NextCommand)
+		hdr->NextCommand = cpu_to_le32(len);
+
+	hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+
+	iov[0].iov_base = (char *)&hdr->ProtocolId;
+	iov[0].iov_len = len;
 
 	if (HAS_AUX_PAYLOAD(work)) {
 		iov[0].iov_len -= AUX_PAYLOAD_SIZE(work);
@@ -7732,7 +7822,7 @@ void smb2_set_sign_rsp(struct ksmbd_work *work)
 
 	if (!ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, iov, n_vec,
 		signature))
-		memcpy(rsp_hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
 }
 
 /**
@@ -7789,7 +7879,7 @@ int smb3_check_sign_req(struct ksmbd_work *work)
 		return 0;
 
 	if (memcmp(signature, signature_req, SMB2_SIGNATURE_SIZE)) {
-		ksmbd_debug(SMB, "bad smb2 signature\n");
+		ksmbd_err("bad smb2 signature\n");
 		return 0;
 	}
 
@@ -8010,19 +8100,19 @@ int smb3_decrypt_req(struct ksmbd_work *work)
 	return rc;
 }
 
-int smb3_final_sess_setup_resp(struct ksmbd_work *work)
+bool smb3_11_final_sess_setup_resp(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 	struct smb2_hdr *rsp = RESPONSE_BUF(work);
 
 	if (conn->dialect != SMB311_PROT_ID)
-		return 0;
+		return false;
 
 	if (work->next_smb2_rcv_hdr_off)
 		rsp = RESPONSE_BUF_NEXT(work);
 
 	if (le16_to_cpu(rsp->Command) == SMB2_SESSION_SETUP_HE &&
 		rsp->Status == STATUS_SUCCESS)
-		return 1;
-	return 0;
+		return true;
+	return false;
 }
