@@ -298,44 +298,16 @@ static int smb2_consume_credit_charge(struct ksmbd_work *work,
 		unsigned short credit_charge)
 {
 	struct ksmbd_conn *conn = work->conn;
-	struct smb2_hdr *req_hdr = REQUEST_BUF_NEXT(work);
-	struct smb2_hdr *rsp_hdr = RESPONSE_BUF_NEXT(work);
-	unsigned int rsp_credits = 1, sz = 0;
+	unsigned int rsp_credits = 1;
 
 	if (!conn->total_credits)
 		return 0;
 
-	switch (req_hdr->Command) {
-	case SMB2_READ:
-		sz = le32_to_cpu(((struct smb2_read_rsp *)rsp_hdr)->DataLength);
-		break;
-	case SMB2_WRITE:
-		sz = le32_to_cpu(((struct smb2_write_req *)req_hdr)->Length);
-		break;
-	case SMB2_IOCTL:
-		sz = le32_to_cpu(((struct smb2_ioctl_rsp *)
-				rsp_hdr)->OutputCount);
-		break;
-	case SMB2_QUERY_DIRECTORY:
-		sz = le32_to_cpu(((struct smb2_query_directory_rsp *)
-				rsp_hdr)->OutputBufferLength);
-		break;
-	}
-
-	if (sz > SMB2_MAX_BUFFER_SIZE && credit_charge > 1) {
-		/* Compute credit charge from response size */
-		rsp_credits = DIV_ROUND_UP(sz, SMB2_MAX_BUFFER_SIZE);
-		if (credit_charge < rsp_credits) {
-			ksmbd_err("The calculated credit number is greater than the CreditCharge\n");
-			return -EINVAL;
-		}
-
-		conn->total_credits -= rsp_credits;
-		return rsp_credits;
-	}
+	if (credit_charge > 0)
+		rsp_credits = credit_charge;
 
 	conn->total_credits -= rsp_credits;
-	return credit_charge;
+	return rsp_credits;
 }
 
 /**
@@ -3318,7 +3290,6 @@ struct smb2_query_dir_private {
 
 	struct ksmbd_dir_info	*d_info;
 	int			info_level;
-	int			flags;
 };
 
 static void lock_dir(struct ksmbd_file *dir_fp)
@@ -3518,8 +3489,10 @@ static int __query_dir(struct dir_context *ctx,
 	rc = reserve_populate_dentry(d_info, priv->info_level);
 	if (rc)
 		return rc;
-	if (priv->flags & SMB2_RETURN_SINGLE_ENTRY)
+	if (d_info->flags & SMB2_RETURN_SINGLE_ENTRY) {
+		d_info->out_buf_len = 0;
 		return 0;
+	}
 	return 0;
 }
 
@@ -3565,12 +3538,12 @@ int smb2_query_dir(struct ksmbd_work *work)
 	if (ksmbd_override_fsids(work)) {
 		rsp->hdr.Status = STATUS_NO_MEMORY;
 		smb2_set_err_rsp(work);
-		return 0;
+		return -ENOMEM;
 	}
 
 	rc = verify_info_level(req->FileInformationClass);
 	if (rc) {
-		rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;
+		rc = -EFAULT;
 		goto err_out2;
 	}
 
@@ -3578,8 +3551,7 @@ int smb2_query_dir(struct ksmbd_work *work)
 			le64_to_cpu(req->VolatileFileId),
 			le64_to_cpu(req->PersistentFileId));
 	if (!dir_fp) {
-		rsp->hdr.Status = STATUS_FILE_CLOSED;
-		rc = -ENOENT;
+		rc = -EBADF;
 		goto err_out2;
 	}
 
@@ -3588,14 +3560,12 @@ int smb2_query_dir(struct ksmbd_work *work)
 			MAY_READ | MAY_EXEC)) {
 		ksmbd_err("no right to enumerate directory (%s)\n",
 			FP_FILENAME(dir_fp));
-		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 		rc = -EACCES;
 		goto err_out2;
 	}
 
 	if (!S_ISDIR(file_inode(dir_fp->filp)->i_mode)) {
 		ksmbd_err("can't do query dir for a file\n");
-		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
 		goto err_out2;
 	}
@@ -3606,7 +3576,6 @@ int smb2_query_dir(struct ksmbd_work *work)
 			conn->local_nls);
 	if (IS_ERR(srch_ptr)) {
 		ksmbd_debug(SMB, "Search Pattern not found\n");
-		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 		rc = -EINVAL;
 		goto err_out2;
 	} else
@@ -3628,23 +3597,18 @@ int smb2_query_dir(struct ksmbd_work *work)
 	d_info.out_buf_len = min_t(int, d_info.out_buf_len,
 				le32_to_cpu(req->OutputBufferLength)) -
 				sizeof(struct smb2_query_directory_rsp);
+	d_info.flags = srch_flag;
 
-	if (!(srch_flag & SMB2_RETURN_SINGLE_ENTRY) || is_asterisk(srch_ptr)) {
-		/*
-		 * reserve dot and dotdot entries in head of buffer
-		 * in first response
-		 */
-		rc = ksmbd_populate_dot_dotdot_entries(work,
-						req->FileInformationClass,
-						dir_fp,
-						&d_info,
-						srch_ptr,
-						smb2_populate_readdir_entry);
-		if (rc == -ENOSPC)
-			rc = 0;
-		if (rc)
-			goto err_out;
-	}
+	/*
+	 * reserve dot and dotdot entries in head of buffer
+	 * in first response
+	 */
+	rc = ksmbd_populate_dot_dotdot_entries(work, req->FileInformationClass,
+		dir_fp,	&d_info, srch_ptr, smb2_populate_readdir_entry);
+	if (rc == -ENOSPC)
+		rc = 0;
+	else if (rc)
+		goto err_out;
 
 	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_HIDE_DOT_FILES))
 		d_info.hide_dot_file = true;
@@ -3656,7 +3620,6 @@ int smb2_query_dir(struct ksmbd_work *work)
 	query_dir_private.dir_fp		= dir_fp;
 	query_dir_private.d_info		= &d_info;
 	query_dir_private.info_level		= req->FileInformationClass;
-	query_dir_private.flags			= srch_flag;
 	dir_fp->readdir_data.private		= &query_dir_private;
 	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
@@ -3675,12 +3638,9 @@ int smb2_query_dir(struct ksmbd_work *work)
 		goto err_out;
 
 	if (!d_info.data_count && d_info.out_buf_len >= 0) {
-		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY)
-			if (is_asterisk(srch_ptr))
-				rsp->hdr.Status = STATUS_NO_MORE_FILES;
-			else
-				rsp->hdr.Status = STATUS_NO_SUCH_FILE;
-		else if (rsp->hdr.Status == 0) {
+		if (srch_flag & SMB2_RETURN_SINGLE_ENTRY && !is_asterisk(srch_ptr))
+			rsp->hdr.Status = STATUS_NO_SUCH_FILE;
+		else {
 			dir_fp->dot_dotdot[0] = dir_fp->dot_dotdot[1] = 0;
 			rsp->hdr.Status = STATUS_NO_MORE_FILES;
 		}
@@ -3710,8 +3670,21 @@ err_out:
 	kfree(srch_ptr);
 
 err_out2:
-	if (rsp->hdr.Status == 0)
-		rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
+	if (rc == -EINVAL)
+		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+	else if (rc == -EACCES)
+		rsp->hdr.Status = STATUS_ACCESS_DENIED;
+	else if (rc == -ENOENT)
+		rsp->hdr.Status = STATUS_NO_SUCH_FILE;
+	else if (rc == -EBADF)
+		rsp->hdr.Status = STATUS_FILE_CLOSED;
+	else if (rc == -ENOMEM)
+		rsp->hdr.Status = STATUS_NO_MEMORY;
+	else if (rc == -EFAULT)
+		rsp->hdr.Status = STATUS_INVALID_INFO_CLASS;
+	if (!rsp->hdr.Status)
+		rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
+
 	smb2_set_err_rsp(work);
 	ksmbd_fd_put(work, dir_fp);
 	ksmbd_revert_fsids(work);
