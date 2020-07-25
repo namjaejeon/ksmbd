@@ -811,27 +811,27 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 	char *pneg_ctxt = (char *)rsp +
 			le32_to_cpu(rsp->NegotiateContextOffset) + 4;
 	int neg_ctxt_cnt = 1;
+	int ctxt_size;
 
 	ksmbd_debug(SMB,
 		"assemble SMB2_PREAUTH_INTEGRITY_CAPABILITIES context\n");
 	build_preauth_ctxt((struct smb2_preauth_neg_context *)pneg_ctxt,
 		conn->preauth_info->Preauth_HashId);
 	rsp->NegotiateContextCount = cpu_to_le16(neg_ctxt_cnt);
-	inc_rfc1001_len(rsp,
-		AUTH_GSS_PADDING + sizeof(struct smb2_preauth_neg_context));
+	inc_rfc1001_len(rsp, AUTH_GSS_PADDING);
+	ctxt_size = sizeof(struct smb2_preauth_neg_context);
 	/* Round to 8 byte boundary */
 	pneg_ctxt += round_up(sizeof(struct smb2_preauth_neg_context), 8);
 
 	if (conn->cipher_type) {
+		ctxt_size = round_up(ctxt_size, 8);
 		ksmbd_debug(SMB,
 			"assemble SMB2_ENCRYPTION_CAPABILITIES context\n");
 		build_encrypt_ctxt(
 			(struct smb2_encryption_neg_context *)pneg_ctxt,
 			conn->cipher_type);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp,
-			round_up(sizeof(struct smb2_encryption_neg_context),
-				 8));
+		ctxt_size += sizeof(struct smb2_encryption_neg_context);
 		/* Round to 8 byte boundary */
 		pneg_ctxt +=
 			round_up(sizeof(struct smb2_encryption_neg_context),
@@ -839,27 +839,28 @@ assemble_neg_contexts(struct ksmbd_conn *conn,
 	}
 
 	if (conn->compress_algorithm) {
+		ctxt_size = round_up(ctxt_size, 8);
 		ksmbd_debug(SMB,
 			"assemble SMB2_COMPRESSION_CAPABILITIES context\n");
 		/* Temporarily set to SMB3_COMPRESS_NONE */
 		build_compression_ctxt((struct smb2_compression_ctx *)pneg_ctxt,
 					conn->compress_algorithm);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp,
-			round_up(sizeof(struct smb2_compression_ctx), 8));
+		ctxt_size += sizeof(struct smb2_compression_ctx);
 		/* Round to 8 byte boundary */
 		pneg_ctxt += round_up(sizeof(struct smb2_compression_ctx), 8);
 	}
 
 	if (conn->posix_ext_supported) {
+		ctxt_size = round_up(ctxt_size, 8);
 		ksmbd_debug(SMB,
 			"assemble SMB2_POSIX_EXTENSIONS_AVAILABLE context\n");
 		build_posix_ctxt((struct smb2_posix_neg_context *)pneg_ctxt);
 		rsp->NegotiateContextCount = cpu_to_le16(++neg_ctxt_cnt);
-		inc_rfc1001_len(rsp,
-				round_up(sizeof(struct smb2_posix_neg_context),
-					 8));
+		ctxt_size += sizeof(struct smb2_posix_neg_context);
 	}
+
+	inc_rfc1001_len(rsp, ctxt_size);
 }
 
 static __le32
@@ -5350,7 +5351,7 @@ static int set_file_allocation_info(struct ksmbd_work *work,
 
 	if (alloc_blks > inode->i_blocks) {
 		rc = ksmbd_vfs_alloc_size(work, fp, alloc_blks * 512);
-		if (rc) {
+		if (rc && rc != -EOPNOTSUPP) {
 			ksmbd_err("ksmbd_vfs_alloc_size is failed : %d\n", rc);
 			return rc;
 		}
@@ -7233,6 +7234,11 @@ int smb2_ioctl(struct ksmbd_work *work)
 		nbytes = fsctl_pipe_transceive(work, id, out_buf_len, req, rsp);
 		break;
 	case FSCTL_VALIDATE_NEGOTIATE_INFO:
+		if (conn->dialect < SMB30_PROT_ID) {
+			ret = -EOPNOTSUPP;
+			goto out;
+		}
+
 		ret = fsctl_validate_negotiate_info(conn,
 			(struct validate_negotiate_info_req *)&req->Buffer[0],
 			(struct validate_negotiate_info_rsp *)&rsp->Buffer[0]);
@@ -7336,7 +7342,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 	default:
 		ksmbd_debug(SMB, "not implemented yet ioctl command 0x%x\n",
 				cnt_code);
-		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
+		ret = -EOPNOTSUPP;
 		goto out;
 	}
 
@@ -7358,6 +7364,8 @@ out:
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 	else if (ret == -ENOENT)
 		rsp->hdr.Status = STATUS_OBJECT_NAME_NOT_FOUND;
+	else if (ret == -EOPNOTSUPP)
+		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 	else if (ret < 0 || rsp->hdr.Status == 0)
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	smb2_set_err_rsp(work);
@@ -8078,7 +8086,7 @@ bool smb3_11_final_sess_setup_resp(struct ksmbd_work *work)
 	struct ksmbd_conn *conn = work->conn;
 	struct smb2_hdr *rsp = RESPONSE_BUF(work);
 
-	if (conn->dialect != SMB311_PROT_ID)
+	if (conn->dialect < SMB30_PROT_ID)
 		return false;
 
 	if (work->next_smb2_rcv_hdr_off)

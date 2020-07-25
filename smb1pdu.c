@@ -159,7 +159,6 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 {
 	struct smb_hdr *hdr = (struct smb_hdr *)REQUEST_BUF(work);
 	unsigned char cmd = hdr->Command;
-	size_t small_sz = MAX_CIFS_SMALL_BUFFER_SIZE;
 	size_t large_sz = work->conn->vals->max_read_size + MAX_CIFS_HDR_SIZE;
 	size_t sz = MAX_CIFS_SMALL_BUFFER_SIZE;
 
