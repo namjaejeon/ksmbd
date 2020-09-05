@@ -253,7 +253,8 @@ int smb_check_user_session(struct ksmbd_work *work)
 	unsigned int cmd = conn->ops->get_cmd_val(work);
 
 	work->sess = NULL;
-	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX)
+	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX ||
+		cmd == SMB_COM_ECHO)
 		return 0;
 
 	if (!ksmbd_conn_good(work))
