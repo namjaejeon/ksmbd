@@ -873,8 +873,11 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 		cpu_to_le32((time & 0xFFFFFFFF00000000) >> 32);
 	neg_rsp->ServerTimeZone = 0;
 
-	/* TODO: need to set spnego enable through smb.conf parameter */
-	conn->use_spnego = true;
+	if (((struct smb_hdr *)REQUEST_BUF(work))->Flags2 & SMBFLG2_EXT_SEC)
+		conn->use_spnego = true;
+
+	ksmbd_debug(SMB, "spnego is %s\n", conn->use_spnego ? "on" : "off");
+
 	if (conn->use_spnego == false) {
 		neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
 		neg_rsp->ByteCount = cpu_to_le16(CIFS_CRYPTO_KEY_SIZE);
