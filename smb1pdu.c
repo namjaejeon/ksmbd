@@ -6381,7 +6381,6 @@ err_out:
 		rsp->hdr.Status.CifsError =
 			STATUS_UNEXPECTED_IO_ERROR;
 
-	ksmbd_fd_put(work, dir_fp);
 	kfree(d_info.smb1_name);
 	kfree(pathname);
 	return 0;
