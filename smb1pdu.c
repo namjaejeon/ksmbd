@@ -5908,6 +5908,8 @@ static int find_first(struct ksmbd_work *work)
 	int header_size;
 	unsigned int flags = LOOKUP_FOLLOW;
 
+	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
+
 	if (ksmbd_override_fsids(work)) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return -ENOMEM;
@@ -5978,7 +5980,6 @@ static int find_first(struct ksmbd_work *work)
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
-	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
 	if (!d_info.smb1_name)
 		goto err_out;
@@ -6193,6 +6194,8 @@ static int find_next(struct ksmbd_work *work)
 	char *pathname = NULL;
 	int header_size;
 
+	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
+
 	req_params = (struct smb_com_trans2_fnext_req_params *)
 		(REQUEST_BUF(work) + le16_to_cpu(req->ParameterOffset) + 4);
 	sid = req_params->SearchHandle;
@@ -6233,7 +6236,6 @@ static int find_next(struct ksmbd_work *work)
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
-	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
 	if (!d_info.smb1_name)
 		goto err_out;
