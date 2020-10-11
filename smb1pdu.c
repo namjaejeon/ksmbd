@@ -7099,17 +7099,17 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	char *newname;
 	int rc = 0;
 
+	req = (struct smb_com_trans2_sfi_req *)REQUEST_BUF(work);
+	rsp = (struct smb_com_trans2_sfi_rsp *)RESPONSE_BUF(work);
+	info =  (struct set_file_rename *)
+		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
+
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
 			"returning as user does not have permission to write\n");
 		rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		return -EACCES;
 	}
-
-	req = (struct smb_com_trans2_sfi_req *)REQUEST_BUF(work);
-	rsp = (struct smb_com_trans2_sfi_rsp *)RESPONSE_BUF(work);
-	info =  (struct set_file_rename *)
-		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
