@@ -2901,8 +2901,10 @@ reconnected:
 	generic_fillattr(FP_INODE(fp), &stat);
 
 	rsp->StructureSize = cpu_to_le16(89);
+	rcu_read_lock();
 	opinfo = rcu_dereference(fp->f_opinfo);
 	rsp->OplockLevel = opinfo != NULL ? opinfo->level : 0;
+	rcu_read_unlock();
 	rsp->Reserved = 0;
 	rsp->CreateAction = cpu_to_le32(file_info);
 	rsp->CreationTime = cpu_to_le64(fp->create_time);
