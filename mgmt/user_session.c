@@ -85,6 +85,9 @@ static int __rpc_method(char *rpc_name)
 	if (!strcmp(rpc_name, "\\samr") || !strcmp(rpc_name, "samr"))
 		return KSMBD_RPC_SAMR_METHOD_INVOKE;
 
+	if (!strcmp(rpc_name, "\\lsarpc") || !strcmp(rpc_name, "lsarpc"))
+		return KSMBD_RPC_LSARPC_METHOD_INVOKE;
+
 	ksmbd_err("Unsupported RPC: %s\n", rpc_name);
 	return 0;
 }
