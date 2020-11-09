@@ -10,6 +10,11 @@
 #include <linux/string.h>
 #include "smbacl.h"
 #include "smb_common.h"
+#include "server.h"
+
+static const struct smb_sid domain = {1, 4, {0, 0, 0, 0, 0, 5},
+	{cpu_to_le32(21), cpu_to_le32(1), cpu_to_le32(2), cpu_to_le32(3),
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0} };
 
 /* security id for everyone/world system group */
 static const struct smb_sid sid_everyone = {
@@ -434,4 +439,13 @@ int build_sec_desc(struct smb_ntsd *pntsd, __u32 *secdesclen, umode_t nmode)
 
 	*secdesclen = le32_to_cpu(pntsd->gsidoffset) + sizeof(struct smb_sid);
 	return rc;
+}
+
+void ksmbd_init_domain(u32 *sub_auth)
+{
+	int i;
+
+	memcpy(&server_conf.domain_sid, &domain, sizeof(struct smb_sid));
+	for (i = 0; i < 3; ++i)
+		server_conf.domain_sid.sub_auth[i + 1] = cpu_to_le32(sub_auth[i]);
 }

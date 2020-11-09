@@ -99,5 +99,5 @@ struct smb_fattr {
 int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 		struct smb_fattr *fattr);
 int build_sec_desc(struct smb_ntsd *pntsd, __u32 *secdesclen, umode_t mode);
-
+void ksmbd_init_domain(u32 *sub_auth);
 #endif /* _SMBACL_H */
