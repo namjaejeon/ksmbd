@@ -374,6 +374,11 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.leading-slash
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.impersonation
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.dir-alloc-size
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.aclfile
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.acldir
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.nulldacl
  - sudo rm -rf /mnt/test3/*
  # smb2 delete-on-close test
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.OVERWRITE_IF
@@ -483,3 +488,15 @@ script:
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.complex1
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.timeout
 # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.unlink
+ # smb2 acls test
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.CREATOR
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.GENERIC
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.OWNER
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.INHERITANCE
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.INHERITFLAGS
+ - sudo rm -rf /mnt/test3/*
+ - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.DYNAMIC
