@@ -2416,7 +2416,7 @@ int smb2_open(struct ksmbd_work *work)
 			fp = d_info.fp;
 			rc = smb2_check_durable_oplock(d_info.fp, lc, name);
 			if (rc)
-				goto err_out;
+				goto err_out1;
 			rc = ksmbd_reopen_durable_fd(work, d_info.fp);
 			if (rc)
 				goto err_out;
@@ -2596,7 +2596,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = ksmbd_vfs_kern_path(name, 0, &path, 1);
 			if (!rc && d_is_symlink(path.dentry)) {
 				rc = -EACCES;
-				goto err_out1;
+				goto err_out;
 			}
 		}
 	}
@@ -2828,7 +2828,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = check_context_err(az_req,
 				SMB2_CREATE_ALLOCATION_SIZE);
 			if (rc < 0)
-				goto err_out1;
+				goto err_out;
 		} else {
 			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
 			int err;
@@ -2849,7 +2849,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = check_context_err(context,
 				SMB2_CREATE_QUERY_ON_DISK_ID);
 			if (rc < 0)
-				goto err_out1;
+				goto err_out;
 		} else {
 			ksmbd_debug(SMB, "get query on disk id context\n");
 			query_disk_id = 1;
