@@ -620,9 +620,12 @@ static void destroy_previous_session(struct ksmbd_user *user, uint64_t id)
 
 	if (strcmp(user->name, prev_user->name) ||
 	    user->passkey_sz != prev_user->passkey_sz ||
-	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
+	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz)) {
+		put_session(prev_sess);
 		return;
+	}
 
+	put_session(prev_sess);
 	ksmbd_session_destroy(prev_sess);
 }
 
