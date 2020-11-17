@@ -179,14 +179,13 @@ extern struct list_head global_lock_list;
 		| FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES)
 #define FILE_EXEC_RIGHTS (FILE_EXECUTE)
 
-#define SET_FILE_READ_RIGHTS (FILE_READ_DATA | FILE_READ_EA | FILE_WRITE_EA \
+#define SET_FILE_READ_RIGHTS (FILE_READ_DATA | FILE_READ_EA \
 		| FILE_READ_ATTRIBUTES \
-		| FILE_WRITE_ATTRIBUTES \
 		| DELETE | READ_CONTROL | WRITE_DAC \
 		| WRITE_OWNER | SYNCHRONIZE)
 #define SET_FILE_WRITE_RIGHTS (FILE_WRITE_DATA | FILE_APPEND_DATA \
-		| FILE_READ_EA | FILE_WRITE_EA \
-		| FILE_DELETE_CHILD | FILE_READ_ATTRIBUTES \
+		| FILE_WRITE_EA \
+		| FILE_DELETE_CHILD \
 		| FILE_WRITE_ATTRIBUTES \
 		| DELETE | READ_CONTROL | WRITE_DAC \
 		| WRITE_OWNER | SYNCHRONIZE)
@@ -208,7 +207,8 @@ extern struct list_head global_lock_list;
 		FILE_WRITE_ATTRIBUTES | FILE_WRITE_EA | \
 		FILE_APPEND_DATA | SYNCHRONIZE)
 
-#define GENERIC_EXECUTE_FLAGS	(READ_CONTROL | FILE_EXECUTE | SYNCHRONIZE)
+#define GENERIC_EXECUTE_FLAGS	(READ_CONTROL | FILE_EXECUTE | \
+		FILE_READ_ATTRIBUTES | SYNCHRONIZE)
 
 #define GENERIC_ALL_FLAGS	(DELETE | READ_CONTROL | WRITE_DAC | \
 		WRITE_OWNER | SYNCHRONIZE | FILE_READ_DATA | \
@@ -508,6 +508,7 @@ unsigned int ksmbd_server_side_copy_max_chunk_count(void);
 unsigned int ksmbd_server_side_copy_max_chunk_size(void);
 unsigned int ksmbd_server_side_copy_max_total_size(void);
 bool is_asterisk(char *p);
+__le32 smb_map_generic_desired_access(__le32 daccess);
 
 static inline unsigned int get_rfc1002_len(void *buf)
 {

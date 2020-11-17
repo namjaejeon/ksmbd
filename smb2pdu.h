@@ -8,6 +8,7 @@
 #define _SMB2PDU_H
 
 #include "ntlmssp.h"
+#include "smbacl.h"
 
 /*
  * Note that, due to trying to use names similar to the protocol specifications,
@@ -521,8 +522,7 @@ struct smb2_tree_disconnect_rsp {
 					FILE_WRITE_ATTRIBUTES_LE |	\
 					FILE_DELETE_LE |		\
 					FILE_GENERIC_WRITE_LE)
-#define FILE_RW_DESIRED_ACCESS		(FILE_MAXIMAL_ACCESS_LE |	\
-					FILE_GENERIC_ALL_LE)
+#define FILE_RW_DESIRED_ACCESS		(FILE_GENERIC_ALL_LE)
 
 /* Impersonation Levels */
 #define IL_ANONYMOUS_LE		cpu_to_le32(0x00000000)
@@ -1492,6 +1492,12 @@ struct create_ea_buf_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	struct smb2_ea_info ea;
+} __packed;
+
+struct create_sd_buf_req {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct smb_ntsd ntsd;
 } __packed;
 
 /* functions */
