@@ -4578,6 +4578,36 @@ static int get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 	return 0;
 }
 
+static int find_file_posix_info(struct smb2_query_info_rsp *rsp,
+					struct ksmbd_file *fp,
+					void *rsp_org)
+{
+	struct smb311_posix_qinfo *file_info;
+	struct inode *inode = FP_INODE(fp);
+	u64 time;
+
+	file_info = (struct smb311_posix_qinfo *)rsp->Buffer;
+	file_info->CreationTime = cpu_to_le64(fp->create_time);
+	time = ksmbd_UnixTimeToNT(inode->i_atime);
+	file_info->LastAccessTime = cpu_to_le64(time);
+	time = ksmbd_UnixTimeToNT(inode->i_mtime);
+	file_info->LastWriteTime = cpu_to_le64(time);
+	time = ksmbd_UnixTimeToNT(inode->i_ctime);
+	file_info->ChangeTime = cpu_to_le64(time);
+	file_info->DosAttributes = fp->f_ci->m_fattr;
+	file_info->Inode = cpu_to_le64(inode->i_ino);
+	file_info->EndOfFile = cpu_to_le64(inode->i_size);
+	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->HardLinks = cpu_to_le32(inode->i_nlink);
+	file_info->Mode = cpu_to_le32(inode->i_mode);
+	file_info->DeviceId = cpu_to_le32(inode->i_rdev);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb311_posix_qinfo));
+	inc_rfc1001_len(rsp_org,
+		sizeof(struct smb311_posix_qinfo));
+	return 0;
+}
+
 /**
  * smb2_get_info_file() - handler for smb2 query info command
  * @work:	smb work containing query info request buffer
@@ -4696,7 +4726,15 @@ static int smb2_get_info_file(struct ksmbd_work *work,
 		rc = get_file_attribute_tag_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ATTRIBUTE_TAG_INFORMATION_SIZE;
 		break;
-
+	case SMB_FIND_FILE_POSIX_INFO:
+		if (!work->tcon->posix_extensions) {
+			ksmbd_err("client doesn't negotiate with SMB3.1.1 POSIX Extensions\n");
+			rc = -EOPNOTSUPP;
+		} else {
+			rc = find_file_posix_info(rsp, fp, rsp_org);
+			file_infoclass_size = sizeof(struct smb311_posix_qinfo);
+		}
+		break;
 	default:
 		ksmbd_debug(SMB, "fileinfoclass %d not supported yet\n",
 			    fileinfoclass);
