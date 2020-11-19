@@ -51,6 +51,7 @@ struct ksmbd_startup_request {
 	__u32	smb2_max_read;
 	__u32	smb2_max_trans;
 	__u32	share_fake_fscaps;
+	__u32	sub_auth[3];
 	__u32	ifc_list_sz;
 	__s8	____payload[0];
 } ____ksmbd_align;
@@ -241,6 +242,10 @@ enum KSMBD_TREE_CONN_STATUS {
 #define KSMBD_RPC_CLOSE_METHOD		(1 << 7)
 #define KSMBD_RPC_RAP_METHOD		((1 << 8) | KSMBD_RPC_METHOD_RETURN)
 #define KSMBD_RPC_RESTRICTED_CONTEXT	(1 << 9)
+#define KSMBD_RPC_SAMR_METHOD_INVOKE	(1 << 10)
+#define KSMBD_RPC_SAMR_METHOD_RETURN	((1 << 10) | KSMBD_RPC_METHOD_RETURN)
+#define KSMBD_RPC_LSARPC_METHOD_INVOKE	(1 << 11)
+#define KSMBD_RPC_LSARPC_METHOD_RETURN	((1 << 11) | KSMBD_RPC_METHOD_RETURN)
 
 #define KSMBD_RPC_OK			0
 #define KSMBD_RPC_EBAD_FUNC		0x00000001

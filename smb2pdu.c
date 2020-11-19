@@ -620,9 +620,12 @@ static void destroy_previous_session(struct ksmbd_user *user, uint64_t id)
 
 	if (strcmp(user->name, prev_user->name) ||
 	    user->passkey_sz != prev_user->passkey_sz ||
-	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
+	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz)) {
+		put_session(prev_sess);
 		return;
+	}
 
+	put_session(prev_sess);
 	ksmbd_session_destroy(prev_sess);
 }
 
@@ -730,11 +733,11 @@ static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 {
 	int attr = 0;
 
-	attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
-
 	if (S_ISDIR(stat->mode))
-		attr = ATTR_DIRECTORY;
+		attr = ATTR_DIRECTORY |
+			(attribute & (ATTR_HIDDEN | ATTR_SYSTEM));
 	else {
+		attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 		attr &= ~(ATTR_DIRECTORY);
 		if (S_ISREG(stat->mode) && (server_conf.share_fake_fscaps &
 				FILE_SUPPORTS_SPARSE_FILES))
@@ -1656,7 +1659,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 
 	if ((access & FILE_READ_DESIRED_ACCESS &&
 			access & FILE_WRITE_DESIRE_ACCESS) ||
-			access & FILE_RW_DESIRED_ACCESS)
+			access & FILE_WRITE_DAC_LE)
 		oflags |= O_RDWR;
 	else if (access & FILE_WRITE_DESIRE_ACCESS)
 		oflags |= O_WRONLY;
@@ -2191,7 +2194,6 @@ static int smb2_create_truncate(struct path *path)
 	return rc;
 }
 
-
 static void smb2_new_xattrs(struct ksmbd_tree_connect *tcon,
 			    struct path *path,
 			    struct ksmbd_file *fp)
@@ -2292,6 +2294,30 @@ static int smb2_creat(struct ksmbd_work *work,
 	return 0;
 }
 
+static int smb2_create_sd_buffer(struct smb2_create_req *req,
+		struct dentry *dentry)
+{
+	struct create_context *context;
+	int rc = -ENOENT;
+
+	if (!req->CreateContextsOffset)
+		return rc;
+
+	/* Parse SD BUFFER create contexts */
+	context = smb2_find_context_vals(req, SMB2_CREATE_SD_BUFFER);
+	if (context && !IS_ERR(context)) {
+		struct create_sd_buf_req *sd_buf;
+
+		ksmbd_debug(SMB,
+			"Set ACLs using SMB2_CREATE_SD_BUFFER context\n");
+		sd_buf = (struct create_sd_buf_req *)context;
+		rc = set_info_sec(dentry, &sd_buf->ntsd,
+			le32_to_cpu(sd_buf->ccontext.DataLength), true);
+	}
+
+	return rc;
+}
+
 /**
  * smb2_open() - handler for smb file open request
  * @work:	smb work containing request buffer
@@ -2329,6 +2355,7 @@ int smb2_open(struct ksmbd_work *work)
 	int share_ret, need_truncate = 0;
 	u64 time;
 	umode_t posix_mode = 0;
+	__le32 daccess;
 
 	rsp_org = RESPONSE_BUF(work);
 	WORK_BUFFERS(work, req, rsp);
@@ -2416,7 +2443,7 @@ int smb2_open(struct ksmbd_work *work)
 			fp = d_info.fp;
 			rc = smb2_check_durable_oplock(d_info.fp, lc, name);
 			if (rc)
-				goto err_out;
+				goto err_out1;
 			rc = ksmbd_reopen_durable_fd(work, d_info.fp);
 			if (rc)
 				goto err_out;
@@ -2596,7 +2623,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = ksmbd_vfs_kern_path(name, 0, &path, 1);
 			if (!rc && d_is_symlink(path.dentry)) {
 				rc = -EACCES;
-				goto err_out1;
+				goto err_out;
 			}
 		}
 	}
@@ -2666,8 +2693,18 @@ int smb2_open(struct ksmbd_work *work)
 		file_present = ksmbd_close_inode_fds(work,
 						     d_inode(path.dentry));
 
+	daccess = smb_map_generic_desired_access(req->DesiredAccess);
+
+	if (file_present && !(req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+		rc = smb_check_perm_dacl(path.dentry, &daccess,
+				sess->user->uid);
+		if (rc)
+			goto err_out;
+	} else if (daccess & FILE_MAXIMAL_ACCESS_LE)
+		daccess = cpu_to_le32(GENERIC_ALL_FLAGS);
+
 	open_flags = smb2_create_open_flags(file_present,
-		req->DesiredAccess, req->CreateDisposition);
+		daccess, req->CreateDisposition);
 
 	if (!test_tree_conn_flag(tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		if (open_flags & O_CREAT) {
@@ -2694,9 +2731,10 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 		}
 	} else {
-		if (ksmbd_vfs_inode_permission(path.dentry,
-				open_flags & O_ACCMODE,
-				req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+		if (!(req->DesiredAccess & FILE_MAXIMAL_ACCESS_LE) &&
+			ksmbd_vfs_inode_permission(path.dentry,
+			open_flags & O_ACCMODE,
+			req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
 			rc = -EACCES;
 			goto err_out;
 		}
@@ -2739,17 +2777,37 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-	fp->filename = name;
-	fp->cdoption = req->CreateDisposition;
-	fp->daccess = req->DesiredAccess;
-	fp->saccess = req->ShareAccess;
-	fp->coption = req->CreateOptions;
-
 	/* Get Persistent-ID */
 	ksmbd_open_durable_fd(fp);
 	if (!HAS_FILE_ID(fp->persistent_id)) {
 		rc = -ENOMEM;
 		goto err_out;
+	}
+
+	fp->filename = name;
+	fp->cdoption = req->CreateDisposition;
+	fp->daccess = daccess;
+	fp->saccess = req->ShareAccess;
+	fp->coption = req->CreateOptions;
+
+	/* Set default windows and posix acls if creating new file */
+	if (created) {
+		rc = smb_inherit_dacl(path.dentry, sess->user->uid,
+			sess->user->gid);
+		if (rc) {
+			rc = smb2_create_sd_buffer(req, path.dentry);
+			if (rc) {
+				store_init_posix_acl(path.dentry->d_inode);
+				if (daccess & FILE_WRITE_DAC_LE)
+					store_init_ntacl(path.dentry);
+			}
+		} else {
+			rc = smb_inherit_posix_acl(path.dentry->d_inode,
+				path.dentry->d_parent->d_inode);
+			if (rc)
+				ksmbd_debug(SMB, "inherit posix acl failed : %d\n", rc);
+		}
+		rc = 0;
 	}
 
 	if (stream_name) {
@@ -2828,7 +2886,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = check_context_err(az_req,
 				SMB2_CREATE_ALLOCATION_SIZE);
 			if (rc < 0)
-				goto err_out1;
+				goto err_out;
 		} else {
 			loff_t alloc_size = le64_to_cpu(az_req->AllocationSize);
 			int err;
@@ -2849,7 +2907,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = check_context_err(context,
 				SMB2_CREATE_QUERY_ON_DISK_ID);
 			if (rc < 0)
-				goto err_out1;
+				goto err_out;
 		} else {
 			ksmbd_debug(SMB, "get query on disk id context\n");
 			query_disk_id = 1;
@@ -3820,10 +3878,7 @@ static int smb2_get_ea(struct ksmbd_work *work,
 	struct smb2_ea_info_req *ea_req = NULL;
 	struct path *path;
 
-	if (!(fp->daccess & (FILE_READ_EA_LE |
-				FILE_GENERIC_READ_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_READ_EA_LE)) {
 		ksmbd_err("Not permitted to read ext attr : 0x%x\n",
 			  fp->daccess);
 		return -EACCES;
@@ -3987,10 +4042,7 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	struct kstat stat;
 	u64 time;
 
-	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-				FILE_GENERIC_READ_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_READ_ATTRIBUTES_LE)) {
 		ksmbd_err("no right to read the attributes : 0x%x\n",
 			   fp->daccess);
 		return -EACCES;
@@ -4085,10 +4137,7 @@ static int get_file_all_info(struct ksmbd_work *work,
 	char *filename;
 	u64 time;
 
-	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-				FILE_GENERIC_READ_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_READ_ATTRIBUTES_LE)) {
 		ksmbd_debug(SMB, "no right to read the attributes : 0x%x\n",
 				fp->daccess);
 		return -EACCES;
@@ -4293,10 +4342,7 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 	struct kstat stat;
 	u64 time;
 
-	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-				FILE_GENERIC_READ_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_READ_ATTRIBUTES_LE)) {
 		ksmbd_err("no right to read the attributes : 0x%x\n",
 			  fp->daccess);
 		return -EACCES;
@@ -4391,10 +4437,7 @@ static int get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 {
 	struct smb2_file_attr_tag_info *file_info;
 
-	if (!(fp->daccess & (FILE_READ_ATTRIBUTES_LE |
-				FILE_GENERIC_READ_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_READ_ATTRIBUTES_LE)) {
 		ksmbd_err("no right to read the attributes : 0x%x\n",
 			  fp->daccess);
 		return -EACCES;
@@ -4763,29 +4806,13 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	void *rsp_org)
 {
 	struct ksmbd_file *fp;
-	int rc = 0;
 	struct smb_ntsd *pntsd = (struct smb_ntsd *)rsp->Buffer;
+	struct smb_fattr fattr = {{0}};
+	struct inode *inode;
 	__u32 secdesclen;
 	unsigned int id = KSMBD_NO_FID, pid = KSMBD_NO_FID;
 	int addition_info = le32_to_cpu(req->AdditionalInformation);
-
-	if (addition_info & ~(OWNER_SECINFO | GROUP_SECINFO | DACL_SECINFO)) {
-		ksmbd_debug(SMB, "Unsupported addition info: 0x%x)\n",
-			addition_info);
-
-		pntsd->revision = cpu_to_le16(1);
-		pntsd->type = cpu_to_le16(0x9000);
-		pntsd->osidoffset = 0;
-		pntsd->gsidoffset = 0;
-		pntsd->sacloffset = 0;
-		pntsd->dacloffset = 0;
-
-		secdesclen = sizeof(struct smb_ntsd);
-		rsp->OutputBufferLength = cpu_to_le32(secdesclen);
-		inc_rfc1001_len(rsp_org, secdesclen);
-
-		return 0;
-	}
+	int rc;
 
 	if (work->next_smb2_rcv_hdr_off) {
 		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
@@ -4805,14 +4832,28 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	if (!fp)
 		return -ENOENT;
 
-	rc = build_sec_desc(pntsd, &secdesclen, FP_INODE(fp)->i_mode);
+	inode = FP_INODE(fp);
+	fattr.cf_uid = inode->i_uid;
+	fattr.cf_gid = inode->i_gid;
+	fattr.cf_mode = inode->i_mode;
+	fattr.cf_dacls = NULL;
+
+	fattr.cf_acls = get_acl(inode, ACL_TYPE_ACCESS);
+	if (S_ISDIR(inode->i_mode))
+		fattr.cf_dacls = get_acl(inode, ACL_TYPE_DEFAULT);
+
+	fattr.ntacl = ksmbd_vfs_get_sd_xattr(fp->filp->f_path.dentry);
+
+	rc = build_sec_desc(pntsd, addition_info, &secdesclen, &fattr);
+	posix_acl_release(fattr.cf_acls);
+	posix_acl_release(fattr.cf_dacls);
+	kfree(fattr.ntacl);
 	ksmbd_fd_put(work, fp);
 	if (rc)
 		return rc;
 
 	rsp->OutputBufferLength = cpu_to_le32(secdesclen);
 	inc_rfc1001_len(rsp_org, secdesclen);
-
 	return 0;
 }
 
@@ -5212,10 +5253,7 @@ out:
 
 static bool is_attributes_write_allowed(struct ksmbd_file *fp)
 {
-	return fp->daccess & (FILE_WRITE_ATTRIBUTES_LE |
-				FILE_GENERIC_WRITE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE);
+	return fp->daccess & FILE_WRITE_ATTRIBUTES_LE;
 }
 
 static int set_file_basic_info(struct ksmbd_file *fp,
@@ -5425,9 +5463,7 @@ static int set_rename_info(struct ksmbd_work *work,
 {
 	struct ksmbd_file *parent_fp;
 
-	if (!(fp->daccess & (FILE_DELETE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_DELETE_LE)) {
 		ksmbd_err("no right to delete : 0x%x\n", fp->daccess);
 		return -EACCES;
 	}
@@ -5454,9 +5490,7 @@ static int set_file_disposition_info(struct ksmbd_file *fp,
 	struct smb2_file_disposition_info *file_info;
 	struct inode *inode;
 
-	if (!(fp->daccess & (FILE_DELETE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & FILE_DELETE_LE)) {
 		ksmbd_err("no right to delete : 0x%x\n", fp->daccess);
 		return -EACCES;
 	}
@@ -5572,10 +5606,7 @@ static int smb2_set_info_file(struct ksmbd_work *work,
 
 	case FILE_FULL_EA_INFORMATION:
 	{
-		if (!(fp->daccess & (FILE_WRITE_EA_LE |
-				FILE_GENERIC_WRITE_LE |
-				FILE_MAXIMAL_ACCESS_LE |
-				FILE_GENERIC_ALL_LE))) {
+		if (!(fp->daccess & FILE_WRITE_EA_LE)) {
 			ksmbd_err("Not permitted to write ext  attr: 0x%x\n",
 				  fp->daccess);
 			return -EACCES;
@@ -5602,25 +5633,10 @@ static int smb2_set_info_sec(struct ksmbd_file *fp,
 			     int buf_len)
 {
 	struct smb_ntsd *pntsd = (struct smb_ntsd *)buffer;
-	struct inode *inode = FP_INODE(fp);
-	struct smb_fattr fattr;
-	int rc;
 
-	if (addition_info != DACL_SECINFO) {
-		ksmbd_debug(SMB, "Unsupported addition info: 0x%x)\n",
-			addition_info);
-		return -EOPNOTSUPP;
-	}
+	fp->saccess |= FILE_SHARE_DELETE_LE;
 
-	fattr.cf_mode = 0;
-	rc = parse_sec_desc(pntsd, buf_len, &fattr);
-	if (rc)
-		return rc;
-
-	inode->i_mode |= fattr.cf_mode & 07777;
-	mark_inode_dirty(inode);
-
-	return 0;
+	return set_info_sec(fp->filp->f_path.dentry, pntsd, buf_len, false);
 }
 
 /**
@@ -5837,9 +5853,7 @@ int smb2_read(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
-	if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_GENERIC_READ_LE |
-			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
-			     FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_READ_ATTRIBUTES_LE))) {
 		ksmbd_err("Not permitted to read : 0x%x\n", fp->daccess);
 		err = -EACCES;
 		goto out;
@@ -6108,9 +6122,7 @@ int smb2_write(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
-	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_GENERIC_WRITE_LE |
-			     FILE_READ_ATTRIBUTES_LE | FILE_MAXIMAL_ACCESS_LE |
-			     FILE_GENERIC_ALL_LE))) {
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_READ_ATTRIBUTES_LE))) {
 		ksmbd_err("Not permitted to write : 0x%x\n", fp->daccess);
 		err = -EACCES;
 		goto out;
