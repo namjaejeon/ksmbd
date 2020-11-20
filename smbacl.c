@@ -221,7 +221,7 @@ static __u16 fill_ace_for_sid(struct smb_ace *pntace,
 	return size;
 }
 
-static void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid)
+void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid)
 {
 	switch (sidtype) {
 	case SIDOWNER:
@@ -239,6 +239,15 @@ static void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid)
 	case SIDCREATOR_GROUP:
 		smb_copy_sid(ssid, &creator_group);
 		return;
+	case SIDNFS_USER:
+		smb_copy_sid(ssid, &sid_unix_NFS_users);
+		break;
+	case SIDNFS_GROUP:
+		smb_copy_sid(ssid, &sid_unix_NFS_groups);
+		break;
+	case SIDNFS_MODE:
+		smb_copy_sid(ssid, &sid_unix_NFS_mode);
+		break;
 	default:
 		return;
 	}

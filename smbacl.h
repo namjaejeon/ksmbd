@@ -27,6 +27,9 @@
 #define SIDCREATOR_GROUP 4
 #define SIDUNIX_USER 5
 #define SIDUNIX_GROUP 6
+#define SIDNFS_USER 7
+#define SIDNFS_GROUP 8
+#define SIDNFS_MODE 9
 
 /* Revision for ACLs */
 #define SD_REVISION	1
@@ -199,5 +202,6 @@ int store_init_ntacl(struct dentry *dentry);
 int store_init_posix_acl(struct inode *inode);
 int set_info_sec(struct dentry *dentry, struct smb_ntsd *pntsd,
 		int ntsd_len, bool type_check);
+void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid);
 void ksmbd_init_domain(u32 *sub_auth);
 #endif /* _SMBACL_H */

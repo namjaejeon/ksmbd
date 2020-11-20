@@ -3249,6 +3249,8 @@ static int readdir_info_level_struct_sz(int info_level)
 		return sizeof(struct file_id_full_dir_info);
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 		return sizeof(struct file_id_both_directory_info);
+	case SMB_FIND_FILE_POSIX_INFO:
+		return sizeof(struct smb2_posix_info);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -3315,6 +3317,16 @@ static int dentry_name(struct ksmbd_dir_info *d_info, int info_level)
 		d_info->rptr += le32_to_cpu(fibdinfo->NextEntryOffset);
 		d_info->name = fibdinfo->FileName;
 		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
+		return 0;
+	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+
+		posix_info = (struct smb2_posix_info *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(posix_info->NextEntryOffset);
+		d_info->name = posix_info->name;
+		d_info->name_len = le32_to_cpu(posix_info->name_len);
 		return 0;
 	}
 	default:
@@ -3454,6 +3466,40 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+		u64 time;
+
+		posix_info = (struct smb2_posix_info *)kstat;
+		posix_info->Ignored = 0;
+		posix_info->CreationTime = cpu_to_le64(ksmbd_kstat->create_time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->ctime);
+		posix_info->ChangeTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->atime);
+		posix_info->LastAccessTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->mtime);
+		posix_info->LastWriteTime = cpu_to_le64(time);
+		posix_info->EndOfFile = cpu_to_le64(ksmbd_kstat->kstat->size);
+		posix_info->AllocationSize = cpu_to_le64(ksmbd_kstat->kstat->blocks << 9);
+		posix_info->DeviceId = cpu_to_le32(ksmbd_kstat->kstat->rdev);
+		posix_info->HardLinks = cpu_to_le32(ksmbd_kstat->kstat->nlink);
+		posix_info->Mode = cpu_to_le32(ksmbd_kstat->kstat->mode);
+		posix_info->Inode = cpu_to_le64(ksmbd_kstat->kstat->ino);
+		posix_info->DosAttributes =
+			S_ISDIR(ksmbd_kstat->kstat->mode) ? ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			posix_info->DosAttributes |= ATTR_HIDDEN_LE;
+		id_to_sid(from_kuid(&init_user_ns, ksmbd_kstat->kstat->uid),
+				SIDNFS_USER, (struct smb_sid *)&posix_info->SidBuffer[0]);
+		id_to_sid(from_kgid(&init_user_ns, ksmbd_kstat->kstat->gid),
+				SIDNFS_GROUP, (struct smb_sid *)&posix_info->SidBuffer[20]);
+		memcpy(posix_info->name, conv_name, conv_len);
+		posix_info->name_len = cpu_to_le32(conv_len);
+		posix_info->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+
 	} /* switch (info_level) */
 
 	d_info->last_entry_offset = d_info->data_count;
@@ -3635,6 +3681,18 @@ static int reserve_populate_dentry(struct ksmbd_dir_info *d_info,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+
+		posix_info = (struct smb2_posix_info *)d_info->wptr;
+		memcpy(posix_info->name, d_info->name, d_info->name_len);
+		posix_info->name[d_info->name_len] = 0x00;
+		posix_info->name_len = cpu_to_le32(d_info->name_len);
+		posix_info->NextEntryOffset =
+			cpu_to_le32(next_entry_offset);
+		break;
+	}
 	} /* switch (info_level) */
 
 	d_info->num_entry++;
@@ -3696,6 +3754,7 @@ static int verify_info_level(int info_level)
 	case FILE_NAMES_INFORMATION:
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
+	case SMB_FIND_FILE_POSIX_INFO:
 		break;
 	default:
 		return -EOPNOTSUPP;
