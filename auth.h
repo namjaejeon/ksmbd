@@ -21,6 +21,11 @@
 #define CIFS_SMB1_SIGNATURE_SIZE	8
 #define CIFS_SMB1_SESSKEY_SIZE		16
 
+#define KSMBD_AUTH_NTLMSSP	0x0001
+#define KSMBD_AUTH_KRB5		0x0002
+#define KSMBD_AUTH_MSKRB5	0x0004
+#define KSMBD_AUTH_KRB5U2U	0x0008
+
 struct ksmbd_session;
 struct ksmbd_conn;
 struct kvec;
