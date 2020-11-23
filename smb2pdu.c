@@ -1158,8 +1158,7 @@ static int alloc_preauth_hash(struct ksmbd_session *sess,
 	return 0;
 }
 
-static int generate_preauth_hash(struct ksmbd_work *work,
-				 struct negotiate_message *negblob)
+static int generate_preauth_hash(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 	struct ksmbd_session *sess = work->sess;
@@ -1167,7 +1166,7 @@ static int generate_preauth_hash(struct ksmbd_work *work,
 	if (conn->dialect != SMB311_PROT_ID)
 		return 0;
 
-	if (negblob->MessageType == NtLmNegotiate) {
+	if (!sess->Preauth_HashValue) {
 		if (alloc_preauth_hash(sess, conn))
 			return -ENOMEM;
 	}
@@ -1192,8 +1191,11 @@ static int decode_negotiation_token(struct ksmbd_work *work,
 	sz = le16_to_cpu(req->SecurityBufferLength);
 
 	if (!ksmbd_decode_negTokenInit((char *)negblob, sz, conn)) {
-		if (!ksmbd_decode_negTokenTarg((char *)negblob, sz, conn))
+		if (!ksmbd_decode_negTokenTarg((char *)negblob, sz, conn)) {
+			conn->auth_mechs |= KSMBD_AUTH_NTLMSSP;
+			conn->preferred_auth_mech = KSMBD_AUTH_NTLMSSP;
 			conn->use_spnego = false;
+		}
 	}
 	return 0;
 }
@@ -1295,7 +1297,7 @@ static struct ksmbd_user *session_user(struct ksmbd_conn *conn,
 	}
 
 	ksmbd_debug(SMB, "session setup request for user %s\n", name);
-	user = ksmbd_alloc_user(name);
+	user = ksmbd_login_user(name);
 	kfree(name);
 	return user;
 }
@@ -1442,6 +1444,103 @@ static int ntlm_authenticate(struct ksmbd_work *work)
 	return 0;
 }
 
+#ifdef CONFIG_SMB_SERVER_KERBEROS5
+static int krb5_authenticate(struct ksmbd_work *work)
+{
+	struct smb2_sess_setup_req *req = REQUEST_BUF(work);
+	struct smb2_sess_setup_rsp *rsp = RESPONSE_BUF(work);
+	struct ksmbd_conn *conn = work->conn;
+	struct ksmbd_session *sess = work->sess;
+	char *in_blob, *out_blob;
+	struct channel *chann = NULL;
+	uint64_t prev_sess_id;
+	int in_len, out_len;
+	int retval;
+
+	in_blob = (char *)&req->hdr.ProtocolId +
+		le16_to_cpu(req->SecurityBufferOffset);
+	in_len = le16_to_cpu(req->SecurityBufferLength);
+	out_blob = (char *)&rsp->hdr.ProtocolId +
+		le16_to_cpu(rsp->SecurityBufferOffset);
+	out_len = work->response_sz -
+		offsetof(struct smb2_hdr, smb2_buf_length) -
+		le16_to_cpu(rsp->SecurityBufferOffset);
+
+	/* Check previous session */
+	prev_sess_id = le64_to_cpu(req->PreviousSessionId);
+	if (prev_sess_id && prev_sess_id != sess->id)
+		destroy_previous_session(sess->user, prev_sess_id);
+
+	if (sess->state == SMB2_SESSION_VALID)
+		ksmbd_free_user(sess->user);
+
+	retval = ksmbd_krb5_authenticate(sess, in_blob, in_len,
+			out_blob, &out_len);
+	if (retval) {
+		ksmbd_debug(SMB, "krb5 authentication failed\n");
+		rsp->hdr.Status = STATUS_LOGON_FAILURE;
+		return retval;
+	}
+	rsp->SecurityBufferLength = cpu_to_le16(out_len);
+	inc_rfc1001_len(rsp, out_len - 1);
+
+	if ((conn->sign || server_conf.enforced_signing) ||
+			(req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED))
+		sess->sign = true;
+
+	if ((conn->vals->capabilities & SMB2_GLOBAL_CAP_ENCRYPTION) &&
+			conn->ops->generate_encryptionkey) {
+		retval = conn->ops->generate_encryptionkey(sess);
+		if (retval) {
+			ksmbd_debug(SMB,
+				"SMB3 encryption key generation failed\n");
+			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+			return retval;
+		}
+		sess->enc = true;
+		rsp->SessionFlags = SMB2_SESSION_FLAG_ENCRYPT_DATA_LE;
+		sess->sign = false;
+	}
+
+	if (conn->dialect >= SMB30_PROT_ID) {
+		chann = lookup_chann_list(sess);
+		if (!chann) {
+			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
+			if (!chann)
+				return -ENOMEM;
+
+			chann->conn = conn;
+			INIT_LIST_HEAD(&chann->chann_list);
+			list_add(&chann->chann_list, &sess->ksmbd_chann_list);
+		}
+	}
+
+	if (conn->ops->generate_signingkey) {
+		retval = conn->ops->generate_signingkey(sess);
+		if (retval) {
+			ksmbd_debug(SMB,
+				"SMB3 signing key generation failed\n");
+			rsp->hdr.Status = STATUS_LOGON_FAILURE;
+			return retval;
+		}
+	}
+
+	if (conn->dialect > SMB20_PROT_ID) {
+		if (!ksmbd_conn_lookup_dialect(conn)) {
+			ksmbd_err("fail to verify the dialect\n");
+			rsp->hdr.Status = STATUS_USER_SESSION_DELETED;
+			return -EPERM;
+		}
+	}
+	return 0;
+}
+#else
+static int krb5_authenticate(struct ksmbd_work *work)
+{
+	return -EOPNOTSUPP;
+}
+#endif
+
 int smb2_sess_setup(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
@@ -1489,34 +1588,60 @@ int smb2_sess_setup(struct ksmbd_work *work)
 			negblob = (struct negotiate_message *)conn->mechToken;
 	}
 
-	rc = generate_preauth_hash(work, negblob);
-	if (rc)
-		goto out_err;
+	if (server_conf.auth_mechs & conn->auth_mechs) {
+		if (conn->preferred_auth_mech &
+				(KSMBD_AUTH_KRB5 | KSMBD_AUTH_MSKRB5)) {
+			rc = generate_preauth_hash(work);
+			if (rc)
+				goto out_err;
 
-	if (negblob->MessageType == NtLmNegotiate) {
-		rc = ntlm_negotiate(work, negblob);
-		if (rc)
-			goto out_err;
+			rc = krb5_authenticate(work);
+			if (rc) {
+				rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+				goto out_err;
+			}
 
-		rsp->hdr.Status = STATUS_MORE_PROCESSING_REQUIRED;
-		/*
-		 * Note: here total size -1 is done as an adjustment for
-		 * 0 size blob
-		 */
-		inc_rfc1001_len(rsp,
-				le16_to_cpu(rsp->SecurityBufferLength) - 1);
+			ksmbd_conn_set_good(work);
+			sess->state = SMB2_SESSION_VALID;
+			ksmbd_free(sess->Preauth_HashValue);
+			sess->Preauth_HashValue = NULL;
+		} else if (conn->preferred_auth_mech == KSMBD_AUTH_NTLMSSP) {
+			rc = generate_preauth_hash(work);
+			if (rc)
+				goto out_err;
 
-	} else if (negblob->MessageType == NtLmAuthenticate) {
-		rc = ntlm_authenticate(work);
-		if (rc)
-			goto out_err;
+			if (negblob->MessageType == NtLmNegotiate) {
+				rc = ntlm_negotiate(work, negblob);
+				if (rc)
+					goto out_err;
+				rsp->hdr.Status =
+					STATUS_MORE_PROCESSING_REQUIRED;
+				/*
+				 * Note: here total size -1 is done as an
+				 * adjustment for 0 size blob
+				 */
+				inc_rfc1001_len(rsp,
+					le16_to_cpu(rsp->SecurityBufferLength)
+					- 1);
 
-		ksmbd_conn_set_good(work);
-		sess->state = SMB2_SESSION_VALID;
-		ksmbd_free(sess->Preauth_HashValue);
-		sess->Preauth_HashValue = NULL;
+			} else if (negblob->MessageType == NtLmAuthenticate) {
+				rc = ntlm_authenticate(work);
+				if (rc)
+					goto out_err;
+
+				ksmbd_conn_set_good(work);
+				sess->state = SMB2_SESSION_VALID;
+				ksmbd_free(sess->Preauth_HashValue);
+				sess->Preauth_HashValue = NULL;
+			}
+		} else {
+			/* TODO: need one more negotiation */
+			ksmbd_err("Not support the preferred authentication\n");
+			rc = -EINVAL;
+			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+		}
 	} else {
-		ksmbd_err("Invalid phase\n");
+		ksmbd_err("Not support authentication\n");
 		rc = -EINVAL;
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
 	}
