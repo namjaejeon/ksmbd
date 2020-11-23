@@ -137,6 +137,20 @@ struct ksmbd_rpc_command {
 	__u8	payload[0];
 } ____ksmbd_align;
 
+struct ksmbd_spnego_authen_request {
+	__u32	handle;
+	__u16	spnego_blob_len;
+	__u8	spnego_blob[0];
+} ____ksmbd_align;
+
+struct ksmbd_spnego_authen_response {
+	__u32	handle;
+	struct ksmbd_login_response	login_response;
+	__u16	session_key_len;
+	__u16	spnego_blob_len;
+	__u8	payload[0];		/* session key + AP_REP */
+} ____ksmbd_align;
+
 /*
  * This also used as NETLINK attribute type value.
  *
@@ -166,6 +180,9 @@ enum ksmbd_event {
 
 	KSMBD_EVENT_RPC_REQUEST,
 	KSMBD_EVENT_RPC_RESPONSE,
+
+	KSMBD_EVENT_SPNEGO_AUTHEN_REQUEST,
+	KSMBD_EVENT_SPNEGO_AUTHEN_RESPONSE	= 15,
 
 	KSMBD_EVENT_MAX
 };
