@@ -806,8 +806,14 @@ int ksmbd_vfs_symlink(struct ksmbd_work *work,
 int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp)
 {
 	struct inode *inode;
-	mm_segment_t old_fs;
 	int err;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+	const char *link;
+	DEFINE_DELAYED_CALL(done);
+	int len;
+#else
+	mm_segment_t old_fs;
+#endif
 
 	if (!path)
 		return -ENOENT;
@@ -816,6 +822,23 @@ int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp)
 	if (!S_ISLNK(inode->i_mode))
 		return -EINVAL;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+	link = vfs_get_link(path->dentry, &done);
+	if (IS_ERR(link)) {
+		err = PTR_ERR(link);
+		ksmbd_err("readlink failed, err = %d\n", err);
+		return err;
+	}
+
+	len = strlen(link);
+	if (len > lenp)
+		len = lenp;
+
+	memcpy(buf, link, len);
+	do_delayed_call(&done);
+
+	return 0;
+#else
 	old_fs = get_fs();
 	set_fs(KERNEL_DS);
 	err = inode->i_op->readlink(path->dentry, (char __user *)buf, lenp);
@@ -824,6 +847,7 @@ int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp)
 		ksmbd_err("readlink failed, err = %d\n", err);
 
 	return err;
+#endif
 }
 
 static void fill_file_attributes(struct ksmbd_work *work,
