@@ -2464,13 +2464,13 @@ int smb2_open(struct ksmbd_work *work)
 	struct create_context *context;
 	struct lease_ctx_info *lc = NULL;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
-		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
+		*mxac_ccontext = NULL, *disk_id_ccontext = NULL, *posix_ccontext;
 	struct create_ea_buf_req *ea_buf = NULL;
 	struct oplock_info *opinfo;
 	__le32 *next_ptr = NULL;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
-	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
+	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0, posix_ctxt = 0;
 	int s_type = 0;
 	int next_off = 0;
 	char *name = NULL;
@@ -2699,6 +2699,7 @@ int smb2_open(struct ksmbd_work *work)
 				ksmbd_debug(SMB, "get posix context\n");
 
 				posix_mode = le32_to_cpu(posix->Mode);
+				posix_ctxt = 1;
 			}
 		}
 	}
@@ -3180,6 +3181,22 @@ reconnected:
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_disk_id_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
+		if (next_ptr)
+			*next_ptr = cpu_to_le32(next_off);
+		next_ptr = &disk_id_ccontext->Next;
+		next_off = conn->vals->create_disk_id_size;
+	}
+
+	if (posix_ctxt) {
+		posix_ccontext = (struct create_context *)(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength));
+		contxt_cnt++;
+		create_posix_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				fp);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_posix_size);
+		inc_rfc1001_len(rsp_org, conn->vals->create_posix_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
 	}

@@ -442,6 +442,7 @@ struct smb_version_values {
 	size_t		create_durable_v2_size;
 	size_t		create_mxac_size;
 	size_t		create_disk_id_size;
+	size_t		create_posix_size;
 };
 
 struct filesystem_posix_info {

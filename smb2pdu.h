@@ -703,6 +703,16 @@ struct create_disk_id_rsp {
 	__u8  Reserved[16];
 } __packed;
 
+/* equivalent of the contents of SMB3.1.1 POSIX open context response */
+struct create_posix_rsp {
+	struct create_context ccontext;
+	__u8    Name[16];
+	__le32 nlink;
+	__le32 reparse_tag;
+	__le32 mode;
+	u8 SidBuffer[40];
+} __packed;
+
 #define SMB2_LEASE_NONE_LE			cpu_to_le32(0x00)
 #define SMB2_LEASE_READ_CACHING_LE		cpu_to_le32(0x01)
 #define SMB2_LEASE_HANDLE_CACHING_LE		cpu_to_le32(0x02)
