@@ -234,7 +234,7 @@ int init_smb2_0_server(struct ksmbd_conn *conn)
 #else
 int init_smb2_0_server(struct ksmbd_conn *conn)
 {
-	return -ENOTSUPP;
+	return -EOPNOTSUPP;
 }
 #endif
 
