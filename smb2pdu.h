@@ -1195,6 +1195,7 @@ struct smb2_set_info_rsp {
 #define FS_SECTOR_SIZE_INFORMATION_SIZE 28
 #define FS_OBJECT_ID_INFORMATION_SIZE 64
 #define FS_CONTROL_INFORMATION_SIZE 48
+#define FS_POSIX_INFORMATION_SIZE 56
 
 /* FS_ATTRIBUTE_File_System_Name */
 #define FS_TYPE_SUPPORT_SIZE   44
@@ -1254,7 +1255,7 @@ struct smb2_lease_ack {
 #define FS_OBJECT_ID_INFORMATION	8 /* Query, Set */
 #define FS_DRIVER_PATH_INFORMATION	9 /* Query */
 #define FS_SECTOR_SIZE_INFORMATION	11 /* SMB3 or later. Query */
-
+#define FS_POSIX_INFORMATION		100 /* SMB3.1.1 POSIX. Query */
 
 struct smb2_fs_full_size_info {
 	__le64 TotalAllocationUnits;

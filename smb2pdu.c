@@ -4953,6 +4953,31 @@ static int smb2_get_info_filesystem(struct ksmbd_work *work,
 		fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
 		break;
 	}
+	case FS_POSIX_INFORMATION:
+	{
+		struct filesystem_posix_info *info;
+		unsigned short logical_sector_size;
+
+		if (!work->tcon->posix_extensions) {
+			ksmbd_err("client doesn't negotiate with SMB3.1.1 POSIX Extensions\n");
+			rc = -EOPNOTSUPP;
+		} else {
+			info = (struct filesystem_posix_info *)(rsp->Buffer);
+			logical_sector_size =
+				ksmbd_vfs_logical_sector_size(d_inode(path.dentry));
+			info->OptimalTransferSize = cpu_to_le32(logical_sector_size);
+			info->BlockSize = cpu_to_le32(stfs.f_bsize);
+			info->TotalBlocks = cpu_to_le64(stfs.f_blocks);
+			info->BlocksAvail = cpu_to_le64(stfs.f_bfree);
+			info->UserBlocksAvail = cpu_to_le64(stfs.f_bavail);
+			info->TotalFileNodes = cpu_to_le64(stfs.f_files);
+			info->FreeFileNodes = cpu_to_le64(stfs.f_ffree);
+			rsp->OutputBufferLength = cpu_to_le32(56);
+			inc_rfc1001_len(rsp_org, 56);
+			fs_infoclass_size = FS_POSIX_INFORMATION_SIZE;
+		}
+		break;
+	}
 	default:
 		path_put(&path);
 		return -EOPNOTSUPP;
