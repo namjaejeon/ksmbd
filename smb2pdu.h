@@ -14,7 +14,7 @@
  * Note that, due to trying to use names similar to the protocol specifications,
  * there are many mixed case field names in the structures below.  Although
  * this does not match typical Linux kernel style, it is necessary to be
- * be able to match against the protocol specfication.
+ * able to match against the protocol specfication.
  *
  * SMB2 commands
  * Some commands have minimal (wct=0,bcc=0), or uninteresting, responses
@@ -703,6 +703,16 @@ struct create_disk_id_rsp {
 	__u8  Reserved[16];
 } __packed;
 
+/* equivalent of the contents of SMB3.1.1 POSIX open context response */
+struct create_posix_rsp {
+	struct create_context ccontext;
+	__u8    Name[16];
+	__le32 nlink;
+	__le32 reparse_tag;
+	__le32 mode;
+	u8 SidBuffer[40];
+} __packed;
+
 #define SMB2_LEASE_NONE_LE			cpu_to_le32(0x00)
 #define SMB2_LEASE_READ_CACHING_LE		cpu_to_le32(0x01)
 #define SMB2_LEASE_HANDLE_CACHING_LE		cpu_to_le32(0x02)
@@ -1195,6 +1205,7 @@ struct smb2_set_info_rsp {
 #define FS_SECTOR_SIZE_INFORMATION_SIZE 28
 #define FS_OBJECT_ID_INFORMATION_SIZE 64
 #define FS_CONTROL_INFORMATION_SIZE 48
+#define FS_POSIX_INFORMATION_SIZE 56
 
 /* FS_ATTRIBUTE_File_System_Name */
 #define FS_TYPE_SUPPORT_SIZE   44
@@ -1254,7 +1265,7 @@ struct smb2_lease_ack {
 #define FS_OBJECT_ID_INFORMATION	8 /* Query, Set */
 #define FS_DRIVER_PATH_INFORMATION	9 /* Query */
 #define FS_SECTOR_SIZE_INFORMATION	11 /* SMB3 or later. Query */
-
+#define FS_POSIX_INFORMATION		100 /* SMB3.1.1 POSIX. Query */
 
 struct smb2_fs_full_size_info {
 	__le64 TotalAllocationUnits;
@@ -1505,6 +1516,62 @@ struct create_sd_buf_req {
 	struct create_context ccontext;
 	__u8   Name[8];
 	struct smb_ntsd ntsd;
+} __packed;
+
+/* Find File infolevels */
+#define SMB_FIND_FILE_POSIX_INFO	0x064
+
+/* Level 100 query info */
+struct smb311_posix_qinfo {
+	__le64 CreationTime;
+	__le64 LastAccessTime;
+	__le64 LastWriteTime;
+	__le64 ChangeTime;
+	__le64 EndOfFile;
+	__le64 AllocationSize;
+	__le32 DosAttributes;
+	__le64 Inode;
+	__le32 DeviceId;
+	__le32 Zero;
+	/* beginning of POSIX Create Context Response */
+	__le32 HardLinks;
+	__le32 ReparseTag;
+	__le32 Mode;
+	u8     Sids[];
+	/*
+	 * var sized owner SID
+	 * var sized group SID
+	 * le32 filenamelength
+	 * u8  filename[]
+	 */
+} __packed;
+
+struct smb2_posix_info {
+	__le32 NextEntryOffset;
+	__u32 Ignored;
+	__le64 CreationTime;
+	__le64 LastAccessTime;
+	__le64 LastWriteTime;
+	__le64 ChangeTime;
+	__le64 EndOfFile;
+	__le64 AllocationSize;
+	__le32 DosAttributes;
+	__le64 Inode;
+	__le32 DeviceId;
+	__le32 Zero;
+	/* beginning of POSIX Create Context Response */
+	__le32 HardLinks;
+	__le32 ReparseTag;
+	__le32 Mode;
+	u8 SidBuffer[40];
+	__le32 name_len;
+	u8 name[1];
+	/*
+	 * var sized owner SID
+	 * var sized group SID
+	 * le32 filenamelength
+	 * u8  filename[]
+	 */
 } __packed;
 
 /* functions */

@@ -2464,13 +2464,13 @@ int smb2_open(struct ksmbd_work *work)
 	struct create_context *context;
 	struct lease_ctx_info *lc = NULL;
 	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
-		*mxac_ccontext = NULL, *disk_id_ccontext = NULL;
+		*mxac_ccontext = NULL, *disk_id_ccontext = NULL, *posix_ccontext;
 	struct create_ea_buf_req *ea_buf = NULL;
 	struct oplock_info *opinfo;
 	__le32 *next_ptr = NULL;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
-	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0;
+	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0, posix_ctxt = 0;
 	int s_type = 0;
 	int next_off = 0;
 	char *name = NULL;
@@ -2699,6 +2699,7 @@ int smb2_open(struct ksmbd_work *work)
 				ksmbd_debug(SMB, "get posix context\n");
 
 				posix_mode = le32_to_cpu(posix->Mode);
+				posix_ctxt = 1;
 			}
 		}
 	}
@@ -3182,6 +3183,22 @@ reconnected:
 		inc_rfc1001_len(rsp_org, conn->vals->create_disk_id_size);
 		if (next_ptr)
 			*next_ptr = cpu_to_le32(next_off);
+		next_ptr = &disk_id_ccontext->Next;
+		next_off = conn->vals->create_disk_id_size;
+	}
+
+	if (posix_ctxt) {
+		posix_ccontext = (struct create_context *)(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength));
+		contxt_cnt++;
+		create_posix_rsp_buf(rsp->Buffer +
+				le32_to_cpu(rsp->CreateContextsLength),
+				fp);
+		le32_add_cpu(&rsp->CreateContextsLength,
+			     conn->vals->create_posix_size);
+		inc_rfc1001_len(rsp_org, conn->vals->create_posix_size);
+		if (next_ptr)
+			*next_ptr = cpu_to_le32(next_off);
 	}
 
 	if (contxt_cnt > 0) {
@@ -3249,6 +3266,8 @@ static int readdir_info_level_struct_sz(int info_level)
 		return sizeof(struct file_id_full_dir_info);
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
 		return sizeof(struct file_id_both_directory_info);
+	case SMB_FIND_FILE_POSIX_INFO:
+		return sizeof(struct smb2_posix_info);
 	default:
 		return -EOPNOTSUPP;
 	}
@@ -3315,6 +3334,16 @@ static int dentry_name(struct ksmbd_dir_info *d_info, int info_level)
 		d_info->rptr += le32_to_cpu(fibdinfo->NextEntryOffset);
 		d_info->name = fibdinfo->FileName;
 		d_info->name_len = le32_to_cpu(fibdinfo->FileNameLength);
+		return 0;
+	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+
+		posix_info = (struct smb2_posix_info *)d_info->rptr;
+		d_info->rptr += le32_to_cpu(posix_info->NextEntryOffset);
+		d_info->name = posix_info->name;
+		d_info->name_len = le32_to_cpu(posix_info->name_len);
 		return 0;
 	}
 	default:
@@ -3454,6 +3483,40 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+		u64 time;
+
+		posix_info = (struct smb2_posix_info *)kstat;
+		posix_info->Ignored = 0;
+		posix_info->CreationTime = cpu_to_le64(ksmbd_kstat->create_time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->ctime);
+		posix_info->ChangeTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->atime);
+		posix_info->LastAccessTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(ksmbd_kstat->kstat->mtime);
+		posix_info->LastWriteTime = cpu_to_le64(time);
+		posix_info->EndOfFile = cpu_to_le64(ksmbd_kstat->kstat->size);
+		posix_info->AllocationSize = cpu_to_le64(ksmbd_kstat->kstat->blocks << 9);
+		posix_info->DeviceId = cpu_to_le32(ksmbd_kstat->kstat->rdev);
+		posix_info->HardLinks = cpu_to_le32(ksmbd_kstat->kstat->nlink);
+		posix_info->Mode = cpu_to_le32(ksmbd_kstat->kstat->mode);
+		posix_info->Inode = cpu_to_le64(ksmbd_kstat->kstat->ino);
+		posix_info->DosAttributes =
+			S_ISDIR(ksmbd_kstat->kstat->mode) ? ATTR_DIRECTORY_LE : ATTR_ARCHIVE_LE;
+		if (d_info->hide_dot_file && d_info->name[0] == '.')
+			posix_info->DosAttributes |= ATTR_HIDDEN_LE;
+		id_to_sid(from_kuid(&init_user_ns, ksmbd_kstat->kstat->uid),
+				SIDNFS_USER, (struct smb_sid *)&posix_info->SidBuffer[0]);
+		id_to_sid(from_kgid(&init_user_ns, ksmbd_kstat->kstat->gid),
+				SIDNFS_GROUP, (struct smb_sid *)&posix_info->SidBuffer[20]);
+		memcpy(posix_info->name, conv_name, conv_len);
+		posix_info->name_len = cpu_to_le32(conv_len);
+		posix_info->NextEntryOffset = cpu_to_le32(next_entry_offset);
+		break;
+	}
+
 	} /* switch (info_level) */
 
 	d_info->last_entry_offset = d_info->data_count;
@@ -3635,6 +3698,18 @@ static int reserve_populate_dentry(struct ksmbd_dir_info *d_info,
 		fibdinfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		break;
 	}
+	case SMB_FIND_FILE_POSIX_INFO:
+	{
+		struct smb2_posix_info *posix_info;
+
+		posix_info = (struct smb2_posix_info *)d_info->wptr;
+		memcpy(posix_info->name, d_info->name, d_info->name_len);
+		posix_info->name[d_info->name_len] = 0x00;
+		posix_info->name_len = cpu_to_le32(d_info->name_len);
+		posix_info->NextEntryOffset =
+			cpu_to_le32(next_entry_offset);
+		break;
+	}
 	} /* switch (info_level) */
 
 	d_info->num_entry++;
@@ -3696,6 +3771,7 @@ static int verify_info_level(int info_level)
 	case FILE_NAMES_INFORMATION:
 	case FILEID_FULL_DIRECTORY_INFORMATION:
 	case FILEID_BOTH_DIRECTORY_INFORMATION:
+	case SMB_FIND_FILE_POSIX_INFO:
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -4578,6 +4654,36 @@ static int get_file_attribute_tag_info(struct smb2_query_info_rsp *rsp,
 	return 0;
 }
 
+static int find_file_posix_info(struct smb2_query_info_rsp *rsp,
+					struct ksmbd_file *fp,
+					void *rsp_org)
+{
+	struct smb311_posix_qinfo *file_info;
+	struct inode *inode = FP_INODE(fp);
+	u64 time;
+
+	file_info = (struct smb311_posix_qinfo *)rsp->Buffer;
+	file_info->CreationTime = cpu_to_le64(fp->create_time);
+	time = ksmbd_UnixTimeToNT(inode->i_atime);
+	file_info->LastAccessTime = cpu_to_le64(time);
+	time = ksmbd_UnixTimeToNT(inode->i_mtime);
+	file_info->LastWriteTime = cpu_to_le64(time);
+	time = ksmbd_UnixTimeToNT(inode->i_ctime);
+	file_info->ChangeTime = cpu_to_le64(time);
+	file_info->DosAttributes = fp->f_ci->m_fattr;
+	file_info->Inode = cpu_to_le64(inode->i_ino);
+	file_info->EndOfFile = cpu_to_le64(inode->i_size);
+	file_info->AllocationSize = cpu_to_le64(inode->i_blocks << 9);
+	file_info->HardLinks = cpu_to_le32(inode->i_nlink);
+	file_info->Mode = cpu_to_le32(inode->i_mode);
+	file_info->DeviceId = cpu_to_le32(inode->i_rdev);
+	rsp->OutputBufferLength =
+		cpu_to_le32(sizeof(struct smb311_posix_qinfo));
+	inc_rfc1001_len(rsp_org,
+		sizeof(struct smb311_posix_qinfo));
+	return 0;
+}
+
 /**
  * smb2_get_info_file() - handler for smb2 query info command
  * @work:	smb work containing query info request buffer
@@ -4696,7 +4802,15 @@ static int smb2_get_info_file(struct ksmbd_work *work,
 		rc = get_file_attribute_tag_info(rsp, fp, rsp_org);
 		file_infoclass_size = FILE_ATTRIBUTE_TAG_INFORMATION_SIZE;
 		break;
-
+	case SMB_FIND_FILE_POSIX_INFO:
+		if (!work->tcon->posix_extensions) {
+			ksmbd_err("client doesn't negotiate with SMB3.1.1 POSIX Extensions\n");
+			rc = -EOPNOTSUPP;
+		} else {
+			rc = find_file_posix_info(rsp, fp, rsp_org);
+			file_infoclass_size = sizeof(struct smb311_posix_qinfo);
+		}
+		break;
 	default:
 		ksmbd_debug(SMB, "fileinfoclass %d not supported yet\n",
 			    fileinfoclass);
@@ -4913,6 +5027,31 @@ static int smb2_get_info_filesystem(struct ksmbd_work *work,
 		rsp->OutputBufferLength = cpu_to_le32(48);
 		inc_rfc1001_len(rsp_org, 48);
 		fs_infoclass_size = FS_CONTROL_INFORMATION_SIZE;
+		break;
+	}
+	case FS_POSIX_INFORMATION:
+	{
+		struct filesystem_posix_info *info;
+		unsigned short logical_sector_size;
+
+		if (!work->tcon->posix_extensions) {
+			ksmbd_err("client doesn't negotiate with SMB3.1.1 POSIX Extensions\n");
+			rc = -EOPNOTSUPP;
+		} else {
+			info = (struct filesystem_posix_info *)(rsp->Buffer);
+			logical_sector_size =
+				ksmbd_vfs_logical_sector_size(d_inode(path.dentry));
+			info->OptimalTransferSize = cpu_to_le32(logical_sector_size);
+			info->BlockSize = cpu_to_le32(stfs.f_bsize);
+			info->TotalBlocks = cpu_to_le64(stfs.f_blocks);
+			info->BlocksAvail = cpu_to_le64(stfs.f_bfree);
+			info->UserBlocksAvail = cpu_to_le64(stfs.f_bavail);
+			info->TotalFileNodes = cpu_to_le64(stfs.f_files);
+			info->FreeFileNodes = cpu_to_le64(stfs.f_ffree);
+			rsp->OutputBufferLength = cpu_to_le32(56);
+			inc_rfc1001_len(rsp_org, 56);
+			fs_infoclass_size = FS_POSIX_INFORMATION_SIZE;
+		}
 		break;
 	}
 	default:
