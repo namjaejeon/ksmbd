@@ -1780,7 +1780,7 @@ out_err1:
 static int smb2_create_open_flags(bool file_present, __le32 access,
 		__le32 disposition)
 {
-	int oflags = 0;
+	int oflags = O_NONBLOCK | O_LARGEFILE;
 
 	if ((access & FILE_READ_DESIRED_ACCESS &&
 			access & FILE_WRITE_DESIRE_ACCESS) ||
@@ -2873,7 +2873,7 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 	rc = 0;
-	filp = dentry_open(&path, open_flags | O_LARGEFILE, current_cred());
+	filp = dentry_open(&path, open_flags, current_cred());
 	if (IS_ERR(filp)) {
 		rc = PTR_ERR(filp);
 		ksmbd_err("dentry open for dir failed, rc %d\n", rc);
