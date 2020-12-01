@@ -548,7 +548,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 
 	if (acl_state.users->n || acl_state.groups->n) {
 		acl_state.mask.allow = 0x07;
-		fattr->cf_acls = posix_acl_alloc(acl_state.users->n +
+		fattr->cf_acls = ksmbd_vfs_posix_acl_alloc(acl_state.users->n +
 			acl_state.groups->n + 4, GFP_KERNEL);
 		if (fattr->cf_acls) {
 			cf_pace = fattr->cf_acls->a_entries;
@@ -558,7 +558,8 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 
 	if (default_acl_state.users->n || default_acl_state.groups->n) {
 		default_acl_state.mask.allow = 0x07;
-		fattr->cf_dacls = posix_acl_alloc(default_acl_state.users->n +
+		fattr->cf_dacls =
+			ksmbd_vfs_posix_acl_alloc(default_acl_state.users->n +
 			default_acl_state.groups->n + 4, GFP_KERNEL);
 		if (fattr->cf_dacls) {
 			cf_pdace = fattr->cf_dacls->a_entries;
@@ -1056,7 +1057,7 @@ int smb_inherit_posix_acl(struct inode *inode, struct inode *parent_inode)
 	struct posix_acl_entry *pace;
 	int rc, i;
 
-	acls = get_acl(parent_inode, ACL_TYPE_DEFAULT);
+	acls = ksmbd_vfs_get_acl(parent_inode, ACL_TYPE_DEFAULT);
 	if (!acls)
 		return -ENOENT;
 	pace = acls->a_entries;
@@ -1165,7 +1166,7 @@ int smb_check_perm_dacl(struct dentry *dentry, __le32 *pdaccess, int uid)
 			granted = GENERIC_ALL_FLAGS;
 	}
 
-	posix_acls = get_acl(dentry->d_inode, ACL_TYPE_ACCESS);
+	posix_acls = ksmbd_vfs_get_acl(dentry->d_inode, ACL_TYPE_ACCESS);
 	if (posix_acls && !found) {
 		unsigned int id = -1;
 
@@ -1326,7 +1327,7 @@ int store_init_posix_acl(struct inode *inode)
 		acl_state.group.allow;
 	acl_state.mask.allow = 0x07;
 
-	acls = posix_acl_alloc(6, GFP_KERNEL);
+	acls = ksmbd_vfs_posix_acl_alloc(6, GFP_KERNEL);
 	if (!acls)
 		return -ENOMEM;
 	posix_state_to_acl(&acl_state, acls->a_entries);

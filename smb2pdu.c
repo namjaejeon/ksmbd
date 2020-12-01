@@ -5102,9 +5102,9 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	fattr.cf_mode = inode->i_mode;
 	fattr.cf_dacls = NULL;
 
-	fattr.cf_acls = get_acl(inode, ACL_TYPE_ACCESS);
+	fattr.cf_acls = ksmbd_vfs_get_acl(inode, ACL_TYPE_ACCESS);
 	if (S_ISDIR(inode->i_mode))
-		fattr.cf_dacls = get_acl(inode, ACL_TYPE_DEFAULT);
+		fattr.cf_dacls = ksmbd_vfs_get_acl(inode, ACL_TYPE_DEFAULT);
 
 	fattr.ntacl = ksmbd_vfs_get_sd_xattr(fp->filp->f_path.dentry);
 
