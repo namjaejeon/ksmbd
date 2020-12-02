@@ -2856,7 +2856,11 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 		}
 	} else {
-		if (!(req->DesiredAccess & FILE_MAXIMAL_ACCESS_LE) &&
+		/* FILE_READ_ATTRIBUTE is allowed without inode_permission,
+		 * because execute(search) permission on a parent directory,
+		 * is already granted.
+		 */
+		if (le32_to_cpu(daccess) != FILE_READ_ATTRIBUTES &&
 			ksmbd_vfs_inode_permission(path.dentry,
 			open_flags & O_ACCMODE,
 			req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
