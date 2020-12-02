@@ -1791,6 +1791,9 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 	else
 		oflags |= O_RDONLY;
 
+	if (access == FILE_READ_ATTRIBUTES_LE)
+		oflags |= O_PATH;
+
 	if (file_present) {
 		switch (disposition & FILE_CREATE_MASK_LE) {
 		case FILE_OPEN_LE:
