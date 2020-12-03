@@ -527,7 +527,6 @@ struct smb2_tree_disconnect_rsp {
 					FILE_APPEND_DATA_LE |		\
 					FILE_WRITE_EA_LE |		\
 					FILE_WRITE_ATTRIBUTES_LE |	\
-					FILE_DELETE_LE |		\
 					FILE_GENERIC_WRITE_LE)
 #define FILE_RW_DESIRED_ACCESS		(FILE_GENERIC_ALL_LE)
 
