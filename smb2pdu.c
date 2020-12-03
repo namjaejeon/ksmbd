@@ -1804,9 +1804,8 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 {
 	int oflags = O_NONBLOCK | O_LARGEFILE;
 
-	if ((access & FILE_READ_DESIRED_ACCESS &&
-			access & FILE_WRITE_DESIRE_ACCESS) ||
-			access & FILE_WRITE_DAC_LE)
+	if (access & FILE_READ_DESIRED_ACCESS &&
+			access & FILE_WRITE_DESIRE_ACCESS)
 		oflags |= O_RDWR;
 	else if (access & FILE_WRITE_DESIRE_ACCESS)
 		oflags |= O_WRONLY;
@@ -2882,10 +2881,18 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 		}
 	} else {
-		if (!(req->DesiredAccess & FILE_MAXIMAL_ACCESS_LE) &&
-			ksmbd_vfs_inode_permission(path.dentry,
-			open_flags & O_ACCMODE,
-			req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+		bool may_delete;
+
+		may_delete = daccess & FILE_DELETE_LE ||
+			req->CreateOptions & FILE_DELETE_ON_CLOSE_LE;
+
+		/* FILE_READ_ATTRIBUTE is allowed without inode_permission,
+		 * because execute(search) permission on a parent directory,
+		 * is already granted.
+		 */
+		if (le32_to_cpu(daccess) != FILE_READ_ATTRIBUTES &&
+				ksmbd_vfs_inode_permission(path.dentry,
+				open_flags & O_ACCMODE, may_delete)) {
 			rc = -EACCES;
 			goto err_out;
 		}
