@@ -1804,10 +1804,10 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 {
 	int oflags = O_NONBLOCK | O_LARGEFILE;
 
-	if (access & FILE_READ_DESIRED_ACCESS &&
-			access & FILE_WRITE_DESIRE_ACCESS)
+	if (access & FILE_READ_DESIRED_ACCESS_LE &&
+			access & FILE_WRITE_DESIRE_ACCESS_LE)
 		oflags |= O_RDWR;
-	else if (access & FILE_WRITE_DESIRE_ACCESS)
+	else if (access & FILE_WRITE_DESIRE_ACCESS_LE)
 		oflags |= O_WRONLY;
 	else
 		oflags |= O_RDONLY;
