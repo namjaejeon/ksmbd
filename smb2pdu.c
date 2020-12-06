@@ -2890,11 +2890,13 @@ int smb2_open(struct ksmbd_work *work)
 		 * because execute(search) permission on a parent directory,
 		 * is already granted.
 		 */
-		if (le32_to_cpu(daccess) != FILE_READ_ATTRIBUTES &&
-				ksmbd_vfs_inode_permission(path.dentry,
-				open_flags & O_ACCMODE, may_delete)) {
-			rc = -EACCES;
-			goto err_out;
+		if (daccess != FILE_READ_ATTRIBUTES_LE &&
+				daccess != FILE_READ_CONTROL_LE) {
+			if (ksmbd_vfs_inode_permission(path.dentry,
+					open_flags & O_ACCMODE, may_delete)) {
+				rc = -EACCES;
+				goto err_out;
+			}
 		}
 	}
 
