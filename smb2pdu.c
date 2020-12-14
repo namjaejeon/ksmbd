@@ -5320,33 +5320,39 @@ int smb2_close(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "volatile_id = %u\n", volatile_id);
 
 	rsp->StructureSize = cpu_to_le16(60);
-	rsp->Flags = 0;
 	rsp->Reserved = 0;
-	rsp->AllocationSize = 0;
-	rsp->EndOfFile = 0;
-	rsp->Attributes = 0;
 
-	fp = ksmbd_lookup_fd_fast(work, volatile_id);
-	if (!fp) {
-		err = -ENOENT;
-		goto out;
+	if (req->Flags == SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB) {
+		fp = ksmbd_lookup_fd_fast(work, volatile_id);
+		if (!fp) {
+			err = -ENOENT;
+			goto out;
+		}
+
+		inode = FP_INODE(fp);
+		rsp->Flags = SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB;
+		rsp->AllocationSize = S_ISDIR(inode->i_mode) ? 0 :
+			cpu_to_le64(inode->i_blocks << 9);
+		rsp->EndOfFile = inode->i_size;
+		rsp->Attributes = fp->f_ci->m_fattr;
+		rsp->CreationTime = cpu_to_le64(fp->create_time);
+		time = ksmbd_UnixTimeToNT(inode->i_atime);
+		rsp->LastAccessTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(inode->i_mtime);
+		rsp->LastWriteTime = cpu_to_le64(time);
+		time = ksmbd_UnixTimeToNT(inode->i_ctime);
+		rsp->ChangeTime = cpu_to_le64(time);
+		ksmbd_fd_put(work, fp);
+	} else {
+		rsp->Flags = 0;
+		rsp->AllocationSize = 0;
+		rsp->EndOfFile = 0;
+		rsp->Attributes = 0;
+		rsp->CreationTime = 0;
+		rsp->LastAccessTime = 0;
+		rsp->LastWriteTime = 0;
+		rsp->ChangeTime = 0;
 	}
-
-	inode = FP_INODE(fp);
-	rsp->StructureSize = cpu_to_le16(60);
-	rsp->Flags = 0;
-	rsp->Reserved = 0;
-	rsp->CreationTime = cpu_to_le64(fp->create_time);
-	time = ksmbd_UnixTimeToNT(inode->i_atime);
-	rsp->LastAccessTime = cpu_to_le64(time);
-	time = ksmbd_UnixTimeToNT(inode->i_mtime);
-	rsp->LastWriteTime = cpu_to_le64(time);
-	time = ksmbd_UnixTimeToNT(inode->i_ctime);
-	rsp->ChangeTime = cpu_to_le64(time);
-	rsp->AllocationSize = 0;
-	rsp->EndOfFile = 0;
-	rsp->Attributes = 0;
-	ksmbd_fd_put(work, fp);
 
 	err = ksmbd_close_fd(work, volatile_id);
 out:
