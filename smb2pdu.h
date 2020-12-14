@@ -519,17 +519,15 @@ struct smb2_tree_disconnect_rsp {
 #define FILE_OVERWRITE_IF_LE		cpu_to_le32(0x00000005)
 #define FILE_CREATE_MASK_LE		cpu_to_le32(0x00000007)
 
-#define FILE_READ_DESIRED_ACCESS	(FILE_READ_DATA_LE |		\
+#define FILE_READ_DESIRED_ACCESS_LE	(FILE_READ_DATA_LE |		\
 					FILE_READ_EA_LE |		\
 					FILE_READ_ATTRIBUTES_LE |	\
 					FILE_GENERIC_READ_LE)
-#define FILE_WRITE_DESIRE_ACCESS	(FILE_WRITE_DATA_LE |		\
+#define FILE_WRITE_DESIRE_ACCESS_LE	(FILE_WRITE_DATA_LE |		\
 					FILE_APPEND_DATA_LE |		\
 					FILE_WRITE_EA_LE |		\
 					FILE_WRITE_ATTRIBUTES_LE |	\
-					FILE_DELETE_LE |		\
 					FILE_GENERIC_WRITE_LE)
-#define FILE_RW_DESIRED_ACCESS		(FILE_GENERIC_ALL_LE)
 
 /* Impersonation Levels */
 #define IL_ANONYMOUS_LE		cpu_to_le32(0x00000000)
@@ -974,6 +972,13 @@ struct file_zero_data_information {
 struct file_allocated_range_buffer {
 	__le64	file_offset;
 	__le64	length;
+} __packed;
+
+struct reparse_data_buffer {
+	__le32	ReparseTag;
+	__le16	ReparseDataLength;
+	__u16	Reserved;
+	__u8	DataBuffer[]; /* Variable Length */
 } __packed;
 
 /* Completion Filter flags for Notify */
