@@ -644,6 +644,7 @@ int ksmbd_override_fsids(struct ksmbd_work *work)
 	struct ksmbd_session *sess = work->sess;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct cred *cred;
+	struct group_info *gi;
 	unsigned int uid;
 	unsigned int gid;
 
@@ -667,6 +668,15 @@ int ksmbd_override_fsids(struct ksmbd_work *work)
 
 	cred->fsuid = make_kuid(current_user_ns(), uid);
 	cred->fsgid = make_kgid(current_user_ns(), gid);
+
+	gi = groups_alloc(0);
+	if (!gi) {
+		abort_creds(cred);
+		return -ENOMEM;
+	}
+	set_groups(cred, gi);
+	put_group_info(gi);
+
 	if (!uid_eq(cred->fsuid, GLOBAL_ROOT_UID))
 		cred->cap_effective = cap_drop_fs_set(cred->cap_effective);
 
