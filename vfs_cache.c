@@ -584,7 +584,7 @@ static int __open_id(struct ksmbd_file_table *ft,
 
 	idr_preload(GFP_KERNEL);
 	write_lock(&ft->lock);
-	ret = idr_alloc(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
+	ret = idr_alloc_cyclic(ft->idr, fp, 0, INT_MAX, GFP_NOWAIT);
 	if (ret >= 0) {
 		id = ret;
 		ret = 0;
