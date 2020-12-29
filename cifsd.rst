@@ -75,23 +75,22 @@ The supported features are:
  * Pre-authentication integrity(SMB 3.1.1)
  * SMB3 encryption(CCM, GCM)
  * SMB direct(RDMA)
- * The part of POSIX extension support (posix context, modebit)
+ * SMB3.1.1 POSIX extension support
+ * ACLs
+ * Kerberos
 
 The features that are planned or not supported:
  * SMB3 Multi-channel
  * Durable handle v1,v2
- * Kerberos
  * Persistent handles
  * Directory lease
- * WinAcl
- * POSIX extension support
  * SMB2 notify
 
 How to run
 ==========
 
-1. Download cifsd-tools and compile them.
-	- https://github.com/cifsd-team/cifsd-tools
+1. Download ksmbd-tools and compile them.
+	- https://github.com/cifsd-team/ksmbd-tools
 
 2. Create user/password for SMB share.
 
@@ -100,7 +99,7 @@ How to run
 
 3. Create /etc/ksmbd/smb.conf file, add SMB share in smb.conf file
 	- Refer smb.conf.example and Documentation/configuration.txt
-	  in cifsd-tools
+	  in ksmbd-tools
 
 4. Insert ksmbd.ko module
 
