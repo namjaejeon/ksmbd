@@ -5333,7 +5333,7 @@ int smb2_close(struct ksmbd_work *work)
 		rsp->Flags = SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB;
 		rsp->AllocationSize = S_ISDIR(inode->i_mode) ? 0 :
 			cpu_to_le64(inode->i_blocks << 9);
-		rsp->EndOfFile = inode->i_size;
+		rsp->EndOfFile = cpu_to_le64(inode->i_size);
 		rsp->Attributes = fp->f_ci->m_fattr;
 		rsp->CreationTime = cpu_to_le64(fp->create_time);
 		time = ksmbd_UnixTimeToNT(inode->i_atime);
