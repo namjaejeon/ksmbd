@@ -641,10 +641,6 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work,
 		return ERR_PTR(ret);
 	}
 
-	write_lock(&fp->f_ci->m_lock);
-	list_add(&fp->node, &fp->f_ci->m_fp_list);
-	write_unlock(&fp->f_ci->m_lock);
-
 	atomic_inc(&work->conn->stats.open_files_count);
 	return fp;
 }
