@@ -7786,7 +7786,7 @@ static void smb20_oplock_break_ack(struct ksmbd_work *work)
 	}
 
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
-		ksmbd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
+		ksmbd_debug(SMB, "unexpected oplock state 0x%x\n", opinfo->op_state);
 		rsp->hdr.Status = STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}
