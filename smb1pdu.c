@@ -2483,6 +2483,10 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	fp->saccess = req->ShareAccess;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
+
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
 	if (smb1_oplock_enable &&
 	    test_share_config_flag(work->tcon->share_conf,
@@ -4937,6 +4941,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 	fp->filename = name;
 	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
+
 	if (smb1_oplock_enable &&
 	    test_share_config_flag(work->tcon->share_conf,
 			KSMBD_SHARE_FLAG_OPLOCKS) &&
@@ -5963,6 +5971,10 @@ static int find_first(struct ksmbd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
+
+	write_lock(&dir_fp->f_ci->m_lock);
+	list_add(&dir_fp->node, &dir_fp->f_ci->m_fp_list);
+	write_unlock(&dir_fp->f_ci->m_lock);
 
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
@@ -8094,6 +8106,10 @@ int smb_open_andx(struct ksmbd_work *work)
 		goto free_path;
 	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
+
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
 
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
 	if (smb1_oplock_enable &&
