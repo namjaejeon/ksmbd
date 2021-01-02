@@ -1666,27 +1666,23 @@ int ksmbd_vfs_fqar_lseek(struct ksmbd_file *fp, loff_t start, loff_t length,
 	*out_count = 0;
 	end = start + length;
 	while (start < end && *out_count < in_count) {
-		ret = extent_start = f->f_op->llseek(f, start, SEEK_DATA);
-		if (ret < 0) {
-			if (ret == -ENXIO)
-				ret = 0;
+		extent_start = f->f_op->llseek(f, start, SEEK_DATA);
+		if (extent_start < 0) {
+			if (extent_start != -ENXIO)
+				ret = (int)extent_start;
 			break;
 		}
-		ret = 0;
 
 		if (extent_start >= end)
 			break;
 
-		ret = extent_end = f->f_op->llseek(f, extent_start, SEEK_HOLE);
-		if (ret < 0) {
-			if (ret == -ENXIO)
-				ret = 0;
+		extent_end = f->f_op->llseek(f, extent_start, SEEK_HOLE);
+		if (extent_end < 0) {
+			if (extent_end != -ENXIO)
+				ret = (int)extent_end;
 			break;
-		} else if (extent_start >= extent_end) {
-			ret = 0;
+		} else if (extent_start >= extent_end)
 			break;
-		}
-		ret = 0;
 
 		ranges[*out_count].file_offset = cpu_to_le64(extent_start);
 		ranges[(*out_count)++].length =
