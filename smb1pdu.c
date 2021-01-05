@@ -7269,6 +7269,12 @@ static int create_dir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7309,6 +7315,7 @@ static int create_dir(struct ksmbd_work *work)
 	}
 
 	memset(&rsp->hdr.WordCount, 0, 3);
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }
@@ -7426,6 +7433,12 @@ int smb_mkdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7469,6 +7482,7 @@ int smb_mkdir(struct ksmbd_work *work)
 		path_put(&path);
 	}
 
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }
