@@ -7269,6 +7269,12 @@ static int create_dir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7282,6 +7288,7 @@ static int create_dir(struct ksmbd_work *work)
 					STATUS_OBJECT_NAME_COLLISION;
 		} else
 			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
+		goto out;
 	} else
 		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 
@@ -7303,12 +7310,14 @@ static int create_dir(struct ksmbd_work *work)
 						 0);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
-			err = 0;
+			path_put(&path);
 		}
-		path_put(&path);
+		err = 0;
 	}
 
+out:
 	memset(&rsp->hdr.WordCount, 0, 3);
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }
@@ -7426,6 +7435,12 @@ int smb_mkdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7439,6 +7454,7 @@ int smb_mkdir(struct ksmbd_work *work)
 					STATUS_OBJECT_NAME_COLLISION;
 		} else
 			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
+		goto out;
 	} else {
 		/* mkdir success, return response to server */
 		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -7464,11 +7480,13 @@ int smb_mkdir(struct ksmbd_work *work)
 						 0);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
-			err = 0;
+			path_put(&path);
 		}
-		path_put(&path);
+		err = 0;
 	}
 
+out:
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }

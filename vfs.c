@@ -201,9 +201,6 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work,
 	struct dentry *dentry;
 	int err;
 
-	if (ksmbd_override_fsids(work))
-		return -ENOMEM;
-
 	dentry = kern_path_create(AT_FDCWD, name, &path, LOOKUP_DIRECTORY);
 	if (IS_ERR(dentry)) {
 		ksmbd_revert_fsids(work);
@@ -224,7 +221,6 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work,
 		ksmbd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 
 	done_path_create(&path, dentry);
-	ksmbd_revert_fsids(work);
 	return err;
 }
 
