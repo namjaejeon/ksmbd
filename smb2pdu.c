@@ -2988,6 +2988,14 @@ int smb2_open(struct ksmbd_work *work)
 		need_truncate = 1;
 	}
 
+	/* fp should be searchable through ksmbd_inode.m_fp_list
+	 * after daccess, saccess, attrib_only, and stream are
+	 * initialized.
+	 */
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
+
 	generic_fillattr(d_inode(path.dentry), &stat);
 
 	/* Check delete pending among previous fp before oplock break */
@@ -5333,7 +5341,7 @@ int smb2_close(struct ksmbd_work *work)
 		rsp->Flags = SMB2_CLOSE_FLAG_POSTQUERY_ATTRIB;
 		rsp->AllocationSize = S_ISDIR(inode->i_mode) ? 0 :
 			cpu_to_le64(inode->i_blocks << 9);
-		rsp->EndOfFile = inode->i_size;
+		rsp->EndOfFile = cpu_to_le64(inode->i_size);
 		rsp->Attributes = fp->f_ci->m_fattr;
 		rsp->CreationTime = cpu_to_le64(fp->create_time);
 		time = ksmbd_UnixTimeToNT(inode->i_atime);
@@ -7786,7 +7794,7 @@ static void smb20_oplock_break_ack(struct ksmbd_work *work)
 	}
 
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
-		ksmbd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
+		ksmbd_debug(SMB, "unexpected oplock state 0x%x\n", opinfo->op_state);
 		rsp->hdr.Status = STATUS_UNSUCCESSFUL;
 		goto err_out;
 	}

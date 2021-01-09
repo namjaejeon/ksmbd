@@ -2483,6 +2483,10 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	fp->saccess = req->ShareAccess;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
+
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
 	if (smb1_oplock_enable &&
 	    test_share_config_flag(work->tcon->share_conf,
@@ -2865,9 +2869,10 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
 		FP_FILENAME(fp), pos, count);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF)
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
 		work->aux_payload_buf = ksmbd_find_buffer(count);
-	else
+		work->set_read_buf = true;
+	} else
 		work->aux_payload_buf = ksmbd_alloc_response(count);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
@@ -4937,6 +4942,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 	fp->filename = name;
 	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
+
 	if (smb1_oplock_enable &&
 	    test_share_config_flag(work->tcon->share_conf,
 			KSMBD_SHARE_FLAG_OPLOCKS) &&
@@ -5963,6 +5972,10 @@ static int find_first(struct ksmbd_work *work)
 		rc = -EINVAL;
 		goto err_out;
 	}
+
+	write_lock(&dir_fp->f_ci->m_lock);
+	list_add(&dir_fp->node, &dir_fp->f_ci->m_fp_list);
+	write_unlock(&dir_fp->f_ci->m_lock);
 
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
@@ -7257,6 +7270,12 @@ static int create_dir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7270,6 +7289,7 @@ static int create_dir(struct ksmbd_work *work)
 					STATUS_OBJECT_NAME_COLLISION;
 		} else
 			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
+		goto out;
 	} else
 		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 
@@ -7291,12 +7311,14 @@ static int create_dir(struct ksmbd_work *work)
 						 0);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
-			err = 0;
+			path_put(&path);
 		}
-		path_put(&path);
+		err = 0;
 	}
 
+out:
 	memset(&rsp->hdr.WordCount, 0, 3);
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }
@@ -7414,6 +7436,12 @@ int smb_mkdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
+		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
 	err = ksmbd_vfs_mkdir(work, name, mode);
 	if (err) {
 		if (err == -EEXIST) {
@@ -7427,6 +7455,7 @@ int smb_mkdir(struct ksmbd_work *work)
 					STATUS_OBJECT_NAME_COLLISION;
 		} else
 			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
+		goto out;
 	} else {
 		/* mkdir success, return response to server */
 		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -7452,11 +7481,13 @@ int smb_mkdir(struct ksmbd_work *work)
 						 0);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
-			err = 0;
+			path_put(&path);
 		}
-		path_put(&path);
+		err = 0;
 	}
 
+out:
+	ksmbd_revert_fsids(work);
 	smb_put_name(name);
 	return err;
 }
@@ -8094,6 +8125,10 @@ int smb_open_andx(struct ksmbd_work *work)
 		goto free_path;
 	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
+
+	write_lock(&fp->f_ci->m_lock);
+	list_add(&fp->node, &fp->f_ci->m_fp_list);
+	write_unlock(&fp->f_ci->m_lock);
 
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
 	if (smb1_oplock_enable &&
