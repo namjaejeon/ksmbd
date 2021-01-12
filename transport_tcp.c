@@ -592,23 +592,23 @@ static bool iface_exists(const char *ifname)
 	return ret;
 }
 
-static int alloc_iface(char *ifname)
+static struct interface *alloc_iface(char *ifname)
 {
 	struct interface *iface;
 
 	if (!ifname)
-		return -ENOMEM;
+		return NULL;
 
 	iface = ksmbd_alloc(sizeof(struct interface));
 	if (!iface) {
 		kfree(ifname);
-		return -ENOMEM;
+		return NULL;
 	}
 
 	iface->name = ifname;
 	list_add(&iface->entry, &iface_list);
 	mutex_init(&iface->sock_release_lock);
-	return 0;
+	return iface;
 }
 
 int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
@@ -622,7 +622,7 @@ int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 		for_each_netdev(&init_net, netdev) {
 			if (netdev->priv_flags & IFF_BRIDGE_PORT)
 				continue;
-			if (alloc_iface(kstrdup(netdev->name, GFP_KERNEL)))
+			if (!alloc_iface(kstrdup(netdev->name, GFP_KERNEL)))
 				return -ENOMEM;
 		}
 		rtnl_unlock();
@@ -631,7 +631,7 @@ int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 
 	while (ifc_list_sz > 0) {
 		if (iface_exists(ifc_list)) {
-			if (alloc_iface(kstrdup(ifc_list, GFP_KERNEL)))
+			if (!alloc_iface(kstrdup(ifc_list, GFP_KERNEL)))
 				return -ENOMEM;
 		} else {
 			ksmbd_err("Unknown interface: %s\n", ifc_list);
