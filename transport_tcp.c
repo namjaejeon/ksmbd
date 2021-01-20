@@ -551,12 +551,13 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 			return NOTIFY_OK;
 
 		list_for_each_entry(iface, &iface_list, entry) {
-			if (!strcmp(iface->name, netdev->name) &&
-			    iface->state == IFACE_STATE_DOWN) {
+			if (!strcmp(iface->name, netdev->name)) {
+				found = 1;
+				if (iface->state != IFACE_STATE_DOWN)
+					break;
 				ret = create_socket(iface);
 				if (ret)
 					return NOTIFY_OK;
-				found = 1;
 				break;
 			}
 		}
