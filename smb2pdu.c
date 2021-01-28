@@ -9,6 +9,7 @@
 #include <linux/syscalls.h>
 #include <linux/namei.h>
 #include <linux/statfs.h>
+#include <linux/ethtool.h>
 
 #include "glob.h"
 #include "smb2pdu.h"
