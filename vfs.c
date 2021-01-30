@@ -51,6 +51,7 @@ static char *extract_last_component(char *path)
 		*p = '\0';
 		p++;
 	} else {
+		p = NULL;
 		ksmbd_err("Invalid path %s\n", path);
 	}
 	return p;
