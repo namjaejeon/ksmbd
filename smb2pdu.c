@@ -2480,7 +2480,7 @@ int smb2_open(struct ksmbd_work *work)
 	int next_off = 0;
 	char *name = NULL;
 	char *stream_name = NULL;
-	bool file_present = false, created = false;
+	bool file_present = false, created = false, already_permitted = false;
 	struct durable_info d_info;
 	int share_ret, need_truncate = 0;
 	u64 time;
@@ -2831,8 +2831,19 @@ int smb2_open(struct ksmbd_work *work)
 				sess->user->uid);
 		if (rc)
 			goto err_out;
-	} else if (daccess & FILE_MAXIMAL_ACCESS_LE)
-		daccess = cpu_to_le32(GENERIC_ALL_FLAGS);
+	}
+
+	if (daccess & FILE_MAXIMAL_ACCESS_LE) {
+		if (!file_present) {
+			daccess = cpu_to_le32(GENERIC_ALL_FLAGS);
+		} else {
+			rc = ksmbd_vfs_query_maximal_access(path.dentry,
+							    &daccess);
+			if (rc)
+				goto err_out;
+			already_permitted = true;
+		}
+	}
 
 	open_flags = smb2_create_open_flags(file_present,
 		daccess, req->CreateDisposition);
@@ -2861,7 +2872,7 @@ int smb2_open(struct ksmbd_work *work)
 			else if (rc)
 				goto err_out;
 		}
-	} else {
+	} else if (!already_permitted) {
 		bool may_delete;
 
 		may_delete = daccess & FILE_DELETE_LE ||
@@ -2871,8 +2882,8 @@ int smb2_open(struct ksmbd_work *work)
 		 * because execute(search) permission on a parent directory,
 		 * is already granted.
 		 */
-		if (daccess != FILE_READ_ATTRIBUTES_LE &&
-				daccess != FILE_READ_CONTROL_LE) {
+		if (daccess & ~(FILE_READ_ATTRIBUTES_LE |
+				FILE_READ_CONTROL_LE)) {
 			if (ksmbd_vfs_inode_permission(path.dentry,
 					open_flags & O_ACCMODE, may_delete)) {
 				rc = -EACCES;

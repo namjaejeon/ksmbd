@@ -149,6 +149,35 @@ int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
 	return 0;
 }
 
+int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
+{
+	struct dentry *parent;
+
+	*daccess = cpu_to_le32(FILE_READ_ATTRIBUTES | READ_CONTROL);
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_WRITE) == 0)
+		*daccess |= cpu_to_le32(WRITE_DAC | WRITE_OWNER | SYNCHRONIZE |
+				FILE_WRITE_DATA | FILE_APPEND_DATA |
+				FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES |
+				FILE_DELETE_CHILD);
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_READ) == 0)
+		*daccess |= FILE_READ_DATA_LE | FILE_READ_EA_LE;
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_EXEC) == 0)
+		*daccess |= FILE_EXECUTE_LE;
+
+	parent = dget_parent(dentry);
+	if (!parent)
+		return 0;
+
+	if (inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE) == 0)
+		*daccess |= FILE_DELETE_LE;
+	dput(parent);
+	return 0;
+}
+
+
 /**
  * ksmbd_vfs_create() - vfs helper for smb create file
  * @work:	work
