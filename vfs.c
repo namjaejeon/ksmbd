@@ -56,7 +56,7 @@ static char *extract_last_component(char *path)
 	return p;
 }
 
-static void roolback_path_modification(char *filename)
+static void rollback_path_modification(char *filename)
 {
 	if (filename) {
 		filename--;
@@ -893,7 +893,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
-		roolback_path_modification(last);
+		rollback_path_modification(last);
 		return err;
 	}
 
@@ -939,7 +939,7 @@ out_err:
 	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 out:
-	roolback_path_modification(last);
+	rollback_path_modification(last);
 	path_put(&parent);
 	ksmbd_revert_fsids(work);
 	return err;
@@ -2136,7 +2136,7 @@ int ksmbd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 	}
 
 out:
-	roolback_path_modification(filename);
+	rollback_path_modification(filename);
 	return err;
 }
 
