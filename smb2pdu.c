@@ -2475,7 +2475,8 @@ int smb2_open(struct ksmbd_work *work)
 	__le32 *next_ptr = NULL;
 	int req_op_level = 0, open_flags = 0, file_info = 0;
 	int rc = 0, len = 0;
-	int maximal_access = 0, contxt_cnt = 0, query_disk_id = 0, posix_ctxt = 0;
+	int contxt_cnt = 0, query_disk_id = 0;
+	int maximal_access_ctxt = 0, posix_ctxt = 0;
 	int s_type = 0;
 	int next_off = 0;
 	char *name = NULL;
@@ -2485,7 +2486,7 @@ int smb2_open(struct ksmbd_work *work)
 	int share_ret, need_truncate = 0;
 	u64 time;
 	umode_t posix_mode = 0;
-	__le32 daccess;
+	__le32 daccess, maximal_access = 0;
 
 	rsp_org = RESPONSE_BUF(work);
 	WORK_BUFFERS(work, req, rsp);
@@ -2674,7 +2675,7 @@ int smb2_open(struct ksmbd_work *work)
 			ksmbd_debug(SMB,
 				"get query maximal access context (timestamp : %llu)\n",
 				le64_to_cpu(mxac_req->Timestamp));
-			maximal_access = tcon->maximal_access;
+			maximal_access_ctxt = 1;
 		}
 
 		context = smb2_find_context_vals(req,
@@ -2843,6 +2844,7 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 			already_permitted = true;
 		}
+		maximal_access = daccess;
 	}
 
 	open_flags = smb2_create_open_flags(file_present,
@@ -3236,13 +3238,16 @@ reconnected:
 		next_off = conn->vals->create_durable_size;
 	}
 
-	if (maximal_access) {
+	if (maximal_access_ctxt) {
+		if (maximal_access == 0)
+			ksmbd_vfs_query_maximal_access(path.dentry,
+						       &maximal_access);
 		mxac_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
 		create_mxac_rsp_buf(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength),
-				maximal_access);
+				le32_to_cpu(maximal_access));
 		le32_add_cpu(&rsp->CreateContextsLength,
 			     conn->vals->create_mxac_size);
 		inc_rfc1001_len(rsp_org, conn->vals->create_mxac_size);
