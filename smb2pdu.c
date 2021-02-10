@@ -2405,21 +2405,21 @@ static int smb2_creat(struct ksmbd_work *work,
 		mode = share_config_directory_mode(share, posix_mode);
 		rc = ksmbd_vfs_mkdir(work, name, mode);
 		if (rc)
-			return -EIO;
+			return rc;
 	} else {
 		ksmbd_debug(SMB, "creating regular file\n");
 
 		mode = share_config_create_mode(share, posix_mode);
 		rc = ksmbd_vfs_create(work, name, mode);
 		if (rc)
-			return -EIO;
+			return rc;
 	}
 
 	rc = ksmbd_vfs_kern_path(name, 0, path, 0);
 	if (rc) {
 		ksmbd_err("cannot get linux path (%s), err = %d\n",
 				name, rc);
-		return -EIO;
+		return rc;
 	}
 	return 0;
 }
