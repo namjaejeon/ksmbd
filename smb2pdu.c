@@ -2578,6 +2578,10 @@ int smb2_open(struct ksmbd_work *work)
 			rc = ksmbd_reopen_durable_fd(work, d_info.fp);
 			if (rc)
 				goto err_out1;
+			if (ksmbd_override_fsids(work)) {
+				rc = -ENOMEM;
+				goto err_out1;
+			}
 			file_info = FILE_OPENED;
 			fp = d_info.fp;
 			goto reconnected;
