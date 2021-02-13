@@ -3686,7 +3686,8 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 				     PTR_ERR(dent));
 			continue;
 		}
-		if (d_is_negative(dent)) {
+		if (unlikely(d_is_negative(dent))) {
+			dput(dent);
 			ksmbd_debug(SMB, "Negative dentry `%s'\n",
 				    priv->d_info->name);
 			continue;
