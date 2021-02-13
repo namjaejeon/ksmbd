@@ -2577,7 +2577,7 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out1;
 			rc = ksmbd_reopen_durable_fd(work, d_info.fp);
 			if (rc)
-				goto err_out;
+				goto err_out1;
 			file_info = FILE_OPENED;
 			fp = d_info.fp;
 			goto reconnected;
