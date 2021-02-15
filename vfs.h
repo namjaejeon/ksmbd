@@ -30,6 +30,7 @@ struct xattr_dos_attrib {
 	__u64	alloc_size;
 	__u64	create_time;
 	__u64	change_time;
+	__u64	itime;
 };
 
 /* DOS ATTRIBUITE XATTR PREFIX */

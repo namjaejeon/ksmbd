@@ -2353,9 +2353,9 @@ static void smb2_new_xattrs(struct ksmbd_tree_connect *tcon,
 				    KSMBD_SHARE_FLAG_STORE_DOS_ATTRS))
 		return;
 
-	da.version = 3;
+	da.version = 4;
 	da.attr = le32_to_cpu(fp->f_ci->m_fattr);
-	da.create_time = fp->create_time;
+	da.itime = da.create_time = fp->create_time;
 
 	rc = ksmbd_vfs_set_dos_attrib_xattr(path->dentry, &da);
 	if (rc)
@@ -5682,8 +5682,8 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	    (file_info->CreationTime || file_info->Attributes)) {
 		struct xattr_dos_attrib da = {0};
 
-		da.version = 3;
-		da.create_time = fp->create_time;
+		da.version = 4;
+		da.itime = da.create_time = fp->create_time;
 		da.attr = le32_to_cpu(fp->f_ci->m_fattr);
 
 		rc = ksmbd_vfs_set_dos_attrib_xattr(filp->f_path.dentry, &da);
