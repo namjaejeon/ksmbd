@@ -27,7 +27,8 @@ enum {
 	XATTR_DOSINFO_SIZE		= 0x00000004,
 	XATTR_DOSINFO_ALLOC_SIZE	= 0x00000008,
 	XATTR_DOSINFO_CREATE_TIME	= 0x00000010,
-	XATTR_DOSINFO_CHANGE_TIME	= 0x00000020
+	XATTR_DOSINFO_CHANGE_TIME	= 0x00000020,
+	XATTR_DOSINFO_ITIME		= 0x00000040
 };
 
 static void align_offset(struct ndr *ndr, int n)
@@ -146,6 +147,7 @@ static __u64 ndr_read_int64(struct ndr *n)
 int ndr_encode_dos_attr(struct ndr *n, struct xattr_dos_attrib *da)
 {
 	char hex_attr[12] = {0};
+	int flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME;
 
 	n->offset = 0;
 	n->length = 1024;
@@ -153,17 +155,27 @@ int ndr_encode_dos_attr(struct ndr *n, struct xattr_dos_attrib *da)
 	if (!n->data)
 		return -ENOMEM;
 
-	snprintf(hex_attr, 10, "0x%x", da->attr);
-	ndr_write_string(n, hex_attr, strlen(hex_attr));
+	if (da->version == 3) {
+		snprintf(hex_attr, 10, "0x%x", da->attr);
+		ndr_write_string(n, hex_attr, strlen(hex_attr));
+	} else {
+		ndr_write_int16(n, 0);
+		flags |= XATTR_DOSINFO_ITIME;
+	}
 	ndr_write_int16(n, da->version);
 	ndr_write_int32(n, da->version);
-	ndr_write_int32(n, XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME);
+
+	ndr_write_int32(n, flags);
 	ndr_write_int32(n, da->attr);
-	ndr_write_int32(n, da->ea_size);
-	ndr_write_int64(n, da->size);
-	ndr_write_int64(n, da->alloc_size);
+	if (da->version == 3) {
+		ndr_write_int32(n, da->ea_size);
+		ndr_write_int64(n, da->size);
+		ndr_write_int64(n, da->alloc_size);
+	} else
+		ndr_write_int64(n, da->itime);
 	ndr_write_int64(n, da->create_time);
-	ndr_write_int64(n, da->change_time);
+	if (da->version == 3)
+		ndr_write_int64(n, da->change_time);
 	return 0;
 }
 
@@ -173,9 +185,14 @@ int ndr_decode_dos_attr(struct ndr *n, struct xattr_dos_attrib *da)
 	int version2;
 
 	n->offset = 0;
-	ndr_read_string(n, hex_attr, n->length - n->offset);
 	da->version = ndr_read_int16(n);
-	if (da->version != 3) {
+	if (da->version != 4) {
+		n->offset = 0;
+		ndr_read_string(n, hex_attr, n->length - n->offset);
+		da->version = ndr_read_int16(n);
+	}
+
+	if (da->version != 3 && da->version != 4) {
 		ksmbd_err("v%d version is not supported\n", da->version);
 		return -EINVAL;
 	}
@@ -189,11 +206,17 @@ int ndr_decode_dos_attr(struct ndr *n, struct xattr_dos_attrib *da)
 
 	ndr_read_int32(n);
 	da->attr = ndr_read_int32(n);
-	ndr_read_int32(n);
-	ndr_read_int64(n);
-	ndr_read_int64(n);
-	da->create_time = ndr_read_int64(n);
-	ndr_read_int64(n);
+	if (da->version == 4) {
+		ndr_read_int64(n);
+		da->create_time = ndr_read_int64(n);
+	} else {
+		ndr_read_int32(n);
+		ndr_read_int64(n);
+		ndr_read_int64(n);
+		da->create_time = ndr_read_int64(n);
+		ndr_read_int64(n);
+	}
+
 	return 0;
 }
 
