@@ -2676,12 +2676,8 @@ int smb2_open(struct ksmbd_work *work)
 			if (rc < 0)
 				goto err_out1;
 		} else {
-			struct create_mxac_req *mxac_req =
-				(struct create_mxac_req *)context;
-
 			ksmbd_debug(SMB,
-				"get query maximal access context (timestamp : %llu)\n",
-				le64_to_cpu(mxac_req->Timestamp));
+				"get query maximal access context\n");
 			maximal_access_ctxt = 1;
 		}
 
