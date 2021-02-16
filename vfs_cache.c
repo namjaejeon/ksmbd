@@ -168,6 +168,7 @@ static int ksmbd_inode_init(struct ksmbd_inode *ci, struct ksmbd_file *fp)
 	ci->m_fattr = 0;
 	INIT_LIST_HEAD(&ci->m_fp_list);
 	INIT_LIST_HEAD(&ci->m_op_list);
+	INIT_LIST_HEAD(&ci->m_lock_list);
 	rwlock_init(&ci->m_lock);
 	return 0;
 }
@@ -263,6 +264,15 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 	}
 
 	if (atomic_dec_and_test(&ci->m_count)) {
+		struct ksmbd_lock *smb_lock, *tmp;
+
+		list_for_each_entry_safe(smb_lock, tmp, &ci->m_lock_list, glist) {
+//			ksmbd_err("free lock!!\n");
+			locks_free_lock(smb_lock->fl);
+			list_del(&smb_lock->glist);
+			kfree(smb_lock);
+		}
+
 		write_lock(&ci->m_lock);
 		if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) {
 			dentry = filp->f_path.dentry;

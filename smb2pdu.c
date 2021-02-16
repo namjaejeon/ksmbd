@@ -6924,8 +6924,8 @@ int smb2_lock(struct ksmbd_work *work)
 			goto no_check_gl;
 
 		nolock = 1;
-		/* check locks in global list */
-		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+		/* check locks in inode lock list */
+		list_for_each_entry(cmp_lock, &fp->f_ci->m_lock_list, glist) {
 			if (file_inode(cmp_lock->fl->fl_file) !=
 				file_inode(smb_lock->fl->fl_file))
 				continue;
@@ -7015,7 +7015,7 @@ skip:
 				ksmbd_debug(SMB,
 					"would have to wait for getting lock\n");
 				list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+					&fp->f_ci->m_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
 
 				argv = kmalloc(sizeof(void *), GFP_KERNEL);
@@ -7073,7 +7073,7 @@ skip:
 				goto retry;
 			} else if (!err) {
 				list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+					&fp->f_ci->m_lock_list);
 				list_add(&smb_lock->llist, &rollback_list);
 				ksmbd_debug(SMB, "successful in taking lock\n");
 			} else {

@@ -1668,8 +1668,8 @@ int smb_locking_andx(struct ksmbd_work *work)
 		int same_zero_lock = 0;
 
 		list_del(&smb_lock->llist);
-		/* check locks in global list */
-		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+		/* check locks in inode lock list */
+		list_for_each_entry(cmp_lock, &fp->f_ci->m_lock_list, glist) {
 			if (file_inode(cmp_lock->fl->fl_file) !=
 				file_inode(smb_lock->fl->fl_file))
 				continue;
@@ -1745,7 +1745,7 @@ retry:
 		if (err == FILE_LOCK_DEFERRED) {
 			ksmbd_err("would have to wait for getting lock\n");
 			list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+					&fp->f_ci->m_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
 wait:
 			err = ksmbd_vfs_posix_lock_wait_timeout(flock,
@@ -1759,7 +1759,7 @@ wait:
 		} else if (!err) {
 skip:
 			list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+					&fp->f_ci->m_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
 			ksmbd_err("successful in taking lock\n");
 		} else if (err < 0) {
@@ -1814,7 +1814,7 @@ skip:
 			flock->fl_end = offset + length;
 
 		locked = 0;
-		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
+		list_for_each_entry(cmp_lock, &fp->f_ci->m_lock_list, glist) {
 			if (file_inode(cmp_lock->fl->fl_file) !=
 				file_inode(flock->fl_file))
 				continue;
