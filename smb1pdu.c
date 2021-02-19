@@ -3817,7 +3817,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	}
 	err = 0;
 
-	ptr = (char *)&rsp->Pad + 1;
+	ptr = (char *)&rsp->Buffer[0];
 	memset(ptr, 0, 4);
 	ptr += 4;
 
