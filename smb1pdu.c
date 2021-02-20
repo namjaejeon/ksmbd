@@ -2586,7 +2586,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 					   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			struct xattr_dos_attrib da = {0};
 
-			da.version = 3;
+			da.version = 4;
 			da.attr = smb_get_dos_attr(&stat);
 			da.create_time = fp->create_time;
 
@@ -3817,7 +3817,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	}
 	err = 0;
 
-	ptr = (char *)&rsp->Pad + 1;
+	ptr = (char *)&rsp->Buffer[0];
 	memset(ptr, 0, 4);
 	ptr += 4;
 
@@ -7312,9 +7312,11 @@ static int create_dir(struct ksmbd_work *work)
 			ctime = ksmbd_UnixTimeToNT(CURRENT_TIME);
 #endif
 
-			da.version = 3;
+			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
-			da.create_time = ctime;
+			da.itime = da.create_time = ctime;
+			da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
+				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(path.dentry, &da);
 			if (err)
@@ -7484,9 +7486,11 @@ int smb_mkdir(struct ksmbd_work *work)
 #else
 			ctime = ksmbd_UnixTimeToNT(CURRENT_TIME);
 #endif
-			da.version = 3;
+			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
-			da.create_time = ctime;
+			da.itime = da.create_time = ctime;
+			da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
+				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(path.dentry, &da);
 			if (err)
@@ -7839,7 +7843,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	char *name;
-	int err;
+	int err = 0;
 	unsigned int flags = LOOKUP_FOLLOW;
 
 	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
@@ -7849,26 +7853,31 @@ static __le32 smb_query_info_path(struct ksmbd_work *work,
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = 0;
 
-	if (ksmbd_override_fsids(work))
+	if (ksmbd_override_fsids(work)) {
+		smb_put_name(name);
 		return STATUS_NO_MEMORY;
+	}
 
 	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
 		ksmbd_err("look up failed err %d\n", err);
-		smb_put_name(name);
 
 		if (!test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-			if (d_is_symlink(path.dentry))
-				return STATUS_ACCESS_DENIED;
+			if (d_is_symlink(path.dentry)) {
+				err = STATUS_ACCESS_DENIED;
+				goto out;
+			}
 		}
-		return STATUS_OBJECT_NAME_NOT_FOUND;
+		err = STATUS_OBJECT_NAME_NOT_FOUND;
+		goto out;
 	}
 
 	generic_fillattr(d_inode(path.dentry), st);
+out:
 	ksmbd_revert_fsids(work);
 	smb_put_name(name);
-	return 0;
+	return err;
 }
 
 /**
@@ -8191,8 +8200,10 @@ int smb_open_andx(struct ksmbd_work *work)
 			struct xattr_dos_attrib da;
 
 			err = ksmbd_vfs_get_dos_attrib_xattr(path.dentry, &da);
-			if (err > 0)
+			if (err > 0) {
 				fp->create_time = da.create_time;
+				fp->itime = da.itime;
+			}
 			err = 0;
 		}
 	} else {
@@ -8200,9 +8211,11 @@ int smb_open_andx(struct ksmbd_work *work)
 					KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			struct xattr_dos_attrib da = {0};
 
-			da.version = 3;
+			da.version = 4;
 			da.attr = ATTR_NORMAL;
-			da.create_time = fp->create_time;
+			da.itime = da.create_time = fp->create_time;
+			da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
+				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(path.dentry, &da);
 			if (err)

@@ -686,6 +686,8 @@ void ksmbd_revert_fsids(struct ksmbd_work *work)
 {
 	const struct cred *cred;
 
+	WARN_ON(work->saved_cred == NULL);
+
 	cred = current_cred();
 	revert_creds(work->saved_cred);
 	put_cred(cred);

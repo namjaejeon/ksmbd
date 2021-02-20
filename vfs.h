@@ -21,6 +21,16 @@
 #define XATTR_NAME_STREAM		(XATTR_USER_PREFIX STREAM_PREFIX)
 #define XATTR_NAME_STREAM_LEN		(sizeof(XATTR_NAME_STREAM) - 1)
 
+enum {
+	XATTR_DOSINFO_ATTRIB		= 0x00000001,
+	XATTR_DOSINFO_EA_SIZE		= 0x00000002,
+	XATTR_DOSINFO_SIZE		= 0x00000004,
+	XATTR_DOSINFO_ALLOC_SIZE	= 0x00000008,
+	XATTR_DOSINFO_CREATE_TIME	= 0x00000010,
+	XATTR_DOSINFO_CHANGE_TIME	= 0x00000020,
+	XATTR_DOSINFO_ITIME		= 0x00000040
+};
+
 struct xattr_dos_attrib {
 	__u16	version;
 	__u32	flags;
@@ -30,6 +40,7 @@ struct xattr_dos_attrib {
 	__u64	alloc_size;
 	__u64	create_time;
 	__u64	change_time;
+	__u64	itime;
 };
 
 /* DOS ATTRIBUITE XATTR PREFIX */
@@ -185,6 +196,7 @@ struct ksmbd_fs_sector_size {
 
 int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode,
 		bool delete);
+int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess);
 int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode);
 int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode);
 int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp,

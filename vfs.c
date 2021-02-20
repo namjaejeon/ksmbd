@@ -51,12 +51,13 @@ static char *extract_last_component(char *path)
 		*p = '\0';
 		p++;
 	} else {
+		p = NULL;
 		ksmbd_err("Invalid path %s\n", path);
 	}
 	return p;
 }
 
-static void roolback_path_modification(char *filename)
+static void rollback_path_modification(char *filename)
 {
 	if (filename) {
 		filename--;
@@ -149,6 +150,35 @@ int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
 	return 0;
 }
 
+int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
+{
+	struct dentry *parent;
+
+	*daccess = cpu_to_le32(FILE_READ_ATTRIBUTES | READ_CONTROL);
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_WRITE) == 0)
+		*daccess |= cpu_to_le32(WRITE_DAC | WRITE_OWNER | SYNCHRONIZE |
+				FILE_WRITE_DATA | FILE_APPEND_DATA |
+				FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES |
+				FILE_DELETE_CHILD);
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_READ) == 0)
+		*daccess |= FILE_READ_DATA_LE | FILE_READ_EA_LE;
+
+	if (inode_permission(d_inode(dentry), MAY_OPEN | MAY_EXEC) == 0)
+		*daccess |= FILE_EXECUTE_LE;
+
+	parent = dget_parent(dentry);
+	if (!parent)
+		return 0;
+
+	if (inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE) == 0)
+		*daccess |= FILE_DELETE_LE;
+	dput(parent);
+	return 0;
+}
+
+
 /**
  * ksmbd_vfs_create() - vfs helper for smb create file
  * @work:	work
@@ -205,7 +235,6 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work,
 
 	dentry = kern_path_create(AT_FDCWD, name, &path, LOOKUP_DIRECTORY);
 	if (IS_ERR(dentry)) {
-		ksmbd_revert_fsids(work);
 		err = PTR_ERR(dentry);
 		if (err != -EEXIST)
 			ksmbd_debug(VFS, "path create failed for %s, err %d\n",
@@ -864,7 +893,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
-		roolback_path_modification(last);
+		rollback_path_modification(last);
 		return err;
 	}
 
@@ -910,7 +939,7 @@ out_err:
 	mutex_unlock(&d_inode(dir)->i_mutex);
 #endif
 out:
-	roolback_path_modification(last);
+	rollback_path_modification(last);
 	path_put(&parent);
 	ksmbd_revert_fsids(work);
 	return err;
@@ -1009,7 +1038,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 	err = PTR_ERR(dst_dent);
 	if (IS_ERR(dst_dent)) {
 		ksmbd_err("lookup failed %s [%d]\n", dst_name, err);
-		return err;
+		goto out;
 	}
 
 	err = -ENOTEMPTY;
@@ -1025,6 +1054,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 		ksmbd_err("vfs_rename failed err %d\n", err);
 	if (dst_dent)
 		dput(dst_dent);
+out:
 	ksmbd_revert_fsids(work);
 	return err;
 }
@@ -2107,7 +2137,7 @@ int ksmbd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 	}
 
 out:
-	roolback_path_modification(filename);
+	rollback_path_modification(filename);
 	return err;
 }
 
