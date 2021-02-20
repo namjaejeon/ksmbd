@@ -2732,6 +2732,7 @@ int smb2_open(struct ksmbd_work *work)
 			if (req->CreateDisposition == FILE_OVERWRITE_IF_LE ||
 				req->CreateDisposition == FILE_OPEN_IF_LE) {
 				rc = -EACCES;
+				path_put(&path);
 				goto err_out;
 			}
 
@@ -2740,6 +2741,7 @@ int smb2_open(struct ksmbd_work *work)
 				ksmbd_debug(SMB,
 					"User does not have write permission\n");
 				rc = -EACCES;
+				path_put(&path);
 				goto err_out;
 			}
 		}
@@ -2758,6 +2760,7 @@ int smb2_open(struct ksmbd_work *work)
 			rc = ksmbd_vfs_kern_path(name, 0, &path, 1);
 			if (!rc && d_is_symlink(path.dentry)) {
 				rc = -EACCES;
+				path_put(&path);
 				goto err_out;
 			}
 		}
