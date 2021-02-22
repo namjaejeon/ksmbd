@@ -2429,7 +2429,9 @@ int ksmbd_vfs_set_init_posix_acl(struct inode *inode)
 	int rc;
 
 	ksmbd_debug(SMB, "Set posix acls\n");
-	init_acl_state(&acl_state, 1);
+	rc = init_acl_state(&acl_state, 1);
+	if (rc)
+		return rc;
 
 	/* Set default owner group */
 	acl_state.owner.allow = (inode->i_mode & 0700) >> 6;
