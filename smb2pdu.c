@@ -5708,14 +5708,9 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	attrs.ia_valid |= ATTR_CTIME;
 
 	if (attrs.ia_valid) {
-#if ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) && \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37))) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 		struct dentry *dentry = filp->f_path.dentry;
 		struct inode *inode = d_inode(dentry);
-#else
-		struct inode *inode = FP_INODE(fp);
-#endif
+
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
@@ -5729,8 +5724,21 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		if (rc)
 			return -EINVAL;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
+		inode_lock(inode);
 		setattr_copy(inode, &attrs);
-		mark_inode_dirty(inode);
+		attrs.ia_valid &= ~ATTR_CTIME;
+		rc = notify_change(dentry, &attrs, NULL);
+		inode_unlock(inode);
+#else
+		mutex_lock(&inode->i_mutex);
+		setattr_copy(inode, &attrs);
+		attrs.ia_valid &= ~ATTR_CTIME;
+		rc = notify_change(dentry, &attrs, NULL);
+		mutex_unlock(&inode->i_mutex);
+#endif
+		if (rc)
+			return -EINVAL;
 	}
 	return 0;
 }
