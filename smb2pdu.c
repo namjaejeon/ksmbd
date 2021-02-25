@@ -5677,7 +5677,9 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 			ksmbd_err("can't change a file to a directory\n");
 			return -EINVAL;
 		}
-		fp->f_ci->m_fattr = file_info->Attributes;
+
+		if (!(S_ISDIR(inode->i_mode) && file_info->Attributes == ATTR_NORMAL_LE))
+			fp->f_ci->m_fattr = file_info->Attributes;
 	}
 
 	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_STORE_DOS_ATTRS) &&
