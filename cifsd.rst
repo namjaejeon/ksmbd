@@ -113,12 +113,8 @@ How to run
 Shutdown CIFSD
 ==============
 
-1. kill user space daemon
-	# killall ksmbd.mountd
-
-2. kill kernel space daemon
-	# echo hard > /sys/class/ksmbd-control/kill_server
-
+1. kill user and kernel space daemon
+	# sudo ksmbd.control -s
 
 How to turn debug print on
 ==========================
@@ -126,15 +122,15 @@ How to turn debug print on
 Each layer
 /sys/class/ksmbd-control/debug
 
-1. Enable SMB related debug print
-	# echo "smb" > /sys/class/ksmbd-control/debug
+1. Enable all component prints
+	# sudo ksmbd.control -d "all"
 
-2. Enable RDMA related print.
-	echo "rdma" > /sys/class/ksmbd-control/debug
+2. Enable one of components(smb, auth, vfs, oplock, ipc, conn, rdma)
+	# sudo ksmbd.control -d "smb"
 
 3. Show what prints are enable.
 	# cat/sys/class/ksmbd-control/debug
 	  [smb] auth vfs oplock ipc conn [rdma]
 
-4. If you want to turn all prints on, Do echo "all".
-	# echo "all" > /sys/class/ksmbd-control/debug
+4. Disable prints:
+	If you try the selected component once more, It is disabled without brackets.
