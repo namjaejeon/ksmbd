@@ -58,7 +58,7 @@ script:
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
  - cd ../linux-stable
@@ -82,7 +82,7 @@ script:
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
  - cd ../linux
@@ -94,7 +94,7 @@ script:
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Compile secure server build + Kerberos  with 4.1 kernel
  - cd ../linux-stable
@@ -118,7 +118,7 @@ script:
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_KERBEROS5=y' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
  # Run xfstests testsuite
  - cd ../cifsd
