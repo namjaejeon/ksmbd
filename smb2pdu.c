@@ -3854,9 +3854,6 @@ static int __query_dir(struct dir_context *ctx,
 	/* dot and dotdot entries are already reserved */
 	if (!strcmp(".", name) || !strcmp("..", name))
 		return 0;
-	/* Hide backup files, e.g. ~$file.doc */
-	if (!strncmp("~$", name, 2))
-		return 0;
 	if (ksmbd_share_veto_filename(priv->work->tcon->share_conf, name))
 		return 0;
 	if (!match_pattern(name, priv->search_pattern))
