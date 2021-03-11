@@ -5715,13 +5715,14 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 
 	if (file_info->Attributes) {
 		if (!S_ISDIR(inode->i_mode) &&
-				file_info->Attributes == ATTR_DIRECTORY_LE) {
+				file_info->Attributes & ATTR_DIRECTORY_LE) {
 			ksmbd_err("can't change a file to a directory\n");
 			return -EINVAL;
 		}
 
 		if (!(S_ISDIR(inode->i_mode) && file_info->Attributes == ATTR_NORMAL_LE))
-			fp->f_ci->m_fattr = file_info->Attributes;
+			fp->f_ci->m_fattr = file_info->Attributes |
+				(fp->f_ci->m_fattr & ATTR_DIRECTORY_LE);
 	}
 
 	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_STORE_DOS_ATTRS) &&
