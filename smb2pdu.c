@@ -2471,8 +2471,6 @@ int smb2_open(struct ksmbd_work *work)
 	struct kstat stat;
 	struct create_context *context;
 	struct lease_ctx_info *lc = NULL;
-	struct create_context *lease_ccontext = NULL, *durable_ccontext = NULL,
-		*mxac_ccontext = NULL, *disk_id_ccontext = NULL, *posix_ccontext;
 	struct create_ea_buf_req *ea_buf = NULL;
 	struct oplock_info *opinfo;
 	__le32 *next_ptr = NULL;
@@ -3215,6 +3213,8 @@ reconnected:
 
 	/* If lease is request send lease context response */
 	if (opinfo && opinfo->is_lease) {
+		struct create_context *lease_ccontext;
+
 		ksmbd_debug(SMB, "lease granted on(%s) lease state 0x%x\n",
 				name, opinfo->o_lease->state);
 		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
@@ -3230,6 +3230,8 @@ reconnected:
 	}
 
 	if (d_info.type == DURABLE_REQ || d_info.type == DURABLE_REQ_V2) {
+		struct create_context *durable_ccontext;
+
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
@@ -3257,6 +3259,8 @@ reconnected:
 	}
 
 	if (maximal_access_ctxt) {
+		struct create_context *mxac_ccontext;
+
 		if (maximal_access == 0)
 			ksmbd_vfs_query_maximal_access(path.dentry,
 						       &maximal_access);
@@ -3276,6 +3280,8 @@ reconnected:
 	}
 
 	if (query_disk_id) {
+		struct create_context *disk_id_ccontext;
+
 		disk_id_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
@@ -3292,6 +3298,8 @@ reconnected:
 	}
 
 	if (posix_ctxt) {
+		struct create_context *posix_ccontext;
+
 		posix_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
 		contxt_cnt++;
@@ -8159,9 +8167,8 @@ int smb2_oplock_break(struct ksmbd_work *work)
 int smb2_notify(struct ksmbd_work *work)
 {
 	struct smb2_notify_req *req;
-	struct smb2_notify_rsp *rsp, *rsp_org;
+	struct smb2_notify_rsp *rsp;
 
-	rsp_org = RESPONSE_BUF(work);
 	WORK_BUFFERS(work, req, rsp);
 
 	if (work->next_smb2_rcv_hdr_off && req->hdr.NextCommand) {

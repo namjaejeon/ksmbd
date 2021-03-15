@@ -289,14 +289,16 @@ int ksmbd_negotiate_smb_dialect(void *buf)
 int ksmbd_init_smb_server(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
+#ifdef CONFIG_SMB_INSECURE_SERVER
 	void *buf = REQUEST_BUF(work);
 	__le32 proto;
+#endif
 
 	if (conn->need_neg == false)
 		return 0;
 
-	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
 #ifdef CONFIG_SMB_INSECURE_SERVER
+	proto = *(__le32 *)((struct smb_hdr *)buf)->Protocol;
 	if (proto == SMB1_PROTO_NUMBER)
 		init_smb1_server(conn);
 	else
