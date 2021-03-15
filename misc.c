@@ -90,7 +90,7 @@ int ksmbd_validate_filename(char *filename)
 
 		filename++;
 		if (!is_char_allowed(c)) {
-			ksmbd_err("File name validation failed: 0x%x\n", c);
+			ksmbd_debug(VFS, "File name validation failed: 0x%x\n", c);
 			return -ENOENT;
 		}
 	}
