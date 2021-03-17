@@ -453,7 +453,7 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
 		goto out_err;
 	}
-	name = extract_sharename(treename);
+	name = ksmbd_extract_sharename(treename);
 	if (IS_ERR(name)) {
 		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
 		goto out_err;
