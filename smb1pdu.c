@@ -6100,7 +6100,7 @@ static int find_first(struct ksmbd_work *work)
 			continue;
 		}
 
-		if (match_pattern(d_info.name, srch_ptr)) {
+		if (match_pattern(d_info.name, d_info.name_len, srch_ptr)) {
 			rc = smb_populate_readdir_entry(conn,
 				le16_to_cpu(req_params->InformationLevel),
 				&d_info,
