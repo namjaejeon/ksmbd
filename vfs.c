@@ -853,7 +853,8 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   struct ksmbd_kstat *ksmbd_kstat,
 			   const char *de_name,
 			   int de_name_len,
-			   const char *dir_path)
+			   const char *dir_path,
+			   unsigned int lookup_flags)
 {
 	struct path path;
 	int rc, file_pathlen, dir_pathlen;
@@ -871,7 +872,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
 	name[file_pathlen] = '\0';
 
-	rc = ksmbd_vfs_kern_path(name, LOOKUP_FOLLOW, &path, 1);
+	rc = ksmbd_vfs_kern_path(name, lookup_flags, &path, 1);
 	if (rc) {
 		ksmbd_err("lookup failed: %s [%d]\n", name, rc);
 		kfree(name);
@@ -915,7 +916,8 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, uint64_t fid, uint64_t p_id)
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
+int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name,
+			  unsigned int lookup_flags)
 {
 	struct path parent;
 	struct dentry *dir, *dentry;
@@ -929,7 +931,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = kern_path(name, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &parent);
+	err = kern_path(name, lookup_flags | LOOKUP_DIRECTORY, &parent);
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
@@ -1001,7 +1003,8 @@ out:
  * Return:	0 on success, otherwise error
  */
 int ksmbd_vfs_link(struct ksmbd_work *work,
-		const char *oldname, const char *newname)
+		const char *oldname, const char *newname,
+		unsigned int lookup_flags)
 {
 	struct path oldpath, newpath;
 	struct dentry *dentry;
@@ -1010,7 +1013,7 @@ int ksmbd_vfs_link(struct ksmbd_work *work,
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = kern_path(oldname, LOOKUP_FOLLOW, &oldpath);
+	err = kern_path(oldname, lookup_flags, &oldpath);
 	if (err) {
 		ksmbd_err("cannot get linux path for %s, err = %d\n",
 				oldname, err);
@@ -1018,7 +1021,7 @@ int ksmbd_vfs_link(struct ksmbd_work *work,
 	}
 
 	dentry = kern_path_create(AT_FDCWD, newname, &newpath,
-			LOOKUP_FOLLOW | LOOKUP_REVAL);
+			lookup_flags | LOOKUP_REVAL);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		ksmbd_err("path create err for %s, err %d\n", newname, err);
@@ -1125,7 +1128,7 @@ out:
 }
 
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
-		char *newname)
+		char *newname, unsigned int lookup_flags)
 {
 	struct path dst_path;
 	struct dentry *src_dent_parent, *dst_dent_parent;
@@ -1144,7 +1147,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	src_dent = fp->filp->f_path.dentry;
 	dget(src_dent);
 
-	err = kern_path(newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dst_path);
+	err = kern_path(newname, lookup_flags | LOOKUP_DIRECTORY, &dst_path);
 	if (err) {
 		ksmbd_debug(VFS, "Cannot get path for %s [%d]\n", newname, err);
 		goto out;
@@ -1170,7 +1173,8 @@ out:
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-		char *oldname, char *newname)
+		char *oldname, char *newname,
+		unsigned int lookup_flags)
 {
 	struct path dst_path, src_path;
 	struct dentry *src_dent_parent, *dst_dent_parent;
@@ -1185,7 +1189,7 @@ int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
 	if (!dst_name)
 		return -EINVAL;
 
-	err = kern_path(oldname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &src_path);
+	err = kern_path(oldname, lookup_flags | LOOKUP_DIRECTORY, &src_path);
 	if (err) {
 		ksmbd_err("Cannot get path for %s [%d]\n", oldname, err);
 		return err;
@@ -1193,7 +1197,7 @@ int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
 	src_dent_parent = src_path.dentry;
 	dget(src_dent_parent);
 
-	err = kern_path(newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dst_path);
+	err = kern_path(newname, lookup_flags | LOOKUP_DIRECTORY, &dst_path);
 	if (err) {
 		ksmbd_err("Cannot get path for %s [%d]\n", newname, err);
 		dput(src_dent_parent);
@@ -1229,7 +1233,8 @@ out:
 }
 #else
 int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-		char *oldname, char *newname)
+		char *oldname, char *newname,
+		unsigned int lookup_flags)
 {
 	return 0;
 }

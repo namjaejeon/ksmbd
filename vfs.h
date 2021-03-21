@@ -204,9 +204,11 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp,
 int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written);
 int ksmbd_vfs_fsync(struct ksmbd_work *work, uint64_t fid, uint64_t p_id);
-int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name);
+int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name,
+			  unsigned int lookup_flags);
 int ksmbd_vfs_link(struct ksmbd_work *work,
-		const char *oldname, const char *newname);
+		const char *oldname, const char *newname,
+		unsigned int lookup_flags);
 int ksmbd_vfs_getattr(struct path *path, struct kstat *stat);
 #ifdef CONFIG_SMB_INSECURE_SERVER
 int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
@@ -218,12 +220,14 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   struct ksmbd_kstat *ksmbd_kstat,
 			   const char *de_name,
 			   int de_name_len,
-			   const char *dir_path);
+			   const char *dir_path,
+			   unsigned int lookup_flags);
 #endif
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
-		char *newname);
+		char *newname, unsigned int lookup_flags);
 int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-		char *oldname, char *newname);
+		char *oldname, char *newname,
+		unsigned int lookup_flags);
 
 int ksmbd_vfs_truncate(struct ksmbd_work *work, const char *name,
 	struct ksmbd_file *fp, loff_t size);

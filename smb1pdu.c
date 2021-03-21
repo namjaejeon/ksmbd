@@ -763,6 +763,7 @@ int smb_rename(struct ksmbd_work *work)
 	struct path path;
 	bool file_present = true;
 	int rc = 0;
+	unsigned int lookup_flags = 0;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -813,7 +814,12 @@ int smb_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = ksmbd_vfs_rename_slowpath(work, abs_oldname, abs_newname);
+
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	rc = ksmbd_vfs_rename_slowpath(work, abs_oldname, abs_newname,
+				       lookup_flags);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -5078,6 +5084,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	char *name;
 	int rc = 0;
+	unsigned int lookup_flags = 0;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -5093,7 +5100,10 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	rc = ksmbd_vfs_remove_file(work, name);
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	rc = ksmbd_vfs_remove_file(work, name, lookup_flags);
 	if (rc < 0)
 		goto out;
 
@@ -5424,6 +5434,7 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	char *oldname, *newname, *oldname_offset;
 	int err;
+	unsigned int lookup_flags = 0;
 
 	newname = smb_get_name(share, req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(newname)) {
@@ -5441,7 +5452,10 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "oldname %s, newname %s\n", oldname, newname);
 
-	err = ksmbd_vfs_link(work, oldname, newname);
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	err = ksmbd_vfs_link(work, oldname, newname, lookup_flags);
 	if (err < 0) {
 		if (err == -EACCES)
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
@@ -6081,7 +6095,8 @@ static int find_first(struct ksmbd_work *work)
 					    &ksmbd_kstat,
 					    de->name,
 					    de->namelen,
-					    dirpath);
+					    dirpath,
+					    flags);
 		if (rc) {
 			ksmbd_debug(SMB, "Cannot read dirent: %d\n", rc);
 			continue;
@@ -6215,6 +6230,7 @@ static int find_next(struct ksmbd_work *work)
 	char *name = NULL;
 	char *pathname = NULL;
 	int header_size;
+	unsigned int lookup_flags = 0;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 
@@ -6231,6 +6247,9 @@ static int find_next(struct ksmbd_work *work)
 	}
 	ksmbd_debug(SMB, "FileName after unicode conversion %s\n", name);
 	kfree(name);
+
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
 
 	dir_fp = ksmbd_lookup_fd_fast(work, sid);
 	if (!dir_fp) {
@@ -6324,7 +6343,8 @@ static int find_next(struct ksmbd_work *work)
 					    &ksmbd_kstat,
 					    de->name,
 					    de->namelen,
-					    dirpath);
+					    dirpath,
+					    lookup_flags);
 		if (rc) {
 			ksmbd_debug(SMB, "Err while dirent read rc = %d\n", rc);
 			rc = 0;
@@ -7125,6 +7145,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	struct ksmbd_file *fp;
 	char *newname;
 	int rc = 0;
+	unsigned int lookup_flags = 0;
 
 	req = (struct smb_com_trans2_sfi_req *)REQUEST_BUF(work);
 	rsp = (struct smb_com_trans2_sfi_rsp *)RESPONSE_BUF(work);
@@ -7164,7 +7185,11 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 
 	ksmbd_debug(SMB, "rename oldname(%s) -> newname(%s)\n", fp->filename,
 		newname);
-	rc = ksmbd_vfs_fp_rename(work, fp, newname);
+
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	rc = ksmbd_vfs_fp_rename(work, fp, newname, lookup_flags);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
@@ -7649,6 +7674,7 @@ int smb_rmdir(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	char *name;
 	int err;
+	unsigned int lookup_flags = 0;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -7664,7 +7690,10 @@ int smb_rmdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_remove_file(work, name);
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	err = ksmbd_vfs_remove_file(work, name, lookup_flags);
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError =
@@ -7717,8 +7746,15 @@ int smb_unlink(struct ksmbd_work *work)
 	fp = ksmbd_lookup_fd_filename(work, name);
 	if (fp)
 		err = -ESHARE;
-	else
-		err = ksmbd_vfs_remove_file(work, name);
+	else {
+		unsigned int lookup_flags = 0;
+
+		if (test_share_config_flag(share,
+				KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+			lookup_flags = LOOKUP_FOLLOW;
+
+		err = ksmbd_vfs_remove_file(work, name, lookup_flags);
+	}
 
 	if (err) {
 		if (err == -EISDIR)
@@ -7791,6 +7827,7 @@ int smb_nt_rename(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	char *oldname, *newname;
 	int oldname_len, err;
+	unsigned int lookup_flags = 0;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -7831,7 +7868,10 @@ int smb_nt_rename(struct ksmbd_work *work)
 			oldname, newname, oldname_len,
 			is_smbreq_unicode(&req->hdr));
 
-	err = ksmbd_vfs_link(work, oldname, newname);
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
+	err = ksmbd_vfs_link(work, oldname, newname, lookup_flags);
 	if (err == -EACCES)
 		rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 	else if (err < 0)

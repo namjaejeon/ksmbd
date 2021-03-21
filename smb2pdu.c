@@ -5488,6 +5488,7 @@ static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	struct path path;
 	bool file_present = true;
 	int rc;
+	unsigned int lookup_flags = 0;
 
 	ksmbd_debug(SMB, "setting FILE_RENAME_INFO\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5555,8 +5556,11 @@ static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		goto out;
 	}
 
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
 	ksmbd_debug(SMB, "new name %s\n", new_name);
-	rc = ksmbd_vfs_kern_path(new_name, 0, &path, 1);
+	rc = ksmbd_vfs_kern_path(new_name, lookup_flags, &path, 1);
 	if (rc)
 		file_present = false;
 	else
@@ -5570,7 +5574,8 @@ static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = ksmbd_vfs_remove_file(work, new_name);
+			rc = ksmbd_vfs_remove_file(work, new_name,
+						   lookup_flags);
 			if (rc) {
 				if (rc != -ENOTEMPTY)
 					rc = -EINVAL;
@@ -5590,7 +5595,7 @@ static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		}
 	}
 
-	rc = ksmbd_vfs_fp_rename(work, fp, new_name);
+	rc = ksmbd_vfs_fp_rename(work, fp, new_name, lookup_flags);
 out:
 	kfree(pathname);
 	if (!IS_ERR(new_name))
@@ -5616,6 +5621,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 	struct path path;
 	bool file_present = true;
 	int rc;
+	unsigned int lookup_flags = 0;
 
 	ksmbd_debug(SMB, "setting FILE_LINK_INFORMATION\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -5638,8 +5644,11 @@ static int smb2_create_link(struct ksmbd_work *work,
 		goto out;
 	}
 
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_FOLLOW;
+
 	ksmbd_debug(SMB, "target name is %s\n", target_name);
-	rc = ksmbd_vfs_kern_path(link_name, 0, &path, 0);
+	rc = ksmbd_vfs_kern_path(link_name, lookup_flags, &path, 0);
 	if (rc)
 		file_present = false;
 	else
@@ -5647,7 +5656,8 @@ static int smb2_create_link(struct ksmbd_work *work,
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
-			rc = ksmbd_vfs_remove_file(work, link_name);
+			rc = ksmbd_vfs_remove_file(work, link_name,
+						   lookup_flags);
 			if (rc) {
 				rc = -EINVAL;
 				ksmbd_debug(SMB, "cannot delete %s\n",
@@ -5663,7 +5673,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 		}
 	}
 
-	rc = ksmbd_vfs_link(work, target_name, link_name);
+	rc = ksmbd_vfs_link(work, target_name, link_name, lookup_flags);
 	if (rc)
 		rc = -EINVAL;
 out:
