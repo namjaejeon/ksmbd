@@ -133,8 +133,8 @@ int ksmbd_lookup_protocol_idx(char *str)
 }
 
 /**
- * check_message() - check for valid smb2 request header
- * @buf:       smb2 header to be checked
+ * ksmbd_verify_smb_message() - check for valid smb2 request header
+ * @work:	smb work
  *
  * check for valid smb signature and packet direction(request/response)
  *
@@ -160,9 +160,8 @@ int ksmbd_verify_smb_message(struct ksmbd_work *work)
 }
 
 /**
- * is_smb_request() - check for valid smb request type
+ * ksmbd_smb_request() - check for valid smb request type
  * @conn:	connection instance
- * @type:	smb request type
  *
  * Return:      true on success, otherwise false
  */
