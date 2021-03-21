@@ -88,7 +88,7 @@ char *ksmbd_work_group(void)
 
 /**
  * check_conn_state() - check state of server thread connection
- * @ksmbd_work:     smb work containing server thread information
+ * @work:     smb work containing server thread information
  *
  * Return:	0 on valid connection, otherwise 1 to reconnect
  */
@@ -250,7 +250,7 @@ send:
 
 /**
  * handle_ksmbd_work() - process pending smb work requests
- * @ksmbd_work:	smb work containing request command buffer
+ * @wk:	smb work containing request command buffer
  *
  * called by kworker threads to processing remaining smb work requests
  */
@@ -621,7 +621,7 @@ error:
 }
 
 /**
- * exit_smb_server() - shutdown forker thread and free memory at module exit
+ * ksmbd_server_exit() - shutdown forker thread and free memory at module exit
  */
 static void __exit ksmbd_server_exit(void)
 {
