@@ -636,7 +636,7 @@ static struct interface *alloc_iface(char *ifname)
 	if (!ifname)
 		return NULL;
 
-	iface = ksmbd_alloc(sizeof(struct interface));
+	iface = kzalloc(sizeof(struct interface), GFP_KERNEL);
 	if (!iface) {
 		kfree(ifname);
 		return NULL;

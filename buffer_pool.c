@@ -115,11 +115,7 @@ static int register_wm_size_class(size_t sz)
 {
 	struct wm_list *l, *nl;
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
-	nl = __alloc(sizeof(struct wm_list), GFP_KERNEL);
-#else
-	nl = kvmalloc(sizeof(struct wm_list), GFP_KERNEL);
-#endif
+	nl = kmalloc(sizeof(struct wm_list), GFP_KERNEL);
 	if (!nl)
 		return -ENOMEM;
 
