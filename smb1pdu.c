@@ -18,7 +18,6 @@
 #include "vfs.h"
 #include "misc.h"
 
-#include "time_wrappers.h"
 #include "auth.h"
 #include "asn1.h"
 #include "server.h"

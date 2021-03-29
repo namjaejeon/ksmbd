@@ -10,7 +10,7 @@
 #include "glob.h"
 #include "smberr.h"
 #include "nterr.h"
-#include "time_wrappers.h"
+#include "smb_common.h"
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 /*****************************************************************************
@@ -642,4 +642,27 @@ struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
 	}
 
 	return ts;
+}
+
+/* Convert the Unix UTC into NT UTC. */
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
+u64 ksmbd_UnixTimeToNT(struct timespec t)
+#else
+u64 ksmbd_UnixTimeToNT(struct timespec64 t)
+#endif
+{
+	/* Convert to 100ns intervals and then add the NTFS time offset. */
+	return (u64)t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
+}
+
+long long ksmbd_systime(void)
+{
+	struct timespec64	ts;
+
+	ktime_get_real_ts64(&ts);
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
+	return ksmbd_UnixTimeToNT(timespec64_to_timespec(ts));
+#else
+	return ksmbd_UnixTimeToNT(ts);
+#endif
 }
