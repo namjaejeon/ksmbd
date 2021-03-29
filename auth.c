@@ -66,7 +66,6 @@ static char NEGOTIATE_GSS_HEADER[AUTH_GSS_LENGTH] = {
 #endif
 };
 
-
 void ksmbd_copy_gss_neg_header(void *buf)
 {
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
@@ -139,9 +138,7 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 }
 #endif
 
-static int ksmbd_enc_p24(unsigned char *p21,
-			 const unsigned char *c8,
-			 unsigned char *p24)
+static int ksmbd_enc_p24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 {
 	int rc;
 
@@ -156,9 +153,8 @@ static int ksmbd_enc_p24(unsigned char *p21,
 }
 
 /* produce a md4 message digest from data of length n bytes */
-static int ksmbd_enc_md4(unsigned char *md4_hash,
-			 unsigned char *link_str,
-			 int link_len)
+static int ksmbd_enc_md4(unsigned char *md4_hash, unsigned char *link_str,
+		int link_len)
 {
 	int rc;
 	struct ksmbd_crypto_ctx *ctx;
@@ -189,10 +185,8 @@ out:
 	return rc;
 }
 
-static int ksmbd_enc_update_sess_key(unsigned char *md5_hash,
-				     char *nonce,
-				     char *server_challenge,
-				     int len)
+static int ksmbd_enc_update_sess_key(unsigned char *md5_hash, char *nonce,
+		char *server_challenge, int len)
 {
 	int rc;
 	struct ksmbd_crypto_ctx *ctx;
@@ -236,9 +230,8 @@ out:
  * @hmac:	source hmac value to be used for finding session key
  *
  */
-static int ksmbd_gen_sess_key(struct ksmbd_session *sess,
-			      char *hash,
-			      char *hmac)
+static int ksmbd_gen_sess_key(struct ksmbd_session *sess, char *hash,
+		char *hmac)
 {
 	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
@@ -283,7 +276,7 @@ out:
 }
 
 static int calc_ntlmv2_hash(struct ksmbd_session *sess, char *ntlmv2_hash,
-	char *dname)
+		char *dname)
 {
 	int ret = -EINVAL, len;
 	wchar_t *domain = NULL;
@@ -393,8 +386,9 @@ int ksmbd_auth_ntlm(struct ksmbd_session *sess, char *pw_buf)
 	if (strncmp(pw_buf, key, CIFS_AUTH_RESP_SIZE) != 0) {
 		ksmbd_debug(AUTH, "ntlmv1 authentication failed\n");
 		rc = -EINVAL;
-	} else
+	} else {
 		ksmbd_debug(AUTH, "ntlmv1 authentication pass\n");
+	}
 
 	return rc;
 }
@@ -408,10 +402,8 @@ int ksmbd_auth_ntlm(struct ksmbd_session *sess, char *pw_buf)
  *
  * Return:	0 on success, error number on error
  */
-int ksmbd_auth_ntlmv2(struct ksmbd_session *sess,
-		      struct ntlmv2_resp *ntlmv2,
-		      int blen,
-		      char *domain_name)
+int ksmbd_auth_ntlmv2(struct ksmbd_session *sess, struct ntlmv2_resp *ntlmv2,
+		int blen, char *domain_name)
 {
 	char ntlmv2_hash[CIFS_ENCPWD_SIZE];
 	char ntlmv2_rsp[CIFS_HMAC_MD5_HASH_SIZE];
@@ -489,9 +481,8 @@ out:
  *
  * Return:	0 on success, error number on error
  */
-static int __ksmbd_auth_ntlmv2(struct ksmbd_session *sess,
-			       char *client_nonce,
-			       char *ntlm_resp)
+static int __ksmbd_auth_ntlmv2(struct ksmbd_session *sess, char *client_nonce,
+		char *ntlm_resp)
 {
 	char sess_key[CIFS_SMB1_SESSKEY_SIZE] = {0};
 	int rc;
@@ -529,8 +520,7 @@ out:
  * Return:	0 on success, error number on error
  */
 int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
-				   int blob_len,
-				   struct ksmbd_session *sess)
+		int blob_len, struct ksmbd_session *sess)
 {
 	char *domain_name;
 	unsigned int lm_off, nt_off;
@@ -555,8 +545,8 @@ int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 
 	/* process NTLM authentication */
 	if (nt_len == CIFS_AUTH_RESP_SIZE) {
-		if (le32_to_cpu(authblob->NegotiateFlags)
-			& NTLMSSP_NEGOTIATE_EXTENDED_SEC)
+		if (le32_to_cpu(authblob->NegotiateFlags) &
+		    NTLMSSP_NEGOTIATE_EXTENDED_SEC)
 			return __ksmbd_auth_ntlmv2(sess, (char *)authblob +
 				lm_off, (char *)authblob + nt_off);
 		else
@@ -565,8 +555,7 @@ int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 	}
 
 	/* TODO : use domain name that imported from configuration file */
-	domain_name = smb_strndup_from_utf16(
-			(const char *)authblob +
+	domain_name = smb_strndup_from_utf16((const char *)authblob +
 			le32_to_cpu(authblob->DomainName.BufferOffset),
 			le16_to_cpu(authblob->DomainName.Length), true,
 			sess->conn->local_nls);
@@ -593,8 +582,7 @@ int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
  *
  */
 int ksmbd_decode_ntlmssp_neg_blob(struct negotiate_message *negblob,
-				  int blob_len,
-				  struct ksmbd_session *sess)
+		int blob_len, struct ksmbd_session *sess)
 {
 	if (blob_len < sizeof(struct negotiate_message)) {
 		ksmbd_debug(AUTH, "negotiate blob len %d too small\n",
@@ -650,7 +638,7 @@ ksmbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
 		flags |= NTLMSSP_REQUEST_TARGET;
 
 	if (sess->conn->use_spnego &&
-		(cflags & NTLMSSP_NEGOTIATE_EXTENDED_SEC))
+	    (cflags & NTLMSSP_NEGOTIATE_EXTENDED_SEC))
 		flags |= NTLMSSP_NEGOTIATE_EXTENDED_SEC;
 
 	chgblob->NegotiateFlags = cpu_to_le32(flags);
@@ -707,9 +695,8 @@ ksmbd_build_ntlmssp_challenge_blob(struct challenge_message *chgblob,
 }
 
 #ifdef CONFIG_SMB_SERVER_KERBEROS5
-int ksmbd_krb5_authenticate(struct ksmbd_session *sess,
-			char *in_blob, int in_len,
-			char *out_blob, int *out_len)
+int ksmbd_krb5_authenticate(struct ksmbd_session *sess, char *in_blob,
+		int in_len, char *out_blob, int *out_len)
 {
 	struct ksmbd_spnego_authen_response *resp;
 	struct ksmbd_user *user = NULL;
@@ -758,9 +745,8 @@ out:
 	return retval;
 }
 #else
-int ksmbd_krb5_authenticate(struct ksmbd_session *sess,
-			char *in_blob, int in_len,
-			char *out_blob, int *out_len)
+int ksmbd_krb5_authenticate(struct ksmbd_session *sess, char *in_blob,
+		int in_len, char *out_blob, int *out_len)
 {
 	return -EOPNOTSUPP;
 }
@@ -775,10 +761,8 @@ int ksmbd_krb5_authenticate(struct ksmbd_session *sess,
  * @sig:        signature value generated for client request packet
  *
  */
-int ksmbd_sign_smb1_pdu(struct ksmbd_session *sess,
-			struct kvec *iov,
-			int n_vec,
-			char *sig)
+int ksmbd_sign_smb1_pdu(struct ksmbd_session *sess, struct kvec *iov, int n_vec,
+		char *sig)
 {
 	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
@@ -831,11 +815,8 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int ksmbd_sign_smb2_pdu(struct ksmbd_conn *conn,
-			char *key,
-			struct kvec *iov,
-			int n_vec,
-			char *sig)
+int ksmbd_sign_smb2_pdu(struct ksmbd_conn *conn, char *key, struct kvec *iov,
+		int n_vec, char *sig)
 {
 	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
@@ -886,11 +867,8 @@ out:
  * @sig:	signature value generated for client request packet
  *
  */
-int ksmbd_sign_smb3_pdu(struct ksmbd_conn *conn,
-			char *key,
-			struct kvec *iov,
-			int n_vec,
-			char *sig)
+int ksmbd_sign_smb3_pdu(struct ksmbd_conn *conn, char *key, struct kvec *iov,
+		int n_vec, char *sig)
 {
 	struct ksmbd_crypto_ctx *ctx;
 	int rc = -EINVAL;
@@ -939,7 +917,7 @@ struct derivation {
 };
 
 static int generate_key(struct ksmbd_session *sess, struct kvec label,
-	struct kvec context, __u8 *key, unsigned int key_size)
+		struct kvec context, __u8 *key, unsigned int key_size)
 {
 	unsigned char zero = 0x0;
 	__u8 i[4] = {0, 0, 0, 1};
@@ -1019,7 +997,7 @@ smb3signkey_ret:
 }
 
 static int generate_smb3signingkey(struct ksmbd_session *sess,
-				   const struct derivation *signing)
+		const struct derivation *signing)
 {
 	int rc;
 	struct channel *chann;
@@ -1083,7 +1061,7 @@ struct derivation_twin {
 };
 
 static int generate_smb3encryptionkey(struct ksmbd_session *sess,
-	const struct derivation_twin *ptwin)
+		const struct derivation_twin *ptwin)
 {
 	int rc;
 
@@ -1150,9 +1128,8 @@ int ksmbd_gen_smb311_encryptionkey(struct ksmbd_session *sess)
 	return generate_smb3encryptionkey(sess, &twin);
 }
 
-int ksmbd_gen_preauth_integrity_hash(struct ksmbd_conn *conn,
-				     char *buf,
-				     __u8 *pi_hash)
+int ksmbd_gen_preauth_integrity_hash(struct ksmbd_conn *conn, char *buf,
+		__u8 *pi_hash)
 {
 	int rc = -1;
 	struct smb2_hdr *rcv_hdr = (struct smb2_hdr *)buf;
@@ -1161,14 +1138,15 @@ int ksmbd_gen_preauth_integrity_hash(struct ksmbd_conn *conn,
 	struct ksmbd_crypto_ctx *ctx = NULL;
 
 	if (conn->preauth_info->Preauth_HashId ==
-			SMB2_PREAUTH_INTEGRITY_SHA512) {
+	    SMB2_PREAUTH_INTEGRITY_SHA512) {
 		ctx = ksmbd_crypto_ctx_find_sha512();
 		if (!ctx) {
 			ksmbd_debug(AUTH, "could not alloc sha512 rc %d\n", rc);
 			goto out;
 		}
-	} else
+	} else {
 		goto out;
+	}
 
 	rc = crypto_shash_init(CRYPTO_SHA512(ctx));
 	if (rc) {
@@ -1232,10 +1210,8 @@ out:
 	return rc;
 }
 
-static int ksmbd_get_encryption_key(struct ksmbd_conn *conn,
-				    __u64 ses_id,
-				    int enc,
-				    u8 *key)
+static int ksmbd_get_encryption_key(struct ksmbd_conn *conn, __u64 ses_id,
+		int enc, u8 *key)
 {
 	struct ksmbd_session *sess;
 	u8 *ses_enc_key;
@@ -1277,8 +1253,9 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 			nr_entries[i] = ((kaddr + iov[i + 1].iov_len +
 					PAGE_SIZE - 1) >> PAGE_SHIFT) -
 				(kaddr >> PAGE_SHIFT);
-		} else
+		} else {
 			nr_entries[i]++;
+		}
 		total_entries += nr_entries[i];
 	}
 
@@ -1318,16 +1295,14 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 			sg_set_page(&sg[sg_idx++], virt_to_page(data), len,
 				    offset_in_page(data));
 		}
-
 	}
 	smb2_sg_set_buf(&sg[sg_idx], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }
 
 #else
-static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
-					 unsigned int nvec,
-					 u8 *sign)
+static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
+		u8 *sign)
 {
 	struct scatterlist *sg;
 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 24;
@@ -1340,8 +1315,9 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 			nr_entries[i] = ((kaddr + iov[i + 1].iov_len +
 					PAGE_SIZE - 1) >> PAGE_SHIFT) -
 				(kaddr >> PAGE_SHIFT);
-		} else
+		} else {
 			nr_entries[i]++;
+		}
 		total_entries += nr_entries[i];
 	}
 
@@ -1382,17 +1358,14 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
 			sg_set_page(&sg[sg_idx++], virt_to_page(data), len,
 				    offset_in_page(data));
 		}
-
 	}
 	smb2_sg_set_buf(&sg[sg_idx], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }
 #endif
 
-int ksmbd_crypt_message(struct ksmbd_conn *conn,
-			struct kvec *iov,
-			unsigned int nvec,
-			int enc)
+int ksmbd_crypt_message(struct ksmbd_conn *conn, struct kvec *iov,
+		unsigned int nvec, int enc)
 {
 	struct smb2_transform_hdr *tr_hdr =
 		(struct smb2_transform_hdr *)iov[0].iov_base;
@@ -1478,9 +1451,9 @@ int ksmbd_crypt_message(struct ksmbd_conn *conn,
 		goto free_sg;
 	}
 
-	if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM)
+	if (conn->cipher_type == SMB2_ENCRYPTION_AES128_GCM) {
 		memcpy(iv, (char *)tr_hdr->Nonce, SMB3_AES128GCM_NONCE);
-	else {
+	} else {
 		iv[0] = 3;
 		memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
 	}
