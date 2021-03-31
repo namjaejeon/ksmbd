@@ -879,7 +879,7 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id)
 int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 {
 	struct path parent;
-	struct dentry *dir, *dentry;
+	struct dentry *dentry;
 	char *last;
 	int err;
 
@@ -898,16 +898,12 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 		return err;
 	}
 
-	dir = parent.dentry;
-	if (!d_inode(dir))
-		goto out;
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
-	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
+	inode_lock_nested(d_inode(parent.dentry), I_MUTEX_PARENT);
 #else
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
+	mutex_lock_nested(&d_inode(parent.dentry)->i_mutex, I_MUTEX_PARENT);
 #endif
-	dentry = lookup_one_len(last, dir, strlen(last));
+	dentry = lookup_one_len(last, parent.dentry, strlen(last));
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		ksmbd_debug(VFS, "%s: lookup failed, err %d\n", last, err);
@@ -922,18 +918,19 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 
 	if (S_ISDIR(d_inode(dentry)->i_mode)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = vfs_rmdir(&init_user_ns, d_inode(dir), dentry);
+		err = vfs_rmdir(&init_user_ns, d_inode(parent.dentry), dentry);
 #else
-		err = vfs_rmdir(d_inode(dir), dentry);
+		err = vfs_rmdir(d_inode(parent.dentry), dentry);
 #endif
 		if (err && err != -ENOTEMPTY)
 			ksmbd_debug(VFS, "%s: rmdir failed, err %d\n", name,
 				err);
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = vfs_unlink(&init_user_ns, d_inode(dir), dentry, NULL);
+		err = vfs_unlink(&init_user_ns, d_inode(parent.dentry), dentry,
+				 NULL);
 #else
-		err = vfs_unlink(d_inode(dir), dentry, NULL);
+		err = vfs_unlink(d_inode(parent.dentry), dentry, NULL);
 #endif
 		if (err)
 			ksmbd_debug(VFS, "%s: unlink failed, err %d\n", name,
@@ -943,11 +940,10 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 	dput(dentry);
 out_err:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
-	inode_unlock(d_inode(dir));
+	inode_unlock(d_inode(parent.dentry));
 #else
-	mutex_unlock(&d_inode(dir)->i_mutex);
+	mutex_unlock(&d_inode(parent.dentry)->i_mutex);
 #endif
-out:
 	rollback_path_modification(last);
 	path_put(&parent);
 	ksmbd_revert_fsids(work);
