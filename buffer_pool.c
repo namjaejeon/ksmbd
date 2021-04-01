@@ -18,6 +18,25 @@
 
 static struct kmem_cache *filp_cache;
 
+struct wm {
+	struct list_head	list;
+	unsigned int		sz;
+	char			buffer[0];
+};
+
+struct wm_list {
+	struct list_head	list;
+	unsigned int		sz;
+
+	spinlock_t		wm_lock;
+	int			avail_wm;
+	struct list_head	idle_wm;
+	wait_queue_head_t	wm_wait;
+};
+
+static LIST_HEAD(wm_lists);
+static DEFINE_RWLOCK(wm_lists_lock);
+
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
 /*
  * A simple kvmalloc()/kvfree() implementation.
@@ -76,6 +95,170 @@ void ksmbd_free(void *ptr)
 #endif
 }
 
+static struct wm *wm_alloc(size_t sz, gfp_t flags)
+{
+	struct wm *wm;
+	size_t alloc_sz = sz + sizeof(struct wm);
+
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
+	wm = __alloc(alloc_sz, flags);
+#else
+	wm = kvmalloc(alloc_sz, flags);
+#endif
+	if (!wm)
+		return NULL;
+	wm->sz = sz;
+	return wm;
+}
+
+static int register_wm_size_class(size_t sz)
+{
+	struct wm_list *l, *nl;
+
+	nl = kmalloc(sizeof(struct wm_list), GFP_KERNEL);
+	if (!nl)
+		return -ENOMEM;
+
+	nl->sz = sz;
+	spin_lock_init(&nl->wm_lock);
+	INIT_LIST_HEAD(&nl->idle_wm);
+	INIT_LIST_HEAD(&nl->list);
+	init_waitqueue_head(&nl->wm_wait);
+	nl->avail_wm = 0;
+
+	write_lock(&wm_lists_lock);
+	list_for_each_entry(l, &wm_lists, list) {
+		if (l->sz == sz) {
+			write_unlock(&wm_lists_lock);
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
+			__free(nl);
+#else
+			kvfree(nl);
+#endif
+			return 0;
+		}
+	}
+
+	list_add(&nl->list, &wm_lists);
+	write_unlock(&wm_lists_lock);
+	return 0;
+}
+
+static struct wm_list *match_wm_list(size_t size)
+{
+	struct wm_list *l, *rl = NULL;
+
+	read_lock(&wm_lists_lock);
+	list_for_each_entry(l, &wm_lists, list) {
+		if (l->sz == size) {
+			rl = l;
+			break;
+		}
+	}
+	read_unlock(&wm_lists_lock);
+	return rl;
+}
+
+static struct wm *find_wm(size_t size)
+{
+	struct wm_list *wm_list;
+	struct wm *wm;
+
+	wm_list = match_wm_list(size);
+	if (!wm_list) {
+		if (register_wm_size_class(size))
+			return NULL;
+		wm_list = match_wm_list(size);
+	}
+
+	if (!wm_list)
+		return NULL;
+
+	while (1) {
+		spin_lock(&wm_list->wm_lock);
+		if (!list_empty(&wm_list->idle_wm)) {
+			wm = list_entry(wm_list->idle_wm.next,
+					struct wm,
+					list);
+			list_del(&wm->list);
+			spin_unlock(&wm_list->wm_lock);
+			return wm;
+		}
+
+		if (wm_list->avail_wm > num_online_cpus()) {
+			spin_unlock(&wm_list->wm_lock);
+			wait_event(wm_list->wm_wait,
+				   !list_empty(&wm_list->idle_wm));
+			continue;
+		}
+
+		wm_list->avail_wm++;
+		spin_unlock(&wm_list->wm_lock);
+
+		wm = wm_alloc(size, GFP_KERNEL);
+		if (!wm) {
+			spin_lock(&wm_list->wm_lock);
+			wm_list->avail_wm--;
+			spin_unlock(&wm_list->wm_lock);
+			wait_event(wm_list->wm_wait,
+				   !list_empty(&wm_list->idle_wm));
+			continue;
+		}
+		break;
+	}
+
+	return wm;
+}
+
+static void release_wm(struct wm *wm, struct wm_list *wm_list)
+{
+	if (!wm)
+		return;
+
+	spin_lock(&wm_list->wm_lock);
+	if (wm_list->avail_wm <= num_online_cpus()) {
+		list_add(&wm->list, &wm_list->idle_wm);
+		spin_unlock(&wm_list->wm_lock);
+		wake_up(&wm_list->wm_wait);
+		return;
+	}
+
+	wm_list->avail_wm--;
+	spin_unlock(&wm_list->wm_lock);
+	ksmbd_free(wm);
+}
+
+static void wm_list_free(struct wm_list *l)
+{
+	struct wm *wm;
+
+	while (!list_empty(&l->idle_wm)) {
+		wm = list_entry(l->idle_wm.next, struct wm, list);
+		list_del(&wm->list);
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
+		__free(wm);
+#else
+		kvfree(wm);
+#endif
+	}
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
+	__free(l);
+#else
+	kvfree(l);
+#endif
+}
+
+static void wm_lists_destroy(void)
+{
+	struct wm_list *l;
+
+	while (!list_empty(&wm_lists)) {
+		l = list_entry(wm_lists.next, struct wm_list, list);
+		list_del(&l->list);
+		wm_list_free(l);
+	}
+}
+
 void ksmbd_free_request(void *addr)
 {
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
@@ -112,6 +295,33 @@ void *ksmbd_alloc_response(size_t size)
 #endif
 }
 
+void *ksmbd_find_buffer(size_t size)
+{
+	struct wm *wm;
+
+	wm = find_wm(size);
+
+	WARN_ON(!wm);
+	if (wm)
+		return wm->buffer;
+	return NULL;
+}
+
+void ksmbd_release_buffer(void *buffer)
+{
+	struct wm_list *wm_list;
+	struct wm *wm;
+
+	if (!buffer)
+		return;
+
+	wm = container_of(buffer, struct wm, buffer);
+	wm_list = match_wm_list(wm->sz);
+	WARN_ON(!wm_list);
+	if (wm_list)
+		release_wm(wm, wm_list);
+}
+
 void *ksmbd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 {
 	size_t sz = min(old_sz, new_sz);
@@ -137,6 +347,7 @@ void *ksmbd_alloc_file_struct(void)
 
 void ksmbd_destroy_buffer_pools(void)
 {
+	wm_lists_destroy();
 	ksmbd_work_pool_destroy();
 	kmem_cache_destroy(filp_cache);
 }

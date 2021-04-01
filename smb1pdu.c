@@ -2875,7 +2875,11 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
 		FP_FILENAME(fp), pos, count);
 
-	work->aux_payload_buf = ksmbd_alloc_response(count);
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
+		work->aux_payload_buf = ksmbd_find_buffer(count);
+		work->set_read_buf = true;
+	} else
+		work->aux_payload_buf = ksmbd_alloc_response(count);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
