@@ -104,7 +104,11 @@ int smb2_get_ksmbd_tcon(struct ksmbd_work *work)
 		return 0;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
+	if (xa_empty(&work->sess->tree_conns)) {
+#else
 	if (list_empty(&work->sess->tree_conn_list)) {
+#endif
 		ksmbd_debug(SMB, "NO tree connected\n");
 		return -1;
 	}
