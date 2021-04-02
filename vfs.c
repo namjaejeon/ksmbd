@@ -19,12 +19,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/crc32c.h>
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
-#else
-#include <linux/sched.h>
-#endif
 
 #include "glob.h"
 #include "oplock.h"
@@ -369,9 +364,6 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 	ssize_t nbytes = 0;
 	char *rbuf;
 	struct inode *inode;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	mm_segment_t old_fs;
-#endif
 
 	rbuf = work->aux_payload_buf;
 	filp = fp->filp;
@@ -403,15 +395,7 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 		}
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	nbytes = vfs_read(filp, rbuf, count, pos);
-	set_fs(old_fs);
-#else
 	nbytes = kernel_read(filp, rbuf, count, pos);
-#endif
 	if (nbytes < 0) {
 		ksmbd_err("smb read failed for (%s), err = %zd\n",
 				fp->filename, nbytes);
@@ -497,9 +481,6 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 	struct file *filp;
 	loff_t	offset = *pos;
 	int err = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	mm_segment_t old_fs;
-#endif
 
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & FILE_WRITE_DATA_LE)) {
@@ -530,15 +511,7 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 	/* Do we need to break any of a levelII oplock? */
 	smb_break_all_levII_oplock(work, fp, 1);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	err = vfs_write(filp, buf, count, pos);
-	set_fs(old_fs);
-#else
 	err = kernel_write(filp, buf, count, pos);
-#endif
-
 	if (err < 0) {
 		ksmbd_debug(VFS, "smb write failed, err = %d\n", err);
 		goto out;
@@ -570,11 +543,7 @@ int ksmbd_vfs_getattr(struct path *path, struct kstat *stat)
 {
 	int err;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	err = vfs_getattr(path, stat, STATX_BTIME, AT_STATX_SYNC_AS_STAT);
-#else
-	err = vfs_getattr(path, stat);
-#endif
 	if (err)
 		ksmbd_err("getattr failed, err %d\n", err);
 	return err;
@@ -690,7 +659,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 
 	attrs->ia_valid |= ATTR_CTIME;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock(inode);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	err = notify_change(&init_user_ns, dentry, attrs, NULL);
@@ -698,11 +666,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 	err = notify_change(dentry, attrs, NULL);
 #endif
 	inode_unlock(inode);
-#else
-	mutex_lock(&inode->i_mutex);
-	err = notify_change(dentry, attrs, NULL);
-	mutex_unlock(&inode->i_mutex);
-#endif
 
 	if (update_size)
 		put_write_access(inode);
@@ -898,11 +861,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 		return err;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(parent.dentry), I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&d_inode(parent.dentry)->i_mutex, I_MUTEX_PARENT);
-#endif
 	dentry = lookup_one_len(last, parent.dentry, strlen(last));
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
@@ -939,11 +898,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 
 	dput(dentry);
 out_err:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(parent.dentry));
-#else
-	mutex_unlock(&d_inode(parent.dentry)->i_mutex);
-#endif
 	rollback_path_modification(last);
 	path_put(&parent);
 	ksmbd_revert_fsids(work);
@@ -1528,11 +1483,7 @@ int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn, struct dentry *dentry,
 
 	acl.version = 4;
 	acl.hash_type = XATTR_SD_HASH_TYPE_SHA256;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	acl.current_time = ksmbd_UnixTimeToNT(current_time(dentry->d_inode));
-#else
-	acl.current_time = ksmbd_UnixTimeToNT(CURRENT_TIME);
-#endif
 
 	memcpy(acl.desc, "posix_acl", 9);
 	acl.desc_len = 10;
@@ -1718,31 +1669,10 @@ int ksmbd_vfs_set_posix_acl(struct inode *inode, int type,
 		struct posix_acl *acl)
 {
 #if IS_ENABLED(CONFIG_FS_POSIX_ACL)
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 4, 21)
-	int ret;
-
-	if (!IS_POSIXACL(inode))
-		return -EOPNOTSUPP;
-	if (!inode->i_op->set_acl)
-		return -EOPNOTSUPP;
-
-	if (type == ACL_TYPE_DEFAULT && !S_ISDIR(inode->i_mode))
-		return -EACCES;
-	if (!inode_owner_or_capable(inode))
-		return -EPERM;
-	if (!acl)
-		return -EINVAL;
-
-	ret = posix_acl_valid(acl);
-	if (ret)
-		return ret;
-	return inode->i_op->set_acl(inode, acl, type);
-#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	return set_posix_acl(&init_user_ns, inode, type, acl);
 #else
 	return set_posix_acl(inode, type, acl);
-#endif
 #endif
 #else
 	return -EOPNOTSUPP;
@@ -1891,11 +1821,7 @@ int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 	int err = 0;
 
 	dget(dentry);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
-#endif
 	if (!d_inode(dentry) || !d_inode(dentry)->i_nlink) {
 		err = -ENOENT;
 		goto out;
@@ -1913,11 +1839,7 @@ int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 #endif
 
 out:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
-#else
-	mutex_unlock(&d_inode(dir)->i_mutex);
-#endif
 	dput(dentry);
 	if (err)
 		ksmbd_debug(VFS, "failed to delete, err %d\n", err);
@@ -2319,12 +2241,10 @@ static int ksmbd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 	struct inode *inode_out = file_inode(file_out);
 	int ret;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	ret = vfs_copy_file_range(file_in, pos_in, file_out, pos_out, len, 0);
 	/* do splice for the copy between different file systems */
 	if (ret != -EXDEV)
 		return ret;
-#endif
 
 	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
 		return -EISDIR;
@@ -2427,33 +2347,19 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 
 int ksmbd_vfs_posix_lock_wait(struct file_lock *flock)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	return wait_event_interruptible(flock->fl_wait, !flock->fl_next);
-#else
 	return wait_event_interruptible(flock->fl_wait, !flock->fl_blocker);
-#endif
 }
 
 int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	return wait_event_interruptible_timeout(flock->fl_wait,
-						!flock->fl_next,
-						timeout);
-#else
 	return wait_event_interruptible_timeout(flock->fl_wait,
 						!flock->fl_blocker,
 						timeout);
-#endif
 }
 
 void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	posix_unblock_lock(flock);
-#else
 	locks_delete_block(flock);
-#endif
 }
 
 int ksmbd_vfs_set_init_posix_acl(struct inode *inode)

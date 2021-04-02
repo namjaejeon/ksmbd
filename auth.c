@@ -19,10 +19,8 @@
 #include "auth.h"
 #include "glob.h"
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 #include <linux/fips.h>
 #include <crypto/des.h>
-#endif
 
 #include "server.h"
 #include "smb_common.h"
@@ -88,7 +86,6 @@ str_to_key(unsigned char *str, unsigned char *key)
 		key[i] = (key[i] << 1);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 static int
 smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 {
@@ -108,35 +105,6 @@ smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
 	memzero_explicit(&ctx, sizeof(ctx));
 	return 0;
 }
-#else
-static int
-smbhash(unsigned char *out, const unsigned char *in, unsigned char *key)
-{
-	int rc;
-	unsigned char key2[8];
-	struct scatterlist sgin, sgout;
-	struct ksmbd_crypto_ctx *ctx;
-
-	str_to_key(key, key2);
-
-	ctx = ksmbd_crypto_ctx_find_ecbdes();
-	if (!ctx) {
-		ksmbd_debug(AUTH, "could not allocate des crypto API\n");
-		return -EINVAL;
-	}
-
-	crypto_blkcipher_setkey(CRYPTO_ECBDES_TFM(ctx), key2, 8);
-
-	sg_init_one(&sgin, in, 8);
-	sg_init_one(&sgout, out, 8);
-
-	rc = crypto_blkcipher_encrypt(CRYPTO_ECBDES(ctx), &sgout, &sgin, 8);
-	if (rc)
-		ksmbd_debug(AUTH, "could not encrypt crypt key rc: %d\n", rc);
-	ksmbd_release_crypto_ctx(ctx);
-	return rc;
-}
-#endif
 
 static int ksmbd_enc_p24(unsigned char *p21, const unsigned char *c8, unsigned char *p24)
 {
@@ -1239,68 +1207,6 @@ static inline void smb2_sg_set_buf(struct scatterlist *sg, const void *buf,
 	sg_set_page(sg, addr, buflen, offset_in_page(buf));
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static struct scatterlist *ksmbd_init_sg(struct kvec *iov,
-		unsigned int nvec, u8 *sign)
-{
-	struct scatterlist *sg;
-	int i, nr_entries[2] = {0}, total_entries = 0, sg_idx = 0;
-
-	for (i = 0; i < nvec - 1; i++) {
-		unsigned long kaddr = (unsigned long)iov[i + 1].iov_base;
-
-		if (is_vmalloc_addr(iov[i + 1].iov_base)) {
-			nr_entries[i] = ((kaddr + iov[i + 1].iov_len +
-					PAGE_SIZE - 1) >> PAGE_SHIFT) -
-				(kaddr >> PAGE_SHIFT);
-		} else {
-			nr_entries[i]++;
-		}
-		total_entries += nr_entries[i];
-	}
-
-	/* add one more entry for signature */
-	total_entries++;
-
-	sg = kmalloc_array(total_entries, sizeof(struct scatterlist), GFP_KERNEL);
-	if (!sg)
-		return NULL;
-
-	sg_init_table(sg, total_entries);
-	for (i = 0; i < nvec - 1; i++) {
-		void *data = iov[i + 1].iov_base;
-		int len = iov[i + 1].iov_len;
-
-		if (is_vmalloc_addr(data)) {
-			int j, offset = offset_in_page(data);
-
-			for (j = 0; j < nr_entries[i]; j++) {
-				unsigned int bytes = PAGE_SIZE - offset;
-
-				if (len <= 0)
-					break;
-
-				if (bytes > len)
-					bytes = len;
-
-				sg_set_page(&sg[sg_idx++],
-					    vmalloc_to_page(data), bytes,
-					    offset_in_page(data));
-
-				data += bytes;
-				len -= bytes;
-				offset = 0;
-			}
-		} else {
-			sg_set_page(&sg[sg_idx++], virt_to_page(data), len,
-				    offset_in_page(data));
-		}
-	}
-	smb2_sg_set_buf(&sg[sg_idx], sign, SMB2_SIGNATURE_SIZE);
-	return sg;
-}
-
-#else
 static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 		u8 *sign)
 {
@@ -1362,7 +1268,6 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 	smb2_sg_set_buf(&sg[sg_idx], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }
-#endif
 
 int ksmbd_crypt_message(struct ksmbd_conn *conn, struct kvec *iov,
 		unsigned int nvec, int enc)
@@ -1379,9 +1284,6 @@ int ksmbd_crypt_message(struct ksmbd_conn *conn, struct kvec *iov,
 	unsigned int iv_len;
 	struct crypto_aead *tfm;
 	unsigned int crypt_len = le32_to_cpu(tr_hdr->OriginalMessageSize);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	struct scatterlist assoc;
-#endif
 	struct ksmbd_crypto_ctx *ctx;
 
 	rc = ksmbd_get_encryption_key(conn,
@@ -1431,11 +1333,6 @@ int ksmbd_crypt_message(struct ksmbd_conn *conn, struct kvec *iov,
 		crypt_len += SMB2_SIGNATURE_SIZE;
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	sg_init_table(&assoc, 1);
-	smb2_sg_set_buf(&assoc, iov[0].iov_base + 24, assoc_data_len);
-#endif
-
 	sg = ksmbd_init_sg(iov, nvec, sign);
 	if (!sg) {
 		ksmbd_err("Failed to init sg\n");
@@ -1458,13 +1355,8 @@ int ksmbd_crypt_message(struct ksmbd_conn *conn, struct kvec *iov,
 		memcpy(iv + 1, (char *)tr_hdr->Nonce, SMB3_AES128CCM_NONCE);
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-	aead_request_set_assoc(req, &assoc, assoc_data_len);
-	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
-#else
 	aead_request_set_crypt(req, sg, sg, crypt_len, iv);
 	aead_request_set_ad(req, assoc_data_len);
-#endif
 	aead_request_set_callback(req, CRYPTO_TFM_REQ_MAY_SLEEP, NULL, NULL);
 
 	if (enc)

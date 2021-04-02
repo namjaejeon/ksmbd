@@ -123,29 +123,11 @@ struct ksmbd_file {
 	int				dot_dotdot[2];
 };
 
-/*
- * Starting from 4.16 ->actor is not const anymore. The const prevents
- * the structure from being used as part of a kmalloc'd object as it
- * makes the compiler require that the actor member be set at object
- * initialisation time (or not at all).
- */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
-static inline void set_ctx_actor(struct dir_context *ctx,
-				 filldir_t actor)
-{
-	struct dir_context c = {
-		.actor	= actor,
-		.pos	= ctx->pos,
-	};
-	memcpy(ctx, &c, sizeof(struct dir_context));
-}
-#else
 static inline void set_ctx_actor(struct dir_context *ctx,
 				 filldir_t actor)
 {
 	ctx->actor = actor;
 }
-#endif
 
 #define KSMBD_NR_OPEN_DEFAULT BITS_PER_LONG
 

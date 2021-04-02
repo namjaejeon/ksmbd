@@ -104,11 +104,7 @@ int smb2_get_ksmbd_tcon(struct ksmbd_work *work)
 		return 0;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	if (xa_empty(&work->sess->tree_conns)) {
-#else
-	if (list_empty(&work->sess->tree_conn_list)) {
-#endif
 		ksmbd_debug(SMB, "NO tree connected\n");
 		return -1;
 	}
@@ -3093,14 +3089,10 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	if (stat.result_mask & STATX_BTIME)
 		fp->create_time = ksmbd_UnixTimeToNT(stat.btime);
 	else
 		fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#else
-	fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#endif
 	if (req->FileAttributes || fp->f_ci->m_fattr == 0)
 		fp->f_ci->m_fattr = cpu_to_le32(smb2_get_dos_mode(&stat,
 			le32_to_cpu(req->FileAttributes)));
@@ -3617,22 +3609,14 @@ static void lock_dir(struct ksmbd_file *dir_fp)
 {
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
-#endif
 }
 
 static void unlock_dir(struct ksmbd_file *dir_fp)
 {
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
-#else
-	mutex_unlock(&d_inode(dir)->i_mutex);
-#endif
 }
 
 static int process_query_dir_entries(struct smb2_query_dir_private *priv)
@@ -5644,21 +5628,14 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		if (IS_IMMUTABLE(inode) || IS_APPEND(inode))
 			return -EACCES;
 
-#if ((LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)) && \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 1, 37))) || \
-		(LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		rc = setattr_prepare(&init_user_ns, dentry, &attrs);
 #else
 		rc = setattr_prepare(dentry, &attrs);
 #endif
-#else
-		rc = inode_change_ok(inode, &attrs);
-#endif
 		if (rc)
 			return -EINVAL;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 		inode_lock(inode);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		setattr_copy(&init_user_ns, inode, &attrs);
@@ -5672,13 +5649,6 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		rc = notify_change(dentry, &attrs, NULL);
 #endif
 		inode_unlock(inode);
-#else
-		mutex_lock(&inode->i_mutex);
-		setattr_copy(inode, &attrs);
-		attrs.ia_valid &= ~ATTR_CTIME;
-		rc = notify_change(dentry, &attrs, NULL);
-		mutex_unlock(&inode->i_mutex);
-#endif
 		if (rc)
 			return -EINVAL;
 	}
@@ -7169,7 +7139,6 @@ static __be32 idev_ipv4_address(struct in_device *idev)
 {
 	__be32 addr = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 	struct in_ifaddr *ifa;
 
 	rcu_read_lock();
@@ -7181,12 +7150,6 @@ static __be32 idev_ipv4_address(struct in_device *idev)
 		break;
 	}
 	rcu_read_unlock();
-#else
-	for_primary_ifa(idev) {
-		addr = ifa->ifa_address;
-		break;
-	} endfor_ifa(idev);
-#endif
 	return addr;
 }
 
@@ -7227,7 +7190,6 @@ static int fsctl_query_iface_info_ioctl(struct ksmbd_conn *conn,
 		nii_rsp->Next = cpu_to_le32(152);
 		nii_rsp->Reserved = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 6, 0)
 		if (netdev->ethtool_ops->get_link_ksettings) {
 			struct ethtool_link_ksettings cmd;
 
@@ -7238,19 +7200,6 @@ static int fsctl_query_iface_info_ioctl(struct ksmbd_conn *conn,
 				"speed is unknown, defaulting to 1Gb/sec");
 			speed = SPEED_1000;
 		}
-
-#else
-		if (netdev->ethtool_ops->get_settings) {
-			struct ethtool_cmd cmd;
-
-			netdev->ethtool_ops->get_settings(netdev, &cmd);
-			speed = cmd.speed;
-		} else {
-			ksmbd_err("%s %s\n", netdev->name,
-				"speed is unknown, defaulting to 1Gb/sec");
-			speed = SPEED_1000;
-		}
-#endif
 
 		speed *= 1000000;
 		nii_rsp->LinkSpeed = cpu_to_le64(speed);

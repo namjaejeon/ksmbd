@@ -52,15 +52,10 @@ struct ksmbd_dirent {
  *
  * Return:      timespec containing unix style time
  */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-static struct timespec smb_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec ts;
-#else
 static struct timespec64 smb_NTtimeToUnix(__le64 ntutc)
 {
 	struct timespec64 ts;
-#endif
+
 	/* BB what about the timezone? BB */
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
@@ -285,7 +280,7 @@ int smb_get_ksmbd_tcon(struct ksmbd_work *work)
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	int tree_id;
 
-	if (list_empty(&work->sess->tree_conn_list)) {
+	if (xa_empty(&work->sess->tree_conns)) {
 		ksmbd_debug(SMB, "NO tree connected\n");
 		return 0;
 	}
@@ -572,7 +567,7 @@ out_err:
 	}
 
 	/* Clean session if there is no tree attached */
-	if (!sess || list_empty(&sess->tree_conn_list))
+	if (!sess || xa_empty(&work->sess->tree_conns))
 		ksmbd_conn_set_exiting(work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + le16_to_cpu(rsp->ByteCount) +
 		extra_byte));
@@ -2324,12 +2319,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			}
 		}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
-#else
-		err = vfs_getattr(&path, &stat);
-#endif
 		if (err) {
 			ksmbd_err("can not stat %s, err = %d\n",
 				conv_name, err);
@@ -2526,12 +2517,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		ksmbd_fd_set_delete_on_close(fp, file_info);
 
 	/* open success, send back response */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 		AT_STATX_SYNC_AS_STAT);
-#else
-	err = vfs_getattr(&path, &stat);
-#endif
 	if (err) {
 		ksmbd_err("cannot get stat information\n");
 		goto free_path;
@@ -2562,14 +2549,10 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	else
 		rsp->CreateAction = cpu_to_le32(file_info);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	if (stat.result_mask & STATX_BTIME)
 		fp->create_time = ksmbd_UnixTimeToNT(stat.btime);
 	else
 		fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#else
-	fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#endif
 	if (file_present) {
 		if (test_share_config_flag(tcon->share_conf,
 					   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
@@ -3311,11 +3294,7 @@ static void init_unix_info(struct file_unix_basic_info *unix_info,
 static int unix_info_to_attr(struct file_unix_basic_info *unix_info,
 		struct iattr *attrs)
 {
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-	struct timespec ts;
-#else
 	struct timespec64 ts;
-#endif
 
 	if (le64_to_cpu(unix_info->EndOfFile) != NO_CHANGE_64) {
 		attrs->ia_size = le64_to_cpu(unix_info->EndOfFile);
@@ -3393,16 +3372,12 @@ static int unix_info_to_attr(struct file_unix_basic_info *unix_info,
  * @time:	store dos style time
  * @date:	store dos style date
  */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-static void unix_to_dos_time(struct timespec ts, __le16 *time, __le16 *date)
-#else
 static void unix_to_dos_time(struct timespec64 ts, __le16 *time, __le16 *date)
-#endif
 {
 	struct tm t;
 	__u16 val;
 
-	KSMBD_TIME_TO_TM(ts.tv_sec, (-sys_tz.tz_minuteswest) * 60, &t);
+	time64_to_tm(ts.tv_sec, (-sys_tz.tz_minuteswest) * 60, &t);
 	val = (((unsigned int)(t.tm_mon + 1)) >> 3) | ((t.tm_year - 80) << 1);
 	val = ((val & 0xFF) << 8) | (t.tm_mday |
 			(((t.tm_mon + 1) & 0x7) << 5));
@@ -3420,13 +3395,8 @@ static void unix_to_dos_time(struct timespec64 ts, __le16 *time, __le16 *date)
  * @ace:	local - unix style Access Control Entry format
  * @cifs_ace:	cifs wire Access Control Entry format
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static void cifs_convert_ace(struct posix_acl_xattr_entry *ace,
 		struct cifs_posix_ace *cifs_ace)
-#else
-static void cifs_convert_ace(posix_acl_xattr_entry *ace,
-		struct cifs_posix_ace *cifs_ace)
-#endif
 {
 	/* u8 cifs fields do not need le conversion */
 	ace->e_perm = cpu_to_le16(cifs_ace->cifs_e_perm);
@@ -3453,12 +3423,9 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 	__u16 count;
 	struct cifs_posix_ace *pACE;
 	struct cifs_posix_acl *cifs_acl = (struct cifs_posix_acl *)src;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	struct posix_acl_xattr_entry *ace;
 	struct posix_acl_xattr_header *local_acl = (void *)trgt;
-#else
-	posix_acl_xattr_header *local_acl = (posix_acl_xattr_header *)trgt;
-#endif
+
 	if (le16_to_cpu(cifs_acl->version) != CIFS_ACL_VERSION)
 		return -EOPNOTSUPP;
 
@@ -3491,16 +3458,10 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
 		return -ERANGE;
 
 	/* buffer big enough */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	ace = (void *)(local_acl + 1);
-#endif
 	local_acl->a_version = cpu_to_le32(POSIX_ACL_XATTR_VERSION);
 	for (i = 0; i < count; i++) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		cifs_convert_ace(&ace[i], pACE);
-#else
-		cifs_convert_ace(&local_acl->a_entries[i], pACE);
-#endif
 		pACE++;
 	}
 
@@ -3515,13 +3476,8 @@ static int cifs_copy_posix_acl(char *trgt, char *src, const int buflen,
  *
  * Return:	0
  */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
 		const struct posix_acl_xattr_entry *local_ace)
-#else
-static __u16 convert_ace_to_cifs_ace(struct cifs_posix_ace *cifs_ace,
-		const posix_acl_xattr_entry *local_ace)
-#endif
 {
 	__u16 rc = 0; /* 0 = ACL converted ok */
 
@@ -3553,12 +3509,8 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 {
 	__u16 rc = 0;
 	struct cifs_posix_acl *cifs_acl = (struct cifs_posix_acl *)parm_data;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 	struct posix_acl_xattr_header *local_acl = (void *)pACL;
 	struct posix_acl_xattr_entry *ace = (void *)(local_acl + 1);
-#else
-	posix_acl_xattr_header *local_acl = (posix_acl_xattr_header *)pACL;
-#endif
 	int count;
 	int i, j = 0;
 
@@ -3585,12 +3537,7 @@ static __u16 ACL_to_cifs_posix(char *parm_data, const char *pACL,
 		return 0;
 	}
 	for (i = 0; i < count; i++, j++) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 9, 0)
 		rc = convert_ace_to_cifs_ace(&cifs_acl->ace_array[i], &ace[i]);
-#else
-		rc = convert_ace_to_cifs_ace(&cifs_acl->ace_array[j],
-					&local_acl->a_entries[i]);
-#endif
 		if (rc != 0) {
 			/* ACE not converted */
 			break;
@@ -3828,11 +3775,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-		name_len = strlcpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
-#else
 		name_len = strscpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
-#endif
 		name_len++;     /* trailing null */
 	}
 
@@ -4024,12 +3967,7 @@ static int query_path_info(struct ksmbd_work *work)
 		}
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	rc = vfs_getattr(&path, &st, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
-#else
-	rc = vfs_getattr(&path, &st);
-#endif
-
 	if (rc) {
 		ksmbd_err("cannot get stat information\n");
 		goto err_out;
@@ -4855,12 +4793,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 				goto free_path;
 			}
 		}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
-#else
-		err = vfs_getattr(&path, &stat);
-#endif
 		if (err) {
 			ksmbd_err("can not stat %s, err = %d\n", name, err);
 			goto free_path;
@@ -4993,12 +4927,8 @@ prepare_rsp:
 	}
 	psx_rsp->ReturnedLevel = cpu_to_le16(rsp_info_level);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 		AT_STATX_SYNC_AS_STAT);
-#else
-	err = vfs_getattr(&path, &stat);
-#endif
 	if (err) {
 		ksmbd_err("cannot get stat information\n");
 		goto free_path;
@@ -7308,11 +7238,7 @@ static int create_dir(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 			ctime = ksmbd_UnixTimeToNT(current_time(path.dentry->d_inode));
-#else
-			ctime = ksmbd_UnixTimeToNT(CURRENT_TIME);
-#endif
 
 			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
@@ -7483,11 +7409,8 @@ int smb_mkdir(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 			ctime = ksmbd_UnixTimeToNT(current_time(path.dentry->d_inode));
-#else
-			ctime = ksmbd_UnixTimeToNT(CURRENT_TIME);
-#endif
+
 			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
 			da.itime = da.create_time = ctime;
@@ -8203,14 +8126,10 @@ int smb_open_andx(struct ksmbd_work *work)
 	if (oplock_rsp)
 		file_info |= SMBOPEN_LOCK_GRANTED;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	if (stat.result_mask & STATX_BTIME)
 		fp->create_time = ksmbd_UnixTimeToNT(stat.btime);
 	else
 		fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#else
-	fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-#endif
 	if (file_present) {
 		if (test_share_config_flag(work->tcon->share_conf,
 					   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {

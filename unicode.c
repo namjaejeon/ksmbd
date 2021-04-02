@@ -308,11 +308,7 @@ char *smb_strndup_from_utf16(const char *src, const int maxlen,
 		dst = kmalloc(len, GFP_KERNEL);
 		if (!dst)
 			return ERR_PTR(-ENOMEM);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-		strlcpy(dst, src, len);
-#else
 		strscpy(dst, src, len);
-#endif
 	}
 
 	return dst;

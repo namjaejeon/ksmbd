@@ -208,16 +208,11 @@ static void ksmbd_nl_init_fixup(void)
 {
 	int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
 	for (i = 0; i < ARRAY_SIZE(ksmbd_genl_ops); i++)
 		ksmbd_genl_ops[i].validate = GENL_DONT_VALIDATE_STRICT |
 						GENL_DONT_VALIDATE_DUMP;
 
 	ksmbd_genl_family.policy = ksmbd_nl_policy;
-#else
-	for (i = 0; i < ARRAY_SIZE(ksmbd_genl_ops); i++)
-		ksmbd_genl_ops[i].policy = ksmbd_nl_policy;
-#endif
 }
 
 static int rpc_context_flags(struct ksmbd_session *sess)
@@ -522,12 +517,7 @@ struct ksmbd_login_response *ksmbd_ipc_login_request(const char *account)
 	msg->type = KSMBD_EVENT_LOGIN_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
 	req->handle = ksmbd_acquire_id(ida);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#else
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#endif
-
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
 	ipc_msg_free(msg);
@@ -585,13 +575,8 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 	req->account_flags = sess->user->flags;
 	req->session_id = sess->id;
 	req->connect_id = tree_conn->id;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, user_name(sess->user), KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-	strlcpy(req->share, share->name, KSMBD_REQ_MAX_SHARE_NAME);
-#else
 	strscpy(req->account, user_name(sess->user), KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 	strscpy(req->share, share->name, KSMBD_REQ_MAX_SHARE_NAME);
-#endif
 	snprintf(req->peer_addr, sizeof(req->peer_addr), "%pIS", peer_addr);
 
 	if (peer_addr->sa_family == AF_INET6)
@@ -641,11 +626,7 @@ int ksmbd_ipc_logout_request(const char *account)
 
 	msg->type = KSMBD_EVENT_LOGOUT_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#else
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#endif
 
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
@@ -669,11 +650,7 @@ ksmbd_ipc_share_config_request(const char *name)
 	msg->type = KSMBD_EVENT_SHARE_CONFIG_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
 	req->handle = ksmbd_acquire_id(ida);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
-#else
 	strscpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
-#endif
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);

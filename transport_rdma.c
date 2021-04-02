@@ -1294,11 +1294,7 @@ static void read_write_done(struct ib_cq *cq, struct ib_wc *wc,
 
 	rdma_rw_ctx_destroy(&msg->rw_ctx, t->qp, t->qp->port,
 			msg->sg_list, msg->sgt.nents, dir);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 	sg_free_table_chained(&msg->sgt, SG_CHUNK_SIZE);
-#else
-	sg_free_table_chained(&msg->sgt, msg->sg_list);
-#endif
 
 	complete(msg->completion);
 	kfree(msg);
@@ -1336,15 +1332,9 @@ static int smb_direct_rdma_xmit(struct smb_direct_transport *t, void *buf,
 	}
 
 	msg->sgt.sgl = &msg->sg_list[0];
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 	ret = sg_alloc_table_chained(&msg->sgt,
 				BUFFER_NR_PAGES(buf, buf_len),
 				msg->sg_list, SG_CHUNK_SIZE);
-#else
-	ret = sg_alloc_table_chained(&msg->sgt,
-				BUFFER_NR_PAGES(buf, buf_len),
-				msg->sg_list);
-#endif
 	if (ret) {
 		atomic_inc(&t->rw_avail_ops);
 		kfree(msg);
@@ -1387,11 +1377,7 @@ err:
 		rdma_rw_ctx_destroy(&msg->rw_ctx, t->qp, t->qp->port,
 				msg->sg_list, msg->sgt.nents,
 				is_read ? DMA_FROM_DEVICE : DMA_TO_DEVICE);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 3, 0)
 	sg_free_table_chained(&msg->sgt, SG_CHUNK_SIZE);
-#else
-	sg_free_table_chained(&msg->sgt, msg->sg_list);
-#endif
 	kfree(msg);
 	return ret;
 }
@@ -1549,13 +1535,8 @@ static int smb_direct_accept_client(struct smb_direct_transport *t)
 				SMB_DIRECT_CM_INITIATOR_DEPTH);
 	conn_param.responder_resources = 0;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
 	t->cm_id->device->ops.get_port_immutable(t->cm_id->device,
 			t->cm_id->port_num, &port_immutable);
-#else
-	t->cm_id->device->get_port_immutable(t->cm_id->device,
-			t->cm_id->port_num, &port_immutable);
-#endif
 	if (port_immutable.core_cap_flags & RDMA_CORE_PORT_IWARP) {
 		ird_ord_hdr[0] = conn_param.responder_resources;
 		ird_ord_hdr[1] = 1;
@@ -1686,7 +1667,6 @@ static int smb_direct_init_params(struct smb_direct_transport *t,
 		return -EINVAL;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	if (device->attrs.max_send_sge < SMB_DIRECT_MAX_SEND_SGES) {
 		ksmbd_err("warning: device max_send_sge = %d too small\n",
 			device->attrs.max_send_sge);
@@ -1697,13 +1677,6 @@ static int smb_direct_init_params(struct smb_direct_transport *t,
 			device->attrs.max_recv_sge);
 		return -EINVAL;
 	}
-#else
-	if (device->attrs.max_sge < SMB_DIRECT_MAX_SEND_SGES) {
-		ksmbd_err("warning: device max_sge = %d too small\n",
-			device->attrs.max_sge);
-		return -EINVAL;
-	}
-#endif
 
 	t->recv_credits = 0;
 	t->count_avail_recvmsg = 0;

@@ -7,9 +7,7 @@
 #include "glob.h"
 #include "oplock.h"
 #include "misc.h"
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/signal.h>
-#endif
 #include <linux/workqueue.h>
 #include <linux/sysfs.h>
 #include <linux/module.h>
@@ -513,7 +511,6 @@ static ssize_t debug_store(struct class *class, struct class_attribute *attr,
 	return len;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 10, 0)
 static CLASS_ATTR_RO(stats);
 static CLASS_ATTR_WO(kill_server);
 static CLASS_ATTR_RW(debug);
@@ -531,20 +528,6 @@ static struct class ksmbd_control_class = {
 	.owner		= THIS_MODULE,
 	.class_groups	= ksmbd_control_class_groups,
 };
-#else
-static struct class_attribute ksmbd_control_class_attrs[] = {
-	__ATTR_RO(stats),
-	__ATTR_WO(kill_server),
-	__ATTR_RW(debug),
-	__ATTR_NULL,
-};
-
-static struct class ksmbd_control_class = {
-	.name		= "ksmbd-control",
-	.owner		= THIS_MODULE,
-	.class_attrs	= ksmbd_control_class_attrs,
-};
-#endif
 
 static int ksmbd_server_shutdown(void)
 {

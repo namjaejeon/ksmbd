@@ -8,9 +8,9 @@ notifications:
 before_script:
  # Download the kernel
  - sudo apt-get install libelf-dev wget tar gzip python
- - wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/v4.x/linux-4.1.36.tar.gz
- - tar xf linux-4.1.36.tar.gz
- - mv linux-4.1.36 linux-stable
+ - wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.109.tar.gz
+ - tar xf linux-5.4.109.tar.gz
+ - mv linux-5.4.109 linux-stable
  - ./.travis_get_mainline_kernel
  - cp ./.travis_cmd_wrapper.pl ~/travis_cmd_wrapper.pl
  # Prerequisite for xfstests testing
@@ -36,7 +36,7 @@ script:
  - mkdir ../linux/fs/cifsd
  - cp -ar * ../linux/fs/cifsd/
 
- # Compile with 4.1 kernel
+ # Compile with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
@@ -60,7 +60,7 @@ script:
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
 # - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
- # Compile secure server build (no smb1.0 & smb2.0) with 4.1 kernel
+ # Compile secure server build (no smb1.0 & smb2.0) with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
@@ -96,7 +96,7 @@ script:
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
 # - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
 
- # Compile secure server build + Kerberos  with 4.1 kernel
+ # Compile secure server build + Kerberos  with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
  - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile

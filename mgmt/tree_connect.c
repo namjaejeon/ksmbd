@@ -66,16 +66,12 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 	tree_conn->share_conf = sc;
 	status.tree_conn = tree_conn;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	ret = xa_err(xa_store(&sess->tree_conns, tree_conn->id, tree_conn,
 			GFP_KERNEL));
 	if (ret) {
 		status.ret = -ENOMEM;
 		goto out_error;
 	}
-#else
-	list_add(&tree_conn->list, &sess->tree_conn_list);
-#endif
 	ksmbd_free(resp);
 	return status;
 
@@ -95,11 +91,7 @@ int ksmbd_tree_conn_disconnect(struct ksmbd_session *sess,
 
 	ret = ksmbd_ipc_tree_disconnect_request(sess->id, tree_conn->id);
 	ksmbd_release_tree_conn_id(sess, tree_conn->id);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	xa_erase(&sess->tree_conns, tree_conn->id);
-#else
-	list_del(&tree_conn->list);
-#endif
 	ksmbd_share_config_put(tree_conn->share_conf);
 	ksmbd_free(tree_conn);
 	return ret;
@@ -108,19 +100,7 @@ int ksmbd_tree_conn_disconnect(struct ksmbd_session *sess,
 struct ksmbd_tree_connect *ksmbd_tree_conn_lookup(struct ksmbd_session *sess,
 						  unsigned int id)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	return xa_load(&sess->tree_conns, id);
-#else
-	struct ksmbd_tree_connect *tree_conn;
-	struct list_head *tmp;
-
-	list_for_each(tmp, &sess->tree_conn_list) {
-		tree_conn = list_entry(tmp, struct ksmbd_tree_connect, list);
-		if (tree_conn->id == id)
-			return tree_conn;
-	}
-	return NULL;
-#endif
 }
 
 struct ksmbd_share_config *ksmbd_tree_conn_share(struct ksmbd_session *sess,
@@ -138,20 +118,10 @@ int ksmbd_tree_conn_session_logoff(struct ksmbd_session *sess)
 {
 	int ret = 0;
 	struct ksmbd_tree_connect *tc;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	unsigned long id;
 
 	xa_for_each(&sess->tree_conns, id, tc)
 		ret |= ksmbd_tree_conn_disconnect(sess, tc);
 	xa_destroy(&sess->tree_conns);
-#else
-	while (!list_empty(&sess->tree_conn_list)) {
-		tc = list_entry(sess->tree_conn_list.next,
-				struct ksmbd_tree_connect,
-				list);
-		ret |= ksmbd_tree_conn_disconnect(sess, tc);
-	}
-#endif
 	return ret;
 }

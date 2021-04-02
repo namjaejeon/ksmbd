@@ -611,15 +611,9 @@ ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode)
  * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
  * into Unix UTC (based 1970-01-01, in seconds).
  */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-struct timespec ksmbd_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec ts;
-#else
 struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
 {
 	struct timespec64 ts;
-#endif
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
 	s64 t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
@@ -645,11 +639,7 @@ struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
 }
 
 /* Convert the Unix UTC into NT UTC. */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-u64 ksmbd_UnixTimeToNT(struct timespec t)
-#else
 u64 ksmbd_UnixTimeToNT(struct timespec64 t)
-#endif
 {
 	/* Convert to 100ns intervals and then add the NTFS time offset. */
 	return (u64)t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
@@ -660,9 +650,5 @@ long long ksmbd_systime(void)
 	struct timespec64	ts;
 
 	ktime_get_real_ts64(&ts);
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-	return ksmbd_UnixTimeToNT(timespec64_to_timespec(ts));
-#else
 	return ksmbd_UnixTimeToNT(ts);
-#endif
 }

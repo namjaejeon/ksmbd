@@ -132,7 +132,7 @@ build your kernel
 
 ## Supported Linux Kernel Versions
 
-* Linux Kernel 4.1 or later
+* Linux Kernel 5.4 or later
 
 
 ## CIFSD architecture

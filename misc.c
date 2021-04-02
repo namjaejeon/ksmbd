@@ -174,11 +174,7 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && name_len != len) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-		strncpy(ab_pathname, &filename[len], name_len);
-#else
 		strscpy(ab_pathname, &filename[len], name_len);
-#endif
 		ksmbd_conv_path_to_windows(ab_pathname);
 	}
 
@@ -195,15 +191,6 @@ int get_nlink(struct kstat *st)
 
 	return nlink;
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static void strreplace(char *s, char old, char new)
-{
-	for (; *s; ++s)
-		if (*s == old)
-			*s = new;
-}
-#endif
 
 void ksmbd_conv_path_to_unix(char *path)
 {
