@@ -188,7 +188,7 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 			sz = large_sz;
 	}
 
-	work->response_buf = ksmbd_alloc_response(sz);
+	work->response_buf = kvmalloc(sz, GFP_KERNEL | __GFP_ZERO);
 	work->response_sz = sz;
 
 	if (!work->response_buf) {
@@ -1969,12 +1969,12 @@ int smb_trans(struct ksmbd_work *work)
 			if (rpc_resp->flags == KSMBD_RPC_ENOTIMPLEMENTED) {
 				rsp->hdr.Status.CifsError =
 					STATUS_NOT_SUPPORTED;
-				ksmbd_free(rpc_resp);
+				kvfree(rpc_resp);
 				goto out;
 			} else if (rpc_resp->flags != KSMBD_RPC_OK) {
 				rsp->hdr.Status.CifsError =
 					STATUS_INVALID_PARAMETER;
-				ksmbd_free(rpc_resp);
+				kvfree(rpc_resp);
 				goto out;
 			}
 
@@ -1982,7 +1982,7 @@ int smb_trans(struct ksmbd_work *work)
 			memcpy((char *)rsp + sizeof(struct smb_com_trans_rsp),
 				rpc_resp->payload, nbytes);
 
-			ksmbd_free(rpc_resp);
+			kvfree(rpc_resp);
 			ret = 0;
 			goto resp_out;
 		} else {
@@ -2003,19 +2003,19 @@ int smb_trans(struct ksmbd_work *work)
 			if (rpc_resp->flags == KSMBD_RPC_ENOTIMPLEMENTED) {
 				rsp->hdr.Status.CifsError =
 					STATUS_NOT_SUPPORTED;
-				ksmbd_free(rpc_resp);
+				kvfree(rpc_resp);
 				goto out;
 			} else if (rpc_resp->flags != KSMBD_RPC_OK) {
 				rsp->hdr.Status.CifsError =
 					STATUS_INVALID_PARAMETER;
-				ksmbd_free(rpc_resp);
+				kvfree(rpc_resp);
 				goto out;
 			}
 
 			nbytes = rpc_resp->payload_sz;
 			memcpy((char *)rsp + sizeof(struct smb_com_trans_rsp),
 				rpc_resp->payload, nbytes);
-			ksmbd_free(rpc_resp);
+			kvfree(rpc_resp);
 			ret = 0;
 		}
 		break;
@@ -2764,13 +2764,13 @@ static int smb_read_andx_pipe(struct ksmbd_work *work)
 				!rpc_resp->payload_sz) {
 			rsp->hdr.Status.CifsError =
 				STATUS_UNEXPECTED_IO_ERROR;
-			ksmbd_free(rpc_resp);
+			kvfree(rpc_resp);
 			return -EINVAL;
 		}
 
 		nbytes = rpc_resp->payload_sz;
 		memcpy(data_buf, rpc_resp->payload, rpc_resp->payload_sz);
-		ksmbd_free(rpc_resp);
+		kvfree(rpc_resp);
 	} else {
 		ret = -EINVAL;
 	}
@@ -2862,7 +2862,7 @@ int smb_read_andx(struct ksmbd_work *work)
 		work->aux_payload_buf = ksmbd_find_buffer(count);
 		work->set_read_buf = true;
 	} else
-		work->aux_payload_buf = ksmbd_alloc_response(count);
+		work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -2995,16 +2995,16 @@ static int smb_write_andx_pipe(struct ksmbd_work *work)
 	if (rpc_resp) {
 		if (rpc_resp->flags == KSMBD_RPC_ENOTIMPLEMENTED) {
 			rsp->hdr.Status.CifsError = STATUS_NOT_SUPPORTED;
-			ksmbd_free(rpc_resp);
+			kvfree(rpc_resp);
 			return -EOPNOTSUPP;
 		}
 		if (rpc_resp->flags != KSMBD_RPC_OK) {
 			rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
-			ksmbd_free(rpc_resp);
+			kvfree(rpc_resp);
 			return -EINVAL;
 		}
 		count = rpc_resp->payload_sz;
-		ksmbd_free(rpc_resp);
+		kvfree(rpc_resp);
 	} else {
 		ret = -EINVAL;
 	}
@@ -3579,7 +3579,7 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
-		ksmbd_free(buf);
+		kfree(buf);
 		buf = NULL;
 	}
 
@@ -3590,7 +3590,7 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_DEFAULT);
-		ksmbd_free(buf);
+		kfree(buf);
 		buf = NULL;
 	}
 
@@ -3614,7 +3614,7 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 
 	if (buf)
-		ksmbd_free(buf);
+		kfree(buf);
 	return rc;
 }
 
@@ -3860,7 +3860,7 @@ static int smb_get_ea(struct ksmbd_work *work, struct path *path)
 		}
 
 		memcpy(ptr, buf, value_len);
-		ksmbd_free(buf);
+		kfree(buf);
 
 		temp_fea->EA_flags = 0;
 		temp_fea->name_len = name_len;
@@ -3896,7 +3896,7 @@ done:
 	rsp->ByteCount = cpu_to_le16(rsp_data_cnt + 5);
 	inc_rfc1001_len(&rsp->hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return rc;
 }
 

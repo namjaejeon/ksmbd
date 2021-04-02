@@ -276,7 +276,7 @@ static ssize_t ksmbd_vfs_getcasexattr(struct dentry *dentry, char *attr_name,
 	}
 
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return value_len;
 }
 
@@ -433,7 +433,7 @@ static int ksmbd_vfs_stream_write(struct ksmbd_file *fp, char *buf, loff_t *pos,
 	}
 
 	if (v_len < size) {
-		wbuf = ksmbd_alloc(size);
+		wbuf = kvmalloc(size, GFP_KERNEL | __GFP_ZERO);
 		if (!wbuf) {
 			err = -ENOMEM;
 			goto out;
@@ -457,7 +457,7 @@ static int ksmbd_vfs_stream_write(struct ksmbd_file *fp, char *buf, loff_t *pos,
 	fp->filp->f_pos = *pos;
 	err = 0;
 out:
-	ksmbd_free(stream_buf);
+	kvfree(stream_buf);
 	return err;
 }
 
@@ -1224,7 +1224,7 @@ ssize_t ksmbd_vfs_listxattr(struct dentry *dentry, char **list)
 	if (size <= 0)
 		return size;
 
-	vlist = ksmbd_alloc(size);
+	vlist = kvmalloc(size, GFP_KERNEL | __GFP_ZERO);
 	if (!vlist)
 		return -ENOMEM;
 
@@ -1232,7 +1232,7 @@ ssize_t ksmbd_vfs_listxattr(struct dentry *dentry, char **list)
 	size = vfs_listxattr(dentry, vlist, size);
 	if (size < 0) {
 		ksmbd_debug(VFS, "listxattr failed\n");
-		ksmbd_vfs_xattr_free(vlist);
+		kvfree(vlist);
 		*list = NULL;
 	}
 
@@ -1378,7 +1378,7 @@ int ksmbd_vfs_remove_acl_xattrs(struct dentry *dentry)
 		}
 	}
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return err;
 }
 
@@ -1407,7 +1407,7 @@ int ksmbd_vfs_remove_sd_xattrs(struct dentry *dentry)
 		}
 	}
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return err;
 }
 
@@ -1639,7 +1639,7 @@ int ksmbd_vfs_get_dos_attrib_xattr(struct dentry *dentry,
 		n.length = err;
 		if (ndr_decode_dos_attr(&n, da))
 			err = -EINVAL;
-		ksmbd_free(n.data);
+		kfree(n.data);
 	} else {
 		ksmbd_debug(SMB, "failed to load dos attribute in xattr\n");
 	}
@@ -1809,11 +1809,6 @@ int ksmbd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 #else
 	return vfs_removexattr(dentry, attr_name);
 #endif
-}
-
-void ksmbd_vfs_xattr_free(char *xattr)
-{
-	ksmbd_free(xattr);
 }
 
 int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
@@ -2191,7 +2186,7 @@ ssize_t ksmbd_vfs_casexattr_len(struct dentry *dentry, char *attr_name,
 	}
 
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return value_len;
 }
 

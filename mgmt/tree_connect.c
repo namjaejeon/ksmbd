@@ -35,7 +35,7 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 	if (!sc)
 		return status;
 
-	tree_conn = ksmbd_alloc(sizeof(struct ksmbd_tree_connect));
+	tree_conn = kzalloc(sizeof(struct ksmbd_tree_connect), GFP_KERNEL);
 	if (!tree_conn) {
 		status.ret = -ENOMEM;
 		goto out_error;
@@ -72,15 +72,15 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 		status.ret = -ENOMEM;
 		goto out_error;
 	}
-	ksmbd_free(resp);
+	kvfree(resp);
 	return status;
 
 out_error:
 	if (tree_conn)
 		ksmbd_release_tree_conn_id(sess, tree_conn->id);
 	ksmbd_share_config_put(sc);
-	ksmbd_free(tree_conn);
-	ksmbd_free(resp);
+	kfree(tree_conn);
+	kvfree(resp);
 	return status;
 }
 
@@ -93,7 +93,7 @@ int ksmbd_tree_conn_disconnect(struct ksmbd_session *sess,
 	ksmbd_release_tree_conn_id(sess, tree_conn->id);
 	xa_erase(&sess->tree_conns, tree_conn->id);
 	ksmbd_share_config_put(tree_conn->share_conf);
-	ksmbd_free(tree_conn);
+	kfree(tree_conn);
 	return ret;
 }
 
