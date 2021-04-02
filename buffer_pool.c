@@ -133,7 +133,7 @@ static int register_wm_size_class(size_t sz)
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
 			__free(nl);
 #else
-			kvfree(nl);
+			kfree(nl);
 #endif
 			return 0;
 		}
@@ -244,7 +244,7 @@ static void wm_list_free(struct wm_list *l)
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(5, 0, 0)
 	__free(l);
 #else
-	kvfree(l);
+	kfree(l);
 #endif
 }
 
