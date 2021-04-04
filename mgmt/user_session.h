@@ -7,6 +7,8 @@
 #define __USER_SESSION_MANAGEMENT_H__
 
 #include <linux/hashtable.h>
+#include <linux/version.h>
+#include <linux/xarray.h>
 
 #include "../smb_common.h"
 #include "../ntlmssp.h"
@@ -29,12 +31,12 @@ struct channel {
 
 struct preauth_session {
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	uint64_t		sess_id;
+	u64			sess_id;
 	struct list_head	list_entry;
 };
 
 struct ksmbd_session {
-	uint64_t			id;
+	u64				id;
 
 	struct ksmbd_user		*user;
 	struct ksmbd_conn		*conn;
@@ -53,9 +55,11 @@ struct ksmbd_session {
 
 	struct hlist_node		hlist;
 	struct list_head		ksmbd_chann_list;
-	struct list_head		tree_conn_list;
+	struct xarray			tree_conns;
 	struct ksmbd_ida		*tree_conn_ida;
 	struct list_head		rpc_handle_list;
+
+
 
 	__u8				smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
 	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];

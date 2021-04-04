@@ -10,13 +10,13 @@
 #include <linux/parser.h>
 #include <linux/namei.h>
 #include <linux/sched.h>
+#include <linux/mm.h>
 
 #include "share_config.h"
 #include "user_config.h"
 #include "user_session.h"
 #include "../buffer_pool.h"
 #include "../transport_ipc.h"
-#include "../ksmbd_server.h" /* FIXME */
 
 #define SHARE_HASH_BITS		3
 static DEFINE_HASHTABLE(shares_table, SHARE_HASH_BITS);
@@ -93,17 +93,17 @@ static int parse_veto_list(struct ksmbd_share_config *share,
 	while (veto_list_sz > 0) {
 		struct ksmbd_veto_pattern *p;
 
-		p = ksmbd_alloc(sizeof(struct ksmbd_veto_pattern));
-		if (!p)
-			return -ENOMEM;
-
 		sz = strlen(veto_list);
 		if (!sz)
 			break;
 
+		p = kzalloc(sizeof(struct ksmbd_veto_pattern), GFP_KERNEL);
+		if (!p)
+			return -ENOMEM;
+
 		p->pattern = kstrdup(veto_list, GFP_KERNEL);
 		if (!p->pattern) {
-			ksmbd_free(p);
+			kfree(p);
 			return -ENOMEM;
 		}
 
@@ -130,7 +130,7 @@ static struct ksmbd_share_config *share_config_request(char *name)
 	if (resp->flags == KSMBD_SHARE_FLAG_INVALID)
 		goto out;
 
-	share = ksmbd_alloc(sizeof(struct ksmbd_share_config));
+	share = kzalloc(sizeof(struct ksmbd_share_config), GFP_KERNEL);
 	if (!share)
 		goto out;
 
@@ -183,7 +183,7 @@ static struct ksmbd_share_config *share_config_request(char *name)
 	up_write(&shares_table_lock);
 
 out:
-	ksmbd_free(resp);
+	kvfree(resp);
 	return share;
 }
 

@@ -6,6 +6,8 @@
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/rwsem.h>
+#include <linux/version.h>
+#include <linux/xarray.h>
 
 #include "ksmbd_ida.h"
 #include "user_session.h"
@@ -14,7 +16,6 @@
 #include "../transport_ipc.h"
 #include "../connection.h"
 #include "../buffer_pool.h"
-#include "../ksmbd_server.h" /* FIXME */
 #include "../vfs_cache.h"
 
 static struct ksmbd_ida *session_ida;
@@ -52,9 +53,9 @@ static void __session_rpc_close(struct ksmbd_session *sess,
 	if (!resp)
 		pr_err("Unable to close RPC pipe %d\n", entry->id);
 
-	ksmbd_free(resp);
+	kvfree(resp);
 	ksmbd_rpc_id_free(entry->id);
-	ksmbd_free(entry);
+	kfree(entry);
 }
 
 static void ksmbd_session_rpc_clear_list(struct ksmbd_session *sess)
@@ -102,7 +103,7 @@ int ksmbd_session_rpc_open(struct ksmbd_session *sess, char *rpc_name)
 	if (!method)
 		return -EINVAL;
 
-	entry = ksmbd_alloc(sizeof(struct ksmbd_session_rpc));
+	entry = kzalloc(sizeof(struct ksmbd_session_rpc), GFP_KERNEL);
 	if (!entry)
 		return -EINVAL;
 
@@ -116,11 +117,11 @@ int ksmbd_session_rpc_open(struct ksmbd_session *sess, char *rpc_name)
 	if (!resp)
 		goto error;
 
-	ksmbd_free(resp);
+	kvfree(resp);
 	return entry->id;
 error:
 	list_del(&entry->list);
-	ksmbd_free(entry);
+	kfree(entry);
 	return -EINVAL;
 }
 
@@ -175,7 +176,7 @@ void ksmbd_session_destroy(struct ksmbd_session *sess)
 	ksmbd_release_id(session_ida, sess->id);
 
 	ksmbd_ida_free(sess->tree_conn_ida);
-	ksmbd_free(sess);
+	kfree(sess);
 }
 
 static struct ksmbd_session *__session_lookup(unsigned long long id)
@@ -279,7 +280,7 @@ static struct ksmbd_session *__session_create(int protocol)
 	struct ksmbd_session *sess;
 	int ret;
 
-	sess = ksmbd_alloc(sizeof(struct ksmbd_session));
+	sess = kzalloc(sizeof(struct ksmbd_session), GFP_KERNEL);
 	if (!sess)
 		return NULL;
 
@@ -288,7 +289,7 @@ static struct ksmbd_session *__session_create(int protocol)
 
 	set_session_flag(sess, protocol);
 	INIT_LIST_HEAD(&sess->sessions_entry);
-	INIT_LIST_HEAD(&sess->tree_conn_list);
+	xa_init(&sess->tree_conns);
 	INIT_LIST_HEAD(&sess->ksmbd_chann_list);
 	INIT_LIST_HEAD(&sess->rpc_handle_list);
 	sess->sequence_number = 1;
@@ -316,9 +317,9 @@ static struct ksmbd_session *__session_create(int protocol)
 		goto error;
 
 	if (protocol == CIFDS_SESSION_FLAG_SMB2) {
-		down_read(&sessions_table_lock);
+		down_write(&sessions_table_lock);
 		hash_add(sessions_table, &sess->hlist, sess->id);
-		up_read(&sessions_table_lock);
+		up_write(&sessions_table_lock);
 	}
 	return sess;
 

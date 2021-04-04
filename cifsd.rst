@@ -1,8 +1,8 @@
 .. SPDX-License-Identifier: GPL-2.0
 
-=========================
-CIFSD - SMB Kernel Server
-=========================
+==========================
+CIFSD - SMB3 Kernel Server
+==========================
 
 CIFSD is a linux kernel server which implements SMB3 protocol in kernel space
 for sharing files over network.
@@ -59,32 +59,48 @@ dozen) that are most important for file server from NetShareEnum and
 NetServerGetInfo. Complete DCE/RPC response is prepared from the user space
 and passed over to the associated kernel thread for the client.
 
-Key Features
-============
 
-The supported features are:
- * SMB3 protocols for basic file sharing
- * Auto negotiation
- * Compound requests
- * Oplock/Lease
- * Large MTU
- * NTLM/NTLMv2
- * HMAC-SHA256 Signing
- * Secure negotiate
- * Signing Update
- * Pre-authentication integrity(SMB 3.1.1)
- * SMB3 encryption(CCM, GCM)
- * SMB direct(RDMA)
- * SMB3.1.1 POSIX extension support
- * ACLs
- * Kerberos
+CIFSD Feature Status
+====================
 
-The features that are planned or not supported:
- * SMB3 Multi-channel
- * Durable handle v1,v2
- * Persistent handles
- * Directory lease
- * SMB2 notify
+============================== =================================================
+Feature name                   Status
+============================== =================================================
+Dialects                       Supported. SMB2.1 SMB3.0, SMB3.1.1 dialects
+                               excluding security vulnerable SMB1.
+Auto Negotiation               Supported.
+Compound Request               Supported.
+Oplock Cache Mechanism         Supported.
+SMB2 leases(v1 lease)          Supported.
+Directory leases(v2 lease)     Planned for future.
+Multi-credits                  Supported.
+NTLM/NTLMv2                    Supported.
+HMAC-SHA256 Signing            Supported.
+Secure negotiate               Supported.
+Signing Update                 Supported.
+Pre-authentication integrity   Supported.
+SMB3 encryption(CCM, GCM)      Supported.
+SMB direct(RDMA)               Partial Supported. SMB3 Multi-channel is required
+                               to connect to Windows client.
+SMB3 Multi-channel             In Progress.
+SMB3.1.1 POSIX extension       Supported.
+ACLs                           Partial Supported. only DACLs available, SACLs is
+                               planned for future. ksmbd generate random subauth
+                               values(then store it to disk) and use uid/gid
+                               get from inode as RID for local domain SID.
+                               The current acl implementation is limited to
+                               standalone server, not a domain member.
+Kerberos                       Supported.
+Durable handle v1,v2           Planned for future.
+Persistent handle              Planned for future.
+SMB2 notify                    Planned for future.
+Sparse file support            Supported.
+DCE/RPC support                Partial Supported. a few calls(NetShareEnumAll,
+                               NetServerGetInfo, SAMR, LSARPC) that needed as
+                               file server via netlink interface from
+                               ksmbd.mountd.
+============================== =================================================
+
 
 How to run
 ==========
@@ -98,8 +114,8 @@ How to run
 	# ksmbd.adduser -a <Enter USERNAME for SMB share access>
 
 3. Create /etc/ksmbd/smb.conf file, add SMB share in smb.conf file
-	- Refer smb.conf.example and Documentation/configuration.txt
-	  in ksmbd-tools
+	- Refer smb.conf.example and
+          https://github.com/cifsd-team/ksmbd-tools/blob/master/Documentation/configuration.txt
 
 4. Insert ksmbd.ko module
 
@@ -113,12 +129,8 @@ How to run
 Shutdown CIFSD
 ==============
 
-1. kill user space daemon
-	# killall ksmbd.mountd
-
-2. kill kernel space daemon
-	# echo hard > /sys/class/ksmbd-control/kill_server
-
+1. kill user and kernel space daemon
+	# sudo ksmbd.control -s
 
 How to turn debug print on
 ==========================
@@ -126,15 +138,15 @@ How to turn debug print on
 Each layer
 /sys/class/ksmbd-control/debug
 
-1. Enable SMB related debug print
-	# echo "smb" > /sys/class/ksmbd-control/debug
+1. Enable all component prints
+	# sudo ksmbd.control -d "all"
 
-2. Enable RDMA related print.
-	echo "rdma" > /sys/class/ksmbd-control/debug
+2. Enable one of components(smb, auth, vfs, oplock, ipc, conn, rdma)
+	# sudo ksmbd.control -d "smb"
 
 3. Show what prints are enable.
 	# cat/sys/class/ksmbd-control/debug
 	  [smb] auth vfs oplock ipc conn [rdma]
 
-4. If you want to turn all prints on, Do echo "all".
-	# echo "all" > /sys/class/ksmbd-control/debug
+4. Disable prints:
+	If you try the selected component once more, It is disabled without brackets.

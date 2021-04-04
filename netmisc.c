@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
- *   fs/ksmbd/netmisc.c
- *
  *   Copyright (c) International Business Machines  Corp., 2002,2008
  *   Author(s): Steve French (sfrench@us.ibm.com)
  *
@@ -12,7 +10,7 @@
 #include "glob.h"
 #include "smberr.h"
 #include "nterr.h"
-#include "time_wrappers.h"
+#include "smb_common.h"
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 /*****************************************************************************
@@ -613,15 +611,9 @@ ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode)
  * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
  * into Unix UTC (based 1970-01-01, in seconds).
  */
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-struct timespec ksmbd_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec ts;
-#else
 struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
 {
 	struct timespec64 ts;
-#endif
 
 	/* Subtract the NTFS time offset, then convert to 1s intervals. */
 	s64 t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
@@ -644,4 +636,19 @@ struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
 	}
 
 	return ts;
+}
+
+/* Convert the Unix UTC into NT UTC. */
+u64 ksmbd_UnixTimeToNT(struct timespec64 t)
+{
+	/* Convert to 100ns intervals and then add the NTFS time offset. */
+	return (u64)t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
+}
+
+long long ksmbd_systime(void)
+{
+	struct timespec64	ts;
+
+	ktime_get_real_ts64(&ts);
+	return ksmbd_UnixTimeToNT(ts);
 }

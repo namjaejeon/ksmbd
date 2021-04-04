@@ -24,16 +24,6 @@ struct crypto_ctx_list {
 
 static struct crypto_ctx_list ctx_list;
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-static inline void free_blk(struct blkcipher_desc *desc)
-{
-	if (desc) {
-		crypto_free_blkcipher(desc->tfm);
-		kfree(desc);
-	}
-}
-#endif
-
 static inline void free_aead(struct crypto_aead *aead)
 {
 	if (aead)
@@ -113,33 +103,9 @@ static struct shash_desc *alloc_shash_desc(int id)
 	return shash;
 }
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-static struct blkcipher_desc *alloc_blk_desc(int id)
-{
-	struct crypto_blkcipher *tfm = NULL;
-	struct blkcipher_desc *desc;
-
-	switch (id) {
-	case CRYPTO_BLK_ECBDES:
-		tfm = crypto_alloc_blkcipher("ecb(des)", 0, CRYPTO_ALG_ASYNC);
-		break;
-	}
-
-	if (IS_ERR(tfm))
-		return NULL;
-
-	desc = kzalloc(sizeof(*desc), GFP_KERNEL);
-	if (!desc)
-		crypto_free_blkcipher(tfm);
-	else
-		desc->tfm = tfm;
-	return desc;
-}
-#endif
-
 static struct ksmbd_crypto_ctx *ctx_alloc(void)
 {
-	return ksmbd_alloc(sizeof(struct ksmbd_crypto_ctx));
+	return kzalloc(sizeof(struct ksmbd_crypto_ctx), GFP_KERNEL);
 }
 
 static void ctx_free(struct ksmbd_crypto_ctx *ctx)
@@ -150,11 +116,7 @@ static void ctx_free(struct ksmbd_crypto_ctx *ctx)
 		free_shash(ctx->desc[i]);
 	for (i = 0; i < CRYPTO_AEAD_MAX; i++)
 		free_aead(ctx->ccmaes[i]);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-	for (i = 0; i < CRYPTO_BLK_MAX; i++)
-		free_blk(ctx->blk_desc[i]);
-#endif
-	ksmbd_free(ctx);
+	kfree(ctx);
 }
 
 static struct ksmbd_crypto_ctx *ksmbd_find_crypto_ctx(void)
@@ -294,31 +256,6 @@ struct ksmbd_crypto_ctx *ksmbd_crypto_ctx_find_ccm(void)
 {
 	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_CCM);
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0)
-static struct ksmbd_crypto_ctx *____crypto_blk_ctx_find(int id)
-{
-	struct ksmbd_crypto_ctx *ctx;
-
-	if (id >= CRYPTO_BLK_MAX)
-		return NULL;
-
-	ctx = ksmbd_find_crypto_ctx();
-	if (ctx->blk_desc[id])
-		return ctx;
-
-	ctx->blk_desc[id] = alloc_blk_desc(id);
-	if (ctx->blk_desc[id])
-		return ctx;
-	ksmbd_release_crypto_ctx(ctx);
-	return NULL;
-}
-
-struct ksmbd_crypto_ctx *ksmbd_crypto_ctx_find_ecbdes(void)
-{
-	return ____crypto_blk_ctx_find(CRYPTO_BLK_ECBDES);
-}
-#endif
 
 void ksmbd_crypto_destroy(void)
 {

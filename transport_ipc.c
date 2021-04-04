@@ -28,9 +28,6 @@
 #include "connection.h"
 #include "transport_tcp.h"
 
-/* @FIXME fix this code */
-extern int get_protocol_idx(char *str);
-
 #define IPC_WAIT_TIMEOUT	(2 * HZ)
 
 #define IPC_MSG_HASH_BITS	3
@@ -78,8 +75,7 @@ struct ipc_msg_table_entry {
 static struct delayed_work ipc_timer_work;
 
 static int handle_startup_event(struct sk_buff *skb, struct genl_info *info);
-static int handle_unsupported_event(struct sk_buff *skb,
-				    struct genl_info *info);
+static int handle_unsupported_event(struct sk_buff *skb, struct genl_info *info);
 static int handle_generic_event(struct sk_buff *skb, struct genl_info *info);
 static int ksmbd_ipc_heartbeat_request(void);
 
@@ -212,16 +208,11 @@ static void ksmbd_nl_init_fixup(void)
 {
 	int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
 	for (i = 0; i < ARRAY_SIZE(ksmbd_genl_ops); i++)
 		ksmbd_genl_ops[i].validate = GENL_DONT_VALIDATE_STRICT |
 						GENL_DONT_VALIDATE_DUMP;
 
 	ksmbd_genl_family.policy = ksmbd_nl_policy;
-#else
-	for (i = 0; i < ARRAY_SIZE(ksmbd_genl_ops); i++)
-		ksmbd_genl_ops[i].policy = ksmbd_nl_policy;
-#endif
 }
 
 static int rpc_context_flags(struct ksmbd_session *sess)
@@ -242,7 +233,7 @@ static struct ksmbd_ipc_msg *ipc_msg_alloc(size_t sz)
 	struct ksmbd_ipc_msg *msg;
 	size_t msg_sz = sz + sizeof(struct ksmbd_ipc_msg);
 
-	msg = ksmbd_alloc(msg_sz);
+	msg = kvmalloc(msg_sz, GFP_KERNEL | __GFP_ZERO);
 	if (msg)
 		msg->sz = sz;
 	return msg;
@@ -250,7 +241,7 @@ static struct ksmbd_ipc_msg *ipc_msg_alloc(size_t sz)
 
 static void ipc_msg_free(struct ksmbd_ipc_msg *msg)
 {
-	ksmbd_free(msg);
+	kvfree(msg);
 }
 
 static void ipc_msg_handle_free(int handle)
@@ -281,7 +272,7 @@ static int handle_response(int type, void *payload, size_t sz)
 				entry->type + 1, type);
 		}
 
-		entry->response = ksmbd_alloc(sz);
+		entry->response = kvmalloc(sz, GFP_KERNEL | __GFP_ZERO);
 		if (!entry->response) {
 			ret = -ENOMEM;
 			break;
@@ -397,8 +388,7 @@ out:
 	return ret;
 }
 
-static int handle_unsupported_event(struct sk_buff *skb,
-				    struct genl_info *info)
+static int handle_unsupported_event(struct sk_buff *skb, struct genl_info *info)
 {
 	ksmbd_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
 	return -EINVAL;
@@ -465,8 +455,7 @@ out:
 	return ret;
 }
 
-static void *ipc_msg_send_request(struct ksmbd_ipc_msg *msg,
-				  unsigned int handle)
+static void *ipc_msg_send_request(struct ksmbd_ipc_msg *msg, unsigned int handle)
 {
 	struct ipc_msg_table_entry entry;
 	int ret;
@@ -528,12 +517,7 @@ struct ksmbd_login_response *ksmbd_ipc_login_request(const char *account)
 	msg->type = KSMBD_EVENT_LOGIN_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
 	req->handle = ksmbd_acquire_id(ida);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#else
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#endif
-
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
 	ipc_msg_free(msg);
@@ -566,9 +550,9 @@ ksmbd_ipc_spnego_authen_request(const char *spnego_blob, int blob_len)
 
 struct ksmbd_tree_connect_response *
 ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
-			       struct ksmbd_share_config *share,
-			       struct ksmbd_tree_connect *tree_conn,
-			       struct sockaddr *peer_addr)
+		struct ksmbd_share_config *share,
+		struct ksmbd_tree_connect *tree_conn,
+		struct sockaddr *peer_addr)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_tree_connect_request *req;
@@ -591,13 +575,8 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 	req->account_flags = sess->user->flags;
 	req->session_id = sess->id;
 	req->connect_id = tree_conn->id;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, user_name(sess->user), KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-	strlcpy(req->share, share->name, KSMBD_REQ_MAX_SHARE_NAME);
-#else
 	strscpy(req->account, user_name(sess->user), KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 	strscpy(req->share, share->name, KSMBD_REQ_MAX_SHARE_NAME);
-#endif
 	snprintf(req->peer_addr, sizeof(req->peer_addr), "%pIS", peer_addr);
 
 	if (peer_addr->sa_family == AF_INET6)
@@ -612,7 +591,7 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 }
 
 int ksmbd_ipc_tree_disconnect_request(unsigned long long session_id,
-				      unsigned long long connect_id)
+		unsigned long long connect_id)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_tree_disconnect_request *req;
@@ -647,11 +626,7 @@ int ksmbd_ipc_logout_request(const char *account)
 
 	msg->type = KSMBD_EVENT_LOGOUT_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#else
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
-#endif
 
 	ret = ipc_msg_send(msg);
 	ipc_msg_free(msg);
@@ -675,11 +650,7 @@ ksmbd_ipc_share_config_request(const char *name)
 	msg->type = KSMBD_EVENT_SHARE_CONFIG_REQUEST;
 	req = KSMBD_IPC_MSG_PAYLOAD(msg);
 	req->handle = ksmbd_acquire_id(ida);
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-	strlcpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
-#else
 	strscpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
-#endif
 
 	resp = ipc_msg_send_request(msg, req->handle);
 	ipc_msg_handle_free(req->handle);
@@ -687,8 +658,7 @@ ksmbd_ipc_share_config_request(const char *name)
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_open(struct ksmbd_session *sess,
-					 int handle)
+struct ksmbd_rpc_command *ksmbd_rpc_open(struct ksmbd_session *sess, int handle)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -710,8 +680,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_open(struct ksmbd_session *sess,
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess,
-					  int handle)
+struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess, int handle)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -733,10 +702,8 @@ struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess,
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess,
-					  int handle,
-					  void *payload,
-					  size_t payload_sz)
+struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess, int handle,
+		void *payload, size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -760,8 +727,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess,
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess,
-					 int handle)
+struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess, int handle)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -784,10 +750,8 @@ struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess,
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess,
-					  int handle,
-					  void *payload,
-					  size_t payload_sz)
+struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess, int handle,
+		void *payload, size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -811,9 +775,8 @@ struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess,
 	return resp;
 }
 
-struct ksmbd_rpc_command *ksmbd_rpc_rap(struct ksmbd_session *sess,
-					void *payload,
-					size_t payload_sz)
+struct ksmbd_rpc_command *ksmbd_rpc_rap(struct ksmbd_session *sess, void *payload,
+		size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -914,13 +877,20 @@ int ksmbd_ipc_init(void)
 
 	ret = genl_register_family(&ksmbd_genl_family);
 	if (ret) {
-		ksmbd_err("Failed to register KSMBD netlink interface %d\n",
-				ret);
-		return ret;
+		ksmbd_err("Failed to register KSMBD netlink interface %d\n", ret);
+		goto cancel_work;
 	}
 
 	ida = ksmbd_ida_alloc();
-	if (!ida)
-		return -ENOMEM;
+	if (!ida) {
+		ret = -ENOMEM;
+		goto unregister;
+	}
 	return 0;
+
+unregister:
+	genl_unregister_family(&ksmbd_genl_family);
+cancel_work:
+	cancel_delayed_work_sync(&ipc_timer_work);
+	return ret;
 }

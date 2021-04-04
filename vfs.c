@@ -19,12 +19,7 @@
 #include <linux/slab.h>
 #include <linux/vmalloc.h>
 #include <linux/crc32c.h>
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 #include <linux/sched/xacct.h>
-#else
-#include <linux/sched.h>
-#endif
 
 #include "glob.h"
 #include "oplock.h"
@@ -36,7 +31,6 @@
 #include "ndr.h"
 #include "auth.h"
 
-#include "time_wrappers.h"
 #include "smb_common.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
@@ -66,55 +60,13 @@ static void rollback_path_modification(char *filename)
 }
 
 static void ksmbd_vfs_inherit_owner(struct ksmbd_work *work,
-				    struct inode *parent_inode,
-				    struct inode *inode)
+		struct inode *parent_inode, struct inode *inode)
 {
 	if (!test_share_config_flag(work->tcon->share_conf,
-				   KSMBD_SHARE_FLAG_INHERIT_OWNER))
+				    KSMBD_SHARE_FLAG_INHERIT_OWNER))
 		return;
 
 	i_uid_write(inode, i_uid_read(parent_inode));
-}
-
-static void ksmbd_vfs_inherit_smack(struct ksmbd_work *work,
-				    struct dentry *dir_dentry,
-				    struct dentry *dentry)
-{
-	char *name, *xattr_list = NULL, *smack_buf;
-	int value_len, xattr_list_len;
-
-	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_INHERIT_SMACK))
-		return;
-
-	xattr_list_len = ksmbd_vfs_listxattr(dir_dentry, &xattr_list);
-	if (xattr_list_len < 0) {
-		goto out;
-	} else if (!xattr_list_len) {
-		ksmbd_err("no ea data in the file\n");
-		return;
-	}
-
-	for (name = xattr_list; name - xattr_list < xattr_list_len;
-			name += strlen(name) + 1) {
-		int rc;
-
-		ksmbd_debug(VFS, "%s, len %zd\n", name, strlen(name));
-		if (strcmp(name, XATTR_NAME_SMACK))
-			continue;
-
-		value_len = ksmbd_vfs_getxattr(dir_dentry, name, &smack_buf);
-		if (value_len <= 0)
-			continue;
-
-		rc = ksmbd_vfs_setxattr(dentry, XATTR_NAME_SMACK, smack_buf,
-					value_len, 0);
-		ksmbd_free(smack_buf);
-		if (rc < 0)
-			ksmbd_err("ksmbd_vfs_setxattr() failed: %d\n", rc);
-	}
-out:
-	ksmbd_vfs_xattr_free(xattr_list);
 }
 
 int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
@@ -202,7 +154,6 @@ int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
 	return 0;
 }
 
-
 /**
  * ksmbd_vfs_create() - vfs helper for smb create file
  * @work:	work
@@ -211,9 +162,7 @@ int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_create(struct ksmbd_work *work,
-		     const char *name,
-		     umode_t mode)
+int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -237,7 +186,6 @@ int ksmbd_vfs_create(struct ksmbd_work *work,
 	if (!err) {
 		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry),
 			d_inode(dentry));
-		ksmbd_vfs_inherit_smack(work, path.dentry, dentry);
 	} else {
 		ksmbd_err("File(%s): creation failed (err:%d)\n", name, err);
 	}
@@ -253,9 +201,7 @@ int ksmbd_vfs_create(struct ksmbd_work *work,
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_mkdir(struct ksmbd_work *work,
-		    const char *name,
-		    umode_t mode)
+int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -276,21 +222,37 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work,
 #else
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
 #endif
-	if (!err) {
-		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry),
-			d_inode(dentry));
-		ksmbd_vfs_inherit_smack(work, path.dentry, dentry);
-	} else
-		ksmbd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
+	if (err)
+		goto out;
+	else if (d_unhashed(dentry)) {
+		struct dentry *d;
 
+		d = lookup_one_len(dentry->d_name.name,
+			       dentry->d_parent,
+			       dentry->d_name.len);
+		if (IS_ERR(d)) {
+			err = PTR_ERR(d);
+			goto out;
+		}
+		if (unlikely(d_is_negative(d))) {
+			dput(d);
+			err = -ENOENT;
+			goto out;
+		}
+
+		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry),
+			d_inode(d));
+		dput(d);
+	}
+out:
 	done_path_create(&path, dentry);
+	if (err)
+		ksmbd_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 	return err;
 }
 
-static ssize_t ksmbd_vfs_getcasexattr(struct dentry *dentry,
-				      char *attr_name,
-				      int attr_name_len,
-				      char **attr_value)
+static ssize_t ksmbd_vfs_getcasexattr(struct dentry *dentry, char *attr_name,
+		int attr_name_len, char **attr_value)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
@@ -314,12 +276,12 @@ static ssize_t ksmbd_vfs_getcasexattr(struct dentry *dentry,
 	}
 
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return value_len;
 }
 
 static int ksmbd_vfs_stream_read(struct ksmbd_file *fp, char *buf, loff_t *pos,
-	size_t count)
+		size_t count)
 {
 	ssize_t v_len;
 	char *stream_buf = NULL;
@@ -351,10 +313,8 @@ static int ksmbd_vfs_stream_read(struct ksmbd_file *fp, char *buf, loff_t *pos,
  *
  * Return:	0 on success, otherwise error
  */
-static int check_lock_range(struct file *filp,
-			    loff_t start,
-			    loff_t end,
-			    unsigned char type)
+static int check_lock_range(struct file *filp, loff_t start, loff_t end,
+		unsigned char type)
 {
 	struct file_lock *flock;
 	struct file_lock_context *ctx = file_inode(filp)->i_flctx;
@@ -397,24 +357,17 @@ out:
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int ksmbd_vfs_read(struct ksmbd_work *work,
-		 struct ksmbd_file *fp,
-		 size_t count,
+int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 		 loff_t *pos)
 {
 	struct file *filp;
 	ssize_t nbytes = 0;
-	char *rbuf, *name;
+	char *rbuf;
 	struct inode *inode;
-	char namebuf[NAME_MAX];
-	int ret;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	mm_segment_t old_fs;
-#endif
 
-	rbuf = AUX_PAYLOAD(work);
+	rbuf = work->aux_payload_buf;
 	filp = fp->filp;
-	inode = d_inode(filp->f_path.dentry);
+	inode = file_inode(filp);
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
 
@@ -431,28 +384,21 @@ int ksmbd_vfs_read(struct ksmbd_work *work,
 	if (ksmbd_stream_fd(fp))
 		return ksmbd_vfs_stream_read(fp, rbuf, pos, count);
 
-	ret = check_lock_range(filp, *pos, *pos + count - 1,
-			READ);
-	if (ret) {
-		ksmbd_err("unable to read due to lock\n");
-		return -EAGAIN;
+	if (!work->tcon->posix_extensions) {
+		int ret;
+
+		ret = check_lock_range(filp, *pos, *pos + count - 1,
+				READ);
+		if (ret) {
+			ksmbd_err("unable to read due to lock\n");
+			return -EAGAIN;
+		}
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-
-	nbytes = vfs_read(filp, rbuf, count, pos);
-	set_fs(old_fs);
-#else
 	nbytes = kernel_read(filp, rbuf, count, pos);
-#endif
 	if (nbytes < 0) {
-		name = d_path(&filp->f_path, namebuf, sizeof(namebuf));
-		if (IS_ERR(name))
-			name = "(error)";
 		ksmbd_err("smb read failed for (%s), err = %zd\n",
-				name, nbytes);
+				fp->filename, nbytes);
 		return nbytes;
 	}
 
@@ -461,7 +407,7 @@ int ksmbd_vfs_read(struct ksmbd_work *work,
 }
 
 static int ksmbd_vfs_stream_write(struct ksmbd_file *fp, char *buf, loff_t *pos,
-	size_t count)
+		size_t count)
 {
 	char *stream_buf = NULL, *wbuf;
 	size_t size, v_len;
@@ -487,7 +433,7 @@ static int ksmbd_vfs_stream_write(struct ksmbd_file *fp, char *buf, loff_t *pos,
 	}
 
 	if (v_len < size) {
-		wbuf = ksmbd_alloc(size);
+		wbuf = kvmalloc(size, GFP_KERNEL | __GFP_ZERO);
 		if (!wbuf) {
 			err = -ENOMEM;
 			goto out;
@@ -511,7 +457,7 @@ static int ksmbd_vfs_stream_write(struct ksmbd_file *fp, char *buf, loff_t *pos,
 	fp->filp->f_pos = *pos;
 	err = 0;
 out:
-	ksmbd_free(stream_buf);
+	kvfree(stream_buf);
 	return err;
 }
 
@@ -528,15 +474,13 @@ out:
  * Return:	0 on success, otherwise error
  */
 int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
-	char *buf, size_t count, loff_t *pos, bool sync, ssize_t *written)
+		char *buf, size_t count, loff_t *pos, bool sync,
+		ssize_t *written)
 {
 	struct ksmbd_session *sess = work->sess;
 	struct file *filp;
 	loff_t	offset = *pos;
 	int err = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	mm_segment_t old_fs;
-#endif
 
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & FILE_WRITE_DATA_LE)) {
@@ -555,25 +499,19 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 		goto out;
 	}
 
-	err = check_lock_range(filp, *pos, *pos + count - 1, WRITE);
-	if (err) {
-		ksmbd_err("unable to write due to lock\n");
-		err = -EAGAIN;
-		goto out;
+	if (!work->tcon->posix_extensions) {
+		err = check_lock_range(filp, *pos, *pos + count - 1, WRITE);
+		if (err) {
+			ksmbd_err("unable to write due to lock\n");
+			err = -EAGAIN;
+			goto out;
+		}
 	}
 
 	/* Do we need to break any of a levelII oplock? */
 	smb_break_all_levII_oplock(work, fp, 1);
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-	old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	err = vfs_write(filp, buf, count, pos);
-	set_fs(old_fs);
-#else
 	err = kernel_write(filp, buf, count, pos);
-#endif
-
 	if (err < 0) {
 		ksmbd_debug(VFS, "smb write failed, err = %d\n", err);
 		goto out;
@@ -605,11 +543,7 @@ int ksmbd_vfs_getattr(struct path *path, struct kstat *stat)
 {
 	int err;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
 	err = vfs_getattr(path, stat, STATX_BTIME, AT_STATX_SYNC_AS_STAT);
-#else
-	err = vfs_getattr(path, stat);
-#endif
 	if (err)
 		ksmbd_err("getattr failed, err %d\n", err);
 	return err;
@@ -631,10 +565,10 @@ static void smb_check_attrs(struct inode *inode, struct iattr *attrs)
 
 	/* Revoke setuid/setgid on chown */
 	if (!S_ISDIR(inode->i_mode) &&
-		(((attrs->ia_valid & ATTR_UID) &&
-				!uid_eq(attrs->ia_uid, inode->i_uid)) ||
-		 ((attrs->ia_valid & ATTR_GID) &&
-				!gid_eq(attrs->ia_gid, inode->i_gid)))) {
+	    (((attrs->ia_valid & ATTR_UID) &&
+	      !uid_eq(attrs->ia_uid, inode->i_uid)) ||
+	     ((attrs->ia_valid & ATTR_GID) &&
+	      !gid_eq(attrs->ia_gid, inode->i_gid)))) {
 		attrs->ia_valid |= ATTR_KILL_PRIV;
 		if (attrs->ia_valid & ATTR_MODE) {
 			/* we're setting mode too, just clear the s*id bits */
@@ -657,8 +591,8 @@ static void smb_check_attrs(struct inode *inode, struct iattr *attrs)
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
-		uint64_t fid, struct iattr *attrs)
+int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
+		struct iattr *attrs)
 {
 	struct file *filp;
 	struct dentry *dentry;
@@ -682,7 +616,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 		dentry = path.dentry;
 		inode = d_inode(dentry);
 	} else {
-
 		fp = ksmbd_lookup_fd_fast(work, fid);
 		if (!fp) {
 			ksmbd_revert_fsids(work);
@@ -726,7 +659,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 
 	attrs->ia_valid |= ATTR_CTIME;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock(inode);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	err = notify_change(&init_user_ns, dentry, attrs, NULL);
@@ -734,11 +666,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 	err = notify_change(dentry, attrs, NULL);
 #endif
 	inode_unlock(inode);
-#else
-	mutex_lock(&inode->i_mutex);
-	err = notify_change(dentry, attrs, NULL);
-	mutex_unlock(&inode->i_mutex);
-#endif
 
 	if (update_size)
 		put_write_access(inode);
@@ -763,8 +690,8 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_symlink(struct ksmbd_work *work,
-		const char *name, const char *symname)
+int ksmbd_vfs_symlink(struct ksmbd_work *work, const char *name,
+		const char *symname)
 {
 	struct path path;
 	struct dentry *dentry;
@@ -849,11 +776,8 @@ int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp)
 #endif
 }
 
-int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
-			   struct ksmbd_kstat *ksmbd_kstat,
-			   const char *de_name,
-			   int de_name_len,
-			   const char *dir_path)
+int ksmbd_vfs_readdir_name(struct ksmbd_work *work, struct ksmbd_kstat *ksmbd_kstat,
+		const char *de_name, int de_name_len, const char *dir_path)
 {
 	struct path path;
 	int rc, file_pathlen, dir_pathlen;
@@ -892,7 +816,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_fsync(struct ksmbd_work *work, uint64_t fid, uint64_t p_id)
+int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id)
 {
 	struct ksmbd_file *fp;
 	int err;
@@ -918,13 +842,13 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, uint64_t fid, uint64_t p_id)
 int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 {
 	struct path parent;
-	struct dentry *dir, *dentry;
+	struct dentry *dentry;
 	char *last;
-	int err = -ENOENT;
+	int err;
 
 	last = extract_last_component(name);
 	if (!last)
-		return -ENOENT;
+		return -EINVAL;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
@@ -937,16 +861,8 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 		return err;
 	}
 
-	dir = parent.dentry;
-	if (!d_inode(dir))
-		goto out;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
-	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
-#endif
-	dentry = lookup_one_len(last, dir, strlen(last));
+	inode_lock_nested(d_inode(parent.dentry), I_MUTEX_PARENT);
+	dentry = lookup_one_len(last, parent.dentry, strlen(last));
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		ksmbd_debug(VFS, "%s: lookup failed, err %d\n", last, err);
@@ -961,18 +877,19 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 
 	if (S_ISDIR(d_inode(dentry)->i_mode)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = vfs_rmdir(&init_user_ns, d_inode(dir), dentry);
+		err = vfs_rmdir(&init_user_ns, d_inode(parent.dentry), dentry);
 #else
-		err = vfs_rmdir(d_inode(dir), dentry);
+		err = vfs_rmdir(d_inode(parent.dentry), dentry);
 #endif
 		if (err && err != -ENOTEMPTY)
 			ksmbd_debug(VFS, "%s: rmdir failed, err %d\n", name,
 				err);
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = vfs_unlink(&init_user_ns, d_inode(dir), dentry, NULL);
+		err = vfs_unlink(&init_user_ns, d_inode(parent.dentry), dentry,
+				 NULL);
 #else
-		err = vfs_unlink(d_inode(dir), dentry, NULL);
+		err = vfs_unlink(d_inode(parent.dentry), dentry, NULL);
 #endif
 		if (err)
 			ksmbd_debug(VFS, "%s: unlink failed, err %d\n", name,
@@ -981,12 +898,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 
 	dput(dentry);
 out_err:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
-	inode_unlock(d_inode(dir));
-#else
-	mutex_unlock(&d_inode(dir)->i_mutex);
-#endif
-out:
+	inode_unlock(d_inode(parent.dentry));
 	rollback_path_modification(last);
 	path_put(&parent);
 	ksmbd_revert_fsids(work);
@@ -1000,8 +912,8 @@ out:
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_link(struct ksmbd_work *work,
-		const char *oldname, const char *newname)
+int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
+		const char *newname)
 {
 	struct path oldpath, newpath;
 	struct dentry *dentry;
@@ -1050,30 +962,30 @@ out1:
 }
 
 static int __ksmbd_vfs_rename(struct ksmbd_work *work,
-			      struct dentry *src_dent_parent,
-			      struct dentry *src_dent,
-			      struct dentry *dst_dent_parent,
-			      struct dentry *trap_dent,
-			      char *dst_name)
+		struct dentry *src_dent_parent, struct dentry *src_dent,
+		struct dentry *dst_dent_parent, struct dentry *trap_dent,
+		char *dst_name)
 {
 	struct dentry *dst_dent;
 	int err;
 
-	spin_lock(&src_dent->d_lock);
-	list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
-		struct ksmbd_file *child_fp;
+	if (!work->tcon->posix_extensions) {
+		spin_lock(&src_dent->d_lock);
+		list_for_each_entry(dst_dent, &src_dent->d_subdirs, d_child) {
+			struct ksmbd_file *child_fp;
 
-		if (d_really_is_negative(dst_dent))
-			continue;
+			if (d_really_is_negative(dst_dent))
+				continue;
 
-		child_fp = ksmbd_lookup_fd_inode(d_inode(dst_dent));
-		if (child_fp) {
-			spin_unlock(&src_dent->d_lock);
-			ksmbd_debug(VFS, "Forbid rename, sub file/dir is in use\n");
-			return -EACCES;
+			child_fp = ksmbd_lookup_fd_inode(d_inode(dst_dent));
+			if (child_fp) {
+				spin_unlock(&src_dent->d_lock);
+				ksmbd_debug(VFS, "Forbid rename, sub file/dir is in use\n");
+				return -EACCES;
+			}
 		}
+		spin_unlock(&src_dent->d_lock);
 	}
-	spin_unlock(&src_dent->d_lock);
 
 	if (d_really_is_negative(src_dent_parent))
 		return -ENOENT;
@@ -1169,8 +1081,7 @@ out:
 }
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
-int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-		char *oldname, char *newname)
+int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work, char *oldname, char *newname)
 {
 	struct path dst_path, src_path;
 	struct dentry *src_dent_parent, *dst_dent_parent;
@@ -1228,8 +1139,8 @@ out:
 	return err;
 }
 #else
-int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-		char *oldname, char *newname)
+int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work, char *oldname,
+		char *newname)
 {
 	return 0;
 }
@@ -1245,11 +1156,10 @@ int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
  * Return:	0 on success, otherwise error
  */
 int ksmbd_vfs_truncate(struct ksmbd_work *work, const char *name,
-	struct ksmbd_file *fp, loff_t size)
+		struct ksmbd_file *fp, loff_t size)
 {
 	struct path path;
 	int err = 0;
-	struct inode *inode;
 
 	if (name) {
 		err = kern_path(name, 0, &path);
@@ -1271,18 +1181,21 @@ int ksmbd_vfs_truncate(struct ksmbd_work *work, const char *name,
 		/* Do we need to break any of a levelII oplock? */
 		smb_break_all_levII_oplock(work, fp, 1);
 
-		inode = file_inode(filp);
-		if (size < inode->i_size) {
-			err = check_lock_range(filp, size,
-					inode->i_size - 1, WRITE);
-		} else {
-			err = check_lock_range(filp, inode->i_size,
-					size - 1, WRITE);
-		}
+		if (!work->tcon->posix_extensions) {
+			struct inode *inode = file_inode(filp);
 
-		if (err) {
-			ksmbd_err("failed due to lock\n");
-			return -EAGAIN;
+			if (size < inode->i_size) {
+				err = check_lock_range(filp, size,
+						inode->i_size - 1, WRITE);
+			} else {
+				err = check_lock_range(filp, inode->i_size,
+						size - 1, WRITE);
+			}
+
+			if (err) {
+				ksmbd_err("failed due to lock\n");
+				return -EAGAIN;
+			}
 		}
 
 		err = vfs_truncate(&filp->f_path, size);
@@ -1311,7 +1224,7 @@ ssize_t ksmbd_vfs_listxattr(struct dentry *dentry, char **list)
 	if (size <= 0)
 		return size;
 
-	vlist = ksmbd_alloc(size);
+	vlist = kvmalloc(size, GFP_KERNEL | __GFP_ZERO);
 	if (!vlist)
 		return -ENOMEM;
 
@@ -1319,15 +1232,14 @@ ssize_t ksmbd_vfs_listxattr(struct dentry *dentry, char **list)
 	size = vfs_listxattr(dentry, vlist, size);
 	if (size < 0) {
 		ksmbd_debug(VFS, "listxattr failed\n");
-		ksmbd_vfs_xattr_free(vlist);
+		kvfree(vlist);
 		*list = NULL;
 	}
 
 	return size;
 }
 
-static ssize_t ksmbd_vfs_xattr_len(struct dentry *dentry,
-			   char *xattr_name)
+static ssize_t ksmbd_vfs_xattr_len(struct dentry *dentry, char *xattr_name)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	return vfs_getxattr(&init_user_ns, dentry, xattr_name, NULL, 0);
@@ -1344,9 +1256,8 @@ static ssize_t ksmbd_vfs_xattr_len(struct dentry *dentry,
  *
  * Return:	read xattr value length on success, otherwise error
  */
-ssize_t ksmbd_vfs_getxattr(struct dentry *dentry,
-			   char *xattr_name,
-			   char **xattr_buf)
+ssize_t ksmbd_vfs_getxattr(struct dentry *dentry, char *xattr_name,
+		char **xattr_buf)
 {
 	ssize_t xattr_len;
 	char *buf;
@@ -1383,11 +1294,8 @@ ssize_t ksmbd_vfs_getxattr(struct dentry *dentry,
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_setxattr(struct dentry *dentry,
-		       const char *attr_name,
-		       const void *attr_value,
-		       size_t attr_size,
-		       int flags)
+int ksmbd_vfs_setxattr(struct dentry *dentry, const char *attr_name,
+		const void *attr_value, size_t attr_size, int flags)
 {
 	int err;
 
@@ -1406,12 +1314,9 @@ int ksmbd_vfs_setxattr(struct dentry *dentry,
 }
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
-int ksmbd_vfs_fsetxattr(struct ksmbd_work *work,
-			const char *filename,
-			const char *attr_name,
-			const void *attr_value,
-			size_t attr_size,
-			int flags)
+int ksmbd_vfs_fsetxattr(struct ksmbd_work *work, const char *filename,
+		const char *attr_name, const void *attr_value, size_t attr_size,
+		int flags)
 {
 	struct path path;
 	int err;
@@ -1463,9 +1368,9 @@ int ksmbd_vfs_remove_acl_xattrs(struct dentry *dentry)
 		ksmbd_debug(SMB, "%s, len %zd\n", name, strlen(name));
 
 		if (!strncmp(name, XATTR_NAME_POSIX_ACL_ACCESS,
-			     sizeof(XATTR_NAME_POSIX_ACL_ACCESS)-1) ||
+			     sizeof(XATTR_NAME_POSIX_ACL_ACCESS) - 1) ||
 		    !strncmp(name, XATTR_NAME_POSIX_ACL_DEFAULT,
-			     sizeof(XATTR_NAME_POSIX_ACL_DEFAULT)-1)) {
+			     sizeof(XATTR_NAME_POSIX_ACL_DEFAULT) - 1)) {
 			err = ksmbd_vfs_remove_xattr(dentry, name);
 			if (err)
 				ksmbd_debug(SMB,
@@ -1473,7 +1378,7 @@ int ksmbd_vfs_remove_acl_xattrs(struct dentry *dentry)
 		}
 	}
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return err;
 }
 
@@ -1502,7 +1407,7 @@ int ksmbd_vfs_remove_sd_xattrs(struct dentry *dentry)
 		}
 	}
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return err;
 }
 
@@ -1578,11 +1483,7 @@ int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn, struct dentry *dentry,
 
 	acl.version = 4;
 	acl.hash_type = XATTR_SD_HASH_TYPE_SHA256;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 12, 0)
 	acl.current_time = ksmbd_UnixTimeToNT(current_time(dentry->d_inode));
-#else
-	acl.current_time = ksmbd_UnixTimeToNT(CURRENT_TIME);
-#endif
 
 	memcpy(acl.desc, "posix_acl", 9);
 	acl.desc_len = 10;
@@ -1738,9 +1639,10 @@ int ksmbd_vfs_get_dos_attrib_xattr(struct dentry *dentry,
 		n.length = err;
 		if (ndr_decode_dos_attr(&n, da))
 			err = -EINVAL;
-		ksmbd_free(n.data);
-	} else
+		kfree(n.data);
+	} else {
 		ksmbd_debug(SMB, "failed to load dos attribute in xattr\n");
+	}
 
 	return err;
 }
@@ -1767,31 +1669,10 @@ int ksmbd_vfs_set_posix_acl(struct inode *inode, int type,
 		struct posix_acl *acl)
 {
 #if IS_ENABLED(CONFIG_FS_POSIX_ACL)
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 4, 21)
-	int ret;
-
-	if (!IS_POSIXACL(inode))
-		return -EOPNOTSUPP;
-	if (!inode->i_op->set_acl)
-		return -EOPNOTSUPP;
-
-	if (type == ACL_TYPE_DEFAULT && !S_ISDIR(inode->i_mode))
-		return -EACCES;
-	if (!inode_owner_or_capable(inode))
-		return -EPERM;
-	if (!acl)
-		return -EINVAL;
-
-	ret = posix_acl_valid(acl);
-	if (ret)
-		return ret;
-	return inode->i_op->set_acl(inode, acl, type);
-#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	return set_posix_acl(&init_user_ns, inode, type, acl);
 #else
 	return set_posix_acl(inode, type, acl);
-#endif
 #endif
 #else
 	return -EOPNOTSUPP;
@@ -1812,9 +1693,9 @@ void ksmbd_vfs_set_fadvise(struct file *filp, __le32 option)
 	if (!option || !mapping)
 		return;
 
-	if (option & FILE_WRITE_THROUGH_LE)
+	if (option & FILE_WRITE_THROUGH_LE) {
 		filp->f_flags |= O_SYNC;
-	else if (option & FILE_SEQUENTIAL_ONLY_LE) {
+	} else if (option & FILE_SEQUENTIAL_ONLY_LE) {
 		filp->f_ra.ra_pages = inode_to_bdi(mapping->host)->ra_pages * 2;
 		spin_lock(&filp->f_lock);
 		filp->f_mode &= ~FMODE_RANDOM;
@@ -1846,18 +1727,15 @@ int ksmbd_vfs_readdir(struct file *file, struct ksmbd_readdir_data *rdata)
 	return iterate_dir(file, &rdata->ctx);
 }
 
-int ksmbd_vfs_alloc_size(struct ksmbd_work *work,
-			 struct ksmbd_file *fp,
-			 loff_t len)
+int ksmbd_vfs_alloc_size(struct ksmbd_work *work, struct ksmbd_file *fp,
+		loff_t len)
 {
 	smb_break_all_levII_oplock(work, fp, 1);
 	return vfs_fallocate(fp->filp, FALLOC_FL_KEEP_SIZE, 0, len);
 }
 
-int ksmbd_vfs_zero_data(struct ksmbd_work *work,
-			 struct ksmbd_file *fp,
-			 loff_t off,
-			 loff_t len)
+int ksmbd_vfs_zero_data(struct ksmbd_work *work, struct ksmbd_file *fp,
+		loff_t off, loff_t len)
 {
 	smb_break_all_levII_oplock(work, fp, 1);
 	if (fp->f_ci->m_fattr & ATTR_SPARSE_FILE_LE)
@@ -1868,8 +1746,8 @@ int ksmbd_vfs_zero_data(struct ksmbd_work *work,
 }
 
 int ksmbd_vfs_fqar_lseek(struct ksmbd_file *fp, loff_t start, loff_t length,
-	struct file_allocated_range_buffer *ranges,
-	int in_count, int *out_count)
+		struct file_allocated_range_buffer *ranges, int in_count,
+		int *out_count)
 {
 	struct file *f = fp->filp;
 	struct inode *inode = FP_INODE(fp);
@@ -1910,8 +1788,9 @@ int ksmbd_vfs_fqar_lseek(struct ksmbd_file *fp, loff_t start, loff_t length,
 			if (extent_end != -ENXIO)
 				ret = (int)extent_end;
 			break;
-		} else if (extent_start >= extent_end)
+		} else if (extent_start >= extent_end) {
 			break;
+		}
 
 		ranges[*out_count].file_offset = cpu_to_le64(extent_start);
 		ranges[(*out_count)++].length =
@@ -1932,21 +1811,12 @@ int ksmbd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 #endif
 }
 
-void ksmbd_vfs_xattr_free(char *xattr)
-{
-	ksmbd_free(xattr);
-}
-
 int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 {
 	int err = 0;
 
 	dget(dentry);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
-#else
-	mutex_lock_nested(&d_inode(dir)->i_mutex, I_MUTEX_PARENT);
-#endif
 	if (!d_inode(dentry) || !d_inode(dentry)->i_nlink) {
 		err = -ENOENT;
 		goto out;
@@ -1964,11 +1834,7 @@ int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 #endif
 
 out:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 21)
 	inode_unlock(d_inode(dir));
-#else
-	mutex_unlock(&d_inode(dir)->i_mutex);
-#endif
 	dput(dentry);
 	if (err)
 		ksmbd_debug(VFS, "failed to delete, err %d\n", err);
@@ -2004,7 +1870,7 @@ unsigned short ksmbd_vfs_logical_sector_size(struct inode *inode)
  * @fs_ss: fs sector size struct
  */
 void ksmbd_vfs_smb2_sector_size(struct inode *inode,
-	struct ksmbd_fs_sector_size *fs_ss)
+		struct ksmbd_fs_sector_size *fs_ss)
 {
 	struct request_queue *q;
 
@@ -2042,7 +1908,7 @@ void ksmbd_vfs_smb2_sector_size(struct inode *inode,
  * Return:	0 on success, otherwise error
  */
 struct ksmbd_file *ksmbd_vfs_dentry_open(struct ksmbd_work *work,
-	const struct path *path, int flags, __le32 option, int fexist)
+		const struct path *path, int flags, __le32 option, int fexist)
 {
 	struct file *filp;
 	int err = 0;
@@ -2085,21 +1951,14 @@ err_out:
 }
 #else
 struct ksmbd_file *ksmbd_vfs_dentry_open(struct ksmbd_work *work,
-					 const struct path *path,
-					 int flags,
-					 __le32 option,
-					 int fexist)
+		const struct path *path, int flags, __le32 option, int fexist)
 {
 	return NULL;
 }
 #endif
 
-static int __dir_empty(struct dir_context *ctx,
-				   const char *name,
-				   int namlen,
-				   loff_t offset,
-				   u64 ino,
-				   unsigned int d_type)
+static int __dir_empty(struct dir_context *ctx, const char *name, int namlen,
+		loff_t offset, u64 ino, unsigned int d_type)
 {
 	struct ksmbd_readdir_data *buf;
 
@@ -2135,12 +1994,8 @@ int ksmbd_vfs_empty_dir(struct ksmbd_file *fp)
 	return err;
 }
 
-static int __caseless_lookup(struct dir_context *ctx,
-			     const char *name,
-			     int namlen,
-			     loff_t offset,
-			     u64 ino,
-			     unsigned int d_type)
+static int __caseless_lookup(struct dir_context *ctx, const char *name,
+		int namlen, loff_t offset, u64 ino, unsigned int d_type)
 {
 	struct ksmbd_readdir_data *buf;
 
@@ -2168,7 +2023,7 @@ static int ksmbd_vfs_lookup_in_dir(char *dirname, char *filename)
 	struct path dir_path;
 	int ret;
 	struct file *dfilp;
-	int flags = O_RDONLY|O_LARGEFILE;
+	int flags = O_RDONLY | O_LARGEFILE;
 	int dirnamelen = strlen(dirname);
 	struct ksmbd_readdir_data readdir_data = {
 		.ctx.actor	= __caseless_lookup,
@@ -2270,9 +2125,8 @@ void *ksmbd_vfs_init_kstat(char **p, struct ksmbd_kstat *ksmbd_kstat)
 	return info;
 }
 
-int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
-				struct dentry *dentry,
-				struct ksmbd_kstat *ksmbd_kstat)
+int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work, struct dentry *dentry,
+		struct ksmbd_kstat *ksmbd_kstat)
 {
 	u64 time;
 	int rc;
@@ -2296,23 +2150,23 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		ksmbd_kstat->file_attributes = ATTR_ARCHIVE_LE;
 
 	if (test_share_config_flag(work->tcon->share_conf,
-	    KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		struct xattr_dos_attrib da;
 
 		rc = ksmbd_vfs_get_dos_attrib_xattr(dentry, &da);
 		if (rc > 0) {
 			ksmbd_kstat->file_attributes = cpu_to_le32(da.attr);
 			ksmbd_kstat->create_time = da.create_time;
-		} else
+		} else {
 			ksmbd_debug(VFS, "fail to load dos attribute.\n");
+		}
 	}
 
 	return 0;
 }
 
-ssize_t ksmbd_vfs_casexattr_len(struct dentry *dentry,
-				char *attr_name,
-				int attr_name_len)
+ssize_t ksmbd_vfs_casexattr_len(struct dentry *dentry, char *attr_name,
+		int attr_name_len)
 {
 	char *name, *xattr_list = NULL;
 	ssize_t value_len = -ENOENT, xattr_list_len;
@@ -2332,14 +2186,12 @@ ssize_t ksmbd_vfs_casexattr_len(struct dentry *dentry,
 	}
 
 out:
-	ksmbd_vfs_xattr_free(xattr_list);
+	kvfree(xattr_list);
 	return value_len;
 }
 
-int ksmbd_vfs_xattr_stream_name(char *stream_name,
-				char **xattr_stream_name,
-				size_t *xattr_stream_name_size,
-				int s_type)
+int ksmbd_vfs_xattr_stream_name(char *stream_name, char **xattr_stream_name,
+		size_t *xattr_stream_name_size, int s_type)
 {
 	int stream_name_size;
 	char *xattr_stream_name_buf;
@@ -2378,19 +2230,16 @@ int ksmbd_vfs_xattr_stream_name(char *stream_name,
 }
 
 static int ksmbd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
-				struct file *file_out, loff_t pos_out,
-				size_t len)
+		struct file *file_out, loff_t pos_out, size_t len)
 {
 	struct inode *inode_in = file_inode(file_in);
 	struct inode *inode_out = file_inode(file_out);
 	int ret;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 5, 0)
 	ret = vfs_copy_file_range(file_in, pos_in, file_out, pos_out, len, 0);
 	/* do splice for the copy between different file systems */
 	if (ret != -EXDEV)
 		return ret;
-#endif
 
 	if (S_ISDIR(inode_in->i_mode) || S_ISDIR(inode_out->i_mode))
 		return -EISDIR;
@@ -2427,13 +2276,10 @@ static int ksmbd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
 }
 
 int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
-				struct ksmbd_file *src_fp,
-				struct ksmbd_file *dst_fp,
-				struct srv_copychunk *chunks,
-				unsigned int chunk_count,
-				unsigned int *chunk_count_written,
-				unsigned int *chunk_size_written,
-				loff_t *total_size_written)
+		struct ksmbd_file *src_fp, struct ksmbd_file *dst_fp,
+		struct srv_copychunk *chunks, unsigned int chunk_count,
+		unsigned int *chunk_count_written,
+		unsigned int *chunk_size_written, loff_t *total_size_written)
 {
 	unsigned int i;
 	loff_t src_off, dst_off, src_file_size;
@@ -2458,17 +2304,19 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 
 	smb_break_all_levII_oplock(work, dst_fp, 1);
 
-	for (i = 0; i < chunk_count; i++) {
-		src_off = le64_to_cpu(chunks[i].SourceOffset);
-		dst_off = le64_to_cpu(chunks[i].TargetOffset);
-		len = le32_to_cpu(chunks[i].Length);
+	if (!work->tcon->posix_extensions) {
+		for (i = 0; i < chunk_count; i++) {
+			src_off = le64_to_cpu(chunks[i].SourceOffset);
+			dst_off = le64_to_cpu(chunks[i].TargetOffset);
+			len = le32_to_cpu(chunks[i].Length);
 
-		if (check_lock_range(src_fp->filp, src_off,
-				src_off + len - 1, READ))
-			return -EAGAIN;
-		if (check_lock_range(dst_fp->filp, dst_off,
-				dst_off + len - 1, WRITE))
-			return -EAGAIN;
+			if (check_lock_range(src_fp->filp, src_off,
+					     src_off + len - 1, READ))
+				return -EAGAIN;
+			if (check_lock_range(dst_fp->filp, dst_off,
+					     dst_off + len - 1, WRITE))
+				return -EAGAIN;
+		}
 	}
 
 	src_file_size = i_size_read(file_inode(src_fp->filp));
@@ -2494,33 +2342,19 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 
 int ksmbd_vfs_posix_lock_wait(struct file_lock *flock)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	return wait_event_interruptible(flock->fl_wait, !flock->fl_next);
-#else
 	return wait_event_interruptible(flock->fl_wait, !flock->fl_blocker);
-#endif
 }
 
 int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	return wait_event_interruptible_timeout(flock->fl_wait,
-						!flock->fl_next,
-						timeout);
-#else
 	return wait_event_interruptible_timeout(flock->fl_wait,
 						!flock->fl_blocker,
 						timeout);
-#endif
 }
 
 void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
-	posix_unblock_lock(flock);
-#else
 	locks_delete_block(flock);
-#endif
 }
 
 int ksmbd_vfs_set_init_posix_acl(struct inode *inode)

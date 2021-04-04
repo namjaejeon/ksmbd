@@ -22,20 +22,22 @@
  * TODO : implement consideration about DOS_DOT, DOS_QM and DOS_STAR
  *
  * @string:	string to compare with a pattern
+ * @len:	string length
  * @pattern:	pattern string which might include wildcard '*' and '?'
  *
  * Return:	0 if pattern matched with the string, otherwise non zero value
  */
-int match_pattern(const char *str, const char *pattern)
+int match_pattern(const char *str, size_t len, const char *pattern)
 {
 	const char *s = str;
 	const char *p = pattern;
 	bool star = false;
 
-	while (*s) {
+	while (*s && len) {
 		switch (*p) {
 		case '?':
 			s++;
+			len--;
 			p++;
 			break;
 		case '*':
@@ -48,6 +50,7 @@ int match_pattern(const char *str, const char *pattern)
 		default:
 			if (tolower(*s) == tolower(*p)) {
 				s++;
+				len--;
 				p++;
 			} else {
 				if (!star)
@@ -75,9 +78,9 @@ static inline int is_char_allowed(char ch)
 {
 	/* check for control chars, wildcards etc. */
 	if (!(ch & 0x80) &&
-		(ch <= 0x1f ||
-		 ch == '?' || ch == '"' || ch == '<' ||
-		 ch == '>' || ch == '|' || ch == '*'))
+	    (ch <= 0x1f ||
+	     ch == '?' || ch == '"' || ch == '<' ||
+	     ch == '>' || ch == '|' || ch == '*'))
 		return 0;
 
 	return 1;
@@ -90,7 +93,7 @@ int ksmbd_validate_filename(char *filename)
 
 		filename++;
 		if (!is_char_allowed(c)) {
-			ksmbd_err("File name validation failed: 0x%x\n", c);
+			ksmbd_debug(VFS, "File name validation failed: 0x%x\n", c);
 			return -ENOENT;
 		}
 	}
@@ -171,11 +174,7 @@ char *convert_to_nt_pathname(char *filename, char *sharepath)
 
 	len = strlen(sharepath);
 	if (!strncmp(filename, sharepath, len) && name_len != len) {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 3, 0)
-		strncpy(ab_pathname, &filename[len], name_len);
-#else
 		strscpy(ab_pathname, &filename[len], name_len);
-#endif
 		ksmbd_conv_path_to_windows(ab_pathname);
 	}
 
@@ -192,15 +191,6 @@ int get_nlink(struct kstat *st)
 
 	return nlink;
 }
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 2, 0)
-static void strreplace(char *s, char old, char new)
-{
-	for (; *s; ++s)
-		if (*s == old)
-			*s = new;
-}
-#endif
 
 void ksmbd_conv_path_to_unix(char *path)
 {
@@ -223,12 +213,12 @@ void ksmbd_conv_path_to_windows(char *path)
 }
 
 /**
- * extract_sharename() - get share name from tree connect request
+ * ksmbd_extract_sharename() - get share name from tree connect request
  * @treename:	buffer containing tree name and share name
  *
  * Return:      share name on success, otherwise error
  */
-char *extract_sharename(char *treename)
+char *ksmbd_extract_sharename(char *treename)
 {
 	char *name = treename;
 	char *dst;
@@ -278,8 +268,7 @@ char *convert_to_unix_name(struct ksmbd_share_config *share, char *name)
 }
 
 char *ksmbd_convert_dir_info_name(struct ksmbd_dir_info *d_info,
-				  const struct nls_table *local_nls,
-				  int *conv_len)
+		const struct nls_table *local_nls, int *conv_len)
 {
 	char *conv;
 	int  sz = min(4 * d_info->name_len, PATH_MAX);

@@ -13,8 +13,8 @@
 #include "connection.h"
 #include "transport_tcp.h"
 
-#define IFACE_STATE_DOWN		(1 << 0)
-#define IFACE_STATE_CONFIGURED		(1 << 1)
+#define IFACE_STATE_DOWN		BIT(0)
+#define IFACE_STATE_CONFIGURED		BIT(1)
 
 struct interface {
 	struct task_struct	*ksmbd_kthread;
@@ -72,19 +72,10 @@ static inline void ksmbd_tcp_reuseaddr(struct socket *sock)
 static inline void ksmbd_tcp_rcv_timeout(struct socket *sock, s64 secs)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-	struct timeval tv = { .tv_sec = secs, .tv_usec = 0 };
-#else
 	struct __kernel_old_timeval tv = { .tv_sec = secs, .tv_usec = 0 };
-#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	kernel_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO_OLD, (char *)&tv,
 			  sizeof(tv));
-#else
-	kernel_setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,
-			  sizeof(tv));
-#endif
 #else
 	lock_sock(sock->sk);
 	if (secs && secs < MAX_SCHEDULE_TIMEOUT / HZ - 1)
@@ -98,19 +89,10 @@ static inline void ksmbd_tcp_rcv_timeout(struct socket *sock, s64 secs)
 static inline void ksmbd_tcp_snd_timeout(struct socket *sock, s64 secs)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 18, 0)
-	struct timeval tv = { .tv_sec = secs, .tv_usec = 0 };
-#else
 	struct __kernel_old_timeval tv = { .tv_sec = secs, .tv_usec = 0 };
-#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 1, 0)
 	kernel_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO_OLD, (char *)&tv,
 			  sizeof(tv));
-#else
-	kernel_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv,
-			  sizeof(tv));
-#endif
 #else
 	sock_set_sndtimeo(sock->sk, secs);
 #endif
@@ -159,7 +141,7 @@ static void free_transport(struct tcp_transport *t)
  * Return:	Number of IO segments
  */
 static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
-				    unsigned int nr_segs, size_t bytes)
+		unsigned int nr_segs, size_t bytes)
 {
 	size_t base = 0;
 
@@ -188,8 +170,7 @@ static unsigned int kvec_array_init(struct kvec *new, struct kvec *iov,
  *
  * Return:	return existing or newly allocate iovec
  */
-static struct kvec *get_conn_iovec(struct tcp_transport *t,
-				     unsigned int nr_segs)
+static struct kvec *get_conn_iovec(struct tcp_transport *t, unsigned int nr_segs)
 {
 	struct kvec *new_iov;
 
@@ -219,7 +200,7 @@ static unsigned short ksmbd_tcp_get_port(const struct sockaddr *sa)
 
 /**
  * ksmbd_tcp_new_connection() - create a new tcp session on mount
- * @sock:	socket associated with new connection
+ * @client_sk:	socket associated with new connection
  *
  * whenever a new connection is requested, create a conn thread
  * (session thread) to handle new incoming smb requests from the connection
@@ -238,20 +219,11 @@ static int ksmbd_tcp_new_connection(struct socket *client_sk)
 
 	csin = KSMBD_TCP_PEER_SOCKADDR(KSMBD_TRANS(t)->conn);
 
-#if LINUX_VERSION_CODE <= KERNEL_VERSION(4, 16, 0)
-	if (kernel_getpeername(client_sk, csin, &rc) < 0) {
-		ksmbd_err("client ip resolution failed\n");
-		rc = -EINVAL;
-		goto out_error;
-	}
-	rc = 0;
-#else
 	if (kernel_getpeername(client_sk, csin) < 0) {
 		ksmbd_err("client ip resolution failed\n");
 		rc = -EINVAL;
 		goto out_error;
 	}
-#endif
 	KSMBD_TRANS(t)->handler = kthread_run(ksmbd_conn_handler_loop,
 					KSMBD_TRANS(t)->conn,
 					"ksmbd:%u", ksmbd_tcp_get_port(csin));
@@ -307,7 +279,8 @@ static int ksmbd_kthread_fn(void *p)
 }
 
 /**
- * ksmbd_create_ksmbd_kthread() - start forker thread
+ * ksmbd_tcp_run_kthread() - start forker thread
+ * @iface: pointer to struct interface
  *
  * start forker thread(ksmbd/0) at module init time to listen
  * on port 445 for new SMB connection requests. It creates per connection
@@ -341,10 +314,8 @@ static int ksmbd_tcp_run_kthread(struct interface *iface)
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-static int ksmbd_tcp_readv(struct tcp_transport *t,
-			   struct kvec *iov_orig,
-			   unsigned int nr_segs,
-			   unsigned int to_read)
+static int ksmbd_tcp_readv(struct tcp_transport *t, struct kvec *iov_orig,
+		unsigned int nr_segs, unsigned int to_read)
 {
 	int length = 0;
 	int total_read;
@@ -399,9 +370,7 @@ static int ksmbd_tcp_readv(struct tcp_transport *t,
  * Return:	on success return number of bytes read from socket,
  *		otherwise return error number
  */
-static int ksmbd_tcp_read(struct ksmbd_transport *t,
-		   char *buf,
-		   unsigned int to_read)
+static int ksmbd_tcp_read(struct ksmbd_transport *t, char *buf, unsigned int to_read)
 {
 	struct kvec iov;
 
@@ -411,9 +380,8 @@ static int ksmbd_tcp_read(struct ksmbd_transport *t,
 	return ksmbd_tcp_readv(TCP_TRANS(t), &iov, 1, to_read);
 }
 
-static int ksmbd_tcp_writev(struct ksmbd_transport *t,
-			struct kvec *iov, int nvecs, int size,
-			bool need_invalidate, unsigned int remote_key)
+static int ksmbd_tcp_writev(struct ksmbd_transport *t, struct kvec *iov,
+		int nvecs, int size, bool need_invalidate, unsigned int remote_key)
 
 {
 	struct msghdr smb_msg = {.msg_flags = MSG_NOSIGNAL};
@@ -539,7 +507,7 @@ out_error:
 }
 
 static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
-				void *ptr)
+		void *ptr)
 {
 	struct net_device *netdev = netdev_notifier_info_to_dev(ptr);
 	struct interface *iface;
@@ -589,7 +557,6 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 	}
 
 	return NOTIFY_DONE;
-
 }
 
 static struct notifier_block ksmbd_netdev_notifier = {
@@ -624,7 +591,7 @@ void ksmbd_tcp_destroy(void)
 	list_for_each_entry_safe(iface, tmp, &iface_list, entry) {
 		list_del(&iface->entry);
 		kfree(iface->name);
-		ksmbd_free(iface);
+		kfree(iface);
 	}
 }
 
@@ -635,7 +602,7 @@ static struct interface *alloc_iface(char *ifname)
 	if (!ifname)
 		return NULL;
 
-	iface = ksmbd_alloc(sizeof(struct interface));
+	iface = kzalloc(sizeof(struct interface), GFP_KERNEL);
 	if (!iface) {
 		kfree(ifname);
 		return NULL;

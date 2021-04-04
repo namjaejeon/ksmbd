@@ -1,13 +1,14 @@
 config SMB_SERVER
 	tristate "SMB server support (EXPERIMENTAL)"
 	depends on INET
+	depends on MULTIUSER
+	depends on FILE_LOCKING
 	select NLS
 	select NLS_UTF8
 	select CRYPTO
 	select CRYPTO_MD4
 	select CRYPTO_MD5
 	select CRYPTO_HMAC
-	select CRYPTO_ARC4
 	select CRYPTO_ECB
 	select CRYPTO_LIB_DES
 	select CRYPTO_SHA256
