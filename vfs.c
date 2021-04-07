@@ -71,7 +71,7 @@ static void ksmbd_vfs_inherit_owner(struct ksmbd_work *work,
 
 int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
 {
-	int mask;
+	int mask, ret = 0;
 
 	mask = 0;
 	acc_mode &= O_ACCMODE;
@@ -91,28 +91,43 @@ int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
 		return -EACCES;
 
 	if (delete) {
-		struct dentry *parent;
+		struct dentry *child, *parent;
 
 		parent = dget_parent(dentry);
-		if (!parent)
-			return -EINVAL;
+		inode_lock_nested(d_inode(parent), I_MUTEX_PARENT);
+		child = lookup_one_len(dentry->d_name.name, parent,
+				dentry->d_name.len);
+		if (IS_ERR(child)) {
+			ret = PTR_ERR(child);
+			goto out_lock;
+		}
+
+		if (child != dentry) {
+			ret = -ESTALE;
+			dput(child);
+			goto out_lock;
+		}
+		dput(child);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		if (inode_permission(&init_user_ns, d_inode(parent), MAY_EXEC | MAY_WRITE)) {
 #else
 		if (inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE)) {
 #endif
-			dput(parent);
-			return -EACCES;
+			ret = -EACCES;
+			goto out_lock;
 		}
+out_lock:
+		inode_unlock(d_inode(parent));
 		dput(parent);
 	}
-	return 0;
+	return ret;
 }
 
 int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
 {
-	struct dentry *parent;
+	struct dentry *parent, *child;
+	int ret = 0;
 
 	*daccess = cpu_to_le32(FILE_READ_ATTRIBUTES | READ_CONTROL);
 
@@ -141,8 +156,20 @@ int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
 		*daccess |= FILE_EXECUTE_LE;
 
 	parent = dget_parent(dentry);
-	if (!parent)
-		return 0;
+	inode_lock_nested(d_inode(parent), I_MUTEX_PARENT);
+	child = lookup_one_len(dentry->d_name.name, parent,
+			dentry->d_name.len);
+	if (IS_ERR(child)) {
+		ret = PTR_ERR(child);
+		goto out_lock;
+	}
+
+	if (child != dentry) {
+		ret = -ESTALE;
+		dput(child);
+		goto out_lock;
+	}
+	dput(child);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	if (!inode_permission(&init_user_ns, d_inode(parent), MAY_EXEC | MAY_WRITE))
@@ -150,8 +177,11 @@ int ksmbd_vfs_query_maximal_access(struct dentry *dentry, __le32 *daccess)
 	if (!inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE))
 #endif
 		*daccess |= FILE_DELETE_LE;
+
+out_lock:
+	inode_unlock(d_inode(parent));
 	dput(parent);
-	return 0;
+	return ret;
 }
 
 /**
@@ -628,10 +658,9 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 		inode = d_inode(dentry);
 	}
 
-	if (ksmbd_vfs_inode_permission(dentry, O_WRONLY, false)) {
-		err = -EACCES;
+	err = ksmbd_vfs_inode_permission(dentry, O_WRONLY, false);
+	if (err)
 		goto out;
-	}
 
 	/* no need to update mode of symlink */
 	if (S_ISLNK(inode->i_mode))
@@ -1041,7 +1070,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 {
 	struct path dst_path;
 	struct dentry *src_dent_parent, *dst_dent_parent;
-	struct dentry *src_dent, *trap_dent;
+	struct dentry *src_dent, *trap_dent, *src_child;
 	char *dst_name;
 	int err;
 
@@ -1050,11 +1079,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		return -EINVAL;
 
 	src_dent_parent = dget_parent(fp->filp->f_path.dentry);
-	if (!src_dent_parent)
-		return -EINVAL;
-
 	src_dent = fp->filp->f_path.dentry;
-	dget(src_dent);
 
 	err = kern_path(newname, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &dst_path);
 	if (err) {
@@ -1062,20 +1087,36 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		goto out;
 	}
 	dst_dent_parent = dst_path.dentry;
-	dget(dst_dent_parent);
 
 	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
+	dget(src_dent);
+	dget(dst_dent_parent);
+	src_child = lookup_one_len(src_dent->d_name.name, src_dent_parent,
+			src_dent->d_name.len);
+	if (IS_ERR(src_child)) {
+		err = PTR_ERR(src_child);
+		goto out_lock;
+	}
+
+	if (src_child != src_dent) {
+		err = -ESTALE;
+		dput(src_child);
+		goto out_lock;
+	}
+	dput(src_child);
+
 	err = __ksmbd_vfs_rename(work,
 				 src_dent_parent,
 				 src_dent,
 				 dst_dent_parent,
 				 trap_dent,
 				 dst_name);
-	unlock_rename(src_dent_parent, dst_dent_parent);
+out_lock:
+	dput(src_dent);
 	dput(dst_dent_parent);
+	unlock_rename(src_dent_parent, dst_dent_parent);
 	path_put(&dst_path);
 out:
-	dput(src_dent);
 	dput(src_dent_parent);
 	return err;
 }
@@ -1813,14 +1854,24 @@ int ksmbd_vfs_remove_xattr(struct dentry *dentry, char *attr_name)
 
 int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 {
+	struct dentry *child;
 	int err = 0;
 
-	dget(dentry);
 	inode_lock_nested(d_inode(dir), I_MUTEX_PARENT);
-	if (!d_inode(dentry) || !d_inode(dentry)->i_nlink) {
-		err = -ENOENT;
+	dget(dentry);
+	child = lookup_one_len(dentry->d_name.name, dir,
+			dentry->d_name.len);
+	if (IS_ERR(child)) {
+		err = PTR_ERR(child);
 		goto out;
 	}
+
+	if (child != dentry) {
+		err = -ESTALE;
+		dput(child);
+		goto out;
+	}
+	dput(child);
 
 	if (S_ISDIR(d_inode(dentry)->i_mode))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
@@ -1834,8 +1885,8 @@ int ksmbd_vfs_unlink(struct dentry *dir, struct dentry *dentry)
 #endif
 
 out:
-	inode_unlock(d_inode(dir));
 	dput(dentry);
+	inode_unlock(d_inode(dir));
 	if (err)
 		ksmbd_debug(VFS, "failed to delete, err %d\n", err);
 

@@ -2390,14 +2390,15 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			goto out;
 		}
 	} else {
-		if (file_present && ksmbd_vfs_inode_permission(path.dentry,
-				open_flags & O_ACCMODE, false)) {
-			err = -EACCES;
-			goto free_path;
-		}
+		if (file_present) {
+			err = ksmbd_vfs_inode_permission(path.dentry,
+					open_flags & O_ACCMODE, false);
+			if (err)
+				goto free_path;
 
-		if (file_present && S_ISFIFO(stat.mode))
-			open_flags |= O_NONBLOCK;
+			if (S_ISFIFO(stat.mode))
+				open_flags |= O_NONBLOCK;
+		}
 
 		if (req->CreateOptions & FILE_WRITE_THROUGH_LE)
 			open_flags |= O_SYNC;
@@ -4864,10 +4865,11 @@ static int smb_posix_open(struct ksmbd_work *work)
 			ksmbd_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
-	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
-					posix_open_flags & O_ACCMODE, false)) {
-		err = -EACCES;
-		goto free_path;
+	} else if (file_present) {
+		err = ksmbd_vfs_inode_permission(path.dentry,
+				posix_open_flags & O_ACCMODE, false);
+		if (err)
+			goto free_path;
 	}
 
 	fp = ksmbd_vfs_dentry_open(work, &path, posix_open_flags,
@@ -8062,10 +8064,11 @@ int smb_open_andx(struct ksmbd_work *work)
 #else
 		generic_fillattr(d_inode(path.dentry), &stat);
 #endif
-	} else if (file_present && ksmbd_vfs_inode_permission(path.dentry,
-			open_flags & O_ACCMODE, false)) {
-		err = -EACCES;
-		goto free_path;
+	} else if (file_present) {
+		err = ksmbd_vfs_inode_permission(path.dentry,
+				open_flags & O_ACCMODE, false);
+		if (err)
+			goto free_path;
 	}
 
 	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
