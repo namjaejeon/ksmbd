@@ -5761,7 +5761,9 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		finfo->ResumeKey = 0;
 		unix_info = (struct file_unix_basic_info *)((char *)finfo + 8);
 		init_unix_info(unix_info, ksmbd_kstat->kstat);
-		memcpy(finfo->FileName, conv_name, conv_len);
+		/* include null terminator */
+		memcpy(finfo->FileName, conv_name, conv_len + 2);
+		next_entry_offset += 2;
 		finfo->NextEntryOffset = cpu_to_le32(next_entry_offset);
 		memset((char *)finfo + struct_sz - 1 + conv_len,
 			'\0',
