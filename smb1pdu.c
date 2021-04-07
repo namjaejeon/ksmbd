@@ -5586,15 +5586,15 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 						conn->local_nls,
 						&conv_len);
 	if (!conv_name)
-		return 0;
+		return -ENOMEM;
 
 	next_entry_offset = ALIGN(struct_sz - 1 + conv_len,
 				  KSMBD_DIR_INFO_ALIGNMENT);
 
 	if (next_entry_offset > d_info->out_buf_len) {
 		kfree(conv_name);
-		d_info->out_buf_len = -1;
-		return 0;
+		d_info->out_buf_len = 0;
+		return -ENOSPC;
 	}
 
 	switch (info_level) {
