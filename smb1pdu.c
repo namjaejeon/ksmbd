@@ -2289,8 +2289,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	if (IS_ERR(conv_name)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
-		err = PTR_ERR(conv_name);
-		goto out1;
+		return PTR_ERR(conv_name);
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
@@ -2342,6 +2341,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				STATUS_OBJECT_NAME_COLLISION;
 
 		memset(&rsp->hdr.WordCount, 0, 3);
+		kfree(conv_name);
 
 		goto free_path;
 	}
@@ -2359,6 +2359,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				STATUS_NOT_A_DIRECTORY;
 
 		memset(&rsp->hdr.WordCount, 0, 3);
+		kfree(conv_name);
 
 		goto free_path;
 	}
@@ -2384,6 +2385,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				rsp->hdr.Status.CifsError =
 					STATUS_OBJECT_NAME_COLLISION;
 			memset(&rsp->hdr.WordCount, 0, 3);
+			kfree(conv_name);
 			goto free_path;
 		} else {
 			err = -ENOENT;
@@ -2468,6 +2470,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				   file_present);
 	if (IS_ERR(fp)) {
 		err = PTR_ERR(fp);
+		fp = NULL;
 		goto free_path;
 	}
 	fp->filename = conv_name;
@@ -2658,8 +2661,12 @@ out1:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err && fp)
-		ksmbd_close_fd(work, fp->volatile_id);
+	if (err) {
+		if (fp)
+			ksmbd_close_fd(work, fp->volatile_id);
+		else
+			kfree(conv_name);
+	}
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -4876,6 +4883,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 			0, file_present);
 	if (IS_ERR(fp)) {
 		err = PTR_ERR(fp);
+		fp = NULL;
 		goto free_path;
 	}
 	fp->filename = name;
@@ -4989,8 +4997,12 @@ out:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err && fp)
-		ksmbd_close_fd(work, fp->volatile_id);
+	if (err) {
+		if (fp)
+			ksmbd_close_fd(work, fp->volatile_id);
+		else
+			kfree(name);
+	}
 	ksmbd_revert_fsids(work);
 	return err;
 }
@@ -5229,8 +5241,10 @@ static int smb_set_ea(struct ksmbd_work *work)
 	ea = (struct fea *)eabuf->list;
 
 	for (i = 0; list_len >= 0 && ea->name_len != 0; i++, list_len -= next) {
-		if (ea->name_len > (XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN))
-			return -EINVAL;
+		if (ea->name_len > (XATTR_NAME_MAX - XATTR_USER_PREFIX_LEN)) {
+			rc = -EINVAL;
+			goto out;
+		}
 
 		next = ea->name_len + le16_to_cpu(ea->value_len) + 4;
 
@@ -5316,7 +5330,7 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	rc = ksmbd_vfs_truncate(work, name, NULL, newsize);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
-		return rc;
+		goto out;
 	}
 	ksmbd_debug(SMB, "%s truncated to newsize %lld\n",
 			name, newsize);
@@ -5338,8 +5352,9 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	rsp->ByteCount = cpu_to_le16(3);
 	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2 + 3);
 
-	smb_put_name(name);
-	return 0;
+out:
+	kfree(name);
+	return rc;
 }
 
 /**
@@ -8212,8 +8227,12 @@ out:
 				STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err && fp)
-		ksmbd_close_fd(work, fp->volatile_id);
+	if (err) {
+		if (fp)
+			ksmbd_close_fd(work, fp->volatile_id);
+		else
+			kfree(name);
+	}
 
 	if (!rsp->hdr.WordCount)
 		return err;
