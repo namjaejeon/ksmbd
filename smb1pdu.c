@@ -29,6 +29,7 @@
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 #include "ndr.h"
+#include "smberr.h"
 
 static int smb1_oplock_enable = false;
 

@@ -12,7 +12,6 @@
 
 #include "unicode.h"
 #include "vfs_cache.h"
-#include "smberr.h"
 
 #define KSMBD_VERSION	"3.3.8"
 
