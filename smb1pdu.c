@@ -7256,7 +7256,7 @@ static int create_dir(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-			ctime = ksmbd_UnixTimeToNT(current_time(path.dentry->d_inode));
+			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
 
 			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
@@ -7427,7 +7427,7 @@ int smb_mkdir(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
 		if (!err) {
-			ctime = ksmbd_UnixTimeToNT(current_time(path.dentry->d_inode));
+			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
 
 			da.version = 4;
 			da.attr = ATTR_DIRECTORY;
