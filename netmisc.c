@@ -12,7 +12,6 @@
 #include "nterr.h"
 #include "smb_common.h"
 
-#ifdef CONFIG_SMB_INSECURE_SERVER
 /*****************************************************************************
  * convert a NT status code to a dos class/code
  *****************************************************************************/
@@ -604,51 +603,4 @@ ntstatus_to_dos(__le32 ntstatus, __u8 *eclass, __le16 *ecode)
 	}
 	*eclass = ERRHRD;
 	*ecode = cpu_to_le16(ERRgeneral);
-}
-#endif
-
-/*
- * Convert the NT UTC (based 1601-01-01, in hundred nanosecond units)
- * into Unix UTC (based 1970-01-01, in seconds).
- */
-struct timespec64 ksmbd_NTtimeToUnix(__le64 ntutc)
-{
-	struct timespec64 ts;
-
-	/* Subtract the NTFS time offset, then convert to 1s intervals. */
-	s64 t = le64_to_cpu(ntutc) - NTFS_TIME_OFFSET;
-	u64 abs_t;
-
-	/*
-	 * Unfortunately can not use normal 64 bit division on 32 bit arch, but
-	 * the alternative, do_div, does not work with negative numbers so have
-	 * to special case them
-	 */
-	if (t < 0) {
-		abs_t = -t;
-		ts.tv_nsec = do_div(abs_t, 10000000) * 100;
-		ts.tv_nsec = -ts.tv_nsec;
-		ts.tv_sec = -abs_t;
-	} else {
-		abs_t = t;
-		ts.tv_nsec = do_div(abs_t, 10000000) * 100;
-		ts.tv_sec = abs_t;
-	}
-
-	return ts;
-}
-
-/* Convert the Unix UTC into NT UTC. */
-u64 ksmbd_UnixTimeToNT(struct timespec64 t)
-{
-	/* Convert to 100ns intervals and then add the NTFS time offset. */
-	return (u64)t.tv_sec * 10000000 + t.tv_nsec / 100 + NTFS_TIME_OFFSET;
-}
-
-long long ksmbd_systime(void)
-{
-	struct timespec64	ts;
-
-	ktime_get_real_ts64(&ts);
-	return ksmbd_UnixTimeToNT(ts);
 }
