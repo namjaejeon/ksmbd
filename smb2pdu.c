@@ -564,10 +564,8 @@ int smb2_allocate_rsp_buf(struct ksmbd_work *work)
 		work->response_buf = ksmbd_find_buffer(sz);
 	else
 		work->response_buf = kvmalloc(sz, GFP_KERNEL | __GFP_ZERO);
-	if (!work->response_buf) {
-		ksmbd_err("Failed to allocate %zu bytes buffer\n", sz);
+	if (!work->response_buf)
 		return -ENOMEM;
-	}
 
 	work->response_sz = sz;
 	return 0;
