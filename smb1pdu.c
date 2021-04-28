@@ -2106,18 +2106,8 @@ out:
 	case -EINVAL:
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		break;
-	case -EOVERFLOW:
-		rsp->hdr.Status.CifsError = STATUS_BUFFER_OVERFLOW;
-		break;
-	case -ETIMEDOUT:
-		rsp->hdr.Status.CifsError = STATUS_IO_TIMEOUT;
-		break;
-	case -EOPNOTSUPP:
-		rsp->hdr.Status.CifsError = STATUS_NOT_SUPPORTED;
-		break;
-	case -EMFILE:
-		rsp->hdr.Status.CifsError = STATUS_TOO_MANY_OPENED_FILES;
-		break;
+	case -ENOSPC:
+	case -ENOMEM:
 	default:
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		break;
