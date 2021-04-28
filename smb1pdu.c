@@ -2487,7 +2487,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	} else {
 		if (ksmbd_inode_pending_delete(fp)) {
 			err = -EBUSY;
-			goto out;
+			goto free_path;
 		}
 
 		if (share_ret < 0) {
@@ -3973,7 +3973,7 @@ static int query_path_info(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 		if (d_is_symlink(path.dentry)) {
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
-			goto out;
+			goto err_out;
 		}
 	}
 
@@ -4839,7 +4839,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 			err = -EACCES;
 			ksmbd_debug(SMB,
 				"returning as user does not have permission to write\n");
-			goto out;
+			if (file_present)
+				goto free_path;
+			else
+				goto out;
 		}
 	}
 
@@ -5908,6 +5911,7 @@ static int find_first(struct ksmbd_work *work)
 #endif
 			rc = -EACCES;
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			path_put(&path);
 			goto err_out;
 		}
 	}
@@ -5915,6 +5919,7 @@ static int find_first(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 		if (d_is_symlink(path.dentry)) {
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			path_put(&path);
 			goto err_out;
 		}
 	}
@@ -7824,6 +7829,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 #else
 	generic_fillattr(d_inode(path.dentry), st);
 #endif
+	path_put(&path);
 out:
 	ksmbd_revert_fsids(work);
 	kfree(name);
