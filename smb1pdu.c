@@ -1023,6 +1023,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 	int err = 0, neg_blob_len;
 	unsigned char *spnego_blob;
 	u16 spnego_blob_len;
+	int sz;
 
 	rsp->hdr.WordCount = 4;
 	rsp->Action = 0;
@@ -1033,19 +1034,12 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 	inc_rfc1001_len(&rsp->hdr, 8);
 
 	negblob = (struct negotiate_message *)req->SecurityBlob;
-	err = ksmbd_decode_negTokenInit((char *)negblob,
-			le16_to_cpu(req->SecurityBlobLength), conn);
-	if (!err) {
-		ksmbd_debug(SMB, "negTokenInit parse err %d\n", err);
-		/* If failed, it might be negTokenTarg */
-		err = ksmbd_decode_negTokenTarg((char *)negblob,
-				le16_to_cpu(req->SecurityBlobLength),
-				conn);
-		if (!err) {
-			ksmbd_debug(SMB, "negTokenTarg parse err %d\n", err);
+	sz = le16_to_cpu(req->SecurityBlobLength);
+
+	if (ksmbd_decode_negTokenInit((char *)negblob, sz, conn)) {
+		if (ksmbd_decode_negTokenTarg((char *)negblob, sz, conn)) {
 			conn->use_spnego = false;
 		}
-		err = 0;
 	}
 
 	if (conn->mechToken)
