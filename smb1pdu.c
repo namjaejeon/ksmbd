@@ -567,9 +567,6 @@ out_err:
 		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
 	}
 
-	/* Clean session if there is no tree attached */
-	if (!sess || xa_empty(&work->sess->tree_conns))
-		ksmbd_conn_set_exiting(work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + le16_to_cpu(rsp->ByteCount) +
 		extra_byte));
 	return -EINVAL;
