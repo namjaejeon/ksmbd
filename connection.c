@@ -9,7 +9,6 @@
 #include <linux/module.h>
 
 #include "server.h"
-#include "buffer_pool.h"
 #include "smb_common.h"
 #ifdef CONFIG_SMB_INSECURE_SERVER
 #include "smb1pdu.h"

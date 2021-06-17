@@ -12,7 +12,6 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "buffer_pool.h"
 #include "connection.h"
 #include "transport_ipc.h"
 #include "vfs.h"
@@ -2844,11 +2843,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
 		FP_FILENAME(fp), pos, count);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
-		work->aux_payload_buf = ksmbd_find_buffer(count);
-		work->set_read_buf = true;
-	} else
-		work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
+	work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -3703,6 +3698,19 @@ out:
 		vfree(buf);
 	kfree(fname);
 	return rc;
+}
+
+static void *ksmbd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
+{
+	size_t sz = min(old_sz, new_sz);
+	void *nptr;
+
+	nptr = kvmalloc(new_sz, GFP_KERNEL | __GFP_ZERO);
+	if (!nptr)
+		return ptr;
+	memcpy(nptr, ptr, sz);
+	kvfree(ptr);
+	return nptr;
 }
 
 /**

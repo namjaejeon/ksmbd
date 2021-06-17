@@ -10,7 +10,6 @@
 #include <linux/xarray.h>
 #endif
 
-#include "../buffer_pool.h"
 #include "../transport_ipc.h"
 #include "../connection.h"
 

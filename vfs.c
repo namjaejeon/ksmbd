@@ -24,7 +24,6 @@
 #include "glob.h"
 #include "oplock.h"
 #include "connection.h"
-#include "buffer_pool.h"
 #include "vfs.h"
 #include "vfs_cache.h"
 #include "smbacl.h"
