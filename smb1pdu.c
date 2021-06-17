@@ -7717,13 +7717,11 @@ int smb_nt_cancel(struct ksmbd_work *work)
 	struct smb_hdr *hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *work_hdr;
 	struct ksmbd_work *new_work;
-	struct list_head *tmp;
 
 	ksmbd_debug(SMB, "smb cancel called on mid %u\n", hdr->Mid);
 
 	spin_lock(&conn->request_lock);
-	list_for_each(tmp, &conn->requests) {
-		new_work = list_entry(tmp, struct ksmbd_work, request_entry);
+	list_for_each_entry(new_work, &conn->requests, request_entry) {
 		work_hdr = (struct smb_hdr *)new_work->request_buf;
 		if (work_hdr->Mid == hdr->Mid) {
 			ksmbd_debug(SMB, "smb with mid %u cancelled command = 0x%x\n",
