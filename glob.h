@@ -15,8 +15,6 @@
 
 #define KSMBD_VERSION	"3.3.9"
 
-/* @FIXME clean up this code */
-
 extern int ksmbd_debug_types;
 
 #define DATA_STREAM	1
