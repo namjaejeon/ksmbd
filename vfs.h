@@ -233,9 +233,6 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 			       unsigned int *chunk_count_written,
 			       unsigned int *chunk_size_written,
 			       loff_t  *total_size_written);
-int ksmbd_vfs_copy_file_range(struct file *file_in, loff_t pos_in,
-			      struct file *file_out, loff_t pos_out,
-			      size_t len);
 struct ksmbd_file *ksmbd_vfs_dentry_open(struct ksmbd_work *work,
 					 const struct path *path, int flags,
 					 __le32 option, int fexist);
