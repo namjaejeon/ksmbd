@@ -1882,37 +1882,6 @@ out:
 	return err;
 }
 
-/*
- * ksmbd_vfs_get_smb2_sector_size() - get fs sector sizes
- * @inode: inode
- * @fs_ss: fs sector size struct
- */
-void ksmbd_vfs_smb2_sector_size(struct inode *inode,
-				struct ksmbd_fs_sector_size *fs_ss)
-{
-	struct request_queue *q;
-
-	fs_ss->logical_sector_size = 512;
-	fs_ss->physical_sector_size = 512;
-	fs_ss->optimal_io_size = 512;
-
-	if (!inode->i_sb->s_bdev)
-		return;
-
-	q = inode->i_sb->s_bdev->bd_disk->queue;
-
-	if (q) {
-		if (q->limits.logical_block_size)
-			fs_ss->logical_sector_size =
-				q->limits.logical_block_size;
-		if (q->limits.physical_block_size)
-			fs_ss->physical_sector_size =
-				q->limits.physical_block_size;
-		if (q->limits.io_opt)
-			fs_ss->optimal_io_size = q->limits.io_opt;
-	}
-}
-
 #ifdef CONFIG_SMB_INSECURE_SERVER
 /**
  * ksmbd_vfs_dentry_open() - open a dentry and provide fid for it
