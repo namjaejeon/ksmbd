@@ -1717,7 +1717,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 		flock = smb_lock->fl;
 retry:
-		err = ksmbd_vfs_lock(filp, smb_lock->cmd, flock);
+		err = vfs_lock_file(filp, smb_lock->cmd, flock, NULL);
 		if (err == FILE_LOCK_DEFERRED) {
 			ksmbd_err("would have to wait for getting lock\n");
 			list_add_tail(&smb_lock->glist,
@@ -1808,7 +1808,7 @@ skip:
 			goto out;
 		}
 
-		err = ksmbd_vfs_lock(filp, cmd, flock);
+		err = vfs_lock_file(filp, cmd, flock, NULL);
 		if (!err) {
 			ksmbd_debug(SMB, "File unlocked\n");
 			list_del(&cmp_lock->glist);
@@ -1853,7 +1853,7 @@ out:
 		rlock->fl_start = smb_lock->start;
 		rlock->fl_end = smb_lock->end;
 
-		err = ksmbd_vfs_lock(filp, 0, rlock);
+		err = vfs_lock_file(filp, 0, rlock, NULL);
 		if (err)
 			ksmbd_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);
@@ -5980,8 +5980,7 @@ static int find_first(struct ksmbd_work *work)
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			rc = ksmbd_vfs_readdir(dir_fp->filp,
-					       &dir_fp->readdir_data);
+			rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
 			if (rc < 0) {
 				ksmbd_debug(SMB, "err : %d\n", rc);
 				goto err_out;
@@ -6234,8 +6233,7 @@ static int find_next(struct ksmbd_work *work)
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			rc = ksmbd_vfs_readdir(dir_fp->filp,
-					       &dir_fp->readdir_data);
+			rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
 			if (rc < 0) {
 				ksmbd_debug(SMB, "err : %d\n", rc);
 				goto err_out;
