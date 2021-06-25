@@ -662,7 +662,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *pattern_pos, *pattern = NULL;
-	int pattern_len;
+	int pattern_len, rc;
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
 			work->conn->local_nls);
@@ -685,17 +685,15 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 
 	pattern_len = strlen(pattern_pos);
 	if (pattern_len == 0) {
-		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-		kfree(name);
-		return ERR_PTR(-EINVAL);
+		rc = -EINVAL;
+		goto err_name;
 	}
 	ksmbd_debug(SMB, "pattern searched = %s pattern_len = %d\n",
 			pattern_pos, pattern_len);
 	pattern = kmalloc(pattern_len + 1, GFP_KERNEL);
 	if (!pattern) {
-		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
-		kfree(name);
-		return ERR_PTR(-ENOMEM);
+		rc = -ENOMEM;
+		goto err_name;
 	}
 	memcpy(pattern, pattern_pos, pattern_len);
 	*(pattern + pattern_len) = '\0';
@@ -703,29 +701,44 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	*srch_ptr = pattern;
 
 	unixname = convert_to_unix_name(share, name);
-	kfree(name);
 	if (!unixname) {
-		kfree(pattern);
 		pr_err("can not convert absolute name\n");
-		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-		return ERR_PTR(-EINVAL);
+		rc = -EINVAL;
+		goto err_pattern;
 	}
 
 	if (ksmbd_validate_filename(unixname) < 0) {
-		kfree(unixname);
-		return ERR_PTR(-ENOENT);
+		rc = -ENOENT;
+		goto err_unixname;
 	}
 
 	if (ksmbd_share_veto_filename(share, unixname)) {
 		ksmbd_debug(SMB,
 			"file(%s) open is not allowed by setting as veto file\n",
 				unixname);
-		kfree(unixname);
-		return ERR_PTR(-ENOENT);
+		rc = -ENOENT;
+		goto err_unixname;
 	}
 
+	kfree(name);
 	ksmbd_debug(SMB, "absolute name = %s\n", unixname);
 	return unixname;
+
+err_unixname:
+	kfree(unixname);
+err_pattern:
+	kfree(pattern);
+err_name:
+	kfree(name);
+
+	if (rc == -EINVAL)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+	else if (rc == -ENOMEM)
+		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
+	else if (rc == -ENOENT)
+		rsp_hdr->Status.CifsError = STATUS_OBJECT_NAME_INVALID;
+
+	return ERR_PTR(rc);
 }
 
 /**
