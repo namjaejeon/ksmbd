@@ -38,8 +38,6 @@ static DEFINE_IDA(ipc_ida);
 
 static unsigned int ksmbd_tools_pid;
 
-#define KSMBD_IPC_MSG_HANDLE(m)	(*(unsigned int *)m)
-
 static bool ksmbd_ipc_validate_version(struct genl_info *m)
 {
 	if (m->genlhdr->version != KSMBD_GENL_VERSION) {
@@ -56,11 +54,8 @@ static bool ksmbd_ipc_validate_version(struct genl_info *m)
 struct ksmbd_ipc_msg {
 	unsigned int		type;
 	unsigned int		sz;
-	unsigned char		____payload[0];
+	unsigned char		payload[];
 };
-
-#define KSMBD_IPC_MSG_PAYLOAD(m)					\
-	((void *)(((struct ksmbd_ipc_msg *)(m))->____payload))
 
 struct ipc_msg_table_entry {
 	unsigned int		handle;
@@ -251,7 +246,7 @@ static void ipc_msg_handle_free(int handle)
 
 static int handle_response(int type, void *payload, size_t sz)
 {
-	int handle = KSMBD_IPC_MSG_HANDLE(payload);
+	unsigned int handle = *(unsigned int *)payload;
 	struct ipc_msg_table_entry *entry;
 	int ret = 0;
 
@@ -432,7 +427,7 @@ static int ipc_msg_send(struct ksmbd_ipc_msg *msg)
 	if (!nlh)
 		goto out;
 
-	ret = nla_put(skb, msg->type, msg->sz, KSMBD_IPC_MSG_PAYLOAD(msg));
+	ret = nla_put(skb, msg->type, msg->sz, msg->payload);
 	if (ret) {
 		genlmsg_cancel(skb, nlh);
 		goto out;
@@ -509,7 +504,7 @@ struct ksmbd_login_response *ksmbd_ipc_login_request(const char *account)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_LOGIN_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_login_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 	resp = ipc_msg_send_request(msg, req->handle);
@@ -531,7 +526,7 @@ ksmbd_ipc_spnego_authen_request(const char *spnego_blob, int blob_len)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_SPNEGO_AUTHEN_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_spnego_authen_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->spnego_blob_len = blob_len;
 	memcpy(req->spnego_blob, spnego_blob, blob_len);
@@ -563,7 +558,7 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 		return NULL;
 
 	msg->type = KSMBD_EVENT_TREE_CONNECT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_tree_connect_request *)msg->payload;
 
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->account_flags = sess->user->flags;
@@ -596,7 +591,7 @@ int ksmbd_ipc_tree_disconnect_request(unsigned long long session_id,
 		return -ENOMEM;
 
 	msg->type = KSMBD_EVENT_TREE_DISCONNECT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_tree_disconnect_request *)msg->payload;
 	req->session_id = session_id;
 	req->connect_id = connect_id;
 
@@ -619,7 +614,7 @@ int ksmbd_ipc_logout_request(const char *account)
 		return -ENOMEM;
 
 	msg->type = KSMBD_EVENT_LOGOUT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_logout_request *)msg->payload;
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 
 	ret = ipc_msg_send(msg);
@@ -642,7 +637,7 @@ ksmbd_ipc_share_config_request(const char *name)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_SHARE_CONFIG_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_share_config_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	strscpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
 
@@ -663,7 +658,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_open(struct ksmbd_session *sess, int handle)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= KSMBD_RPC_OPEN_METHOD;
@@ -685,7 +680,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= KSMBD_RPC_CLOSE_METHOD;
@@ -708,7 +703,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -732,7 +727,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess, int handle)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -756,7 +751,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)req->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -781,7 +776,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_rap(struct ksmbd_session *sess, void *payloa
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)req->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->flags = rpc_context_flags(sess);
 	req->flags |= KSMBD_RPC_RAP_METHOD;
