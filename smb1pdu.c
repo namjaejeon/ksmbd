@@ -2877,8 +2877,8 @@ int smb_read_andx(struct ksmbd_work *work)
 		count = CIFS_DEFAULT_IOSIZE;
 	}
 
-	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 
 	work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
 	if (!work->aux_payload_buf) {
@@ -2964,8 +2964,8 @@ int smb_write(struct ksmbd_work *work)
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
 
-	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 	if (!count) {
 		err = ksmbd_vfs_truncate(work, NULL, fp, pos);
 		nbytes = 0;
@@ -3129,8 +3129,8 @@ int smb_write_andx(struct ksmbd_work *work)
 				le16_to_cpu(req->DataOffset));
 	}
 
-	ksmbd_debug(SMB, "filname %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filname %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 	err = ksmbd_vfs_write(work, fp, data_buf, count, &pos,
 			      writethrough, &nbytes);
 	if (err < 0)

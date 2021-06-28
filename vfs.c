@@ -394,7 +394,8 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 
 	if (work->conn->connection_type) {
 		if (!(fp->daccess & (FILE_READ_DATA_LE | FILE_EXECUTE_LE))) {
-			pr_err("no right to read(%s)\n", FP_FILENAME(fp));
+			pr_err("no right to read(%pd)\n",
+			       fp->filp->f_path.dentry);
 			return -EACCES;
 		}
 	}
@@ -502,7 +503,8 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 
 	if (sess->conn->connection_type) {
 		if (!(fp->daccess & FILE_WRITE_DATA_LE)) {
-			pr_err("no right to write(%s)\n", FP_FILENAME(fp));
+			pr_err("no right to write(%pd)\n",
+			       fp->filp->f_path.dentry);
 			err = -EACCES;
 			goto out;
 		}
@@ -541,8 +543,8 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 	if (sync) {
 		err = vfs_fsync_range(filp, offset, offset + *written, 0);
 		if (err < 0)
-			pr_err("fsync failed for filename = %s, err = %d\n",
-			       FP_FILENAME(fp), err);
+			pr_err("fsync failed for filename = %pd, err = %d\n",
+			       fp->filp->f_path.dentry, err);
 	}
 
 out:
@@ -2212,11 +2214,11 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 	*total_size_written = 0;
 
 	if (!(src_fp->daccess & (FILE_READ_DATA_LE | FILE_EXECUTE_LE))) {
-		pr_err("no right to read(%s)\n", FP_FILENAME(src_fp));
+		pr_err("no right to read(%pd)\n", src_fp->filp->f_path.dentry);
 		return -EACCES;
 	}
 	if (!(dst_fp->daccess & (FILE_WRITE_DATA_LE | FILE_APPEND_DATA_LE))) {
-		pr_err("no right to write(%s)\n", FP_FILENAME(dst_fp));
+		pr_err("no right to write(%pd)\n", dst_fp->filp->f_path.dentry);
 		return -EACCES;
 	}
 
