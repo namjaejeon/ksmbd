@@ -96,47 +96,27 @@ out_err:
 	return ret;
 }
 
-int ksmbd_vfs_inode_permission(struct dentry *dentry, int acc_mode, bool delete)
+int ksmbd_vfs_may_delete(struct dentry *dentry)
 {
-	int mask, ret = 0;
+	struct dentry *parent;
+	int ret;
 
-	mask = 0;
-	acc_mode &= O_ACCMODE;
-
-	if (acc_mode == O_RDONLY)
-		mask = MAY_READ;
-	else if (acc_mode == O_WRONLY)
-		mask = MAY_WRITE;
-	else if (acc_mode == O_RDWR)
-		mask = MAY_READ | MAY_WRITE;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	if (inode_permission(&init_user_ns, d_inode(dentry), mask | MAY_OPEN))
-#else
-	if (inode_permission(d_inode(dentry), mask | MAY_OPEN))
-#endif
-		return -EACCES;
-
-	if (delete) {
-		struct dentry *parent;
-
-		parent = dget_parent(dentry);
-		ret = ksmbd_vfs_lock_parent(parent, dentry);
-		if (ret) {
-			dput(parent);
-			return ret;
-		}
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		if (inode_permission(&init_user_ns, d_inode(parent), MAY_EXEC | MAY_WRITE))
-#else
-		if (inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE))
-#endif
-			ret = -EACCES;
-
-		inode_unlock(d_inode(parent));
+	parent = dget_parent(dentry);
+	ret = ksmbd_vfs_lock_parent(parent, dentry);
+	if (ret) {
 		dput(parent);
+		return ret;
 	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	ret = inode_permission(&init_user_ns, d_inode(parent),
+			       MAY_EXEC | MAY_WRITE);
+#else
+	ret = inode_permission(d_inode(parent), MAY_EXEC | MAY_WRITE);
+#endif
+
+	inode_unlock(d_inode(parent));
+	dput(parent);
 	return ret;
 }
 
@@ -666,7 +646,11 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 		inode = d_inode(dentry);
 	}
 
-	err = ksmbd_vfs_inode_permission(dentry, O_WRONLY, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	err = inode_permission(&init_user_ns, d_inode(dentry), MAY_WRITE);
+#else
+	err = inode_permission(d_inode(dentry), MAY_WRITE);
+#endif
 	if (err)
 		goto out;
 

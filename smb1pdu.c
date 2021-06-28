@@ -1345,17 +1345,31 @@ static int file_create_dispostion_flags(int dispostion, bool file_present)
 	return disp_flags;
 }
 
+static inline int ksmbd_openflags_to_mayflags(int open_flags)
+{
+	int mask = open_flags & O_ACCMODE;
+
+	if (mask == O_WRONLY)
+		return MAY_OPEN | MAY_WRITE;
+	else if (mask == O_RDWR)
+		return MAY_OPEN | MAY_READ | MAY_WRITE;
+	else
+		return MAY_OPEN | MAY_READ;
+}
+
 /**
  * convert_generic_access_flags() - convert access flags to
  *				file open flags
  * @access_flag:	file access flags contained in open request
  * @open_flag:		file open flags are updated as per access flags
+ * @may_flags:		file may flags are updated with @open_flags
  * @attrib:		attribute flag indicating posix symantics or not
  *
  * Return:		access flags
  */
 static int
-convert_generic_access_flags(int access_flag, int *open_flags, int attrib)
+convert_generic_access_flags(int access_flag, int *open_flags,
+			     int *may_flags, int attrib)
 {
 	int aflags = access_flag;
 	int oflags = *open_flags;
@@ -1397,6 +1411,8 @@ convert_generic_access_flags(int access_flag, int *open_flags, int attrib)
 
 	if ((attrib & ATTR_POSIX_SEMANTICS) && (aflags & FILE_APPEND_DATA))
 		*open_flags |= O_APPEND;
+
+	*may_flags = ksmbd_openflags_to_mayflags(*open_flags);
 
 	return aflags;
 }
@@ -2123,7 +2139,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
-	int oplock_flags, file_info, open_flags, access_flags;
+	int oplock_flags, file_info, open_flags, may_flags, access_flags;
 	char *name;
 	char *conv_name;
 	bool file_present = true, extended_reply;
@@ -2365,11 +2381,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		}
 	} else {
 		if (file_present) {
-			err = ksmbd_vfs_inode_permission(path.dentry,
-					open_flags & O_ACCMODE, false);
-			if (err)
-				goto free_path;
-
 			if (S_ISFIFO(stat.mode))
 				open_flags |= O_NONBLOCK;
 		}
@@ -2380,7 +2391,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 
 	access_flags = convert_generic_access_flags(
 			le32_to_cpu(req->DesiredAccess),
-			&open_flags, le32_to_cpu(req->FileAttributes));
+			&open_flags, &may_flags,
+			le32_to_cpu(req->FileAttributes));
 
 	mode |= 0777;
 	if (le32_to_cpu(req->FileAttributes) & ATTR_READONLY)
@@ -2425,6 +2437,17 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
+	} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
+		if (err)
+			goto free_path;
 	}
 
 	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
@@ -4676,7 +4699,7 @@ err_out:
  *
  * Return:	file open flags
  */
-static __u32 smb_posix_convert_flags(__u32 flags)
+static __u32 smb_posix_convert_flags(__u32 flags, int *may_flags)
 {
 	__u32 posix_flags = 0;
 
@@ -4695,6 +4718,8 @@ static __u32 smb_posix_convert_flags(__u32 flags)
 		posix_flags |= O_NOFOLLOW;
 	if (flags & SMB_O_APPEND)
 		posix_flags |= O_APPEND;
+
+	*may_flags = ksmbd_openflags_to_mayflags(posix_flags);
 
 	return posix_flags;
 }
@@ -4752,7 +4777,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 	struct path path;
 	struct kstat stat;
 	__u16 data_offset, rsp_info_level, file_info = 0;
-	__u32 oplock_flags, posix_open_flags;
+	__u32 oplock_flags, posix_open_flags, may_flags;
 	umode_t mode;
 	char *name;
 	bool file_present = true;
@@ -4806,7 +4831,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 	oplock_flags = le32_to_cpu(psx_req->OpenFlags);
 
 	posix_open_flags = smb_posix_convert_flags(
-			le32_to_cpu(psx_req->PosixOpenFlags));
+			le32_to_cpu(psx_req->PosixOpenFlags),
+			&may_flags);
 	err = smb_get_disposition(le32_to_cpu(psx_req->PosixOpenFlags),
 			file_present, &stat,
 			&posix_open_flags);
@@ -4867,8 +4893,14 @@ static int smb_posix_open(struct ksmbd_work *work)
 			goto out;
 		}
 	} else if (file_present) {
-		err = ksmbd_vfs_inode_permission(path.dentry,
-				posix_open_flags & O_ACCMODE, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
 		if (err)
 			goto free_path;
 	}
@@ -7939,7 +7971,9 @@ int smb_closedir(struct ksmbd_work *work)
  *
  * Return:	converted file open flags
  */
-static int convert_open_flags(bool file_present, __u16 mode, __u16 dispostion)
+static int convert_open_flags(bool file_present,
+			      __u16 mode, __u16 dispostion,
+			      int *may_flags)
 {
 	int oflags = 0;
 
@@ -7986,6 +8020,8 @@ static int convert_open_flags(bool file_present, __u16 mode, __u16 dispostion)
 		}
 	}
 
+	*may_flags = ksmbd_openflags_to_mayflags(oflags);
+
 	return oflags;
 }
 
@@ -8003,7 +8039,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
-	int oplock_flags, file_info, open_flags;
+	int oplock_flags, file_info, open_flags, may_flags;
 	char *name;
 	bool file_present = true;
 	umode_t mode = 0;
@@ -8066,8 +8102,10 @@ int smb_open_andx(struct ksmbd_work *work)
 	oplock_flags = le16_to_cpu(req->OpenFlags) &
 		(REQ_OPLOCK | REQ_BATCHOPLOCK);
 
-	open_flags = convert_open_flags(file_present, le16_to_cpu(req->Mode),
-			le16_to_cpu(req->OpenFunction));
+	open_flags = convert_open_flags(file_present,
+					le16_to_cpu(req->Mode),
+					le16_to_cpu(req->OpenFunction),
+					&may_flags);
 	if (open_flags < 0) {
 		ksmbd_debug(SMB, "create_dispostion returned %d\n", open_flags);
 		if (file_present)
@@ -8109,8 +8147,14 @@ int smb_open_andx(struct ksmbd_work *work)
 		generic_fillattr(d_inode(path.dentry), &stat);
 #endif
 	} else if (file_present) {
-		err = ksmbd_vfs_inode_permission(path.dentry,
-				open_flags & O_ACCMODE, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
 		if (err)
 			goto free_path;
 	}
