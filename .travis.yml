@@ -18,7 +18,7 @@ before_script:
  - sudo apt-get install linux-headers-$(uname -r)
  - sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev
  - sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
- - git clone --branch=ksmbd-tools-next https://github.com/cifsd-team/cifsd-tools
+ - git clone --branch=ksmbd-tools-next https://github.com/cifsd-team/ksmbd-tools
  - git clone https://github.com/cifsd-team/cifsd-test-result
  - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
  - export PATH=/usr/local/lib:$PATH
@@ -31,102 +31,102 @@ script:
  # Copy ksmbd source to kernel
  - mv linux-stable ../
  - mv linux ../
- - mkdir ../linux-stable/fs/cifsd
- - cp -ar * ../linux-stable/fs/cifsd/
- - mkdir ../linux/fs/cifsd
- - cp -ar * ../linux/fs/cifsd/
+ - mkdir ../linux-stable/fs/ksmbd
+ - cp -ar * ../linux-stable/fs/ksmbd/
+ - mkdir ../linux/fs/ksmbd
+ - cp -ar * ../linux/fs/ksmbd/
 
  # Compile with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
-# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
-# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
-# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + Kerberos  with 5.4 kernel
  - cd ../linux-stable
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_KERBEROS5=y' >> .config
- - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+ - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + SMBD + Kerberos with latest Torvalds' kernel
  - cd ../linux
  - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += cifsd/' >> fs/Makefile
- - echo 'source "fs/cifsd/Kconfig"' >> fs/Kconfig
+ - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
  - echo 'CONFIG_SMB_SERVER=m' >> .config
  - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
  - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
  - echo 'CONFIG_SMB_SERVER_KERBEROS5=y' >> .config
-# - make -j$((`nproc`+1)) fs/cifsd/ksmbd.ko
+# - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Run xfstests testsuite
- - cd ../cifsd
+ - cd ../ksmbd
  - make > /dev/null
  - sudo make install > /dev/null
  - sudo modprobe ksmbd
  - sudo modprobe cifs
- - cd cifsd-tools
+ - cd ksmbd-tools
  - ./autogen.sh > /dev/null
  - ./configure > /dev/null
  - make -j$((`nproc`+1)) > /dev/null
