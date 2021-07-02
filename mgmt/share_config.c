@@ -15,7 +15,6 @@
 #include "share_config.h"
 #include "user_config.h"
 #include "user_session.h"
-#include "../buffer_pool.h"
 #include "../transport_ipc.h"
 
 #define SHARE_HASH_BITS		3
@@ -140,7 +139,7 @@ static struct ksmbd_share_config *share_config_request(char *name)
 	share->name = kstrdup(name, GFP_KERNEL);
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_PIPE)) {
-		share->path = kstrdup(KSMBD_SHARE_CONFIG_PATH(resp),
+		share->path = kstrdup(ksmbd_share_config_path(resp),
 				      GFP_KERNEL);
 		if (share->path)
 			share->path_sz = strlen(share->path);
@@ -157,7 +156,7 @@ static struct ksmbd_share_config *share_config_request(char *name)
 			ret = kern_path(share->path, 0, &share->vfs_path);
 			if (ret) {
 				ksmbd_debug(SMB, "failed to access '%s'\n",
-					share->path);
+					    share->path);
 				/* Avoid put_path() */
 				kfree(share->path);
 				share->path = NULL;

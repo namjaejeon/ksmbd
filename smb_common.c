@@ -124,7 +124,7 @@ int ksmbd_lookup_protocol_idx(char *str)
 	while (offt >= 0) {
 		if (!strncmp(str, smb_protos[offt].prot, len)) {
 			ksmbd_debug(SMB, "selected %s dialect idx = %d\n",
-					smb_protos[offt].prot, offt);
+				    smb_protos[offt].prot, offt);
 			return smb_protos[offt].index;
 		}
 		offt--;
@@ -191,7 +191,7 @@ static bool supported_protocol(int idx)
 		return true;
 
 	return (server_conf.min_protocol <= idx &&
-			idx <= server_conf.max_protocol);
+		idx <= server_conf.max_protocol);
 }
 
 static char *next_dialect(char *dialect, int *next_off)
@@ -214,12 +214,12 @@ static int ksmbd_lookup_dialect_by_name(char *cli_dialects, __le16 byte_count)
 		do {
 			dialect = next_dialect(dialect, &next);
 			ksmbd_debug(SMB, "client requested dialect %s\n",
-				dialect);
+				    dialect);
 			if (!strcmp(dialect, smb_protos[i].name)) {
 				if (supported_protocol(smb_protos[i].index)) {
 					ksmbd_debug(SMB,
-						"selected %s dialect\n",
-						smb_protos[i].name);
+						    "selected %s dialect\n",
+						    smb_protos[i].name);
 					if (smb_protos[i].index == SMB1_PROT)
 						return seq_num;
 					return smb_protos[i].prot_id;
@@ -242,14 +242,14 @@ int ksmbd_lookup_dialect_by_id(__le16 *cli_dialects, __le16 dialects_count)
 		count = le16_to_cpu(dialects_count);
 		while (--count >= 0) {
 			ksmbd_debug(SMB, "client requested dialect 0x%x\n",
-				le16_to_cpu(cli_dialects[count]));
+				    le16_to_cpu(cli_dialects[count]));
 			if (le16_to_cpu(cli_dialects[count]) !=
 					smb_protos[i].prot_id)
 				continue;
 
 			if (supported_protocol(smb_protos[i].index)) {
 				ksmbd_debug(SMB, "selected %s dialect\n",
-					smb_protos[i].name);
+					    smb_protos[i].name);
 				return smb_protos[i].prot_id;
 			}
 		}
@@ -316,9 +316,12 @@ bool ksmbd_pdu_size_has_room(unsigned int pdu)
 }
 
 int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
-		struct ksmbd_file *dir, struct ksmbd_dir_info *d_info,
-		char *search_pattern, int (*fn)(struct ksmbd_conn *, int,
-			struct ksmbd_dir_info *, struct ksmbd_kstat *))
+				      struct ksmbd_file *dir,
+				      struct ksmbd_dir_info *d_info,
+				      char *search_pattern,
+				      int (*fn)(struct ksmbd_conn *, int,
+						struct ksmbd_dir_info *,
+						struct ksmbd_kstat *))
 {
 	int i, rc = 0;
 	struct ksmbd_conn *conn = work->conn;
@@ -344,8 +347,8 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
 
 			ksmbd_kstat.kstat = &kstat;
 			ksmbd_vfs_fill_dentry_attrs(work,
-				dir->filp->f_path.dentry->d_parent,
-				&ksmbd_kstat);
+						    dir->filp->f_path.dentry->d_parent,
+						    &ksmbd_kstat);
 			rc = fn(conn, info_level, d_info, &ksmbd_kstat);
 			if (rc)
 				break;
@@ -374,7 +377,7 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
  * but the result is different with Windows 7's one. need to check.
  */
 int ksmbd_extract_shortname(struct ksmbd_conn *conn, const char *longname,
-		char *shortname)
+			    char *shortname)
 {
 	const char *p;
 	char base[9], extension[4];
@@ -442,7 +445,7 @@ int ksmbd_extract_shortname(struct ksmbd_conn *conn, const char *longname,
 	else
 		out[baselen + 4] = '\0';
 	smbConvertToUTF16((__le16 *)shortname, out, PATH_MAX,
-			conn->local_nls, 0);
+			  conn->local_nls, 0);
 	len = strlen(out) * 2;
 	return len;
 }
@@ -450,7 +453,7 @@ int ksmbd_extract_shortname(struct ksmbd_conn *conn, const char *longname,
 static int __smb2_negotiate(struct ksmbd_conn *conn)
 {
 	return (conn->dialect >= SMB20_PROT_ID &&
-			conn->dialect <= SMB311_PROT_ID);
+		conn->dialect <= SMB311_PROT_ID);
 }
 
 #ifndef CONFIG_SMB_INSECURE_SERVER
@@ -498,7 +501,7 @@ int ksmbd_smb_negotiate_common(struct ksmbd_work *work, unsigned int command)
 		return smb_handle_negotiate(work);
 	}
 
-	ksmbd_err("Unknown SMB negotiation command: %u\n", command);
+	pr_err("Unknown SMB negotiation command: %u\n", command);
 	return -EINVAL;
 }
 
@@ -521,27 +524,25 @@ static const char * const shared_mode_errors[] = {
 };
 
 static void smb_shared_mode_error(int error, struct ksmbd_file *prev_fp,
-		struct ksmbd_file *curr_fp)
+				  struct ksmbd_file *curr_fp)
 {
 	ksmbd_debug(SMB, "%s\n", shared_mode_errors[error]);
 	ksmbd_debug(SMB, "Current mode: 0x%x Desired mode: 0x%x\n",
-		  prev_fp->saccess, curr_fp->daccess);
+		    prev_fp->saccess, curr_fp->daccess);
 }
 
 int ksmbd_smb_check_shared_mode(struct file *filp, struct ksmbd_file *curr_fp)
 {
 	int rc = 0;
 	struct ksmbd_file *prev_fp;
-	struct list_head *cur;
 
 	/*
 	 * Lookup fp in master fp list, and check desired access and
 	 * shared mode between previous open and current open.
 	 */
 	read_lock(&curr_fp->f_ci->m_lock);
-	list_for_each(cur, &curr_fp->f_ci->m_fp_list) {
-		prev_fp = list_entry(cur, struct ksmbd_file, node);
-		if (file_inode(filp) != FP_INODE(prev_fp))
+	list_for_each_entry(prev_fp, &curr_fp->f_ci->m_fp_list, node) {
+		if (file_inode(filp) != file_inode(prev_fp->filp))
 			continue;
 
 		if (filp == prev_fp->filp)

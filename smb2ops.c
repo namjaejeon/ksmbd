@@ -12,7 +12,6 @@
 #include "connection.h"
 #include "smb_common.h"
 #include "server.h"
-#include "ksmbd_server.h"
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 static struct smb_version_values smb20_server_values = {
@@ -84,7 +83,7 @@ static struct smb_version_values smb30_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
-	.create_lease_size = sizeof(struct create_lease),
+	.create_lease_size = sizeof(struct create_lease_v2),
 	.create_durable_size = sizeof(struct create_durable_rsp),
 	.create_durable_v2_size = sizeof(struct create_durable_v2_rsp),
 	.create_mxac_size = sizeof(struct create_mxac_rsp),
@@ -110,7 +109,7 @@ static struct smb_version_values smb302_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
-	.create_lease_size = sizeof(struct create_lease),
+	.create_lease_size = sizeof(struct create_lease_v2),
 	.create_durable_size = sizeof(struct create_durable_rsp),
 	.create_durable_v2_size = sizeof(struct create_durable_v2_rsp),
 	.create_mxac_size = sizeof(struct create_mxac_rsp),
@@ -136,7 +135,7 @@ static struct smb_version_values smb311_server_values = {
 	.cap_unix = 0,
 	.cap_nt_find = SMB2_NT_FIND,
 	.cap_large_files = SMB2_LARGE_FILES,
-	.create_lease_size = sizeof(struct create_lease),
+	.create_lease_size = sizeof(struct create_lease_v2),
 	.create_durable_size = sizeof(struct create_durable_rsp),
 	.create_durable_v2_size = sizeof(struct create_durable_v2_rsp),
 	.create_mxac_size = sizeof(struct create_mxac_rsp),
@@ -274,6 +273,9 @@ void init_smb3_0_server(struct ksmbd_conn *conn)
 	if (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB2_ENCRYPTION &&
 	    conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
+
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB3_MULTICHANNEL)
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
@@ -295,6 +297,9 @@ void init_smb3_02_server(struct ksmbd_conn *conn)
 	if (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB2_ENCRYPTION &&
 	    conn->cli_cap & SMB2_GLOBAL_CAP_ENCRYPTION)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
+
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB3_MULTICHANNEL)
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 }
 
 /**
@@ -315,6 +320,9 @@ int init_smb3_11_server(struct ksmbd_conn *conn)
 
 	if (conn->cipher_type)
 		conn->vals->capabilities |= SMB2_GLOBAL_CAP_ENCRYPTION;
+
+	if (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB3_MULTICHANNEL)
+		conn->vals->capabilities |= SMB2_GLOBAL_CAP_MULTI_CHANNEL;
 
 	INIT_LIST_HEAD(&conn->preauth_sess_table);
 	return 0;

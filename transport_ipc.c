@@ -16,7 +16,6 @@
 
 #include "vfs_cache.h"
 #include "transport_ipc.h"
-#include "buffer_pool.h"
 #include "server.h"
 #include "smb_common.h"
 
@@ -39,16 +38,14 @@ static DEFINE_IDA(ipc_ida);
 
 static unsigned int ksmbd_tools_pid;
 
-#define KSMBD_IPC_MSG_HANDLE(m)	(*(unsigned int *)m)
-
 static bool ksmbd_ipc_validate_version(struct genl_info *m)
 {
 	if (m->genlhdr->version != KSMBD_GENL_VERSION) {
-		ksmbd_err("%s. ksmbd: %d, kernel module: %d. %s.\n",
-			  "Daemon and kernel module version mismatch",
-			  m->genlhdr->version,
-			  KSMBD_GENL_VERSION,
-			  "User-space ksmbd should terminate");
+		pr_err("%s. ksmbd: %d, kernel module: %d. %s.\n",
+		       "Daemon and kernel module version mismatch",
+		       m->genlhdr->version,
+		       KSMBD_GENL_VERSION,
+		       "User-space ksmbd should terminate");
 		return false;
 	}
 	return true;
@@ -57,11 +54,8 @@ static bool ksmbd_ipc_validate_version(struct genl_info *m)
 struct ksmbd_ipc_msg {
 	unsigned int		type;
 	unsigned int		sz;
-	unsigned char		____payload[0];
+	unsigned char		payload[];
 };
-
-#define KSMBD_IPC_MSG_PAYLOAD(m)					\
-	((void *)(((struct ksmbd_ipc_msg *)(m))->____payload))
 
 struct ipc_msg_table_entry {
 	unsigned int		handle;
@@ -252,7 +246,7 @@ static void ipc_msg_handle_free(int handle)
 
 static int handle_response(int type, void *payload, size_t sz)
 {
-	int handle = KSMBD_IPC_MSG_HANDLE(payload);
+	unsigned int handle = *(unsigned int *)payload;
 	struct ipc_msg_table_entry *entry;
 	int ret = 0;
 
@@ -268,8 +262,8 @@ static int handle_response(int type, void *payload, size_t sz)
 		 * request message type + 1.
 		 */
 		if (entry->type + 1 != type) {
-			ksmbd_err("Waiting for IPC type %d, got %d. Ignore.\n",
-				entry->type + 1, type);
+			pr_err("Waiting for IPC type %d, got %d. Ignore.\n",
+			       entry->type + 1, type);
 		}
 
 		entry->response = kvmalloc(sz, GFP_KERNEL | __GFP_ZERO);
@@ -301,10 +295,6 @@ static int ipc_server_config_on_startup(struct ksmbd_startup_request *req)
 	server_conf.share_fake_fscaps = req->share_fake_fscaps;
 	ksmbd_init_domain(req->sub_auth);
 
-#ifdef CONFIG_SMB_INSECURE_SERVER
-	server_conf.flags &= ~KSMBD_GLOBAL_FLAG_CACHE_TBUF;
-#endif
-
 	if (req->smb2_max_read)
 		init_smb2_max_read_size(req->smb2_max_read);
 	if (req->smb2_max_write)
@@ -318,10 +308,9 @@ static int ipc_server_config_on_startup(struct ksmbd_startup_request *req)
 	ret |= ksmbd_tcp_set_interfaces(KSMBD_STARTUP_CONFIG_INTERFACES(req),
 					req->ifc_list_sz);
 	if (ret) {
-		ksmbd_err("Server configuration error: %s %s %s\n",
-				req->netbios_name,
-				req->server_string,
-				req->work_group);
+		pr_err("Server configuration error: %s %s %s\n",
+		       req->netbios_name, req->server_string,
+		       req->work_group);
 		return ret;
 	}
 
@@ -359,7 +348,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 	mutex_lock(&startup_lock);
 	if (!ksmbd_server_configurable()) {
 		mutex_unlock(&startup_lock);
-		ksmbd_err("Server reset is in progress, can't start daemon\n");
+		pr_err("Server reset is in progress, can't start daemon\n");
 		return -EINVAL;
 	}
 
@@ -369,7 +358,7 @@ static int handle_startup_event(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 
-		ksmbd_err("Reconnect to a new user space daemon\n");
+		pr_err("Reconnect to a new user space daemon\n");
 	} else {
 		struct ksmbd_startup_request *req;
 
@@ -390,7 +379,7 @@ out:
 
 static int handle_unsupported_event(struct sk_buff *skb, struct genl_info *info)
 {
-	ksmbd_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
+	pr_err("Unknown IPC event: %d, ignore.\n", info->genlhdr->cmd);
 	return -EINVAL;
 }
 
@@ -438,7 +427,7 @@ static int ipc_msg_send(struct ksmbd_ipc_msg *msg)
 	if (!nlh)
 		goto out;
 
-	ret = nla_put(skb, msg->type, msg->sz, KSMBD_IPC_MSG_PAYLOAD(msg));
+	ret = nla_put(skb, msg->type, msg->sz, msg->payload);
 	if (ret) {
 		genlmsg_cancel(skb, nlh);
 		goto out;
@@ -515,7 +504,7 @@ struct ksmbd_login_response *ksmbd_ipc_login_request(const char *account)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_LOGIN_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_login_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 	resp = ipc_msg_send_request(msg, req->handle);
@@ -537,7 +526,7 @@ ksmbd_ipc_spnego_authen_request(const char *spnego_blob, int blob_len)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_SPNEGO_AUTHEN_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_spnego_authen_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->spnego_blob_len = blob_len;
 	memcpy(req->spnego_blob, spnego_blob, blob_len);
@@ -550,9 +539,9 @@ ksmbd_ipc_spnego_authen_request(const char *spnego_blob, int blob_len)
 
 struct ksmbd_tree_connect_response *
 ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
-		struct ksmbd_share_config *share,
-		struct ksmbd_tree_connect *tree_conn,
-		struct sockaddr *peer_addr)
+			       struct ksmbd_share_config *share,
+			       struct ksmbd_tree_connect *tree_conn,
+			       struct sockaddr *peer_addr)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_tree_connect_request *req;
@@ -569,7 +558,7 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 		return NULL;
 
 	msg->type = KSMBD_EVENT_TREE_CONNECT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_tree_connect_request *)msg->payload;
 
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->account_flags = sess->user->flags;
@@ -591,7 +580,7 @@ ksmbd_ipc_tree_connect_request(struct ksmbd_session *sess,
 }
 
 int ksmbd_ipc_tree_disconnect_request(unsigned long long session_id,
-		unsigned long long connect_id)
+				      unsigned long long connect_id)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_tree_disconnect_request *req;
@@ -602,7 +591,7 @@ int ksmbd_ipc_tree_disconnect_request(unsigned long long session_id,
 		return -ENOMEM;
 
 	msg->type = KSMBD_EVENT_TREE_DISCONNECT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_tree_disconnect_request *)msg->payload;
 	req->session_id = session_id;
 	req->connect_id = connect_id;
 
@@ -625,7 +614,7 @@ int ksmbd_ipc_logout_request(const char *account)
 		return -ENOMEM;
 
 	msg->type = KSMBD_EVENT_LOGOUT_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_logout_request *)msg->payload;
 	strscpy(req->account, account, KSMBD_REQ_MAX_ACCOUNT_NAME_SZ);
 
 	ret = ipc_msg_send(msg);
@@ -648,7 +637,7 @@ ksmbd_ipc_share_config_request(const char *name)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_SHARE_CONFIG_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_share_config_request *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	strscpy(req->share_name, name, KSMBD_REQ_MAX_SHARE_NAME);
 
@@ -669,7 +658,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_open(struct ksmbd_session *sess, int handle)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= KSMBD_RPC_OPEN_METHOD;
@@ -691,7 +680,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= KSMBD_RPC_CLOSE_METHOD;
@@ -703,7 +692,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_close(struct ksmbd_session *sess, int handle
 }
 
 struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess, int handle,
-		void *payload, size_t payload_sz)
+					  void *payload, size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -714,7 +703,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_write(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -738,7 +727,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess, int handle)
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -751,7 +740,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_read(struct ksmbd_session *sess, int handle)
 }
 
 struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess, int handle,
-		void *payload, size_t payload_sz)
+					  void *payload, size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -762,7 +751,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess, int handle
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = handle;
 	req->flags = ksmbd_session_rpc_method(sess, handle);
 	req->flags |= rpc_context_flags(sess);
@@ -776,7 +765,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_ioctl(struct ksmbd_session *sess, int handle
 }
 
 struct ksmbd_rpc_command *ksmbd_rpc_rap(struct ksmbd_session *sess, void *payload,
-		size_t payload_sz)
+					size_t payload_sz)
 {
 	struct ksmbd_ipc_msg *msg;
 	struct ksmbd_rpc_command *req;
@@ -787,7 +776,7 @@ struct ksmbd_rpc_command *ksmbd_rpc_rap(struct ksmbd_session *sess, void *payloa
 		return NULL;
 
 	msg->type = KSMBD_EVENT_RPC_REQUEST;
-	req = KSMBD_IPC_MSG_PAYLOAD(msg);
+	req = (struct ksmbd_rpc_command *)msg->payload;
 	req->handle = ksmbd_acquire_id(&ipc_ida);
 	req->flags = rpc_context_flags(sess);
 	req->flags |= KSMBD_RPC_RAP_METHOD;
@@ -832,7 +821,7 @@ static int __ipc_heartbeat(void)
 	WRITE_ONCE(server_conf.state, SERVER_STATE_RESETTING);
 	server_conf.ipc_last_active = 0;
 	ksmbd_tools_pid = 0;
-	ksmbd_err("No IPC daemon response for %lus\n", delta / HZ);
+	pr_err("No IPC daemon response for %lus\n", delta / HZ);
 	mutex_unlock(&startup_lock);
 	return -EINVAL;
 }
@@ -876,7 +865,7 @@ int ksmbd_ipc_init(void)
 
 	ret = genl_register_family(&ksmbd_genl_family);
 	if (ret) {
-		ksmbd_err("Failed to register KSMBD netlink interface %d\n", ret);
+		pr_err("Failed to register KSMBD netlink interface %d\n", ret);
 		cancel_delayed_work_sync(&ipc_timer_work);
 	}
 

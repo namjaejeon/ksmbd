@@ -9,21 +9,9 @@
 #include "glob.h"
 #include "ndr.h"
 
-#define PAYLOAD_HEAD(d) ((d)->data + (d)->offset)
-
-#define KSMBD_ALIGN_MASK(x, mask) (((x) + (mask)) & ~(mask))
-
-#define KSMBD_ALIGN(x, a)							\
-	({									\
-		typeof(x) ret = (x);						\
-		if (((x) & ((typeof(x))(a) - 1)) != 0)				\
-			ret = KSMBD_ALIGN_MASK(x, (typeof(x))(a) - 1);		\
-		ret;								\
-	})
-
-static void align_offset(struct ndr *ndr, int n)
+static inline char *ndr_get_field(struct ndr *n)
 {
-	ndr->offset = KSMBD_ALIGN(ndr->offset, n);
+	return n->data + n->offset;
 }
 
 static int try_to_realloc_ndr_blob(struct ndr *n, size_t sz)
@@ -45,7 +33,7 @@ static void ndr_write_int16(struct ndr *n, __u16 value)
 	if (n->length <= n->offset + sizeof(value))
 		try_to_realloc_ndr_blob(n, sizeof(value));
 
-	*(__le16 *)PAYLOAD_HEAD(n) = cpu_to_le16(value);
+	*(__le16 *)ndr_get_field(n) = cpu_to_le16(value);
 	n->offset += sizeof(value);
 }
 
@@ -54,7 +42,7 @@ static void ndr_write_int32(struct ndr *n, __u32 value)
 	if (n->length <= n->offset + sizeof(value))
 		try_to_realloc_ndr_blob(n, sizeof(value));
 
-	*(__le32 *)PAYLOAD_HEAD(n) = cpu_to_le32(value);
+	*(__le32 *)ndr_get_field(n) = cpu_to_le32(value);
 	n->offset += sizeof(value);
 }
 
@@ -63,7 +51,7 @@ static void ndr_write_int64(struct ndr *n, __u64 value)
 	if (n->length <= n->offset + sizeof(value))
 		try_to_realloc_ndr_blob(n, sizeof(value));
 
-	*(__le64 *)PAYLOAD_HEAD(n) = cpu_to_le64(value);
+	*(__le64 *)ndr_get_field(n) = cpu_to_le64(value);
 	n->offset += sizeof(value);
 }
 
@@ -72,7 +60,7 @@ static int ndr_write_bytes(struct ndr *n, void *value, size_t sz)
 	if (n->length <= n->offset + sz)
 		try_to_realloc_ndr_blob(n, sz);
 
-	memcpy(PAYLOAD_HEAD(n), value, sz);
+	memcpy(ndr_get_field(n), value, sz);
 	n->offset += sz;
 	return 0;
 }
@@ -82,27 +70,27 @@ static int ndr_write_string(struct ndr *n, void *value, size_t sz)
 	if (n->length <= n->offset + sz)
 		try_to_realloc_ndr_blob(n, sz);
 
-	strncpy(PAYLOAD_HEAD(n), value, sz);
+	strncpy(ndr_get_field(n), value, sz);
 	sz++;
 	n->offset += sz;
-	align_offset(n, 2);
+	n->offset = ALIGN(n->offset, 2);
 	return 0;
 }
 
 static int ndr_read_string(struct ndr *n, void *value, size_t sz)
 {
-	int len = strnlen(PAYLOAD_HEAD(n), sz);
+	int len = strnlen(ndr_get_field(n), sz);
 
-	memcpy(value, PAYLOAD_HEAD(n), len);
+	memcpy(value, ndr_get_field(n), len);
 	len++;
 	n->offset += len;
-	align_offset(n, 2);
+	n->offset = ALIGN(n->offset, 2);
 	return 0;
 }
 
 static int ndr_read_bytes(struct ndr *n, void *value, size_t sz)
 {
-	memcpy(value, PAYLOAD_HEAD(n), sz);
+	memcpy(value, ndr_get_field(n), sz);
 	n->offset += sz;
 	return 0;
 }
@@ -111,7 +99,7 @@ static __u16 ndr_read_int16(struct ndr *n)
 {
 	__u16 ret;
 
-	ret = le16_to_cpu(*(__le16 *)PAYLOAD_HEAD(n));
+	ret = le16_to_cpu(*(__le16 *)ndr_get_field(n));
 	n->offset += sizeof(__u16);
 	return ret;
 }
@@ -120,7 +108,7 @@ static __u32 ndr_read_int32(struct ndr *n)
 {
 	__u32 ret;
 
-	ret = le32_to_cpu(*(__le32 *)PAYLOAD_HEAD(n));
+	ret = le32_to_cpu(*(__le32 *)ndr_get_field(n));
 	n->offset += sizeof(__u32);
 	return ret;
 }
@@ -129,7 +117,7 @@ static __u64 ndr_read_int64(struct ndr *n)
 {
 	__u64 ret;
 
-	ret = le64_to_cpu(*(__le64 *)PAYLOAD_HEAD(n));
+	ret = le64_to_cpu(*(__le64 *)ndr_get_field(n));
 	n->offset += sizeof(__u64);
 	return ret;
 }
@@ -178,14 +166,14 @@ int ndr_decode_dos_attr(struct ndr *n, struct xattr_dos_attrib *da)
 	da->version = ndr_read_int16(n);
 
 	if (da->version != 3 && da->version != 4) {
-		ksmbd_err("v%d version is not supported\n", da->version);
+		pr_err("v%d version is not supported\n", da->version);
 		return -EINVAL;
 	}
 
 	version2 = ndr_read_int32(n);
 	if (da->version != version2) {
-		ksmbd_err("ndr version mismatched(version: %d, version2: %d)\n",
-				da->version, version2);
+		pr_err("ndr version mismatched(version: %d, version2: %d)\n",
+		       da->version, version2);
 		return -EINVAL;
 	}
 
@@ -210,20 +198,20 @@ static int ndr_encode_posix_acl_entry(struct ndr *n, struct xattr_smb_acl *acl)
 	int i;
 
 	ndr_write_int32(n, acl->count);
-	align_offset(n, 8);
+	n->offset = ALIGN(n->offset, 8);
 	ndr_write_int32(n, acl->count);
 	ndr_write_int32(n, 0);
 
 	for (i = 0; i < acl->count; i++) {
-		align_offset(n, 8);
+		n->offset = ALIGN(n->offset, 8);
 		ndr_write_int16(n, acl->entries[i].type);
 		ndr_write_int16(n, acl->entries[i].type);
 
 		if (acl->entries[i].type == SMB_ACL_USER) {
-			align_offset(n, 8);
+			n->offset = ALIGN(n->offset, 8);
 			ndr_write_int64(n, acl->entries[i].uid);
 		} else if (acl->entries[i].type == SMB_ACL_GROUP) {
-			align_offset(n, 8);
+			n->offset = ALIGN(n->offset, 8);
 			ndr_write_int64(n, acl->entries[i].gid);
 		}
 
@@ -235,7 +223,8 @@ static int ndr_encode_posix_acl_entry(struct ndr *n, struct xattr_smb_acl *acl)
 }
 
 int ndr_encode_posix_acl(struct ndr *n, struct inode *inode,
-		struct xattr_smb_acl *acl, struct xattr_smb_acl *def_acl)
+			 struct xattr_smb_acl *acl,
+			 struct xattr_smb_acl *def_acl)
 {
 	int ref_id = 0x00020000;
 
@@ -308,14 +297,14 @@ int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl)
 	n->offset = 0;
 	acl->version = ndr_read_int16(n);
 	if (acl->version != 4) {
-		ksmbd_err("v%d version is not supported\n", acl->version);
+		pr_err("v%d version is not supported\n", acl->version);
 		return -EINVAL;
 	}
 
 	version2 = ndr_read_int32(n);
 	if (acl->version != version2) {
-		ksmbd_err("ndr version mismatched(version: %d, version2: %d)\n",
-				acl->version, version2);
+		pr_err("ndr version mismatched(version: %d, version2: %d)\n",
+		       acl->version, version2);
 		return -EINVAL;
 	}
 
@@ -328,7 +317,7 @@ int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl)
 
 	ndr_read_bytes(n, acl->desc, 10);
 	if (strncmp(acl->desc, "posix_acl", 9)) {
-		ksmbd_err("Invalid acl description : %s\n", acl->desc);
+		pr_err("Invalid acl description : %s\n", acl->desc);
 		return -EINVAL;
 	}
 

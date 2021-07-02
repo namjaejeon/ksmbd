@@ -17,18 +17,28 @@
 #define NUM_AUTHS (6)	/* number of authority fields */
 #define SID_MAX_SUB_AUTHORITIES (15) /* max number of sub authority fields */
 
-#define ACCESS_ALLOWED	0
-#define ACCESS_DENIED	1
+/*
+ * ACE types - see MS-DTYP 2.4.4.1
+ */
+enum {
+	ACCESS_ALLOWED,
+	ACCESS_DENIED,
+};
 
-#define SIDOWNER 1
-#define SIDGROUP 2
-#define SIDCREATOR_OWNER 3
-#define SIDCREATOR_GROUP 4
-#define SIDUNIX_USER 5
-#define SIDUNIX_GROUP 6
-#define SIDNFS_USER 7
-#define SIDNFS_GROUP 8
-#define SIDNFS_MODE 9
+/*
+ * Security ID types
+ */
+enum {
+	SIDOWNER = 1,
+	SIDGROUP,
+	SIDCREATOR_OWNER,
+	SIDCREATOR_GROUP,
+	SIDUNIX_USER,
+	SIDUNIX_GROUP,
+	SIDNFS_USER,
+	SIDNFS_GROUP,
+	SIDNFS_MODE,
+};
 
 /* Revision for ACLs */
 #define SD_REVISION	1
@@ -180,22 +190,23 @@ struct posix_acl_state {
 };
 
 int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
-		struct smb_fattr *fattr);
+		   struct smb_fattr *fattr);
 int build_sec_desc(struct smb_ntsd *pntsd, struct smb_ntsd *ppntsd,
-		int addition_info, __u32 *secdesclen, struct smb_fattr *fattr);
+		   int addition_info, __u32 *secdesclen,
+		   struct smb_fattr *fattr);
 int init_acl_state(struct posix_acl_state *state, int cnt);
 void free_acl_state(struct posix_acl_state *state);
 void posix_state_to_acl(struct posix_acl_state *state,
-		struct posix_acl_entry *pace);
+			struct posix_acl_entry *pace);
 int compare_sids(const struct smb_sid *ctsid, const struct smb_sid *cwsid);
 bool smb_inherit_flags(int flags, bool is_dir);
 int smb_inherit_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
-		unsigned int uid, unsigned int gid);
+		     unsigned int uid, unsigned int gid);
 int smb_check_perm_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
-		__le32 *pdaccess, int uid);
+			__le32 *pdaccess, int uid);
 int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
-		struct dentry *dentry, struct smb_ntsd *pntsd, int ntsd_len,
-		bool type_check);
+		 struct dentry *dentry, struct smb_ntsd *pntsd, int ntsd_len,
+		 bool type_check);
 void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid);
 void ksmbd_init_domain(u32 *sub_auth);
 #endif /* _SMBACL_H */

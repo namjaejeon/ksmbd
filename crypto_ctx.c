@@ -13,7 +13,6 @@
 
 #include "glob.h"
 #include "crypto_ctx.h"
-#include "buffer_pool.h"
 
 struct crypto_ctx_list {
 	spinlock_t		ctx_lock;
@@ -43,19 +42,19 @@ static struct crypto_aead *alloc_aead(int id)
 	struct crypto_aead *tfm = NULL;
 
 	switch (id) {
-	case CRYPTO_AEAD_AES128_GCM:
+	case CRYPTO_AEAD_AES_GCM:
 		tfm = crypto_alloc_aead("gcm(aes)", 0, 0);
 		break;
-	case CRYPTO_AEAD_AES128_CCM:
+	case CRYPTO_AEAD_AES_CCM:
 		tfm = crypto_alloc_aead("ccm(aes)", 0, 0);
 		break;
 	default:
-		ksmbd_err("Does not support encrypt ahead(id : %d)\n", id);
+		pr_err("Does not support encrypt ahead(id : %d)\n", id);
 		return NULL;
 	}
 
 	if (IS_ERR(tfm)) {
-		ksmbd_err("Failed to alloc encrypt aead : %ld\n", PTR_ERR(tfm));
+		pr_err("Failed to alloc encrypt aead : %ld\n", PTR_ERR(tfm));
 		return NULL;
 	}
 
@@ -89,6 +88,8 @@ static struct shash_desc *alloc_shash_desc(int id)
 	case CRYPTO_SHASH_MD5:
 		tfm = crypto_alloc_shash("md5", 0, 0);
 		break;
+	default:
+		return NULL;
 	}
 
 	if (IS_ERR(tfm))
@@ -101,11 +102,6 @@ static struct shash_desc *alloc_shash_desc(int id)
 	else
 		shash->tfm = tfm;
 	return shash;
-}
-
-static struct ksmbd_crypto_ctx *ctx_alloc(void)
-{
-	return kzalloc(sizeof(struct ksmbd_crypto_ctx), GFP_KERNEL);
 }
 
 static void ctx_free(struct ksmbd_crypto_ctx *ctx)
@@ -127,8 +123,8 @@ static struct ksmbd_crypto_ctx *ksmbd_find_crypto_ctx(void)
 		spin_lock(&ctx_list.ctx_lock);
 		if (!list_empty(&ctx_list.idle_ctx)) {
 			ctx = list_entry(ctx_list.idle_ctx.next,
-					  struct ksmbd_crypto_ctx,
-					  list);
+					 struct ksmbd_crypto_ctx,
+					 list);
 			list_del(&ctx->list);
 			spin_unlock(&ctx_list.ctx_lock);
 			return ctx;
@@ -144,7 +140,7 @@ static struct ksmbd_crypto_ctx *ksmbd_find_crypto_ctx(void)
 		ctx_list.avail_ctx++;
 		spin_unlock(&ctx_list.ctx_lock);
 
-		ctx = ctx_alloc();
+		ctx = kzalloc(sizeof(struct ksmbd_crypto_ctx), GFP_KERNEL);
 		if (!ctx) {
 			spin_lock(&ctx_list.ctx_lock);
 			ctx_list.avail_ctx--;
@@ -249,12 +245,12 @@ static struct ksmbd_crypto_ctx *____crypto_aead_ctx_find(int id)
 
 struct ksmbd_crypto_ctx *ksmbd_crypto_ctx_find_gcm(void)
 {
-	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_GCM);
+	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES_GCM);
 }
 
 struct ksmbd_crypto_ctx *ksmbd_crypto_ctx_find_ccm(void)
 {
-	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES128_CCM);
+	return ____crypto_aead_ctx_find(CRYPTO_AEAD_AES_CCM);
 }
 
 void ksmbd_crypto_destroy(void)
@@ -279,7 +275,7 @@ int ksmbd_crypto_create(void)
 	init_waitqueue_head(&ctx_list.ctx_wait);
 	ctx_list.avail_ctx = 1;
 
-	ctx = ctx_alloc();
+	ctx = kzalloc(sizeof(struct ksmbd_crypto_ctx), GFP_KERNEL);
 	if (!ctx)
 		return -ENOMEM;
 	list_add(&ctx->list, &ctx_list.idle_ctx);

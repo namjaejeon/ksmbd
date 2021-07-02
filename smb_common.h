@@ -51,9 +51,6 @@
 extern struct list_head global_lock_list;
 
 #define IS_SMB2(x)		((x)->vals->protocol_id != SMB10_PROT_ID)
-
-#define HEADER_SIZE(conn)		((conn)->vals->header_size)
-#define HEADER_SIZE_NO_BUF_LEN(conn)	((conn)->vals->header_size - 4)
 #define MAX_HEADER_SIZE(conn)		((conn)->vals->max_header_size)
 
 /* RFC 1002 session packet types */
@@ -469,7 +466,7 @@ struct filesystem_posix_info {
 } __packed;
 
 struct smb_version_ops {
-	uint16_t (*get_cmd_val)(struct ksmbd_work *swork);
+	u16 (*get_cmd_val)(struct ksmbd_work *swork);
 	int (*init_rsp_hdr)(struct ksmbd_work *swork);
 	void (*set_rsp_status)(struct ksmbd_work *swork, __le32 err);
 	int (*allocate_rsp_buf)(struct ksmbd_work *work);
@@ -479,7 +476,7 @@ struct smb_version_ops {
 	bool (*is_sign_req)(struct ksmbd_work *work, unsigned int command);
 	int (*check_sign_req)(struct ksmbd_work *work);
 	void (*set_sign_rsp)(struct ksmbd_work *work);
-	int (*generate_signingkey)(struct ksmbd_session *sess);
+	int (*generate_signingkey)(struct ksmbd_session *sess, struct ksmbd_conn *conn);
 	int (*generate_encryptionkey)(struct ksmbd_session *sess);
 	int (*is_transform_hdr)(void *buf);
 	int (*decrypt_req)(struct ksmbd_work *work);
@@ -489,6 +486,12 @@ struct smb_version_ops {
 struct smb_version_cmds {
 	int (*proc)(struct ksmbd_work *swork);
 };
+
+static inline size_t
+smb2_hdr_size_no_buflen(struct smb_version_values *vals)
+{
+	return vals->header_size - 4;
+}
 
 int ksmbd_min_protocol(void);
 int ksmbd_max_protocol(void);

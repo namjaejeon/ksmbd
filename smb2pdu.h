@@ -77,6 +77,13 @@
 #define SMB2_SIGNATURE_SIZE		16
 #define SMB2_HMACSHA256_SIZE		32
 #define SMB2_CMACAES_SIZE		16
+#define SMB3_GCM128_CRYPTKEY_SIZE	16
+#define SMB3_GCM256_CRYPTKEY_SIZE	32
+
+/*
+ * Size of the smb3 encryption/decryption keys
+ */
+#define SMB3_ENC_DEC_KEY_SIZE		32
 
 /*
  * Size of the smb3 signing key
@@ -151,8 +158,8 @@ struct smb2_pdu {
 	__le16 StructureSize2; /* size of wct area (varies, request specific) */
 } __packed;
 
-#define SMB3_AES128CCM_NONCE 11
-#define SMB3_AES128GCM_NONCE 12
+#define SMB3_AES_CCM_NONCE 11
+#define SMB3_AES_GCM_NONCE 12
 
 struct smb2_transform_hdr {
 	__be32 smb2_buf_length; /* big endian on wire */
@@ -283,13 +290,16 @@ struct smb2_preauth_neg_context {
 /* Encryption Algorithms Ciphers */
 #define SMB2_ENCRYPTION_AES128_CCM	cpu_to_le16(0x0001)
 #define SMB2_ENCRYPTION_AES128_GCM	cpu_to_le16(0x0002)
+#define SMB2_ENCRYPTION_AES256_CCM	cpu_to_le16(0x0003)
+#define SMB2_ENCRYPTION_AES256_GCM	cpu_to_le16(0x0004)
 
 struct smb2_encryption_neg_context {
 	__le16	ContextType; /* 2 */
 	__le16	DataLength;
 	__le32	Reserved;
-	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM */
-	__le16	Ciphers[1]; /* Ciphers[0] since only one used now */
+	/* CipherCount usally 2, but can be 3 when AES256-GCM enabled */
+	__le16	CipherCount; /* AES-128-GCM and AES-128-CCM by default */
+	__le16	Ciphers[1];
 } __packed;
 
 #define SMB3_COMPRESS_NONE	cpu_to_le16(0x0000)
@@ -725,10 +735,29 @@ struct lease_context {
 	__le64 LeaseDuration;
 } __packed;
 
+struct lease_context_v2 {
+	__le64 LeaseKeyLow;
+	__le64 LeaseKeyHigh;
+	__le32 LeaseState;
+	__le32 LeaseFlags;
+	__le64 LeaseDuration;
+	__le64 ParentLeaseKeyLow;
+	__le64 ParentLeaseKeyHigh;
+	__le16 Epoch;
+	__le16 Reserved;
+} __packed;
+
 struct create_lease {
 	struct create_context ccontext;
 	__u8   Name[8];
 	struct lease_context lcontext;
+} __packed;
+
+struct create_lease_v2 {
+	struct create_context ccontext;
+	__u8   Name[8];
+	struct lease_context_v2 lcontext;
+	__u8   Pad[4];
 } __packed;
 
 /* Currently defined values for close flags */
@@ -840,6 +869,14 @@ struct smb2_write_rsp {
 } __packed;
 
 #define SMB2_0_IOCTL_IS_FSCTL 0x00000001
+
+struct duplicate_extents_to_file {
+	__u64 PersistentFileHandle; /* source file handle, opaque endianness */
+	__u64 VolatileFileHandle;
+	__le64 SourceFileOffset;
+	__le64 TargetFileOffset;
+	__le64 ByteCount;  /* Bytes to be copied */
+} __packed;
 
 struct smb2_ioctl_req {
 	struct smb2_hdr hdr;
@@ -1231,7 +1268,7 @@ struct smb2_oplock_break {
 struct smb2_lease_break {
 	struct smb2_hdr hdr;
 	__le16 StructureSize; /* Must be 44 */
-	__le16 Reserved;
+	__le16 Epoch;
 	__le32 Flags;
 	__u8   LeaseKey[16];
 	__le32 CurrentLeaseState;
@@ -1605,12 +1642,13 @@ void smb2_set_sign_rsp(struct ksmbd_work *work);
 int smb3_check_sign_req(struct ksmbd_work *work);
 void smb3_set_sign_rsp(struct ksmbd_work *work);
 int find_matching_smb2_dialect(int start_index, __le16 *cli_dialects,
-		__le16 dialects_count);
+			       __le16 dialects_count);
 struct file_lock *smb_flock_init(struct file *f);
 int setup_async_work(struct ksmbd_work *work, void (*fn)(void **),
-		void **arg);
+		     void **arg);
 void smb2_send_interim_resp(struct ksmbd_work *work, __le32 status);
-struct channel *lookup_chann_list(struct ksmbd_session *sess);
+struct channel *lookup_chann_list(struct ksmbd_session *sess,
+				  struct ksmbd_conn *conn);
 void smb3_preauth_hash_rsp(struct ksmbd_work *work);
 int smb3_is_transform_hdr(void *buf);
 int smb3_decrypt_req(struct ksmbd_work *work);

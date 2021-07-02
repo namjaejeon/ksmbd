@@ -10,7 +10,6 @@
 
 #include "glob.h"
 #include "vfs_cache.h"
-#include "buffer_pool.h"
 #include "oplock.h"
 #include "vfs.h"
 #include "connection.h"
@@ -29,6 +28,7 @@ static DEFINE_RWLOCK(inode_hash_lock);
 
 static struct ksmbd_file_table global_ft;
 static atomic_long_t fd_limit;
+static struct kmem_cache *filp_cache;
 
 void ksmbd_set_fd_limit(unsigned long limit)
 {
@@ -83,7 +83,7 @@ static struct ksmbd_inode *__ksmbd_inode_lookup(struct inode *inode)
 
 static struct ksmbd_inode *ksmbd_inode_lookup(struct ksmbd_file *fp)
 {
-	return __ksmbd_inode_lookup(FP_INODE(fp));
+	return __ksmbd_inode_lookup(file_inode(fp->filp));
 }
 
 static struct ksmbd_inode *ksmbd_inode_lookup_by_vfsinode(struct inode *inode)
@@ -156,7 +156,7 @@ static void ksmbd_inode_unhash(struct ksmbd_inode *ci)
 
 static int ksmbd_inode_init(struct ksmbd_inode *ci, struct ksmbd_file *fp)
 {
-	ci->m_inode = FP_INODE(fp);
+	ci->m_inode = file_inode(fp->filp);
 	atomic_set(&ci->m_count, 1);
 	atomic_set(&ci->op_count, 0);
 	atomic_set(&ci->sop_count, 0);
@@ -185,7 +185,7 @@ static struct ksmbd_inode *ksmbd_inode_get(struct ksmbd_file *fp)
 
 	rc = ksmbd_inode_init(ci, fp);
 	if (rc) {
-		ksmbd_err("inode initialized failed\n");
+		pr_err("inode initialized failed\n");
 		kfree(ci);
 		return NULL;
 	}
@@ -254,8 +254,8 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 		err = ksmbd_vfs_remove_xattr(filp->f_path.dentry,
 					     fp->stream.name);
 		if (err)
-			ksmbd_err("remove xattr failed : %s\n",
-				fp->stream.name);
+			pr_err("remove xattr failed : %s\n",
+			       fp->stream.name);
 	}
 
 	if (atomic_dec_and_test(&ci->m_count)) {
@@ -315,7 +315,7 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 	kfree(fp->filename);
 	if (ksmbd_stream_fd(fp))
 		kfree(fp->stream.name);
-	ksmbd_free_file_struct(fp);
+	kmem_cache_free(filp_cache, fp);
 }
 
 static struct ksmbd_file *ksmbd_fp_get(struct ksmbd_file *fp)
@@ -326,7 +326,7 @@ static struct ksmbd_file *ksmbd_fp_get(struct ksmbd_file *fp)
 }
 
 static struct ksmbd_file *__ksmbd_lookup_fd(struct ksmbd_file_table *ft,
-		unsigned int id)
+					    unsigned int id)
 {
 	struct ksmbd_file *fp;
 
@@ -350,7 +350,7 @@ static void set_close_state_blocked_works(struct ksmbd_file *fp)
 
 	spin_lock(&fp->f_lock);
 	list_for_each_entry_safe(cancel_work, ctmp, &fp->blocked_works,
-			fp_entry) {
+				 fp_entry) {
 		list_del(&cancel_work->fp_entry);
 		cancel_work->state = KSMBD_WORK_CLOSED;
 		cancel_work->cancel_fn(cancel_work->cancel_argv);
@@ -420,7 +420,7 @@ struct ksmbd_file *ksmbd_lookup_fd_fast(struct ksmbd_work *work, unsigned int id
 }
 
 struct ksmbd_file *ksmbd_lookup_fd_slow(struct ksmbd_work *work, unsigned int id,
-		unsigned int pid)
+					unsigned int pid)
 {
 	struct ksmbd_file *fp;
 
@@ -491,16 +491,14 @@ struct ksmbd_file *ksmbd_lookup_fd_inode(struct inode *inode)
 {
 	struct ksmbd_file	*lfp;
 	struct ksmbd_inode	*ci;
-	struct list_head	*cur;
 
 	ci = ksmbd_inode_lookup_by_vfsinode(inode);
 	if (!ci)
 		return NULL;
 
 	read_lock(&ci->m_lock);
-	list_for_each(cur, &ci->m_fp_list) {
-		lfp = list_entry(cur, struct ksmbd_file, node);
-		if (inode == FP_INODE(lfp)) {
+	list_for_each_entry(lfp, &ci->m_fp_list, node) {
+		if (inode == file_inode(lfp->filp)) {
 			atomic_dec(&ci->m_count);
 			read_unlock(&ci->m_lock);
 			return lfp;
@@ -558,12 +556,12 @@ unsigned int ksmbd_open_durable_fd(struct ksmbd_file *fp)
 
 struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 {
-	struct ksmbd_file	*fp;
+	struct ksmbd_file *fp;
 	int ret;
 
-	fp = ksmbd_alloc_file_struct();
+	fp = kmem_cache_zalloc(filp_cache, GFP_KERNEL);
 	if (!fp) {
-		ksmbd_err("Failed to allocate memory\n");
+		pr_err("Failed to allocate memory\n");
 		return ERR_PTR(-ENOMEM);
 	}
 
@@ -580,24 +578,29 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 	fp->f_ci		= ksmbd_inode_get(fp);
 
 	if (!fp->f_ci) {
-		ksmbd_free_file_struct(fp);
-		return ERR_PTR(-ENOMEM);
+		ret = -ENOMEM;
+		goto err_out;
 	}
 
 	ret = __open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
 	if (ret) {
 		ksmbd_inode_put(fp->f_ci);
-		ksmbd_free_file_struct(fp);
-		return ERR_PTR(ret);
+		goto err_out;
 	}
 
 	atomic_inc(&work->conn->stats.open_files_count);
 	return fp;
+
+err_out:
+	kmem_cache_free(filp_cache, fp);
+	return ERR_PTR(ret);
 }
 
 static int
-__close_file_table_ids(struct ksmbd_file_table *ft, struct ksmbd_tree_connect *tcon,
-		bool (*skip)(struct ksmbd_tree_connect *tcon, struct ksmbd_file *fp))
+__close_file_table_ids(struct ksmbd_file_table *ft,
+		       struct ksmbd_tree_connect *tcon,
+		       bool (*skip)(struct ksmbd_tree_connect *tcon,
+				    struct ksmbd_file *fp))
 {
 	unsigned int			id;
 	struct ksmbd_file		*fp;
@@ -617,12 +620,14 @@ __close_file_table_ids(struct ksmbd_file_table *ft, struct ksmbd_tree_connect *t
 	return num;
 }
 
-static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon, struct ksmbd_file *fp)
+static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon,
+			       struct ksmbd_file *fp)
 {
 	return fp->tcon != tcon;
 }
 
-static bool session_fd_check(struct ksmbd_tree_connect *tcon, struct ksmbd_file *fp)
+static bool session_fd_check(struct ksmbd_tree_connect *tcon,
+			     struct ksmbd_file *fp)
 {
 	return false;
 }
@@ -657,7 +662,7 @@ void ksmbd_free_global_file_table(void)
 
 	idr_for_each_entry(global_ft.idr, fp, id) {
 		__ksmbd_remove_durable_fd(fp);
-		ksmbd_free_file_struct(fp);
+		kmem_cache_free(filp_cache, fp);
 	}
 
 	ksmbd_destroy_file_table(&global_ft);
@@ -699,4 +704,24 @@ void ksmbd_destroy_file_table(struct ksmbd_file_table *ft)
 	idr_destroy(ft->idr);
 	kfree(ft->idr);
 	ft->idr = NULL;
+}
+
+int ksmbd_init_file_cache(void)
+{
+	filp_cache = kmem_cache_create("ksmbd_file_cache",
+				       sizeof(struct ksmbd_file), 0,
+				       SLAB_HWCACHE_ALIGN, NULL);
+	if (!filp_cache)
+		goto out;
+
+	return 0;
+
+out:
+	pr_err("failed to allocate file cache\n");
+	return -ENOMEM;
+}
+
+void ksmbd_exit_file_cache(void)
+{
+	kmem_cache_destroy(filp_cache);
 }

@@ -12,7 +12,6 @@
 
 #include "glob.h"
 #include "oplock.h"
-#include "buffer_pool.h"
 #include "connection.h"
 #include "transport_ipc.h"
 #include "vfs.h"
@@ -75,11 +74,11 @@ static struct timespec64 smb_NTtimeToUnix(__le64 ntutc)
  *
  * Return:      smb command value
  */
-uint16_t get_smb_cmd_val(struct ksmbd_work *work)
+u16 get_smb_cmd_val(struct ksmbd_work *work)
 {
 	struct smb_hdr *rcv_hdr = (struct smb_hdr *)work->request_buf;
 
-	return (uint16_t)rcv_hdr->Command;
+	return (u16)rcv_hdr->Command;
 }
 
 /**
@@ -121,7 +120,8 @@ int init_smb_rsp_hdr(struct ksmbd_work *work)
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 2);
 
 	/* remove 4 byte direct TCP header, add 1 byte wc and 2 byte bcc */
-	rsp_hdr->smb_buf_length = cpu_to_be32(HEADER_SIZE_NO_BUF_LEN(conn) + 2);
+	rsp_hdr->smb_buf_length =
+		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals) + 2);
 	memcpy(rsp_hdr->Protocol, rcv_hdr->Protocol, 4);
 	rsp_hdr->Command = rcv_hdr->Command;
 
@@ -193,7 +193,7 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 	work->response_sz = sz;
 
 	if (!work->response_buf) {
-		ksmbd_err("Failed to allocate %zu bytes buffer\n", sz);
+		pr_err("Failed to allocate %zu bytes buffer\n", sz);
 		return -ENOMEM;
 	}
 
@@ -295,7 +295,7 @@ int smb_get_ksmbd_tcon(struct ksmbd_work *work)
 	tree_id = le16_to_cpu(req_hdr->Tid);
 	work->tcon = ksmbd_tree_conn_lookup(work->sess, tree_id);
 	if (!work->tcon) {
-		ksmbd_err("Invalid tid %d\n", tree_id);
+		pr_err("Invalid tid %d\n", tree_id);
 		return -1;
 	}
 
@@ -347,7 +347,7 @@ int smb_tree_disconnect(struct ksmbd_work *work)
 	struct ksmbd_session *sess = work->sess;
 
 	if (!tcon) {
-		ksmbd_err("Invalid tid %d\n", req_hdr->Tid);
+		pr_err("Invalid tid %d\n", req_hdr->Tid);
 		rsp_hdr->Status.CifsError = STATUS_NO_SUCH_USER;
 		return -EINVAL;
 	}
@@ -443,8 +443,8 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	}
 
 	if (IS_ERR(treename) || IS_ERR(dev_type)) {
-		ksmbd_err("Unable to strdup() treename or devtype uid %d\n",
-				rsp_hdr->Uid);
+		pr_err("Unable to strdup() treename or devtype uid %d\n",
+		       rsp_hdr->Uid);
 		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
 		goto out_err;
 	}
@@ -567,9 +567,6 @@ out_err:
 		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
 	}
 
-	/* Clean session if there is no tree attached */
-	if (!sess || xa_empty(&work->sess->tree_conns))
-		ksmbd_conn_set_exiting(work);
 	inc_rfc1001_len(rsp_hdr, (7 * 2 + le16_to_cpu(rsp->ByteCount) +
 		extra_byte));
 	return -EINVAL;
@@ -626,7 +623,7 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 	if (!converted)
 		kfree(name);
 	if (!unixname) {
-		ksmbd_err("can not convert absolute name\n");
+		pr_err("can not convert absolute name\n");
 		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
 		return ERR_PTR(-ENOMEM);
 	}
@@ -665,12 +662,12 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *unixname;
 	char *pattern_pos, *pattern = NULL;
-	int pattern_len;
+	int pattern_len, rc;
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
 			work->conn->local_nls);
 	if (IS_ERR(name)) {
-		ksmbd_err("failed to allocate memory\n");
+		pr_err("failed to allocate memory\n");
 		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
 		return name;
 	}
@@ -688,17 +685,15 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 
 	pattern_len = strlen(pattern_pos);
 	if (pattern_len == 0) {
-		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-		kfree(name);
-		return ERR_PTR(-EINVAL);
+		rc = -EINVAL;
+		goto err_name;
 	}
 	ksmbd_debug(SMB, "pattern searched = %s pattern_len = %d\n",
 			pattern_pos, pattern_len);
 	pattern = kmalloc(pattern_len + 1, GFP_KERNEL);
 	if (!pattern) {
-		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
-		kfree(name);
-		return ERR_PTR(-ENOMEM);
+		rc = -ENOMEM;
+		goto err_name;
 	}
 	memcpy(pattern, pattern_pos, pattern_len);
 	*(pattern + pattern_len) = '\0';
@@ -706,29 +701,44 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	*srch_ptr = pattern;
 
 	unixname = convert_to_unix_name(share, name);
-	kfree(name);
 	if (!unixname) {
-		kfree(pattern);
-		ksmbd_err("can not convert absolute name\n");
-		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-		return ERR_PTR(-EINVAL);
+		pr_err("can not convert absolute name\n");
+		rc = -EINVAL;
+		goto err_pattern;
 	}
 
 	if (ksmbd_validate_filename(unixname) < 0) {
-		kfree(unixname);
-		return ERR_PTR(-ENOENT);
+		rc = -ENOENT;
+		goto err_unixname;
 	}
 
 	if (ksmbd_share_veto_filename(share, unixname)) {
 		ksmbd_debug(SMB,
 			"file(%s) open is not allowed by setting as veto file\n",
 				unixname);
-		kfree(unixname);
-		return ERR_PTR(-ENOENT);
+		rc = -ENOENT;
+		goto err_unixname;
 	}
 
+	kfree(name);
 	ksmbd_debug(SMB, "absolute name = %s\n", unixname);
 	return unixname;
+
+err_unixname:
+	kfree(unixname);
+err_pattern:
+	kfree(pattern);
+err_name:
+	kfree(name);
+
+	if (rc == -EINVAL)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+	else if (rc == -ENOMEM)
+		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
+	else if (rc == -ENOENT)
+		rsp_hdr->Status.CifsError = STATUS_OBJECT_NAME_INVALID;
+
+	return ERR_PTR(rc);
 }
 
 /**
@@ -926,7 +936,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 	name = smb_strndup_from_utf16((req->CaseInsensitivePassword + offset +
 				1), 256, true, conn->local_nls);
 	if (IS_ERR(name)) {
-		ksmbd_err("cannot allocate memory\n");
+		pr_err("cannot allocate memory\n");
 		err = PTR_ERR(name);
 		goto out_err;
 	}
@@ -937,7 +947,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 	sess->user = ksmbd_login_user(name);
 	kfree(name);
 	if (!sess->user) {
-		ksmbd_err("user not present in database\n");
+		pr_err("user not present in database\n");
 		err = -EINVAL;
 		goto out_err;
 	}
@@ -948,7 +958,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 		kfree(conn->ntlmssp_cryptkey);
 		conn->ntlmssp_cryptkey = NULL;
 	} else {
-		ksmbd_err("server challenge is not assigned in negotiate\n");
+		pr_err("server challenge is not assigned in negotiate\n");
 		err = -EINVAL;
 		goto out_err;
 	}
@@ -963,8 +973,8 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 		err = ksmbd_auth_ntlm(sess, req->CaseInsensitivePassword +
 			le16_to_cpu(req->CaseInsensitivePasswordLength));
 		if (err) {
-			ksmbd_err("ntlm authentication failed for user %s\n",
-					user_name(sess->user));
+			pr_err("ntlm authentication failed for user %s\n",
+			       user_name(sess->user));
 			goto out_err;
 		}
 	} else {
@@ -978,7 +988,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 				req->CaseInsensitivePassword +
 				offset + 1, 256, true, conn->local_nls);
 		if (IS_ERR(ntdomain)) {
-			ksmbd_err("cannot allocate memory\n");
+			pr_err("cannot allocate memory\n");
 			err = PTR_ERR(ntdomain);
 			goto out_err;
 		}
@@ -991,8 +1001,8 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 				CIFS_ENCPWD_SIZE, ntdomain);
 		kfree(ntdomain);
 		if (err) {
-			ksmbd_err("authentication failed for user %s\n",
-					user_name(sess->user));
+			pr_err("authentication failed for user %s\n",
+			       user_name(sess->user));
 			goto out_err;
 		}
 	}
@@ -1023,6 +1033,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 	int err = 0, neg_blob_len;
 	unsigned char *spnego_blob;
 	u16 spnego_blob_len;
+	int sz;
 
 	rsp->hdr.WordCount = 4;
 	rsp->Action = 0;
@@ -1033,19 +1044,12 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 	inc_rfc1001_len(&rsp->hdr, 8);
 
 	negblob = (struct negotiate_message *)req->SecurityBlob;
-	err = ksmbd_decode_negTokenInit((char *)negblob,
-			le16_to_cpu(req->SecurityBlobLength), conn);
-	if (!err) {
-		ksmbd_debug(SMB, "negTokenInit parse err %d\n", err);
-		/* If failed, it might be negTokenTarg */
-		err = ksmbd_decode_negTokenTarg((char *)negblob,
-				le16_to_cpu(req->SecurityBlobLength),
-				conn);
-		if (!err) {
-			ksmbd_debug(SMB, "negTokenTarg parse err %d\n", err);
+	sz = le16_to_cpu(req->SecurityBlobLength);
+
+	if (ksmbd_decode_negTokenInit((char *)negblob, sz, conn)) {
+		if (ksmbd_decode_negTokenTarg((char *)negblob, sz, conn)) {
 			conn->use_spnego = false;
 		}
-		err = 0;
 	}
 
 	if (conn->mechToken)
@@ -1135,7 +1139,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 				conn->local_nls);
 
 		if (IS_ERR(username)) {
-			ksmbd_err("cannot allocate memory\n");
+			pr_err("cannot allocate memory\n");
 			err = PTR_ERR(username);
 			goto out_err;
 		}
@@ -1182,7 +1186,7 @@ no_password_check:
 			rsp->ByteCount = rsp->SecurityBlobLength;
 		}
 	} else {
-		ksmbd_err("Invalid phase\n");
+		pr_err("Invalid phase\n");
 		err = -EINVAL;
 	}
 
@@ -1227,7 +1231,7 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 	else if (pSMB->req.hdr.WordCount == 13)
 		cap = le32_to_cpu(pSMB->req_no_secext.Capabilities);
 	else {
-		ksmbd_err("malformed packet\n");
+		pr_err("malformed packet\n");
 		work->send_no_response = 1;
 		return 0;
 	}
@@ -1355,17 +1359,31 @@ static int file_create_dispostion_flags(int dispostion, bool file_present)
 	return disp_flags;
 }
 
+static inline int ksmbd_openflags_to_mayflags(int open_flags)
+{
+	int mask = open_flags & O_ACCMODE;
+
+	if (mask == O_WRONLY)
+		return MAY_OPEN | MAY_WRITE;
+	else if (mask == O_RDWR)
+		return MAY_OPEN | MAY_READ | MAY_WRITE;
+	else
+		return MAY_OPEN | MAY_READ;
+}
+
 /**
  * convert_generic_access_flags() - convert access flags to
  *				file open flags
  * @access_flag:	file access flags contained in open request
  * @open_flag:		file open flags are updated as per access flags
+ * @may_flags:		file may flags are updated with @open_flags
  * @attrib:		attribute flag indicating posix symantics or not
  *
  * Return:		access flags
  */
 static int
-convert_generic_access_flags(int access_flag, int *open_flags, int attrib)
+convert_generic_access_flags(int access_flag, int *open_flags,
+			     int *may_flags, int attrib)
 {
 	int aflags = access_flag;
 	int oflags = *open_flags;
@@ -1407,6 +1425,8 @@ convert_generic_access_flags(int access_flag, int *open_flags, int attrib)
 
 	if ((attrib & ATTR_POSIX_SEMANTICS) && (aflags & FILE_APPEND_DATA))
 		*open_flags |= O_APPEND;
+
+	*may_flags = ksmbd_openflags_to_mayflags(*open_flags);
 
 	return aflags;
 }
@@ -1456,7 +1476,7 @@ lock_oplock_release(struct ksmbd_file *fp, int type, int oplock_level)
 
 	opinfo = fp->f_opinfo;
 	if (opinfo->op_state == OPLOCK_STATE_NONE) {
-		ksmbd_err("unexpected oplock state 0x%x\n", opinfo->op_state);
+		pr_err("unexpected oplock state 0x%x\n", opinfo->op_state);
 		return -EINVAL;
 	}
 
@@ -1544,12 +1564,12 @@ int smb_locking_andx(struct ksmbd_work *work)
 	/* find fid */
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("cannot obtain fid for %d\n", req->Fid);
+		pr_err("cannot obtain fid for %d\n", req->Fid);
 		return -EINVAL;
 	}
 
 	if (req->LockType & LOCKING_ANDX_OPLOCK_RELEASE) {
-		ksmbd_err("lock type is oplock release\n");
+		pr_err("lock type is oplock release\n");
 		err = lock_oplock_release(fp, req->LockType, req->OplockLevel);
 	}
 
@@ -1566,7 +1586,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 		lock_ele32 = (struct locking_andx_range32 *)req->Locks;
 
 	if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE) {
-		ksmbd_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
+		pr_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
 		rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
 		rsp->hdr.Status.DosError.Error = cpu_to_le16(ERRnoatomiclocks);
 		rsp->hdr.Flags2 &= ~SMBFLG2_ERR_STATUS;
@@ -1574,7 +1594,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	}
 
 	if (req->LockType & LOCKING_ANDX_CANCEL_LOCK)
-		ksmbd_err("lock type: LOCKING_ANDX_CANCEL_LOCK\n");
+		pr_err("lock type: LOCKING_ANDX_CANCEL_LOCK\n");
 
 	for (i = 0; i < lock_count; i++) {
 		flock = smb_flock_init(filp);
@@ -1582,7 +1602,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 			goto out;
 
 		if (req->LockType & LOCKING_ANDX_SHARED_LOCK) {
-			ksmbd_err("received shared request\n");
+			pr_err("received shared request\n");
 			if (!(filp->f_mode & FMODE_READ)) {
 				rsp->hdr.Status.CifsError =
 					STATUS_ACCESS_DENIED;
@@ -1591,7 +1611,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 			cmd = F_SETLKW;
 			flock->fl_type = F_RDLCK;
 		} else {
-			ksmbd_err("received exclusive request\n");
+			pr_err("received exclusive request\n");
 			if (!(filp->f_mode & FMODE_WRITE)) {
 				rsp->hdr.Status.CifsError =
 					STATUS_ACCESS_DENIED;
@@ -1619,14 +1639,14 @@ int smb_locking_andx(struct ksmbd_work *work)
 		}
 
 		if (offset > loff_max) {
-			ksmbd_err("Invalid lock range requested\n");
+			pr_err("Invalid lock range requested\n");
 			rsp->hdr.Status.CifsError =
 				STATUS_INVALID_LOCK_RANGE;
 			goto out;
 		}
 
 		if (offset > 0 && length > (loff_max - offset) + 1) {
-			ksmbd_err("Invalid lock range requested\n");
+			pr_err("Invalid lock range requested\n");
 			rsp->hdr.Status.CifsError =
 				STATUS_INVALID_LOCK_RANGE;
 			goto out;
@@ -1671,19 +1691,19 @@ int smb_locking_andx(struct ksmbd_work *work)
 			if (cmp_lock->zero_len && !smb_lock->zero_len &&
 					cmp_lock->start > smb_lock->start &&
 					cmp_lock->start < smb_lock->end) {
-				ksmbd_err("previous lock conflict with zero byte lock range\n");
+				pr_err("previous lock conflict with zero byte lock range\n");
 				err = -EPERM;
 			} else if (smb_lock->zero_len && !cmp_lock->zero_len &&
 				smb_lock->start > cmp_lock->start &&
 				smb_lock->start < cmp_lock->end) {
-				ksmbd_err("current lock conflict with zero byte lock range\n");
+				pr_err("current lock conflict with zero byte lock range\n");
 				err = -EPERM;
 			} else if (((cmp_lock->start <= smb_lock->start &&
 				cmp_lock->end > smb_lock->start) ||
 				(cmp_lock->start < smb_lock->end &&
 				 cmp_lock->end >= smb_lock->end)) &&
 				!cmp_lock->zero_len && !smb_lock->zero_len) {
-				ksmbd_err("Not allow lock operation on exclusive lock range\n");
+				pr_err("Not allow lock operation on exclusive lock range\n");
 				err = -EPERM;
 			}
 
@@ -1727,9 +1747,9 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 		flock = smb_lock->fl;
 retry:
-		err = ksmbd_vfs_lock(filp, smb_lock->cmd, flock);
+		err = vfs_lock_file(filp, smb_lock->cmd, flock, NULL);
 		if (err == FILE_LOCK_DEFERRED) {
-			ksmbd_err("would have to wait for getting lock\n");
+			pr_err("would have to wait for getting lock\n");
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
@@ -1747,7 +1767,7 @@ skip:
 			list_add_tail(&smb_lock->glist,
 					&global_lock_list);
 			list_add(&smb_lock->llist, &rollback_list);
-			ksmbd_err("successful in taking lock\n");
+			pr_err("successful in taking lock\n");
 		} else if (err < 0) {
 			rsp->hdr.Status.CifsError = STATUS_LOCK_NOT_GRANTED;
 			goto out;
@@ -1818,7 +1838,7 @@ skip:
 			goto out;
 		}
 
-		err = ksmbd_vfs_lock(filp, cmd, flock);
+		err = vfs_lock_file(filp, cmd, flock, NULL);
 		if (!err) {
 			ksmbd_debug(SMB, "File unlocked\n");
 			list_del(&cmp_lock->glist);
@@ -1863,9 +1883,9 @@ out:
 		rlock->fl_start = smb_lock->start;
 		rlock->fl_end = smb_lock->end;
 
-		err = ksmbd_vfs_lock(filp, 0, rlock);
+		err = vfs_lock_file(filp, 0, rlock, NULL);
 		if (err)
-			ksmbd_err("rollback unlock fail : %d\n", err);
+			pr_err("rollback unlock fail : %d\n", err);
 		list_del(&smb_lock->llist);
 		list_del(&smb_lock->glist);
 		locks_free_lock(smb_lock->fl);
@@ -1874,7 +1894,7 @@ out:
 	}
 
 	ksmbd_fd_put(work, fp);
-	ksmbd_err("failed in taking lock\n");
+	pr_err("failed in taking lock\n");
 	return err;
 }
 
@@ -1914,7 +1934,7 @@ int smb_trans(struct ksmbd_work *work)
 			conn->local_nls);
 
 	if (IS_ERR(name)) {
-		ksmbd_err("failed to allocate memory\n");
+		pr_err("failed to allocate memory\n");
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return PTR_ERR(name);
 	}
@@ -2106,18 +2126,8 @@ out:
 	case -EINVAL:
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		break;
-	case -EOVERFLOW:
-		rsp->hdr.Status.CifsError = STATUS_BUFFER_OVERFLOW;
-		break;
-	case -ETIMEDOUT:
-		rsp->hdr.Status.CifsError = STATUS_IO_TIMEOUT;
-		break;
-	case -EOPNOTSUPP:
-		rsp->hdr.Status.CifsError = STATUS_NOT_SUPPORTED;
-		break;
-	case -EMFILE:
-		rsp->hdr.Status.CifsError = STATUS_TOO_MANY_OPENED_FILES;
-		break;
+	case -ENOSPC:
+	case -ENOMEM:
 	default:
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		break;
@@ -2143,7 +2153,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
-	int oplock_flags, file_info, open_flags, access_flags;
+	int oplock_flags, file_info, open_flags, may_flags, access_flags;
 	char *name;
 	char *conv_name;
 	bool file_present = true, extended_reply;
@@ -2236,7 +2246,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 
 	if (IS_ERR(name)) {
 		if (PTR_ERR(name) == -ENOMEM) {
-			ksmbd_err("failed to allocate memory\n");
+			pr_err("failed to allocate memory\n");
 			rsp->hdr.Status.CifsError =
 				STATUS_NO_MEMORY;
 		} else
@@ -2313,8 +2323,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
 		if (err) {
-			ksmbd_err("can not stat %s, err = %d\n",
-				conv_name, err);
+			pr_err("can not stat %s, err = %d\n",
+			       conv_name, err);
 			goto free_path;
 		}
 	}
@@ -2385,11 +2395,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		}
 	} else {
 		if (file_present) {
-			err = ksmbd_vfs_inode_permission(path.dentry,
-					open_flags & O_ACCMODE, false);
-			if (err)
-				goto free_path;
-
 			if (S_ISFIFO(stat.mode))
 				open_flags |= O_NONBLOCK;
 		}
@@ -2400,7 +2405,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 
 	access_flags = convert_generic_access_flags(
 			le32_to_cpu(req->DesiredAccess),
-			&open_flags, le32_to_cpu(req->FileAttributes));
+			&open_flags, &may_flags,
+			le32_to_cpu(req->FileAttributes));
 
 	mode |= 0777;
 	if (le32_to_cpu(req->FileAttributes) & ATTR_READONLY)
@@ -2434,17 +2440,28 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		} else {
 			err = ksmbd_vfs_mkdir(work, conv_name, mode);
 			if (err) {
-				ksmbd_err("Can't create directory %s",
-					conv_name);
+				pr_err("Can't create directory %s",
+				       conv_name);
 				goto out;
 			}
 		}
 
 		err = ksmbd_vfs_kern_path(conv_name, 0, &path, 0);
 		if (err) {
-			ksmbd_err("cannot get linux path, err = %d\n", err);
+			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
+	} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
+		if (err)
+			goto free_path;
 	}
 
 	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
@@ -2487,7 +2504,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	} else {
 		if (ksmbd_inode_pending_delete(fp)) {
 			err = -EBUSY;
-			goto out;
+			goto free_path;
 		}
 
 		if (share_ret < 0) {
@@ -2516,7 +2533,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 		AT_STATX_SYNC_AS_STAT);
 	if (err) {
-		ksmbd_err("cannot get stat information\n");
+		pr_err("cannot get stat information\n");
 		goto free_path;
 	}
 
@@ -2526,8 +2543,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		if (alloc_size > stat.size) {
 			err = ksmbd_vfs_truncate(work, NULL, fp, alloc_size);
 			if (err) {
-				ksmbd_err("failed to expand file, err = %d\n",
-						err);
+				pr_err("failed to expand file, err = %d\n",
+				       err);
 				goto free_path;
 			}
 		}
@@ -2719,7 +2736,7 @@ int smb_close(struct ksmbd_work *work)
 	 */
 	if (req->LastWriteTime > 0 &&
 	    le32_to_cpu(req->LastWriteTime) < 0xFFFFFFFF)
-		ksmbd_info("need to set last modified time before close\n");
+		pr_info("need to set last modified time before close\n");
 
 	err = ksmbd_close_fd(work, req->FileID);
 
@@ -2826,8 +2843,8 @@ int smb_read_andx(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %d\n",
-			req->Fid);
+		pr_err("failed to get filp for fid %d\n",
+		       req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -2860,14 +2877,10 @@ int smb_read_andx(struct ksmbd_work *work)
 		count = CIFS_DEFAULT_IOSIZE;
 	}
 
-	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF) {
-		work->aux_payload_buf = ksmbd_find_buffer(count);
-		work->set_read_buf = true;
-	} else
-		work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
+	work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -2942,7 +2955,7 @@ int smb_write(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req->Fid);
+		pr_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -2951,8 +2964,8 @@ int smb_write(struct ksmbd_work *work)
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
 
-	ksmbd_debug(SMB, "filename %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 	if (!count) {
 		err = ksmbd_vfs_truncate(work, NULL, fp, pos);
 		nbytes = 0;
@@ -3070,7 +3083,7 @@ int smb_write_andx(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req->Fid);
+		pr_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -3105,9 +3118,9 @@ int smb_write_andx(struct ksmbd_work *work)
 		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
 				(le16_to_cpu(req->DataOffset) +
 				 count > get_rfc1002_len(req))) {
-			ksmbd_err("invalid write data offset %u, smb_len %u\n",
-					le16_to_cpu(req->DataOffset),
-					get_rfc1002_len(req));
+			pr_err("invalid write data offset %u, smb_len %u\n",
+			       le16_to_cpu(req->DataOffset),
+			       get_rfc1002_len(req));
 			err = -EINVAL;
 			goto out;
 		}
@@ -3116,8 +3129,8 @@ int smb_write_andx(struct ksmbd_work *work)
 				le16_to_cpu(req->DataOffset));
 	}
 
-	ksmbd_debug(SMB, "filname %s, offset %lld, count %zu\n",
-		FP_FILENAME(fp), pos, count);
+	ksmbd_debug(SMB, "filname %pd, offset %lld, count %zu\n",
+		    fp->filp->f_path.dentry, pos, count);
 	err = ksmbd_vfs_write(work, fp, data_buf, count, &pos,
 			      writethrough, &nbytes);
 	if (err < 0)
@@ -3369,8 +3382,8 @@ static int unix_info_to_attr(struct file_unix_basic_info *unix_info,
 		attrs->ia_mode |= S_IFSOCK;
 		break;
 	default:
-		ksmbd_err("unknown file type 0x%x\n",
-				le32_to_cpu(unix_info->Type));
+		pr_err("unknown file type 0x%x\n",
+		       le32_to_cpu(unix_info->Type));
 	}
 
 	return 0;
@@ -3724,6 +3737,19 @@ out:
 	return rc;
 }
 
+static void *ksmbd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
+{
+	size_t sz = min(old_sz, new_sz);
+	void *nptr;
+
+	nptr = kvmalloc(new_sz, GFP_KERNEL | __GFP_ZERO);
+	if (!nptr)
+		return ptr;
+	memcpy(nptr, ptr, sz);
+	kvfree(ptr);
+	return nptr;
+}
+
 /**
  * smb_readlink() - handler for reading symlink source path
  * @work:	smb work containing query link information
@@ -3973,13 +3999,13 @@ static int query_path_info(struct ksmbd_work *work)
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 		if (d_is_symlink(path.dentry)) {
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
-			goto out;
+			goto err_out;
 		}
 	}
 
 	rc = vfs_getattr(&path, &st, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
 	if (rc) {
-		ksmbd_err("cannot get stat information\n");
+		pr_err("cannot get stat information\n");
 		goto err_out;
 	}
 
@@ -4384,8 +4410,8 @@ static int query_path_info(struct ksmbd_work *work)
 			goto err_out;
 		break;
 	default:
-		ksmbd_err("query path info not implemnted for %x\n",
-				le16_to_cpu(req_params->InformationLevel));
+		pr_err("query path info not implemnted for %x\n",
+		       le16_to_cpu(req_params->InformationLevel));
 		rc = -EINVAL;
 		goto err_out;
 	}
@@ -4445,13 +4471,13 @@ static int set_fs_info(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "SMB_SET_CIFS_UNIX_INFO\n");
 		if (le16_to_cpu(req->ClientUnixMajor) !=
 			CIFS_UNIX_MAJOR_VERSION) {
-			ksmbd_err("Non compatible unix major info\n");
+			pr_err("Non compatible unix major info\n");
 			return -EINVAL;
 		}
 
 		if (le16_to_cpu(req->ClientUnixMinor) !=
 			CIFS_UNIX_MINOR_VERSION) {
-			ksmbd_err("Non compatible unix minor info\n");
+			pr_err("Non compatible unix minor info\n");
 			return -EINVAL;
 		}
 
@@ -4531,13 +4557,13 @@ static int query_fs_info(struct ksmbd_work *work)
 	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
 	if (rc) {
 		ksmbd_revert_fsids(work);
-		ksmbd_err("cannot create vfs path\n");
+		pr_err("cannot create vfs path\n");
 		return rc;
 	}
 
 	rc = vfs_statfs(&path, &stfs);
 	if (rc) {
-		ksmbd_err("cannot do stat of path %s\n", share->path);
+		pr_err("cannot do stat of path %s\n", share->path);
 		goto err_out;
 	}
 
@@ -4596,7 +4622,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		/* query fs info device info response is 0 word and 8 bytes */
 		ksmbd_debug(SMB, "GOT SMB_QUERY_FS_DEVICE_INFO\n");
 		if (le16_to_cpu(req->MaxDataCount) < 8) {
-			ksmbd_err("Insufficient bytes, cannot response()\n");
+			pr_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4616,7 +4642,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		info = (struct filesystem_attribute_info *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			ksmbd_err("Insufficient bytes, cannot response()\n");
+			pr_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4638,7 +4664,7 @@ static int query_fs_info(struct ksmbd_work *work)
 		uinfo = (struct filesystem_unix_info *)(&rsp->Pad + 1);
 
 		if (le16_to_cpu(req->MaxDataCount) < 12) {
-			ksmbd_err("Insufficient bytes, cannot response()\n");
+			pr_err("Insufficient bytes, cannot response()\n");
 			rc = -EINVAL;
 			goto err_out;
 		}
@@ -4687,7 +4713,7 @@ err_out:
  *
  * Return:	file open flags
  */
-static __u32 smb_posix_convert_flags(__u32 flags)
+static __u32 smb_posix_convert_flags(__u32 flags, int *may_flags)
 {
 	__u32 posix_flags = 0;
 
@@ -4706,6 +4732,8 @@ static __u32 smb_posix_convert_flags(__u32 flags)
 		posix_flags |= O_NOFOLLOW;
 	if (flags & SMB_O_APPEND)
 		posix_flags |= O_APPEND;
+
+	*may_flags = ksmbd_openflags_to_mayflags(posix_flags);
 
 	return posix_flags;
 }
@@ -4763,7 +4791,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 	struct path path;
 	struct kstat stat;
 	__u16 data_offset, rsp_info_level, file_info = 0;
-	__u32 oplock_flags, posix_open_flags;
+	__u32 oplock_flags, posix_open_flags, may_flags;
 	umode_t mode;
 	char *name;
 	bool file_present = true;
@@ -4806,7 +4834,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
 		if (err) {
-			ksmbd_err("can not stat %s, err = %d\n", name, err);
+			pr_err("can not stat %s, err = %d\n", name, err);
 			goto free_path;
 		}
 	}
@@ -4817,7 +4845,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 	oplock_flags = le32_to_cpu(psx_req->OpenFlags);
 
 	posix_open_flags = smb_posix_convert_flags(
-			le32_to_cpu(psx_req->PosixOpenFlags));
+			le32_to_cpu(psx_req->PosixOpenFlags),
+			&may_flags);
 	err = smb_get_disposition(le32_to_cpu(psx_req->PosixOpenFlags),
 			file_present, &stat,
 			&posix_open_flags);
@@ -4839,7 +4868,10 @@ static int smb_posix_open(struct ksmbd_work *work)
 			err = -EACCES;
 			ksmbd_debug(SMB,
 				"returning as user does not have permission to write\n");
-			goto out;
+			if (file_present)
+				goto free_path;
+			else
+				goto out;
 		}
 	}
 
@@ -4856,7 +4888,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
-			ksmbd_err("cannot get linux path, err = %d\n", err);
+			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
 		ksmbd_debug(SMB, "mkdir done for %s, inode %lu\n",
@@ -4871,12 +4903,18 @@ static int smb_posix_open(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
-			ksmbd_err("cannot get linux path, err = %d\n", err);
+			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
 	} else if (file_present) {
-		err = ksmbd_vfs_inode_permission(path.dentry,
-				posix_open_flags & O_ACCMODE, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
 		if (err)
 			goto free_path;
 	}
@@ -4942,7 +4980,7 @@ prepare_rsp:
 	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 		AT_STATX_SYNC_AS_STAT);
 	if (err) {
-		ksmbd_err("cannot get stat information\n");
+		pr_err("cannot get stat information\n");
 		goto free_path;
 	}
 
@@ -5501,8 +5539,8 @@ static int set_path_info(struct ksmbd_work *work)
 	total_param = le16_to_cpu(pSMB_req->TotalParameterCount);
 	if (total_param < 7) {
 		pSMB_rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
-		ksmbd_err("invalid total parameter for info_level 0x%x\n",
-				total_param);
+		pr_err("invalid total parameter for info_level 0x%x\n",
+		       total_param);
 		return -EINVAL;
 	}
 
@@ -5611,7 +5649,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 
 	if (next_entry_offset > d_info->out_buf_len) {
 		kfree(conv_name);
-		d_info->out_buf_len = 0;
+		d_info->out_buf_len = -1;
 		return -ENOSPC;
 	}
 
@@ -5865,6 +5903,7 @@ static int find_first(struct ksmbd_work *work)
 	char *srch_ptr = NULL;
 	int header_size;
 	unsigned int flags = LOOKUP_FOLLOW;
+	int struct_sz;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 
@@ -5890,11 +5929,6 @@ static int find_first(struct ksmbd_work *work)
 	rc = ksmbd_vfs_kern_path(dirpath, flags | LOOKUP_DIRECTORY,
 			&path, 0);
 	if (rc < 0) {
-		if (rc == -EACCES)
-			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
-		else
-			rsp_hdr->Status.CifsError =
-				STATUS_OBJECT_NAME_NOT_FOUND;
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
 		goto err_out;
@@ -5907,14 +5941,15 @@ static int find_first(struct ksmbd_work *work)
 					MAY_READ | MAY_EXEC)) {
 #endif
 			rc = -EACCES;
-			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			path_put(&path);
 			goto err_out;
 		}
 	}
 
 	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 		if (d_is_symlink(path.dentry)) {
-			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			rc = -EACCES;
+			path_put(&path);
 			goto err_out;
 		}
 	}
@@ -5934,7 +5969,7 @@ static int find_first(struct ksmbd_work *work)
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
 	if (!dir_fp->readdir_data.dirent) {
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+		rc = -ENOMEM;
 		goto err_out;
 	}
 
@@ -5948,23 +5983,32 @@ static int find_first(struct ksmbd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-	if (!d_info.smb1_name)
+	if (!d_info.smb1_name) {
+		rc = -ENOMEM;
 		goto err_out;
+	}
 	d_info.wptr = (char *)((char *)rsp + sizeof(struct smb_com_trans2_rsp) +
 			params_count + data_alignment_offset);
 
 	header_size = sizeof(struct smb_com_trans2_rsp) + params_count +
 		data_alignment_offset;
 
+
+	struct_sz = readdir_info_level_struct_sz(le16_to_cpu(req_params->InformationLevel));
+
+	if (struct_sz < 0) {
+		rc = -EFAULT;
+		goto err_out;
+	}
+
 	/* When search count is zero, respond only 1 entry. */
 	srch_cnt = le16_to_cpu(req_params->SearchCount);
 	if (!srch_cnt)
-		d_info.out_buf_len = sizeof(struct file_unix_info) +
-			header_size;
+		d_info.out_buf_len = struct_sz + header_size;
 	else
-		d_info.out_buf_len = min((int)(srch_cnt *
-				sizeof(struct file_unix_info)) + header_size,
+		d_info.out_buf_len = min_t(int, srch_cnt * struct_sz + header_size,
 				MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
+
 
 	/* reserve dot and dotdot entries in head of buffer in first response */
 	if (!*srch_ptr || is_asterisk(srch_ptr)) {
@@ -5982,8 +6026,7 @@ static int find_first(struct ksmbd_work *work)
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			rc = ksmbd_vfs_readdir(dir_fp->filp,
-					       &dir_fp->readdir_data);
+			rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
 			if (rc < 0) {
 				ksmbd_debug(SMB, "err : %d\n", rc);
 				goto err_out;
@@ -6015,7 +6058,7 @@ static int find_first(struct ksmbd_work *work)
 		ksmbd_kstat.kstat = &kstat;
 
 		if (de->namelen > NAME_MAX) {
-			ksmbd_err("filename length exceeds 255 bytes.\n");
+			pr_err("filename length exceeds 255 bytes.\n");
 			continue;
 		}
 		memcpy(d_info.smb1_name, de->name, de->namelen);
@@ -6046,15 +6089,16 @@ static int find_first(struct ksmbd_work *work)
 				le16_to_cpu(req_params->InformationLevel),
 				&d_info,
 				&ksmbd_kstat);
-			if (rc)
+			if (rc == -ENOSPC)
+				break;
+			else if (rc)
 				goto err_out;
 		}
 	} while (d_info.out_buf_len >= 0);
 
 	if (!d_info.data_count && *srch_ptr) {
 		ksmbd_debug(SMB, "There is no entry matched with the search pattern\n");
-		rsp->hdr.Status.CifsError = STATUS_NO_SUCH_FILE;
-		rc = -EINVAL;
+		rc = -ENOENT;
 		goto err_out;
 	}
 
@@ -6107,6 +6151,21 @@ static int find_first(struct ksmbd_work *work)
 	return 0;
 
 err_out:
+	if (rc == -EINVAL)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+	else if (rc == -EACCES)
+		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+	else if (rc == -ENOENT)
+		rsp_hdr->Status.CifsError = STATUS_NO_SUCH_FILE;
+	else if (rc == -EBADF)
+		rsp_hdr->Status.CifsError = STATUS_FILE_CLOSED;
+	else if (rc == -ENOMEM)
+		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
+	else if (rc == -EFAULT)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_LEVEL;
+	if (!rsp->hdr.Status.CifsError)
+		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+
 	if (dir_fp) {
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
@@ -6115,9 +6174,6 @@ err_out:
 		path_put(&(dir_fp->filp->f_path));
 		ksmbd_close_fd(work, dir_fp->volatile_id);
 	}
-
-	if (rsp->hdr.Status.CifsError == 0)
-		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(srch_ptr);
 	kfree(d_info.smb1_name);
@@ -6155,7 +6211,7 @@ static int find_next(struct ksmbd_work *work)
 	char *dirpath = NULL;
 	char *name = NULL;
 	char *pathname = NULL;
-	int header_size;
+	int header_size, srch_cnt, struct_sz;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 
@@ -6183,7 +6239,6 @@ static int find_next(struct ksmbd_work *work)
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
 	if (!pathname) {
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -6200,24 +6255,31 @@ static int find_next(struct ksmbd_work *work)
 		data_alignment_offset = 4 - params_count % 4;
 
 	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
-	if (!d_info.smb1_name)
+	if (!d_info.smb1_name) {
+		rc = -ENOMEM;
 		goto err_out;
+	}
 	d_info.wptr = (char *)((char *)rsp + sizeof(struct smb_com_trans2_rsp) +
 			params_count + data_alignment_offset);
 
 	header_size = sizeof(struct smb_com_trans2_rsp) + params_count +
 		data_alignment_offset;
 
-	d_info.out_buf_len = min((int)(le16_to_cpu(req_params->SearchCount) *
-				       sizeof(struct file_unix_info)) +
-				       header_size,
+	srch_cnt = le16_to_cpu(req_params->SearchCount);
+	struct_sz = readdir_info_level_struct_sz(le16_to_cpu(req_params->InformationLevel));
+
+	if (struct_sz < 0) {
+		rc = -EFAULT;
+		goto err_out;
+	}
+
+	d_info.out_buf_len = min_t(int, srch_cnt * struct_sz + header_size,
 				 MAX_CIFS_LOOKUP_BUFFER_SIZE - header_size);
 	do {
 		if (dir_fp->dirent_offset >= dir_fp->readdir_data.used) {
 			dir_fp->dirent_offset = 0;
 			dir_fp->readdir_data.used = 0;
-			rc = ksmbd_vfs_readdir(dir_fp->filp,
-					       &dir_fp->readdir_data);
+			rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
 			if (rc < 0) {
 				ksmbd_debug(SMB, "err : %d\n", rc);
 				goto err_out;
@@ -6254,7 +6316,7 @@ static int find_next(struct ksmbd_work *work)
 		ksmbd_kstat.kstat = &kstat;
 
 		if (de->namelen > NAME_MAX) {
-			ksmbd_err("filename length exceeds 255 bytes.\n");
+			pr_err("filename length exceeds 255 bytes.\n");
 			continue;
 		}
 		memcpy(d_info.smb1_name, de->name, de->namelen);
@@ -6283,7 +6345,9 @@ static int find_next(struct ksmbd_work *work)
 		rc = smb_populate_readdir_entry(conn,
 			le16_to_cpu(req_params->InformationLevel), &d_info,
 			&ksmbd_kstat);
-		if (rc)
+		if (rc == -ENOSPC)
+			break;
+		else if (rc)
 			goto err_out;
 
 	} while (d_info.out_buf_len >= 0);
@@ -6337,6 +6401,21 @@ static int find_next(struct ksmbd_work *work)
 	return 0;
 
 err_out:
+	if (rc == -EINVAL)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+	else if (rc == -EACCES)
+		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+	else if (rc == -ENOENT)
+		rsp_hdr->Status.CifsError = STATUS_NO_SUCH_FILE;
+	else if (rc == -EBADF)
+		rsp_hdr->Status.CifsError = STATUS_FILE_CLOSED;
+	else if (rc == -ENOMEM)
+		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
+	else if (rc == -EFAULT)
+		rsp_hdr->Status.CifsError = STATUS_INVALID_LEVEL;
+	if (!rsp->hdr.Status.CifsError)
+		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+
 	if (dir_fp) {
 		if (dir_fp->readdir_data.dirent)  {
 			free_page((unsigned long)(dir_fp->readdir_data.dirent));
@@ -6345,10 +6424,6 @@ err_out:
 		path_put(&(dir_fp->filp->f_path));
 		ksmbd_close_fd(work, sid);
 	}
-
-	if (rsp->hdr.Status.CifsError == 0)
-		rsp->hdr.Status.CifsError =
-			STATUS_UNEXPECTED_IO_ERROR;
 
 	kfree(d_info.smb1_name);
 	kfree(pathname);
@@ -6381,7 +6456,7 @@ static int smb_set_alloc_size(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req->Fid);
+		pr_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -6460,7 +6535,7 @@ static int smb_set_file_size_finfo(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req->Fid);
+		pr_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -6587,16 +6662,16 @@ static int query_file_info(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req_params->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req_params->Fid);
+		pr_err("failed to get filp for fid %u\n", req_params->Fid);
 		rsp_hdr->Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		rc = -EIO;
 		goto err_out;
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(&init_user_ns, FP_INODE(fp), &st);
+	generic_fillattr(&init_user_ns, file_inode(fp->filp), &st);
 #else
-	generic_fillattr(FP_INODE(fp), &st);
+	generic_fillattr(file_inode(fp->filp), &st);
 #endif
 
 	switch (le16_to_cpu(req_params->InformationLevel)) {
@@ -6835,8 +6910,8 @@ static int query_file_info(struct ksmbd_work *work)
 		break;
 	}
 	default:
-		ksmbd_err("query path info not implemnted for %x\n",
-				le16_to_cpu(req_params->InformationLevel));
+		pr_err("query path info not implemnted for %x\n",
+		       le16_to_cpu(req_params->InformationLevel));
 		rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
 		rc = -EINVAL;
 		goto err_out;
@@ -6936,13 +7011,13 @@ static int smb_set_dispostion(struct ksmbd_work *work)
 			goto err_out;
 		}
 
-		if (!(FP_INODE(fp)->i_mode & 0222)) {
+		if (!(file_inode(fp->filp)->i_mode & 0222)) {
 			rsp->hdr.Status.CifsError = STATUS_CANNOT_DELETE;
 			ret = -EPERM;
 			goto err_out;
 		}
 
-		if (S_ISDIR(FP_INODE(fp)->i_mode) &&
+		if (S_ISDIR(file_inode(fp->filp)->i_mode) &&
 				ksmbd_vfs_empty_dir(fp) == -ENOTEMPTY) {
 			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
 			ret = -ENOTEMPTY;
@@ -7081,7 +7156,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 
 	fp = ksmbd_lookup_fd_fast(work, req->Fid);
 	if (!fp) {
-		ksmbd_err("failed to get filp for fid %u\n", req->Fid);
+		pr_err("failed to get filp for fid %u\n", req->Fid);
 		rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
 		return -ENOENT;
 	}
@@ -7154,8 +7229,8 @@ static int set_file_info(struct ksmbd_work *work)
 	total_param = le16_to_cpu(req->TotalParameterCount);
 	if (total_param < 4) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
-		ksmbd_err("invalid total parameter for info_level 0x%x\n",
-				total_param);
+		pr_err("invalid total parameter for info_level 0x%x\n",
+		       total_param);
 		return -EINVAL;
 	}
 
@@ -7310,7 +7385,7 @@ int smb_trans2(struct ksmbd_work *work)
 	 *		MS-CIFS, SMB COM TRANSACTION
 	 */
 	if (req->SetupCount < 1) {
-		ksmbd_err("Wrong setup count in SMB_TRANS2 - indicates wrong request\n");
+		pr_err("Wrong setup count in SMB_TRANS2 - indicates wrong request\n");
 		rsp_hdr->Status.CifsError = STATUS_UNSUCCESSFUL;
 		return -EINVAL;
 	}
@@ -7688,13 +7763,11 @@ int smb_nt_cancel(struct ksmbd_work *work)
 	struct smb_hdr *hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *work_hdr;
 	struct ksmbd_work *new_work;
-	struct list_head *tmp;
 
 	ksmbd_debug(SMB, "smb cancel called on mid %u\n", hdr->Mid);
 
 	spin_lock(&conn->request_lock);
-	list_for_each(tmp, &conn->requests) {
-		new_work = list_entry(tmp, struct ksmbd_work, request_entry);
+	list_for_each_entry(new_work, &conn->requests, request_entry) {
 		work_hdr = (struct smb_hdr *)new_work->request_buf;
 		if (work_hdr->Mid == hdr->Mid) {
 			ksmbd_debug(SMB, "smb with mid %u cancelled command = 0x%x\n",
@@ -7806,7 +7879,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 
 	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
 	if (err) {
-		ksmbd_err("look up failed err %d\n", err);
+		pr_err("look up failed err %d\n", err);
 
 		if (!test_share_config_flag(share,
 			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
@@ -7824,6 +7897,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 #else
 	generic_fillattr(d_inode(path.dentry), st);
 #endif
+	path_put(&path);
 out:
 	ksmbd_revert_fsids(work);
 	kfree(name);
@@ -7911,7 +7985,9 @@ int smb_closedir(struct ksmbd_work *work)
  *
  * Return:	converted file open flags
  */
-static int convert_open_flags(bool file_present, __u16 mode, __u16 dispostion)
+static int convert_open_flags(bool file_present,
+			      __u16 mode, __u16 dispostion,
+			      int *may_flags)
 {
 	int oflags = 0;
 
@@ -7958,6 +8034,8 @@ static int convert_open_flags(bool file_present, __u16 mode, __u16 dispostion)
 		}
 	}
 
+	*may_flags = ksmbd_openflags_to_mayflags(oflags);
+
 	return oflags;
 }
 
@@ -7975,7 +8053,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	struct kstat stat;
-	int oplock_flags, file_info, open_flags;
+	int oplock_flags, file_info, open_flags, may_flags;
 	char *name;
 	bool file_present = true;
 	umode_t mode = 0;
@@ -8038,8 +8116,10 @@ int smb_open_andx(struct ksmbd_work *work)
 	oplock_flags = le16_to_cpu(req->OpenFlags) &
 		(REQ_OPLOCK | REQ_BATCHOPLOCK);
 
-	open_flags = convert_open_flags(file_present, le16_to_cpu(req->Mode),
-			le16_to_cpu(req->OpenFunction));
+	open_flags = convert_open_flags(file_present,
+					le16_to_cpu(req->Mode),
+					le16_to_cpu(req->OpenFunction),
+					&may_flags);
 	if (open_flags < 0) {
 		ksmbd_debug(SMB, "create_dispostion returned %d\n", open_flags);
 		if (file_present)
@@ -8072,7 +8152,7 @@ int smb_open_andx(struct ksmbd_work *work)
 
 		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
 		if (err) {
-			ksmbd_err("cannot get linux path, err = %d\n", err);
+			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
@@ -8081,8 +8161,14 @@ int smb_open_andx(struct ksmbd_work *work)
 		generic_fillattr(d_inode(path.dentry), &stat);
 #endif
 	} else if (file_present) {
-		err = ksmbd_vfs_inode_permission(path.dentry,
-				open_flags & O_ACCMODE, false);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		err = inode_permission(&init_user_ns,
+				       d_inode(path.dentry),
+				       may_flags);
+#else
+		err = inode_permission(d_inode(path.dentry),
+				       may_flags);
+#endif
 		if (err)
 			goto free_path;
 	}

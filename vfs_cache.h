@@ -26,15 +26,6 @@
 #define KSMBD_NO_FID		(UINT_MAX)
 #define SMB2_NO_FID		(0xFFFFFFFFFFFFFFFFULL)
 
-#define FP_FILENAME(fp)		fp->filp->f_path.dentry->d_name.name
-#define FP_INODE(fp)		d_inode(fp->filp->f_path.dentry)
-#define PARENT_INODE(fp)	d_inode(fp->filp->f_path.dentry->d_parent)
-
-#define ATTR_FP(fp) (fp->attrib_only && \
-		(fp->cdoption != FILE_OVERWRITE_IF_LE && \
-		fp->cdoption != FILE_OVERWRITE_LE && \
-		fp->cdoption != FILE_SUPERSEDE_LE))
-
 struct ksmbd_conn;
 struct ksmbd_session;
 
@@ -151,7 +142,7 @@ int ksmbd_close_fd(struct ksmbd_work *work, unsigned int id);
 struct ksmbd_file *ksmbd_lookup_fd_fast(struct ksmbd_work *work, unsigned int id);
 struct ksmbd_file *ksmbd_lookup_foreign_fd(struct ksmbd_work *work, unsigned int id);
 struct ksmbd_file *ksmbd_lookup_fd_slow(struct ksmbd_work *work, unsigned int id,
-		unsigned int pid);
+					unsigned int pid);
 void ksmbd_fd_put(struct ksmbd_work *work, struct ksmbd_file *fp);
 struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id);
 struct ksmbd_file *ksmbd_lookup_fd_cguid(char *cguid);
@@ -187,4 +178,6 @@ void ksmbd_set_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_clear_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 				  int file_info);
+int ksmbd_init_file_cache(void);
+void ksmbd_exit_file_cache(void);
 #endif /* __VFS_CACHE_H__ */

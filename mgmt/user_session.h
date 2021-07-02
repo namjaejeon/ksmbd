@@ -14,9 +14,9 @@
 #include "../ntlmssp.h"
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
-#define CIFDS_SESSION_FLAG_SMB1		(1 << 0)
+#define CIFDS_SESSION_FLAG_SMB1		BIT(0)
 #endif
-#define CIFDS_SESSION_FLAG_SMB2		(1 << 1)
+#define CIFDS_SESSION_FLAG_SMB2		BIT(1)
 
 #define PREAUTH_HASHVALUE_SIZE		64
 
@@ -30,8 +30,8 @@ struct channel {
 
 struct preauth_session {
 	__u8			Preauth_HashValue[PREAUTH_HASHVALUE_SIZE];
-	u64			sess_id;
-	struct list_head	list_entry;
+	u64			id;
+	struct list_head	preauth_entry;
 };
 
 struct ksmbd_session {
@@ -58,10 +58,8 @@ struct ksmbd_session {
 	struct ida			tree_conn_ida;
 	struct list_head		rpc_handle_list;
 
-
-
-	__u8				smb3encryptionkey[SMB3_SIGN_KEY_SIZE];
-	__u8				smb3decryptionkey[SMB3_SIGN_KEY_SIZE];
+	__u8				smb3encryptionkey[SMB3_ENC_DEC_KEY_SIZE];
+	__u8				smb3decryptionkey[SMB3_ENC_DEC_KEY_SIZE];
 	__u8				smb3signingkey[SMB3_SIGN_KEY_SIZE];
 
 	struct list_head		sessions_entry;
@@ -91,13 +89,18 @@ struct ksmbd_session *ksmbd_smb2_session_create(void);
 
 void ksmbd_session_destroy(struct ksmbd_session *sess);
 
-bool ksmbd_session_id_match(struct ksmbd_session *sess, unsigned long long id);
 struct ksmbd_session *ksmbd_session_lookup_slowpath(unsigned long long id);
 struct ksmbd_session *ksmbd_session_lookup(struct ksmbd_conn *conn,
 					   unsigned long long id);
 void ksmbd_session_register(struct ksmbd_conn *conn,
 			    struct ksmbd_session *sess);
 void ksmbd_sessions_deregister(struct ksmbd_conn *conn);
+struct ksmbd_session *ksmbd_session_lookup_all(struct ksmbd_conn *conn,
+					       unsigned long long id);
+struct preauth_session *ksmbd_preauth_session_alloc(struct ksmbd_conn *conn,
+						    u64 sess_id);
+struct preauth_session *ksmbd_preauth_session_lookup(struct ksmbd_conn *conn,
+						     unsigned long long id);
 
 int ksmbd_acquire_tree_conn_id(struct ksmbd_session *sess);
 void ksmbd_release_tree_conn_id(struct ksmbd_session *sess, int id);

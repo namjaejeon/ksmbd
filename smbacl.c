@@ -14,7 +14,6 @@
 #include "smb_common.h"
 #include "server.h"
 #include "misc.h"
-#include "ksmbd_server.h"
 #include "mgmt/share_config.h"
 
 static const struct smb_sid domain = {1, 4, {0, 0, 0, 0, 0, 5},
@@ -131,7 +130,7 @@ static void smb_copy_sid(struct smb_sid *dst, const struct smb_sid *src)
  * bits to set can be: S_IRWXU, S_IRWXG or S_IRWXO ie 00700 or 00070 or 00007
  */
 static umode_t access_flags_to_mode(struct smb_fattr *fattr, __le32 ace_flags,
-		int type)
+				    int type)
 {
 	__u32 flags = le32_to_cpu(ace_flags);
 	umode_t mode = 0;
@@ -166,7 +165,7 @@ static umode_t access_flags_to_mode(struct smb_fattr *fattr, __le32 ace_flags,
  * with either owner or group or everyone.
  */
 static void mode_to_access_flags(umode_t mode, umode_t bits_to_use,
-		__u32 *pace_flags)
+				 __u32 *pace_flags)
 {
 	/* reset access mask */
 	*pace_flags = 0x0;
@@ -187,12 +186,12 @@ static void mode_to_access_flags(umode_t mode, umode_t bits_to_use,
 		*pace_flags |= SET_FILE_EXEC_RIGHTS;
 
 	ksmbd_debug(SMB, "mode: %o, access flags now 0x%x\n",
-		 mode, *pace_flags);
+		    mode, *pace_flags);
 }
 
 static __u16 fill_ace_for_sid(struct smb_ace *pntace,
-		const struct smb_sid *psid, int type, int flags,
-		umode_t mode, umode_t bits)
+			      const struct smb_sid *psid, int type, int flags,
+			      umode_t mode, umode_t bits)
 {
 	int i;
 	__u16 size = 0;
@@ -255,7 +254,7 @@ void id_to_sid(unsigned int cid, uint sidtype, struct smb_sid *ssid)
 }
 
 static int sid_to_id(struct smb_sid *psid, uint sidtype,
-		struct smb_fattr *fattr)
+		     struct smb_fattr *fattr)
 {
 	int rc = -EINVAL;
 
@@ -264,8 +263,8 @@ static int sid_to_id(struct smb_sid *psid, uint sidtype,
 	 * Just return an error.
 	 */
 	if (unlikely(psid->num_subauth > SID_MAX_SUB_AUTHORITIES)) {
-		ksmbd_err("%s: %u subauthorities is too many!\n",
-			 __func__, psid->num_subauth);
+		pr_err("%s: %u subauthorities is too many!\n",
+		       __func__, psid->num_subauth);
 		return -EIO;
 	}
 
@@ -299,7 +298,7 @@ static int sid_to_id(struct smb_sid *psid, uint sidtype,
 }
 
 void posix_state_to_acl(struct posix_acl_state *state,
-		struct posix_acl_entry *pace)
+			struct posix_acl_entry *pace)
 {
 	int i;
 
@@ -364,8 +363,8 @@ void free_acl_state(struct posix_acl_state *state)
 }
 
 static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
-		struct smb_sid *pownersid, struct smb_sid *pgrpsid,
-		struct smb_fattr *fattr)
+		       struct smb_sid *pownersid, struct smb_sid *pgrpsid,
+		       struct smb_fattr *fattr)
 {
 	int i, ret;
 	int num_aces = 0;
@@ -383,13 +382,13 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 	/* validate that we do not go past end of acl */
 	if (end_of_acl <= (char *)pdacl ||
 	    end_of_acl < (char *)pdacl + le16_to_cpu(pdacl->size)) {
-		ksmbd_err("ACL too small to parse DACL\n");
+		pr_err("ACL too small to parse DACL\n");
 		return;
 	}
 
 	ksmbd_debug(SMB, "DACL revision %d size %d num aces %d\n",
-		 le16_to_cpu(pdacl->revision), le16_to_cpu(pdacl->size),
-		 le32_to_cpu(pdacl->num_aces));
+		    le16_to_cpu(pdacl->revision), le16_to_cpu(pdacl->size),
+		    le32_to_cpu(pdacl->num_aces));
 
 	acl_base = (char *)pdacl;
 	acl_size = sizeof(struct smb_acl);
@@ -401,8 +400,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 	if (num_aces > ULONG_MAX / sizeof(struct smb_ace *))
 		return;
 
-	ppace = kmalloc_array(num_aces, sizeof(struct smb_ace *),
-			GFP_KERNEL);
+	ppace = kmalloc_array(num_aces, sizeof(struct smb_ace *), GFP_KERNEL);
 	if (!ppace)
 		return;
 
@@ -433,7 +431,8 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 			break;
 		} else if (!compare_sids(&ppace[i]->sid, pownersid)) {
 			acl_mode = access_flags_to_mode(fattr,
-				ppace[i]->access_req, ppace[i]->type);
+							ppace[i]->access_req,
+							ppace[i]->type);
 			acl_mode &= 0700;
 
 			if (!owner_found) {
@@ -445,7 +444,8 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 			   ppace[i]->sid.sub_auth[ppace[i]->sid.num_subauth - 1] ==
 			    DOMAIN_USER_RID_LE) {
 			acl_mode = access_flags_to_mode(fattr,
-				ppace[i]->access_req, ppace[i]->type);
+							ppace[i]->access_req,
+							ppace[i]->type);
 			acl_mode &= 0070;
 			if (!group_found) {
 				mode &= ~(0070);
@@ -454,7 +454,8 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 			group_found = true;
 		} else if (!compare_sids(&ppace[i]->sid, &sid_everyone)) {
 			acl_mode = access_flags_to_mode(fattr,
-				ppace[i]->access_req, ppace[i]->type);
+							ppace[i]->access_req,
+							ppace[i]->type);
 			acl_mode &= 0007;
 			if (!others_found) {
 				mode &= ~(0007);
@@ -471,12 +472,12 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 			struct smb_fattr temp_fattr;
 
 			acl_mode = access_flags_to_mode(fattr, ppace[i]->access_req,
-					ppace[i]->type);
+							ppace[i]->type);
 			temp_fattr.cf_uid = INVALID_UID;
 			ret = sid_to_id(&ppace[i]->sid, SIDOWNER, &temp_fattr);
 			if (ret || uid_eq(temp_fattr.cf_uid, INVALID_UID)) {
-				ksmbd_err("%s: Error %d mapping Owner SID to uid\n",
-						__func__, ret);
+				pr_err("%s: Error %d mapping Owner SID to uid\n",
+				       __func__, ret);
 				continue;
 			}
 
@@ -530,7 +531,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 
 	if (acl_state.users->n || acl_state.groups->n) {
 		acl_state.mask.allow = 0x07;
-		fattr->cf_acls = ksmbd_vfs_posix_acl_alloc(acl_state.users->n +
+		fattr->cf_acls = posix_acl_alloc(acl_state.users->n +
 			acl_state.groups->n + 4, GFP_KERNEL);
 		if (fattr->cf_acls) {
 			cf_pace = fattr->cf_acls->a_entries;
@@ -541,7 +542,7 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 	if (default_acl_state.users->n || default_acl_state.groups->n) {
 		default_acl_state.mask.allow = 0x07;
 		fattr->cf_dacls =
-			ksmbd_vfs_posix_acl_alloc(default_acl_state.users->n +
+			posix_acl_alloc(default_acl_state.users->n +
 			default_acl_state.groups->n + 4, GFP_KERNEL);
 		if (fattr->cf_dacls) {
 			cf_pdace = fattr->cf_dacls->a_entries;
@@ -553,7 +554,8 @@ static void parse_dacl(struct smb_acl *pdacl, char *end_of_acl,
 }
 
 static void set_posix_acl_entries_dacl(struct smb_ace *pndace,
-		struct smb_fattr *fattr, u32 *num_aces, u16 *size, u32 nt_aces_num)
+				       struct smb_fattr *fattr, u32 *num_aces,
+				       u16 *size, u32 nt_aces_num)
 {
 	struct posix_acl_entry *pace;
 	struct smb_sid *sid;
@@ -665,8 +667,9 @@ posix_default_acl:
 }
 
 static void set_ntacl_dacl(struct smb_acl *pndacl, struct smb_acl *nt_dacl,
-		const struct smb_sid *pownersid, const struct smb_sid *pgrpsid,
-		struct smb_fattr *fattr)
+			   const struct smb_sid *pownersid,
+			   const struct smb_sid *pgrpsid,
+			   struct smb_fattr *fattr)
 {
 	struct smb_ace *ntace, *pndace;
 	int nt_num_aces = le32_to_cpu(nt_dacl->num_aces), num_aces = 0;
@@ -711,7 +714,7 @@ static void set_mode_dacl(struct smb_acl *pndacl, struct smb_fattr *fattr)
 	else
 		sid = &sid_unix_users;
 	ace_size = fill_ace_for_sid(pace, sid, ACCESS_ALLOWED, 0,
-			fattr->cf_mode, 0700);
+				    fattr->cf_mode, 0700);
 	pace->sid.sub_auth[pace->sid.num_subauth++] = cpu_to_le32(uid);
 	pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 	pace->size = cpu_to_le16(ace_size + 4);
@@ -720,7 +723,7 @@ static void set_mode_dacl(struct smb_acl *pndacl, struct smb_fattr *fattr)
 
 	/* Group RID */
 	ace_size = fill_ace_for_sid(pace, &sid_unix_groups,
-			ACCESS_ALLOWED, 0, fattr->cf_mode, 0070);
+				    ACCESS_ALLOWED, 0, fattr->cf_mode, 0070);
 	pace->sid.sub_auth[pace->sid.num_subauth++] =
 		cpu_to_le32(from_kgid(&init_user_ns, fattr->cf_gid));
 	pace->size = cpu_to_le16(ace_size + 4);
@@ -733,20 +736,20 @@ static void set_mode_dacl(struct smb_acl *pndacl, struct smb_fattr *fattr)
 
 		/* creator owner */
 		size += fill_ace_for_sid(pace, &creator_owner, ACCESS_ALLOWED,
-				0x0b, fattr->cf_mode, 0700);
+					 0x0b, fattr->cf_mode, 0700);
 		pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 		pace = (struct smb_ace *)((char *)pndace + size);
 
 		/* creator group */
 		size += fill_ace_for_sid(pace, &creator_group, ACCESS_ALLOWED,
-				0x0b, fattr->cf_mode, 0070);
+					 0x0b, fattr->cf_mode, 0070);
 		pace = (struct smb_ace *)((char *)pndace + size);
 		num_aces = 5;
 	}
 
 	/* other */
 	size += fill_ace_for_sid(pace, &sid_everyone, ACCESS_ALLOWED, 0,
-			fattr->cf_mode, 0007);
+				 fattr->cf_mode, 0007);
 
 out:
 	pndacl->num_aces = cpu_to_le32(num_aces);
@@ -760,7 +763,7 @@ static int parse_sid(struct smb_sid *psid, char *end_of_acl)
 	 * bytes long (assuming no sub-auths - e.g. the null SID
 	 */
 	if (end_of_acl < (char *)psid + 8) {
-		ksmbd_err("ACL too small to parse SID %p\n", psid);
+		pr_err("ACL too small to parse SID %p\n", psid);
 		return -EINVAL;
 	}
 
@@ -769,7 +772,7 @@ static int parse_sid(struct smb_sid *psid, char *end_of_acl)
 
 /* Convert CIFS ACL to POSIX form */
 int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
-		struct smb_fattr *fattr)
+		   struct smb_fattr *fattr)
 {
 	int rc = 0;
 	struct smb_sid *owner_sid_ptr, *group_sid_ptr;
@@ -788,10 +791,10 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 	dacloffset = le32_to_cpu(pntsd->dacloffset);
 	dacl_ptr = (struct smb_acl *)((char *)pntsd + dacloffset);
 	ksmbd_debug(SMB,
-		"revision %d type 0x%x ooffset 0x%x goffset 0x%x sacloffset 0x%x dacloffset 0x%x\n",
-		 pntsd->revision, pntsd->type, le32_to_cpu(pntsd->osidoffset),
-		 le32_to_cpu(pntsd->gsidoffset),
-		 le32_to_cpu(pntsd->sacloffset), dacloffset);
+		    "revision %d type 0x%x ooffset 0x%x goffset 0x%x sacloffset 0x%x dacloffset 0x%x\n",
+		    pntsd->revision, pntsd->type, le32_to_cpu(pntsd->osidoffset),
+		    le32_to_cpu(pntsd->gsidoffset),
+		    le32_to_cpu(pntsd->sacloffset), dacloffset);
 
 	pntsd_type = le16_to_cpu(pntsd->type);
 	if (!(pntsd_type & DACL_PRESENT)) {
@@ -804,14 +807,14 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 	if (pntsd->osidoffset) {
 		rc = parse_sid(owner_sid_ptr, end_of_acl);
 		if (rc) {
-			ksmbd_err("%s: Error %d parsing Owner SID\n", __func__, rc);
+			pr_err("%s: Error %d parsing Owner SID\n", __func__, rc);
 			return rc;
 		}
 
 		rc = sid_to_id(owner_sid_ptr, SIDOWNER, fattr);
 		if (rc) {
-			ksmbd_err("%s: Error %d mapping Owner SID to uid\n",
-					__func__, rc);
+			pr_err("%s: Error %d mapping Owner SID to uid\n",
+			       __func__, rc);
 			owner_sid_ptr = NULL;
 		}
 	}
@@ -819,20 +822,19 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 	if (pntsd->gsidoffset) {
 		rc = parse_sid(group_sid_ptr, end_of_acl);
 		if (rc) {
-			ksmbd_err("%s: Error %d mapping Owner SID to gid\n",
-					__func__, rc);
+			pr_err("%s: Error %d mapping Owner SID to gid\n",
+			       __func__, rc);
 			return rc;
 		}
 		rc = sid_to_id(group_sid_ptr, SIDUNIX_GROUP, fattr);
 		if (rc) {
-			ksmbd_err("%s: Error %d mapping Group SID to gid\n",
-					__func__, rc);
+			pr_err("%s: Error %d mapping Group SID to gid\n",
+			       __func__, rc);
 			group_sid_ptr = NULL;
 		}
 	}
 
-	if ((pntsd_type &
-	     (DACL_AUTO_INHERITED | DACL_AUTO_INHERIT_REQ)) ==
+	if ((pntsd_type & (DACL_AUTO_INHERITED | DACL_AUTO_INHERIT_REQ)) ==
 	    (DACL_AUTO_INHERITED | DACL_AUTO_INHERIT_REQ))
 		pntsd->type |= cpu_to_le16(DACL_AUTO_INHERITED);
 	if (pntsd_type & DACL_PROTECTED)
@@ -840,7 +842,7 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 
 	if (dacloffset) {
 		parse_dacl(dacl_ptr, end_of_acl, owner_sid_ptr, group_sid_ptr,
-				fattr);
+			   fattr);
 	}
 
 	return 0;
@@ -848,7 +850,8 @@ int parse_sec_desc(struct smb_ntsd *pntsd, int acl_len,
 
 /* Convert permission bits from mode to equivalent CIFS ACL */
 int build_sec_desc(struct smb_ntsd *pntsd, struct smb_ntsd *ppntsd,
-		int addition_info, __u32 *secdesclen, struct smb_fattr *fattr)
+		   int addition_info, __u32 *secdesclen,
+		   struct smb_fattr *fattr)
 {
 	int rc = 0;
 	__u32 offset;
@@ -929,7 +932,7 @@ out:
 }
 
 static void smb_set_ace(struct smb_ace *ace, const struct smb_sid *sid, u8 type,
-		u8 flags, __le32 access_req)
+			u8 flags, __le32 access_req)
 {
 	ace->type = type;
 	ace->flags = flags;
@@ -939,7 +942,7 @@ static void smb_set_ace(struct smb_ace *ace, const struct smb_sid *sid, u8 type,
 }
 
 int smb_inherit_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
-		unsigned int uid, unsigned int gid)
+		     unsigned int uid, unsigned int gid)
 {
 	const struct smb_sid *psid, *creator = NULL;
 	struct smb_ace *parent_aces, *aces;
@@ -1003,7 +1006,7 @@ int smb_inherit_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
 
 		if (is_dir && creator && flags & CONTAINER_INHERIT_ACE) {
 			smb_set_ace(aces, psid, parent_aces->type, inherited_flags,
-					parent_aces->access_req);
+				    parent_aces->access_req);
 			nt_size += le16_to_cpu(aces->size);
 			ace_cnt++;
 			aces = (struct smb_ace *)((char *)aces + le16_to_cpu(aces->size));
@@ -1014,7 +1017,7 @@ int smb_inherit_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
 		}
 
 		smb_set_ace(aces, psid, parent_aces->type, flags | inherited_flags,
-				parent_aces->access_req);
+			    parent_aces->access_req);
 		nt_size += le16_to_cpu(aces->size);
 		aces = (struct smb_ace *)((char *)aces + le16_to_cpu(aces->size));
 		ace_cnt++;
@@ -1107,7 +1110,7 @@ bool smb_inherit_flags(int flags, bool is_dir)
 }
 
 int smb_check_perm_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
-		__le32 *pdaccess, int uid)
+			__le32 *pdaccess, int uid)
 {
 	struct smb_ntsd *pntsd = NULL;
 	struct smb_acl *pdacl;
@@ -1198,7 +1201,7 @@ int smb_check_perm_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
 			granted = GENERIC_ALL_FLAGS;
 	}
 
-	posix_acls = ksmbd_vfs_get_acl(d_inode(dentry), ACL_TYPE_ACCESS);
+	posix_acls = get_acl(d_inode(dentry), ACL_TYPE_ACCESS);
 	if (posix_acls && !found) {
 		unsigned int id = -1;
 
@@ -1243,10 +1246,10 @@ int smb_check_perm_dacl(struct ksmbd_conn *conn, struct dentry *dentry,
 	}
 
 check_access_bits:
-	if (granted & ~(access_bits | FILE_READ_ATTRIBUTES |
-		READ_CONTROL | WRITE_DAC | DELETE)) {
+	if (granted &
+	    ~(access_bits | FILE_READ_ATTRIBUTES | READ_CONTROL | WRITE_DAC | DELETE)) {
 		ksmbd_debug(SMB, "Access denied with winACL, granted : %x, access_req : %x\n",
-				granted, le32_to_cpu(ace->access_req));
+			    granted, le32_to_cpu(ace->access_req));
 		rc = -EACCES;
 		goto err_out;
 	}
@@ -1258,8 +1261,8 @@ err_out:
 }
 
 int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
-		struct dentry *dentry, struct smb_ntsd *pntsd, int ntsd_len,
-		bool type_check)
+		 struct dentry *dentry, struct smb_ntsd *pntsd, int ntsd_len,
+		 bool type_check)
 {
 	int rc;
 	struct smb_fattr fattr = {{0}};
@@ -1283,11 +1286,20 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	ksmbd_vfs_remove_acl_xattrs(dentry);
 	/* Update posix acls */
 	if (fattr.cf_dacls) {
-		rc = ksmbd_vfs_set_posix_acl(inode, ACL_TYPE_ACCESS,
-				fattr.cf_acls);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		rc = set_posix_acl(&init_user_ns, inode, ACL_TYPE_ACCESS,
+				   fattr.cf_acls);
+#else
+		rc = set_posix_acl(inode, ACL_TYPE_ACCESS, fattr.cf_acls);
+#endif
 		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls)
-			rc = ksmbd_vfs_set_posix_acl(inode, ACL_TYPE_DEFAULT,
-					fattr.cf_dacls);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+			rc = set_posix_acl(&init_user_ns, inode,
+					   ACL_TYPE_DEFAULT, fattr.cf_dacls);
+#else
+			rc = set_posix_acl(inode, ACL_TYPE_DEFAULT,
+					   fattr.cf_dacls);
+#endif
 	}
 
 	/* Check it only calling from SD BUFFER context */

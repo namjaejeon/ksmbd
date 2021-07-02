@@ -11,11 +11,7 @@
 #include "server.h"
 #include "connection.h"
 #include "ksmbd_work.h"
-#include "buffer_pool.h"
 #include "mgmt/ksmbd_ida.h"
-
-/* @FIXME */
-#include "ksmbd_server.h"
 
 static struct kmem_cache *work_cache;
 static struct workqueue_struct *ksmbd_wq;
@@ -38,18 +34,9 @@ struct ksmbd_work *ksmbd_alloc_work_struct(void)
 void ksmbd_free_work_struct(struct ksmbd_work *work)
 {
 	WARN_ON(work->saved_cred != NULL);
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_TBUF &&
-			work->set_trans_buf)
-		ksmbd_release_buffer(work->response_buf);
-	else
-		kvfree(work->response_buf);
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_CACHE_RBUF &&
-			work->set_read_buf)
-		ksmbd_release_buffer(work->aux_payload_buf);
-	else
-		kvfree(work->aux_payload_buf);
-
+	kvfree(work->response_buf);
+	kvfree(work->aux_payload_buf);
 	kfree(work->tr_buf);
 	kvfree(work->request_buf);
 	if (work->async_id)
@@ -65,8 +52,8 @@ void ksmbd_work_pool_destroy(void)
 int ksmbd_work_pool_init(void)
 {
 	work_cache = kmem_cache_create("ksmbd_work_cache",
-					sizeof(struct ksmbd_work), 0,
-					SLAB_HWCACHE_ALIGN, NULL);
+				       sizeof(struct ksmbd_work), 0,
+				       SLAB_HWCACHE_ALIGN, NULL);
 	if (!work_cache)
 		return -ENOMEM;
 	return 0;
