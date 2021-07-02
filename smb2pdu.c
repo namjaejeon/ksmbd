@@ -11,6 +11,7 @@
 #include <linux/statfs.h>
 #include <linux/ethtool.h>
 #include <linux/falloc.h>
+#include <linux/fanotify.h>
 
 #include "glob.h"
 #include "smb2pdu.h"
@@ -7865,6 +7866,7 @@ int smb2_oplock_break(struct ksmbd_work *work)
 	return 0;
 }
 
+#if 0
 /**
  * smb2_notify() - handler for smb2 notify request
  * @work:   smb work containing notify command buffer
@@ -7888,6 +7890,106 @@ int smb2_notify(struct ksmbd_work *work)
 	rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
 	return 0;
 }
+#else
+
+struct ksmbd_notify {
+
+
+};
+
+int smb2_notify(struct ksmbd_work *work)
+{
+	struct smb2_notify_req *req;
+	struct smb2_notify_rsp *rsp;
+	struct ksmbd_file *fp;
+	int flags = 0, filter, ret = 0, notify_fd;
+	u64 mask;
+	unsigned int id = KSMBD_NO_FID, pid = KSMBD_NO_FID;
+
+	WORK_BUFFERS(work, req, rsp);
+
+	if (work->next_smb2_rcv_hdr_off) {
+		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
+			ksmbd_debug(SMB, "Compound request set FID = %u\n",
+				    work->compound_fid);
+			id = work->compound_fid;
+			pid = work->compound_pfid;
+		}
+	}
+
+	if (!HAS_FILE_ID(id)) {
+		id = le64_to_cpu(req->VolatileFileId);
+		pid = le64_to_cpu(req->PersistentFileId);
+	}
+
+	fp = ksmbd_lookup_fd_slow(work, id, pid);
+	if (!fp) {
+		ret = -EBADF;
+		goto out;
+	}
+
+	if (!(fp->daccess & FILE_LIST_DIRECTORY_LE)) {
+		ret = -EACCES;
+		goto out;
+	}
+
+	if (req->Flags)
+		flags = FAN_MARK_MOUNT;
+
+	filter = le32_to_cpu(req->CompletionFileter);
+	if (!filter) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (filter & FILE_NOTIFY_CHANGE_FILE_NAME)
+	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+	if (filter & FILE_NOTIFY_CHANGE_DIR_NAME)
+	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+	if (filter & FILE_NOTIFY_CHANGE_ATTRIBUTES)
+	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+	if (filter & FILE_NOTIFY_CHANGE_LAST_WRITE)
+	       mask |= FAN_MODIFY;
+	if (filter & FILE_NOTIFY_CHANGE_LAST_ACCESS)
+	       mask |= FAN_ACCESS;
+	if (filter & FILE_NOTIFY_CHANGE_EA)
+	       mask |= FAN_ATTRIB;
+	if (filter & FILE_NOTIFY_CHANGE_SECURITY)
+	       mask |= FAN_ATTRIB;
+
+	notify_fd = do_fanotify_init(FAN_CLASS_NOTIF, O_RDWR | O_LARGEFILE);
+	if (notify_fd < 0) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	// send pending respose.
+	
+	if (!list_empty(fp->notify_list)) {
+		list_add_tail(&notify_item->entry, &fp->notify_list);
+		return 0;
+	}
+	
+	
+	// lock
+	// list
+	
+	ret = do_fanotify_mark(notify_fd, flags, mask, AT_FDCWD, fp->filename);
+	if (ret < 0)
+		goto out;
+
+
+	
+
+out:
+	if (ret == -EINVAL)
+		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
+	else if (rc == -EACCES)
+		rsp->hdr.Status = STATUS_ACCESS_DENIED;
+
+	return ret;
+}
+#endif
 
 /**
  * smb2_is_sign_req() - handler for checking packet signing status
