@@ -109,6 +109,9 @@ struct ksmbd_file {
 	/* if ls is happening on directory, below is valid*/
 	struct ksmbd_readdir_data	readdir_data;
 	int				dot_dotdot[2];
+
+	rwlock_t			notify_lock;
+	struct list_head		notify_list;
 };
 
 static inline void set_ctx_actor(struct dir_context *ctx,

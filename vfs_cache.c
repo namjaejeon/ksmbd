@@ -567,7 +567,9 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 
 	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
+	INIT_LIST_HEAD(&fp->notify_list);
 	spin_lock_init(&fp->f_lock);
+	rwlock_init(&fp->notify_lock);
 	atomic_set(&fp->refcount, 1);
 
 	fp->filp		= filp;

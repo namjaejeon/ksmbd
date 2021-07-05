@@ -7892,9 +7892,10 @@ int smb2_notify(struct ksmbd_work *work)
 }
 #else
 
-struct ksmbd_notify {
-
-
+struct ksmbd_notify_item {
+	int flags;
+	u64 mask;
+	struct list_head entry;
 };
 
 int smb2_notify(struct ksmbd_work *work)
@@ -7902,10 +7903,14 @@ int smb2_notify(struct ksmbd_work *work)
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp;
 	struct ksmbd_file *fp;
-	int flags = 0, filter, ret = 0, notify_fd;
-	u64 mask;
+	int filter, ret = 0, len;
+	struct ksmbd_notify_item *notify_item;
 	unsigned int id = KSMBD_NO_FID, pid = KSMBD_NO_FID;
+	char events_buf[256];
+	struct fanotify_event_metadata *event;
 
+	pr_err("Received request for smb2 notify\n");
+	
 	WORK_BUFFERS(work, req, rsp);
 
 	if (work->next_smb2_rcv_hdr_off) {
@@ -7928,63 +7933,114 @@ int smb2_notify(struct ksmbd_work *work)
 		goto out;
 	}
 
+	pr_err("fp filename : %s\n", fp->filename);
 	if (!(fp->daccess & FILE_LIST_DIRECTORY_LE)) {
+		pr_err("trace 1\n");
 		ret = -EACCES;
 		goto out;
 	}
 
-	if (req->Flags)
-		flags = FAN_MARK_MOUNT;
-
 	filter = le32_to_cpu(req->CompletionFileter);
 	if (!filter) {
+		pr_err("trace 2\n");
 		ret = -EINVAL;
 		goto out;
 	}
+
+	notify_item = kzalloc(sizeof(struct ksmbd_notify_item), GFP_KERNEL);
+	if (!notify_item) {
+		pr_err("trace 3\n");
+		ret = -ENOMEM;
+		goto  out;
+	}
+
+	notify_item->flags = FAN_MARK_ADD | FAN_MARK_ONLYDIR;
+	
+	if (req->Flags)
+		notify_item->flags |= FAN_MARK_MOUNT;
 
 	if (filter & FILE_NOTIFY_CHANGE_FILE_NAME)
-	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+		notify_item->mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
 	if (filter & FILE_NOTIFY_CHANGE_DIR_NAME)
-	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+		notify_item->mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
 	if (filter & FILE_NOTIFY_CHANGE_ATTRIBUTES)
-	       mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
+		notify_item->mask |= FAN_CREATE | FAN_DELETE | FAN_MOVE;
 	if (filter & FILE_NOTIFY_CHANGE_LAST_WRITE)
-	       mask |= FAN_MODIFY;
+		notify_item->mask |= FAN_MODIFY;
 	if (filter & FILE_NOTIFY_CHANGE_LAST_ACCESS)
-	       mask |= FAN_ACCESS;
+		notify_item->mask |= FAN_ACCESS;
 	if (filter & FILE_NOTIFY_CHANGE_EA)
-	       mask |= FAN_ATTRIB;
+		notify_item->mask |= FAN_ATTRIB;
 	if (filter & FILE_NOTIFY_CHANGE_SECURITY)
-	       mask |= FAN_ATTRIB;
-
-	notify_fd = do_fanotify_init(FAN_CLASS_NOTIF, O_RDWR | O_LARGEFILE);
-	if (notify_fd < 0) {
-		ret = -EINVAL;
-		goto out;
-	}
+		notify_item->mask |= FAN_ATTRIB;
 
 	// send pending respose.
-	
-	if (!list_empty(fp->notify_list)) {
+	write_lock(&fp->notify_lock);
+	if (!list_empty(&fp->notify_list)) {
 		list_add_tail(&notify_item->entry, &fp->notify_list);
+		write_unlock(&fp->notify_lock);
+		work->send_no_response = 1;
+		kfree(notify_item);
+		pr_err("add notify_item to list and return\n");
 		return 0;
 	}
-	
-	
-	// lock
-	// list
-	
-	ret = do_fanotify_mark(notify_fd, flags, mask, AT_FDCWD, fp->filename);
-	if (ret < 0)
-		goto out;
 
+	list_add_tail(&notify_item->entry, &fp->notify_list);
+	write_unlock(&fp->notify_lock);
 
-	
+next:
+	read_lock(&fp->notify_lock);
+	list_for_each_entry(notify_item, &fp->notify_list, entry) {
+		int fd;
+		struct fd f;
+		
+		list_del(&notify_item->entry);
+		read_unlock(&fp->notify_lock);
+		fd = do_fanotify_init(FAN_CLASS_NOTIF, 0);
+		pr_err("fd : %d\n", fd);
+		if (fd < 0) {
+			pr_err("trace 10\n");
+			ret = -EINVAL;
+			goto out;
+		}
+
+		pr_err("notify flags : %x, mask : %llx\n", notify_item->flags, notify_item->mask);
+		ret = do_fanotify_mark(fd, notify_item->flags,
+				       notify_item->mask, AT_FDCWD,
+				       fp->filename);
+		if (ret < 0) {
+			pr_err("trace 11 ret : %d\n", ret);
+			goto out;
+		}
+		kfree(notify_item);
+
+		f = fdget(fd);
+		pr_err("read block\n");
+		len = kernel_read(f.file, events_buf, 256, 0);
+		pr_err("len : %d\n", len);
+
+		for (event = (struct fanotify_event_metadata *)events_buf;
+		     FAN_EVENT_OK(event, len);
+		     event = FAN_EVENT_NEXT(event, len)) {
+
+			if (event->mask == FAN_CREATE)
+				pr_err("FAN_CREATE (file created):\n");
+
+			if (event->mask == (FAN_CREATE | FAN_ONDIR))
+				pr_err("FAN_CREATE | FAN_ONDIR (subdirectory created):\n");
+		}
+
+		goto next;
+	}	
+	read_lock(&fp->notify_lock);
+
+	return 0;
 
 out:
+	kfree(notify_item);
 	if (ret == -EINVAL)
 		rsp->hdr.Status = STATUS_INVALID_PARAMETER;
-	else if (rc == -EACCES)
+	else if (ret == -EACCES)
 		rsp->hdr.Status = STATUS_ACCESS_DENIED;
 
 	return ret;
