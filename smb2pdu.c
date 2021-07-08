@@ -2801,7 +2801,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	/* Get Persistent-ID */
 	ksmbd_open_durable_fd(fp);
-	if (!HAS_FILE_ID(fp->persistent_id)) {
+	if (!has_file_id(fp->persistent_id)) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -4591,15 +4591,15 @@ static int smb2_get_info_file(struct ksmbd_work *work,
 	}
 
 	if (work->next_smb2_rcv_hdr_off) {
-		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-			ksmbd_debug(SMB, "Compound request set FID = %u\n",
+		if (!has_file_id(le64_to_cpu(req->VolatileFileId))) {
+			ksmbd_debug(SMB, "Compound request set FID = %llu\n",
 				    work->compound_fid);
 			id = work->compound_fid;
 			pid = work->compound_pfid;
 		}
 	}
 
-	if (!HAS_FILE_ID(id)) {
+	if (!has_file_id(id)) {
 		id = le64_to_cpu(req->VolatileFileId);
 		pid = le64_to_cpu(req->PersistentFileId);
 	}
@@ -4962,15 +4962,15 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	}
 
 	if (work->next_smb2_rcv_hdr_off) {
-		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-			ksmbd_debug(SMB, "Compound request set FID = %u\n",
+		if (!has_file_id(le64_to_cpu(req->VolatileFileId))) {
+			ksmbd_debug(SMB, "Compound request set FID = %llu\n",
 				    work->compound_fid);
 			id = work->compound_fid;
 			pid = work->compound_pfid;
 		}
 	}
 
-	if (!HAS_FILE_ID(id)) {
+	if (!has_file_id(id)) {
 		id = le64_to_cpu(req->VolatileFileId);
 		pid = le64_to_cpu(req->PersistentFileId);
 	}
@@ -5093,7 +5093,7 @@ static noinline int smb2_close_pipe(struct ksmbd_work *work)
  */
 int smb2_close(struct ksmbd_work *work)
 {
-	unsigned int volatile_id = KSMBD_NO_FID;
+	u64 volatile_id = KSMBD_NO_FID;
 	u64 sess_id;
 	struct smb2_close_req *req;
 	struct smb2_close_rsp *rsp;
@@ -5129,15 +5129,16 @@ int smb2_close(struct ksmbd_work *work)
 	}
 
 	if (work->next_smb2_rcv_hdr_off &&
-	    !HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-		if (!HAS_FILE_ID(work->compound_fid)) {
+	    !has_file_id(le64_to_cpu(req->VolatileFileId))) {
+		if (!has_file_id(work->compound_fid)) {
 			/* file already closed, return FILE_CLOSED */
 			ksmbd_debug(SMB, "file already closed\n");
 			rsp->hdr.Status = STATUS_FILE_CLOSED;
 			err = -EBADF;
 			goto out;
 		} else {
-			ksmbd_debug(SMB, "Compound request set FID = %u:%u\n",
+			ksmbd_debug(SMB,
+				    "Compound request set FID = %llu:%llu\n",
 				    work->compound_fid,
 				    work->compound_pfid);
 			volatile_id = work->compound_fid;
@@ -5149,7 +5150,7 @@ int smb2_close(struct ksmbd_work *work)
 	} else {
 		volatile_id = le64_to_cpu(req->VolatileFileId);
 	}
-	ksmbd_debug(SMB, "volatile_id = %u\n", volatile_id);
+	ksmbd_debug(SMB, "volatile_id = %llu\n", volatile_id);
 
 	rsp->StructureSize = cpu_to_le16(60);
 	rsp->Reserved = 0;
@@ -5809,8 +5810,8 @@ int smb2_set_info(struct ksmbd_work *work)
 	if (work->next_smb2_rcv_hdr_off) {
 		req = ksmbd_req_buf_next(work);
 		rsp = ksmbd_resp_buf_next(work);
-		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-			ksmbd_debug(SMB, "Compound request set FID = %u\n",
+		if (!has_file_id(le64_to_cpu(req->VolatileFileId))) {
+			ksmbd_debug(SMB, "Compound request set FID = %llu\n",
 				    work->compound_fid);
 			id = work->compound_fid;
 			pid = work->compound_pfid;
@@ -5820,7 +5821,7 @@ int smb2_set_info(struct ksmbd_work *work)
 		rsp = work->response_buf;
 	}
 
-	if (!HAS_FILE_ID(id)) {
+	if (!has_file_id(id)) {
 		id = le64_to_cpu(req->VolatileFileId);
 		pid = le64_to_cpu(req->PersistentFileId);
 	}
@@ -7301,8 +7302,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 	if (work->next_smb2_rcv_hdr_off) {
 		req = ksmbd_req_buf_next(work);
 		rsp = ksmbd_resp_buf_next(work);
-		if (!HAS_FILE_ID(le64_to_cpu(req->VolatileFileId))) {
-			ksmbd_debug(SMB, "Compound request set FID = %u\n",
+		if (!has_file_id(le64_to_cpu(req->VolatileFileId))) {
+			ksmbd_debug(SMB, "Compound request set FID = %llu\n",
 				    work->compound_fid);
 			id = work->compound_fid;
 		}
@@ -7311,7 +7312,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 		rsp = work->response_buf;
 	}
 
-	if (!HAS_FILE_ID(id))
+	if (!has_file_id(id))
 		id = le64_to_cpu(req->VolatileFileId);
 
 	if (req->Flags != cpu_to_le32(SMB2_0_IOCTL_IS_FSCTL)) {
