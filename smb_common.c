@@ -321,10 +321,12 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
 				      char *search_pattern,
 				      int (*fn)(struct ksmbd_conn *, int,
 						struct ksmbd_dir_info *,
+						struct user_namespace *,
 						struct ksmbd_kstat *))
 {
 	int i, rc = 0;
 	struct ksmbd_conn *conn = work->conn;
+	struct user_namespace *user_ns = file_mnt_user_ns(dir->filp);
 
 	for (i = 0; i < 2; i++) {
 		struct kstat kstat;
@@ -347,9 +349,11 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
 
 			ksmbd_kstat.kstat = &kstat;
 			ksmbd_vfs_fill_dentry_attrs(work,
+						    user_ns,
 						    dir->filp->f_path.dentry->d_parent,
 						    &ksmbd_kstat);
-			rc = fn(conn, info_level, d_info, &ksmbd_kstat);
+			rc = fn(conn, info_level, d_info,
+				user_ns, &ksmbd_kstat);
 			if (rc)
 				break;
 			if (d_info->out_buf_len <= 0)
