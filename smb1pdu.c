@@ -1526,7 +1526,8 @@ static struct ksmbd_lock *smb_lock_init(struct file_lock *flock,
 	if (lock->start == lock->end)
 		lock->zero_len = 1;
 	INIT_LIST_HEAD(&lock->llist);
-	INIT_LIST_HEAD(&lock->glist);
+	INIT_LIST_HEAD(&lock->clist);
+	INIT_LIST_HEAD(&lock->flist);
 	list_add_tail(&lock->llist, lock_list);
 
 	return lock;
@@ -1547,7 +1548,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	struct locking_andx_range32 *lock_ele32 = NULL, *unlock_ele32 = NULL;
 	struct locking_andx_range64 *lock_ele64 = NULL, *unlock_ele64 = NULL;
 	struct file *filp = NULL;
-	struct ksmbd_lock *smb_lock = NULL, *cmp_lock, *tmp;
+	struct ksmbd_lock *smb_lock = NULL, *cmp_lock, *tmp, *tmp2;
 	int i, lock_count, unlock_count;
 	unsigned long long offset, length;
 	struct file_lock *flock = NULL;
@@ -1556,6 +1557,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	LIST_HEAD(rollback_list);
 	int locked, timeout;
 	const unsigned long long loff_max = ~0;
+	struct ksmbd_conn *conn;
 
 	timeout = le32_to_cpu(req->Timeout);
 	ksmbd_debug(SMB, "got oplock brk for fid %d lock type = 0x%x, timeout : %d\n",
@@ -1674,70 +1676,86 @@ int smb_locking_andx(struct ksmbd_work *work)
 		int same_zero_lock = 0;
 
 		list_del(&smb_lock->llist);
-		/* check locks in global list */
-		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
-			if (file_inode(cmp_lock->fl->fl_file) !=
-				file_inode(smb_lock->fl->fl_file))
-				continue;
+		/* check locks in connections */
+		read_lock(&conn_list_lock);
+		list_for_each_entry(conn, &conn_list, conns_list) {
+			spin_lock(&conn->llist_lock);
+			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
+				if (file_inode(cmp_lock->fl->fl_file) !=
+					file_inode(smb_lock->fl->fl_file))
+					continue;
 
-			if (smb_lock->zero_len &&
-				cmp_lock->start == smb_lock->start &&
-				cmp_lock->end == smb_lock->end) {
-				same_zero_lock = 1;
-				break;
-			}
-
-			/* check zero byte lock range */
-			if (cmp_lock->zero_len && !smb_lock->zero_len &&
-					cmp_lock->start > smb_lock->start &&
-					cmp_lock->start < smb_lock->end) {
-				pr_err("previous lock conflict with zero byte lock range\n");
-				err = -EPERM;
-			} else if (smb_lock->zero_len && !cmp_lock->zero_len &&
-				smb_lock->start > cmp_lock->start &&
-				smb_lock->start < cmp_lock->end) {
-				pr_err("current lock conflict with zero byte lock range\n");
-				err = -EPERM;
-			} else if (((cmp_lock->start <= smb_lock->start &&
-				cmp_lock->end > smb_lock->start) ||
-				(cmp_lock->start < smb_lock->end &&
-				 cmp_lock->end >= smb_lock->end)) &&
-				!cmp_lock->zero_len && !smb_lock->zero_len) {
-				pr_err("Not allow lock operation on exclusive lock range\n");
-				err = -EPERM;
-			}
-
-			if (err) {
-				/* Clean error cache */
-				if ((smb_lock->zero_len &&
-						fp->cflock_cnt > 1) ||
-					(timeout && (fp->llock_fstart ==
-							smb_lock->start))) {
-					ksmbd_debug(SMB, "clean error cache\n");
-					fp->cflock_cnt = 0;
+				if (smb_lock->zero_len &&
+					cmp_lock->start == smb_lock->start &&
+					cmp_lock->end == smb_lock->end) {
+					same_zero_lock = 1;
+					spin_unlock(&conn->llist_lock);
+					read_unlock(&conn_list_lock);
+					goto out_check_cl;
 				}
 
-				if (timeout > 0 ||
-					(fp->cflock_cnt > 0 &&
-					fp->llock_fstart == smb_lock->start) ||
-					((smb_lock->start >> 63) == 0 &&
-					smb_lock->start >= 0xEF000000)) {
-					if (timeout) {
-						ksmbd_debug(SMB, "waiting error response for timeout : %d\n",
-							timeout);
-						msleep(timeout);
-					}
-					rsp->hdr.Status.CifsError =
-						STATUS_FILE_LOCK_CONFLICT;
-				} else
-					rsp->hdr.Status.CifsError =
-						STATUS_LOCK_NOT_GRANTED;
-				fp->cflock_cnt++;
-				fp->llock_fstart = smb_lock->start;
-				goto out;
-			}
-		}
+				/* check zero byte lock range */
+				if (cmp_lock->zero_len && !smb_lock->zero_len &&
+						cmp_lock->start > smb_lock->start &&
+						cmp_lock->start < smb_lock->end) {
+					pr_err("previous lock conflict with zero byte lock range\n");
+					err = -EPERM;
+				} else if (smb_lock->zero_len && !cmp_lock->zero_len &&
+					smb_lock->start > cmp_lock->start &&
+					smb_lock->start < cmp_lock->end) {
+					pr_err("current lock conflict with zero byte lock range\n");
+					err = -EPERM;
+				} else if (((cmp_lock->start <= smb_lock->start &&
+					cmp_lock->end > smb_lock->start) ||
+					(cmp_lock->start < smb_lock->end &&
+					 cmp_lock->end >= smb_lock->end)) &&
+					!cmp_lock->zero_len && !smb_lock->zero_len) {
+					pr_err("Not allow lock operation on exclusive lock range\n");
+					err = -EPERM;
+				}
 
+				if (err) {
+					/* Clean error cache */
+					if ((smb_lock->zero_len &&
+							fp->cflock_cnt > 1) ||
+						(timeout && (fp->llock_fstart ==
+								smb_lock->start))) {
+						ksmbd_debug(SMB, "clean error cache\n");
+						fp->cflock_cnt = 0;
+					}
+
+					if (timeout > 0 ||
+						(fp->cflock_cnt > 0 &&
+						fp->llock_fstart == smb_lock->start) ||
+						((smb_lock->start >> 63) == 0 &&
+						smb_lock->start >= 0xEF000000)) {
+						if (timeout) {
+							spin_unlock(&conn->llist_lock);
+							read_unlock(&conn_list_lock);
+							ksmbd_debug(SMB, "waiting error response for timeout : %d\n",
+								timeout);
+							msleep(timeout);
+						}
+						rsp->hdr.Status.CifsError =
+							STATUS_FILE_LOCK_CONFLICT;
+					} else
+						rsp->hdr.Status.CifsError =
+							STATUS_LOCK_NOT_GRANTED;
+					fp->cflock_cnt++;
+					fp->llock_fstart = smb_lock->start;
+
+					if (timeout <= 0) {
+						spin_unlock(&conn->llist_lock);
+						read_unlock(&conn_list_lock);
+					}
+					goto out;
+				}
+			}
+			spin_unlock(&conn->llist_lock);
+		}
+		read_unlock(&conn_list_lock);
+
+out_check_cl:
 		if (same_zero_lock)
 			continue;
 		if (smb_lock->zero_len) {
@@ -1750,22 +1768,30 @@ retry:
 		err = vfs_lock_file(filp, smb_lock->cmd, flock, NULL);
 		if (err == FILE_LOCK_DEFERRED) {
 			pr_err("would have to wait for getting lock\n");
-			list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+			spin_lock(&work->conn->llist_lock);
+			list_add_tail(&smb_lock->clist,
+				      &work->conn->lock_list);
+			spin_unlock(&work->conn->llist_lock);
 			list_add(&smb_lock->llist, &rollback_list);
 wait:
 			err = ksmbd_vfs_posix_lock_wait_timeout(flock,
 							msecs_to_jiffies(10));
 			if (err) {
 				list_del(&smb_lock->llist);
-				list_del(&smb_lock->glist);
+				spin_lock(&work->conn->llist_lock);
+				list_del(&smb_lock->clist);
+				spin_unlock(&work->conn->llist_lock);
 				goto retry;
 			} else
 				goto wait;
 		} else if (!err) {
 skip:
-			list_add_tail(&smb_lock->glist,
-					&global_lock_list);
+			spin_lock(&work->conn->llist_lock);
+			list_add_tail(&smb_lock->clist,
+				      &work->conn->lock_list);
+			list_add_tail(&smb_lock->flist,
+				      &fp->lock_list);
+			spin_unlock(&work->conn->llist_lock);
 			list_add(&smb_lock->llist, &rollback_list);
 			pr_err("successful in taking lock\n");
 		} else if (err < 0) {
@@ -1820,18 +1846,27 @@ skip:
 			flock->fl_end = offset + length;
 
 		locked = 0;
-		list_for_each_entry(cmp_lock, &global_lock_list, glist) {
-			if (file_inode(cmp_lock->fl->fl_file) !=
-				file_inode(flock->fl_file))
-				continue;
+		read_lock(&conn_list_lock);
+		list_for_each_entry(conn, &conn_list, conns_list) {
+			spin_lock(&conn->llist_lock);
+			list_for_each_entry(cmp_lock, &conn->lock_list, clist) {
+				if (file_inode(cmp_lock->fl->fl_file) !=
+					file_inode(flock->fl_file))
+					continue;
 
-			if ((cmp_lock->start == offset &&
-				 cmp_lock->end == offset + length)) {
-				locked = 1;
-				break;
+				if ((cmp_lock->start == offset &&
+					 cmp_lock->end == offset + length)) {
+					locked = 1;
+					spin_unlock(&conn->llist_lock);
+					read_unlock(&conn_list_lock);
+					goto out_check_cl_unlck;
+				}
 			}
+			spin_unlock(&conn->llist_lock);
 		}
+		read_unlock(&conn_list_lock);
 
+out_check_cl_unlck:
 		if (!locked) {
 			locks_free_lock(flock);
 			rsp->hdr.Status.CifsError = STATUS_RANGE_NOT_LOCKED;
@@ -1841,7 +1876,12 @@ skip:
 		err = vfs_lock_file(filp, cmd, flock, NULL);
 		if (!err) {
 			ksmbd_debug(SMB, "File unlocked\n");
-			list_del(&cmp_lock->glist);
+			spin_lock(&conn->llist_lock);
+			if (!list_empty(&cmp_lock->flist))
+				list_del(&cmp_lock->flist);
+			list_del(&cmp_lock->clist);
+			spin_unlock(&conn->llist_lock);
+
 			locks_free_lock(cmp_lock->fl);
 			kfree(cmp_lock);
 			fp->cflock_cnt = 0;
@@ -1886,8 +1926,14 @@ out:
 		err = vfs_lock_file(filp, 0, rlock, NULL);
 		if (err)
 			pr_err("rollback unlock fail : %d\n", err);
+
 		list_del(&smb_lock->llist);
-		list_del(&smb_lock->glist);
+		spin_lock(&work->conn->llist_lock);
+		if (!list_empty(&smb_lock->flist))
+			list_del(&smb_lock->flist);
+		list_del(&smb_lock->clist);
+		spin_unlock(&work->conn->llist_lock);
+
 		locks_free_lock(smb_lock->fl);
 		locks_free_lock(rlock);
 		kfree(smb_lock);

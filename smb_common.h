@@ -48,8 +48,6 @@
 #define CIFS_DEFAULT_IOSIZE	(64 * 1024)
 #define MAX_CIFS_SMALL_BUFFER_SIZE 448 /* big enough for most */
 
-extern struct list_head global_lock_list;
-
 #define IS_SMB2(x)		((x)->vals->protocol_id != SMB10_PROT_ID)
 #define MAX_HEADER_SIZE(conn)		((conn)->vals->max_header_size)
 
