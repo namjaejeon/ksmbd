@@ -3559,9 +3559,15 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 			return -EINVAL;
 
 		lock_dir(priv->dir_fp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+		dent = lookup_one(user_ns, priv->d_info->name,
+				  priv->dir_fp->filp->f_path.dentry,
+				  priv->d_info->name_len);
+#else
 		dent = lookup_one_len(priv->d_info->name,
-				      priv->dir_fp->filp->f_path.dentry,
-				      priv->d_info->name_len);
+				  priv->dir_fp->filp->f_path.dentry,
+				  priv->d_info->name_len);
+#endif
 		unlock_dir(priv->dir_fp);
 
 		if (IS_ERR(dent)) {
@@ -5291,7 +5297,9 @@ int smb2_echo(struct ksmbd_work *work)
 	return 0;
 }
 
-static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
+static int smb2_rename(struct ksmbd_work *work,
+		       struct ksmbd_file *fp,
+		       struct user_namespace *user_ns,
 		       struct smb2_file_rename_info *file_info,
 		       struct nls_table *local_nls)
 {
@@ -5355,7 +5363,7 @@ static int smb2_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 		if (rc)
 			goto out;
 
-		rc = ksmbd_vfs_setxattr(file_mnt_user_ns(fp->filp),
+		rc = ksmbd_vfs_setxattr(user_ns,
 					fp->filp->f_path.dentry,
 					xattr_stream_name,
 					NULL, 0, 0);
@@ -5683,6 +5691,7 @@ static int set_end_of_file_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 			   char *buf)
 {
+	struct user_namespace *user_ns;
 	struct ksmbd_file *parent_fp;
 	struct dentry *parent;
 	struct dentry *dentry = fp->filp->f_path.dentry;
@@ -5693,11 +5702,12 @@ static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 		return -EACCES;
 	}
 
+	user_ns = file_mnt_user_ns(fp->filp);
 	if (ksmbd_stream_fd(fp))
 		goto next;
 
 	parent = dget_parent(dentry);
-	ret = ksmbd_vfs_lock_parent(parent, dentry);
+	ret = ksmbd_vfs_lock_parent(user_ns, parent, dentry);
 	if (ret) {
 		dput(parent);
 		return ret;
@@ -5714,7 +5724,7 @@ static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 		}
 	}
 next:
-	return smb2_rename(work, fp,
+	return smb2_rename(work, fp, user_ns,
 			   (struct smb2_file_rename_info *)buf,
 			   work->sess->conn->local_nls);
 }

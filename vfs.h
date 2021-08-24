@@ -122,7 +122,8 @@ static inline struct user_namespace *file_mnt_user_ns(struct file *file)
 }
 #endif
 
-int ksmbd_vfs_lock_parent(struct dentry *parent, struct dentry *child);
+int ksmbd_vfs_lock_parent(struct user_namespace *user_ns, struct dentry *parent,
+			  struct dentry *child);
 int ksmbd_vfs_may_delete(struct user_namespace *user_ns, struct dentry *dentry);
 int ksmbd_vfs_query_maximal_access(struct user_namespace *user_ns,
 				   struct dentry *dentry, __le32 *daccess);
