@@ -5601,7 +5601,7 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 		if (rc)
 			return -EINVAL;
 	}
-	return 0;
+	return rc;
 }
 
 static int set_file_allocation_info(struct ksmbd_work *work,
