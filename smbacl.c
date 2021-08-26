@@ -269,6 +269,9 @@ static int sid_to_id(struct user_namespace *user_ns,
 		return -EIO;
 	}
 
+	if (!compare_sids(psid, &sid_everyone))
+		return -EIO;
+
 	if (sidtype == SIDOWNER) {
 		kuid_t uid;
 		uid_t id;
