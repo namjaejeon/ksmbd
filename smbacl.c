@@ -1339,16 +1339,6 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	newattrs.ia_valid |= ATTR_MODE;
 	newattrs.ia_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
 
-	inode_lock(inode);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	rc = notify_change(user_ns, path->dentry, &newattrs, NULL);
-#else
-	rc = notify_change(path->dentry, &newattrs, NULL);
-#endif
-	inode_unlock(inode);
-	if (rc)
-		goto out;
-
 	ksmbd_vfs_remove_acl_xattrs(user_ns, path->dentry);
 	/* Update posix acls */
 	if (IS_ENABLED(CONFIG_FS_POSIX_ACL) && fattr.cf_dacls) {
@@ -1359,7 +1349,11 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 #else
 		rc = set_posix_acl(inode, ACL_TYPE_ACCESS, fattr.cf_acls);
 #endif
-		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls)
+		if (rc < 0)
+			ksmbd_debug(SMB,
+				    "Set posix acl(ACL_TYPE_ACCESS) failed, rc : %d\n",
+				    rc);
+		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 			rc = set_posix_acl(user_ns, inode,
 					   ACL_TYPE_DEFAULT, fattr.cf_dacls);
@@ -1367,7 +1361,22 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 			rc = set_posix_acl(inode, ACL_TYPE_DEFAULT,
 					   fattr.cf_dacls);
 #endif
+			if (rc)
+				ksmbd_debug(SMB,
+					    "Set posix acl(ACL_TYPE_DEFAULT) failed, rc : %d\n",
+					    rc);
+		}
 	}
+
+	inode_lock(inode);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	rc = notify_change(user_ns, path->dentry, &newattrs, NULL);
+#else
+	rc = notify_change(path->dentry, &newattrs, NULL);
+#endif
+	inode_unlock(inode);
+	if (rc)
+		goto out;
 
 	/* Check it only calling from SD BUFFER context */
 	if (type_check && !(le16_to_cpu(pntsd->type) & DACL_PRESENT))
