@@ -128,11 +128,6 @@
 	cpu_to_le16(__SMB2_HEADER_STRUCTURE_SIZE)
 
 struct smb2_hdr {
-	__be32 smb2_buf_length;	/* big endian on wire */
-				/*
-				 * length is only two or three bytes - with
-				 * one or two byte type preceding it that MBZ
-				 */
 	__le32 ProtocolId;	/* 0xFE 'S' 'M' 'B' */
 	__le16 StructureSize;	/* 64 */
 	__le16 CreditCharge;	/* MBZ */
@@ -1695,4 +1690,12 @@ int smb2_ioctl(struct ksmbd_work *work);
 int smb2_oplock_break(struct ksmbd_work *work);
 int smb2_notify(struct ksmbd_work *ksmbd_work);
 
+/*
+ * Get the body of the smb2 message excluding the 4 byte rfc1002 headers
+ * from request/response buffer.
+ */
+static inline void *smb2_get_msg(void *buf)
+{
+	return buf + 4;
+}
 #endif	/* _SMB2PDU_H */
