@@ -724,7 +724,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	/* wct is 8 for locking andx(18) */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
 	rsp_hdr->smb_buf_length =
-		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals) + 18);
+		cpu_to_be32(conn->vals->header_size - 4 + 18);
 	rsp_hdr->Protocol[0] = 0xFF;
 	rsp_hdr->Protocol[1] = 'S';
 	rsp_hdr->Protocol[2] = 'M';
@@ -833,10 +833,10 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = work->response_buf;
+	rsp_hdr = smb2_get_msg(work->response_buf);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length =
-		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals));
+	*(__be32 *)work->response_buf =
+		cpu_to_be32(conn->vals->header_size);
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
@@ -849,7 +849,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = work->response_buf;
+	rsp = smb2_get_msg(work->response_buf);
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -863,7 +863,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
 	rsp->VolatileFid = cpu_to_le64(fp->volatile_id);
 
-	inc_rfc1001_len(rsp, 24);
+	inc_rfc1001_len(work->response_buf, 24);
 
 	ksmbd_debug(OPLOCK,
 		    "sending oplock break v_id %llu p_id = %llu lock level = %d\n",
@@ -940,10 +940,10 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = work->response_buf;
+	rsp_hdr = smb2_get_msg(work->response_buf);
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	rsp_hdr->smb2_buf_length =
-		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals));
+	*(__be32 *)work->response_buf =
+		cpu_to_be32(conn->vals->header_size);
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
@@ -956,7 +956,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = work->response_buf;
+	rsp = smb2_get_msg(work->response_buf);
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Epoch = br_info->epoch;
 	rsp->Flags = 0;
@@ -972,7 +972,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp->AccessMaskHint = 0;
 	rsp->ShareMaskHint = 0;
 
-	inc_rfc1001_len(rsp, 44);
+	inc_rfc1001_len(work->response_buf, 44);
 
 	ksmbd_conn_write(work);
 	ksmbd_free_work_struct(work);
@@ -1706,7 +1706,7 @@ struct create_context *smb2_find_context_vals(void *open_req, const char *tag)
 	char *name;
 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
 
-	data_offset = (char *)req + 4 + le32_to_cpu(req->CreateContextsOffset);
+	data_offset = (char *)req + le32_to_cpu(req->CreateContextsOffset);
 	cc = (struct create_context *)data_offset;
 	do {
 		int val;
@@ -1832,7 +1832,9 @@ void create_posix_rsp_buf(char *cc, struct ksmbd_file *fp)
 {
 	struct create_posix_rsp *buf;
 	struct inode *inode = file_inode(fp->filp);
-	struct user_namespace *user_ns = file_mnt_user_ns(fp->filp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	struct user_namespace *user_ns;
+#endif
 
 	buf = (struct create_posix_rsp *)cc;
 	memset(buf, 0, sizeof(struct create_posix_rsp));
@@ -1863,9 +1865,20 @@ void create_posix_rsp_buf(char *cc, struct ksmbd_file *fp)
 	buf->nlink = cpu_to_le32(inode->i_nlink);
 	buf->reparse_tag = cpu_to_le32(fp->volatile_id);
 	buf->mode = cpu_to_le32(inode->i_mode);
-	id_to_sid(from_kuid(user_ns, inode->i_uid),
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	user_ns = file_mnt_user_ns(fp->filp);
+	id_to_sid(from_kuid_munged(&init_user_ns,
+				   i_uid_into_mnt(user_ns, inode)),
+#else
+	id_to_sid(from_kuid_munged(&init_user_ns, inode->i_uid),
+#endif
 		  SIDNFS_USER, (struct smb_sid *)&buf->SidBuffer[0]);
-	id_to_sid(from_kgid(user_ns, inode->i_gid),
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	id_to_sid(from_kgid_munged(&init_user_ns,
+				   i_gid_into_mnt(user_ns, inode)),
+#else
+	id_to_sid(from_kgid_munged(&init_user_ns, inode->i_gid),
+#endif
 		  SIDNFS_GROUP, (struct smb_sid *)&buf->SidBuffer[20]);
 }
 

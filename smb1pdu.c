@@ -121,7 +121,7 @@ int init_smb_rsp_hdr(struct ksmbd_work *work)
 
 	/* remove 4 byte direct TCP header, add 1 byte wc and 2 byte bcc */
 	rsp_hdr->smb_buf_length =
-		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals) + 2);
+		cpu_to_be32(conn->vals->header_size + 2);
 	memcpy(rsp_hdr->Protocol, rcv_hdr->Protocol, 4);
 	rsp_hdr->Command = rcv_hdr->Command;
 
@@ -5690,8 +5690,7 @@ static int readdir_info_level_struct_sz(int info_level)
  * Return:	0 on success, otherwise error
  */
 static int smb_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
-		struct ksmbd_dir_info *d_info, struct user_namespace *user_ns,
-		struct ksmbd_kstat *ksmbd_kstat)
+		struct ksmbd_dir_info *d_info, struct ksmbd_kstat *ksmbd_kstat)
 {
 	int next_entry_offset;
 	char *conv_name;
@@ -5880,7 +5879,7 @@ static int smb_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		finfo = (struct file_unix_info *)(d_info->wptr);
 		finfo->ResumeKey = 0;
 		unix_info = (struct file_unix_basic_info *)((char *)finfo + 8);
-		init_unix_info(unix_info, user_ns, ksmbd_kstat->kstat);
+		init_unix_info(unix_info, &init_user_ns, ksmbd_kstat->kstat);
 		/* include null terminator */
 		memcpy(finfo->FileName, conv_name, conv_len + 2);
 		next_entry_offset += 2;
@@ -6154,7 +6153,6 @@ static int find_first(struct ksmbd_work *work)
 			rc = smb_populate_readdir_entry(conn,
 				le16_to_cpu(req_params->InformationLevel),
 				&d_info,
-				file_mnt_user_ns(dir_fp->filp),
 				&ksmbd_kstat);
 			if (rc == -ENOSPC)
 				break;
@@ -6412,7 +6410,6 @@ static int find_next(struct ksmbd_work *work)
 				d_info.name_len, d_info.name);
 		rc = smb_populate_readdir_entry(conn,
 			le16_to_cpu(req_params->InformationLevel), &d_info,
-			file_mnt_user_ns(dir_fp->filp),
 			&ksmbd_kstat);
 		if (rc == -ENOSPC)
 			break;

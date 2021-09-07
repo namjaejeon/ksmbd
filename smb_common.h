@@ -476,7 +476,7 @@ struct smb_version_ops {
 	void (*set_sign_rsp)(struct ksmbd_work *work);
 	int (*generate_signingkey)(struct ksmbd_session *sess, struct ksmbd_conn *conn);
 	int (*generate_encryptionkey)(struct ksmbd_session *sess);
-	int (*is_transform_hdr)(void *buf);
+	bool (*is_transform_hdr)(void *buf);
 	int (*decrypt_req)(struct ksmbd_work *work);
 	int (*encrypt_resp)(struct ksmbd_work *work);
 };
@@ -484,12 +484,6 @@ struct smb_version_ops {
 struct smb_version_cmds {
 	int (*proc)(struct ksmbd_work *swork);
 };
-
-static inline size_t
-smb2_hdr_size_no_buflen(struct smb_version_values *vals)
-{
-	return vals->header_size - 4;
-}
 
 int ksmbd_min_protocol(void);
 int ksmbd_max_protocol(void);
@@ -514,7 +508,6 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work,
 				      int (*fn)(struct ksmbd_conn *,
 						int,
 						struct ksmbd_dir_info *,
-						struct user_namespace *,
 						struct ksmbd_kstat *));
 
 int ksmbd_extract_shortname(struct ksmbd_conn *conn,

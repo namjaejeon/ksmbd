@@ -269,29 +269,46 @@ static int sid_to_id(struct user_namespace *user_ns,
 		return -EIO;
 	}
 
+	if (!compare_sids(psid, &sid_everyone))
+		return -EIO;
+
 	if (sidtype == SIDOWNER) {
 		kuid_t uid;
 		uid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
-		if (id > 0) {
-			uid = make_kuid(user_ns, id);
-			if (uid_valid(uid) && kuid_has_mapping(user_ns, uid)) {
-				fattr->cf_uid = uid;
-				rc = 0;
-			}
+		/*
+		 * Translate raw sid into kuid in the server's user
+		 * namespace.
+		 */
+		uid = make_kuid(&init_user_ns, id);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		/* If this is an idmapped mount, apply the idmapping. */
+		uid = kuid_from_mnt(user_ns, uid);
+#endif
+		if (uid_valid(uid)) {
+			fattr->cf_uid = uid;
+			rc = 0;
 		}
 	} else {
 		kgid_t gid;
 		gid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
-		if (id > 0) {
-			gid = make_kgid(user_ns, id);
-			if (gid_valid(gid) && kgid_has_mapping(user_ns, gid)) {
-				fattr->cf_gid = gid;
-				rc = 0;
-			}
+		/*
+		 * Translate raw sid into kgid in the server's user
+		 * namespace.
+		 */
+		gid = make_kgid(&init_user_ns, id);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+		/* If this is an idmapped mount, apply the idmapping. */
+		gid = kgid_from_mnt(user_ns, gid);
+#endif
+		if (gid_valid(gid)) {
+			fattr->cf_gid = gid;
+			rc = 0;
 		}
 	}
 
@@ -533,22 +550,29 @@ static void parse_dacl(struct user_namespace *user_ns,
 
 	if (acl_state.users->n || acl_state.groups->n) {
 		acl_state.mask.allow = 0x07;
-		fattr->cf_acls = posix_acl_alloc(acl_state.users->n +
-			acl_state.groups->n + 4, GFP_KERNEL);
-		if (fattr->cf_acls) {
-			cf_pace = fattr->cf_acls->a_entries;
-			posix_state_to_acl(&acl_state, cf_pace);
+
+		if (IS_ENABLED(CONFIG_FS_POSIX_ACL)) {
+			fattr->cf_acls =
+				posix_acl_alloc(acl_state.users->n +
+					acl_state.groups->n + 4, GFP_KERNEL);
+			if (fattr->cf_acls) {
+				cf_pace = fattr->cf_acls->a_entries;
+				posix_state_to_acl(&acl_state, cf_pace);
+			}
 		}
 	}
 
 	if (default_acl_state.users->n || default_acl_state.groups->n) {
 		default_acl_state.mask.allow = 0x07;
-		fattr->cf_dacls =
-			posix_acl_alloc(default_acl_state.users->n +
-			default_acl_state.groups->n + 4, GFP_KERNEL);
-		if (fattr->cf_dacls) {
-			cf_pdace = fattr->cf_dacls->a_entries;
-			posix_state_to_acl(&default_acl_state, cf_pdace);
+
+		if (IS_ENABLED(CONFIG_FS_POSIX_ACL)) {
+			fattr->cf_dacls =
+				posix_acl_alloc(default_acl_state.users->n +
+				default_acl_state.groups->n + 4, GFP_KERNEL);
+			if (fattr->cf_dacls) {
+				cf_pdace = fattr->cf_dacls->a_entries;
+				posix_state_to_acl(&default_acl_state, cf_pdace);
+			}
 		}
 	}
 	free_acl_state(&acl_state);
@@ -580,14 +604,14 @@ static void set_posix_acl_entries_dacl(struct user_namespace *user_ns,
 			uid_t uid;
 			unsigned int sid_type = SIDOWNER;
 
-			uid = from_kuid(user_ns, pace->e_uid);
+			uid = posix_acl_uid_translate(user_ns, pace);
 			if (!uid)
 				sid_type = SIDUNIX_USER;
 			id_to_sid(uid, sid_type, sid);
 		} else if (pace->e_tag == ACL_GROUP) {
 			gid_t gid;
 
-			gid = from_kgid(user_ns, pace->e_gid);
+			gid = posix_acl_gid_translate(user_ns, pace);
 			id_to_sid(gid, SIDUNIX_GROUP, sid);
 		} else if (pace->e_tag == ACL_OTHER && !nt_aces_num) {
 			smb_copy_sid(sid, &sid_everyone);
@@ -646,12 +670,12 @@ posix_default_acl:
 		if (pace->e_tag == ACL_USER) {
 			uid_t uid;
 
-			uid = from_kuid(user_ns, pace->e_uid);
+			uid = posix_acl_uid_translate(user_ns, pace);
 			id_to_sid(uid, SIDCREATOR_OWNER, sid);
 		} else if (pace->e_tag == ACL_GROUP) {
 			gid_t gid;
 
-			gid = from_kgid(user_ns, pace->e_gid);
+			gid = posix_acl_gid_translate(user_ns, pace);
 			id_to_sid(gid, SIDCREATOR_GROUP, sid);
 		} else {
 			kfree(sid);
@@ -716,7 +740,7 @@ static void set_mode_dacl(struct user_namespace *user_ns,
 	}
 
 	/* owner RID */
-	uid = from_kuid(user_ns, fattr->cf_uid);
+	uid = from_kuid(&init_user_ns, fattr->cf_uid);
 	if (uid)
 		sid = &server_conf.domain_sid;
 	else
@@ -724,7 +748,6 @@ static void set_mode_dacl(struct user_namespace *user_ns,
 	ace_size = fill_ace_for_sid(pace, sid, ACCESS_ALLOWED, 0,
 				    fattr->cf_mode, 0700);
 	pace->sid.sub_auth[pace->sid.num_subauth++] = cpu_to_le32(uid);
-	pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 	pace->size = cpu_to_le16(ace_size + 4);
 	size += le16_to_cpu(pace->size);
 	pace = (struct smb_ace *)((char *)pndace + size);
@@ -733,7 +756,7 @@ static void set_mode_dacl(struct user_namespace *user_ns,
 	ace_size = fill_ace_for_sid(pace, &sid_unix_groups,
 				    ACCESS_ALLOWED, 0, fattr->cf_mode, 0070);
 	pace->sid.sub_auth[pace->sid.num_subauth++] =
-		cpu_to_le32(from_kgid(user_ns, fattr->cf_gid));
+		cpu_to_le32(from_kgid(&init_user_ns, fattr->cf_gid));
 	pace->size = cpu_to_le16(ace_size + 4);
 	size += le16_to_cpu(pace->size);
 	pace = (struct smb_ace *)((char *)pndace + size);
@@ -745,7 +768,6 @@ static void set_mode_dacl(struct user_namespace *user_ns,
 		/* creator owner */
 		size += fill_ace_for_sid(pace, &creator_owner, ACCESS_ALLOWED,
 					 0x0b, fattr->cf_mode, 0700);
-		pace->access_req |= FILE_DELETE_LE | FILE_DELETE_CHILD_LE;
 		pace = (struct smb_ace *)((char *)pndace + size);
 
 		/* creator group */
@@ -875,7 +897,7 @@ int build_sec_desc(struct user_namespace *user_ns,
 	if (!nowner_sid_ptr)
 		return -ENOMEM;
 
-	uid = from_kuid(user_ns, fattr->cf_uid);
+	uid = from_kuid(&init_user_ns, fattr->cf_uid);
 	if (!uid)
 		sid_type = SIDUNIX_USER;
 	id_to_sid(uid, sid_type, nowner_sid_ptr);
@@ -886,7 +908,7 @@ int build_sec_desc(struct user_namespace *user_ns,
 		return -ENOMEM;
 	}
 
-	gid = from_kgid(user_ns, fattr->cf_gid);
+	gid = from_kgid(&init_user_ns, fattr->cf_gid);
 	id_to_sid(gid, SIDUNIX_GROUP, ngroup_sid_ptr);
 
 	offset = sizeof(struct smb_ntsd);
@@ -1221,31 +1243,34 @@ int smb_check_perm_dacl(struct ksmbd_conn *conn, struct path *path,
 			granted = GENERIC_ALL_FLAGS;
 	}
 
-	posix_acls = get_acl(d_inode(path->dentry), ACL_TYPE_ACCESS);
-	if (posix_acls && !found) {
-		unsigned int id = -1;
+	if (IS_ENABLED(CONFIG_FS_POSIX_ACL)) {
+		posix_acls = get_acl(d_inode(path->dentry), ACL_TYPE_ACCESS);
+		if (posix_acls && !found) {
+			unsigned int id = -1;
 
-		pa_entry = posix_acls->a_entries;
-		for (i = 0; i < posix_acls->a_count; i++, pa_entry++) {
-			if (pa_entry->e_tag == ACL_USER)
-				id = from_kuid(user_ns,
-					       pa_entry->e_uid);
-			else if (pa_entry->e_tag == ACL_GROUP)
-				id = from_kgid(user_ns,
-					       pa_entry->e_gid);
-			else
-				continue;
+			pa_entry = posix_acls->a_entries;
+			for (i = 0; i < posix_acls->a_count; i++, pa_entry++) {
+				if (pa_entry->e_tag == ACL_USER)
+					id = posix_acl_uid_translate(user_ns, pa_entry);
+				else if (pa_entry->e_tag == ACL_GROUP)
+					id = posix_acl_gid_translate(user_ns, pa_entry);
+				else
+					continue;
 
-			if (id == uid) {
-				mode_to_access_flags(pa_entry->e_perm, 0777, &access_bits);
-				if (!access_bits)
-					access_bits = SET_MINIMUM_RIGHTS;
-				goto check_access_bits;
+				if (id == uid) {
+					mode_to_access_flags(pa_entry->e_perm,
+							     0777,
+							     &access_bits);
+					if (!access_bits)
+						access_bits =
+							SET_MINIMUM_RIGHTS;
+					goto check_access_bits;
+				}
 			}
 		}
+		if (posix_acls)
+			posix_acl_release(posix_acls);
 	}
-	if (posix_acls)
-		posix_acl_release(posix_acls);
 
 	if (!found) {
 		if (others_ace) {
@@ -1290,6 +1315,7 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	struct smb_fattr fattr = {{0}};
 	struct inode *inode = d_inode(path->dentry);
 	struct user_namespace *user_ns = mnt_user_ns(path->mnt);
+	struct iattr newattrs;
 
 	fattr.cf_uid = INVALID_UID;
 	fattr.cf_gid = INVALID_GID;
@@ -1299,16 +1325,22 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	if (rc)
 		goto out;
 
-	inode->i_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
-	if (!uid_eq(fattr.cf_uid, INVALID_UID))
-		inode->i_uid = fattr.cf_uid;
-	if (!gid_eq(fattr.cf_gid, INVALID_GID))
+	newattrs.ia_valid = ATTR_CTIME;
+	if (!uid_eq(fattr.cf_uid, INVALID_UID)) {
+		newattrs.ia_valid |= ATTR_UID;
+		newattrs.ia_uid = fattr.cf_uid;
+	}
+	if (!gid_eq(fattr.cf_gid, INVALID_GID)) {
 		inode->i_gid = fattr.cf_gid;
-	mark_inode_dirty(inode);
+		newattrs.ia_valid |= ATTR_GID;
+		newattrs.ia_gid = fattr.cf_gid;
+	}
+	newattrs.ia_valid |= ATTR_MODE;
+	newattrs.ia_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
 
 	ksmbd_vfs_remove_acl_xattrs(user_ns, path->dentry);
 	/* Update posix acls */
-	if (fattr.cf_dacls) {
+	if (IS_ENABLED(CONFIG_FS_POSIX_ACL) && fattr.cf_dacls) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		rc = set_posix_acl(user_ns, inode,
 				   ACL_TYPE_ACCESS,
@@ -1316,7 +1348,11 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 #else
 		rc = set_posix_acl(inode, ACL_TYPE_ACCESS, fattr.cf_acls);
 #endif
-		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls)
+		if (rc < 0)
+			ksmbd_debug(SMB,
+				    "Set posix acl(ACL_TYPE_ACCESS) failed, rc : %d\n",
+				    rc);
+		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 			rc = set_posix_acl(user_ns, inode,
 					   ACL_TYPE_DEFAULT, fattr.cf_dacls);
@@ -1324,7 +1360,22 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 			rc = set_posix_acl(inode, ACL_TYPE_DEFAULT,
 					   fattr.cf_dacls);
 #endif
+			if (rc)
+				ksmbd_debug(SMB,
+					    "Set posix acl(ACL_TYPE_DEFAULT) failed, rc : %d\n",
+					    rc);
+		}
 	}
+
+	inode_lock(inode);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+	rc = notify_change(user_ns, path->dentry, &newattrs, NULL);
+#else
+	rc = notify_change(path->dentry, &newattrs, NULL);
+#endif
+	inode_unlock(inode);
+	if (rc)
+		goto out;
 
 	/* Check it only calling from SD BUFFER context */
 	if (type_check && !(le16_to_cpu(pntsd->type) & DACL_PRESENT))
