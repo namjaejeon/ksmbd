@@ -5994,7 +5994,7 @@ static int find_first(struct ksmbd_work *work)
 	if (rc < 0) {
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
-		goto err_out;
+		goto err_free_dirpath;
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		if (inode_permission(mnt_user_ns(path.mnt),
@@ -6006,7 +6006,7 @@ static int find_first(struct ksmbd_work *work)
 #endif
 			rc = -EACCES;
 			path_put(&path);
-			goto err_out;
+			goto err_free_dirpath;
 		}
 	}
 
@@ -6014,7 +6014,7 @@ static int find_first(struct ksmbd_work *work)
 		if (d_is_symlink(path.dentry)) {
 			rc = -EACCES;
 			path_put(&path);
-			goto err_out;
+			goto err_free_dirpath;
 		}
 	}
 
@@ -6023,7 +6023,7 @@ static int find_first(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
 		rc = -EINVAL;
-		goto err_out;
+		goto err_free_dirpath;
 	}
 
 	write_lock(&dir_fp->f_ci->m_lock);
@@ -6034,7 +6034,7 @@ static int find_first(struct ksmbd_work *work)
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
 	if (!dir_fp->readdir_data.dirent) {
 		rc = -ENOMEM;
-		goto err_out;
+		goto err_free_dirpath;
 	}
 
 	dir_fp->filename = dirpath;
@@ -6215,6 +6215,8 @@ static int find_first(struct ksmbd_work *work)
 	ksmbd_revert_fsids(work);
 	return 0;
 
+err_free_dirpath:
+	kfree(dirpath);
 err_out:
 	if (rc == -EINVAL)
 		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
