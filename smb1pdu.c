@@ -6530,6 +6530,7 @@ static int smb_set_alloc_size(struct ksmbd_work *work)
 	err = ksmbd_vfs_getattr(&fp->filp->f_path, &stat);
 	if (err) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		ksmbd_fd_put(work, fp);
 		return err;
 	}
 
