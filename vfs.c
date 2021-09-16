@@ -1927,7 +1927,7 @@ int ksmbd_vfs_unlink(struct user_namespace *user_ns,
  * @option:	file access pattern options for fadvise
  * @fexist:	file already present or not
  *
- * Return:	0 on success, otherwise error
+ * Return:	allocated struct ksmbd_file on success, otherwise error pointer
  */
 struct ksmbd_file *ksmbd_vfs_dentry_open(struct ksmbd_work *work,
 					 const struct path *path, int flags,
@@ -1971,13 +1971,6 @@ err_out:
 		pr_err("err : %d\n", err);
 	}
 	return fp;
-}
-#else
-struct ksmbd_file *ksmbd_vfs_dentry_open(struct ksmbd_work *work,
-					 const struct path *path, int flags,
-					 __le32 option, int fexist)
-{
-	return NULL;
 }
 #endif
 
