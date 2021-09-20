@@ -611,18 +611,20 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 	/* change it to absolute unix name */
 	norm_name = ksmbd_conv_path_to_unix(name);
 	if (IS_ERR(norm_name)) {
-		kfree(name);
+		if (!converted)
+			kfree(name);
 		return norm_name;
 	}
 
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
-	wild_card_pos = strrchr(name, '*');
+	wild_card_pos = strrchr(norm_name, '*');
 
 	if (wild_card_pos != NULL)
 		*wild_card_pos = '\0';
 
-	unixname = convert_to_unix_name(share, name);
+	unixname = convert_to_unix_name(share, norm_name);
 
+	kfree(norm_name);
 	if (!converted)
 		kfree(name);
 	if (!unixname) {
@@ -682,10 +684,10 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 		return norm_name;
 	}
 
-	pattern_pos = strrchr(name, '/');
+	pattern_pos = strrchr(norm_name, '/');
 
 	if (!pattern_pos)
-		pattern_pos = name;
+		pattern_pos = norm_name;
 	else
 		pattern_pos += 1;
 
@@ -706,7 +708,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	*pattern_pos = '\0';
 	*srch_ptr = pattern;
 
-	unixname = convert_to_unix_name(share, name);
+	unixname = convert_to_unix_name(share, norm_name);
 	if (!unixname) {
 		pr_err("can not convert absolute name\n");
 		rc = -EINVAL;
@@ -727,6 +729,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	}
 
 	kfree(name);
+	kfree(norm_name);
 	ksmbd_debug(SMB, "absolute name = %s\n", unixname);
 	return unixname;
 
@@ -736,6 +739,7 @@ err_pattern:
 	kfree(pattern);
 err_name:
 	kfree(name);
+	kfree(norm_name);
 
 	if (rc == -EINVAL)
 		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
