@@ -8268,8 +8268,11 @@ int smb_open_andx(struct ksmbd_work *work)
 	/* open  file and get FID */
 	fp = ksmbd_vfs_dentry_open(work, &path, open_flags,
 			0, file_present);
-	if (IS_ERR(fp))
+	if (IS_ERR(fp)) {
+		err = PTR_ERR(fp);
+		fp = NULL;
 		goto free_path;
+	}
 	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
@@ -8399,9 +8402,6 @@ out:
 		else
 			rsp->hdr.Status.CifsError =
 				STATUS_UNEXPECTED_IO_ERROR;
-	}
-
-	if (err) {
 		if (fp)
 			ksmbd_close_fd(work, fp->volatile_id);
 		else
