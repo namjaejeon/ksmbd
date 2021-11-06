@@ -319,6 +319,9 @@ int ksmbd_conn_handler_loop(void *p)
 			continue;
 		}
 
+		if (pdu_size > MAX_STREAM_PROT_LEN)
+                        continue;
+
 		/* 4 for rfc1002 length field */
 		size = pdu_size + 4;
 		conn->request_buf = kvmalloc(size, GFP_KERNEL);
