@@ -588,7 +588,7 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
-	char *name, *unixname;
+	char *name, *unixname, *norm_name;
 	char *wild_card_pos;
 
 	if (converted)
@@ -609,8 +609,11 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 	}
 
 	/* change it to absolute unix name */
-	ksmbd_conv_path_to_unix(name);
-	ksmbd_strip_last_slash(name);
+	norm_name = ksmbd_conv_path_to_unix(name);
+	if (IS_ERR(norm_name)) {
+		kfree(name);
+		return norm_name;
+	}
 
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
 	wild_card_pos = strrchr(name, '*');
@@ -660,7 +663,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
-	char *name, *unixname;
+	char *name, *unixname, *norm_name;
 	char *pattern_pos, *pattern = NULL;
 	int pattern_len, rc;
 
@@ -673,8 +676,11 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	}
 
 	/* change it to absolute unix name */
-	ksmbd_conv_path_to_unix(name);
-	ksmbd_strip_last_slash(name);
+	norm_name = ksmbd_conv_path_to_unix(name);
+	if (IS_ERR(norm_name)) {
+		kfree(name);
+		return norm_name;
+	}
 
 	pattern_pos = strrchr(name, '/');
 
