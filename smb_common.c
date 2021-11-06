@@ -155,11 +155,11 @@ int ksmbd_lookup_protocol_idx(char *str)
  *
  * check for valid smb signature and packet direction(request/response)
  *
- * Return:      0 on success, otherwise 1
+ * Return:      0 on success, otherwise error
  */
 int ksmbd_verify_smb_message(struct ksmbd_work *work)
 {
-	struct smb2_hdr *smb2_hdr = work->request_buf;
+	struct smb2_hdr *smb2_hdr = work->request_buf + work->next_smb2_rcv_hdr_off;
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER) {
@@ -169,10 +169,17 @@ int ksmbd_verify_smb_message(struct ksmbd_work *work)
 
 	return ksmbd_smb1_check_message(work);
 #else
+	struct smb_hdr *hdr;
+
 	if (smb2_hdr->ProtocolId == SMB2_PROTO_NUMBER)
 		return ksmbd_smb2_check_message(work);
 
-	return 0;
+	hdr = work->request_buf;
+	if (*(__le32 *)hdr->Protocol == SMB1_PROTO_NUMBER &&
+	    hdr->Command == SMB_COM_NEGOTIATE)
+		return 0;
+
+	return -EINVAL;
 #endif
 }
 
