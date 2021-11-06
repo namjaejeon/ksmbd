@@ -4216,7 +4216,7 @@ static void get_file_access_info(struct smb2_query_info_rsp *rsp,
 static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 			       struct ksmbd_file *fp, void *rsp_org)
 {
-	struct smb2_file_all_info *basic_info;
+	struct smb2_file_basic_info *basic_info;
 	struct kstat stat;
 	u64 time;
 
@@ -4226,7 +4226,7 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 		return -EACCES;
 	}
 
-	basic_info = (struct smb2_file_all_info *)rsp->Buffer;
+	basic_info = (struct smb2_file_basic_info *)rsp->Buffer;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &stat);
 #else
@@ -4242,9 +4242,8 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	basic_info->Attributes = fp->f_ci->m_fattr;
 	basic_info->Pad1 = 0;
 	rsp->OutputBufferLength =
-		cpu_to_le32(offsetof(struct smb2_file_all_info, AllocationSize));
-	inc_rfc1001_len(rsp_org, offsetof(struct smb2_file_all_info,
-					  AllocationSize));
+		cpu_to_le32(sizeof(struct smb2_file_basic_info));
+	inc_rfc1001_len(rsp_org, sizeof(struct smb2_file_basic_info));
 	return 0;
 }
 
@@ -5486,7 +5485,7 @@ out:
 static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 			       struct ksmbd_share_config *share)
 {
-	struct smb2_file_all_info *file_info;
+	struct smb2_file_basic_info *file_info;
 	struct iattr attrs;
 	struct timespec64 ctime;
 	struct file *filp;
@@ -5497,7 +5496,7 @@ static int set_file_basic_info(struct ksmbd_file *fp, char *buf,
 	if (!(fp->daccess & FILE_WRITE_ATTRIBUTES_LE))
 		return -EACCES;
 
-	file_info = (struct smb2_file_all_info *)buf;
+	file_info = (struct smb2_file_basic_info *)buf;
 	attrs.ia_valid = 0;
 	filp = fp->filp;
 	inode = file_inode(filp);
