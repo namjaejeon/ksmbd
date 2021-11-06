@@ -11,7 +11,7 @@ before_script:
  - wget --no-check-certificate https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.109.tar.gz
  - tar xf linux-5.4.109.tar.gz
  - mv linux-5.4.109 linux-stable
- - ./.travis_get_mainline_kernel
+   # - ./.travis_get_mainline_kernel
  - cp ./.travis_cmd_wrapper.pl ~/travis_cmd_wrapper.pl
  # Prerequisite for xfstests testing
  - sudo apt-get install cifs-utils
@@ -30,11 +30,11 @@ before_script:
 script:
  # Copy ksmbd source to kernel
  - mv linux-stable ../
- - mv linux ../
+ #- mv linux ../
  - mkdir ../linux-stable/fs/ksmbd
  - cp -ar * ../linux-stable/fs/ksmbd/
- - mkdir ../linux/fs/ksmbd
- - cp -ar * ../linux/fs/ksmbd/
+# - mkdir ../linux/fs/ksmbd
+#- cp -ar * ../linux/fs/ksmbd/
 
  # Compile with 5.4 kernel
  - cd ../linux-stable
@@ -49,15 +49,15 @@ script:
  - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile with latest Torvalds' kernel
- - cd ../linux
- - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
- - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
- - echo 'CONFIG_SMB_SERVER=m' >> .config
- - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
- - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
+ # - cd ../linux
+ # - yes "" | make oldconfig > /dev/null
+ # - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ # - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
+ # - echo 'CONFIG_SMB_SERVER=m' >> .config
+ # - echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
+ # - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
+ # - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
+ # - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
 # - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1.0 & smb2.0) with 5.4 kernel
@@ -73,27 +73,27 @@ script:
  - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build (no smb1/smb2) with latest Torvalds' kernel
- - cd ../linux
- - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
- - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
- - echo 'CONFIG_SMB_SERVER=m' >> .config
- - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
+ # - cd ../linux
+ # - yes "" | make oldconfig > /dev/null
+ # - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ # - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
+ # - echo 'CONFIG_SMB_SERVER=m' >> .config
+ # - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
+ # - echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
+ # - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
+ # - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
 # - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + SMBD with latest Torvalds' kernel
- - cd ../linux
- - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
- - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
- - echo 'CONFIG_SMB_SERVER=m' >> .config
- - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
- - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
- - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
+ # - cd ../linux
+ # - yes "" | make oldconfig > /dev/null
+ # - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ # - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
+ # - echo 'CONFIG_SMB_SERVER=m' >> .config
+ # - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
+ # - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
+ # - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
+ # - echo '# CONFIG_SMB_SERVER_KERBEROS5 is not set' >> .config
 # - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + Kerberos  with 5.4 kernel
@@ -109,15 +109,15 @@ script:
  - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Compile secure server build + SMBD + Kerberos with latest Torvalds' kernel
- - cd ../linux
- - yes "" | make oldconfig > /dev/null
- - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
- - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
- - echo 'CONFIG_SMB_SERVER=m' >> .config
- - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
- - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
- - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
- - echo 'CONFIG_SMB_SERVER_KERBEROS5=y' >> .config
+ # - cd ../linux
+ # - yes "" | make oldconfig > /dev/null
+ # - echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
+ # - echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
+ # - echo 'CONFIG_SMB_SERVER=m' >> .config
+ # - echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
+ # - echo 'CONFIG_SMB_SERVER_SMBDIRECT=y' >> .config
+ # - echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
+ # - echo 'CONFIG_SMB_SERVER_KERBEROS5=y' >> .config
 # - make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
 
  # Run xfstests testsuite
