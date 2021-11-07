@@ -724,7 +724,7 @@ static void __smb1_oplock_break_noti(struct work_struct *wk)
 	/* wct is 8 for locking andx(18) */
 	memset(rsp_hdr, 0, sizeof(struct smb_hdr) + 18);
 	rsp_hdr->smb_buf_length =
-		cpu_to_be32(conn->vals->header_size - 4 + 18);
+		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals) + 18);
 	rsp_hdr->Protocol[0] = 0xFF;
 	rsp_hdr->Protocol[1] = 'S';
 	rsp_hdr->Protocol[2] = 'M';
@@ -833,10 +833,10 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = smb2_get_msg(work->response_buf);
+	rsp_hdr = work->response_buf;
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	*(__be32 *)work->response_buf =
-		cpu_to_be32(conn->vals->header_size);
+	rsp_hdr->smb2_buf_length =
+		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
@@ -849,7 +849,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = smb2_get_msg(work->response_buf);
+	rsp = work->response_buf;
 
 	rsp->StructureSize = cpu_to_le16(24);
 	if (!br_info->open_trunc &&
@@ -863,7 +863,7 @@ static void __smb2_oplock_break_noti(struct work_struct *wk)
 	rsp->PersistentFid = cpu_to_le64(fp->persistent_id);
 	rsp->VolatileFid = cpu_to_le64(fp->volatile_id);
 
-	inc_rfc1001_len(work->response_buf, 24);
+	inc_rfc1001_len(rsp, 24);
 
 	ksmbd_debug(OPLOCK,
 		    "sending oplock break v_id %llu p_id = %llu lock level = %d\n",
@@ -940,10 +940,10 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 		return;
 	}
 
-	rsp_hdr = smb2_get_msg(work->response_buf);
+	rsp_hdr = work->response_buf;
 	memset(rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-	*(__be32 *)work->response_buf =
-		cpu_to_be32(conn->vals->header_size);
+	rsp_hdr->smb2_buf_length =
+		cpu_to_be32(smb2_hdr_size_no_buflen(conn->vals));
 	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
 	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
 	rsp_hdr->CreditRequest = cpu_to_le16(0);
@@ -956,7 +956,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp_hdr->SessionId = 0;
 	memset(rsp_hdr->Signature, 0, 16);
 
-	rsp = smb2_get_msg(work->response_buf);
+	rsp = work->response_buf;
 	rsp->StructureSize = cpu_to_le16(44);
 	rsp->Epoch = br_info->epoch;
 	rsp->Flags = 0;
@@ -972,7 +972,7 @@ static void __smb2_lease_break_noti(struct work_struct *wk)
 	rsp->AccessMaskHint = 0;
 	rsp->ShareMaskHint = 0;
 
-	inc_rfc1001_len(work->response_buf, 44);
+	inc_rfc1001_len(rsp, 44);
 
 	ksmbd_conn_write(work);
 	ksmbd_free_work_struct(work);
@@ -1700,26 +1700,47 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
  */
 struct create_context *smb2_find_context_vals(void *open_req, const char *tag)
 {
-	char *data_offset;
 	struct create_context *cc;
 	unsigned int next = 0;
 	char *name;
 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
+	unsigned int remain_len, name_off, name_len, value_off, value_len,
+		     cc_len;
 
-	data_offset = (char *)req + le32_to_cpu(req->CreateContextsOffset);
-	cc = (struct create_context *)data_offset;
+	/*
+	 * CreateContextsOffset and CreateContextsLength are guaranteed to
+	 * be valid because of ksmbd_smb2_check_message().
+	 */
+	cc = (struct create_context *)((char *)req + 4 +
+				       le32_to_cpu(req->CreateContextsOffset));
+	remain_len = le32_to_cpu(req->CreateContextsLength);
 	do {
-		int val;
-
 		cc = (struct create_context *)((char *)cc + next);
-		name = le16_to_cpu(cc->NameOffset) + (char *)cc;
-		val = le16_to_cpu(cc->NameLength);
-		if (val < 4)
+		if (remain_len < offsetof(struct create_context, Buffer))
 			return ERR_PTR(-EINVAL);
 
-		if (memcmp(name, tag, val) == 0)
-			return cc;
 		next = le32_to_cpu(cc->Next);
+		name_off = le16_to_cpu(cc->NameOffset);
+		name_len = le16_to_cpu(cc->NameLength);
+		value_off = le16_to_cpu(cc->DataOffset);
+		value_len = le32_to_cpu(cc->DataLength);
+		cc_len = next ? next : remain_len;
+
+		if ((next & 0x7) != 0 ||
+		    next > remain_len ||
+		    name_off != offsetof(struct create_context, Buffer) ||
+		    name_len < 4 ||
+		    name_off + name_len > cc_len ||
+		    (value_off & 0x7) != 0 ||
+		    (value_off && (value_off < name_off + name_len)) ||
+		    ((u64)value_off + value_len > cc_len))
+			return ERR_PTR(-EINVAL);
+
+		name = (char *)cc + name_off;
+		if (memcmp(name, tag, name_len) == 0)
+			return cc;
+
+		remain_len -= next;
 	} while (next != 0);
 
 	return NULL;

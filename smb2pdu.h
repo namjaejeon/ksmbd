@@ -113,6 +113,8 @@
 #define SMB21_DEFAULT_IOSIZE	(1024 * 1024)
 #define SMB3_DEFAULT_IOSIZE	(4 * 1024 * 1024)
 #define SMB3_DEFAULT_TRANS_SIZE	(1024 * 1024)
+#define SMB3_MIN_IOSIZE	(64 * 1024)
+#define SMB3_MAX_IOSIZE	(8 * 1024 * 1024)
 
 /*
  * SMB2 Header Definition
@@ -128,6 +130,11 @@
 	cpu_to_le16(__SMB2_HEADER_STRUCTURE_SIZE)
 
 struct smb2_hdr {
+	__be32 smb2_buf_length;	/* big endian on wire */
+				/*
+				 * length is only two or three bytes - with
+				 * one or two byte type preceding it that MBZ
+				 */
 	__le32 ProtocolId;	/* 0xFE 'S' 'M' 'B' */
 	__le16 StructureSize;	/* 64 */
 	__le16 CreditCharge;	/* MBZ */
@@ -157,6 +164,11 @@ struct smb2_pdu {
 #define SMB3_AES_GCM_NONCE 12
 
 struct smb2_transform_hdr {
+	__be32 smb2_buf_length; /* big endian on wire */
+	/*
+	 * length is only two or three bytes - with
+	 * one or two byte type preceding it that MBZ
+	 */
 	__le32 ProtocolId;      /* 0xFD 'S' 'M' 'B' */
 	__u8   Signature[16];
 	__u8   Nonce[16];
@@ -1454,6 +1466,15 @@ struct smb2_file_all_info { /* data block encoding of response to level 18 */
 	char   FileName[1];
 } __packed; /* level 18 Query */
 
+struct smb2_file_basic_info { /* data block encoding of response to level 18 */
+	__le64 CreationTime;	/* Beginning of FILE_BASIC_INFO equivalent */
+	__le64 LastAccessTime;
+	__le64 LastWriteTime;
+	__le64 ChangeTime;
+	__le32 Attributes;
+	__u32  Pad1;		/* End of FILE_BASIC_INFO_INFO equivalent */
+} __packed;
+
 struct smb2_file_alt_name_info {
 	__le32 FileNameLength;
 	char FileName[0];
@@ -1685,12 +1706,4 @@ int smb2_ioctl(struct ksmbd_work *work);
 int smb2_oplock_break(struct ksmbd_work *work);
 int smb2_notify(struct ksmbd_work *ksmbd_work);
 
-/*
- * Get the body of the smb2 message excluding the 4 byte rfc1002 headers
- * from request/response buffer.
- */
-static inline void *smb2_get_msg(void *buf)
-{
-	return buf + 4;
-}
 #endif	/* _SMB2PDU_H */
