@@ -5,10 +5,7 @@
 
 #include <linux/list.h>
 #include <linux/slab.h>
-#include <linux/version.h>
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 #include <linux/xarray.h>
-#endif
 
 #include "../transport_ipc.h"
 #include "../connection.h"
@@ -26,9 +23,7 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 	struct ksmbd_share_config *sc;
 	struct ksmbd_tree_connect *tree_conn = NULL;
 	struct sockaddr *peer_addr;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	int ret;
-#endif
 
 	sc = ksmbd_share_config_get(share_name);
 	if (!sc)
