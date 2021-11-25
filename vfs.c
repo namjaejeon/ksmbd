@@ -696,12 +696,6 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 		err = get_write_access(inode);
 		if (err)
 			goto out;
-
-		err = locks_verify_truncate(inode, NULL, attrs->ia_size);
-		if (err) {
-			put_write_access(inode);
-			goto out;
-		}
 		update_size = true;
 	}
 
