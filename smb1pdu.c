@@ -5426,6 +5426,7 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct file_end_of_file_info *eofinfo;
+	struct iattr attr;
 	char *name = NULL;
 	loff_t newsize;
 	int rc = 0;
@@ -5440,7 +5441,9 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	eofinfo =  (struct file_end_of_file_info *)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	rc = ksmbd_vfs_truncate(work, name, NULL, newsize);
+	attr.ia_valid = ATTR_SIZE;
+	attr.ia_size = newsize;
+	rc = ksmbd_vfs_setattr(work, name, 0, &attr);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		goto out;
