@@ -1247,55 +1247,38 @@ int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work, char *oldname,
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_truncate(struct ksmbd_work *work, const char *name,
+int ksmbd_vfs_truncate(struct ksmbd_work *work,
 		       struct ksmbd_file *fp, loff_t size)
 {
-	struct path path;
 	int err = 0;
+	struct file *filp;
 
-	if (name) {
-		err = kern_path(name, LOOKUP_NO_SYMLINKS, &path);
+	filp = fp->filp;
+
+	/* Do we need to break any of a levelII oplock? */
+	smb_break_all_levII_oplock(work, fp, 1);
+
+	if (!work->tcon->posix_extensions) {
+		struct inode *inode = file_inode(filp);
+
+		if (size < inode->i_size) {
+			err = check_lock_range(filp, size,
+					       inode->i_size - 1, WRITE);
+		} else {
+			err = check_lock_range(filp, inode->i_size,
+					       size - 1, WRITE);
+		}
+
 		if (err) {
-			pr_err("cannot get linux path for %s, err %d\n",
-			       name, err);
-			return err;
+			pr_err("failed due to lock\n");
+			return -EAGAIN;
 		}
-		err = vfs_truncate(&path, size);
-		if (err)
-			pr_err("truncate failed for %s err %d\n",
-			       name, err);
-		path_put(&path);
-	} else {
-		struct file *filp;
-
-		filp = fp->filp;
-
-		/* Do we need to break any of a levelII oplock? */
-		smb_break_all_levII_oplock(work, fp, 1);
-
-		if (!work->tcon->posix_extensions) {
-			struct inode *inode = file_inode(filp);
-
-			if (size < inode->i_size) {
-				err = check_lock_range(filp, size,
-						       inode->i_size - 1, WRITE);
-			} else {
-				err = check_lock_range(filp, inode->i_size,
-						       size - 1, WRITE);
-			}
-
-			if (err) {
-				pr_err("failed due to lock\n");
-				return -EAGAIN;
-			}
-		}
-
-		err = vfs_truncate(&filp->f_path, size);
-		if (err)
-			pr_err("truncate failed for filename : %s err %d\n",
-			       fp->filename, err);
 	}
 
+	err = vfs_truncate(&filp->f_path, size);
+	if (err)
+		pr_err("truncate failed for filename : %s err %d\n",
+		       fp->filename, err);
 	return err;
 }
 

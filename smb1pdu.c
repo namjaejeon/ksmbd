@@ -2597,7 +2597,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	if (alloc_size && (file_info == F_CREATED ||
 				file_info == F_OVERWRITTEN)) {
 		if (alloc_size > stat.size) {
-			err = ksmbd_vfs_truncate(work, NULL, fp, alloc_size);
+			err = ksmbd_vfs_truncate(work, fp, alloc_size);
 			if (err) {
 				pr_err("failed to expand file, err = %d\n",
 				       err);
@@ -3025,7 +3025,7 @@ int smb_write(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
 	if (!count) {
-		err = ksmbd_vfs_truncate(work, NULL, fp, pos);
+		err = ksmbd_vfs_truncate(work, fp, pos);
 		nbytes = 0;
 	} else
 		err = ksmbd_vfs_write(work, fp, data_buf,
@@ -6559,7 +6559,7 @@ static int smb_set_alloc_size(struct ksmbd_work *work)
 		newsize *= alloc_roundup_size;
 	}
 
-	err = ksmbd_vfs_truncate(work, NULL, fp, newsize);
+	err = ksmbd_vfs_truncate(work, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		ksmbd_fd_put(work, fp);
@@ -6623,7 +6623,7 @@ static int smb_set_file_size_finfo(struct ksmbd_work *work)
 	}
 
 	newsize = le64_to_cpu(eofinfo->FileSize);
-	err = ksmbd_vfs_truncate(work, NULL, fp, newsize);
+	err = ksmbd_vfs_truncate(work, fp, newsize);
 	if (err) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		ksmbd_fd_put(work, fp);
@@ -7256,7 +7256,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	}
 
 	if (info->overwrite) {
-		rc = ksmbd_vfs_truncate(work, NULL, fp, 0);
+		rc = ksmbd_vfs_truncate(work, fp, 0);
 		if (rc) {
 			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 			ksmbd_fd_put(work, fp);

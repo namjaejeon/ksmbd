@@ -5757,7 +5757,7 @@ static int set_file_allocation_info(struct ksmbd_work *work,
 		 * inode size is retained by backup inode size.
 		 */
 		size = i_size_read(inode);
-		rc = ksmbd_vfs_truncate(work, NULL, fp, alloc_blks * 512);
+		rc = ksmbd_vfs_truncate(work, fp, alloc_blks * 512);
 		if (rc) {
 			pr_err("truncate failed! filename : %s, err %d\n",
 			       fp->filename, rc);
@@ -5792,7 +5792,7 @@ static int set_end_of_file_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 	if (inode->i_sb->s_magic != MSDOS_SUPER_MAGIC) {
 		ksmbd_debug(SMB, "filename : %s truncated to newsize %lld\n",
 			    fp->filename, newsize);
-		rc = ksmbd_vfs_truncate(work, NULL, fp, newsize);
+		rc = ksmbd_vfs_truncate(work, fp, newsize);
 		if (rc) {
 			ksmbd_debug(SMB, "truncate failed! filename : %s err %d\n",
 				    fp->filename, rc);
