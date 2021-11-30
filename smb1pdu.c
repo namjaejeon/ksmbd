@@ -279,24 +279,27 @@ int smb_check_user_session(struct ksmbd_work *work)
 int smb_get_ksmbd_tcon(struct ksmbd_work *work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
+	unsigned int cmd = le16_to_cpu(req_hdr->Command);
 	int tree_id;
 
-	if (xa_empty(&work->sess->tree_conns)) {
-		ksmbd_debug(SMB, "NO tree connected\n");
+	work->tcon = NULL;
+	if (cmd == SMB_COM_TREE_CONNECT_ANDX ||
+	    cmd == SMB_COM_NT_CANCEL ||
+	    cmd == SMB_COM_LOGOFF_ANDX) {
+		ksmbd_debug(SMB, "skip to check tree connect request\n");
 		return 0;
 	}
 
-	work->tcon = NULL;
-	if (work->conn->ops->get_cmd_val(work) == SMB_COM_TREE_CONNECT_ANDX) {
-		ksmbd_debug(SMB, "skip to check tree connect request\n");
-		return 0;
+	if (xa_empty(&work->sess->tree_conns)) {
+		ksmbd_debug(SMB, "NO tree connected\n");
+		return -ENOENT;
 	}
 
 	tree_id = le16_to_cpu(req_hdr->Tid);
 	work->tcon = ksmbd_tree_conn_lookup(work->sess, tree_id);
 	if (!work->tcon) {
 		pr_err("Invalid tid %d\n", tree_id);
-		return -1;
+		return -EINVAL;
 	}
 
 	return 1;
