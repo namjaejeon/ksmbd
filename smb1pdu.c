@@ -805,7 +805,7 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
-	rc = ksmbd_vfs_kern_path(abs_newname, 0, &path, 1);
+	rc = ksmbd_vfs_kern_path(abs_newname, LOOKUP_NO_SYMLINKS, &path, 1);
 	if (rc)
 		file_present = false;
 	else
@@ -2227,7 +2227,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 	int share_ret;
-	unsigned int flags = LOOKUP_FOLLOW;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -2353,15 +2352,12 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		return PTR_ERR(conv_name);
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
-
 	if (ksmbd_override_fsids(work)) {
 		err = -ENOMEM;
 		goto out1;
 	}
 
-	err = ksmbd_vfs_kern_path(conv_name, flags, &path,
+	err = ksmbd_vfs_kern_path(conv_name, LOOKUP_NO_SYMLINKS, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
@@ -2371,12 +2367,9 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "can not get linux path for %s, err = %d\n",
 				conv_name, err);
 	} else {
-		if (!test_share_config_flag(share,
-			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-			if (d_is_symlink(path.dentry)) {
-				err = -EACCES;
-				goto free_path;
-			}
+		if (d_is_symlink(path.dentry)) {
+			err = -EACCES;
+			goto free_path;
 		}
 
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
@@ -4019,7 +4012,6 @@ static int query_path_info(struct ksmbd_work *work)
 	int rc;
 	char *ptr;
 	__u64 create_time = 0, time;
-	unsigned int flags = LOOKUP_FOLLOW;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE)) {
@@ -4037,17 +4029,13 @@ static int query_path_info(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
-
 	if (ksmbd_override_fsids(work)) {
 		kfree(name);
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return -ENOMEM;
 	}
 
-	rc = ksmbd_vfs_kern_path(name, flags, &path, 0);
+	rc = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (rc) {
 		if (rc == -EACCES)
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
@@ -4059,11 +4047,9 @@ static int query_path_info(struct ksmbd_work *work)
 		goto out;
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-		if (d_is_symlink(path.dentry)) {
-			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
-			goto err_out;
-		}
+	if (d_is_symlink(path.dentry)) {
+		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+		goto err_out;
 	}
 
 	rc = vfs_getattr(&path, &st, STATX_BASIC_STATS, AT_STATX_SYNC_AS_STAT);
@@ -4618,7 +4604,7 @@ static int query_fs_info(struct ksmbd_work *work)
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_FOLLOW, &path, 0);
+	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (rc) {
 		ksmbd_revert_fsids(work);
 		pr_err("cannot create vfs path\n");
@@ -4862,7 +4848,6 @@ static int smb_posix_open(struct ksmbd_work *work)
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
-	unsigned int flags = LOOKUP_FOLLOW;
 
 	name = smb_get_name(share, pSMB_req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(name)) {
@@ -4877,10 +4862,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		return -ENOMEM;
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
-
-	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
+	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (err) {
 		file_present = false;
 		ksmbd_debug(SMB, "cannot get linux path for %s, err = %d\n",
@@ -4888,12 +4870,9 @@ static int smb_posix_open(struct ksmbd_work *work)
 		if (err == -EACCES)
 			goto out;
 	} else {
-		if (!test_share_config_flag(share,
-			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-			if (d_is_symlink(path.dentry)) {
-				err = -EACCES;
-				goto free_path;
-			}
+		if (d_is_symlink(path.dentry)) {
+			err = -EACCES;
+			goto free_path;
 		}
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
 			AT_STATX_SYNC_AS_STAT);
@@ -5981,7 +5960,6 @@ static int find_first(struct ksmbd_work *work)
 	char *dirpath = NULL;
 	char *srch_ptr = NULL;
 	int header_size;
-	unsigned int flags = LOOKUP_FOLLOW;
 	int struct_sz;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
@@ -6001,12 +5979,9 @@ static int find_first(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
-
 	ksmbd_debug(SMB, "complete dir path = %s\n",  dirpath);
-	rc = ksmbd_vfs_kern_path(dirpath, flags | LOOKUP_DIRECTORY,
-			&path, 0);
+	rc = ksmbd_vfs_kern_path(dirpath, LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
+				 &path, 0);
 	if (rc < 0) {
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 				dirpath, rc);
@@ -6026,12 +6001,10 @@ static int find_first(struct ksmbd_work *work)
 		}
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-		if (d_is_symlink(path.dentry)) {
-			rc = -EACCES;
-			path_put(&path);
-			goto err_free_dirpath;
-		}
+	if (d_is_symlink(path.dentry)) {
+		rc = -EACCES;
+		path_put(&path);
+		goto err_free_dirpath;
 	}
 
 	dir_fp = ksmbd_vfs_dentry_open(work, &path, O_RDONLY, 0, 1);
@@ -7649,7 +7622,8 @@ int smb_checkdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, 0, &path, caseless_lookup);
+	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+				  caseless_lookup);
 	if (err) {
 		if (err == -ENOENT) {
 			/*
@@ -7962,30 +7936,23 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 	struct path path;
 	char *name;
 	int err = 0;
-	unsigned int flags = LOOKUP_FOLLOW;
 
 	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(name))
 		return STATUS_OBJECT_NAME_INVALID;
-
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
 
 	if (ksmbd_override_fsids(work)) {
 		kfree(name);
 		return STATUS_NO_MEMORY;
 	}
 
-	err = ksmbd_vfs_kern_path(name, flags, &path, 0);
+	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (err) {
 		pr_err("look up failed err %d\n", err);
 
-		if (!test_share_config_flag(share,
-			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-			if (d_is_symlink(path.dentry)) {
-				err = STATUS_ACCESS_DENIED;
-				goto out;
-			}
+		if (d_is_symlink(path.dentry)) {
+			err = STATUS_ACCESS_DENIED;
+			goto out;
 		}
 		err = STATUS_OBJECT_NAME_NOT_FOUND;
 		goto out;
@@ -8159,7 +8126,6 @@ int smb_open_andx(struct ksmbd_work *work)
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE, share_ret;
-	unsigned int flags = LOOKUP_FOLLOW;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 
@@ -8187,23 +8153,17 @@ int smb_open_andx(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	if (!test_share_config_flag(share, KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags = 0;
-
 	if (ksmbd_override_fsids(work)) {
 		kfree(name);
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return -ENOMEM;
 	}
 
-	err = ksmbd_vfs_kern_path(name, flags, &path,
-			req->hdr.Flags & SMBFLG_CASELESS);
+	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+				  req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
-		if (err == -EACCES || !test_share_config_flag(share,
-			KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
-			err = -EACCES;
+		if (err == -EACCES)
 			goto out;
-		}
 		file_present = false;
 	} else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
@@ -8465,8 +8425,8 @@ int smb_setattr(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, 0, &path,
-		req->hdr.Flags & SMBFLG_CASELESS);
+	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+				  req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
 		ksmbd_debug(SMB, "look up failed err %d\n", err);
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_NOT_FOUND;
