@@ -591,8 +591,7 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
-	char *name, *unixname, *norm_name;
-	char *wild_card_pos;
+	char *name, *wild_card_pos;
 
 	if (converted)
 		name = (char *)src;
@@ -611,46 +610,31 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 		}
 	}
 
-	/* change it to absolute unix name */
-	norm_name = ksmbd_conv_path_to_unix(name);
-	if (IS_ERR(norm_name)) {
-		if (!converted)
-			kfree(name);
-		return norm_name;
-	}
+	ksmbd_conv_path_to_unix(name);
+	ksmbd_strip_last_slash(name);
 
 	/*Handling of dir path in FIND_FIRST2 having '*' at end of path*/
-	wild_card_pos = strrchr(norm_name, '*');
+	wild_card_pos = strrchr(name, '*');
 
 	if (wild_card_pos != NULL)
 		*wild_card_pos = '\0';
 
-	unixname = convert_to_unix_name(share, norm_name);
 
-	kfree(norm_name);
-	if (!converted)
-		kfree(name);
-	if (!unixname) {
-		pr_err("can not convert absolute name\n");
-		rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
-		return ERR_PTR(-ENOMEM);
-	}
-
-	if (ksmbd_validate_filename(unixname) < 0) {
-		kfree(unixname);
+	if (ksmbd_validate_filename(name) < 0)
 		return ERR_PTR(-ENOENT);
-	}
 
-	if (ksmbd_share_veto_filename(share, unixname)) {
+	if (ksmbd_share_veto_filename(share, name)) {
 		ksmbd_debug(SMB,
 			"file(%s) open is not allowed by setting as veto file\n",
-				unixname);
-		kfree(unixname);
+				name);
+		if (!converted)
+			kfree(name);
 		return ERR_PTR(-ENOENT);
 	}
 
-	ksmbd_debug(SMB, "absolute name = %s\n", unixname);
-	return unixname;
+	ksmbd_debug(SMB, "file name = %s\n", name);
+
+	return name;
 }
 
 /**
@@ -668,8 +652,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
-	char *name, *unixname, *norm_name;
-	char *pattern_pos, *pattern = NULL;
+	char *name, *pattern_pos, *pattern = NULL;
 	int pattern_len, rc;
 
 	name = smb_strndup_from_utf16(src, maxlen, is_unicode,
@@ -680,17 +663,13 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 		return name;
 	}
 
-	/* change it to absolute unix name */
-	norm_name = ksmbd_conv_path_to_unix(name);
-	if (IS_ERR(norm_name)) {
-		kfree(name);
-		return norm_name;
-	}
+	ksmbd_conv_path_to_unix(name);
+	ksmbd_strip_last_slash(name);
 
-	pattern_pos = strrchr(norm_name, '/');
+	pattern_pos = strrchr(name, '/');
 
 	if (!pattern_pos)
-		pattern_pos = norm_name;
+		pattern_pos = name;
 	else
 		pattern_pos += 1;
 
@@ -711,38 +690,26 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share, const char *src,
 	*pattern_pos = '\0';
 	*srch_ptr = pattern;
 
-	unixname = convert_to_unix_name(share, norm_name);
-	if (!unixname) {
-		pr_err("can not convert absolute name\n");
-		rc = -EINVAL;
+	if (ksmbd_validate_filename(name) < 0) {
+		rc = -ENOENT;
 		goto err_pattern;
 	}
 
-	if (ksmbd_validate_filename(unixname) < 0) {
-		rc = -ENOENT;
-		goto err_unixname;
-	}
-
-	if (ksmbd_share_veto_filename(share, unixname)) {
+	if (ksmbd_share_veto_filename(share, name)) {
 		ksmbd_debug(SMB,
 			"file(%s) open is not allowed by setting as veto file\n",
-				unixname);
+				name);
 		rc = -ENOENT;
-		goto err_unixname;
+		goto err_pattern;
 	}
 
-	kfree(name);
-	kfree(norm_name);
-	ksmbd_debug(SMB, "absolute name = %s\n", unixname);
-	return unixname;
+	ksmbd_debug(SMB, "dir name = %s\n", name);
+	return name;
 
-err_unixname:
-	kfree(unixname);
 err_pattern:
 	kfree(pattern);
 err_name:
 	kfree(name);
-	kfree(norm_name);
 
 	if (rc == -EINVAL)
 		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
@@ -766,7 +733,7 @@ int smb_rename(struct ksmbd_work *work)
 	struct smb_com_rename_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
-	char *abs_oldname, *abs_newname;
+	char *oldname, *newname;
 	int oldname_len;
 	struct path path;
 	bool file_present = true;
@@ -779,41 +746,38 @@ int smb_rename(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	abs_oldname = smb_get_name(share, req->OldFileName, PATH_MAX, work,
-		false);
-	if (IS_ERR(abs_oldname)) {
+	oldname = smb_get_name(share, req->OldFileName, PATH_MAX, work, false);
+	if (IS_ERR(oldname)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
-		return PTR_ERR(abs_oldname);
+		return PTR_ERR(oldname);
 	}
 
 	if (is_unicode)
 		oldname_len = smb1_utf16_name_length((__le16 *)req->OldFileName,
 				PATH_MAX);
 	else {
-		oldname_len = strlen(abs_oldname);
+		oldname_len = strlen(oldname);
 		oldname_len++;
 	}
 
-	abs_newname = smb_get_name(share, &req->OldFileName[oldname_len + 2],
-			PATH_MAX, work, false);
-	if (IS_ERR(abs_newname)) {
+	newname = smb_get_name(share, &req->OldFileName[oldname_len + 2],
+			       PATH_MAX, work, false);
+	if (IS_ERR(newname)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
-		rc = PTR_ERR(abs_newname);
-		abs_newname = NULL;
+		rc = PTR_ERR(newname);
+		newname = NULL;
 		goto out;
 	}
 
-	rc = ksmbd_vfs_kern_path(work, abs_newname, LOOKUP_NO_SYMLINKS, &path, 1);
+	rc = ksmbd_vfs_kern_path(work, newname, LOOKUP_NO_SYMLINKS, &path, 1);
 	if (rc)
 		file_present = false;
 	else
 		path_put(&path);
 
-	if (file_present &&
-			strncmp(abs_oldname, abs_newname,
-				strlen(abs_oldname))) {
+	if (file_present && strncmp(oldname, newname, strlen(oldname))) {
 		rc = -EEXIST;
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_COLLISION;
@@ -821,8 +785,8 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
-	ksmbd_debug(SMB, "rename %s -> %s\n", abs_oldname, abs_newname);
-	rc = ksmbd_vfs_rename_slowpath(work, abs_oldname, abs_newname);
+	ksmbd_debug(SMB, "rename %s -> %s\n", oldname, newname);
+	rc = ksmbd_vfs_rename_slowpath(work, oldname, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		goto out;
@@ -830,8 +794,8 @@ int smb_rename(struct ksmbd_work *work)
 	rsp->hdr.WordCount = 0;
 	rsp->ByteCount = 0;
 out:
-	kfree(abs_oldname);
-	kfree(abs_newname);
+	kfree(oldname);
+	kfree(newname);
 	return rc;
 }
 
@@ -2345,7 +2309,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	}
 
 	conv_name = smb_get_name(share, name, PATH_MAX, work, true);
-	kfree(name);
 	if (IS_ERR(conv_name)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
@@ -2361,7 +2324,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
-		if (err == -EACCES)
+		if (err == -EACCES || err == -EXDEV)
 			goto out;
 		file_present = false;
 		ksmbd_debug(SMB, "can not get linux path for %s, err = %d\n",
@@ -2373,7 +2336,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		}
 
 		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
-			AT_STATX_SYNC_AS_STAT);
+				  AT_STATX_SYNC_AS_STAT);
 		if (err) {
 			pr_err("can not stat %s, err = %d\n",
 			       conv_name, err);
@@ -4037,7 +4000,7 @@ static int query_path_info(struct ksmbd_work *work)
 
 	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (rc) {
-		if (rc == -EACCES)
+		if (rc == -EACCES || rc == -EXDEV)
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp_hdr->Status.CifsError =
@@ -4239,8 +4202,7 @@ static int query_path_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = convert_to_nt_pathname(name,
-				work->tcon->share_conf->path);
+		filename = convert_to_nt_pathname(name);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -4286,8 +4248,7 @@ static int query_path_info(struct ksmbd_work *work)
 		else
 			del_pending = 0;
 
-		filename = convert_to_nt_pathname(name,
-				work->tcon->share_conf->path);
+		filename = convert_to_nt_pathname(name);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -4604,7 +4565,7 @@ static int query_fs_info(struct ksmbd_work *work)
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	rc = ksmbd_vfs_kern_path(work, share->path, LOOKUP_NO_SYMLINKS, &path, 0);
+	rc = kern_path(share->path, LOOKUP_NO_SYMLINKS, &path);
 	if (rc) {
 		ksmbd_revert_fsids(work);
 		pr_err("cannot create vfs path\n");
@@ -4867,7 +4828,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		file_present = false;
 		ksmbd_debug(SMB, "cannot get linux path for %s, err = %d\n",
 				name, err);
-		if (err == -EACCES)
+		if (err == -EACCES || err == -EXDEV)
 			goto out;
 	} else {
 		if (d_is_symlink(path.dentry)) {
@@ -6114,6 +6075,11 @@ static int find_first(struct ksmbd_work *work)
 			pr_err("filename length exceeds 255 bytes.\n");
 			continue;
 		}
+
+		if (!strncmp(de->name, ".", de->namelen) ||
+		    !strncmp(de->name, "..", de->namelen))
+			continue;
+
 		memcpy(d_info.smb1_name, de->name, de->namelen);
 		d_info.smb1_name[de->namelen] = '\0';
 		d_info.name = (const char *)d_info.smb1_name;
@@ -6128,10 +6094,6 @@ static int find_first(struct ksmbd_work *work)
 			ksmbd_debug(SMB, "Cannot read dirent: %d\n", rc);
 			continue;
 		}
-
-		if (!strncmp(de->name, ".", de->namelen) ||
-			!strncmp(de->name, "..", de->namelen))
-			continue;
 
 		if (ksmbd_share_veto_filename(share, d_info.name)) {
 			ksmbd_debug(SMB, "Veto filename %s\n", d_info.name);
@@ -6209,7 +6171,7 @@ err_free_dirpath:
 err_out:
 	if (rc == -EINVAL)
 		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-	else if (rc == -EACCES)
+	else if (rc == -EACCES || rc == -EXDEV)
 		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
 	else if (rc == -ENOENT)
 		rsp_hdr->Status.CifsError = STATUS_NO_SUCH_FILE;
@@ -6264,7 +6226,6 @@ static int find_next(struct ksmbd_work *work)
 	int data_alignment_offset = 0;
 	int rc = 0, reclen = 0;
 	__u16 sid;
-	char *dirpath = NULL;
 	char *name = NULL;
 	char *pathname = NULL;
 	int header_size, srch_cnt, struct_sz;
@@ -6298,14 +6259,6 @@ static int find_next(struct ksmbd_work *work)
 		rc = -ENOMEM;
 		goto err_out;
 	}
-
-	dirpath = d_path(&(dir_fp->filp->f_path), pathname, PATH_MAX);
-	if (IS_ERR(dirpath)) {
-		rc = PTR_ERR(dirpath);
-		goto err_out;
-	}
-
-	ksmbd_debug(SMB, "dirpath = %s\n", dirpath);
 
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
@@ -6384,7 +6337,7 @@ static int find_next(struct ksmbd_work *work)
 					    &ksmbd_kstat,
 					    de->name,
 					    de->namelen,
-					    dirpath);
+					    dir_fp->filename);
 		if (rc) {
 			ksmbd_debug(SMB, "Err while dirent read rc = %d\n", rc);
 			rc = 0;
@@ -6460,7 +6413,7 @@ static int find_next(struct ksmbd_work *work)
 err_out:
 	if (rc == -EINVAL)
 		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
-	else if (rc == -EACCES)
+	else if (rc == -EACCES || rc == -EXDEV)
 		rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
 	else if (rc == -ENOENT)
 		rsp_hdr->Status.CifsError = STATUS_NO_SUCH_FILE;
@@ -6885,8 +6838,7 @@ static int query_file_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = convert_to_nt_pathname(fp->filename,
-			work->tcon->share_conf->path);
+		filename = convert_to_nt_pathname(fp->filename);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -7808,7 +7760,7 @@ int smb_unlink(struct ksmbd_work *work)
 				STATUS_FILE_IS_A_DIRECTORY;
 		else if (err == -ESHARE)
 			rsp->hdr.Status.CifsError = STATUS_SHARING_VIOLATION;
-		else if (err == -EACCES)
+		else if (err == -EACCES || err == -EXDEV)
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status.CifsError =
@@ -8162,7 +8114,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
-		if (err == -EACCES)
+		if (err == -EACCES || err == -EXDEV)
 			goto out;
 		file_present = false;
 	} else
@@ -8373,7 +8325,7 @@ out:
 		else if (err == -ENOENT)
 			rsp->hdr.Status.CifsError =
 				STATUS_OBJECT_NAME_NOT_FOUND;
-		else if (err == -EACCES)
+		else if (err == -EACCES || err == -EXDEV)
 			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
 		else
 			rsp->hdr.Status.CifsError =
