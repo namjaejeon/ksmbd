@@ -805,7 +805,7 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
-	rc = ksmbd_vfs_kern_path(abs_newname, LOOKUP_NO_SYMLINKS, &path, 1);
+	rc = ksmbd_vfs_kern_path(work, abs_newname, LOOKUP_NO_SYMLINKS, &path, 1);
 	if (rc)
 		file_present = false;
 	else
@@ -2357,7 +2357,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		goto out1;
 	}
 
-	err = ksmbd_vfs_kern_path(conv_name, LOOKUP_NO_SYMLINKS, &path,
+	err = ksmbd_vfs_kern_path(work, conv_name, LOOKUP_NO_SYMLINKS, &path,
 			(req->hdr.Flags & SMBFLG_CASELESS) &&
 			!create_directory);
 	if (err) {
@@ -2498,7 +2498,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			}
 		}
 
-		err = ksmbd_vfs_kern_path(conv_name, 0, &path, 0);
+		err = ksmbd_vfs_kern_path(work, conv_name, 0, &path, 0);
 		if (err) {
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -4035,7 +4035,7 @@ static int query_path_info(struct ksmbd_work *work)
 		return -ENOMEM;
 	}
 
-	rc = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
+	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (rc) {
 		if (rc == -EACCES)
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
@@ -4604,7 +4604,7 @@ static int query_fs_info(struct ksmbd_work *work)
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	rc = ksmbd_vfs_kern_path(share->path, LOOKUP_NO_SYMLINKS, &path, 0);
+	rc = ksmbd_vfs_kern_path(work, share->path, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (rc) {
 		ksmbd_revert_fsids(work);
 		pr_err("cannot create vfs path\n");
@@ -4862,7 +4862,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		return -ENOMEM;
 	}
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (err) {
 		file_present = false;
 		ksmbd_debug(SMB, "cannot get linux path for %s, err = %d\n",
@@ -4929,7 +4929,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		if (err)
 			goto out;
 
-		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 0);
 		if (err) {
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -4944,7 +4944,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 		if (err)
 			goto out;
 
-		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 0);
 		if (err) {
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -5980,7 +5980,7 @@ static int find_first(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "complete dir path = %s\n",  dirpath);
-	rc = ksmbd_vfs_kern_path(dirpath, LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
+	rc = ksmbd_vfs_kern_path(work, dirpath, LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
 				 &path, 0);
 	if (rc < 0) {
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
@@ -7399,7 +7399,7 @@ static int create_dir(struct ksmbd_work *work)
 		struct path path;
 		struct xattr_dos_attrib da = {0};
 
-		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 1);
 		if (!err) {
 			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
 
@@ -7571,7 +7571,7 @@ int smb_mkdir(struct ksmbd_work *work)
 		struct path path;
 		struct xattr_dos_attrib da = {0};
 
-		err = ksmbd_vfs_kern_path(name, 0, &path, 1);
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 1);
 		if (!err) {
 			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
 
@@ -7622,7 +7622,7 @@ int smb_checkdir(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  caseless_lookup);
 	if (err) {
 		if (err == -ENOENT) {
@@ -7638,7 +7638,7 @@ int smb_checkdir(struct ksmbd_work *work)
 				*last = '\0';
 				last++;
 
-				err = ksmbd_vfs_kern_path(name, LOOKUP_FOLLOW |
+				err = ksmbd_vfs_kern_path(work, name, LOOKUP_FOLLOW |
 						LOOKUP_DIRECTORY, &path,
 						caseless_lookup);
 			} else {
@@ -7946,7 +7946,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 		return STATUS_NO_MEMORY;
 	}
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path, 0);
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
 	if (err) {
 		pr_err("look up failed err %d\n", err);
 
@@ -8159,7 +8159,7 @@ int smb_open_andx(struct ksmbd_work *work)
 		return -ENOMEM;
 	}
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
 		if (err == -EACCES)
@@ -8209,7 +8209,7 @@ int smb_open_andx(struct ksmbd_work *work)
 		if (err)
 			goto out;
 
-		err = ksmbd_vfs_kern_path(name, 0, &path, 0);
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 0);
 		if (err) {
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
@@ -8425,7 +8425,7 @@ int smb_setattr(struct ksmbd_work *work)
 		return PTR_ERR(name);
 	}
 
-	err = ksmbd_vfs_kern_path(name, LOOKUP_NO_SYMLINKS, &path,
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  req->hdr.Flags & SMBFLG_CASELESS);
 	if (err) {
 		ksmbd_debug(SMB, "look up failed err %d\n", err);
