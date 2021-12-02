@@ -36,6 +36,9 @@
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
+extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
+			   const char *, unsigned int, struct path *);
+
 static char *extract_last_component(char *path)
 {
 	char *p = strrchr(path, '/');
@@ -45,7 +48,6 @@ static char *extract_last_component(char *path)
 		p++;
 	} else {
 		p = NULL;
-		pr_err("Invalid path %s\n", path);
 	}
 	return p;
 }
@@ -181,7 +183,7 @@ int ksmbd_vfs_query_maximal_access(struct user_namespace *user_ns,
 /**
  * ksmbd_vfs_create() - vfs helper for smb create file
  * @work:	work
- * @name:	file name
+ * @name:	file name that is relative to share
  * @mode:	file create mode
  *
  * Return:	0 on success, otherwise error
@@ -192,7 +194,8 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 	struct dentry *dentry;
 	int err;
 
-	dentry = kern_path_create(AT_FDCWD, name, &path, LOOKUP_NO_SYMLINKS);
+	dentry = ksmbd_vfs_kern_path_create(work, name,
+					    LOOKUP_NO_SYMLINKS, &path);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		if (err != -ENOENT)
@@ -220,7 +223,7 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 /**
  * ksmbd_vfs_mkdir() - vfs helper for smb create directory
  * @work:	work
- * @name:	directory name
+ * @name:	directory name that is relative to share
  * @mode:	directory create mode
  *
  * Return:	0 on success, otherwise error
@@ -232,8 +235,9 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	struct dentry *dentry;
 	int err;
 
-	dentry = kern_path_create(AT_FDCWD, name, &path,
-				  LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY);
+	dentry = ksmbd_vfs_kern_path_create(work, name,
+					    LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
+					    &path);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		if (err != -EEXIST)
@@ -880,7 +884,7 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id)
 
 /**
  * ksmbd_vfs_remove_file() - vfs helper for smb rmdir or unlink
- * @name:	absolute directory or file name
+ * @name:	directory or file name that is relative to share
  *
  * Return:	0 on success, otherwise error
  */
@@ -894,7 +898,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = kern_path(name, LOOKUP_NO_SYMLINKS, &path);
+	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, false);
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
@@ -947,7 +951,7 @@ out_err:
 /**
  * ksmbd_vfs_link() - vfs helper for creating smb hardlink
  * @oldname:	source file name
- * @newname:	hardlink name
+ * @newname:	hardlink name that is relative to share
  *
  * Return:	0 on success, otherwise error
  */
@@ -968,8 +972,9 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 		goto out1;
 	}
 
-	dentry = kern_path_create(AT_FDCWD, newname, &newpath,
-				  LOOKUP_NO_SYMLINKS | LOOKUP_REVAL);
+	dentry = ksmbd_vfs_kern_path_create(work, newname,
+					    LOOKUP_NO_SYMLINKS | LOOKUP_REVAL,
+					    &newpath);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		pr_err("path create err for %s, err %d\n", newname, err);
@@ -1108,14 +1113,17 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	int err;
 
 	dst_name = extract_last_component(newname);
-	if (!dst_name)
-		return -EINVAL;
+	if (!dst_name) {
+		dst_name = newname;
+		newname = "";
+	}
 
 	src_dent_parent = dget_parent(fp->filp->f_path.dentry);
 	src_dent = fp->filp->f_path.dentry;
 
-	err = kern_path(newname, LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
-			&dst_path);
+	err = ksmbd_vfs_kern_path(work, newname,
+				  LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
+				  &dst_path, false);
 	if (err) {
 		ksmbd_debug(VFS, "Cannot get path for %s [%d]\n", newname, err);
 		goto out;
@@ -1429,6 +1437,23 @@ int ksmbd_vfs_fsetxattr(struct ksmbd_work *work, const char *filename,
 	return err;
 }
 #endif
+
+struct dentry *ksmbd_vfs_kern_path_create(struct ksmbd_work *work,
+					  const char *name,
+					  unsigned int flags,
+					  struct path *path)
+{
+	char *abs_name;
+	struct dentry *dent;
+
+	abs_name = convert_to_unix_name(work->tcon->share_conf, name);
+	if (!abs_name)
+		return ERR_PTR(-ENOMEM);
+
+	dent = kern_path_create(AT_FDCWD, abs_name, path, flags);
+	kfree(abs_name);
+	return dent;
+}
 
 int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
 				struct dentry *dentry)
@@ -2025,22 +2050,25 @@ static int ksmbd_vfs_lookup_in_dir(struct path *dir, char *name, size_t namelen)
 
 /**
  * ksmbd_vfs_kern_path() - lookup a file and get path info
- * @name:	name of file for lookup
+ * @name:	file path that is relative to share
  * @flags:	lookup flags
  * @path:	if lookup succeed, return path info
  * @caseless:	caseless filename lookup
  *
  * Return:	0 on success, otherwise error
  */
-int ksmbd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
-			bool caseless)
+int ksmbd_vfs_kern_path(struct ksmbd_work *work, char *name,
+			unsigned int flags, struct path *path, bool caseless)
 {
+	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	int err;
 
-	if (name[0] != '/')
-		return -EINVAL;
-
-	err = kern_path(name, flags, path);
+	flags |= LOOKUP_BENEATH;
+	err = vfs_path_lookup(share_conf->vfs_path.dentry,
+			      share_conf->vfs_path.mnt,
+			      name,
+			      flags,
+			      path);
 	if (!err)
 		return 0;
 
@@ -2054,11 +2082,10 @@ int ksmbd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 			return -ENOMEM;
 
 		path_len = strlen(filepath);
-		remain_len = path_len - 1;
+		remain_len = path_len;
 
-		err = kern_path("/", flags, &parent);
-		if (err)
-			goto out;
+		parent = share_conf->vfs_path;
+		path_get(&parent);
 
 		while (d_can_lookup(parent.dentry)) {
 			char *filename = filepath + path_len - remain_len;
@@ -2071,21 +2098,21 @@ int ksmbd_vfs_kern_path(char *name, unsigned int flags, struct path *path,
 
 			err = ksmbd_vfs_lookup_in_dir(&parent, filename,
 						      filename_len);
-			if (err) {
-				path_put(&parent);
-				goto out;
-			}
-
 			path_put(&parent);
-			next[0] = '\0';
-
-			err = kern_path(filepath, flags, &parent);
 			if (err)
 				goto out;
 
-			if (is_last) {
-				path->mnt = parent.mnt;
-				path->dentry = parent.dentry;
+			next[0] = '\0';
+
+			err = vfs_path_lookup(share_conf->vfs_path.dentry,
+					      share_conf->vfs_path.mnt,
+					      filepath,
+					      flags,
+					      &parent);
+			if (err)
+				goto out;
+			else if (is_last) {
+				*path = parent;
 				goto out;
 			}
 
