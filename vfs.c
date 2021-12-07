@@ -36,8 +36,10 @@
 #include "mgmt/user_session.h"
 #include "mgmt/user_config.h"
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 extern int vfs_path_lookup(struct dentry *, struct vfsmount *,
 			   const char *, unsigned int, struct path *);
+#endif
 
 static char *extract_last_component(char *path)
 {
@@ -2057,6 +2059,7 @@ static int ksmbd_vfs_lookup_in_dir(struct path *dir, char *name, size_t namelen)
  *
  * Return:	0 on success, otherwise error
  */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 6, 0)
 int ksmbd_vfs_kern_path(struct ksmbd_work *work, char *name,
 			unsigned int flags, struct path *path, bool caseless)
 {
@@ -2127,6 +2130,85 @@ out:
 	}
 	return err;
 }
+#else
+int ksmbd_vfs_kern_path(struct ksmbd_work *work, char *name,
+			unsigned int flags, struct path *path, bool caseless)
+{
+	char *abs_name;
+	int err;
+
+	abs_name = convert_to_unix_name(work->tcon->share_conf, name);
+	if (IS_ERR(abs_name))
+		return PTR_ERR(abs_name);
+
+	err = kern_path(abs_name, flags, path);
+	if (!err) {
+		err = 0;
+		goto free_abs_name;
+	}
+
+	if (caseless) {
+		char *filepath;
+		struct path parent;
+		size_t path_len, remain_len;
+
+		filepath = kstrdup(abs_name, GFP_KERNEL);
+		if (!filepath) {
+			err = -ENOMEM;
+			goto free_abs_name;
+		}
+
+		path_len = strlen(filepath);
+		remain_len = path_len - 1;
+
+		err = kern_path("/", flags, &parent);
+		if (err)
+			goto out;
+
+		while (d_can_lookup(parent.dentry)) {
+			char *filename = filepath + path_len - remain_len;
+			char *next = strchrnul(filename, '/');
+			size_t filename_len = next - filename;
+			bool is_last = !next[0];
+
+			if (filename_len == 0)
+				break;
+
+			err = ksmbd_vfs_lookup_in_dir(&parent, filename,
+						      filename_len);
+			if (err) {
+				path_put(&parent);
+				goto out;
+			}
+
+			path_put(&parent);
+			next[0] = '\0';
+
+			err = kern_path(filepath, flags, &parent);
+			if (err)
+				goto out;
+
+			if (is_last) {
+				path->mnt = parent.mnt;
+				path->dentry = parent.dentry;
+				goto out;
+			}
+
+			next[0] = '/';
+			remain_len -= filename_len + 1;
+		}
+
+		path_put(&parent);
+		err = -EINVAL;
+out:
+		kfree(filepath);
+	}
+
+free_abs_name:
+	kfree(abs_name);
+	return err;
+}
+#endif
 
 /**
  * ksmbd_vfs_init_kstat() - convert unix stat information to smb stat format
