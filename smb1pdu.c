@@ -855,16 +855,9 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 	if (conn->use_spnego == false) {
 		neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
 		neg_rsp->ByteCount = cpu_to_le16(CIFS_CRYPTO_KEY_SIZE);
-		conn->ntlmssp_cryptkey = kmalloc(CIFS_CRYPTO_KEY_SIZE,
-			GFP_KERNEL);
-		if (!conn->ntlmssp_cryptkey) {
-			rc = -ENOMEM;
-			neg_rsp->hdr.Status.CifsError = STATUS_LOGON_FAILURE;
-			goto err_out;
-		}
 		/* initialize random server challenge */
-		get_random_bytes(conn->ntlmssp_cryptkey, sizeof(__u64));
-		memcpy((neg_rsp->u.EncryptionKey), conn->ntlmssp_cryptkey,
+		get_random_bytes(conn->ntlmssp.cryptkey, sizeof(__u64));
+		memcpy((neg_rsp->u.EncryptionKey), conn->ntlmssp.cryptkey,
 				CIFS_CRYPTO_KEY_SIZE);
 		/* Adjust pdu length, 17 words and 8 bytes added */
 		inc_rfc1001_len(neg_rsp, (17 * 2 + 8));
@@ -889,11 +882,11 @@ err_out:
 	return rc;
 }
 
-static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
+static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
+		struct ksmbd_session *sess,
 		struct smb_com_session_setup_req_no_secext *req,
 		struct smb_com_session_setup_old_resp *rsp)
 {
-	struct ksmbd_conn *conn = sess->conn;
 	int offset, err = 0;
 	char *name;
 
@@ -929,17 +922,6 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 		goto out_err;
 	}
 
-	if (conn->ntlmssp_cryptkey) {
-		memcpy(sess->ntlmssp.cryptkey, conn->ntlmssp_cryptkey,
-			CIFS_CRYPTO_KEY_SIZE);
-		kfree(conn->ntlmssp_cryptkey);
-		conn->ntlmssp_cryptkey = NULL;
-	} else {
-		pr_err("server challenge is not assigned in negotiate\n");
-		err = -EINVAL;
-		goto out_err;
-	}
-
 	if (user_guest(sess->user)) {
 		rsp->Action = cpu_to_le16(GUEST_LOGIN);
 		goto no_password_check;
@@ -948,7 +930,8 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 	if (le16_to_cpu(req->CaseSensitivePasswordLength) ==
 			CIFS_AUTH_RESP_SIZE) {
 		err = ksmbd_auth_ntlm(sess, req->CaseInsensitivePassword +
-			le16_to_cpu(req->CaseInsensitivePasswordLength));
+			le16_to_cpu(req->CaseInsensitivePasswordLength),
+			conn->ntlmssp.cryptkey);
 		if (err) {
 			pr_err("ntlm authentication failed for user %s\n",
 			       user_name(sess->user));
@@ -975,7 +958,8 @@ static int build_sess_rsp_noextsec(struct ksmbd_session *sess,
 			req->CaseInsensitivePassword +
 			le16_to_cpu(req->CaseInsensitivePasswordLength)),
 			le16_to_cpu(req->CaseSensitivePasswordLength) -
-				CIFS_ENCPWD_SIZE, ntdomain);
+				CIFS_ENCPWD_SIZE, ntdomain,
+				conn->ntlmssp.cryptkey);
 		kfree(ntdomain);
 		if (err) {
 			pr_err("authentication failed for user %s\n",
@@ -1000,11 +984,11 @@ out_err:
 	return err;
 }
 
-static int build_sess_rsp_extsec(struct ksmbd_session *sess,
+static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
+		struct ksmbd_session *sess,
 		struct smb_com_session_setup_req *req,
 		struct smb_com_session_setup_resp *rsp)
 {
-	struct ksmbd_conn *conn = sess->conn;
 	struct negotiate_message *negblob;
 	char *neg_blob;
 	int err = 0, neg_blob_len;
@@ -1038,7 +1022,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 		ksmbd_debug(SMB, "negotiate phase\n");
 		err = ksmbd_decode_ntlmssp_neg_blob(negblob,
 				le16_to_cpu(req->SecurityBlobLength),
-				sess);
+				conn);
 		if (err)
 			goto out_err;
 
@@ -1058,7 +1042,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 			chgblob = (struct challenge_message *)neg_blob;
 			neg_blob_len = ksmbd_build_ntlmssp_challenge_blob(
 					chgblob,
-					sess);
+					conn);
 			if (neg_blob_len < 0) {
 				kfree(neg_blob);
 				err = -ENOMEM;
@@ -1082,7 +1066,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 		} else {
 			neg_blob_len = ksmbd_build_ntlmssp_challenge_blob(
 					chgblob,
-					sess);
+					conn);
 			if (neg_blob_len < 0) {
 				err = -ENOMEM;
 				goto out_err;
@@ -1139,7 +1123,7 @@ static int build_sess_rsp_extsec(struct ksmbd_session *sess,
 
 		err = ksmbd_decode_ntlmssp_auth_blob(authblob,
 				le16_to_cpu(req->SecurityBlobLength),
-				sess);
+				conn, sess);
 		if (err) {
 			ksmbd_debug(SMB, "authentication failed\n");
 			err = -EINVAL;
@@ -1237,11 +1221,11 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 
 	if (cap & CAP_EXTENDED_SECURITY) {
 		ksmbd_debug(SMB, "build response with extend_security\n");
-		rc = build_sess_rsp_extsec(sess, &pSMB->req, &rsp->resp);
+		rc = build_sess_rsp_extsec(conn, sess, &pSMB->req, &rsp->resp);
 
 	} else {
 		ksmbd_debug(SMB, "build response without extend_security\n");
-		rc = build_sess_rsp_noextsec(sess, &pSMB->req_no_secext,
+		rc = build_sess_rsp_noextsec(conn, sess, &pSMB->req_no_secext,
 				&rsp->old_resp);
 	}
 	if (rc < 0)
