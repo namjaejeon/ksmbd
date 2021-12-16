@@ -922,6 +922,25 @@ static void decode_encrypt_ctxt(struct ksmbd_conn *conn,
 	}
 }
 
+/**
+ * smb3_encryption_negotiated() - checks if server and client agreed on enabling encryption
+ * @conn:	smb connection
+ *
+ * Return:	true if connection should be encrypted, else false
+ */
+static bool smb3_encryption_negotiated(struct ksmbd_conn *conn)
+{
+	if (!conn->ops->generate_encryptionkey)
+		return false;
+
+	/*
+	 * SMB 3.0 and 3.0.2 dialects use the SMB2_GLOBAL_CAP_ENCRYPTION flag.
+	 * SMB 3.1.1 uses the cipher_type field.
+	 */
+	return (conn->vals->capabilities & SMB2_GLOBAL_CAP_ENCRYPTION) ||
+	    conn->cipher_type;
+}
+
 static void decode_compress_ctxt(struct ksmbd_conn *conn,
 				 struct smb2_compression_ctx *pneg_ctxt)
 {
@@ -1491,8 +1510,7 @@ static int ntlm_authenticate(struct ksmbd_work *work)
 		    (req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED))
 			sess->sign = true;
 
-		if (conn->vals->capabilities & SMB2_GLOBAL_CAP_ENCRYPTION &&
-		    conn->ops->generate_encryptionkey &&
+		if (smb3_encryption_negotiated(conn) &&
 		    !(req->Flags & SMB2_SESSION_REQ_FLAG_BINDING)) {
 			rc = conn->ops->generate_encryptionkey(sess);
 			if (rc) {
@@ -1584,8 +1602,7 @@ static int krb5_authenticate(struct ksmbd_work *work)
 	    (req->SecurityMode & SMB2_NEGOTIATE_SIGNING_REQUIRED))
 		sess->sign = true;
 
-	if ((conn->vals->capabilities & SMB2_GLOBAL_CAP_ENCRYPTION) &&
-	    conn->ops->generate_encryptionkey) {
+	if (smb3_encryption_negotiated(conn)) {
 		retval = conn->ops->generate_encryptionkey(sess);
 		if (retval) {
 			ksmbd_debug(SMB,
