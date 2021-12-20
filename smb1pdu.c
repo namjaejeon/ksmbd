@@ -279,7 +279,7 @@ int smb_check_user_session(struct ksmbd_work *work)
 int smb_get_ksmbd_tcon(struct ksmbd_work *work)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
-	unsigned int cmd = le16_to_cpu(req_hdr->Command);
+	u8 cmd = req_hdr->Command;
 	int tree_id;
 
 	work->tcon = NULL;
@@ -499,7 +499,7 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 					FILE_EXEC_RIGHTS);
 	if (test_tree_conn_flag(status.tree_conn,
 				KSMBD_TREE_CONN_FLAG_WRITABLE))
-		rsp->MaximalShareAccessRights |= FILE_WRITE_RIGHTS;
+		rsp->MaximalShareAccessRights |= cpu_to_le32(FILE_WRITE_RIGHTS);
 	rsp->GuestMaximalShareAccessRights = 0;
 
 	set_service_type(conn, share, rsp);
@@ -2735,7 +2735,7 @@ int smb_close(struct ksmbd_work *work)
 	 * TODO: linux cifs client does not send LastWriteTime,
 	 * need to check if windows client use this field
 	 */
-	if (req->LastWriteTime > 0 &&
+	if (le32_to_cpu(req->LastWriteTime) > 0 &&
 	    le32_to_cpu(req->LastWriteTime) < 0xFFFFFFFF)
 		pr_info("need to set last modified time before close\n");
 
@@ -7871,7 +7871,8 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
 	char *name;
-	int err = 0;
+	__le32 err = 0;
+	int ret;
 
 	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
 	if (IS_ERR(name))
@@ -7882,9 +7883,9 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 		return STATUS_NO_MEMORY;
 	}
 
-	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
-	if (err) {
-		pr_err("look up failed err %d\n", err);
+	ret = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
+	if (ret) {
+		pr_err("look up failed err %d\n", ret);
 
 		if (d_is_symlink(path.dentry)) {
 			err = STATUS_ACCESS_DENIED;
@@ -7927,7 +7928,7 @@ int smb_query_info(struct ksmbd_work *work)
 	else
 		err = smb_query_info_pipe(share, &st);
 
-	if (err != 0) {
+	if (le32_to_cpu(err) != 0) {
 		rsp->hdr.Status.CifsError = err;
 		return -EINVAL;
 	}

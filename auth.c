@@ -441,6 +441,7 @@ out:
 	return rc;
 }
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
 /**
  * __ksmbd_auth_ntlmv2() - NTLM2(extended security) authentication handler
  * @sess:	session of connection
@@ -478,6 +479,7 @@ static int __ksmbd_auth_ntlmv2(struct ksmbd_session *sess,
 out:
 	return rc;
 }
+#endif
 
 /**
  * ksmbd_decode_ntlmssp_auth_blob() - helper function to construct
@@ -524,7 +526,7 @@ int ksmbd_decode_ntlmssp_auth_blob(struct authenticate_message *authblob,
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	lm_off = le32_to_cpu(authblob->LmChallengeResponse.BufferOffset);
-	lm_len = le32_to_cpu(authblob->LmChallengeResponse.Length);
+	lm_len = le16_to_cpu(authblob->LmChallengeResponse.Length);
 	if (blob_len < (u64)lm_off + lm_len)
 		return -EINVAL;
 
