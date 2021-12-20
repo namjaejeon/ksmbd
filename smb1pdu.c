@@ -8418,12 +8418,21 @@ out:
  */
 bool smb1_is_sign_req(struct ksmbd_work *work, unsigned int command)
 {
+#if 0
 	struct smb_hdr *rcv_hdr1 = (struct smb_hdr *)work->request_buf;
 
+	/*
+	 * FIXME: signed tree connect failed by signing error
+	 * with windows XP client. For now, Force to turn off
+	 * signing feature in SMB1.
+	 */
 	if ((rcv_hdr1->Flags2 & SMBFLG2_SECURITY_SIGNATURE) &&
 			command != SMB_COM_SESSION_SETUP_ANDX)
 		return true;
 	return false;
+#else
+	return false;
+#endif
 }
 
 /**
