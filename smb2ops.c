@@ -230,7 +230,6 @@ int init_smb2_0_server(struct ksmbd_conn *conn)
 	conn->ops = &smb2_0_server_ops;
 	conn->cmds = smb2_0_server_cmds;
 	conn->max_cmds = ARRAY_SIZE(smb2_0_server_cmds);
-	conn->total_credits = 0;
 	conn->signing_algorithm = SIGNING_ALG_HMAC_SHA256;
 	return 0;
 }
