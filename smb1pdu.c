@@ -5957,6 +5957,7 @@ static int find_first(struct ksmbd_work *work)
 		ksmbd_debug(SMB, "dir dentry open failed with rc=%d\n", rc);
 		path_put(&path);
 		rc = -EINVAL;
+		dir_fp = NULL;
 		goto err_free_dirpath;
 	}
 
