@@ -12,6 +12,9 @@
 #include <linux/fs.h>
 #include <linux/namei.h>
 #include <linux/posix_acl.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#include <linux/mnt_idmapping.h>
+#endif
 
 #include "mgmt/tree_connect.h"
 

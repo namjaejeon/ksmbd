@@ -9,6 +9,9 @@
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#include <linux/mnt_idmapping.h>
+#endif
 
 #include "smbacl.h"
 #include "smb_common.h"
