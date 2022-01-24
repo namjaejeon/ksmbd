@@ -6,6 +6,7 @@
  *   Author(s): Namjae Jeon <linkinjeon@kernel.org>
  */
 
+#include <linux/version.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -280,6 +281,9 @@ static int sid_to_id(struct user_namespace *user_ns,
 		uid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+		uid = mapped_kuid_user(user_ns, &init_user_ns, KUIDT_INIT(id));
+#else
 		/*
 		 * Translate raw sid into kuid in the server's user
 		 * namespace.
@@ -290,6 +294,7 @@ static int sid_to_id(struct user_namespace *user_ns,
 		/* If this is an idmapped mount, apply the idmapping. */
 		uid = kuid_from_mnt(user_ns, uid);
 #endif
+#endif
 		if (uid_valid(uid)) {
 			fattr->cf_uid = uid;
 			rc = 0;
@@ -299,6 +304,9 @@ static int sid_to_id(struct user_namespace *user_ns,
 		gid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+		gid = mapped_kgid_user(user_ns, &init_user_ns, KGIDT_INIT(id));
+#else
 		/*
 		 * Translate raw sid into kgid in the server's user
 		 * namespace.
@@ -308,6 +316,7 @@ static int sid_to_id(struct user_namespace *user_ns,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		/* If this is an idmapped mount, apply the idmapping. */
 		gid = kgid_from_mnt(user_ns, gid);
+#endif
 #endif
 		if (gid_valid(gid)) {
 			fattr->cf_gid = gid;
