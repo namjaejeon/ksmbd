@@ -149,6 +149,7 @@ out:
 	return rc;
 }
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
 static int ksmbd_enc_update_sess_key(unsigned char *md5_hash, char *nonce,
 				     char *server_challenge, int len)
 {
@@ -186,6 +187,7 @@ out:
 	ksmbd_release_crypto_ctx(ctx);
 	return rc;
 }
+#endif
 
 /**
  * ksmbd_gen_sess_key() - function to generate session key
