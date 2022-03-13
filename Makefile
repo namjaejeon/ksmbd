@@ -54,6 +54,19 @@ install: ksmbd.ko
 	install -m644 -b -D ksmbd.ko ${MDIR}/kernel/fs/ksmbd/ksmbd.ko
 	depmod -a
 
+# install dkms
+PKGVER=$(shell echo `git rev-parse --short HEAD`)
+dkms-install:
+	rm -rf "/usr/src/ksmbd*"
+	cp -r "$(PWD)" "/usr/src/ksmbd-$(PKGVER)"
+	sed -e "s/@VERSION@/$(PKGVER)/" -i "/usr/src/ksmbd-$(PKGVER)/dkms.conf"
+	dkms install -m ksmbd/$(PKGVER) --force
+
+dkms-uninstall:
+	modprobe -r ksmbd
+	dkms remove ksmbd/$(PKGVER)
+	rm -rf "/usr/src/ksmbd-$(PKGVER)"
+
 uninstall:
 	rm -rf ${MDIR}/kernel/fs/ksmbd
 	depmod -a
