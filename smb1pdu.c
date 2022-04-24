@@ -4186,7 +4186,7 @@ static int query_path_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = convert_to_nt_pathname(name);
+		filename = smb1_convert_to_nt_pathname(name);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -4232,7 +4232,7 @@ static int query_path_info(struct ksmbd_work *work)
 		else
 			del_pending = 0;
 
-		filename = convert_to_nt_pathname(name);
+		filename = smb1_convert_to_nt_pathname(name);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -6823,7 +6823,7 @@ static int query_file_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = convert_to_nt_pathname(fp->filename);
+		filename = smb1_convert_to_nt_pathname(fp->filename);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
