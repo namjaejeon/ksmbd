@@ -343,8 +343,8 @@ script:
  - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.msword
  - sudo rm -rf /mnt/test3/*
- - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
- - sudo rm -rf /mnt/test3/*
+# - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
+# - sudo rm -rf /mnt/test3/*
  - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_bench
  - sudo rm -rf /mnt/test3/*
  # smb2 maxfid test
