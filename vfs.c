@@ -12,7 +12,9 @@
 #include <linux/version.h>
 #include <linux/xattr.h>
 #include <linux/falloc.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
 #include <linux/genhd.h>
+#endif
 #include <linux/fsnotify.h>
 #include <linux/dcache.h>
 #include <linux/slab.h>
