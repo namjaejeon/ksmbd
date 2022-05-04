@@ -2263,20 +2263,15 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	}
 
 	if (is_relative_root) {
-		int org_len = strnlen(name, PATH_MAX);
-		int add_len = strnlen(root, PATH_MAX);
 		char *full_name;
 
-		/* +3 for: '\'<root>'\' & '\0' */
-		full_name = kzalloc(org_len + add_len + 3, GFP_KERNEL);
+		full_name = kasprintf(GFP_KERNEL, "\\%s\\%s", root, name);
 		if (!full_name) {
 			kfree(name);
 			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 			return -ENOMEM;
 		}
 
-		snprintf(full_name, add_len + 3, "\\%s\\", root);
-		strncat(full_name, name, org_len);
 		kfree(name);
 		name = full_name;
 	}
