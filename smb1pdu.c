@@ -2291,6 +2291,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	if (IS_ERR(conv_name)) {
 		rsp->hdr.Status.CifsError =
 			STATUS_OBJECT_NAME_INVALID;
+		kfree(name);
 		return PTR_ERR(conv_name);
 	}
 
