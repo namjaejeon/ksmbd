@@ -57,15 +57,15 @@ install: ksmbd.ko
 # install dkms
 PKGVER=$(shell echo `git rev-parse --short HEAD`)
 dkms-install:
-	rm -rf "/usr/src/ksmbd*"
-	cp -r "$(PWD)" "/usr/src/ksmbd-$(PKGVER)"
-	sed -e "s/@VERSION@/$(PKGVER)/" -i "/usr/src/ksmbd-$(PKGVER)/dkms.conf"
-	dkms install -m ksmbd/$(PKGVER) --force
+	sudo rm -rf "/usr/src/ksmbd*"
+	sudo cp -r "$(PWD)" "/usr/src/ksmbd-$(PKGVER)"
+	sudo sed -e "s/@VERSION@/$(PKGVER)/" -i "/usr/src/ksmbd-$(PKGVER)/dkms.conf"
+	sudo dkms install -m ksmbd/$(PKGVER) --force
 
 dkms-uninstall:
-	modprobe -r ksmbd
-	dkms remove ksmbd/$(PKGVER)
-	rm -rf "/usr/src/ksmbd-$(PKGVER)"
+	sudo modprobe -r ksmbd
+	sudo dkms remove ksmbd/$(PKGVER)
+	sudo rm -rf "/usr/src/ksmbd-$(PKGVER)"
 
 uninstall:
 	rm -rf ${MDIR}/kernel/fs/ksmbd
