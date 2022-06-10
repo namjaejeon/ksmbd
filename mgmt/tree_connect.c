@@ -26,8 +26,10 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 	int ret;
 
 	sc = ksmbd_share_config_get(share_name);
-	if (!sc)
+	if (!sc) {
+		pr_err("Failed to get share config\n");
 		return status;
+	}
 
 	tree_conn = kzalloc(sizeof(struct ksmbd_tree_connect), GFP_KERNEL);
 	if (!tree_conn) {
@@ -37,6 +39,8 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 
 	tree_conn->id = ksmbd_acquire_tree_conn_id(sess);
 	if (tree_conn->id < 0) {
+		pr_err("Failed to acquire tree connect id(%d)\n",
+				tree_conn->id);
 		status.ret = -EINVAL;
 		goto out_error;
 	}
@@ -47,13 +51,17 @@ ksmbd_tree_conn_connect(struct ksmbd_session *sess, char *share_name)
 					      tree_conn,
 					      peer_addr);
 	if (!resp) {
+		pr_err("Failed to request ipc tree connect\n");
 		status.ret = -EINVAL;
 		goto out_error;
 	}
 
 	status.ret = resp->status;
-	if (status.ret != KSMBD_TREE_CONN_STATUS_OK)
+	if (status.ret != KSMBD_TREE_CONN_STATUS_OK) {
+		pr_err("status.ret(%d) is not KSMBD_TREE_CONN_STATUS_OK\n",
+				status.ret);
 		goto out_error;
+	}
 
 	tree_conn->flags = resp->connection_flags;
 	tree_conn->user = sess->user;
