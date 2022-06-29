@@ -128,7 +128,7 @@ script:
  - sudo modprobe cifs
  - cd ksmbd-tools
  - ./autogen.sh > /dev/null
- - ./configure > /dev/null
+ - ./configure --sysconfdir=/etc > /dev/null
  - make -j$((`nproc`+1)) > /dev/null
  - sudo make install > /dev/null
  - cd ..
