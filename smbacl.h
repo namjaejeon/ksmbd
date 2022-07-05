@@ -221,7 +221,8 @@ static inline uid_t posix_acl_uid_translate(struct user_namespace *mnt_userns,
 	kuid_t kuid;
 
 	/* If this is an idmapped mount, apply the idmapping. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 	kuid = mapped_kuid_fs(mnt_userns, &init_user_ns, pace->e_uid);
 #else
 	kuid = kuid_into_mnt(mnt_userns, pace->e_uid);
@@ -241,7 +242,8 @@ static inline gid_t posix_acl_gid_translate(struct user_namespace *mnt_userns,
 	kgid_t kgid;
 
 	/* If this is an idmapped mount, apply the idmapping. */
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 	kgid = mapped_kgid_fs(mnt_userns, &init_user_ns, pace->e_gid);
 #else
 	kgid = kgid_into_mnt(mnt_userns, pace->e_gid);

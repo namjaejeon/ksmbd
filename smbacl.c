@@ -281,7 +281,8 @@ static int sid_to_id(struct user_namespace *user_ns,
 		uid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 		uid = mapped_kuid_user(user_ns, &init_user_ns, KUIDT_INIT(id));
 #else
 		/*
@@ -304,7 +305,8 @@ static int sid_to_id(struct user_namespace *user_ns,
 		gid_t id;
 
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
+    (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
 		gid = mapped_kgid_user(user_ns, &init_user_ns, KGIDT_INIT(id));
 #else
 		/*
