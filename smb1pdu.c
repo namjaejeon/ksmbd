@@ -256,7 +256,7 @@ int smb_check_user_session(struct ksmbd_work *work)
 	if (!ksmbd_conn_good(work))
 		return -EINVAL;
 
-	if (list_empty(&conn->sessions)) {
+	if (xa_empty(&conn->sessions)) {
 		ksmbd_debug(SMB, "NO sessions registered\n");
 		return 0;
 	}
@@ -1213,7 +1213,9 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 			goto out_err;
 		}
 
-		ksmbd_session_register(conn, sess);
+		rc = ksmbd_session_register(conn, sess);
+		if (rc)
+			goto out_err;
 		rsp->resp.hdr.Uid = cpu_to_le16(sess->id);
 		ksmbd_debug(SMB, "New session ID: %llu, Uid: %u\n", sess->id,
 			uid);
