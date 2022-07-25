@@ -316,9 +316,6 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	struct ksmbd_conn *conn = work->conn;
 	struct ksmbd_session *sess = work->sess;
 
-	/* Got a valid session, set connection state */
-	WARN_ON(sess->conn != conn);
-
 	/* setting CifsExiting here may race with start_tcp_sess */
 	ksmbd_conn_set_need_reconnect(work);
 
@@ -481,7 +478,7 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 		goto out_err;
 	}
 
-	status = ksmbd_tree_conn_connect(sess, name);
+	status = ksmbd_tree_conn_connect(conn, sess, name);
 	if (status.ret == KSMBD_TREE_CONN_STATUS_OK)
 		rsp_hdr->Tid = cpu_to_le16(status.tree_conn->id);
 	else
@@ -953,7 +950,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 			goto out_err;
 		}
 
-		err = ksmbd_auth_ntlmv2(sess,
+		err = ksmbd_auth_ntlmv2(conn, sess,
 			(struct ntlmv2_resp *) ((char *)
 			req->CaseInsensitivePassword +
 			le16_to_cpu(req->CaseInsensitivePasswordLength)),
