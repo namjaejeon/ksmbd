@@ -468,7 +468,7 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	else if (!strcmp(dev_type, "?????"))
 		dev_flags = 5;
 
-	if (!strncmp("IPC$", name, 4)) {
+	if (!strcmp(name, "IPC$")) {
 		if (dev_flags < 3) {
 			status.ret = -ENODEV;
 			goto out_err;
