@@ -18,7 +18,7 @@ before_script:
  - sudo apt-get install linux-headers-$(uname -r)
  - sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev
  - sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
- - git clone --branch=ksmbd-tools-next https://github.com/cifsd-team/ksmbd-tools
+ - git clone https://github.com/cifsd-team/ksmbd-tools
  - git clone https://github.com/cifsd-team/cifsd-test-result
  - export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
  - export PATH=/usr/local/lib:$PATH
@@ -128,7 +128,7 @@ script:
  - sudo modprobe cifs
  - cd ksmbd-tools
  - ./autogen.sh > /dev/null
- - ./configure --sysconfdir=/etc > /dev/null
+ - ./configure --sysconfdir=/etc --with-rundir=./ > /dev/null
  - make -j$((`nproc`+1)) > /dev/null
  - sudo make install > /dev/null
  - cd ..
