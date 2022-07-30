@@ -1870,7 +1870,9 @@ static int smb_direct_create_qpair(struct smb_direct_transport *t,
 {
 	int ret;
 	struct ib_qp_init_attr qp_attr;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
 	int pages_per_rw;
+#endif
 
 	t->pd = ib_alloc_pd(t->cm_id->device, 0);
 	if (IS_ERR(t->pd)) {
@@ -1918,8 +1920,10 @@ static int smb_direct_create_qpair(struct smb_direct_transport *t,
 	t->qp = t->cm_id->qp;
 	t->cm_id->event_handler = smb_direct_cm_handler;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
 	pages_per_rw = DIV_ROUND_UP(t->max_rdma_rw_size, PAGE_SIZE) + 1;
 	if (pages_per_rw > t->cm_id->device->attrs.max_sgl_rd) {
+#endif
 		ret = ib_mr_pool_init(t->qp, &t->qp->rdma_mrs,
 				      t->max_rw_credits, IB_MR_TYPE_MEM_REG,
 				      t->pages_per_rw_credit, 0);
@@ -1928,8 +1932,9 @@ static int smb_direct_create_qpair(struct smb_direct_transport *t,
 			       t->max_rw_credits, t->pages_per_rw_credit);
 			goto err;
 		}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 5, 0)
 	}
-
+#endif
 	return 0;
 err:
 	if (t->qp) {
@@ -2131,7 +2136,11 @@ err:
 	return ret;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 static int smb_direct_ib_client_add(struct ib_device *ib_dev)
+#else
+static void smb_direct_ib_client_add(struct ib_device *ib_dev)
+#endif
 {
 	struct smb_direct_device *smb_dev;
 
@@ -2141,11 +2150,19 @@ static int smb_direct_ib_client_add(struct ib_device *ib_dev)
 
 	if (!ib_dev->ops.get_netdev ||
 	    !rdma_frwr_is_supported(&ib_dev->attrs))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 		return 0;
+#else
+		return;
+#endif
 
 	smb_dev = kzalloc(sizeof(*smb_dev), GFP_KERNEL);
 	if (!smb_dev)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 		return -ENOMEM;
+#else
+		return;
+#endif
 	smb_dev->ib_dev = ib_dev;
 
 	write_lock(&smb_direct_device_lock);
@@ -2153,7 +2170,11 @@ static int smb_direct_ib_client_add(struct ib_device *ib_dev)
 	write_unlock(&smb_direct_device_lock);
 
 	ksmbd_debug(RDMA, "ib device added: name %s\n", ib_dev->name);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 8, 0)
 	return 0;
+#else
+	return;
+#endif
 }
 
 static void smb_direct_ib_client_remove(struct ib_device *ib_dev,
