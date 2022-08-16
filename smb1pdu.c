@@ -1239,6 +1239,7 @@ out_err:
 	rsp->resp.hdr.WordCount = 0;
 	rsp->resp.ByteCount = 0;
 	if (rc < 0 && sess) {
+		xa_erase(&conn->sessions, sess->id);
 		ksmbd_session_destroy(sess);
 		work->sess = NULL;
 	}
