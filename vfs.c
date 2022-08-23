@@ -1263,6 +1263,9 @@ int ksmbd_vfs_truncate(struct ksmbd_work *work,
 	int err = 0;
 	struct file *filp;
 
+	if (size < 0)
+		return -EINVAL;
+
 	filp = fp->filp;
 
 	/* Do we need to break any of a levelII oplock? */
