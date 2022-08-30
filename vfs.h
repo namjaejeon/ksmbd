@@ -139,7 +139,7 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id);
 int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name);
 int ksmbd_vfs_link(struct ksmbd_work *work,
 		   const char *oldname, const char *newname);
-int ksmbd_vfs_getattr(struct path *path, struct kstat *stat);
+int ksmbd_vfs_getattr(const struct path *path, struct kstat *stat);
 #ifdef CONFIG_SMB_INSECURE_SERVER
 int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 		      u64 fid, struct iattr *attrs);
