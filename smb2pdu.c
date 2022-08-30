@@ -3817,7 +3817,11 @@ static int reserve_populate_dentry(struct ksmbd_dir_info *d_info,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+static bool __query_dir(struct dir_context *ctx, const char *name, int namlen,
+#else
 static int __query_dir(struct dir_context *ctx, const char *name, int namlen,
+#endif
 		       loff_t offset, u64 ino, unsigned int d_type)
 {
 	struct ksmbd_readdir_data	*buf;
@@ -3831,22 +3835,46 @@ static int __query_dir(struct dir_context *ctx, const char *name, int namlen,
 
 	/* dot and dotdot entries are already reserved */
 	if (!strcmp(".", name) || !strcmp("..", name))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return true;
+#else
 		return 0;
+#endif
 	if (ksmbd_share_veto_filename(priv->work->tcon->share_conf, name))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return true;
+#else
 		return 0;
+#endif
 	if (!match_pattern(name, namlen, priv->search_pattern))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return true;
+#else
 		return 0;
+#endif
 
 	d_info->name		= name;
 	d_info->name_len	= namlen;
 	rc = reserve_populate_dentry(d_info, priv->info_level);
 	if (rc)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return false;
+#else
 		return rc;
+#endif
 	if (d_info->flags & SMB2_RETURN_SINGLE_ENTRY) {
 		d_info->out_buf_len = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return false;
+#else
 		return 0;
+#endif
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	return true;
+#else
 	return 0;
+#endif
 }
 
 static void restart_ctx(struct dir_context *ctx)

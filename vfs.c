@@ -1971,7 +1971,11 @@ err_out:
 }
 #endif
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+static bool __dir_empty(struct dir_context *ctx, const char *name, int namlen,
+#else
 static int __dir_empty(struct dir_context *ctx, const char *name, int namlen,
+#endif
 		       loff_t offset, u64 ino, unsigned int d_type)
 {
 	struct ksmbd_readdir_data *buf;
@@ -1979,9 +1983,7 @@ static int __dir_empty(struct dir_context *ctx, const char *name, int namlen,
 	buf = container_of(ctx, struct ksmbd_readdir_data, ctx);
 	buf->dirent_count++;
 
-	if (buf->dirent_count > 2)
-		return -ENOTEMPTY;
-	return 0;
+	return buf->dirent_count <= 2;
 }
 
 /**
@@ -2008,7 +2010,11 @@ int ksmbd_vfs_empty_dir(struct ksmbd_file *fp)
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+static bool __caseless_lookup(struct dir_context *ctx, const char *name,
+#else
 static int __caseless_lookup(struct dir_context *ctx, const char *name,
+#endif
 			     int namlen, loff_t offset, u64 ino,
 			     unsigned int d_type)
 {
@@ -2017,13 +2023,25 @@ static int __caseless_lookup(struct dir_context *ctx, const char *name,
 	buf = container_of(ctx, struct ksmbd_readdir_data, ctx);
 
 	if (buf->used != namlen)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return true;
+#else
 		return 0;
+#endif
 	if (!strncasecmp((char *)buf->private, name, namlen)) {
 		memcpy((char *)buf->private, name, namlen);
 		buf->dirent_count = 1;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return false;
+#else
 		return -EEXIST;
+#endif
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	return true;
+#else
 	return 0;
+#endif
 }
 
 /**
