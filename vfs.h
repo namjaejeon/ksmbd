@@ -180,7 +180,11 @@ ssize_t ksmbd_vfs_casexattr_len(struct user_namespace *user_ns,
 				int attr_name_len);
 int ksmbd_vfs_setxattr(struct user_namespace *user_ns,
 		       struct dentry *dentry, const char *attr_name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+		       void *attr_value, size_t attr_size, int flags);
+#else
 		       const void *attr_value, size_t attr_size, int flags);
+#endif
 int ksmbd_vfs_fsetxattr(struct ksmbd_work *work, const char *filename,
 			const char *attr_name, const void *attr_value,
 			size_t attr_size, int flags);

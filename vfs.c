@@ -1385,7 +1385,11 @@ ssize_t ksmbd_vfs_getxattr(struct user_namespace *user_ns,
  */
 int ksmbd_vfs_setxattr(struct user_namespace *user_ns,
 		       struct dentry *dentry, const char *attr_name,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+		       void *attr_value, size_t attr_size, int flags)
+#else
 		       const void *attr_value, size_t attr_size, int flags)
+#endif
 {
 	int err;
 
