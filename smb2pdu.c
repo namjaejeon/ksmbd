@@ -1903,7 +1903,7 @@ int smb2_tree_connect(struct ksmbd_work *work)
 		goto out_err1;
 	}
 
-	name = ksmbd_extract_sharename(treename);
+	name = ksmbd_extract_sharename(conn->um, treename);
 	if (IS_ERR(name)) {
 		pr_err("Failed to get share name from tree connect request\n");
 		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
