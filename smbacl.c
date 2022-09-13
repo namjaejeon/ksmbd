@@ -283,7 +283,12 @@ static int sid_to_id(struct user_namespace *user_ns,
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
     (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+		uid = KUIDT_INIT(id);
+		uid = from_vfsuid(user_ns, &init_user_ns, VFSUIDT_INIT(uid));
+#else
 		uid = mapped_kuid_user(user_ns, &init_user_ns, KUIDT_INIT(id));
+#endif
 #else
 		/*
 		 * Translate raw sid into kuid in the server's user
@@ -307,7 +312,12 @@ static int sid_to_id(struct user_namespace *user_ns,
 		id = le32_to_cpu(psid->sub_auth[psid->num_subauth - 1]);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 17, 0) || \
     (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 52) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 16, 0))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+		gid = KGIDT_INIT(id);
+		gid = from_vfsgid(user_ns, &init_user_ns, VFSGIDT_INIT(gid));
+#else
 		gid = mapped_kgid_user(user_ns, &init_user_ns, KGIDT_INIT(id));
+#endif
 #else
 		/*
 		 * Translate raw sid into kgid in the server's user

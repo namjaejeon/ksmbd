@@ -2499,8 +2499,16 @@ static void ksmbd_acls_fattr(struct smb_fattr *fattr,
 			     struct inode *inode)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+	vfsuid_t vfsuid = i_uid_into_vfsuid(mnt_userns, inode);
+	vfsgid_t vfsgid = i_gid_into_vfsgid(mnt_userns, inode);
+
+	fattr->cf_uid = vfsuid_into_kuid(vfsuid);
+	fattr->cf_gid = vfsgid_into_kgid(vfsgid);
+#else
 	fattr->cf_uid = i_uid_into_mnt(mnt_userns, inode);
 	fattr->cf_gid = i_gid_into_mnt(mnt_userns, inode);
+#endif
 #else
 	fattr->cf_uid = inode->i_uid;
 	fattr->cf_gid = inode->i_gid;
