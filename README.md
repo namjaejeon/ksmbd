@@ -41,16 +41,9 @@ The development git tree is available at
 
 For reporting bugs and sending patches, please send the patches to the following mail address:
 
-* linux-cifsd-devel@lists.sourceforge.net
 * linkinjeon@kernel.org
 
 or open issues/send PRs to [KSMBD](https://github.com/cifsd-team/ksmbd).
-
-## linux-cifsd-devel mailing list subscription
-
-For subscribing to maling list, Insert your mail and info after accessing the following address:
-
-* https://sourceforge.net/projects/linux-cifsd/lists/linux-cifsd-devel
 
 ## Installing as a stand-alone module
 
