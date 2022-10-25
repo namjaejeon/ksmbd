@@ -2338,7 +2338,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				STATUS_OBJECT_NAME_COLLISION;
 
 		memset(&rsp->hdr.WordCount, 0, 3);
-		kfree(conv_name);
 
 		goto free_path;
 	}
@@ -2356,7 +2355,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				STATUS_NOT_A_DIRECTORY;
 
 		memset(&rsp->hdr.WordCount, 0, 3);
-		kfree(conv_name);
 
 		goto free_path;
 	}
@@ -2382,7 +2380,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 				rsp->hdr.Status.CifsError =
 					STATUS_OBJECT_NAME_COLLISION;
 			memset(&rsp->hdr.WordCount, 0, 3);
-			kfree(conv_name);
 			goto free_path;
 		} else {
 			err = -ENOENT;
@@ -2477,7 +2474,6 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		fp = NULL;
 		goto free_path;
 	}
-	fp->filename = conv_name;
 	fp->daccess = req->DesiredAccess;
 	fp->saccess = req->ShareAccess;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
@@ -2667,12 +2663,10 @@ out1:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err) {
-		if (fp)
-			ksmbd_close_fd(work, fp->volatile_id);
-		else
-			kfree(conv_name);
-	}
+	if (err && fp)
+		ksmbd_close_fd(work, fp->volatile_id);
+
+	kfree(conv_name);
 
 	if (!rsp->hdr.WordCount)
 		return err;
@@ -2688,7 +2682,6 @@ out1:
 	rsp->AndXCommand = SMB_NO_MORE_ANDX_COMMAND;
 
 	return err;
-
 }
 
 /**
@@ -4182,7 +4175,7 @@ static int query_path_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = smb1_convert_to_nt_pathname(name);
+		filename = convert_to_nt_pathname(work->tcon->share_conf, &path);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -4228,7 +4221,7 @@ static int query_path_info(struct ksmbd_work *work)
 		else
 			del_pending = 0;
 
-		filename = smb1_convert_to_nt_pathname(name);
+		filename = convert_to_nt_pathname(work->tcon->share_conf, &path);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -4910,7 +4903,6 @@ static int smb_posix_open(struct ksmbd_work *work)
 		fp = NULL;
 		goto free_path;
 	}
-	fp->filename = name;
 	fp->pid = le16_to_cpu(pSMB_req->hdr.Pid);
 
 	write_lock(&fp->f_ci->m_lock);
@@ -5021,12 +5013,9 @@ out:
 			STATUS_UNEXPECTED_IO_ERROR;
 	}
 
-	if (err) {
-		if (fp)
-			ksmbd_close_fd(work, fp->volatile_id);
-		else
-			kfree(name);
-	}
+	if (err && fp)
+		ksmbd_close_fd(work, fp->volatile_id);
+	kfree(name);
 	ksmbd_revert_fsids(work);
 	return err;
 }
@@ -6207,7 +6196,6 @@ static int find_next(struct ksmbd_work *work)
 	int data_alignment_offset = 0;
 	int rc = 0, reclen = 0;
 	__u16 sid;
-	char *pathname = NULL;
 	int header_size, srch_cnt, struct_sz;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
@@ -6224,11 +6212,6 @@ static int find_next(struct ksmbd_work *work)
 	}
 
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
-	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
-	if (!pathname) {
-		rc = -ENOMEM;
-		goto err_out;
-	}
 
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
@@ -6375,7 +6358,6 @@ static int find_next(struct ksmbd_work *work)
 		params_count, '\0', data_alignment_offset);
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 		params_count + 1 + data_alignment_offset));
-	kfree(pathname);
 	kfree(d_info.smb1_name);
 	ksmbd_fd_put(work, dir_fp);
 	return 0;
@@ -6406,7 +6388,6 @@ err_out:
 	}
 
 	kfree(d_info.smb1_name);
-	kfree(pathname);
 	return 0;
 }
 
@@ -6808,7 +6789,8 @@ static int query_file_info(struct ksmbd_work *work)
 		memset(ptr, 0, 4);
 		name_info = (struct file_name_info *)(ptr + 4);
 
-		filename = smb1_convert_to_nt_pathname(fp->filename);
+		filename = convert_to_nt_pathname(work->tcon->share_conf,
+						  &fp->filp->f_path);
 		if (!filename) {
 			rc = -ENOMEM;
 			goto err_out;
@@ -7170,8 +7152,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 		return PTR_ERR(newname);
 	}
 
-	ksmbd_debug(SMB, "rename oldname(%s) -> newname(%s)\n", fp->filename,
-		newname);
+	ksmbd_debug(SMB, "new name(%s)\n", newname);
 	rc = ksmbd_vfs_fp_rename(work, fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
@@ -8172,7 +8153,6 @@ int smb_open_andx(struct ksmbd_work *work)
 		fp = NULL;
 		goto free_path;
 	}
-	fp->filename = name;
 	fp->pid = le16_to_cpu(req->hdr.Pid);
 
 	write_lock(&fp->f_ci->m_lock);
@@ -8303,10 +8283,9 @@ out:
 				STATUS_UNEXPECTED_IO_ERROR;
 		if (fp)
 			ksmbd_close_fd(work, fp->volatile_id);
-		else
-			kfree(name);
 	}
 
+	kfree(name);
 	if (!rsp->hdr.WordCount)
 		return err;
 
