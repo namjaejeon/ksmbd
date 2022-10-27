@@ -197,22 +197,6 @@ free_pathname:
 	return nt_pathname;
 }
 
-char *smb1_convert_to_nt_pathname(char *filename)
-{
-	char *ab_pathname;
-
-	if (strlen(filename) == 0)
-		filename = "\\";
-
-	ab_pathname = kstrdup(filename, GFP_KERNEL);
-	if (!ab_pathname)
-		return NULL;
-
-	ksmbd_conv_path_to_windows(ab_pathname);
-	return ab_pathname;
-}
-
-
 int get_nlink(struct kstat *st)
 {
 	int nlink;

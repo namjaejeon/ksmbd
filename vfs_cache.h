@@ -62,7 +62,6 @@ struct ksmbd_inode {
 
 struct ksmbd_file {
 	struct file			*filp;
-	char				*filename;
 	u64				persistent_id;
 	u64				volatile_id;
 
@@ -106,6 +105,9 @@ struct ksmbd_file {
 	unsigned long long		llock_fstart;
 
 	int				dirent_offset;
+
+	/* for find_first/find_next */
+	char				*filename;
 #endif
 	/* if ls is happening on directory, below is valid*/
 	struct ksmbd_readdir_data	readdir_data;

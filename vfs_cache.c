@@ -328,7 +328,6 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 		kfree(smb_lock);
 	}
 
-	kfree(fp->filename);
 	if (ksmbd_stream_fd(fp))
 		kfree(fp->stream.name);
 	kmem_cache_free(filp_cache, fp);
@@ -489,16 +488,27 @@ struct ksmbd_file *ksmbd_lookup_fd_filename(struct ksmbd_work *work, char *filen
 {
 	struct ksmbd_file	*fp = NULL;
 	unsigned int		id;
+	char			*pathname;
+
+	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
+	if (!pathname)
+		return NULL;
 
 	read_lock(&work->sess->file_table.lock);
 	idr_for_each_entry(work->sess->file_table.idr, fp, id) {
-		if (!strcmp(fp->filename, filename)) {
+		char *path = d_path(&fp->filp->f_path, pathname, PATH_MAX);
+
+		if (IS_ERR(path))
+			break;
+
+		if (!strcmp(path, filename)) {
 			fp = ksmbd_fp_get(fp);
 			break;
 		}
 	}
 	read_unlock(&work->sess->file_table.lock);
 
+	kfree(pathname);
 	return fp;
 }
 #endif
