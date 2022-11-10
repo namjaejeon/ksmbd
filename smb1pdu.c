@@ -587,7 +587,6 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 		const int maxlen, struct ksmbd_work *work, bool converted)
 {
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	bool is_unicode = is_smbreq_unicode(req_hdr);
 	char *name, *wild_card_pos;
 
@@ -595,15 +594,10 @@ smb_get_name(struct ksmbd_share_config *share, const char *src,
 		name = (char *)src;
 	else {
 		name = smb_strndup_from_utf16(src, maxlen, is_unicode,
-				work->conn->local_nls);
+					      work->conn->local_nls);
 		if (IS_ERR(name)) {
 			ksmbd_debug(SMB, "failed to get name %ld\n",
 				PTR_ERR(name));
-			if (PTR_ERR(name) == -ENOMEM)
-				rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
-			else
-				rsp_hdr->Status.CifsError =
-					STATUS_OBJECT_NAME_INVALID;
 			return name;
 		}
 	}
