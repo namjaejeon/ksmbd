@@ -156,8 +156,6 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 #endif
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 			char *newname);
-int ksmbd_vfs_rename_slowpath(struct ksmbd_work *work,
-			      char *oldname, char *newname);
 int ksmbd_vfs_truncate(struct ksmbd_work *work,
 		       struct ksmbd_file *fp, loff_t size);
 struct srv_copychunk;
