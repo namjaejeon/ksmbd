@@ -327,7 +327,9 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 		locks_free_lock(smb_lock->fl);
 		kfree(smb_lock);
 	}
-
+#ifdef CONFIG_SMB_INSECURE_SERVER
+	kfree(fp->filename);
+#endif
 	if (ksmbd_stream_fd(fp))
 		kfree(fp->stream.name);
 	kmem_cache_free(filp_cache, fp);
