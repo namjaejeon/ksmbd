@@ -1937,12 +1937,8 @@ int smb_trans(struct ksmbd_work *work)
 	int str_len_uni;
 	int ret = 0, nbytes = 0;
 	int param_len = 0;
-	int id, buf_len;
+	int id;
 	int padding;
-
-	buf_len = le16_to_cpu(req->MaxDataCount);
-	buf_len = min((int)(KSMBD_IPC_MAX_PAYLOAD -
-				sizeof(struct smb_com_trans_rsp)), buf_len);
 
 	if (req->SetupCount)
 		setup_bytes_count = 2 * req->SetupCount;
