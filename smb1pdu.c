@@ -1605,6 +1605,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 			if (!(filp->f_mode & FMODE_READ)) {
 				rsp->hdr.Status.CifsError =
 					STATUS_ACCESS_DENIED;
+				locks_free_lock(flock);
 				goto out;
 			}
 			cmd = F_SETLKW;
@@ -1614,6 +1615,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 			if (!(filp->f_mode & FMODE_WRITE)) {
 				rsp->hdr.Status.CifsError =
 					STATUS_ACCESS_DENIED;
+				locks_free_lock(flock);
 				goto out;
 			}
 			cmd = F_SETLKW;
@@ -1639,15 +1641,15 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 		if (offset > loff_max) {
 			pr_err("Invalid lock range requested\n");
-			rsp->hdr.Status.CifsError =
-				STATUS_INVALID_LOCK_RANGE;
+			rsp->hdr.Status.CifsError = STATUS_INVALID_LOCK_RANGE;
+			locks_free_lock(flock);
 			goto out;
 		}
 
 		if (offset > 0 && length > (loff_max - offset) + 1) {
 			pr_err("Invalid lock range requested\n");
-			rsp->hdr.Status.CifsError =
-				STATUS_INVALID_LOCK_RANGE;
+			rsp->hdr.Status.CifsError = STATUS_INVALID_LOCK_RANGE;
+			locks_free_lock(flock);
 			goto out;
 		}
 
@@ -1665,8 +1667,10 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 		smb_lock = smb_lock_init(flock, cmd, req->LockType, offset,
 			length, &lock_list);
-		if (!smb_lock)
+		if (!smb_lock) {
+			locks_free_lock(flock);
 			goto out;
+		}
 	}
 
 	list_for_each_entry_safe(smb_lock, tmp, &lock_list, llist) {
@@ -1884,6 +1888,7 @@ out_check_cl_unlck:
 			fp->cflock_cnt = 0;
 		} else if (err == -ENOENT) {
 			rsp->hdr.Status.CifsError = STATUS_RANGE_NOT_LOCKED;
+			locks_free_lock(flock);
 			goto out;
 		}
 		locks_free_lock(flock);
