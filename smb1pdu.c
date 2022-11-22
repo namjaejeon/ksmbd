@@ -862,6 +862,7 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 
 	if (conn->use_spnego == false) {
 		neg_rsp->EncryptionKeyLength = CIFS_CRYPTO_KEY_SIZE;
+		neg_rsp->Capabilities &= ~cpu_to_le32(CAP_EXTENDED_SECURITY);
 		neg_rsp->ByteCount = cpu_to_le16(CIFS_CRYPTO_KEY_SIZE);
 		/* initialize random server challenge */
 		get_random_bytes(conn->ntlmssp.cryptkey, sizeof(__u64));
@@ -895,8 +896,9 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 		struct smb_com_session_setup_req_no_secext *req,
 		struct smb_com_session_setup_old_resp *rsp)
 {
-	int offset, err = 0;
+	int offset, err = 0, len;
 	char *name;
+	__le16 str[32];
 
 	/* Build response. We don't use extended security (yet), so wct is 3 */
 	rsp->hdr.WordCount = 3;
@@ -980,6 +982,29 @@ no_password_check:
 	/* this is an ANDx command ? */
 	rsp->AndXReserved = 0;
 	rsp->AndXOffset = cpu_to_le16(get_rfc1002_len(&rsp->hdr));
+
+	/* 1 byte padding for word alignment */
+	offset = 1;
+
+	memset(str, 0 , sizeof(str));
+
+	len = smb_strtoUTF16(str, "Unix", 4, conn->local_nls);
+	len = UNICODE_LEN(len + 1);
+	memcpy(rsp->NativeOS + offset, str, len);
+	offset += len;
+
+	len = smb_strtoUTF16(str, "ksmbd", 5, conn->local_nls);
+	len = UNICODE_LEN(len + 1);
+	memcpy(rsp->NativeOS + offset, str, len);
+	offset += len;
+
+	len = smb_strtoUTF16(str, "WORKGROUP", 9, conn->local_nls);
+	len = UNICODE_LEN(len + 1);
+	memcpy(rsp->NativeOS + offset, str, len);
+	offset += len;
+
+	rsp->ByteCount = cpu_to_le16(offset);
+	inc_rfc1001_len(&rsp->hdr, offset);
 
 	if (req->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
 		/* adjust response */
