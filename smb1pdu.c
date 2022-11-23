@@ -43,6 +43,11 @@ struct ksmbd_dirent {
 	char			name[];
 };
 
+static inline unsigned int get_req_len(void *buf)
+{
+	return 4 + get_rfc1002_len(buf);
+}
+
 /**
  * smb_NTtimeToUnix() - convert NTFS time to unix style time format
  * @ntutc:	NTFS style time
@@ -202,20 +207,28 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 
 /**
  * andx_request_buffer() - return pointer to matching andx command
- * @work:	buffer containing smb request
+ * @buf:	buffer containing smb request
+ * @len:	buffer length
  * @command:	match next command with this command
  *
  * Return:      pointer to matching command buffer on success, otherwise NULL
  */
-static char *andx_request_buffer(char *buf, int command)
+static char *andx_request_buffer(char *buf, unsigned int len, int command)
 {
 	struct andx_block *andx_ptr = (struct andx_block *)(buf +
 					sizeof(struct smb_hdr) - 1);
 	struct andx_block *next;
 
+	/* AndXOffset does not include 4 byte RFC1002 header */
+	len -= 4;
+
 	while (andx_ptr->AndXCommand != SMB_NO_MORE_ANDX_COMMAND) {
-		next = (struct andx_block *)
-			(buf + 4 + le16_to_cpu(andx_ptr->AndXOffset));
+		unsigned int offset = le16_to_cpu(andx_ptr->AndXOffset);
+
+		if (offset > len)
+			return NULL;
+
+		next = (struct andx_block *)(buf + 4 + offset);
 		if (andx_ptr->AndXCommand == command)
 			return (char *)next;
 		andx_ptr = next;
@@ -380,7 +393,8 @@ static void set_service_type(struct ksmbd_conn *conn,
 		length += 1;
 		uni_len = smbConvertToUTF16((__le16 *)(buf + length),
 					     NATIVE_FILE_SYSTEM,
-					     PATH_MAX, conn->local_nls, 0);
+					     strlen(NATIVE_FILE_SYSTEM),
+					     conn->local_nls, 0);
 		uni_len++;
 		uni_len *= 2;
 		length += uni_len;
@@ -407,13 +421,16 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	struct ksmbd_session *sess = work->sess;
 	int dev_flags = 0;
 	struct ksmbd_tree_conn_status status;
+	unsigned int maxlen, offset;
+
+	maxlen = get_req_len(req_hdr);
 
 	/* Is this an ANDX command ? */
 	if (req_hdr->Command != SMB_COM_TREE_CONNECT_ANDX) {
 		ksmbd_debug(SMB, "SMB_COM_TREE_CONNECT_ANDX is part of ANDX");
 		req = (struct smb_com_tconx_req *)
-			andx_request_buffer(work->request_buf,
-				SMB_COM_TREE_CONNECT_ANDX);
+			andx_request_buffer(work->request_buf, maxlen,
+					    SMB_COM_TREE_CONNECT_ANDX);
 		rsp = (struct smb_com_tconx_rsp_ext *)
 			andx_response_buffer(work->response_buf);
 		extra_byte = 3;
@@ -427,24 +444,40 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	}
 
 	/* check if valid tree name is present in request or not */
-	if (!req->PasswordLength) {
-		treename = smb_strndup_from_utf16(req->Password + 1,
-				256, true, conn->local_nls);
-		dev_type = smb_strndup_from_utf16(req->Password + 1 +
-			((strlen(treename) + 1) * 2), 256, false,
-			conn->local_nls);
-	} else {
-		treename = smb_strndup_from_utf16(req->Password +
-				le16_to_cpu(req->PasswordLength), 256, true,
-				conn->local_nls);
-		dev_type = smb_strndup_from_utf16(req->Password +
-			le16_to_cpu(req->PasswordLength) +
-				((strlen(treename) + 1) * 2),
-			256, false, conn->local_nls);
+	offset = (char *)req - (char *)work->request_buf;
+	offset += offsetof(struct smb_com_tconx_req, Password)
+		  + le16_to_cpu(req->PasswordLength);
+
+	if (offset >= maxlen) {
+		status.ret = -EINVAL;
+		goto out_err;
 	}
 
-	if (IS_ERR(treename) || IS_ERR(dev_type)) {
-		pr_err("Unable to strdup() treename or devtype uid %d\n",
+	treename = smb_strndup_from_utf16((char *)work->request_buf + offset,
+					  maxlen - offset,
+					  true,
+					  conn->local_nls);
+
+	if (IS_ERR(treename)) {
+		pr_err("Unable to strdup() treename for uid %d\n",
+		       rsp_hdr->Uid);
+		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
+		goto out_err;
+	}
+
+	/* adjust tree name length */
+	offset += (strlen(treename) + 1) * 2;
+
+	if (offset > maxlen) {
+		status.ret = -EINVAL;
+		goto out_err;
+	}
+
+	dev_type = kstrndup((char *)work->request_buf + offset,
+			    maxlen - offset, GFP_KERNEL);
+
+	if (IS_ERR(dev_type)) {
+		pr_err("Unable to strdup() devtype for uid %d\n",
 		       rsp_hdr->Uid);
 		status.ret = KSMBD_TREE_CONN_STATUS_ERROR;
 		goto out_err;
@@ -725,12 +758,13 @@ int smb_rename(struct ksmbd_work *work)
 	struct smb_com_rename_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
-	char *oldname, *newname;
+	char *oldname, *newname = NULL;
 	struct ksmbd_file *fp = NULL;
 	int oldname_len;
 	struct path path;
 	bool file_present = true;
 	int rc = 0;
+	unsigned int maxlen, offset;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -739,26 +773,39 @@ int smb_rename(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	oldname = smb_get_name(share, req->OldFileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_rename_req, OldFileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	oldname = smb_get_name(share, req->OldFileName,
+			       maxlen - offset, work, false);
 	if (IS_ERR(oldname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(oldname);
 	}
 
 	if (is_unicode)
 		oldname_len = smb1_utf16_name_length((__le16 *)req->OldFileName,
-				PATH_MAX);
+						     maxlen - offset);
 	else {
 		oldname_len = strlen(oldname);
 		oldname_len++;
 	}
 
-	newname = smb_get_name(share, &req->OldFileName[oldname_len + 2],
-			       PATH_MAX, work, false);
+	/* 2 bytes for BufferFormat field and padding byte */
+	offset += oldname_len + 2;
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		goto out;
+	}
+
+	newname = smb_get_name(share, (char *)req + offset,
+			       maxlen - offset, work, false);
 	if (IS_ERR(newname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		rc = PTR_ERR(newname);
 		newname = NULL;
 		goto out;
@@ -896,7 +943,7 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 		struct smb_com_session_setup_req_no_secext *req,
 		struct smb_com_session_setup_old_resp *rsp)
 {
-	int offset, err = 0, len;
+	int offset, err = 0, len, maxlen;
 	char *name;
 	__le16 str[32];
 
@@ -908,13 +955,22 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 	/* adjust pdu length. data added 6 bytes */
 	inc_rfc1001_len(&rsp->hdr, 6);
 
-	/* check if valid user name is present in request or not */
+	maxlen = get_req_len(req);
+
+	/* offset to username */
 	offset = le16_to_cpu(req->CaseInsensitivePasswordLength) +
 		le16_to_cpu(req->CaseSensitivePasswordLength);
 
 	/* 1 byte for padding */
-	name = smb_strndup_from_utf16((req->CaseInsensitivePassword + offset +
-				1), 256, true, conn->local_nls);
+	offset++;
+	if (offset > maxlen) {
+		err = -EINVAL;
+		goto out_err;
+	}
+
+	/* check if valid user name is present in request or not */
+	name = smb_strndup_from_utf16(req->CaseInsensitivePassword + offset,
+				      maxlen - offset, true, conn->local_nls);
 	if (IS_ERR(name)) {
 		pr_err("cannot allocate memory\n");
 		err = PTR_ERR(name);
@@ -937,6 +993,10 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 		goto no_password_check;
 	}
 
+	/* set offset to start of variable data */
+	offset = offsetof(struct smb_com_session_setup_req_no_secext,
+			  CaseInsensitivePassword);
+
 	if (le16_to_cpu(req->CaseSensitivePasswordLength) ==
 			CIFS_AUTH_RESP_SIZE) {
 		err = ksmbd_auth_ntlm(sess, req->CaseInsensitivePassword +
@@ -950,13 +1010,20 @@ static int build_sess_rsp_noextsec(struct ksmbd_conn *conn,
 	} else {
 		char *ntdomain;
 
-		offset = le16_to_cpu(req->CaseInsensitivePasswordLength) +
+		offset += le16_to_cpu(req->CaseInsensitivePasswordLength) +
 			le16_to_cpu(req->CaseSensitivePasswordLength) +
 			((strlen(user_name(sess->user)) + 1) * 2);
 
-		ntdomain = smb_strndup_from_utf16(
-				req->CaseInsensitivePassword +
-				offset + 1, 256, true, conn->local_nls);
+		/* 1 byte padding */
+		offset++;
+		if (offset > maxlen) {
+			err = -EINVAL;
+			goto out_err;
+		}
+
+		ntdomain = smb_strndup_from_utf16((char *)req + offset,
+						  maxlen - offset, true,
+						  conn->local_nls);
 		if (IS_ERR(ntdomain)) {
 			pr_err("cannot allocate memory\n");
 			err = PTR_ERR(ntdomain);
@@ -1040,6 +1107,12 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 	negblob = (struct negotiate_message *)req->SecurityBlob;
 	sz = le16_to_cpu(req->SecurityBlobLength);
 
+	if (offsetof(struct smb_com_session_setup_req, SecurityBlob) + sz >
+		get_req_len(req)) {
+		err = -EINVAL;
+		goto out_err;
+	}
+
 	if (ksmbd_decode_negTokenInit((char *)negblob, sz, conn)) {
 		if (ksmbd_decode_negTokenTarg((char *)negblob, sz, conn)) {
 			conn->use_spnego = false;
@@ -1053,9 +1126,7 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 		struct challenge_message *chgblob;
 
 		ksmbd_debug(SMB, "negotiate phase\n");
-		err = ksmbd_decode_ntlmssp_neg_blob(negblob,
-				le16_to_cpu(req->SecurityBlobLength),
-				conn);
+		err = ksmbd_decode_ntlmssp_neg_blob(negblob, sz, conn);
 		if (err)
 			goto out_err;
 
@@ -1117,6 +1188,7 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 		rsp->ByteCount = rsp->SecurityBlobLength;
 	} else if (negblob->MessageType == NtLmAuthenticate) {
 		struct authenticate_message *authblob;
+		unsigned int blob_len, un_off, un_len;
 		char *username;
 
 		ksmbd_debug(SMB, "authenticate phase\n");
@@ -1127,10 +1199,17 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 			authblob = (struct authenticate_message *)
 						req->SecurityBlob;
 
-		username = smb_strndup_from_utf16((const char *)authblob +
-				le32_to_cpu(authblob->UserName.BufferOffset),
-				le16_to_cpu(authblob->UserName.Length), true,
-				conn->local_nls);
+		un_off = le32_to_cpu(authblob->UserName.BufferOffset);
+		un_len = le16_to_cpu(authblob->UserName.Length);
+		blob_len = le16_to_cpu(req->SecurityBlobLength);
+		if (blob_len < (u64)un_off + un_len) {
+			err = -EINVAL;
+			goto out_err;
+		}
+
+		username =
+			smb_strndup_from_utf16((const char *)authblob + un_off,
+					       un_len, true, conn->local_nls);
 
 		if (IS_ERR(username)) {
 			pr_err("cannot allocate memory\n");
@@ -1154,9 +1233,8 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 			goto no_password_check;
 		}
 
-		err = ksmbd_decode_ntlmssp_auth_blob(authblob,
-				le16_to_cpu(req->SecurityBlobLength),
-				conn, sess);
+		err = ksmbd_decode_ntlmssp_auth_blob(authblob, blob_len,
+						     conn, sess);
 		if (err) {
 			ksmbd_debug(SMB, "authentication failed\n");
 			err = -EINVAL;
@@ -1549,7 +1627,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	int i, lock_count, unlock_count;
 	unsigned long long offset, length;
 	struct file_lock *flock = NULL;
-	unsigned int cmd = 0;
+	unsigned int cmd = 0, leftlen;
 	LIST_HEAD(lock_list);
 	LIST_HEAD(rollback_list);
 	int locked, timeout;
@@ -1579,10 +1657,21 @@ int smb_locking_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "lock count is %d, unlock_count : %d\n",
 		lock_count, unlock_count);
 
-	if (req->LockType & LOCKING_ANDX_LARGE_FILES)
+	leftlen = get_req_len(req) - offsetof(struct smb_com_lock_req, Locks);
+
+	if (req->LockType & LOCKING_ANDX_LARGE_FILES) {
+		if ((unlock_count + lock_count) * sizeof(*lock_ele64) > leftlen) {
+			err = -EINVAL;
+			goto out;
+		}
 		lock_ele64 = (struct locking_andx_range64 *)req->Locks;
-	else
+	} else {
+		if ((unlock_count + lock_count) * sizeof(*lock_ele32) > leftlen) {
+			err = -EINVAL;
+			goto out;
+		}
 		lock_ele32 = (struct locking_andx_range32 *)req->Locks;
+	}
 
 	if (req->LockType & LOCKING_ANDX_CHANGE_LOCKTYPE) {
 		pr_err("lock type: LOCKING_ANDX_CHANGE_LOCKTYPE\n");
@@ -1959,6 +2048,7 @@ int smb_trans(struct ksmbd_work *work)
 	struct smb_com_trans_rsp *rsp = work->response_buf;
 	struct smb_com_trans_pipe_req *pipe_req = work->request_buf;
 	struct ksmbd_rpc_command *rpc_resp;
+	unsigned int maxlen, offset;
 	__u16 subcommand;
 	char *name, *pipe;
 	char *pipedata;
@@ -1973,9 +2063,17 @@ int smb_trans(struct ksmbd_work *work)
 	if (req->SetupCount)
 		setup_bytes_count = 2 * req->SetupCount;
 
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans_req, Data) + setup_bytes_count;
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return 0;
+	}
+
 	subcommand = le16_to_cpu(req->SubCommand);
-	name = smb_strndup_from_utf16(req->Data + setup_bytes_count, 256, 1,
-			conn->local_nls);
+	name = smb_strndup_from_utf16(req->Data + setup_bytes_count,
+				      maxlen - offset, 1,
+				      conn->local_nls);
 
 	if (IS_ERR(name)) {
 		pr_err("failed to allocate memory\n");
@@ -2016,10 +2114,17 @@ int smb_trans(struct ksmbd_work *work)
 		offsetof(struct smb_com_trans_req, Data)
 		- str_len_uni;
 	pipedata = req->Data + str_len_uni + setup_bytes_count + padding;
+	offset += str_len_uni + padding;
 
 	if (!strncmp(pipe, "LANMAN", sizeof("LANMAN"))) {
-		rpc_resp = ksmbd_rpc_rap(work->sess, pipedata,
-					 le16_to_cpu(req->TotalParameterCount));
+		u16 param_count = le16_to_cpu(req->ParameterCount);
+
+		if (offset + param_count > maxlen) {
+			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+			goto out;
+		}
+
+		rpc_resp = ksmbd_rpc_rap(work->sess, pipedata, param_count);
 
 		if (rpc_resp) {
 			if (rpc_resp->flags == KSMBD_RPC_ENOTIMPLEMENTED) {
@@ -2050,11 +2155,18 @@ int smb_trans(struct ksmbd_work *work)
 	id = pipe_req->fid;
 	switch (subcommand) {
 	case TRANSACT_DCERPCCMD:
+	{
+		u16 data_count = le16_to_cpu(req->DataCount);
+
+		if (offset + data_count > maxlen) {
+			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+			goto out;
+		}
 
 		ksmbd_debug(SMB, "GOT TRANSACT_DCERPCCMD\n");
 		ret = -EINVAL;
 		rpc_resp = ksmbd_rpc_ioctl(work->sess, id, pipedata,
-					   le16_to_cpu(req->DataCount));
+					   data_count);
 		if (rpc_resp) {
 			if (rpc_resp->flags == KSMBD_RPC_ENOTIMPLEMENTED) {
 				rsp->hdr.Status.CifsError =
@@ -2075,7 +2187,7 @@ int smb_trans(struct ksmbd_work *work)
 			ret = 0;
 		}
 		break;
-
+	}
 	default:
 		ksmbd_debug(SMB, "SMB TRANS subcommand not supported %u\n",
 				subcommand);
@@ -2118,18 +2230,26 @@ static int create_andx_pipe(struct ksmbd_work *work)
 {
 	struct smb_com_open_req *req = work->request_buf;
 	struct smb_com_open_ext_rsp *rsp = work->response_buf;
+	unsigned int maxlen, offset;
 	char *name;
 	int rc = 0;
 	__u16 fid;
 
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_open_req, fileName);
+
 	/* one byte pad before unicode file name start */
 	if (is_smbreq_unicode(&req->hdr))
-		name = smb_strndup_from_utf16(req->fileName + 1, 256, 1,
-				work->conn->local_nls);
-	else
-		name = smb_strndup_from_utf16(req->fileName, 256, 1,
-				work->conn->local_nls);
+		offset += 1;
 
+	if (offset >= maxlen) {
+		rc = -EINVAL;
+		goto out;
+	}
+
+	name = smb_strndup_from_utf16((char *)req + offset,
+				      maxlen - offset, 1,
+				      work->conn->local_nls);
 	if (IS_ERR(name)) {
 		rc = -ENOMEM;
 		goto out;
@@ -2205,13 +2325,13 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	umode_t mode = 0;
 	int err;
 	int create_directory = 0;
-	char *src;
 	char *root = NULL;
 	bool is_unicode;
 	bool is_relative_root = false;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 	int share_ret;
+	unsigned int maxlen, offset;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 	if (test_share_config_flag(work->tcon->share_conf,
@@ -2264,37 +2384,27 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		ksmbd_fd_put(work, fp);
 	}
 
-	/* here allocated +2 (UNI '\0') length for both ASCII & UNI
-	 * to avoid unnecessary if/else check
-	 */
-	src = kzalloc(le16_to_cpu(req->NameLength) + 2, GFP_KERNEL);
-	if (!src) {
-		rsp->hdr.Status.CifsError =
-			STATUS_NO_MEMORY;
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_open_req, fileName);
+	is_unicode = is_smbreq_unicode(&req->hdr);
 
-		return -ENOMEM;
+	if (is_unicode)
+		offset++;
+
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
 	}
 
-	if (is_smbreq_unicode(&req->hdr)) {
-		memcpy(src, req->fileName + 1, le16_to_cpu(req->NameLength));
-		is_unicode = true;
-	} else {
-		memcpy(src, req->fileName, le16_to_cpu(req->NameLength));
-		is_unicode = false;
-	}
-
-	name = smb_strndup_from_utf16(src, PATH_MAX, is_unicode,
-			conn->local_nls);
-	kfree(src);
+	name = smb_strndup_from_utf16((char *)req + offset, maxlen - offset,
+				      is_unicode, conn->local_nls);
 
 	if (IS_ERR(name)) {
 		if (PTR_ERR(name) == -ENOMEM) {
 			pr_err("failed to allocate memory\n");
-			rsp->hdr.Status.CifsError =
-				STATUS_NO_MEMORY;
+			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		} else
-			rsp->hdr.Status.CifsError =
-				STATUS_OBJECT_NAME_INVALID;
+			rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 
 		return PTR_ERR(name);
 	}
@@ -2324,10 +2434,9 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 		}
 	}
 
-	conv_name = smb_get_name(share, name, PATH_MAX, work, true);
+	conv_name = smb_get_name(share, name, strlen(name), work, true);
 	if (IS_ERR(conv_name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		kfree(name);
 		return PTR_ERR(conv_name);
 	}
@@ -2972,6 +3081,7 @@ int smb_write(struct ksmbd_work *work)
 	char *data_buf;
 	ssize_t nbytes = 0;
 	int err = 0;
+	unsigned int maxlen, offset;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -2990,6 +3100,13 @@ int smb_write(struct ksmbd_work *work)
 	pos = le32_to_cpu(req->Offset);
 	count = le16_to_cpu(req->Length);
 	data_buf = req->Data;
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_write_req_32bit, Data);
+	if (offset + count > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		ksmbd_fd_put(work, fp);
+		return -EINVAL;
+	}
 
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
@@ -3031,10 +3148,17 @@ static int smb_write_andx_pipe(struct ksmbd_work *work)
 	struct ksmbd_rpc_command *rpc_resp;
 	int ret = 0;
 	size_t count = 0;
+	unsigned int maxlen;
 
 	count = le16_to_cpu(req->DataLengthLow);
 	if (work->conn->vals->capabilities & CAP_LARGE_WRITE_X)
 		count |= (le16_to_cpu(req->DataLengthHigh) << 16);
+
+	maxlen = get_req_len(req) - sizeof(struct smb_com_write_req);
+	if (count > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
 
 	rpc_resp = ksmbd_rpc_write(work->sess, req->Fid, req->Data, count);
 	if (rpc_resp) {
@@ -3094,6 +3218,7 @@ int smb_write_andx(struct ksmbd_work *work)
 	ssize_t nbytes = 0;
 	char *data_buf;
 	int err = 0;
+	unsigned int maxlen, offset;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -3138,23 +3263,18 @@ int smb_write_andx(struct ksmbd_work *work)
 		count = CIFS_DEFAULT_IOSIZE;
 	}
 
-	if (le16_to_cpu(req->DataOffset) ==
-			(offsetof(struct smb_com_write_req, Data) - 4)) {
-		data_buf = (char *)&req->Data[0];
-	} else {
-		if ((le16_to_cpu(req->DataOffset) > get_rfc1002_len(req)) ||
-				(le16_to_cpu(req->DataOffset) +
-				 count > get_rfc1002_len(req))) {
-			pr_err("invalid write data offset %u, smb_len %u\n",
-			       le16_to_cpu(req->DataOffset),
-			       get_rfc1002_len(req));
-			err = -EINVAL;
-			goto out;
-		}
-
-		data_buf = (char *)(((char *)&req->hdr.Protocol) +
-				le16_to_cpu(req->DataOffset));
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen ||
+	    (offset + count > maxlen)) {
+		pr_err("invalid write data offset %u, smb_len %u\n",
+		       le16_to_cpu(req->DataOffset),
+		       get_rfc1002_len(req));
+		err = -EINVAL;
+		goto out;
 	}
+
+	data_buf = (char *)req + offset;
 
 	ksmbd_debug(SMB, "filname %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
@@ -3683,12 +3803,27 @@ static int smb_set_acl(struct ksmbd_work *work)
 	struct cifs_posix_acl *wire_acl_data;
 	char *fname, *buf = NULL;
 	int rc = 0, acl_type = 0, value_len;
+	unsigned int maxlen, offset;
 
-	fname = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	fname = smb_get_name(share, req->FileName, maxlen - offset,
+			     work, false);
 	if (IS_ERR(fname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(fname);
+	}
+
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(fname);
+		return -EINVAL;
 	}
 
 	buf = vmalloc(XATTR_SIZE_MAX);
@@ -3698,12 +3833,10 @@ static int smb_set_acl(struct ksmbd_work *work)
 		goto out;
 	}
 
-	wire_acl_data = (struct cifs_posix_acl *)(((char *) &req->hdr.Protocol)
-			+ le16_to_cpu(req->DataOffset));
+	wire_acl_data = (struct cifs_posix_acl *)((char *)req + offset);
 	if (le16_to_cpu(wire_acl_data->access_entry_count) > 0 &&
 		le16_to_cpu(wire_acl_data->access_entry_count) < 0xFFFF) {
 		acl_type = ACL_TYPE_ACCESS;
-
 	} else if (le16_to_cpu(wire_acl_data->default_entry_count) > 0 &&
 		le16_to_cpu(wire_acl_data->default_entry_count) < 0xFFFF) {
 		acl_type = ACL_TYPE_DEFAULT;
@@ -3712,9 +3845,8 @@ static int smb_set_acl(struct ksmbd_work *work)
 		goto out;
 	}
 
-	rc = cifs_copy_posix_acl(buf,
-			(char *)wire_acl_data,
-			XATTR_SIZE_MAX, acl_type, XATTR_SIZE_MAX);
+	rc = cifs_copy_posix_acl(buf, (char *)wire_acl_data, XATTR_SIZE_MAX,
+				 acl_type, maxlen - offset);
 	if (rc < 0) {
 		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
 		goto out;
@@ -3985,6 +4117,7 @@ static int query_path_info(struct ksmbd_work *work)
 	int rc;
 	char *ptr;
 	__u64 create_time = 0, time;
+	unsigned int maxlen, offset;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE)) {
@@ -3992,13 +4125,24 @@ static int query_path_info(struct ksmbd_work *work)
 		return 0;
 	}
 
-	req_params = (struct trans2_qpi_req_params *)(work->request_buf +
-		     le16_to_cpu(req->ParameterOffset) + 4);
-	name = smb_get_name(share, req_params->FileName, PATH_MAX, work,
-		false);
+	maxlen = get_req_len(work->request_buf);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+	req_params = (struct trans2_qpi_req_params *)(work->request_buf + offset);
+
+	offset += offsetof(struct trans2_qpi_req_params, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req_params->FileName, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -4219,7 +4363,7 @@ static int query_path_info(struct ksmbd_work *work)
 		}
 		uni_filename_len = smbConvertToUTF16(
 				(__le16 *)name_info->FileName,
-				filename, PATH_MAX,
+				filename, strlen(filename),
 				conn->local_nls, 0);
 		kfree(filename);
 		uni_filename_len *= 2;
@@ -4294,7 +4438,7 @@ static int query_path_info(struct ksmbd_work *work)
 		ainfo->EASize = 0;
 		uni_filename_len = smbConvertToUTF16(
 				(__le16 *)ainfo->FileName,
-				filename, PATH_MAX,
+				filename, strlen(filename),
 				conn->local_nls, 0);
 		kfree(filename);
 		uni_filename_len *= 2;
@@ -4536,9 +4680,18 @@ static int query_fs_info(struct ksmbd_work *work)
 	bool incomplete = false;
 	int info_level, len = 0;
 	struct ksmbd_tree_connect *tree_conn;
+	unsigned int maxlen, offset;
+
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
 
 	req_params = (struct smb_com_trans2_qfsi_req_params *)
-		(work->request_buf + le16_to_cpu(req->ParameterOffset) + 4);
+		     (work->request_buf + offset);
+
 	/* check if more data is coming */
 	if (le16_to_cpu(req->TotalParameterCount) !=
 		le16_to_cpu(req->ParameterCount)) {
@@ -4614,7 +4767,8 @@ static int query_fs_info(struct ksmbd_work *work)
 		/* Taking dummy value of serial number*/
 		vinfo->SerialNumber = cpu_to_le32(0xbc3ac512);
 		len = smbConvertToUTF16((__le16 *)vinfo->VolumeLabel,
-			share->name, PATH_MAX, conn->local_nls, 0);
+					share->name, strlen(share->name),
+					conn->local_nls, 0);
 		vinfo->VolumeLabelSize = cpu_to_le32(len);
 		vinfo->Reserved = 0;
 		rsp->t2.TotalDataCount =
@@ -4815,15 +4969,23 @@ static int smb_posix_open(struct ksmbd_work *work)
 	__u32 oplock_flags, posix_open_flags, may_flags;
 	umode_t mode;
 	char *name;
+	unsigned int maxlen, offset;
 	bool file_present = true;
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE;
 
-	name = smb_get_name(share, pSMB_req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(pSMB_req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		pSMB_rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, pSMB_req->FileName,
+			    maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		pSMB_rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		pSMB_rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -4853,9 +5015,12 @@ static int smb_posix_open(struct ksmbd_work *work)
 		}
 	}
 
-	data_offset = le16_to_cpu(pSMB_req->DataOffset);
-	psx_req = (struct open_psx_req *)(((char *)&pSMB_req->hdr.Protocol) +
-			data_offset);
+	data_offset = le16_to_cpu(pSMB_req->DataOffset) + 4;
+	if (data_offset > maxlen) {
+		err = -EINVAL;
+		goto free_path;
+	}
+	psx_req = (struct open_psx_req *)((char *)pSMB_req + data_offset);
 	oplock_flags = le32_to_cpu(psx_req->OpenFlags);
 
 	posix_open_flags = smb_posix_convert_flags(
@@ -5069,6 +5234,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct unlink_psx_rsp *psx_rsp = NULL;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+	unsigned int maxlen, offset;
 	char *name;
 	int rc = 0;
 
@@ -5079,10 +5245,16 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->FileName, maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -5135,18 +5307,30 @@ static int smb_set_time_pathinfo(struct ksmbd_work *work)
 	struct file_basic_info *info;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct iattr attrs;
+	unsigned int maxlen, offset;
 	char *name;
 	int err = 0;
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->FileName, maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
-	info = (struct file_basic_info *)(((char *) &req->hdr.Protocol) +
-			le16_to_cpu(req->DataOffset));
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(name);
+		return -EINVAL;
+	}
+	info = (struct file_basic_info *)((char *)req + offset);
 
 	attrs.ia_valid = 0;
 	if (le64_to_cpu(info->LastAccessTime)) {
@@ -5214,11 +5398,18 @@ static int smb_set_unix_pathinfo(struct ksmbd_work *work)
 	struct iattr attrs;
 	char *name;
 	int err = 0;
+	unsigned int maxlen, offset;
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->FileName, maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -5231,8 +5422,15 @@ static int smb_set_unix_pathinfo(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
-	unix_info =  (struct file_unix_basic_info *)
-		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		ksmbd_revert_fsids(work);
+		kfree(name);
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	unix_info = (struct file_unix_basic_info *)((char *)req + offset);
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
 	err = unix_info_to_attr(unix_info, mnt_user_ns(path.mnt), &attrs);
@@ -5288,18 +5486,38 @@ static int smb_set_ea(struct ksmbd_work *work)
 	struct fea *ea;
 	char *fname, *attr_name = NULL, *value;
 	int rc = 0, list_len, i, next = 0;
+	unsigned int maxlen, offset;
 
-	fname = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	fname = smb_get_name(share, req->FileName,
+			     maxlen - offset, work, false);
 	if (IS_ERR(fname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(fname);
 	}
 
-	eabuf = (struct fealist *)(((char *) &req->hdr.Protocol)
-			+ le16_to_cpu(req->DataOffset));
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(fname);
+		return -EINVAL;
+	}
+
+	eabuf = (struct fealist *)((char *)req + offset);
 
 	list_len = le32_to_cpu(eabuf->list_len) - 4;
+	if (offset + list_len > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(fname);
+		return -EINVAL;
+	}
+
 	ea = (struct fea *)eabuf->list;
 
 	for (i = 0; list_len >= 0 && ea->name_len != 0; i++, list_len -= next) {
@@ -5309,6 +5527,11 @@ static int smb_set_ea(struct ksmbd_work *work)
 		}
 
 		next = ea->name_len + le16_to_cpu(ea->value_len) + 4;
+		offset += next;
+		if (offset > maxlen) {
+			rc = -EINVAL;
+			goto out;
+		}
 
 		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
 		if (!attr_name) {
@@ -5379,16 +5602,30 @@ static int smb_set_file_size_pinfo(struct ksmbd_work *work)
 	char *name = NULL;
 	loff_t newsize;
 	int rc = 0;
+	unsigned int maxlen, offset;
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->FileName,
+			    maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
-	eofinfo =  (struct file_end_of_file_info *)
-		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(name);
+		return -EINVAL;
+	}
+
+	eofinfo = (struct file_end_of_file_info *)((char *)req + offset);
 	newsize = le64_to_cpu(eofinfo->FileSize);
 	attr.ia_valid = ATTR_SIZE;
 	attr.ia_size = newsize;
@@ -5433,19 +5670,33 @@ static int smb_creat_hardlink(struct ksmbd_work *work)
 	struct smb_com_trans2_spi_req *req = work->request_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
-	char *oldname, *newname, *oldname_offset;
+	unsigned int maxlen, offset;
+	char *oldname, *newname;
 	int err;
 
-	newname = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	newname = smb_get_name(share, req->FileName,
+			       maxlen - offset, work, false);
 	if (IS_ERR(newname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(newname);
 	}
 
-	oldname_offset = ((char *)&req->hdr.Protocol) +
-				le16_to_cpu(req->DataOffset);
-	oldname = smb_get_name(share, oldname_offset, PATH_MAX, work, false);
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(newname);
+		return -EINVAL;
+	}
+
+	oldname = smb_get_name(share, (char *)req + offset,
+			       maxlen - offset, work, false);
 	if (IS_ERR(oldname)) {
 		err = PTR_ERR(oldname);
 		oldname = NULL;
@@ -5494,21 +5745,35 @@ static int smb_creat_symlink(struct ksmbd_work *work)
 	struct smb_com_trans2_spi_req *req = work->request_buf;
 	struct smb_com_trans2_spi_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
-	char *name, *symname, *name_offset;
+	unsigned int maxlen, offset;
+	char *name, *symname;
 	bool is_unicode = is_smbreq_unicode(&req->hdr);
 	int err;
 
-	symname = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_trans2_spi_req, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	symname = smb_get_name(share, req->FileName, maxlen - offset,
+			       work, false);
+
 	if (IS_ERR(symname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(symname);
 	}
 
-	name_offset = ((char *)&req->hdr.Protocol) +
-		le16_to_cpu(req->DataOffset);
-	name = smb_strndup_from_utf16(name_offset, PATH_MAX, is_unicode,
-			work->conn->local_nls);
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset >= maxlen) {
+		kfree(symname);
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_strndup_from_utf16((char *)req + offset, maxlen - offset,
+				      is_unicode, work->conn->local_nls);
 	if (IS_ERR(name)) {
 		kfree(symname);
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
@@ -5928,6 +6193,7 @@ static int find_first(struct ksmbd_work *work)
 	char *srch_ptr = NULL;
 	int header_size;
 	int struct_sz;
+	unsigned int maxlen, offset;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 
@@ -5936,10 +6202,25 @@ static int find_first(struct ksmbd_work *work)
 		return -ENOMEM;
 	}
 
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		ksmbd_revert_fsids(work);
+		return -EINVAL;
+	}
+
 	req_params = (struct smb_com_trans2_ffirst_req_params *)
-		(work->request_buf + le16_to_cpu(req->ParameterOffset) + 4);
-	dirpath = smb_get_dir_name(share, req_params->FileName, PATH_MAX,
-			work, &srch_ptr);
+		     (work->request_buf + offset);
+	offset += offsetof(struct smb_com_trans2_ffirst_req_params, FileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		ksmbd_revert_fsids(work);
+		return -EINVAL;
+	}
+	dirpath = smb_get_dir_name(share, req_params->FileName,
+				   maxlen - offset, work, &srch_ptr);
+
 	if (IS_ERR(dirpath)) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		rc = PTR_ERR(dirpath);
@@ -6234,11 +6515,20 @@ static int find_next(struct ksmbd_work *work)
 	int rc = 0, reclen = 0;
 	__u16 sid;
 	int header_size, srch_cnt, struct_sz;
+	unsigned int maxlen, offset;
 
 	memset(&d_info, 0, sizeof(struct ksmbd_dir_info));
 
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+
+	if (offset > maxlen) {
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
 	req_params = (struct smb_com_trans2_fnext_req_params *)
-		(work->request_buf + le16_to_cpu(req->ParameterOffset) + 4);
+		     (work->request_buf + offset);
 	sid = req_params->SearchHandle;
 
 	dir_fp = ksmbd_lookup_fd_fast(work, sid);
@@ -6576,20 +6866,17 @@ static int smb_set_file_size_finfo(struct ksmbd_work *work)
  * query_file_info_pipe() - query file info of IPC pipe
  *		using query file info command
  * @work:	smb work containing query file info command buffer
+ * @req_params:	buffer containing Trans2 Query File Information parameters
  *
  * Return:	0 on success, otherwise error
  */
-static int query_file_info_pipe(struct ksmbd_work *work)
+static int query_file_info_pipe(struct ksmbd_work *work,
+				struct smb_trans2_qfi_req_params *req_params)
 {
 	struct smb_hdr *rsp_hdr = work->response_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
-	struct smb_com_trans2_req *req = work->request_buf;
-	struct smb_trans2_qfi_req_params *req_params;
 	struct file_standard_info *standard_info;
 	char *ptr;
-
-	req_params = (struct smb_trans2_qfi_req_params *)(work->request_buf +
-			le16_to_cpu(req->ParameterOffset) + 4);
 
 	if (le16_to_cpu(req_params->InformationLevel) !=
 	    SMB_QUERY_FILE_STANDARD_INFO) {
@@ -6644,19 +6931,25 @@ static int query_file_info(struct ksmbd_work *work)
 	struct smb_com_trans2_req *req = work->request_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct smb_trans2_qfi_req_params *req_params;
+	unsigned int maxlen, offset;
 	struct ksmbd_file *fp;
 	struct kstat st;
 	char *ptr;
 	int rc = 0;
 	u64 time;
 
-	req_params = (struct smb_trans2_qfi_req_params *)(work->request_buf +
-			le16_to_cpu(req->ParameterOffset) + 4);
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+	if (offset > maxlen) {
+		rsp_hdr->Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+	req_params = (struct smb_trans2_qfi_req_params *)(work->request_buf + offset);
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE)) {
 		ksmbd_debug(SMB, "query file info for IPC srvsvc\n");
-		return query_file_info_pipe(work);
+		return query_file_info_pipe(work, req_params);
 	}
 
 	fp = ksmbd_lookup_fd_fast(work, req_params->Fid);
@@ -6834,7 +7127,7 @@ static int query_file_info(struct ksmbd_work *work)
 		}
 		uni_filename_len = smbConvertToUTF16(
 				(__le16 *)name_info->FileName,
-				filename, PATH_MAX,
+				filename, strlen(filename),
 				conn->local_nls, 0);
 		kfree(filename);
 		uni_filename_len *= 2;
@@ -6936,6 +7229,7 @@ static int smb_set_unix_fileinfo(struct ksmbd_work *work)
 	struct ksmbd_file *fp;
 	struct iattr attrs;
 	int err = 0;
+	unsigned int maxlen, offset;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
@@ -6945,8 +7239,15 @@ static int smb_set_unix_fileinfo(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
-	unix_info =  (struct file_unix_basic_info *)
-		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		ksmbd_revert_fsids(work);
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	unix_info = (struct file_unix_basic_info *)((char *)req + offset);
 
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
@@ -7150,13 +7451,20 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct set_file_rename *info;
 	struct ksmbd_file *fp;
+	unsigned int maxlen, offset;
 	char *newname;
 	int rc = 0;
 
 	req = (struct smb_com_trans2_sfi_req *)work->request_buf;
 	rsp = (struct smb_com_trans2_sfi_rsp *)work->response_buf;
-	info =  (struct set_file_rename *)
-		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
+
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->DataOffset) + 4;
+	if (offset > maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+	info = (struct set_file_rename *)(work->request_buf + offset);
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -7181,10 +7489,16 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 		}
 	}
 
-	newname = smb_get_name(share, info->target_name, PATH_MAX, work, 0);
+	offset += sizeof(struct set_file_rename);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	newname = smb_get_name(share, info->target_name, maxlen - offset,
+			       work, 0);
 	if (IS_ERR(newname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		ksmbd_fd_put(work, fp);
 		return PTR_ERR(newname);
 	}
@@ -7297,16 +7611,23 @@ static int create_dir(struct ksmbd_work *work)
 	struct smb_com_trans2_req *req = work->request_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+	unsigned int maxlen, offset;
 	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
 
-	name = smb_get_name(share, work->request_buf +
-			le16_to_cpu(req->ParameterOffset) + 4,
-			PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = le16_to_cpu(req->ParameterOffset) + 4;
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, (char *)req + offset,
+			    maxlen - offset, work, false);
+
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -7460,6 +7781,7 @@ int smb_mkdir(struct ksmbd_work *work)
 	struct smb_com_create_directory_req *req = work->request_buf;
 	struct smb_com_create_directory_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+	unsigned int maxlen, offset;
 	mode_t mode = S_IALLUGO;
 	char *name;
 	int err;
@@ -7471,10 +7793,17 @@ int smb_mkdir(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	name = smb_get_name(share, req->DirName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_create_directory_req, DirName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->DirName, maxlen - offset, work, false);
+
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -7554,11 +7883,18 @@ int smb_checkdir(struct ksmbd_work *work)
 	char *name, *last;
 	int err;
 	bool caseless_lookup = req->hdr.Flags & SMBFLG_CASELESS;
+	unsigned int maxlen, offset;
 
-	name = smb_get_name(share, req->DirName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_check_directory_req, DirName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->DirName, maxlen - offset, work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -7669,6 +8005,7 @@ int smb_rmdir(struct ksmbd_work *work)
 	struct smb_com_delete_directory_req *req = work->request_buf;
 	struct smb_com_delete_directory_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+	unsigned int maxlen, offset;
 	char *name;
 	int err;
 
@@ -7679,10 +8016,17 @@ int smb_rmdir(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	name = smb_get_name(share, req->DirName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_delete_directory_req, DirName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->DirName, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -7721,6 +8065,7 @@ int smb_unlink(struct ksmbd_work *work)
 	char *name;
 	int err;
 	struct ksmbd_file *fp;
+	unsigned int maxlen, offset;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -7729,10 +8074,17 @@ int smb_unlink(struct ksmbd_work *work)
 		return -EACCES;
 	}
 
-	name = smb_get_name(share, req->fileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_delete_file_req, fileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->fileName, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -7811,6 +8163,7 @@ int smb_nt_rename(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	char *oldname, *newname;
 	int oldname_len, err;
+	unsigned int maxlen, offset;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
 		ksmbd_debug(SMB,
@@ -7824,26 +8177,40 @@ int smb_nt_rename(struct ksmbd_work *work)
 		return -EINVAL;
 	}
 
-	oldname = smb_get_name(share, req->OldFileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_rename_req, OldFileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	oldname = smb_get_name(share, req->OldFileName,
+			       maxlen - offset, work, false);
 	if (IS_ERR(oldname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(oldname);
 	}
 
 	if (is_smbreq_unicode(&req->hdr))
 		oldname_len = smb1_utf16_name_length((__le16 *)req->OldFileName,
-				PATH_MAX);
+						     maxlen - offset);
 	else {
 		oldname_len = strlen(oldname);
 		oldname_len++;
 	}
 
-	newname = smb_get_name(share, &req->OldFileName[oldname_len + 2],
-			PATH_MAX, work, false);
+	/* 2 bytes for BufferFormat field and padding byte */
+	offset += oldname_len + 2;
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		kfree(oldname);
+		return -EINVAL;
+	}
+
+	newname = smb_get_name(share, (char *)req + offset,
+			       maxlen - offset, work, false);
 	if (IS_ERR(newname)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		kfree(oldname);
 		return PTR_ERR(newname);
 	}
@@ -7874,11 +8241,18 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 	struct smb_com_query_information_req *req = work->request_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct path path;
+	unsigned int maxlen, offset;
 	char *name;
 	__le32 err = 0;
 	int ret;
 
-	name = smb_get_name(share, req->FileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_query_information_req, FileName);
+	if (offset >= maxlen)
+		return STATUS_INVALID_PARAMETER;
+
+	name = smb_get_name(share, req->FileName, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name))
 		return STATUS_OBJECT_NAME_INVALID;
 
@@ -8067,6 +8441,7 @@ int smb_open_andx(struct ksmbd_work *work)
 	int err;
 	struct ksmbd_file *fp = NULL;
 	int oplock_rsp = OPLOCK_NONE, share_ret;
+	unsigned int maxlen, offset;
 
 	rsp->hdr.Status.CifsError = STATUS_UNSUCCESSFUL;
 
@@ -8081,16 +8456,21 @@ int smb_open_andx(struct ksmbd_work *work)
 		return -EINVAL;
 	}
 
-	if (is_smbreq_unicode(&req->hdr))
-		name = smb_get_name(share, req->fileName + 1, PATH_MAX,
-				work, false);
-	else
-		name = smb_get_name(share, req->fileName, PATH_MAX,
-				work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_openx_req, fileName);
 
+	if (is_smbreq_unicode(&req->hdr))
+		offset++;
+
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, (char *)req + offset, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
@@ -8355,12 +8735,20 @@ int smb_setattr(struct ksmbd_work *work)
 	struct iattr attrs;
 	int err = 0;
 	char *name;
+	unsigned int maxlen, offset;
 	__u16 dos_attr;
 
-	name = smb_get_name(share, req->fileName, PATH_MAX, work, false);
+	maxlen = get_req_len(req);
+	offset = offsetof(struct smb_com_setattr_req, fileName);
+	if (offset >= maxlen) {
+		rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
+		return -EINVAL;
+	}
+
+	name = smb_get_name(share, req->fileName, maxlen - offset,
+			    work, false);
 	if (IS_ERR(name)) {
-		rsp->hdr.Status.CifsError =
-			STATUS_OBJECT_NAME_INVALID;
+		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
