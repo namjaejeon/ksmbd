@@ -2361,9 +2361,15 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 					  dst_fp->filp, dst_off, len, 0);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 		if (ret == -EOPNOTSUPP || ret == -EXDEV)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+			ret = vfs_copy_file_range(src_fp->filp, src_off,
+						  dst_fp->filp, dst_off, len,
+						  COPY_FILE_SPLICE);
+#else
 			ret = generic_copy_file_range(src_fp->filp, src_off,
 						      dst_fp->filp, dst_off,
 						      len, 0);
+#endif
 #endif
 		if (ret < 0)
 			return ret;
