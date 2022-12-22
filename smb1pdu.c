@@ -258,7 +258,7 @@ int smb_check_user_session(struct ksmbd_work *work)
 
 	if (xa_empty(&conn->sessions)) {
 		ksmbd_debug(SMB, "NO sessions registered\n");
-		return 0;
+		return -EINVAL;
 	}
 
 	work->sess = ksmbd_session_lookup(conn, le16_to_cpu(req_hdr->Uid));
