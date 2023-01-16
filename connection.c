@@ -124,7 +124,7 @@ void ksmbd_conn_enqueue_request(struct ksmbd_work *work)
 	if (hdr->ProtocolId == SMB2_PROTO_NUMBER) {
 		if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 			requests_queue = &conn->requests;
-			work->syncronous = true;
+			work->synchronous = true;
 		}
 	} else {
 		if (conn->ops->get_cmd_val(work) != SMB_COM_NT_CANCEL)
@@ -133,7 +133,7 @@ void ksmbd_conn_enqueue_request(struct ksmbd_work *work)
 #else
 	if (conn->ops->get_cmd_val(work) != SMB2_CANCEL_HE) {
 		requests_queue = &conn->requests;
-		work->syncronous = true;
+		work->synchronous = true;
 	}
 #endif
 
@@ -159,7 +159,7 @@ int ksmbd_conn_try_dequeue_request(struct ksmbd_work *work)
 	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
 		list_del_init(&work->request_entry);
-		if (work->syncronous == false)
+		if (!work->synchronous)
 			list_del_init(&work->async_request_entry);
 		ret = 0;
 	}
