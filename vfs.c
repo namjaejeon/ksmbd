@@ -1409,7 +1409,11 @@ int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
 			     sizeof(XATTR_NAME_POSIX_ACL_ACCESS) - 1) ||
 		    !strncmp(name, XATTR_NAME_POSIX_ACL_DEFAULT,
 			     sizeof(XATTR_NAME_POSIX_ACL_DEFAULT) - 1)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+			err = vfs_remove_acl(user_ns, dentry, name);
+#else
 			err = ksmbd_vfs_remove_xattr(user_ns, dentry, name);
+#endif
 			if (err)
 				ksmbd_debug(SMB,
 					    "remove acl xattr failed : %s\n", name);
