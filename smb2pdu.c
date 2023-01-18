@@ -2504,9 +2504,17 @@ static void ksmbd_acls_fattr(struct smb_fattr *fattr,
 	fattr->cf_dacls = NULL;
 
 	if (IS_ENABLED(CONFIG_FS_POSIX_ACL)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+		fattr->cf_acls = get_inode_acl(inode, ACL_TYPE_ACCESS);
+#else
 		fattr->cf_acls = get_acl(inode, ACL_TYPE_ACCESS);
+#endif
 		if (S_ISDIR(inode->i_mode))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+			fattr->cf_dacls = get_inode_acl(inode, ACL_TYPE_DEFAULT);
+#else
 			fattr->cf_dacls = get_acl(inode, ACL_TYPE_DEFAULT);
+#endif
 	}
 }
 

@@ -1331,7 +1331,11 @@ int smb_check_perm_dacl(struct ksmbd_conn *conn, const struct path *path,
 	}
 
 	if (IS_ENABLED(CONFIG_FS_POSIX_ACL)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+		posix_acls = get_inode_acl(d_inode(path->dentry), ACL_TYPE_ACCESS);
+#else
 		posix_acls = get_acl(d_inode(path->dentry), ACL_TYPE_ACCESS);
+#endif
 		if (posix_acls && !found) {
 			unsigned int id = -1;
 
