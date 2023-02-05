@@ -5891,7 +5891,11 @@ static int ksmbd_fill_dirent(struct dir_context *ctx, const char *name, int naml
 
 	reclen = ALIGN(sizeof(struct ksmbd_dirent) + namlen, sizeof(u64));
 	if (buf->used + reclen > PAGE_SIZE)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+		return false;
+#else
 		return -EINVAL;
+#endif
 
 	de->namelen = namlen;
 	de->offset = offset;
@@ -5900,7 +5904,11 @@ static int ksmbd_fill_dirent(struct dir_context *ctx, const char *name, int naml
 	memcpy(de->name, name, namlen);
 	buf->used += reclen;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+	return true;
+#else
 	return 0;
+#endif
 }
 
 /**
