@@ -3872,7 +3872,7 @@ static int __query_dir(struct dir_context *ctx, const char *name, int namlen,
 	if (d_info->flags & SMB2_RETURN_SINGLE_ENTRY) {
 		d_info->out_buf_len = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		return false;
+		return true;
 #else
 		return 0;
 #endif
