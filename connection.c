@@ -189,41 +189,28 @@ int ksmbd_conn_write(struct ksmbd_work *work)
 	struct ksmbd_conn *conn = work->conn;
 	size_t len = 0;
 	int sent;
-	struct kvec iov[3];
-	int iov_idx = 0;
+    	struct kvec iov_buf[3], iovs;
 
 	if (!work->response_buf) {
 		pr_err("NULL response header\n");
 		return -EINVAL;
 	}
-
-	if (work->tr_buf) {
-		iov[iov_idx] = (struct kvec) { work->tr_buf,
-				sizeof(struct smb2_transform_hdr) + 4 };
-		len += iov[iov_idx++].iov_len;
-	}
-
-	if (work->aux_payload_sz) {
-		iov[iov_idx] = (struct kvec) { work->response_buf, work->resp_hdr_sz };
-		len += iov[iov_idx++].iov_len;
-		iov[iov_idx] = (struct kvec) { work->aux_payload_buf, work->aux_payload_sz };
-		len += iov[iov_idx++].iov_len;
-	} else {
-		if (work->tr_buf)
-			iov[iov_idx].iov_len = work->resp_hdr_sz;
-		else
-			iov[iov_idx].iov_len = get_rfc1002_len(work->response_buf) + 4;
-		iov[iov_idx].iov_base = work->response_buf;
-		len += iov[iov_idx++].iov_len;
-	}
+    
+	len = smb_generate_rsp_ivs(work, iov_buf, 3, &iovs, true);
+	if (len<0) return (int)len;
+ 
 
 	ksmbd_conn_lock(conn);
-	sent = conn->transport->ops->writev(conn->transport, &iov[0],
-					iov_idx, len,
+	sent = conn->transport->ops->writev(conn->transport,
+                    (struct kvec *)iovs.iov_base,
+                    (int)iovs.iov_len, len,
 					work->need_invalidate_rkey,
 					work->remote_key);
 	ksmbd_conn_unlock(conn);
-
+    	if (iovs.iov_base!=iov_buf) {
+        	kvfree(iovs.iov_base);
+    	}
+    
 	if (sent < 0) {
 		pr_err("Failed to send message: %d\n", sent);
 		return sent;

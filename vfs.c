@@ -400,18 +400,29 @@ out:
  * ksmbd_vfs_read() - vfs helper for smb file read
  * @work:	smb work
  * @fid:	file id of open file
+ * @aux_payload: read payload buffer
  * @count:	read byte count
  * @pos:	file pos
  *
  * Return:	number of read bytes on success, otherwise error
  */
-int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
-		   loff_t *pos)
+int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp,
+                   struct ksmbd_aux_payload *aux_payload, size_t count,
+                   loff_t *pos)
 {
 	struct file *filp = fp->filp;
 	ssize_t nbytes = 0;
-	char *rbuf = work->aux_payload_buf;
-	struct inode *inode = file_inode(filp);
+    	char *rbuf;
+    	struct inode *inode;
+    
+    	if (!aux_payload)
+        	return -EINVAL;
+    	if (count>aux_payload->len)
+        	return -ENOSPC;
+    
+    	rbuf = aux_payload->base;
+    
+	inode = file_inode(filp);
 
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
