@@ -1372,6 +1372,7 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 		return NULL;
 
 	nr_entries = kmalloc_array(nvec - 1, sizeof(int), GFP_KERNEL);
+	
 	if (!nr_entries)
 		return NULL;
 
