@@ -407,21 +407,21 @@ out:
  * Return:	number of read bytes on success, otherwise error
  */
 int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp,
-                   struct ksmbd_aux_payload *aux_payload, size_t count,
-                   loff_t *pos)
+					struct ksmbd_aux_payload *aux_payload, size_t count,
+					loff_t *pos)
 {
 	struct file *filp = fp->filp;
 	ssize_t nbytes = 0;
-    	char *rbuf;
-    	struct inode *inode;
-    
-    	if (!aux_payload)
-        	return -EINVAL;
-    	if (count>aux_payload->len)
-        	return -ENOSPC;
-    
-    	rbuf = aux_payload->base;
-    
+	char *rbuf;
+	struct inode *inode;
+
+	if (!aux_payload)
+		return -EINVAL;
+	if (count > aux_payload->len)
+		return -ENOSPC;
+
+	rbuf = aux_payload->base;
+
 	inode = file_inode(filp);
 
 	if (S_ISDIR(inode->i_mode))

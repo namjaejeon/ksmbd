@@ -362,11 +362,11 @@ int smb2_set_rsp_credits(struct ksmbd_work *work)
  */
 void init_chained_smb2_rsp(struct ksmbd_work *work, int next_rsp_hdr_off)
 {
-    struct smb2_hdr *req = ksmbd_req_buf_next(work);
-    struct smb2_hdr *rsp = ksmbd_resp_buf_next(work);
-    struct smb2_hdr *rsp_hdr;
-    struct smb2_hdr *rcv_hdr;
-    int next_hdr_offset = 0;
+	struct smb2_hdr *req = ksmbd_req_buf_next(work);
+	struct smb2_hdr *rsp = ksmbd_resp_buf_next(work);
+	struct smb2_hdr *rsp_hdr;
+	struct smb2_hdr *rcv_hdr;
+	int next_hdr_offset = 0;
 
     /* Len of this response = updated RFC len - offset of previous cmd
      * in the compound rsp
@@ -375,47 +375,47 @@ void init_chained_smb2_rsp(struct ksmbd_work *work, int next_rsp_hdr_off)
     /* Storing the current local FID which may be needed by subsequent
      * command in the compound request
      */
-    if (req->Command == SMB2_CREATE && rsp->Status == STATUS_SUCCESS) {
-        work->compound_fid = ((struct smb2_create_rsp *)rsp)->VolatileFileId;
-        work->compound_pfid = ((struct smb2_create_rsp *)rsp)->PersistentFileId;
-        work->compound_sid = le64_to_cpu(rsp->SessionId);
-    }
-    
-    next_hdr_offset = le32_to_cpu(req->NextCommand);
-    work->next_smb2_rcv_hdr_off += next_hdr_offset;
-    work->next_smb2_rsp_hdr_off = next_rsp_hdr_off;
-    ksmbd_debug(SMB,
-            "Compound req rcv off = %d rsp off = %d\n",
-            work->next_smb2_rcv_hdr_off,
-            work->next_smb2_rsp_hdr_off);
+	if (req->Command == SMB2_CREATE && rsp->Status == STATUS_SUCCESS) {
+		work->compound_fid = ((struct smb2_create_rsp *)rsp)->VolatileFileId;
+		work->compound_pfid = ((struct smb2_create_rsp *)rsp)->PersistentFileId;
+		work->compound_sid = le64_to_cpu(rsp->SessionId);
+	}
 
-    rsp_hdr = ksmbd_resp_buf_next(work);
-    rcv_hdr = ksmbd_req_buf_next(work);
+	next_hdr_offset = le32_to_cpu(req->NextCommand);
+	work->next_smb2_rcv_hdr_off += next_hdr_offset;
+	work->next_smb2_rsp_hdr_off = next_rsp_hdr_off;
+	ksmbd_debug(SMB,
+			"Compound req rcv off = %d rsp off = %d\n",
+			work->next_smb2_rcv_hdr_off,
+			work->next_smb2_rsp_hdr_off);
 
-    if (!(rcv_hdr->Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
-        ksmbd_debug(SMB, "related flag should be set\n");
-        work->compound_fid = KSMBD_NO_FID;
-        work->compound_pfid = KSMBD_NO_FID;
-    }
-    memset((char *)rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
-    rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
-    rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
-    rsp_hdr->Command = rcv_hdr->Command;
+	rsp_hdr = ksmbd_resp_buf_next(work);
+	rcv_hdr = ksmbd_req_buf_next(work);
 
-    /*
-     * Message is response. We don't grant oplock yet.
-     */
-    rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR |
-                SMB2_FLAGS_RELATED_OPERATIONS);
-    rsp_hdr->NextCommand = 0;
-    rsp_hdr->MessageId = rcv_hdr->MessageId;
-    rsp_hdr->Id.SyncId.ProcessId = rcv_hdr->Id.SyncId.ProcessId;
-    rsp_hdr->Id.SyncId.TreeId = rcv_hdr->Id.SyncId.TreeId;
-    rsp_hdr->SessionId = rcv_hdr->SessionId;
-    memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
-    
-    //includes the rsp header
-    inc_rfc1001_len(work->response_buf, __SMB2_HEADER_STRUCTURE_SIZE);
+	if (!(rcv_hdr->Flags & SMB2_FLAGS_RELATED_OPERATIONS)) {
+		ksmbd_debug(SMB, "related flag should be set\n");
+		work->compound_fid = KSMBD_NO_FID;
+		work->compound_pfid = KSMBD_NO_FID;
+	}
+	memset((char *)rsp_hdr, 0, sizeof(struct smb2_hdr) + 2);
+	rsp_hdr->ProtocolId = SMB2_PROTO_NUMBER;
+	rsp_hdr->StructureSize = SMB2_HEADER_STRUCTURE_SIZE;
+	rsp_hdr->Command = rcv_hdr->Command;
+
+	/*
+	 * Message is response. We don't grant oplock yet.
+	 */
+	rsp_hdr->Flags = (SMB2_FLAGS_SERVER_TO_REDIR |
+			SMB2_FLAGS_RELATED_OPERATIONS);
+	rsp_hdr->NextCommand = 0;
+	rsp_hdr->MessageId = rcv_hdr->MessageId;
+	rsp_hdr->Id.SyncId.ProcessId = rcv_hdr->Id.SyncId.ProcessId;
+	rsp_hdr->Id.SyncId.TreeId = rcv_hdr->Id.SyncId.TreeId;
+	rsp_hdr->SessionId = rcv_hdr->SessionId;
+	memcpy(rsp_hdr->Signature, rcv_hdr->Signature, 16);
+
+	//includes the rsp header
+	inc_rfc1001_len(work->response_buf, __SMB2_HEADER_STRUCTURE_SIZE);
 }
 
 /**
@@ -427,59 +427,60 @@ void init_chained_smb2_rsp(struct ksmbd_work *work, int next_rsp_hdr_off)
  */
 int smb2_seal_rsp(struct ksmbd_work *work)
 {
-    struct smb2_hdr *hdr = smb2_get_msg(work->request_buf);
-    unsigned int rsp_len = 0, next_rsp_hdr_off, next_cmd;
-    struct ksmbd_aux_payload *aux;
+	struct smb2_hdr *hdr = smb2_get_msg(work->request_buf);
+	unsigned int rsp_len = 0, next_rsp_hdr_off, next_cmd;
+	struct ksmbd_aux_payload *aux;
 
-    if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
-        return 0;
+	if (hdr->ProtocolId != SMB2_PROTO_NUMBER)
+		return 0;
 
-    hdr = ksmbd_req_buf_next(work);
-    next_cmd = le32_to_cpu(hdr->NextCommand);
-    if (next_cmd>0||work->next_smb2_rcv_hdr_off) {
-        /*
-         * This is request in chained command,
-         * align response to 8 byte
-         */
-        unsigned int len = ALIGN(get_rfc1002_len(work->response_buf), 8);
-        len = len - get_rfc1002_len(work->response_buf);
-        if (len) {
-            ksmbd_debug(SMB, "padding len %u\n", len);
-            inc_rfc1001_len(work->response_buf, len);
-        }
-    }
-    if (next_cmd > 0) {
-        if ((uint64_t)work->next_smb2_rcv_hdr_off + next_cmd +
-            __SMB2_HEADER_STRUCTURE_SIZE >
-            get_rfc1002_len(work->request_buf)) {
-            pr_err("next command(%u) offset exceeds smb msg size\n",
-                   next_cmd);
-            return 0;
-        }
+	hdr = ksmbd_req_buf_next(work);
+	next_cmd = le32_to_cpu(hdr->NextCommand);
+	if (next_cmd > 0 || work->next_smb2_rcv_hdr_off) {
+		/*
+		 * This is request in chained command,
+		 * align response to 8 byte
+		 */
+		unsigned int len;
 
-        if ((uint64_t)get_rfc1002_len(work->response_buf) + MAX_CIFS_SMALL_BUFFER_SIZE >
-            work->response_sz) {
-            pr_err("next response offset exceeds response buffer size\n");
-            return 0;
-        }
-        
-        next_rsp_hdr_off = get_rfc1002_len(work->response_buf);
-        list_for_each_entry(aux, &work->aux_payload_list, entry) {
-            if (aux->insert_pos>=work->next_smb2_rsp_hdr_off) {
-                rsp_len += aux->len;
-            }
-            next_rsp_hdr_off -= aux->len;
-        }
-        rsp_len += (next_rsp_hdr_off-work->next_smb2_rsp_hdr_off);
-        
-        //fill the rsp NextCommand's field
-        ((struct smb2_hdr *)ksmbd_resp_buf_next(work))->NextCommand = cpu_to_le32(rsp_len);
-        
-        ksmbd_debug(SMB, "got SMB2 chained command\n");
-        
-        return next_rsp_hdr_off;
-    }
-    return 0;
+		len = ALIGN(get_rfc1002_len(work->response_buf), 8);
+		len = len - get_rfc1002_len(work->response_buf);
+		if (len) {
+			ksmbd_debug(SMB, "padding len %u\n", len);
+			inc_rfc1001_len(work->response_buf, len);
+		}
+	}
+	if (next_cmd > 0) {
+		if ((uint64_t)work->next_smb2_rcv_hdr_off + next_cmd +
+				__SMB2_HEADER_STRUCTURE_SIZE >
+		get_rfc1002_len(work->request_buf)) {
+			pr_err("next command(%u) offset exceeds smb msg size\n",
+					next_cmd);
+			return 0;
+		}
+
+		if ((uint64_t)get_rfc1002_len(work->response_buf) + MAX_CIFS_SMALL_BUFFER_SIZE >
+		work->response_sz) {
+			pr_err("next response offset exceeds response buffer size\n");
+			return 0;
+		}
+
+		next_rsp_hdr_off = get_rfc1002_len(work->response_buf);
+		list_for_each_entry(aux, &work->aux_payload_list, entry) {
+			if (aux->insert_pos >= work->next_smb2_rsp_hdr_off)
+				rsp_len += aux->len;
+			next_rsp_hdr_off -= aux->len;
+		}
+		rsp_len += (next_rsp_hdr_off-work->next_smb2_rsp_hdr_off);
+
+		//fill the rsp NextCommand's field
+		((struct smb2_hdr *)ksmbd_resp_buf_next(work))->NextCommand = cpu_to_le32(rsp_len);
+
+		ksmbd_debug(SMB, "got SMB2 chained command\n");
+
+		return next_rsp_hdr_off;
+	}
+	return 0;
 }
 
 /**
@@ -6273,19 +6274,19 @@ static noinline int smb2_read_pipe(struct ksmbd_work *work)
 			goto out;
 		}
 
-        	aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+rpc_resp->payload_sz, GFP_KERNEL | __GFP_ZERO);
-        	if (!aux_payload) {
-            		err = -ENOMEM;
-            		goto out;
-        	}
+		aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+rpc_resp->payload_sz, GFP_KERNEL | __GFP_ZERO);
+		if (!aux_payload) {
+			err = -ENOMEM;
+			goto out;
+		}
 
-        	memcpy(aux_payload->base, rpc_resp->payload,
-               		rpc_resp->payload_sz);
+		memcpy(aux_payload->base, rpc_resp->payload,
+				rpc_resp->payload_sz);
 
 		nbytes = rpc_resp->payload_sz;
 		aux_payload->len = nbytes;
 		kvfree(rpc_resp);
-		
+
 		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-ksmbd_sum_aux_payload_size(work);
 		list_add_tail(&aux_payload->entry, &work->aux_payload_list);
 	}
@@ -6371,17 +6372,17 @@ int smb2_read(struct ksmbd_work *work)
 	bool is_rdma_channel = false;
 	unsigned int max_read_size = conn->vals->max_read_size;
 	struct ksmbd_aux_payload *aux_payload = NULL;
-	
+
 	WORK_BUFFERS(work, req, rsp);
 
 	if (test_share_config_flag(work->tcon->share_conf,
-				   KSMBD_SHARE_FLAG_PIPE)) {
+			KSMBD_SHARE_FLAG_PIPE)) {
 		ksmbd_debug(SMB, "IPC pipe read request\n");
 		return smb2_read_pipe(work);
 	}
 
 	if (req->Channel == SMB2_CHANNEL_RDMA_V1_INVALIDATE ||
-	    req->Channel == SMB2_CHANNEL_RDMA_V1) {
+			req->Channel == SMB2_CHANNEL_RDMA_V1) {
 		is_rdma_channel = true;
 		max_read_size = get_smbd_max_read_write_size();
 	}
@@ -6394,10 +6395,10 @@ int smb2_read(struct ksmbd_work *work)
 			goto out;
 		}
 		err = smb2_set_remote_key_for_rdma(work,
-						   (struct smb2_buffer_desc_v1 *)
-						   ((char *)req + ch_offset),
-						   req->Channel,
-						   req->ReadChannelInfoLength);
+				(struct smb2_buffer_desc_v1 *)
+				((char *)req + ch_offset),
+				req->Channel,
+				req->ReadChannelInfoLength);
 		if (err)
 			goto out;
 	}
@@ -6420,24 +6421,24 @@ int smb2_read(struct ksmbd_work *work)
 
 	if (length > max_read_size) {
 		ksmbd_debug(SMB, "limiting read size to max size(%u)\n",
-			    max_read_size);
+				max_read_size);
 		err = -EINVAL;
 		goto out;
 	}
 
 	ksmbd_debug(SMB, "filename %pD, offset %lld, len %zu\n",
-		    fp->filp, offset, length);
+			fp->filp, offset, length);
 
-    	aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+length, GFP_KERNEL | __GFP_ZERO);
+	aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+length, GFP_KERNEL | __GFP_ZERO);
 	if (!aux_payload) {
 		err = -ENOMEM;
 		goto out;
 	}
-    	aux_payload->len = length;
+	aux_payload->len = length;
 	nbytes = ksmbd_vfs_read(work, fp, aux_payload, length, &offset);
 	if (nbytes < 0) {
 		err = nbytes;
-        kvfree(aux_payload);
+		kvfree(aux_payload);
 		goto out;
 	}
 
@@ -6450,16 +6451,16 @@ int smb2_read(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "nbytes %zu, offset %lld mincount %zu\n",
-		    nbytes, offset, mincount);
+			nbytes, offset, mincount);
 
 	if (is_rdma_channel == true) {
 		/* write data to the client using rdma channel */
 		remain_bytes = smb2_read_rdma_channel(work, req,
-						      aux_payload->base,
-						      nbytes);
-        kvfree(aux_payload);
-        aux_payload = NULL;
-        
+				aux_payload->base,
+				nbytes);
+		kvfree(aux_payload);
+		aux_payload = NULL;
+
 		nbytes = 0;
 		if (remain_bytes < 0) {
 			err = (int)remain_bytes;
@@ -6474,11 +6475,11 @@ int smb2_read(struct ksmbd_work *work)
 	rsp->DataRemaining = cpu_to_le32(remain_bytes);
 	rsp->Reserved2 = 0;
 	inc_rfc1001_len(work->response_buf, 16);
-    	if (aux_payload) {
+	if (aux_payload) {
 		aux_payload->len = nbytes;
 		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-ksmbd_sum_aux_payload_size(work);
 		list_add_tail(&aux_payload->entry, &work->aux_payload_list);
-    	}
+	}
 	inc_rfc1001_len(work->response_buf, nbytes);
 	ksmbd_fd_put(work, fp);
 	return 0;
@@ -8478,29 +8479,28 @@ int smb2_check_sign_req(struct ksmbd_work *work)
  */
 void smb2_set_sign_rsp(struct ksmbd_work *work)
 {
-    struct smb2_hdr *hdr;
-    struct smb2_hdr *req_hdr;
-    char signature[SMB2_HMACSHA256_SIZE];
-    struct kvec iov_buf[2], iovs;
+	struct smb2_hdr *hdr;
+	struct smb2_hdr *req_hdr;
+	char signature[SMB2_HMACSHA256_SIZE];
+	struct kvec iov_buf[2], iovs;
 
-    hdr = smb2_get_msg(work->response_buf);
-    if (work->next_smb2_rsp_hdr_off)
-        hdr = ksmbd_resp_buf_next(work);
-    
-    req_hdr = ksmbd_req_buf_next(work);
+	hdr = smb2_get_msg(work->response_buf);
+	if (work->next_smb2_rsp_hdr_off)
+		hdr = ksmbd_resp_buf_next(work);
 
-    hdr->Flags |= SMB2_FLAGS_SIGNED;
-    memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
+	req_hdr = ksmbd_req_buf_next(work);
 
-    if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false)<0)
-        return;
+	hdr->Flags |= SMB2_FLAGS_SIGNED;
+	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
 
-    if (!ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, signature))
-        memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
-    
-    if (iovs.iov_base!=iov_buf) {
-        kvfree(iovs.iov_base);
-    }
+	if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false) < 0)
+		return;
+
+	if (!ksmbd_sign_smb2_pdu(work->conn, work->sess->sess_key, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, signature))
+		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
 }
 
 /**
@@ -8536,9 +8536,8 @@ int smb3_check_sign_req(struct ksmbd_work *work)
 		signing_key = work->sess->smb3signingkey;
 	} else {
 		chann = lookup_chann_list(work->sess, conn);
-		if (!chann) {
+		if (!chann)
 			return 0;
-		}
 		signing_key = chann->smb3signingkey;
 	}
 
@@ -8574,7 +8573,7 @@ void smb3_set_sign_rsp(struct ksmbd_work *work)
 	struct smb2_hdr *req_hdr, *hdr;
 	struct channel *chann;
 	char signature[SMB2_CMACAES_SIZE];
-    	struct kvec iov_buf[2], iovs;
+	struct kvec iov_buf[2], iovs;
 	char *signing_key;
 
 	hdr = smb2_get_msg(work->response_buf);
@@ -8584,13 +8583,12 @@ void smb3_set_sign_rsp(struct ksmbd_work *work)
 	req_hdr = ksmbd_req_buf_next(work);
 
 	if (conn->binding == false &&
-	    le16_to_cpu(hdr->Command) == SMB2_SESSION_SETUP_HE) {
+			le16_to_cpu(hdr->Command) == SMB2_SESSION_SETUP_HE) {
 		signing_key = work->sess->smb3signingkey;
 	} else {
 		chann = lookup_chann_list(work->sess, work->conn);
-		if (!chann) {
+		if (!chann)
 			return;
-		}
 		signing_key = chann->smb3signingkey;
 	}
 
@@ -8599,16 +8597,15 @@ void smb3_set_sign_rsp(struct ksmbd_work *work)
 
 	hdr->Flags |= SMB2_FLAGS_SIGNED;
 	memset(hdr->Signature, 0, SMB2_SIGNATURE_SIZE);
-        
-    	if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false)<0)
-        	return;
+
+	if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false) < 0)
+		return;
 
 	if (!ksmbd_sign_smb3_pdu(conn, signing_key, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, signature))
-        	memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
-    
-    	if (iovs.iov_base!=iov_buf) {
-        	kvfree(iovs.iov_base);
-    	}
+		memcpy(hdr->Signature, signature, SMB2_SIGNATURE_SIZE);
+
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
 }
 
 /**
@@ -8673,102 +8670,106 @@ static void fill_transform_hdr(void *tr_buf, char *old_buf, __le16 cipher_type)
 }
 
 /**
-* smb_generate_rsp_ivs() - handler for generate io-vectors for the works's response.
-* @work:           smb work containing response buffer
-* @iov_buf:        call give a iov buffer, if it is enough, fill vectors into it
-* @iov_buf_count:  the @iov_buf contains how much vectors
-* @result:         take back the generated io-vectors/count with it's iov_base and iov_len.
-*/
-int smb_generate_rsp_ivs(struct ksmbd_work *work, struct kvec *iov_buf, int iov_buf_count, struct kvec *result, bool whole) {
-    int len, check_pt;
-    int n_vec = 0, i = 0, buf_size = 0;
-    struct ksmbd_aux_payload *aux;
-    
-    if (whole&&work->tr_buf) n_vec ++;
-    
-    check_pt = whole?(work->tr_buf?0:-4):work->next_smb2_rsp_hdr_off;
-    len = get_rfc1002_len(work->response_buf)-check_pt;
-    list_for_each_entry(aux, &work->aux_payload_list, entry) {
-        if (aux->insert_pos>=check_pt) {
-            if (aux->insert_pos>check_pt) {
-                len -= (aux->insert_pos-check_pt);
-                check_pt = aux->insert_pos;
-                n_vec ++;
-            }
-            n_vec ++;
-        }
-        len -= aux->len;
-    }
-    //here has a tail
-    if (len>0) n_vec ++;
-    
-    if (n_vec<=iov_buf_count) {
-        result->iov_base = iov_buf;
-    } else {
-        result->iov_base = kvmalloc(sizeof(struct kvec)*n_vec, GFP_KERNEL | __GFP_ZERO);
-        if (!result->iov_base) return -ENOMEM;
-    }
-    result->iov_len = n_vec;
-    
-    if (whole&&work->tr_buf) {
-        ((struct kvec *)result->iov_base)[i].iov_base = work->tr_buf;
-        ((struct kvec *)result->iov_base)[i].iov_len = sizeof(struct smb2_transform_hdr) + 4;
-        buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
-        i ++;
-    }
-    
-    check_pt = whole?(work->tr_buf?0:-4):work->next_smb2_rsp_hdr_off;
-    len = get_rfc1002_len(work->response_buf)-check_pt;
-    list_for_each_entry(aux, &work->aux_payload_list, entry) {
-        if (aux->insert_pos>=check_pt) {
-            if (aux->insert_pos>check_pt) {
-                ((struct kvec *)result->iov_base)[i].iov_base = work->response_buf+check_pt+4;
-                ((struct kvec *)result->iov_base)[i].iov_len = aux->insert_pos-check_pt;
-                
-                len -= ((struct kvec *)result->iov_base)[i].iov_len;
-                check_pt = aux->insert_pos;
-                buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
-                i ++;
-            }
-            ((struct kvec *)result->iov_base)[i].iov_base = aux->base;
-            ((struct kvec *)result->iov_base)[i].iov_len = aux->len;
-            buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
-            i ++;
-        }
-        len -= aux->len;
-    }
-    if (len>0) {
-        //here has a tail
-        ((struct kvec *)result->iov_base)[i].iov_base = work->response_buf + check_pt + 4;
-        ((struct kvec *)result->iov_base)[i].iov_len = len;
-        buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
-        i ++;
-    }
-    
-    return buf_size;
+ * smb_generate_rsp_ivs() - handler for generate io-vectors for the works's response.
+ * @work:           smb work containing response buffer
+ * @iov_buf:        call give a iov buffer, if it is enough, fill vectors into it
+ * @iov_buf_count:  the @iov_buf contains how much vectors
+ * @result:         take back the generated io-vectors/count with it's iov_base and iov_len.
+ */
+int smb_generate_rsp_ivs(struct ksmbd_work *work, struct kvec *iov_buf, int iov_buf_count, struct kvec *result, bool whole)
+{
+	int len, check_pt;
+	int n_vec = 0, i = 0, buf_size = 0;
+	struct ksmbd_aux_payload *aux;
+
+	if (whole && work->tr_buf)
+		n_vec++;
+
+	check_pt = whole?(work->tr_buf?0 : -4) : work->next_smb2_rsp_hdr_off;
+	len = get_rfc1002_len(work->response_buf)-check_pt;
+	list_for_each_entry(aux, &work->aux_payload_list, entry) {
+		if (aux->insert_pos >= check_pt) {
+			if (aux->insert_pos > check_pt) {
+				len -= (aux->insert_pos-check_pt);
+				check_pt = aux->insert_pos;
+				n_vec++;
+			}
+			n_vec++;
+		}
+		len -= aux->len;
+	}
+	//here has a tail
+	if (len > 0)
+		n_vec++;
+
+	if (n_vec <= iov_buf_count) {
+		result->iov_base = iov_buf;
+	} else {
+		result->iov_base = kvmalloc_array(n_vec, sizeof(struct kvec), GFP_KERNEL | __GFP_ZERO);
+		if (!result->iov_base)
+			return -ENOMEM;
+	}
+	result->iov_len = n_vec;
+
+	if (whole && work->tr_buf) {
+		((struct kvec *)result->iov_base)[i].iov_base = work->tr_buf;
+		((struct kvec *)result->iov_base)[i].iov_len = sizeof(struct smb2_transform_hdr) + 4;
+		buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
+		i++;
+	}
+
+	check_pt = whole?(work->tr_buf?0 : -4) : work->next_smb2_rsp_hdr_off;
+	len = get_rfc1002_len(work->response_buf)-check_pt;
+	list_for_each_entry(aux, &work->aux_payload_list, entry) {
+		if (aux->insert_pos >= check_pt) {
+			if (aux->insert_pos > check_pt) {
+				((struct kvec *)result->iov_base)[i].iov_base = work->response_buf+check_pt+4;
+				((struct kvec *)result->iov_base)[i].iov_len = aux->insert_pos-check_pt;
+
+				len -= ((struct kvec *)result->iov_base)[i].iov_len;
+				check_pt = aux->insert_pos;
+				buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
+				i++;
+			}
+			((struct kvec *)result->iov_base)[i].iov_base = aux->base;
+			((struct kvec *)result->iov_base)[i].iov_len = aux->len;
+			buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
+			i++;
+		}
+		len -= aux->len;
+	}
+	if (len > 0) {
+		//here has a tail
+		((struct kvec *)result->iov_base)[i].iov_base = work->response_buf + check_pt + 4;
+		((struct kvec *)result->iov_base)[i].iov_len = len;
+		buf_size += ((struct kvec *)result->iov_base)[i].iov_len;
+		i++;
+	}
+
+	return buf_size;
 }
 
 int smb3_encrypt_resp(struct ksmbd_work *work)
 {
-    struct kvec iov_buf[3], iovs;
-    int rc = -ENOMEM;
+	struct kvec iov_buf[3], iovs;
+	int rc = -ENOMEM;
 
-    work->tr_buf = kzalloc(sizeof(struct smb2_transform_hdr) + 4, GFP_KERNEL);
-    if (!work->tr_buf)
-        return rc;
+	work->tr_buf = kzalloc(sizeof(struct smb2_transform_hdr) + 4, GFP_KERNEL);
+	if (!work->tr_buf)
+		return rc;
 
-    /* fill transform header */
-    fill_transform_hdr(work->tr_buf, work->response_buf, work->conn->cipher_type);
+	/* fill transform header */
+	fill_transform_hdr(work->tr_buf, work->response_buf, work->conn->cipher_type);
 
-    rc = smb_generate_rsp_ivs(work, iov_buf, 3, &iovs, true);
-    if (rc<0) return rc;
+	rc = smb_generate_rsp_ivs(work, iov_buf, 3, &iovs, true);
+	if (rc < 0)
+		return rc;
 
-    rc = ksmbd_crypt_message(work, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, 1);
-    if (iovs.iov_base!=iov_buf) {
-        kvfree(iovs.iov_base);
-    }
+	rc = ksmbd_crypt_message(work, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, 1);
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
 
-    return rc;
+	return rc;
 }
 
 bool smb3_is_transform_hdr(void *buf)

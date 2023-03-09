@@ -1366,22 +1366,22 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 	struct scatterlist *sg;
 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 20;
 	int i, total_entries = 0, sg_idx = 0;
-    	int *nr_entries;
-    
+	int *nr_entries;
+
 	if (!nvec)
 		return NULL;
 
-    	nr_entries = kmalloc_array(nvec - 1, sizeof(int), GFP_KERNEL);
-    	if (!nr_entries)
-        	return NULL;
-    
+	nr_entries = kmalloc_array(nvec - 1, sizeof(int), GFP_KERNEL);
+	if (!nr_entries)
+		return NULL;
+
 	for (i = 0; i < nvec - 1; i++) {
 		unsigned long kaddr = (unsigned long)iov[i + 1].iov_base;
 
 		if (is_vmalloc_addr(iov[i + 1].iov_base)) {
 			nr_entries[i] = ((kaddr + iov[i + 1].iov_len +
 					PAGE_SIZE - 1) >> PAGE_SHIFT) -
-				(kaddr >> PAGE_SHIFT);
+					(kaddr >> PAGE_SHIFT);
 		} else {
 			nr_entries[i]++;
 		}
@@ -1392,11 +1392,11 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 	total_entries += 2;
 
 	sg = kmalloc_array(total_entries, sizeof(struct scatterlist), GFP_KERNEL);
-    if (!sg) {
-        kfree(nr_entries);
+	if (!sg) {
+		kfree(nr_entries);
 		return NULL;
-    }
-    
+	}
+
 	sg_init_table(sg, total_entries);
 	smb2_sg_set_buf(&sg[sg_idx++], iov[0].iov_base + 24, assoc_data_len);
 	for (i = 0; i < nvec - 1; i++) {
@@ -1416,8 +1416,8 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 					bytes = len;
 
 				sg_set_page(&sg[sg_idx++],
-					    vmalloc_to_page(data), bytes,
-					    offset_in_page(data));
+						vmalloc_to_page(data), bytes,
+						offset_in_page(data));
 
 				data += bytes;
 				len -= bytes;
@@ -1425,11 +1425,11 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 			}
 		} else {
 			sg_set_page(&sg[sg_idx++], virt_to_page(data), len,
-				    offset_in_page(data));
+					offset_in_page(data));
 		}
 	}
-    
-    kfree(nr_entries);
+
+	kfree(nr_entries);
 	smb2_sg_set_buf(&sg[sg_idx], sign, SMB2_SIGNATURE_SIZE);
 	return sg;
 }

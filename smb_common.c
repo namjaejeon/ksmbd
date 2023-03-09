@@ -661,16 +661,18 @@ int ksmbd_smb_check_shared_mode(struct file *filp, struct ksmbd_file *curr_fp)
 }
 
 /**
-* ksmbd_sum_aux_payload_size() - handler for sum up all aux payload.
-* @work:           smb work containing response payload buffer
-*/
-int ksmbd_sum_aux_payload_size(struct ksmbd_work *work) {
-    int len = 0;
-    struct ksmbd_aux_payload *aux;
-    list_for_each_entry(aux, &work->aux_payload_list, entry) {
-        len += aux->len;
-    }
-    return len;
+ * ksmbd_sum_aux_payload_size() - handler for sum up all aux payload.
+ * @work:           smb work containing response payload buffer
+ */
+int ksmbd_sum_aux_payload_size(struct ksmbd_work *work)
+{
+	int len = 0;
+	struct ksmbd_aux_payload *aux;
+
+	list_for_each_entry(aux, &work->aux_payload_list, entry) {
+		len += aux->len;
+	}
+	return len;
 }
 
 bool is_asterisk(char *p)

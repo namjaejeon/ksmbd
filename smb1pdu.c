@@ -30,7 +30,7 @@
 #include "ndr.h"
 #include "smberr.h"
 
-static int smb1_oplock_enable = false;
+static int smb1_oplock_enable = 0;
 
 /* Default: allocation roundup size = 1048576 */
 static unsigned int alloc_roundup_size = 1048576;
@@ -986,7 +986,7 @@ no_password_check:
 	/* 1 byte padding for word alignment */
 	offset = 1;
 
-	memset(str, 0 , sizeof(str));
+	memset(str, 0, sizeof(str));
 
 	len = smb_strtoUTF16(str, "Unix", 4, conn->local_nls);
 	len = UNICODE_LEN(len + 1);
@@ -2908,18 +2908,18 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
 
-    aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+count, GFP_KERNEL | __GFP_ZERO);
-    if (!aux_payload) {
-        err = -ENOMEM;
-        goto out;
-    }
-    aux_payload->len = count;
-    nbytes = ksmbd_vfs_read(work, fp, aux_payload, count, &pos);
-    if (nbytes < 0) {
-        err = nbytes;
-        kvfree(aux_payload);
-        goto out;
-    }
+	aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+count, GFP_KERNEL | __GFP_ZERO);
+	if (!aux_payload) {
+		err = -ENOMEM;
+		goto out;
+	}
+	aux_payload->len = count;
+	nbytes = ksmbd_vfs_read(work, fp, aux_payload, count, &pos);
+	if (nbytes < 0) {
+		err = nbytes;
+		kvfree(aux_payload);
+		goto out;
+	}
 
     /* read success, prepare response */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -8493,17 +8493,16 @@ void smb1_set_sign_rsp(struct ksmbd_work *work)
 		cpu_to_le32(++work->sess->sequence_number);
 	rsp_hdr->Signature.Sequence.Reserved = 0;
 
-    if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false)<0)
-        return;
+	if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false) < 0)
+		return;
 
-    if (ksmbd_sign_smb1_pdu(work->sess, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, signature))
+	if (ksmbd_sign_smb1_pdu(work->sess, (struct kvec *)iovs.iov_base, (int)iovs.iov_len, signature))
 		memset(rsp_hdr->Signature.SecuritySignature,
 				0, CIFS_SMB1_SIGNATURE_SIZE);
 	else
 		memcpy(rsp_hdr->Signature.SecuritySignature,
 				signature, CIFS_SMB1_SIGNATURE_SIZE);
-    
-    if (iovs.iov_base!=iov_buf) {
-        kvfree(iovs.iov_base);
-    }
+
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
 }

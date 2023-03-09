@@ -20,11 +20,11 @@ enum {
 };
 
 struct ksmbd_aux_payload {
-    struct   list_head entry; /* Link to work's response_list */
-    
-    int      insert_pos;    /* Meaning similar to next_smb2_rsp_hdr_off */
-    size_t   len;
-    char     base[];
+	struct   list_head entry; /* Link to work's response_list */
+
+	int      insert_pos;    /* Meaning similar to next_smb2_rsp_hdr_off */
+	size_t   len;
+	char     base[];
 };
 
 /* one of these for every pending CIFS request at the connection */
@@ -40,7 +40,7 @@ struct ksmbd_work {
 	void                            *response_buf;
 
 	/* a list of read data buffer */
-    struct list_head                aux_payload_list; //a list of ITSmb_aux_payload_vec
+	struct list_head                aux_payload_list; //a list of ITSmb_aux_payload_vec
 
 	/* Next cmd hdr in compound req buf*/
 	int                             next_smb2_rcv_hdr_off;
@@ -61,7 +61,7 @@ struct ksmbd_work {
 	unsigned int			credits_granted;
 
     /* response buffer allocated size */
-    unsigned int            response_sz;
+	unsigned int            response_sz;
 
 	void				*tr_buf;
 

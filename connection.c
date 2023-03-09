@@ -189,28 +189,28 @@ int ksmbd_conn_write(struct ksmbd_work *work)
 	struct ksmbd_conn *conn = work->conn;
 	size_t len = 0;
 	int sent;
-    	struct kvec iov_buf[3], iovs;
+	struct kvec iov_buf[3], iovs;
 
 	if (!work->response_buf) {
 		pr_err("NULL response header\n");
 		return -EINVAL;
 	}
-    
+
 	len = smb_generate_rsp_ivs(work, iov_buf, 3, &iovs, true);
-	if (len<0) return (int)len;
- 
+	if (len < 0)
+		return (int)len;
+
 
 	ksmbd_conn_lock(conn);
 	sent = conn->transport->ops->writev(conn->transport,
-                    (struct kvec *)iovs.iov_base,
-                    (int)iovs.iov_len, len,
-					work->need_invalidate_rkey,
-					work->remote_key);
+			(struct kvec *)iovs.iov_base,
+			(int)iovs.iov_len, len,
+			work->need_invalidate_rkey,
+			work->remote_key);
 	ksmbd_conn_unlock(conn);
-    	if (iovs.iov_base!=iov_buf) {
-        	kvfree(iovs.iov_base);
-    	}
-    
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
+
 	if (sent < 0) {
 		pr_err("Failed to send message: %d\n", sent);
 		return sent;
