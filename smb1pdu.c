@@ -2863,6 +2863,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	size_t count;
 	ssize_t nbytes;
 	int err = 0;
+	struct ksmbd_aux_payload *aux_payload = NULL;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE))
@@ -2907,7 +2908,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
 
-    struct ksmbd_aux_payload *aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+count, GFP_KERNEL | __GFP_ZERO);
+    aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+count, GFP_KERNEL | __GFP_ZERO);
     if (!aux_payload) {
         err = -ENOMEM;
         goto out;
@@ -2936,7 +2937,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	rsp->ByteCount = cpu_to_le16(nbytes);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
     aux_payload->len = nbytes;
-    aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-smb_sum_aux_payload_size(work);
+    aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-ksmbd_sum_aux_payload_size(work);
     list_add_tail(&aux_payload->entry, &work->aux_payload_list);
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 

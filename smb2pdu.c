@@ -6248,20 +6248,6 @@ err_out:
 	return rc;
 }
 
-
-/**
-* smb_sum_aux_payload_size() - handler for sum up all aux payload.
-* @work:           smb work containing response payload buffer
-*/
-static int smb_sum_aux_payload_size(struct ksmbd_work *work) {
-    int len = 0;
-    struct ksmbd_aux_payload *aux;
-    list_for_each_entry(aux, &work->aux_payload_list, entry) {
-        len += aux->len;
-    }
-    return len;
-}
-
 /**
  * smb2_read_pipe() - handler for smb2 read from IPC pipe
  * @work:	smb work containing read IPC pipe command buffer
@@ -6300,7 +6286,7 @@ static noinline int smb2_read_pipe(struct ksmbd_work *work)
 		aux_payload->len = nbytes;
 		kvfree(rpc_resp);
 		
-		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-smb_sum_aux_payload_size(work);
+		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-ksmbd_sum_aux_payload_size(work);
 		list_add_tail(&aux_payload->entry, &work->aux_payload_list);
 	}
 
@@ -6490,7 +6476,7 @@ int smb2_read(struct ksmbd_work *work)
 	inc_rfc1001_len(work->response_buf, 16);
     	if (aux_payload) {
 		aux_payload->len = nbytes;
-		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-smb_sum_aux_payload_size(work);
+		aux_payload->insert_pos = get_rfc1002_len(work->response_buf)-ksmbd_sum_aux_payload_size(work);
 		list_add_tail(&aux_payload->entry, &work->aux_payload_list);
     	}
 	inc_rfc1001_len(work->response_buf, nbytes);
