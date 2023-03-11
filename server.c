@@ -162,6 +162,7 @@ static void __handle_ksmbd_work(struct ksmbd_work *work,
 {
 	u16 command = 0;
 	int rc;
+	int next_rsp_hdr_off = 0;
 
 	if (conn->ops->allocate_rsp_buf(work))
 		return;
@@ -221,11 +222,17 @@ static void __handle_ksmbd_work(struct ksmbd_work *work,
 			}
 		}
 
+		next_rsp_hdr_off = smb2_seal_rsp(work);
+
 		if (work->sess &&
-		    (work->sess->sign || smb3_11_final_sess_setup_resp(work) ||
-		     conn->ops->is_sign_req(work, command)))
+				(work->sess->sign || smb3_11_final_sess_setup_resp(work) ||
+						conn->ops->is_sign_req(work, command)))
 			conn->ops->set_sign_rsp(work);
-	} while (is_chained_smb2_message(work));
+
+		if (next_rsp_hdr_off)
+			init_chained_smb2_rsp(work, next_rsp_hdr_off);
+
+	} while (next_rsp_hdr_off);
 
 	if (work->send_no_response)
 		return;

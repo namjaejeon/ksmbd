@@ -27,16 +27,23 @@ struct ksmbd_work *ksmbd_alloc_work_struct(void)
 		INIT_LIST_HEAD(&work->async_request_entry);
 		INIT_LIST_HEAD(&work->fp_entry);
 		INIT_LIST_HEAD(&work->interim_entry);
+		INIT_LIST_HEAD(&work->aux_payload_list);
 	}
 	return work;
 }
 
 void ksmbd_free_work_struct(struct ksmbd_work *work)
 {
+	struct ksmbd_aux_payload *aux, *tmp_aux;
+
 	WARN_ON(work->saved_cred != NULL);
 
+	list_for_each_entry_safe(aux, tmp_aux, &work->aux_payload_list, entry) {
+		list_del_init(&aux->entry);
+		kvfree(aux);
+	}
+
 	kvfree(work->response_buf);
-	kvfree(work->aux_payload_buf);
 	kfree(work->tr_buf);
 	kvfree(work->request_buf);
 	if (work->async_id)

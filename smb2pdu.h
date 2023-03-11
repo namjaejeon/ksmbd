@@ -1649,7 +1649,8 @@ u16 get_smb2_cmd_val(struct ksmbd_work *work);
 void set_smb2_rsp_status(struct ksmbd_work *work, __le32 err);
 int init_smb2_rsp_hdr(struct ksmbd_work *work);
 int smb2_allocate_rsp_buf(struct ksmbd_work *work);
-bool is_chained_smb2_message(struct ksmbd_work *work);
+int smb2_seal_rsp(struct ksmbd_work *work);
+void init_chained_smb2_rsp(struct ksmbd_work *work, int next_rsp_hdr_off);
 int init_smb2_neg_rsp(struct ksmbd_work *work);
 void smb2_set_err_rsp(struct ksmbd_work *work);
 int smb2_check_user_session(struct ksmbd_work *work);
@@ -1674,6 +1675,9 @@ int smb3_encrypt_resp(struct ksmbd_work *work);
 bool smb3_11_final_sess_setup_resp(struct ksmbd_work *work);
 int smb2_set_rsp_credits(struct ksmbd_work *work);
 bool smb3_encryption_negotiated(struct ksmbd_conn *conn);
+struct kvec;
+int smb_generate_rsp_ivs(struct ksmbd_work *work, struct kvec *iov_buf,
+			 int iov_buf_count, struct kvec *result, bool whole);
 
 /* smb2 misc functions */
 int ksmbd_smb2_check_message(struct ksmbd_work *work);

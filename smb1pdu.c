@@ -30,7 +30,7 @@
 #include "ndr.h"
 #include "smberr.h"
 
-static int smb1_oplock_enable = false;
+static int smb1_oplock_enable;
 
 /* Default: allocation roundup size = 1048576 */
 static unsigned int alloc_roundup_size = 1048576;
@@ -986,7 +986,7 @@ no_password_check:
 	/* 1 byte padding for word alignment */
 	offset = 1;
 
-	memset(str, 0 , sizeof(str));
+	memset(str, 0, sizeof(str));
 
 	len = smb_strtoUTF16(str, "Unix", 4, conn->local_nls);
 	len = UNICODE_LEN(len + 1);
@@ -2863,6 +2863,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	size_t count;
 	ssize_t nbytes;
 	int err = 0;
+	struct ksmbd_aux_payload *aux_payload = NULL;
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_PIPE))
@@ -2907,19 +2908,20 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
 
-	work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
-	if (!work->aux_payload_buf) {
+	aux_payload = kvmalloc(sizeof(struct ksmbd_aux_payload)+count, GFP_KERNEL | __GFP_ZERO);
+	if (!aux_payload) {
 		err = -ENOMEM;
 		goto out;
 	}
-
-	nbytes = ksmbd_vfs_read(work, fp, count, &pos);
+	aux_payload->len = count;
+	nbytes = ksmbd_vfs_read(work, fp, aux_payload, count, &pos);
 	if (nbytes < 0) {
 		err = nbytes;
+		kvfree(aux_payload);
 		goto out;
 	}
 
-	/* read success, prepare response */
+    /* read success, prepare response */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
 	rsp->hdr.WordCount = 12;
 	rsp->Remaining = 0;
@@ -2934,8 +2936,10 @@ int smb_read_andx(struct ksmbd_work *work)
 
 	rsp->ByteCount = cpu_to_le16(nbytes);
 	inc_rfc1001_len(&rsp->hdr, (rsp->hdr.WordCount * 2));
-	work->resp_hdr_sz = get_rfc1002_len(rsp) + 4;
-	work->aux_payload_sz = nbytes;
+	aux_payload->len = nbytes;
+	aux_payload->insert_pos = get_rfc1002_len(work->response_buf) -
+		ksmbd_sum_aux_payload_size(work);
+	list_add_tail(&aux_payload->entry, &work->aux_payload_list);
 	inc_rfc1001_len(&rsp->hdr, nbytes);
 
 	/* this is an ANDx command ? */
@@ -8483,29 +8487,24 @@ void smb1_set_sign_rsp(struct ksmbd_work *work)
 {
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	char signature[20];
-	struct kvec iov[2];
-	int n_vec = 1;
+	struct kvec iov_buf[2], iovs;
 
 	rsp_hdr->Flags2 |= SMBFLG2_SECURITY_SIGNATURE;
 	rsp_hdr->Signature.Sequence.SequenceNumber =
 		cpu_to_le32(++work->sess->sequence_number);
 	rsp_hdr->Signature.Sequence.Reserved = 0;
 
-	iov[0].iov_base = rsp_hdr->Protocol;
-	iov[0].iov_len = be32_to_cpu(rsp_hdr->smb_buf_length);
+	if (smb_generate_rsp_ivs(work, iov_buf, 2, &iovs, false) < 0)
+		return;
 
-	if (work->aux_payload_sz) {
-		iov[0].iov_len -= work->aux_payload_sz;
-
-		iov[1].iov_base = work->aux_payload_buf;
-		iov[1].iov_len = work->aux_payload_sz;
-		n_vec++;
-	}
-
-	if (ksmbd_sign_smb1_pdu(work->sess, iov, n_vec, signature))
+	if (ksmbd_sign_smb1_pdu(work->sess, (struct kvec *)iovs.iov_base,
+				(int)iovs.iov_len, signature))
 		memset(rsp_hdr->Signature.SecuritySignature,
 				0, CIFS_SMB1_SIGNATURE_SIZE);
 	else
 		memcpy(rsp_hdr->Signature.SecuritySignature,
 				signature, CIFS_SMB1_SIGNATURE_SIZE);
+
+	if (iovs.iov_base != iov_buf)
+		kvfree(iovs.iov_base);
 }
