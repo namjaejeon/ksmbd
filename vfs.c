@@ -1920,7 +1920,13 @@ static int __dir_empty(struct dir_context *ctx, const char *name, int namlen,
 	buf = container_of(ctx, struct ksmbd_readdir_data, ctx);
 	buf->dirent_count++;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 	return buf->dirent_count <= 2;
+#else
+	if (buf->dirent_count > 2)
+		return -ENOTEMPTY;
+	return 0;
+#endif
 }
 
 /**
