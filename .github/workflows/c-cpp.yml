@@ -27,6 +27,7 @@ jobs:
         sudo apt-get install autoconf libtool pkg-config libnl-3-dev libnl-genl-3-dev
         sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
         sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-dev
+        sudo apt-get install gnutls-bin libparse-yapp-perl libjansson-dev libarchive-dev libjson-perl
         git clone https://github.com/cifsd-team/ksmbd-tools
         export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
         export PATH=/usr/local/lib:$PATH
@@ -235,3 +236,249 @@ jobs:
         sudo ./check generic/568
         sudo ./check generic/590
         sudo ./check generic/599
+
+        cd ..
+        tar xzvf samba-cifsd.tgz > /dev/null
+        cd samba-cifsd/
+        ./configure --disable-cups --disable-iprint --without-ad-dc --without-ads --without-ldap --without-pam --with-shared-modules='!vfs_snapper'
+        make -j$((`nproc`+1)) bin/smbtorture > /dev/null
+
+        # smb2 connect test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.connect
+        sudo rm -rf /mnt/test3/*
+        # smb2 read test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.eof
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.position
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.dir
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.read.access
+        sudo rm -rf /mnt/test3/*
+        # smb2 scan test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.scan
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.getinfo
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.setinfo
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.scan.find
+        sudo rm -rf /mnt/test3/*
+        # smb2 dir test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.find
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.fixed
+        sudo rm -rf /mnt/test3/*
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.one
+        ##sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.many
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.modify
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.sorted
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.file-index
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.dir.large-files
+        sudo rm -rf /mnt/test3/*
+        # smb2 rename test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.simple_nodelete
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_sharing
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_and_delete_access
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.no_share_delete_but_delete_access
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.share_delete_no_delete_access
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.msword
+        sudo rm -rf /mnt/test3/*
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_openfile
+        # - sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.rename.rename_dir_bench
+        sudo rm -rf /mnt/test3/*
+        # smb2 maxfid test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.maxfid
+        sudo rm -rf /mnt/test3/*
+        # smb2 sharemode test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.sharemode-access
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.sharemode.access-sharemode
+        sudo rm -rf /mnt/test3/*
+        # smb2 compound test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.related1
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.related2
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.related3
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.unrelated1
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.invalid1
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.invalid2
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.invalid3
+        sudo rm -rf /mnt/test3/*
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.interim1 #fail
+        # - sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.interim2
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-break
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-padding
+        sudo rm -rf /mnt/test3/*
+        # smb2 streams test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.dir
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.io
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.sharemodes
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.names3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.rename
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.rename2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.create-disposition
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.attributes
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.delete
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.zero-byte
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.basefile-rename-with-open-stream
+        sudo rm -rf /mnt/test3/*
+        # smb2 create test
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.gentest
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.blob
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.open
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.brlocked
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.multi
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.delete
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.leading-slash
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.impersonation
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.dir-alloc-size
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.aclfile
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.acldir
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.nulldacl
+        sudo rm -rf /mnt/test3/*
+        # smb2 delete-on-close test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.OVERWRITE_IF
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.OVERWRITE_IF Existing"
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.CREATE
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.CREATE Existing"
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.CREATE_IF
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 "smb2.delete-on-close-perms.CREATE_IF Existing"
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.delete-on-close-perms.FIND_and_set_DOC
+        sudo rm -rf /mnt/test3/*
+        # smb2 oplock test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive4
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive5
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive6
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.exclusive9
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch4
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch5
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch6
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch7
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch8
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch9
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch9a
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch10
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch11
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch12
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch13
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch14
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch15
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch16
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch19
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch20
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch21
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch22
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch23
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch24
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch25
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch26 #fail
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.stream1 #fail
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.doc
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl1
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl2
+        sudo rm -rf /mnt/test3/*
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii500
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii501
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
+        sudo rm -rf /mnt/test3/*
+        # smb2 session test
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth4
+        # smb2 lock test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.valid-request
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.rw-shared
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.rw-exclusive
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.auto-unlock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.async
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.cancel
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.cancel-tdis
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.cancel-logoff
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.zerobytelength
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.zerobyteread
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.unlock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.multiple-unlock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.stacking
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.contend
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.context
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.truncate
+        # smb2 leases test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.request
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.nobreakself
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen2
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.break
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.oplock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.multibreak
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking1
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking3
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking4
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking5
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking6
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.lock1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.complex1
+        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.timeout
+        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.unlink
+        # smb2 acls test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.CREATOR
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.GENERIC
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.OWNER
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.INHERITANCE
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.INHERITFLAGS
+        sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.DYNAMIC
