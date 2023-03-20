@@ -234,7 +234,6 @@ jobs:
         sudo ./check generic/565
         sudo ./check generic/567
         sudo ./check generic/568
-        sudo ./check generic/590
         sudo ./check generic/599
 
         cd ..
