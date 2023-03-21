@@ -325,13 +325,6 @@ int ksmbd_conn_handler_loop(void *p)
 		pdu_size = get_rfc1002_len(hdr_buf);
 		ksmbd_debug(CONN, "RFC1002 header %u bytes\n", pdu_size);
 
-		/* make sure we have enough to get to SMB header end */
-		if (!ksmbd_pdu_size_has_room(pdu_size)) {
-			ksmbd_debug(CONN, "SMB request too short (%u bytes)\n",
-				    pdu_size);
-			break;
-		}
-
 		if (conn->status == KSMBD_SESS_GOOD)
 			max_allowed_pdu_size =
 				SMB3_MAX_MSGSIZE + conn->vals->max_write_size;
@@ -345,6 +338,9 @@ int ksmbd_conn_handler_loop(void *p)
 			break;
 		}
 
+		/*
+		 * Check maximum pdu size(0x00FFFFFF).
+		 */
 		if (pdu_size > MAX_STREAM_PROT_LEN)
 			break;
 

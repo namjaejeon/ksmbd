@@ -178,6 +178,33 @@
 /* Action bits */
 #define GUEST_LOGIN 1
 
+struct smb_negotiate_rsp {
+	struct smb_hdr hdr;     /* wct = 17 */
+	__le16 DialectIndex; /* 0xFFFF = no dialect acceptable */
+	__u8 SecurityMode;
+	__le16 MaxMpxCount;
+	__le16 MaxNumberVcs;
+	__le32 MaxBufferSize;
+	__le32 MaxRawSize;
+	__le32 SessionKey;
+	__le32 Capabilities;    /* see below */
+	__le32 SystemTimeLow;
+	__le32 SystemTimeHigh;
+	__le16 ServerTimeZone;
+	__u8 EncryptionKeyLength;
+	__le16 ByteCount;
+	union {
+		unsigned char EncryptionKey[8]; /* cap extended security off */
+		/* followed by Domain name - if extended security is off */
+		/* followed by 16 bytes of server GUID */
+		/* then security blob if cap_extended_security negotiated */
+		struct {
+			unsigned char GUID[SMB1_CLIENT_GUID_SIZE];
+			unsigned char SecurityBlob[1];
+		} __packed extended_response;
+	} __packed u;
+} __packed;
+
 struct smb_com_read_req {
 	struct smb_hdr hdr;     /* wct = 12 */
 	__u8 AndXCommand;
@@ -1571,7 +1598,9 @@ extern int ksmbd_smb1_check_message(struct ksmbd_work *work);
 /* smb1 command handlers */
 extern int smb_rename(struct ksmbd_work *work);
 extern int smb_negotiate_request(struct ksmbd_work *work);
+#ifdef CONFIG_SMB_INSECURE_SERVER
 extern int smb_handle_negotiate(struct ksmbd_work *work);
+#endif
 extern int smb_session_setup_andx(struct ksmbd_work *work);
 extern int smb_tree_connect_andx(struct ksmbd_work *work);
 extern int smb_trans2(struct ksmbd_work *work);
