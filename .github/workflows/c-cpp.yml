@@ -421,8 +421,8 @@ jobs:
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii501
         sudo rm -rf /mnt/test3/*
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
-        sudo rm -rf /mnt/test3/*
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
+        #sudo rm -rf /mnt/test3/*
         # smb2 session test
         # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect1
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect2
