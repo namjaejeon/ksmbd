@@ -319,9 +319,6 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	/* setting CifsExiting here may race with start_tcp_sess */
 	ksmbd_conn_set_need_reconnect(work);
 
-	ksmbd_free_user(sess->user);
-	sess->user = NULL;
-
 	ksmbd_conn_wait_idle(conn);
 
 	ksmbd_tree_conn_session_logoff(sess);
