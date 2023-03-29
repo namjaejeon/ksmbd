@@ -3647,7 +3647,12 @@ static void unlock_dir(struct ksmbd_file *dir_fp)
 
 static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap	*idmap = file_mnt_idmap(priv->dir_fp->filp);
+	struct user_namespace	*user_ns = mnt_idmap_owner(idmap);
+#else
 	struct user_namespace	*user_ns = file_mnt_user_ns(priv->dir_fp->filp);
+#endif
 	struct kstat		kstat;
 	struct ksmbd_kstat	ksmbd_kstat;
 	int			rc;
@@ -3687,7 +3692,12 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 		ksmbd_kstat.kstat = &kstat;
 		if (priv->info_level != FILE_NAMES_INFORMATION)
 			ksmbd_vfs_fill_dentry_attrs(priv->work,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+						    idmap,
+#else
 						    user_ns,
+#endif
+
 						    dent,
 						    &ksmbd_kstat);
 
@@ -4389,7 +4399,13 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 
 	basic_info = (struct smb2_file_basic_info *)rsp->Buffer;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &stat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
+			 &stat);
+#else
+	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
+			 &stat);
+#endif
 #else
 	generic_fillattr(file_inode(fp->filp), &stat);
 #endif
@@ -4433,7 +4449,11 @@ static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
 
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(inode, &stat);
 #endif
@@ -4491,7 +4511,11 @@ static int get_file_all_info(struct ksmbd_work *work,
 
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(inode, &stat);
 #endif
@@ -4572,7 +4596,13 @@ static void get_file_stream_info(struct ksmbd_work *work,
 	struct smb2_query_info_req *req = ksmbd_req_buf_next(work);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &stat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
+			 &stat);
+#else
+	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
+			 &stat);
+#endif
 #else
 	generic_fillattr(file_inode(fp->filp), &stat);
 #endif
@@ -4666,7 +4696,13 @@ static void get_file_internal_info(struct smb2_query_info_rsp *rsp,
 	struct kstat stat;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &stat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
+			 &stat);
+#else
+	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
+			 &stat);
+#endif
 #else
 	generic_fillattr(file_inode(fp->filp), &stat);
 #endif
@@ -4695,7 +4731,11 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(inode, &stat);
 #endif
@@ -4760,7 +4800,13 @@ static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
 	struct kstat stat;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &stat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
+			 &stat);
+#else
+	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
+			 &stat);
+#endif
 #else
 	generic_fillattr(file_inode(fp->filp), &stat);
 #endif

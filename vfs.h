@@ -215,10 +215,17 @@ int ksmbd_vfs_unlink(struct user_namespace *user_ns,
 		     struct dentry *dir, struct dentry *dentry);
 #endif
 void *ksmbd_vfs_init_kstat(char **p, struct ksmbd_kstat *ksmbd_kstat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
+				struct mnt_idmap *idmap,
+				struct dentry *dentry,
+				struct ksmbd_kstat *ksmbd_kstat);
+#else
 int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 				struct user_namespace *user_ns,
 				struct dentry *dentry,
 				struct ksmbd_kstat *ksmbd_kstat);
+#endif
 void ksmbd_vfs_posix_lock_wait(struct file_lock *flock);
 int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout);
 void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock);
