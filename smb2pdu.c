@@ -13,6 +13,10 @@
 #include <linux/falloc.h>
 #include <linux/crc32.h>
 #include <linux/mount.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#include <linux/filelock.h>
+#endif
 
 #include "glob.h"
 #include "smb2pdu.h"

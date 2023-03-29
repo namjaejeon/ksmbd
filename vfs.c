@@ -6,10 +6,13 @@
 
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#include <linux/filelock.h>
+#endif
 #include <linux/uaccess.h>
 #include <linux/backing-dev.h>
 #include <linux/writeback.h>
-#include <linux/version.h>
 #include <linux/xattr.h>
 #include <linux/falloc.h>
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 18, 0)
