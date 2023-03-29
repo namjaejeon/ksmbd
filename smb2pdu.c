@@ -5723,6 +5723,9 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	struct iattr attrs;
 	struct file *filp;
 	struct inode *inode;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap;
+#endif
 	struct user_namespace *user_ns;
 	int rc = 0;
 
@@ -5732,7 +5735,12 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	attrs.ia_valid = 0;
 	filp = fp->filp;
 	inode = file_inode(filp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	idmap = file_mnt_idmap(filp);
+	user_ns = mnt_idmap_owner(idmap);
+#else
 	user_ns = file_mnt_user_ns(filp);
+#endif
 
 	if (file_info->CreationTime)
 		fp->create_time = le64_to_cpu(file_info->CreationTime);
@@ -5795,7 +5803,11 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		inode->i_ctime = attrs.ia_ctime;
 		attrs.ia_valid &= ~ATTR_CTIME;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = notify_change(idmap, dentry, &attrs, NULL);
+#else
 		rc = notify_change(user_ns, dentry, &attrs, NULL);
+#endif
 #else
 		rc = notify_change(dentry, &attrs, NULL);
 #endif

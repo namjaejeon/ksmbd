@@ -1406,7 +1406,12 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	int rc;
 	struct smb_fattr fattr = {{0}};
 	struct inode *inode = d_inode(path->dentry);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap = mnt_idmap(path->mnt);
+	struct user_namespace *user_ns = mnt_idmap_owner(idmap);
+#else
 	struct user_namespace *user_ns = mnt_user_ns(path->mnt);
+#endif
 	struct iattr newattrs;
 
 	fattr.cf_uid = INVALID_UID;
@@ -1469,7 +1474,11 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 
 	inode_lock(inode);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = notify_change(idmap, path->dentry, &newattrs, NULL);
+#else
 	rc = notify_change(user_ns, path->dentry, &newattrs, NULL);
+#endif
 #else
 	rc = notify_change(path->dentry, &newattrs, NULL);
 #endif

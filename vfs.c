@@ -213,7 +213,13 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 
 	mode |= S_IFREG;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	err = vfs_create(mnt_user_ns(path.mnt), d_inode(path.dentry), dentry, mode, true);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	err = vfs_create(mnt_idmap(path.mnt), d_inode(path.dentry),
+			 dentry, mode, true);
+#else
+	err = vfs_create(mnt_user_ns(path.mnt), d_inode(path.dentry),
+			 dentry, mode, true);
+#endif
 #else
 	err = vfs_create(d_inode(path.dentry), dentry, mode, true);
 #endif
@@ -237,6 +243,9 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
  */
 int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap;
+#endif
 	struct user_namespace *user_ns;
 	struct path path;
 	struct dentry *dentry;
@@ -253,10 +262,19 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 		return err;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	idmap = mnt_idmap(path.mnt);
+	user_ns = mnt_idmap_owner(idmap);
+#else
 	user_ns = mnt_user_ns(path.mnt);
+#endif
 	mode |= S_IFDIR;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	err = vfs_mkdir(idmap, d_inode(path.dentry), dentry, mode);
+#else
 	err = vfs_mkdir(user_ns, d_inode(path.dentry), dentry, mode);
+#endif
 #else
 	err = vfs_mkdir(d_inode(path.dentry), dentry, mode);
 #endif
@@ -897,6 +915,9 @@ int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id)
  */
 int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap;
+#endif
 	struct user_namespace *user_ns;
 	struct path path;
 	struct dentry *parent;
@@ -912,7 +933,12 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 		return err;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	idmap = mnt_idmap(path.mnt);
+	user_ns = mnt_idmap_owner(idmap);
+#else
 	user_ns = mnt_user_ns(path.mnt);
+#endif
 	parent = dget_parent(path.dentry);
 	err = ksmbd_vfs_lock_parent(user_ns, parent, path.dentry);
 	if (err) {
@@ -929,7 +955,11 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 
 	if (S_ISDIR(d_inode(path.dentry)->i_mode)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		err = vfs_rmdir(idmap, d_inode(parent), path.dentry);
+#else
 		err = vfs_rmdir(user_ns, d_inode(parent), path.dentry);
+#endif
 #else
 		err = vfs_rmdir(d_inode(parent), path.dentry);
 #endif
@@ -938,7 +968,11 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 				    err);
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		err = vfs_unlink(idmap, d_inode(parent), path.dentry, NULL);
+#else
 		err = vfs_unlink(user_ns, d_inode(parent), path.dentry, NULL);
+#endif
 #else
 		err = vfs_unlink(d_inode(parent), path.dentry, NULL);
 #endif
@@ -995,9 +1029,15 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	err = vfs_link(oldpath.dentry, mnt_idmap(newpath.mnt),
+		       d_inode(newpath.dentry),
+		       dentry, NULL);
+#else
 	err = vfs_link(oldpath.dentry, mnt_user_ns(newpath.mnt),
 		       d_inode(newpath.dentry),
 		       dentry, NULL);
+#endif
 #else
 	err = vfs_link(oldpath.dentry, d_inode(newpath.dentry), dentry, NULL);
 #endif
@@ -1036,6 +1076,16 @@ static int ksmbd_validate_entry_in_use(struct dentry *src_dent)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static int __ksmbd_vfs_rename(struct ksmbd_work *work,
+			      struct mnt_idmap *src_idmap,
+			      struct dentry *src_dent_parent,
+			      struct dentry *src_dent,
+			      struct mnt_idmap *dst_idmap,
+			      struct dentry *dst_dent_parent,
+			      struct dentry *trap_dent,
+			      char *dst_name)
+#else
 static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			      struct user_namespace *src_user_ns,
 			      struct dentry *src_dent_parent,
@@ -1044,6 +1094,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			      struct dentry *dst_dent_parent,
 			      struct dentry *trap_dent,
 			      char *dst_name)
+#endif
 {
 	struct dentry *dst_dent;
 	int err;
@@ -1067,8 +1118,13 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 		return -ENOMEM;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	dst_dent = lookup_one(mnt_idmap_owner(dst_idmap), dst_name,
+			      dst_dent_parent, strlen(dst_name));
+#else
 	dst_dent = lookup_one(dst_user_ns, dst_name, dst_dent_parent,
 			      strlen(dst_name));
+#endif
 #else
 	dst_dent = lookup_one_len(dst_name, dst_dent_parent,
 				  strlen(dst_name));
@@ -1082,6 +1138,16 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 	err = -ENOTEMPTY;
 	if (dst_dent != trap_dent && !d_really_is_positive(dst_dent)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		struct renamedata rd = {
+			.old_mnt_idmap	= src_idmap,
+			.old_dir	= d_inode(src_dent_parent),
+			.old_dentry	= src_dent,
+			.new_mnt_idmap	= dst_idmap,
+			.new_dir	= d_inode(dst_dent_parent),
+			.new_dentry	= dst_dent,
+		};
+#else
 		struct renamedata rd = {
 			.old_mnt_userns	= src_user_ns,
 			.old_dir	= d_inode(src_dent_parent),
@@ -1090,6 +1156,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			.new_dir	= d_inode(dst_dent_parent),
 			.new_dentry	= dst_dent,
 		};
+#endif
 		err = vfs_rename(&rd);
 #else
 		err = vfs_rename(d_inode(src_dent_parent),
@@ -1112,6 +1179,9 @@ out:
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 			char *newname)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap;
+#endif
 	struct user_namespace *user_ns;
 	struct path dst_path;
 	struct dentry *src_dent_parent, *dst_dent_parent;
@@ -1140,7 +1210,12 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	trap_dent = lock_rename(src_dent_parent, dst_dent_parent);
 	dget(src_dent);
 	dget(dst_dent_parent);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	idmap = file_mnt_idmap(fp->filp);
+	user_ns = mnt_idmap_owner(idmap);
+#else
 	user_ns = file_mnt_user_ns(fp->filp);
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 	src_child = lookup_one(user_ns, src_dent->d_name.name, src_dent_parent,
 			       src_dent->d_name.len);
@@ -1160,6 +1235,16 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	}
 	dput(src_child);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	err = __ksmbd_vfs_rename(work,
+				 idmap,
+				 src_dent_parent,
+				 src_dent,
+				 mnt_idmap(dst_path.mnt),
+				 dst_dent_parent,
+				 trap_dent,
+				 dst_name);
+#else
 	err = __ksmbd_vfs_rename(work,
 				 user_ns,
 				 src_dent_parent,
@@ -1168,6 +1253,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 				 dst_dent_parent,
 				 trap_dent,
 				 dst_name);
+#endif
 out_lock:
 	dput(src_dent);
 	dput(dst_dent_parent);
@@ -1829,21 +1915,37 @@ int ksmbd_vfs_remove_xattr(struct user_namespace *user_ns,
 #endif
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_unlink(struct mnt_idmap *idmap,
+		     struct dentry *dir, struct dentry *dentry)
+#else
 int ksmbd_vfs_unlink(struct user_namespace *user_ns,
 		     struct dentry *dir, struct dentry *dentry)
+#endif
 {
 	int err = 0;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct user_namespace *mnt_userns = mnt_idmap_owner(idmap);
 
+	err = ksmbd_vfs_lock_parent(mnt_userns, dir, dentry);
+#else
 	err = ksmbd_vfs_lock_parent(user_ns, dir, dentry);
+#endif
 	if (err)
 		return err;
 
 	dget(dentry);
 	if (S_ISDIR(d_inode(dentry)->i_mode))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		err = vfs_rmdir(idmap, d_inode(dir), dentry);
+	else
+		err = vfs_unlink(idmap, d_inode(dir), dentry, NULL);
+#else
 		err = vfs_rmdir(user_ns, d_inode(dir), dentry);
 	else
 		err = vfs_unlink(user_ns, d_inode(dir), dentry, NULL);
+#endif
 #else
 		err = vfs_rmdir(d_inode(dir), dentry);
 	else
