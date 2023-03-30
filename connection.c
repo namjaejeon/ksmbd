@@ -152,14 +152,14 @@ int ksmbd_conn_try_dequeue_request(struct ksmbd_work *work)
 
 	if (!work->multiRsp)
 		atomic_dec(&conn->req_running);
-	spin_lock(&conn->request_lock);
 	if (!work->multiRsp) {
+		spin_lock(&conn->request_lock);
 		list_del_init(&work->request_entry);
+		spin_unlock(&conn->request_lock);
 		if (work->asynchronous)
 			release_async_work(work);
 		ret = 0;
 	}
-	spin_unlock(&conn->request_lock);
 
 	wake_up_all(&conn->req_running_q);
 	return ret;
