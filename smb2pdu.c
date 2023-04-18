@@ -2575,8 +2575,9 @@ int smb2_open(struct ksmbd_work *work)
 	struct file *filp = NULL;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	struct mnt_idmap *idmap = NULL;
-#endif
+#else
 	struct user_namespace *user_ns = NULL;
+#endif
 	struct kstat stat;
 	struct create_context *context;
 	struct lease_ctx_info *lc = NULL;
@@ -2833,7 +2834,6 @@ int smb2_open(struct ksmbd_work *work)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		idmap = mnt_idmap(path.mnt);
-		user_ns = mnt_idmap_owner(idmap);
 #else
 		user_ns = mnt_user_ns(path.mnt);
 #endif
@@ -2944,7 +2944,6 @@ int smb2_open(struct ksmbd_work *work)
 		created = true;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		idmap = mnt_idmap(path.mnt);
-		user_ns = mnt_idmap_owner(idmap);
 #else
 		user_ns = mnt_user_ns(path.mnt);
 #endif
@@ -3109,7 +3108,11 @@ int smb2_open(struct ksmbd_work *work)
 						goto err_out;
 					}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+					rc = build_sec_desc(idmap,
+#else
 					rc = build_sec_desc(user_ns,
+#endif
 							    pntsd, NULL, 0,
 							    OWNER_SECINFO |
 							    GROUP_SECINFO |
@@ -5403,8 +5406,9 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	struct ksmbd_file *fp;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	struct mnt_idmap *idmap;
-#endif
+#else
 	struct user_namespace *user_ns;
+#endif
 	struct smb_ntsd *pntsd = (struct smb_ntsd *)rsp->Buffer, *ppntsd = NULL;
 	struct smb_fattr fattr = {{0}};
 	struct inode *inode;
@@ -5453,7 +5457,6 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	idmap = file_mnt_idmap(fp->filp);
-	user_ns = mnt_idmap_owner(idmap);
 #else
 	user_ns = file_mnt_user_ns(fp->filp);
 #endif
@@ -5476,7 +5479,11 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 
 	/* Check if sd buffer size exceeds response buffer size */
 	if (smb2_resp_buf_len(work, 8) > ppntsd_size)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = build_sec_desc(idmap, pntsd, ppntsd, ppntsd_size,
+#else
 		rc = build_sec_desc(user_ns, pntsd, ppntsd, ppntsd_size,
+#endif
 				    addition_info, &secdesclen, &fattr);
 	posix_acl_release(fattr.cf_acls);
 	posix_acl_release(fattr.cf_dacls);

@@ -1680,7 +1680,11 @@ out:
 	return err;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+static struct xattr_smb_acl *ksmbd_vfs_make_xattr_posix_acl(struct mnt_idmap *idmap,
+#else
 static struct xattr_smb_acl *ksmbd_vfs_make_xattr_posix_acl(struct user_namespace *user_ns,
+#endif
 							    struct inode *inode,
 							    int acl_type)
 {
@@ -1714,14 +1718,22 @@ static struct xattr_smb_acl *ksmbd_vfs_make_xattr_posix_acl(struct user_namespac
 		switch (pa_entry->e_tag) {
 		case ACL_USER:
 			xa_entry->type = SMB_ACL_USER;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			xa_entry->uid = posix_acl_uid_translate(idmap, pa_entry);
+#else
 			xa_entry->uid = posix_acl_uid_translate(user_ns, pa_entry);
+#endif
 			break;
 		case ACL_USER_OBJ:
 			xa_entry->type = SMB_ACL_USER_OBJ;
 			break;
 		case ACL_GROUP:
 			xa_entry->type = SMB_ACL_GROUP;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			xa_entry->gid = posix_acl_gid_translate(idmap, pa_entry);
+#else
 			xa_entry->gid = posix_acl_gid_translate(user_ns, pa_entry);
+#endif
 			break;
 		case ACL_GROUP_OBJ:
 			xa_entry->type = SMB_ACL_GROUP_OBJ;
@@ -1759,9 +1771,6 @@ int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn,
 			   struct smb_ntsd *pntsd, int len)
 {
 	int rc;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	struct user_namespace *user_ns = mnt_idmap_owner(idmap);
-#endif
 	struct ndr sd_ndr = {0}, acl_ndr = {0};
 	struct xattr_ntacl acl = {0};
 	struct xattr_smb_acl *smb_acl, *def_smb_acl = NULL;
@@ -1790,10 +1799,18 @@ int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn,
 		return rc;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	smb_acl = ksmbd_vfs_make_xattr_posix_acl(idmap, inode,
+#else
 	smb_acl = ksmbd_vfs_make_xattr_posix_acl(user_ns, inode,
+#endif
 						 ACL_TYPE_ACCESS);
 	if (S_ISDIR(inode->i_mode))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		def_smb_acl = ksmbd_vfs_make_xattr_posix_acl(idmap, inode,
+#else
 		def_smb_acl = ksmbd_vfs_make_xattr_posix_acl(user_ns, inode,
+#endif
 							     ACL_TYPE_DEFAULT);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
@@ -1848,9 +1865,6 @@ int ksmbd_vfs_get_sd_xattr(struct ksmbd_conn *conn,
 			   struct smb_ntsd **pntsd)
 {
 	int rc;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	struct user_namespace *user_ns = mnt_idmap_owner(idmap);
-#endif
 	struct ndr n;
 	struct inode *inode = d_inode(dentry);
 	struct ndr acl_ndr = {0};
@@ -1871,10 +1885,18 @@ int ksmbd_vfs_get_sd_xattr(struct ksmbd_conn *conn,
 	if (rc)
 		goto free_n_data;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	smb_acl = ksmbd_vfs_make_xattr_posix_acl(idmap, inode,
+#else
 	smb_acl = ksmbd_vfs_make_xattr_posix_acl(user_ns, inode,
+#endif
 						 ACL_TYPE_ACCESS);
 	if (S_ISDIR(inode->i_mode))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		def_smb_acl = ksmbd_vfs_make_xattr_posix_acl(idmap, inode,
+#else
 		def_smb_acl = ksmbd_vfs_make_xattr_posix_acl(user_ns, inode,
+#endif
 							     ACL_TYPE_DEFAULT);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
