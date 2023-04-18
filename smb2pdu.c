@@ -2510,13 +2510,22 @@ static int smb2_create_sd_buffer(struct ksmbd_work *work,
 }
 
 static void ksmbd_acls_fattr(struct smb_fattr *fattr,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			     struct mnt_idmap *idmap,
+#else
 			     struct user_namespace *mnt_userns,
+#endif
 			     struct inode *inode)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	vfsuid_t vfsuid = i_uid_into_vfsuid(idmap, inode);
+	vfsgid_t vfsgid = i_gid_into_vfsgid(idmap, inode);
+#else
 	vfsuid_t vfsuid = i_uid_into_vfsuid(mnt_userns, inode);
 	vfsgid_t vfsgid = i_gid_into_vfsgid(mnt_userns, inode);
+#endif
 
 	fattr->cf_uid = vfsuid_into_kuid(vfsuid);
 	fattr->cf_gid = vfsgid_into_kgid(vfsgid);
@@ -3079,7 +3088,11 @@ int smb2_open(struct ksmbd_work *work)
 					struct smb_ntsd *pntsd;
 					int pntsd_size, ace_num = 0;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+					ksmbd_acls_fattr(&fattr, idmap, inode);
+#else
 					ksmbd_acls_fattr(&fattr, user_ns, inode);
+#endif
 					if (fattr.cf_acls)
 						ace_num = fattr.cf_acls->a_count;
 					if (fattr.cf_dacls)
@@ -4955,7 +4968,11 @@ static int find_file_posix_info(struct smb2_query_info_rsp *rsp,
 {
 	struct smb311_posix_qinfo *file_info;
 	struct inode *inode = file_inode(fp->filp);
-	u64 time;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap = file_mnt_idmap(fp->filp);
+	vfsuid_t vfsuid = i_uid_into_vfsuid(idmap, inode);
+	vfsgid_t vfsgid = i_gid_into_vfsgid(idmap, inode);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 	struct user_namespace *user_ns = file_mnt_user_ns(fp->filp);
 #endif
@@ -4963,6 +4980,8 @@ static int find_file_posix_info(struct smb2_query_info_rsp *rsp,
 	vfsuid_t vfsuid = i_uid_into_vfsuid(user_ns, inode);
 	vfsgid_t vfsgid = i_gid_into_vfsgid(user_ns, inode);
 #endif
+#endif
+	u64 time;
 	int out_buf_len = sizeof(struct smb311_posix_qinfo) + 32;
 
 	file_info = (struct smb311_posix_qinfo *)rsp->Buffer;
@@ -5439,7 +5458,11 @@ static int smb2_get_info_sec(struct ksmbd_work *work,
 	user_ns = file_mnt_user_ns(fp->filp);
 #endif
 	inode = file_inode(fp->filp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	ksmbd_acls_fattr(&fattr, idmap, inode);
+#else
 	ksmbd_acls_fattr(&fattr, user_ns, inode);
+#endif
 
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_ACL_XATTR))
