@@ -229,8 +229,13 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 void ksmbd_vfs_posix_lock_wait(struct file_lock *flock);
 int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout);
 void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_remove_acl_xattrs(struct mnt_idmap *idmap,
+				struct dentry *dentry);
+#else
 int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
 				struct dentry *dentry);
+#endif
 int ksmbd_vfs_remove_sd_xattrs(struct user_namespace *user_ns,
 			       struct dentry *dentry);
 int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn,
@@ -247,9 +252,17 @@ int ksmbd_vfs_set_dos_attrib_xattr(struct user_namespace *user_ns,
 int ksmbd_vfs_get_dos_attrib_xattr(struct user_namespace *user_ns,
 				   struct dentry *dentry,
 				   struct xattr_dos_attrib *da);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_set_init_posix_acl(struct mnt_idmap *idmap,
+				 struct dentry *dentry);
+int ksmbd_vfs_inherit_posix_acl(struct mnt_idmap *idmap,
+				struct dentry *dentry,
+				struct inode *parent_inode);
+#else
 int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 				 struct dentry *dentry);
 int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 				struct dentry *dentry,
 				struct inode *parent_inode);
+#endif
 #endif /* __KSMBD_VFS_H__ */

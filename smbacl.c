@@ -1435,12 +1435,20 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	newattrs.ia_valid |= ATTR_MODE;
 	newattrs.ia_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	ksmbd_vfs_remove_acl_xattrs(idmap, path->dentry);
+#else
 	ksmbd_vfs_remove_acl_xattrs(user_ns, path->dentry);
+#endif
 	/* Update posix acls */
 	if (IS_ENABLED(CONFIG_FS_POSIX_ACL) && fattr.cf_dacls) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = set_posix_acl(idmap, path->dentry,
+#else
 		rc = set_posix_acl(user_ns, path->dentry,
+#endif
 #else
 		rc = set_posix_acl(user_ns, inode,
 #endif
@@ -1456,7 +1464,11 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 		if (S_ISDIR(inode->i_mode) && fattr.cf_dacls) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			rc = set_posix_acl(idmap, path->dentry,
+#else
 			rc = set_posix_acl(user_ns, path->dentry,
+#endif
 #else
 			rc = set_posix_acl(user_ns, inode,
 #endif

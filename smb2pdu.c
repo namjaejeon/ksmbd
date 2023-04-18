@@ -2517,6 +2517,9 @@ int smb2_open(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = tcon->share_conf;
 	struct ksmbd_file *fp = NULL;
 	struct file *filp = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	struct mnt_idmap *idmap = NULL;
+#endif
 	struct user_namespace *user_ns = NULL;
 	struct kstat stat;
 	struct create_context *context;
@@ -2772,7 +2775,12 @@ int smb2_open(struct ksmbd_work *work)
 	} else {
 		file_present = true;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		idmap = mnt_idmap(path.mnt);
+		user_ns = mnt_idmap_owner(idmap);
+#else
 		user_ns = mnt_user_ns(path.mnt);
+#endif
 #else
 		user_ns = NULL;
 #endif
@@ -2874,7 +2882,12 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		created = true;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		idmap = mnt_idmap(path.mnt);
+		user_ns = mnt_idmap_owner(idmap);
+#else
 		user_ns = mnt_user_ns(path.mnt);
+#endif
 		if (ea_buf) {
 			if (le32_to_cpu(ea_buf->ccontext.DataLength) <
 			    sizeof(struct smb2_ea_info)) {
@@ -2971,9 +2984,15 @@ int smb2_open(struct ksmbd_work *work)
 		int posix_acl_rc;
 		struct inode *inode = d_inode(path.dentry);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		posix_acl_rc = ksmbd_vfs_inherit_posix_acl(idmap,
+							   path.dentry,
+							   d_inode(path.dentry->d_parent));
+#else
 		posix_acl_rc = ksmbd_vfs_inherit_posix_acl(user_ns,
 							   path.dentry,
 							   d_inode(path.dentry->d_parent));
+#endif
 		if (posix_acl_rc)
 			ksmbd_debug(SMB, "inherit posix acl failed : %d\n", posix_acl_rc);
 
@@ -2987,8 +3006,13 @@ int smb2_open(struct ksmbd_work *work)
 			rc = smb2_create_sd_buffer(work, req, &path);
 			if (rc) {
 				if (posix_acl_rc)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+					ksmbd_vfs_set_init_posix_acl(idmap,
+								     path.dentry);
+#else
 					ksmbd_vfs_set_init_posix_acl(user_ns,
 								     path.dentry);
+#endif
 
 				if (test_share_config_flag(work->tcon->share_conf,
 							   KSMBD_SHARE_FLAG_ACL_XATTR)) {

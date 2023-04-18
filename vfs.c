@@ -1479,8 +1479,13 @@ struct dentry *ksmbd_vfs_kern_path_create(struct ksmbd_work *work,
 	return dent;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_remove_acl_xattrs(struct mnt_idmap *idmap,
+				struct dentry *dentry)
+#else
 int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
 				struct dentry *dentry)
+#endif
 {
 	char *name, *xattr_list = NULL;
 	ssize_t xattr_list_len;
@@ -1503,7 +1508,11 @@ int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
 		    !strncmp(name, XATTR_NAME_POSIX_ACL_DEFAULT,
 			     sizeof(XATTR_NAME_POSIX_ACL_DEFAULT) - 1)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			err = vfs_remove_acl(idmap, dentry, name);
+#else
 			err = vfs_remove_acl(user_ns, dentry, name);
+#endif
 #else
 			err = ksmbd_vfs_remove_xattr(user_ns, dentry, name);
 #endif
@@ -2536,8 +2545,13 @@ void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock)
 	locks_delete_block(flock);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_set_init_posix_acl(struct mnt_idmap *idmap,
+				 struct dentry *dentry)
+#else
 int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 				 struct dentry *dentry)
+#endif
 {
 	struct posix_acl_state acl_state;
 	struct posix_acl *acls;
@@ -2572,7 +2586,11 @@ int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 	posix_state_to_acl(&acl_state, acls->a_entries);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = set_posix_acl(idmap, dentry, ACL_TYPE_ACCESS, acls);
+#else
 	rc = set_posix_acl(user_ns, dentry, ACL_TYPE_ACCESS, acls);
+#endif
 #else
 	rc = set_posix_acl(user_ns, inode, ACL_TYPE_ACCESS, acls);
 #endif
@@ -2586,7 +2604,11 @@ int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 		posix_state_to_acl(&acl_state, acls->a_entries);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = set_posix_acl(idmap, dentry, ACL_TYPE_DEFAULT, acls);
+#else
 		rc = set_posix_acl(user_ns, dentry, ACL_TYPE_DEFAULT, acls);
+#endif
 #else
 		rc = set_posix_acl(user_ns, inode, ACL_TYPE_DEFAULT, acls);
 #endif
@@ -2602,8 +2624,13 @@ int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 	return rc;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_inherit_posix_acl(struct mnt_idmap *idmap,
+				struct dentry *dentry, struct inode *parent_inode)
+#else
 int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 				struct dentry *dentry, struct inode *parent_inode)
+#endif
 {
 	struct posix_acl *acls;
 	struct posix_acl_entry *pace;
@@ -2631,7 +2658,11 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = set_posix_acl(idmap, dentry, ACL_TYPE_ACCESS, acls);
+#else
 	rc = set_posix_acl(user_ns, dentry, ACL_TYPE_ACCESS, acls);
+#endif
 #else
 	rc = set_posix_acl(user_ns, inode, ACL_TYPE_ACCESS, acls);
 #endif
@@ -2644,8 +2675,13 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 	if (S_ISDIR(inode->i_mode)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 2, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = set_posix_acl(idmap, dentry, ACL_TYPE_DEFAULT,
+				   acls);
+#else
 		rc = set_posix_acl(user_ns, dentry, ACL_TYPE_DEFAULT,
 				   acls);
+#endif
 #else
 		rc = set_posix_acl(user_ns, inode, ACL_TYPE_DEFAULT,
 				   acls);
