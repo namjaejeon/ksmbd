@@ -255,7 +255,11 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 	filp = fp->filp;
 	if (ksmbd_stream_fd(fp) && (ci->m_flags & S_DEL_ON_CLS_STREAM)) {
 		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		err = ksmbd_vfs_remove_xattr(file_mnt_idmap(filp),
+#else
 		err = ksmbd_vfs_remove_xattr(file_mnt_user_ns(filp),
+#endif
 					     filp->f_path.dentry,
 					     fp->stream.name);
 		if (err)
