@@ -253,7 +253,7 @@ int smb_check_user_session(struct ksmbd_work *work)
 		cmd == SMB_COM_ECHO)
 		return 0;
 
-	if (!ksmbd_conn_good(work))
+	if (!ksmbd_conn_good(conn))
 		return -EINVAL;
 
 	if (xa_empty(&conn->sessions)) {
@@ -317,7 +317,7 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	struct ksmbd_session *sess = work->sess;
 
 	/* setting CifsExiting here may race with start_tcp_sess */
-	ksmbd_conn_set_need_reconnect(work);
+	ksmbd_conn_set_need_reconnect(conn);
 
 	ksmbd_conn_wait_idle(conn);
 
@@ -327,7 +327,7 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	work->sess = NULL;
 
 	/* let start_tcp_sess free conn info now */
-	ksmbd_conn_set_exiting(work);
+	ksmbd_conn_set_exiting(conn);
 	return 0;
 }
 
@@ -817,7 +817,7 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 	__u64 time;
 	int rc = 0;
 
-	WARN_ON(ksmbd_conn_good(work));
+	WARN_ON(ksmbd_conn_good(conn));
 
 	if (conn->dialect == BAD_PROT_ID) {
 		neg_rsp->hdr.Status.CifsError = STATUS_INVALID_LOGON_TYPE;
@@ -880,7 +880,7 @@ int smb_handle_negotiate(struct ksmbd_work *work)
 
 	/* Null terminated domain name in unicode */
 
-	ksmbd_conn_set_need_negotiate(work);
+	ksmbd_conn_set_need_negotiate(conn);
 	/* Domain name and PC name are ignored by clients, so no need to send.
 	 * We can try sending them later
 	 */
@@ -1264,7 +1264,7 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 		goto out_err;
 
 	work->sess = sess;
-	ksmbd_conn_set_good(work);
+	ksmbd_conn_set_good(conn);
 	return 0;
 
 out_err:
