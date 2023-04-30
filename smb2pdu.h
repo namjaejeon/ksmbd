@@ -366,6 +366,8 @@ struct smb2_negotiate_rsp {
 #define SMB2_SESSION_IN_PROGRESS	BIT(0)
 #define SMB2_SESSION_VALID		BIT(1)
 
+#define SMB2_SESSION_TIMEOUT		(10 * HZ)
+
 /* Flags */
 #define SMB2_SESSION_REQ_FLAG_BINDING		0x01
 #define SMB2_SESSION_REQ_FLAG_ENCRYPT_DATA	0x04
