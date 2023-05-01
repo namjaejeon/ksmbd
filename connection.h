@@ -143,7 +143,7 @@ extern struct list_head conn_list;
 extern rwlock_t conn_list_lock;
 
 bool ksmbd_conn_alive(struct ksmbd_conn *conn);
-void ksmbd_conn_wait_idle(struct ksmbd_conn *conn);
+void ksmbd_conn_wait_idle(struct ksmbd_conn *conn, u64 sess_id);
 struct ksmbd_conn *ksmbd_conn_alloc(void);
 void ksmbd_conn_free(struct ksmbd_conn *conn);
 bool ksmbd_conn_lookup_dialect(struct ksmbd_conn *c);
@@ -213,4 +213,6 @@ static inline void ksmbd_conn_set_exiting(struct ksmbd_conn *conn)
 {
 	atomic_set(&conn->status, KSMBD_SESS_EXITING);
 }
+
+void ksmbd_all_conn_set_status(u64 sess_id, u32 status);
 #endif /* __CONNECTION_H__ */
