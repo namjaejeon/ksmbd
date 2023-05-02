@@ -42,7 +42,7 @@ struct ksmbd_conn {
 	struct smb_version_cmds		*cmds;
 	unsigned int			max_cmds;
 	struct mutex			srv_mutex;
-	atomic_t			status;
+	int				status;
 	unsigned int			cli_cap;
 	char				*request_buf;
 	struct ksmbd_transport		*transport;
@@ -171,47 +171,47 @@ void ksmbd_conn_transport_destroy(void);
  */
 static inline bool ksmbd_conn_good(struct ksmbd_conn *conn)
 {
-	return atomic_read(&conn->status) == KSMBD_SESS_GOOD;
+	return READ_ONCE(conn->status) == KSMBD_SESS_GOOD;
 }
 
 static inline bool ksmbd_conn_need_negotiate(struct ksmbd_conn *conn)
 {
-	return atomic_read(&conn->status) == KSMBD_SESS_NEED_NEGOTIATE;
+	return READ_ONCE(conn->status) == KSMBD_SESS_NEED_NEGOTIATE;
 }
 
 static inline bool ksmbd_conn_need_reconnect(struct ksmbd_conn *conn)
 {
-	return atomic_read(&conn->status) == KSMBD_SESS_NEED_RECONNECT;
+	return READ_ONCE(conn->status) == KSMBD_SESS_NEED_RECONNECT;
 }
 
 static inline bool ksmbd_conn_exiting(struct ksmbd_conn *conn)
 {
-	return atomic_read(&conn->status) == KSMBD_SESS_EXITING;
+	return READ_ONCE(conn->status) == KSMBD_SESS_EXITING;
 }
 
 static inline void ksmbd_conn_set_new(struct ksmbd_conn *conn)
 {
-	atomic_set(&conn->status, KSMBD_SESS_NEW);
+	WRITE_ONCE(conn->status, KSMBD_SESS_NEW);
 }
 
 static inline void ksmbd_conn_set_good(struct ksmbd_conn *conn)
 {
-	atomic_set(&conn->status, KSMBD_SESS_GOOD);
+	WRITE_ONCE(conn->status, KSMBD_SESS_GOOD);
 }
 
 static inline void ksmbd_conn_set_need_negotiate(struct ksmbd_conn *conn)
 {
-	atomic_set(&conn->status, KSMBD_SESS_NEED_NEGOTIATE);
+	WRITE_ONCE(conn->status, KSMBD_SESS_NEED_NEGOTIATE);
 }
 
 static inline void ksmbd_conn_set_need_reconnect(struct ksmbd_conn *conn)
 {
-	atomic_set(&conn->status, KSMBD_SESS_NEED_RECONNECT);
+	WRITE_ONCE(conn->status, KSMBD_SESS_NEED_RECONNECT);
 }
 
 static inline void ksmbd_conn_set_exiting(struct ksmbd_conn *conn)
 {
-	atomic_set(&conn->status, KSMBD_SESS_EXITING);
+	WRITE_ONCE(conn->status, KSMBD_SESS_EXITING);
 }
 
 void ksmbd_all_conn_set_status(u64 sess_id, u32 status);

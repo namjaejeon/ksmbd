@@ -182,7 +182,7 @@ void ksmbd_all_conn_set_status(u64 sess_id, u32 status)
 	read_lock(&conn_list_lock);
 	list_for_each_entry(conn, &conn_list, conns_list) {
 		if (conn->binding || xa_load(&conn->sessions, sess_id))
-			atomic_set(&conn->status, status);
+			WRITE_ONCE(conn->status, status);
 	}
 	read_unlock(&conn_list_lock);
 }
@@ -359,7 +359,7 @@ int ksmbd_conn_handler_loop(void *p)
 		if (pdu_size > max_allowed_pdu_size) {
 			pr_err_ratelimited("PDU length(%u) excceed maximum allowed pdu size(%u) on connection(%d)\n",
 					pdu_size, max_allowed_pdu_size,
-					atomic_read(&conn->status));
+					READ_ONCE(conn->status));
 			break;
 		}
 
