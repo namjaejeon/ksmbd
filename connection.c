@@ -199,6 +199,7 @@ void ksmbd_conn_wait_idle(struct ksmbd_conn *conn, u64 sess_id)
 			continue;
 
 		if ((bind_conn->binding || xa_load(&bind_conn->sessions, sess_id)) &&
+		    !ksmbd_conn_releasing(conn) &&
 		    atomic_read(&bind_conn->req_running)) {
 			read_unlock(&conn_list_lock);
 			wait_event(bind_conn->req_running_q,
@@ -407,9 +408,9 @@ int ksmbd_conn_handler_loop(void *p)
 	}
 
 out:
+	ksmbd_conn_set_releasing(conn);
 	/* Wait till all reference dropped to the Server object*/
 	wait_event(conn->r_count_q, atomic_read(&conn->r_count) == 0);
-
 
 	if (IS_ENABLED(CONFIG_UNICODE))
 		utf8_unload(conn->um);

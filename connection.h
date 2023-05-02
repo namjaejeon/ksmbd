@@ -26,7 +26,8 @@ enum {
 	KSMBD_SESS_GOOD,
 	KSMBD_SESS_EXITING,
 	KSMBD_SESS_NEED_RECONNECT,
-	KSMBD_SESS_NEED_NEGOTIATE
+	KSMBD_SESS_NEED_NEGOTIATE,
+	KSMBD_SESS_RELEASING
 };
 
 struct ksmbd_stats {
@@ -189,6 +190,11 @@ static inline bool ksmbd_conn_exiting(struct ksmbd_conn *conn)
 	return READ_ONCE(conn->status) == KSMBD_SESS_EXITING;
 }
 
+static inline bool ksmbd_conn_releasing(struct ksmbd_conn *conn)
+{
+	return READ_ONCE(conn->status) == KSMBD_SESS_RELEASING;
+}
+
 static inline void ksmbd_conn_set_new(struct ksmbd_conn *conn)
 {
 	WRITE_ONCE(conn->status, KSMBD_SESS_NEW);
@@ -212,6 +218,11 @@ static inline void ksmbd_conn_set_need_reconnect(struct ksmbd_conn *conn)
 static inline void ksmbd_conn_set_exiting(struct ksmbd_conn *conn)
 {
 	WRITE_ONCE(conn->status, KSMBD_SESS_EXITING);
+}
+
+static inline void ksmbd_conn_set_releasing(struct ksmbd_conn *conn)
+{
+	WRITE_ONCE(conn->status, KSMBD_SESS_RELEASING);
 }
 
 void ksmbd_all_conn_set_status(u64 sess_id, u32 status);
