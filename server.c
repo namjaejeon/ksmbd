@@ -416,7 +416,11 @@ int server_queue_ctrl_reset_work(void)
 	return __queue_ctrl_work(SERVER_CTRL_TYPE_RESET);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static ssize_t stats_show(const struct class *class, const struct class_attribute *attr,
+#else
 static ssize_t stats_show(struct class *class, struct class_attribute *attr,
+#endif
 			  char *buf)
 {
 	/*
@@ -435,8 +439,13 @@ static ssize_t stats_show(struct class *class, struct class_attribute *attr,
 			  server_conf.ipc_last_active / HZ);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static ssize_t kill_server_store(const struct class *class,
+				 const struct class_attribute *attr, const char *buf,
+#else
 static ssize_t kill_server_store(struct class *class,
 				 struct class_attribute *attr, const char *buf,
+#endif
 				 size_t len)
 {
 	if (!sysfs_streq(buf, "hard"))
@@ -456,7 +465,11 @@ static const char * const debug_type_strings[] = {"smb", "auth", "vfs",
 						  "oplock", "ipc", "conn",
 						  "rdma"};
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static ssize_t debug_show(const struct class *class, const struct class_attribute *attr,
+#else
 static ssize_t debug_show(struct class *class, struct class_attribute *attr,
+#endif
 			  char *buf)
 {
 	ssize_t sz = 0;
@@ -474,7 +487,11 @@ static ssize_t debug_show(struct class *class, struct class_attribute *attr,
 	return sz;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static ssize_t debug_store(const struct class *class, const struct class_attribute *attr,
+#else
 static ssize_t debug_store(struct class *class, struct class_attribute *attr,
+#endif
 			   const char *buf, size_t len)
 {
 	int i;
