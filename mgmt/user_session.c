@@ -144,18 +144,6 @@ void ksmbd_session_destroy(struct ksmbd_session *sess)
 	if (!sess)
 		return;
 
-#ifdef CONFIG_SMB_INSECURE_SERVER
-	if (hash_hashed(&sess->hlist)) {
-		down_write(&sessions_table_lock);
-		hash_del(&sess->hlist);
-		up_write(&sessions_table_lock);
-	}
-#else
-	down_write(&sessions_table_lock);
-	hash_del(&sess->hlist);
-	up_write(&sessions_table_lock);
-#endif
-
 	if (sess->user)
 		ksmbd_free_user(sess->user);
 
@@ -186,15 +174,23 @@ static void ksmbd_expire_session(struct ksmbd_conn *conn)
 	unsigned long id;
 	struct ksmbd_session *sess;
 
+	down_write(&sessions_table_lock);
 	xa_for_each(&conn->sessions, id, sess) {
 		if (sess->state != SMB2_SESSION_VALID ||
 		    time_after(jiffies,
 			       sess->last_active + SMB2_SESSION_TIMEOUT)) {
 			xa_erase(&conn->sessions, sess->id);
+#ifdef CONFIG_SMB_INSECURE_SERVER
+			if (hash_hashed(&sess->hlist))
+				hash_del(&sess->hlist);
+#else
+			hash_del(&sess->hlist);
+#endif
 			ksmbd_session_destroy(sess);
 			continue;
 		}
 	}
+	up_write(&sessions_table_lock);
 }
 
 int ksmbd_session_register(struct ksmbd_conn *conn,
@@ -206,15 +202,16 @@ int ksmbd_session_register(struct ksmbd_conn *conn,
 	return xa_err(xa_store(&conn->sessions, sess->id, sess, GFP_KERNEL));
 }
 
-static void ksmbd_chann_del(struct ksmbd_conn *conn, struct ksmbd_session *sess)
+static int ksmbd_chann_del(struct ksmbd_conn *conn, struct ksmbd_session *sess)
 {
 	struct channel *chann;
 
 	chann = xa_erase(&sess->ksmbd_chann_list, (long)conn);
 	if (!chann)
-		return;
+		return -ENOENT;
 
 	kfree(chann);
+	return 0;
 }
 
 void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
@@ -222,13 +219,47 @@ void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
 	struct ksmbd_session *sess;
 	unsigned long id;
 
+	down_write(&sessions_table_lock);
+	if (conn->binding) {
+		int bkt;
+		struct hlist_node *tmp;
+
+		hash_for_each_safe(sessions_table, bkt, tmp, sess, hlist) {
+			if (!ksmbd_chann_del(conn, sess) &&
+			    xa_empty(&sess->ksmbd_chann_list)) {
+#ifdef CONFIG_SMB_INSECURE_SERVER
+			if (hash_hashed(&sess->hlist))
+				hash_del(&sess->hlist);
+#else
+				hash_del(&sess->hlist);
+#endif
+				ksmbd_session_destroy(sess);
+			}
+		}
+	}
+
 	xa_for_each(&conn->sessions, id, sess) {
+		unsigned long chann_id;
+		struct channel *chann;
+
+		xa_for_each(&sess->ksmbd_chann_list, chann_id, chann) {
+			if (chann->conn != conn)
+				ksmbd_conn_set_exiting(chann->conn);
+		}
+
 		ksmbd_chann_del(conn, sess);
 		if (xa_empty(&sess->ksmbd_chann_list)) {
 			xa_erase(&conn->sessions, sess->id);
+#ifdef CONFIG_SMB_INSECURE_SERVER
+			if (hash_hashed(&sess->hlist))
+				hash_del(&sess->hlist);
+#else
+			hash_del(&sess->hlist);
+#endif
 			ksmbd_session_destroy(sess);
 		}
 	}
+	up_write(&sessions_table_lock);
 }
 
 struct ksmbd_session *ksmbd_session_lookup(struct ksmbd_conn *conn,

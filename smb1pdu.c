@@ -319,7 +319,7 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	/* setting CifsExiting here may race with start_tcp_sess */
 	ksmbd_conn_set_need_reconnect(conn);
 
-	ksmbd_conn_wait_idle(conn);
+	ksmbd_conn_wait_idle(conn, sess->id);
 
 	ksmbd_tree_conn_session_logoff(sess);
 	xa_erase(&conn->sessions, sess->id);
@@ -1675,7 +1675,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 		list_del(&smb_lock->llist);
 		/* check locks in connections */
-		read_lock(&conn_list_lock);
+		down_read(&conn_list_lock);
 		list_for_each_entry(conn, &conn_list, conns_list) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
@@ -1688,7 +1688,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 					cmp_lock->end == smb_lock->end) {
 					same_zero_lock = 1;
 					spin_unlock(&conn->llist_lock);
-					read_unlock(&conn_list_lock);
+					up_read(&conn_list_lock);
 					goto out_check_cl;
 				}
 
@@ -1729,7 +1729,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 						smb_lock->start >= 0xEF000000)) {
 						if (timeout) {
 							spin_unlock(&conn->llist_lock);
-							read_unlock(&conn_list_lock);
+							up_read(&conn_list_lock);
 							ksmbd_debug(SMB, "waiting error response for timeout : %d\n",
 								timeout);
 							msleep(timeout);
@@ -1744,14 +1744,14 @@ int smb_locking_andx(struct ksmbd_work *work)
 
 					if (timeout <= 0) {
 						spin_unlock(&conn->llist_lock);
-						read_unlock(&conn_list_lock);
+						up_read(&conn_list_lock);
 					}
 					goto out;
 				}
 			}
 			spin_unlock(&conn->llist_lock);
 		}
-		read_unlock(&conn_list_lock);
+		up_read(&conn_list_lock);
 
 out_check_cl:
 		if (same_zero_lock)
@@ -1844,7 +1844,7 @@ skip:
 			flock->fl_end = offset + length;
 
 		locked = 0;
-		read_lock(&conn_list_lock);
+		up_read(&conn_list_lock);
 		list_for_each_entry(conn, &conn_list, conns_list) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry(cmp_lock, &conn->lock_list, clist) {
@@ -1856,13 +1856,13 @@ skip:
 					 cmp_lock->end == offset + length)) {
 					locked = 1;
 					spin_unlock(&conn->llist_lock);
-					read_unlock(&conn_list_lock);
+					up_read(&conn_list_lock);
 					goto out_check_cl_unlck;
 				}
 			}
 			spin_unlock(&conn->llist_lock);
 		}
-		read_unlock(&conn_list_lock);
+		up_read(&conn_list_lock);
 
 out_check_cl_unlck:
 		if (!locked) {
