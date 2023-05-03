@@ -1747,7 +1747,7 @@ struct create_context *smb2_find_context_vals(void *open_req, const char *tag)
 			return ERR_PTR(-EINVAL);
 
 		name = (char *)cc + name_off;
-		if (memcmp(name, tag, name_len) == 0)
+		if (!strcmp(name, tag))
 			return cc;
 
 		remain_len -= next;
