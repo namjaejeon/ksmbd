@@ -481,3 +481,7 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.INHERITFLAGS
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.DYNAMIC
+        # smb2 credits test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.session_setup_credits_granted
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.single_req_credits_granted
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.skipped_mid
