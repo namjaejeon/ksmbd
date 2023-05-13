@@ -126,9 +126,13 @@ static inline struct user_namespace *file_mnt_user_ns(struct file *file)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+int ksmbd_vfs_lock_parent(struct dentry *parent, struct dentry *child);
+#else
 int ksmbd_vfs_lock_parent(struct mnt_idmap *idmap, struct dentry *parent,
 			  struct dentry *child);
 int ksmbd_vfs_may_delete(struct mnt_idmap *idmap, struct dentry *dentry);
+#endif
 int ksmbd_vfs_query_maximal_access(struct mnt_idmap *idmap,
 				   struct dentry *dentry, __le32 *daccess);
 #else
@@ -146,7 +150,11 @@ int ksmbd_vfs_write(struct ksmbd_work *work, struct ksmbd_file *fp,
 		    char *buf, size_t count, loff_t *pos, bool sync,
 		    ssize_t *written);
 int ksmbd_vfs_fsync(struct ksmbd_work *work, u64 fid, u64 p_id);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+int ksmbd_vfs_remove_file(struct ksmbd_work *work, const struct path *path);
+#else
 int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name);
+#endif
 int ksmbd_vfs_link(struct ksmbd_work *work,
 		   const char *oldname, const char *newname);
 int ksmbd_vfs_getattr(const struct path *path, struct kstat *stat);
@@ -162,8 +170,13 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   const char *de_name, int de_name_len,
 			   const char *dir_path);
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
+		     char *newname, int flags);
+#else
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 			char *newname);
+#endif
 int ksmbd_vfs_truncate(struct ksmbd_work *work,
 		       struct ksmbd_file *fp, loff_t size);
 struct srv_copychunk;
@@ -216,9 +229,15 @@ int ksmbd_vfs_remove_xattr(struct mnt_idmap *idmap,
 int ksmbd_vfs_remove_xattr(struct user_namespace *user_ns,
 #endif
 			   struct dentry *dentry, char *attr_name);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+int ksmbd_vfs_kern_path_locked(struct ksmbd_work *work, char *name,
+			       unsigned int flags, struct path *path,
+			       bool caseless);
+#else
 int ksmbd_vfs_kern_path(struct ksmbd_work *work,
 			char *name, unsigned int flags, struct path *path,
 			bool caseless);
+#endif
 struct dentry *ksmbd_vfs_kern_path_create(struct ksmbd_work *work,
 					  const char *name,
 					  unsigned int flags,
@@ -232,8 +251,12 @@ int ksmbd_vfs_fqar_lseek(struct ksmbd_file *fp, loff_t start, loff_t length,
 			 struct file_allocated_range_buffer *ranges,
 			 unsigned int in_count, unsigned int *out_count);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+int ksmbd_vfs_unlink(struct file *filp);
+#else
 int ksmbd_vfs_unlink(struct mnt_idmap *idmap, struct dentry *dir,
 		     struct dentry *dentry);
+#endif
 #else
 int ksmbd_vfs_unlink(struct user_namespace *user_ns,
 		     struct dentry *dir, struct dentry *dentry);
