@@ -601,7 +601,6 @@ static void destroy_previous_session(struct ksmbd_conn *conn,
 
 /**
  * smb2_get_name() - get filename string from on the wire smb format
- * @share:	ksmbd_share_config pointer
  * @src:	source buffer
  * @maxlen:	maxlen of source string
  * @local_nls:	nls_table pointer
@@ -609,8 +608,7 @@ static void destroy_previous_session(struct ksmbd_conn *conn,
  * Return:      matching converted filename on success, otherwise error ptr
  */
 static char *
-smb2_get_name(struct ksmbd_share_config *share, const char *src,
-	      const int maxlen, struct nls_table *local_nls)
+smb2_get_name(const char *src, const int maxlen, struct nls_table *local_nls)
 {
 	char *name;
 
@@ -2503,7 +2501,11 @@ static int smb2_creat(struct ksmbd_work *work, struct path *path, char *name,
 			return rc;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, name, 0, path, 0);
+#else
 	rc = ksmbd_vfs_kern_path(work, name, 0, path, 0);
+#endif
 	if (rc) {
 		pr_err("cannot get linux path (%s), err = %d\n",
 		       name, rc);
@@ -2652,8 +2654,7 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out1;
 		}
 
-		name = smb2_get_name(share,
-				     req->Buffer,
+		name = smb2_get_name(req->Buffer,
 				     le16_to_cpu(req->NameLength),
 				     work->conn->local_nls);
 		if (IS_ERR(name)) {
@@ -2826,8 +2827,16 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out1;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+#else
 	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+#endif
 	if (!rc) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+		file_present = true;
+#endif
+
 		if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE) {
 			/*
 			 * If file exists with under flags, return access
@@ -2836,7 +2845,9 @@ int smb2_open(struct ksmbd_work *work)
 			if (req->CreateDisposition == FILE_OVERWRITE_IF_LE ||
 			    req->CreateDisposition == FILE_OPEN_IF_LE) {
 				rc = -EACCES;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 				path_put(&path);
+#endif
 				goto err_out;
 			}
 
@@ -2844,23 +2855,19 @@ int smb2_open(struct ksmbd_work *work)
 				ksmbd_debug(SMB,
 					    "User does not have write permission\n");
 				rc = -EACCES;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 				path_put(&path);
+#endif
 				goto err_out;
 			}
 		} else if (d_is_symlink(path.dentry)) {
 			rc = -EACCES;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 			path_put(&path);
+#endif
 			goto err_out;
 		}
-	}
 
-	if (rc) {
-		if (rc != -ENOENT)
-			goto err_out;
-		ksmbd_debug(SMB, "can not get linux path for %s, rc = %d\n",
-			    name, rc);
-		rc = 0;
-	} else {
 		file_present = true;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
@@ -2871,7 +2878,14 @@ int smb2_open(struct ksmbd_work *work)
 #else
 		user_ns = NULL;
 #endif
+	} else {
+		if (rc != -ENOENT)
+			goto err_out;
+		ksmbd_debug(SMB, "can not get linux path for %s, rc = %d\n",
+			    name, rc);
+		rc = 0;
 	}
+
 	if (stream_name) {
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 			if (s_type == DATA_STREAM) {
@@ -3015,12 +3029,18 @@ int smb2_open(struct ksmbd_work *work)
 
 			if ((daccess & FILE_DELETE_LE) ||
 			    (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+				rc = inode_permission(idmap,
+						      d_inode(path.dentry->d_parent),
+						      MAY_EXEC | MAY_WRITE);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 				rc = ksmbd_vfs_may_delete(idmap,
 #else
 				rc = ksmbd_vfs_may_delete(user_ns,
 #endif
 							  path.dentry);
+#endif
 				if (rc)
 					goto err_out;
 			}
@@ -3418,8 +3438,15 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 err_out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	if (file_present || created) {
+		inode_unlock(d_inode(path.dentry->d_parent));
+		dput(path.dentry);
+	}
+#else
 	if (file_present || created)
 		path_put(&path);
+#endif
 	ksmbd_revert_fsids(work);
 err_out1:
 	if (rc) {
@@ -5745,6 +5772,77 @@ int smb2_echo(struct ksmbd_work *work)
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static int smb2_rename(struct ksmbd_work *work,
+		       struct ksmbd_file *fp,
+		       struct smb2_file_rename_info *file_info,
+		       struct nls_table *local_nls)
+{
+	struct ksmbd_share_config *share = fp->tcon->share_conf;
+	char *new_name = NULL;
+	int rc, flags = 0;
+
+	ksmbd_debug(SMB, "setting FILE_RENAME_INFO\n");
+	new_name = smb2_get_name(file_info->FileName,
+				 le32_to_cpu(file_info->FileNameLength),
+				 local_nls);
+	if (IS_ERR(new_name))
+		return PTR_ERR(new_name);
+
+	if (strchr(new_name, ':')) {
+		int s_type;
+		char *xattr_stream_name, *stream_name = NULL;
+		size_t xattr_stream_size;
+		int len;
+
+		rc = parse_stream_name(new_name, &stream_name, &s_type);
+		if (rc < 0)
+			goto out;
+
+		len = strlen(new_name);
+		if (len > 0 && new_name[len - 1] != '/') {
+			pr_err("not allow base filename in rename\n");
+			rc = -ESHARE;
+			goto out;
+		}
+
+		rc = ksmbd_vfs_xattr_stream_name(stream_name,
+						 &xattr_stream_name,
+						 &xattr_stream_size,
+						 s_type);
+		if (rc)
+			goto out;
+
+		rc = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp),
+					fp->filp->f_path.dentry,
+					xattr_stream_name,
+					NULL, 0, 0);
+		if (rc < 0) {
+			pr_err("failed to store stream name in xattr: %d\n",
+			       rc);
+			rc = -EINVAL;
+			goto out;
+		}
+
+		goto out;
+	}
+
+	ksmbd_debug(SMB, "new name %s\n", new_name);
+	if (ksmbd_share_veto_filename(share, new_name)) {
+		rc = -ENOENT;
+		ksmbd_debug(SMB, "Can't rename vetoed file: %s\n", new_name);
+		goto out;
+	}
+
+	if (!file_info->ReplaceIfExists)
+		flags = RENAME_NOREPLACE;
+
+	rc = ksmbd_vfs_rename(work, &fp->filp->f_path, new_name, flags);
+out:
+	kfree(new_name);
+	return rc;
+}
+#else
 static int smb2_rename(struct ksmbd_work *work,
 		       struct ksmbd_file *fp,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
@@ -5782,8 +5880,7 @@ static int smb2_rename(struct ksmbd_work *work,
 		goto out;
 	}
 
-	new_name = smb2_get_name(share,
-				 file_info->FileName,
+	new_name = smb2_get_name(file_info->FileName,
 				 le32_to_cpu(file_info->FileNameLength),
 				 local_nls);
 	if (IS_ERR(new_name)) {
@@ -5877,6 +5974,7 @@ out:
 		kfree(new_name);
 	return rc;
 }
+#endif
 
 static int smb2_create_link(struct ksmbd_work *work,
 			    struct ksmbd_share_config *share,
@@ -5898,8 +5996,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 	if (!pathname)
 		return -ENOMEM;
 
-	link_name = smb2_get_name(share,
-				  file_info->FileName,
+	link_name = smb2_get_name(file_info->FileName,
 				  le32_to_cpu(file_info->FileNameLength),
 				  local_nls);
 	if (IS_ERR(link_name) || S_ISDIR(file_inode(filp)->i_mode)) {
@@ -5915,18 +6012,29 @@ static int smb2_create_link(struct ksmbd_work *work,
 	}
 
 	ksmbd_debug(SMB, "target name is %s\n", target_name);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, link_name, LOOKUP_NO_SYMLINKS,
+					&path, 0);
+#else
 	rc = ksmbd_vfs_kern_path(work, link_name, LOOKUP_NO_SYMLINKS, &path, 0);
+#endif
 	if (rc) {
 		if (rc != -ENOENT)
 			goto out;
 		file_present = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	} else {
 		path_put(&path);
+#endif
 	}
 
 	if (file_info->ReplaceIfExists) {
 		if (file_present) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+			rc = ksmbd_vfs_remove_file(work, &path);
+#else
 			rc = ksmbd_vfs_remove_file(work, link_name);
+#endif
 			if (rc) {
 				rc = -EINVAL;
 				ksmbd_debug(SMB, "cannot delete %s\n",
@@ -5946,6 +6054,12 @@ static int smb2_create_link(struct ksmbd_work *work,
 	if (rc)
 		rc = -EINVAL;
 out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	if (file_present) {
+		inode_unlock(d_inode(path.dentry->d_parent));
+		path_put(&path);
+	}
+#endif
 	if (!IS_ERR(link_name))
 		kfree(link_name);
 	kfree(pathname);
@@ -6141,6 +6255,26 @@ static int set_end_of_file_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 	return 0;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
+			   struct smb2_file_rename_info *rename_info,
+			   unsigned int buf_len)
+{
+	if (!(fp->daccess & FILE_DELETE_LE)) {
+		pr_err("no right to delete : 0x%x\n", fp->daccess);
+		return -EACCES;
+	}
+
+	if (buf_len < (u64)sizeof(struct smb2_file_rename_info) +
+			le32_to_cpu(rename_info->FileNameLength))
+		return -EINVAL;
+
+	if (!le32_to_cpu(rename_info->FileNameLength))
+		return -EINVAL;
+
+	return smb2_rename(work, fp, rename_info, work->conn->local_nls);
+}
+#else
 static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 			   struct smb2_file_rename_info *rename_info,
 			   unsigned int buf_len)
@@ -6203,6 +6337,7 @@ next:
 #endif
 			   work->conn->local_nls);
 }
+#endif
 
 static int set_file_disposition_info(struct ksmbd_file *fp,
 				     struct smb2_file_disposition_info *file_info)
