@@ -5989,7 +5989,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 {
 	char *link_name = NULL, *target_name = NULL, *pathname = NULL;
 	struct path path;
-	bool file_present = true;
+	bool file_present = false;
 	int rc;
 
 	if (buf_len < (u64)sizeof(struct smb2_file_link_info) +
@@ -6026,9 +6026,9 @@ static int smb2_create_link(struct ksmbd_work *work,
 	if (rc) {
 		if (rc != -ENOENT)
 			goto out;
-		file_present = false;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	} else {
+		file_present = true;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 		path_put(&path);
 #endif
 	}
