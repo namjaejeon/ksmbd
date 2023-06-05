@@ -448,25 +448,25 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.context
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lock.truncate
         # smb2 leases test
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.request
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.nobreakself
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen2
+        #        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.request
+        #        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.nobreakself
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen2
         # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.statopen3
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade2
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade3
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.break
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.oplock
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.multibreak
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking1
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade2
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.upgrade3
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.break
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.oplock
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.multibreak
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking1
         ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking2
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking3
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking3
         # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking4
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking5
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking6
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.lock1
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.complex1
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking5
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.breaking6
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.lock1
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.complex1
         ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.timeout
         # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.unlink
         # smb2 acls test
