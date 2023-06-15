@@ -212,7 +212,7 @@ int ksmbd_vfs_setxattr(struct mnt_idmap *idmap,
 #else
 int ksmbd_vfs_setxattr(struct user_namespace *user_ns,
 #endif
-		       struct dentry *dentry, const char *attr_name,
+		       const struct path *path, const char *attr_name,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0)
 		       void *attr_value, size_t attr_size, int flags);
 #else
@@ -228,7 +228,7 @@ int ksmbd_vfs_remove_xattr(struct mnt_idmap *idmap,
 #else
 int ksmbd_vfs_remove_xattr(struct user_namespace *user_ns,
 #endif
-			   struct dentry *dentry, char *attr_name);
+			   const struct path *path, char *attr_name);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 int ksmbd_vfs_kern_path_locked(struct ksmbd_work *work, char *name,
 			       unsigned int flags, struct path *path,
@@ -278,24 +278,24 @@ int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout);
 void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_remove_acl_xattrs(struct mnt_idmap *idmap,
-				struct dentry *dentry);
+				const struct path *path);
 #else
 int ksmbd_vfs_remove_acl_xattrs(struct user_namespace *user_ns,
-				struct dentry *dentry);
+				const struct path *path);
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_remove_sd_xattrs(struct mnt_idmap *idmap,
 #else
 int ksmbd_vfs_remove_sd_xattrs(struct user_namespace *user_ns,
 #endif
-			       struct dentry *dentry);
+			       const struct path *path);
 int ksmbd_vfs_set_sd_xattr(struct ksmbd_conn *conn,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			   struct mnt_idmap *idmap,
 #else
 			   struct user_namespace *user_ns,
 #endif
-			   struct dentry *dentry,
+			   const struct path *path,
 			   struct smb_ntsd *pntsd, int len);
 int ksmbd_vfs_get_sd_xattr(struct ksmbd_conn *conn,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
@@ -307,14 +307,14 @@ int ksmbd_vfs_get_sd_xattr(struct ksmbd_conn *conn,
 			   struct smb_ntsd **pntsd);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_set_dos_attrib_xattr(struct mnt_idmap *idmap,
-				   struct dentry *dentry,
+				   const struct path *path,
 				   struct xattr_dos_attrib *da);
 int ksmbd_vfs_get_dos_attrib_xattr(struct mnt_idmap *idmap,
 				   struct dentry *dentry,
 				   struct xattr_dos_attrib *da);
 #else
 int ksmbd_vfs_set_dos_attrib_xattr(struct user_namespace *user_ns,
-				   struct dentry *dentry,
+				   const struct path *path,
 				   struct xattr_dos_attrib *da);
 int ksmbd_vfs_get_dos_attrib_xattr(struct user_namespace *user_ns,
 				   struct dentry *dentry,
@@ -322,15 +322,15 @@ int ksmbd_vfs_get_dos_attrib_xattr(struct user_namespace *user_ns,
 #endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_set_init_posix_acl(struct mnt_idmap *idmap,
-				 struct dentry *dentry);
+				 struct path *path);
 int ksmbd_vfs_inherit_posix_acl(struct mnt_idmap *idmap,
-				struct dentry *dentry,
+				struct path *path,
 				struct inode *parent_inode);
 #else
 int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
-				 struct dentry *dentry);
+				 struct path *path);
 int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
-				struct dentry *dentry,
+				struct path *path,
 				struct inode *parent_inode);
 #endif
 #endif /* __KSMBD_VFS_H__ */

@@ -1301,7 +1301,7 @@ pass:
 #else
 		ksmbd_vfs_set_sd_xattr(conn, user_ns,
 #endif
-				       path->dentry, pntsd, pntsd_size);
+				       path, pntsd, pntsd_size);
 		kfree(pntsd);
 	}
 
@@ -1551,9 +1551,9 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	newattrs.ia_mode = (inode->i_mode & ~0777) | (fattr.cf_mode & 0777);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	ksmbd_vfs_remove_acl_xattrs(idmap, path->dentry);
+	ksmbd_vfs_remove_acl_xattrs(idmap, path);
 #else
-	ksmbd_vfs_remove_acl_xattrs(user_ns, path->dentry);
+	ksmbd_vfs_remove_acl_xattrs(user_ns, path);
 #endif
 	/* Update posix acls */
 	if (IS_ENABLED(CONFIG_FS_POSIX_ACL) && fattr.cf_dacls) {
@@ -1620,13 +1620,13 @@ int set_info_sec(struct ksmbd_conn *conn, struct ksmbd_tree_connect *tcon,
 	if (test_share_config_flag(tcon->share_conf, KSMBD_SHARE_FLAG_ACL_XATTR)) {
 		/* Update WinACL in xattr */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		ksmbd_vfs_remove_sd_xattrs(idmap, path->dentry);
+		ksmbd_vfs_remove_sd_xattrs(idmap, path);
 		ksmbd_vfs_set_sd_xattr(conn, idmap,
 #else
-		ksmbd_vfs_remove_sd_xattrs(user_ns, path->dentry);
+		ksmbd_vfs_remove_sd_xattrs(user_ns, path);
 		ksmbd_vfs_set_sd_xattr(conn, user_ns,
 #endif
-				       path->dentry, pntsd, ntsd_len);
+				       path, pntsd, ntsd_len);
 	}
 
 out:

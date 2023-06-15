@@ -2315,7 +2315,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 #else
 				rc = ksmbd_vfs_remove_xattr(user_ns,
 #endif
-							    path->dentry,
+							    path,
 							    attr_name);
 
 				if (rc < 0) {
@@ -2334,7 +2334,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 #else
 			rc = ksmbd_vfs_setxattr(user_ns,
 #endif
-						path->dentry, attr_name, value,
+						path, attr_name, value,
 						le16_to_cpu(eabuf->EaValueLength), 0);
 			if (rc < 0) {
 				ksmbd_debug(SMB,
@@ -2400,9 +2400,9 @@ static noinline int smb2_set_stream_name_xattr(const struct path *path,
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	rc = ksmbd_vfs_setxattr(idmap, path->dentry,
+	rc = ksmbd_vfs_setxattr(idmap, path,
 #else
-	rc = ksmbd_vfs_setxattr(user_ns, path->dentry,
+	rc = ksmbd_vfs_setxattr(user_ns, path,
 #endif
 				xattr_stream_name, NULL, 0, 0);
 	if (rc < 0)
@@ -2437,11 +2437,9 @@ static int smb2_remove_smb_xattrs(const struct path *path)
 		    !strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
 			     STREAM_PREFIX_LEN)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			err = ksmbd_vfs_remove_xattr(idmap, path->dentry,
-						     name);
+			err = ksmbd_vfs_remove_xattr(idmap, path, name);
 #else
-			err = ksmbd_vfs_remove_xattr(user_ns, path->dentry,
-						     name);
+			err = ksmbd_vfs_remove_xattr(user_ns, path, name);
 #endif
 			if (err)
 				ksmbd_debug(SMB, "remove xattr failed : %s\n",
@@ -2490,10 +2488,10 @@ static void smb2_new_xattrs(struct ksmbd_tree_connect *tcon, const struct path *
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	rc = ksmbd_vfs_set_dos_attrib_xattr(mnt_idmap(path->mnt),
-					    path->dentry, &da);
+					    path, &da);
 #else
 	rc = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path->mnt),
-					    path->dentry, &da);
+					    path, &da);
 #endif
 	if (rc)
 		ksmbd_debug(SMB, "failed to store file attribute into xattr\n");
@@ -3157,11 +3155,11 @@ int smb2_open(struct ksmbd_work *work)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		posix_acl_rc = ksmbd_vfs_inherit_posix_acl(idmap,
-							   path.dentry,
+							   &path,
 							   d_inode(path.dentry->d_parent));
 #else
 		posix_acl_rc = ksmbd_vfs_inherit_posix_acl(user_ns,
-							   path.dentry,
+							   &path,
 							   d_inode(path.dentry->d_parent));
 #endif
 		if (posix_acl_rc)
@@ -3179,10 +3177,10 @@ int smb2_open(struct ksmbd_work *work)
 				if (posix_acl_rc)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 					ksmbd_vfs_set_init_posix_acl(idmap,
-								     path.dentry);
+								     &path);
 #else
 					ksmbd_vfs_set_init_posix_acl(user_ns,
-								     path.dentry);
+								     &path);
 #endif
 
 				if (test_share_config_flag(work->tcon->share_conf,
@@ -3235,7 +3233,7 @@ int smb2_open(struct ksmbd_work *work)
 #else
 								    user_ns,
 #endif
-								    path.dentry,
+								    &path,
 								    pntsd,
 								    pntsd_size);
 					kfree(pntsd);
@@ -5852,7 +5850,7 @@ static int smb2_rename(struct ksmbd_work *work,
 			goto out;
 
 		rc = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp),
-					fp->filp->f_path.dentry,
+					&fp->filp->f_path,
 					xattr_stream_name,
 					NULL, 0, 0);
 		if (rc < 0) {
@@ -5955,7 +5953,7 @@ static int smb2_rename(struct ksmbd_work *work,
 #else
 		rc = ksmbd_vfs_setxattr(user_ns,
 #endif
-					fp->filp->f_path.dentry,
+					&fp->filp->f_path,
 					xattr_stream_name,
 					NULL, 0, 0);
 		if (rc < 0) {
@@ -6177,7 +6175,7 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 #else
 		rc = ksmbd_vfs_set_dos_attrib_xattr(user_ns,
 #endif
-						    filp->f_path.dentry, &da);
+						    &filp->f_path, &da);
 		if (rc)
 			ksmbd_debug(SMB,
 				    "failed to restore file attribute in EA\n");
@@ -8125,7 +8123,7 @@ static inline int fsctl_set_sparse(struct ksmbd_work *work, u64 id,
 #else
 		ret = ksmbd_vfs_set_dos_attrib_xattr(user_ns,
 #endif
-						     fp->filp->f_path.dentry, &da);
+						     &fp->filp->f_path, &da);
 		if (ret)
 			fp->f_ci->m_fattr = old_fattr;
 	}

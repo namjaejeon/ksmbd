@@ -2612,7 +2612,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			da.create_time = fp->create_time;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+							     &path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
@@ -7359,7 +7359,7 @@ static int create_dir(struct ksmbd_work *work)
 				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+							     &path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
 			path_put(&path);
@@ -7531,7 +7531,7 @@ int smb_mkdir(struct ksmbd_work *work)
 				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+							     &path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			path_put(&path);
@@ -8271,7 +8271,7 @@ int smb_open_andx(struct ksmbd_work *work)
 				XATTR_DOSINFO_ITIME;
 
 			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+							     &path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
