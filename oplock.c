@@ -1233,8 +1233,8 @@ found:
 			goto out;
 		}
 op_next:
-		opinfo_put(opinfo);
 		rcu_read_lock();
+		opinfo_put(opinfo);
 	}
 	rcu_read_unlock();
 
@@ -1561,8 +1561,8 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work, struct ksmbd_file *fp,
 		brk_op->open_trunc = is_trunc;
 		oplock_break(brk_op, SMB2_OPLOCK_LEVEL_NONE);
 next:
-		opinfo_conn_put(brk_op);
 		rcu_read_lock();
+		opinfo_conn_put(brk_op);
 	}
 	rcu_read_unlock();
 
@@ -1986,8 +1986,8 @@ found:
 			goto out;
 		}
 op_next:
-		opinfo_put(opinfo);
 		rcu_read_lock();
+		opinfo_put(opinfo);
 	}
 	rcu_read_unlock();
 
