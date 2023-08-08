@@ -164,19 +164,21 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name,
 int ksmbd_vfs_symlink(struct ksmbd_work *work,
 		      const char *name, const char *symname);
 int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
+			   struct mnt_idmap *idmap,
+#else
 int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   struct user_namespace *user_ns,
+#endif
 			   struct ksmbd_kstat *ksmbd_kstat,
 			   const char *de_name, int de_name_len,
 			   const char *dir_path);
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 		     char *newname, int flags);
-#else
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 			char *newname);
-#endif
 int ksmbd_vfs_truncate(struct ksmbd_work *work,
 		       struct ksmbd_file *fp, loff_t size);
 struct srv_copychunk;
@@ -233,11 +235,10 @@ int ksmbd_vfs_remove_xattr(struct user_namespace *user_ns,
 int ksmbd_vfs_kern_path_locked(struct ksmbd_work *work, char *name,
 			       unsigned int flags, struct path *parent_path,
 			       struct path *path, bool caseless);
-#else
+#endif
 int ksmbd_vfs_kern_path(struct ksmbd_work *work,
 			char *name, unsigned int flags, struct path *path,
 			bool caseless);
-#endif
 struct dentry *ksmbd_vfs_kern_path_create(struct ksmbd_work *work,
 					  const char *name,
 					  unsigned int flags,
