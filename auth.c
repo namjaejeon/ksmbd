@@ -1368,9 +1368,13 @@ static struct scatterlist *ksmbd_init_sg(struct kvec *iov, unsigned int nvec,
 {
 	struct scatterlist *sg;
 	unsigned int assoc_data_len = sizeof(struct smb2_transform_hdr) - 20;
-	int i, nr_entries[3] = {0}, total_entries = 0, sg_idx = 0;
+	int i, *nr_entries, total_entries = 0, sg_idx = 0;
 
 	if (!nvec)
+		return NULL;
+
+	nr_entries = kcalloc(nvec, sizeof(int), GFP_KERNEL);
+	if (!nr_entries)
 		return NULL;
 
 	for (i = 0; i < nvec - 1; i++) {

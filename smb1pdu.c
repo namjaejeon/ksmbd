@@ -2930,7 +2930,7 @@ int smb_read_andx(struct ksmbd_work *work)
 		goto out;
 	}
 
-	nbytes = ksmbd_vfs_read(work, fp, count, &pos);
+	nbytes = ksmbd_vfs_read(work, fp, count, &pos, work->aux_payload_buf);
 	if (nbytes < 0) {
 		err = nbytes;
 		goto out;
@@ -3228,9 +3228,6 @@ int smb_echo(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "SMB_COM_ECHO called with echo count %u\n",
 			le16_to_cpu(req->EchoCount));
 
-	if (le16_to_cpu(req->EchoCount) > 1)
-		work->multiRsp = 1;
-
 	data_count = le16_to_cpu(req->ByteCount);
 	/* send echo response to server */
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
@@ -3251,7 +3248,6 @@ int smb_echo(struct ksmbd_work *work)
 
 	/* Last echo response */
 	rsp->SequenceNumber = cpu_to_le16(i);
-	work->multiRsp = 0;
 
 	return 0;
 }
