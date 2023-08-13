@@ -156,7 +156,7 @@ void smb2_set_err_rsp(struct ksmbd_work *work)
 		err_rsp->ByteCount = 0;
 		err_rsp->ErrorData[0] = 0;
 		ksmbd_iov_pin_rsp(work, (void *)err_rsp,
-				  work->conn->vals->header_size +
+				  __SMB2_HEADER_STRUCTURE_SIZE +
 				  SMB2_ERROR_STRUCTURE_SIZE2);
 	}
 }
@@ -714,14 +714,15 @@ void smb2_send_interim_resp(struct ksmbd_work *work, __le32 status)
 
 	if (allocate_interim_rsp_buf(in_work)) {
 		pr_err("smb_allocate_rsp_buf failed!\n");
-		ksmbd_free_work_struct(work);
+		ksmbd_free_work_struct(in_work);
 		return;
 	}
 
-	memcpy(in_work->response_buf, work->response_buf,
+	in_work->conn = work->conn;
+	memcpy(smb2_get_msg(in_work->response_buf), ksmbd_resp_buf_next(work),
 	       __SMB2_HEADER_STRUCTURE_SIZE);
 
-	rsp_hdr = in_work->response_buf;
+	rsp_hdr = smb2_get_msg(in_work->response_buf);
 	smb2_set_err_rsp(in_work);
 	rsp_hdr->Status = status;
 
