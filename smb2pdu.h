@@ -912,7 +912,7 @@ struct smb2_ioctl_req {
 	__le32 MaxOutputResponse;
 	__le32 Flags;
 	__le32 Reserved2;
-	__u8   Buffer[1];
+	__u8   Buffer[];
 } __packed;
 
 struct smb2_ioctl_rsp {
@@ -928,7 +928,7 @@ struct smb2_ioctl_rsp {
 	__le32 OutputCount;
 	__le32 Flags;
 	__le32 Reserved2;
-	__u8   Buffer[1];
+	__u8   Buffer[];
 } __packed;
 
 struct validate_negotiate_info_req {
