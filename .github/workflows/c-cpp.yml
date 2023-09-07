@@ -93,7 +93,7 @@ jobs:
         sudo mkdir -m 777 -p /mnt/test1
         sudo mkdir -m 777 -p /mnt/test2
         sudo mkdir -m 777 -p /mnt/test3
-        ksmbd.adduser -i ./ksmbdpwd.db -a testuser -p 1234
+        ksmbd.adduser -P ./ksmbdpwd.db -a testuser -p 1234
         git clone https://github.com/cifsd-team/cifsd-test-result
         cp cifsd-test-result/testsuites/smb.conf .
         sudo ksmbd.mountd -n --c=./smb.conf --u=./ksmbdpwd.db&
