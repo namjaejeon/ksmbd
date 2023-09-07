@@ -269,28 +269,28 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 			       fp->stream.name);
 	}
 
-	if (atomic_dec_and_test(&ci->m_count)) {
-		write_lock(&ci->m_lock);
-		if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) {
+	write_lock(&ci->m_lock);
+	if (ci->m_flags & (S_DEL_ON_CLS | S_DEL_PENDING)) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
-			dentry = filp->f_path.dentry;
-			dir = dentry->d_parent;
+		dentry = filp->f_path.dentry;
+		dir = dentry->d_parent;
 #endif
-			ci->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
-			write_unlock(&ci->m_lock);
+		ci->m_flags &= ~(S_DEL_ON_CLS | S_DEL_PENDING);
+		write_unlock(&ci->m_lock);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-			ksmbd_vfs_unlink(filp);
+		ksmbd_vfs_unlink(filp);
 #else
-			ksmbd_vfs_unlink(file_mnt_idmap(filp), dir, dentry);
+		ksmbd_vfs_unlink(file_mnt_idmap(filp), dir, dentry);
 #endif
 #else
-			ksmbd_vfs_unlink(file_mnt_user_ns(filp), dir, dentry);
+		ksmbd_vfs_unlink(file_mnt_user_ns(filp), dir, dentry);
 #endif
-			write_lock(&ci->m_lock);
-		}
-		write_unlock(&ci->m_lock);
+		write_lock(&ci->m_lock);
+	}
+	write_unlock(&ci->m_lock);
 
+	if (atomic_dec_and_test(&ci->m_count)) {
 		ksmbd_inode_free(ci);
 	}
 }
