@@ -637,6 +637,11 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 		goto err_out;
 	}
 
+	if (fp->f_ci->m_flags & S_DEL_ON_CLS) {
+		ret = -ENOENT;
+		goto err_out;
+	}
+
 	ret = __open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
 	if (ret) {
 		ksmbd_inode_put(fp->f_ci);
