@@ -271,9 +271,9 @@ struct ksmbd_session *ksmbd_session_lookup(struct ksmbd_conn *conn,
 
 	down_read(&conn->session_lock);
 	sess = xa_load(&conn->sessions, id);
-	up_read(&conn->session_lock);
 	if (sess)
 		sess->last_active = jiffies;
+	up_read(&conn->session_lock);
 	return sess;
 }
 
