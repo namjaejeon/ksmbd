@@ -214,6 +214,8 @@ static void __handle_ksmbd_work(struct ksmbd_work *work,
 		}
 
 		rc = __process_request(work, conn, &command);
+		if (work->tcon)
+			ksmbd_tree_connect_put(work->tcon);
 		if (rc == SERVER_HANDLER_ABORT)
 			break;
 
