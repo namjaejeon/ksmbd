@@ -5995,6 +5995,7 @@ static int find_first(struct ksmbd_work *work)
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
 	if (!dir_fp->readdir_data.dirent) {
+		path_put(&path);
 		rc = -ENOMEM;
 		goto err_free_dirpath;
 	}
@@ -6010,6 +6011,7 @@ static int find_first(struct ksmbd_work *work)
 
 	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
 	if (!d_info.smb1_name) {
+		path_put(&path);
 		rc = -ENOMEM;
 		goto err_out;
 	}
@@ -6023,6 +6025,7 @@ static int find_first(struct ksmbd_work *work)
 	struct_sz = readdir_info_level_struct_sz(le16_to_cpu(req_params->InformationLevel));
 
 	if (struct_sz < 0) {
+		path_put(&path);
 		rc = -EFAULT;
 		goto err_out;
 	}
@@ -6044,8 +6047,10 @@ static int find_first(struct ksmbd_work *work)
 				&d_info,
 				srch_ptr,
 				smb_populate_readdir_entry);
-		if (rc)
+		if (rc) {
+			path_put(&path);
 			goto err_out;
+		}
 	}
 
 	do {
@@ -6055,6 +6060,7 @@ static int find_first(struct ksmbd_work *work)
 			rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
 			if (rc < 0) {
 				ksmbd_debug(SMB, "err : %d\n", rc);
+				path_put(&path);
 				goto err_out;
 			}
 
@@ -6119,13 +6125,16 @@ static int find_first(struct ksmbd_work *work)
 				&ksmbd_kstat);
 			if (rc == -ENOSPC)
 				break;
-			else if (rc)
+			else if (rc) {
+				path_put(&path);
 				goto err_out;
+			}
 		}
 	} while (d_info.out_buf_len >= 0);
 
 	if (!d_info.data_count && *srch_ptr) {
 		ksmbd_debug(SMB, "There is no entry matched with the search pattern\n");
+		path_put(&path);
 		rc = -ENOENT;
 		goto err_out;
 	}
@@ -6173,6 +6182,7 @@ static int find_first(struct ksmbd_work *work)
 			'\0', 2);
 	inc_rfc1001_len(rsp_hdr, (10 * 2 + d_info.data_count +
 				params_count + 1 + data_alignment_offset));
+	path_put(&path);
 	kfree(srch_ptr);
 	kfree(d_info.smb1_name);
 	ksmbd_revert_fsids(work);
