@@ -8406,6 +8406,143 @@ out:
 }
 
 /**
+ * smb_query_information_disk() - determine capacity and remaining free space
+ * @work:	smb work containing command
+ *
+ * Return:	0 on success, otherwise error
+ */
+int smb_query_information_disk(struct ksmbd_work *work)
+{
+	struct smb_hdr *req = work->request_buf;
+	struct smb_com_query_information_disk_rsp *rsp = work->response_buf;
+	struct ksmbd_share_config *share = work->tcon->share_conf;
+	struct ksmbd_tree_connect *tree_conn;
+	struct kstatfs stfs;
+	struct path path;
+	int err = 0;
+
+	u16 blocks_per_unit, bytes_per_block, total_units, free_units;
+	u64 total_blocks, free_blocks;
+	u32 block_size, unit_size;
+
+	if (req->WordCount) {
+		err = -EINVAL;
+		goto out;
+	}
+
+	tree_conn = ksmbd_tree_conn_lookup(work->sess, le16_to_cpu(req->Tid));
+	if (!tree_conn) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	share = tree_conn->share_conf;
+
+	if (test_share_config_flag(share, KSMBD_SHARE_FLAG_PIPE)) {
+		err = -ENOENT;
+		goto out;
+	}
+
+	if (ksmbd_override_fsids(work)) {
+		err = -ENOMEM;
+		goto out;
+	}
+
+	err = kern_path(share->path, LOOKUP_NO_SYMLINKS, &path);
+	if (err)
+		goto out_fsids;
+
+	err = vfs_statfs(&path, &stfs);
+	if (err) {
+		pr_err("cannot do stat of path %s\n", share->path);
+		goto out_path;
+	}
+
+	unit_size = stfs.f_bsize / stfs.f_frsize;
+	block_size = stfs.f_bsize;
+	total_blocks = stfs.f_blocks;
+	free_blocks = stfs.f_bavail;
+
+	/*
+	 * clamp block size to at most 512 KB for compatibility with
+	 * older clients
+	 */
+	while (block_size > 512) {
+		block_size >>= 1;
+		unit_size <<= 1;
+	}
+
+	/* adjust blocks and sizes until they fit into a u16 */
+	while (total_blocks >= 0xFFFF) {
+		total_blocks >>= 1;
+		free_blocks >>= 1;
+		if ((unit_size <<= 1) > 0xFFFF) {
+			unit_size >>= 1;
+			total_blocks = 0xFFFF;
+			free_blocks <<= 1;
+			break;
+		}
+	}
+
+	total_units = (total_blocks >= 0xFFFF) ? 0xFFFF : (u16)total_blocks;
+	free_units = (free_blocks >= 0xFFFF) ? 0xFFFF : (u16)free_blocks;
+	bytes_per_block = (u16)block_size;
+	blocks_per_unit = (u16)unit_size;
+
+	rsp->hdr.WordCount = 5;
+
+	rsp->TotalUnits = total_units;
+	rsp->BlocksPerUnit = blocks_per_unit;
+	rsp->BlockSize = bytes_per_block;
+	rsp->FreeUnits = free_units;
+	rsp->Pad = 0;
+	rsp->ByteCount = 0;
+
+	inc_rfc1001_len(rsp, rsp->hdr.WordCount * 2);
+
+out_path:
+	path_put(&path);
+out_fsids:
+	ksmbd_revert_fsids(work);
+out:
+	if (err) {
+		switch (err) {
+		case -EINVAL:
+			rsp->hdr.Status.CifsError = STATUS_NOT_SUPPORTED;
+			break;
+		case -ENOMEM:
+			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+			break;
+		case -ENOENT:
+			rsp->hdr.Status.CifsError = STATUS_NO_SUCH_FILE;
+			break;
+		case -EBUSY:
+			rsp->hdr.Status.CifsError = STATUS_DELETE_PENDING;
+			break;
+		case -EACCES:
+		case -EXDEV:
+			rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
+			break;
+		case -EBADF:
+			rsp->hdr.Status.CifsError = STATUS_FILE_CLOSED;
+			break;
+		case -EFAULT:
+			rsp->hdr.Status.CifsError = STATUS_INVALID_LEVEL;
+			break;
+		case -EOPNOTSUPP:
+			rsp->hdr.Status.CifsError = STATUS_NOT_IMPLEMENTED;
+			break;
+		case -EIO:
+			rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+			break;
+		}
+		ksmbd_debug(SMB, "%s failed with error %d\n", __func__, err);
+	}
+
+	return err;
+}
+
+/**
  * smb1_is_sign_req() - handler for checking packet signing status
  * @work:	smb work containing notify command buffer
  *
