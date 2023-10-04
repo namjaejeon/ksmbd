@@ -4618,6 +4618,21 @@ static int query_fs_info(struct ksmbd_work *work)
 		sinfo->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
 		break;
 	}
+	case SMB_QUERY_FS_FULL_SIZE_INFO:
+	{
+		struct filesystem_full_info *sinfo;
+
+		ksmbd_debug(SMB, "GOT SMB_QUERY_FS_FULL_SIZE_INFO\n");
+		rsp->t2.TotalDataCount = cpu_to_le16(32);
+		sinfo = (struct filesystem_full_info *)(&rsp->Pad + 1);
+		sinfo->BytesPerSector = cpu_to_le32(stfs.f_bsize);
+		sinfo->SectorsPerAllocationUnit =
+			cpu_to_le32(stfs.f_bsize/sinfo->BytesPerSector);
+		sinfo->TotalAllocationUnits = cpu_to_le64(stfs.f_blocks);
+		sinfo->FreeAllocationUnits = cpu_to_le64(stfs.f_bfree);
+		sinfo->ActualAvailableUnits = cpu_to_le64(stfs.f_bavail);
+		break;
+	}
 	case SMB_QUERY_FS_DEVICE_INFO:
 	{
 		struct filesystem_device_info *fdi;
