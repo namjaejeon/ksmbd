@@ -1676,7 +1676,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 		list_del(&smb_lock->llist);
 		/* check locks in connections */
 		down_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		list_for_each_entry(conn, &global_conn_list, conn_entry) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=
@@ -1845,7 +1845,7 @@ skip:
 
 		locked = 0;
 		up_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		list_for_each_entry(conn, &global_conn_list, conn_entry) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry(cmp_lock, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=

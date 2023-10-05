@@ -1717,6 +1717,8 @@ int smb2_sess_setup(struct ksmbd_work *work)
 	} else if (conn->dialect >= SMB30_PROT_ID &&
 		   (server_conf.flags & KSMBD_GLOBAL_FLAG_SMB3_MULTICHANNEL) &&
 		   req->Flags & SMB2_SESSION_REQ_FLAG_BINDING) {
+		struct ksmbd_conn *master_conn;
+
 		u64 sess_id = le64_to_cpu(req->hdr.SessionId);
 
 		sess = ksmbd_session_lookup_slowpath(sess_id);
@@ -1767,6 +1769,16 @@ int smb2_sess_setup(struct ksmbd_work *work)
 			goto out_err;
 		}
 
+		master_conn = ksmbd_find_master_conn(conn, sess_id);
+		if (!master_conn) {
+			rc = -ENOENT;
+			goto out_err;
+		}
+
+		conn->master_conn = master_conn;
+		ksmbd_conn_lock(master_conn);
+		list_add(&conn->bind_conn_entry, &master_conn->bind_conn_list);
+		ksmbd_conn_unlock(master_conn);
 		conn->binding = true;
 	} else if ((conn->dialect < SMB30_PROT_ID ||
 		    server_conf.flags & KSMBD_GLOBAL_FLAG_SMB3_MULTICHANNEL) &&
@@ -2215,7 +2227,11 @@ int smb2_session_logoff(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 	sess_id = le64_to_cpu(req->hdr.SessionId);
-	ksmbd_all_conn_set_status(sess_id, KSMBD_SESS_NEED_RECONNECT);
+	if (conn->master_conn)
+		ksmbd_conn_lock(conn->master_conn);
+	ksmbd_all_conn_set_status(conn, sess_id, KSMBD_SESS_NEED_RECONNECT);
+	if (conn->master_conn)
+		ksmbd_conn_unlock(conn->master_conn);
 	ksmbd_conn_unlock(conn);
 
 	ksmbd_close_session_fds(work);
@@ -2238,7 +2254,7 @@ int smb2_session_logoff(struct ksmbd_work *work)
 
 	ksmbd_free_user(sess->user);
 	sess->user = NULL;
-	ksmbd_all_conn_set_status(sess_id, KSMBD_SESS_NEED_NEGOTIATE);
+	ksmbd_all_conn_set_status(conn, sess_id, KSMBD_SESS_NEED_NEGOTIATE);
 
 	rsp->StructureSize = cpu_to_le16(4);
 	err = ksmbd_iov_pin_rsp(work, rsp, sizeof(struct smb2_logoff_rsp));
@@ -7572,7 +7588,7 @@ int smb2_lock(struct ksmbd_work *work)
 		nolock = 1;
 		/* check locks in connection list */
 		down_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		list_for_each_entry(conn, &global_conn_list, conn_entry) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=

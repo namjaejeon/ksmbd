@@ -22,7 +22,7 @@ static DEFINE_MUTEX(init_lock);
 
 static struct ksmbd_conn_ops default_conn_ops;
 
-LIST_HEAD(conn_list);
+LIST_HEAD(global_conn_list);
 DECLARE_RWSEM(conn_list_lock);
 
 /**
@@ -36,7 +36,7 @@ DECLARE_RWSEM(conn_list_lock);
 void ksmbd_conn_free(struct ksmbd_conn *conn)
 {
 	down_write(&conn_list_lock);
-	list_del(&conn->conns_list);
+	list_del(&conn->conn_entry);
 	up_write(&conn_list_lock);
 
 	xa_destroy(&conn->sessions);
@@ -80,7 +80,9 @@ struct ksmbd_conn *ksmbd_conn_alloc(void)
 
 	init_waitqueue_head(&conn->req_running_q);
 	init_waitqueue_head(&conn->r_count_q);
-	INIT_LIST_HEAD(&conn->conns_list);
+	INIT_LIST_HEAD(&conn->conn_entry);
+	INIT_LIST_HEAD(&conn->bind_conn_entry);
+	INIT_LIST_HEAD(&conn->bind_conn_list);
 	INIT_LIST_HEAD(&conn->requests);
 	INIT_LIST_HEAD(&conn->async_requests);
 	spin_lock_init(&conn->request_lock);
@@ -94,7 +96,7 @@ struct ksmbd_conn *ksmbd_conn_alloc(void)
 	init_rwsem(&conn->session_lock);
 
 	down_write(&conn_list_lock);
-	list_add(&conn->conns_list, &conn_list);
+	list_add(&conn->conn_entry, &global_conn_list);
 	up_write(&conn_list_lock);
 	return conn;
 }
@@ -105,7 +107,7 @@ bool ksmbd_conn_lookup_dialect(struct ksmbd_conn *c)
 	bool ret = false;
 
 	down_read(&conn_list_lock);
-	list_for_each_entry(t, &conn_list, conns_list) {
+	list_for_each_entry(t, &global_conn_list, conn_entry) {
 		if (memcmp(t->ClientGUID, c->ClientGUID, SMB2_CLIENT_GUID_SIZE))
 			continue;
 
@@ -171,37 +173,65 @@ void ksmbd_conn_unlock(struct ksmbd_conn *conn)
 	mutex_unlock(&conn->srv_mutex);
 }
 
-void ksmbd_all_conn_set_status(u64 sess_id, u32 status)
+struct ksmbd_conn *ksmbd_find_master_conn(struct ksmbd_conn *bind_conn,
+					  u64 sess_id)
 {
-	struct ksmbd_conn *conn;
+	struct ksmbd_conn *master_conn;
 
 	down_read(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, conns_list) {
-		if (conn->binding || xa_load(&conn->sessions, sess_id))
-			WRITE_ONCE(conn->status, status);
+	list_for_each_entry(master_conn, &global_conn_list, conn_entry) {
+		if (bind_conn == master_conn)
+			continue;
+		if (xa_load(&master_conn->sessions, sess_id)) {
+			up_read(&conn_list_lock);
+			return master_conn;
+		}
 	}
 	up_read(&conn_list_lock);
+
+	return NULL;
+}
+
+void ksmbd_all_conn_set_status(struct ksmbd_conn *conn, u64 sess_id, u32 status)
+{
+	struct ksmbd_conn *master_conn =
+		conn->master_conn ? conn->master_conn : conn;
+	struct ksmbd_conn *bind_conn;
+
+	if (conn->master_conn)
+		ksmbd_conn_lock(conn->master_conn);
+	list_for_each_entry(bind_conn, &master_conn->bind_conn_list,
+			    bind_conn_entry)
+			WRITE_ONCE(bind_conn->status, status);
+	WRITE_ONCE(master_conn->status, status);
+	if (conn->master_conn)
+		ksmbd_conn_unlock(conn->master_conn);
 }
 
 void ksmbd_conn_wait_idle(struct ksmbd_conn *conn, u64 sess_id)
 {
+	struct ksmbd_conn *master_conn =
+		conn->master_conn ? conn->master_conn : conn;
 	struct ksmbd_conn *bind_conn;
 
 	wait_event(conn->req_running_q, atomic_read(&conn->req_running) < 2);
 
-	down_read(&conn_list_lock);
-	list_for_each_entry(bind_conn, &conn_list, conns_list) {
+	ksmbd_conn_lock(master_conn);
+	list_for_each_entry(bind_conn, &master_conn->bind_conn_list,
+			    bind_conn_entry) {
 		if (bind_conn == conn)
 			continue;
 
-		if ((bind_conn->binding || xa_load(&bind_conn->sessions, sess_id)) &&
-		    !ksmbd_conn_releasing(bind_conn) &&
-		    atomic_read(&bind_conn->req_running)) {
+		if (!ksmbd_conn_releasing(bind_conn) &&
+		    atomic_read(&bind_conn->req_running))
 			wait_event(bind_conn->req_running_q,
-				atomic_read(&bind_conn->req_running) == 0);
-		}
+				   atomic_read(&bind_conn->req_running) == 0);
 	}
-	up_read(&conn_list_lock);
+
+	if (conn->master_conn)
+		wait_event(master_conn->req_running_q,
+			   atomic_read(&master_conn->req_running) == 0);
+	ksmbd_conn_unlock(master_conn);
 }
 
 int ksmbd_conn_write(struct ksmbd_work *work)
@@ -482,7 +512,7 @@ static void stop_sessions(void)
 
 again:
 	down_read(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, conns_list) {
+	list_for_each_entry(conn, &global_conn_list, conn_entry) {
 		struct task_struct *task;
 
 		t = conn->transport;
@@ -499,7 +529,7 @@ again:
 	}
 	up_read(&conn_list_lock);
 
-	if (!list_empty(&conn_list)) {
+	if (!list_empty(&global_conn_list)) {
 		schedule_timeout_interruptible(HZ / 10); /* 100ms */
 		goto again;
 	}

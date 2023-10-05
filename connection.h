@@ -49,7 +49,7 @@ struct ksmbd_conn {
 	struct ksmbd_transport		*transport;
 	struct nls_table		*local_nls;
 	struct unicode_map		*um;
-	struct list_head		conns_list;
+	struct list_head		conn_entry;
 	struct rw_semaphore		session_lock;
 	/* smb session 1 per user */
 	struct xarray			sessions;
@@ -105,6 +105,9 @@ struct ksmbd_conn {
 	bool				signing_negotiated;
 	__le16				signing_algorithm;
 	bool				binding;
+	void				*master_conn;
+	struct list_head		bind_conn_entry;
+	struct list_head		bind_conn_list;
 };
 
 struct ksmbd_conn_ops {
@@ -141,7 +144,7 @@ struct ksmbd_transport {
 #define KSMBD_TCP_SEND_TIMEOUT	(5 * HZ)
 #define KSMBD_TCP_PEER_SOCKADDR(c)	((struct sockaddr *)&((c)->peer_addr))
 
-extern struct list_head conn_list;
+extern struct list_head global_conn_list;
 extern struct rw_semaphore conn_list_lock;
 
 bool ksmbd_conn_alive(struct ksmbd_conn *conn);
@@ -166,6 +169,9 @@ int ksmbd_conn_transport_init(void);
 void ksmbd_conn_transport_destroy(void);
 void ksmbd_conn_lock(struct ksmbd_conn *conn);
 void ksmbd_conn_unlock(struct ksmbd_conn *conn);
+struct ksmbd_conn *ksmbd_find_master_conn(struct ksmbd_conn *bind_conn,
+					  u64 sess_id);
+void ksmbd_all_conn_set_status(struct ksmbd_conn *conn, u64 sess_id, u32 status);
 
 /*
  * WARNING
@@ -227,6 +233,4 @@ static inline void ksmbd_conn_set_releasing(struct ksmbd_conn *conn)
 {
 	WRITE_ONCE(conn->status, KSMBD_SESS_RELEASING);
 }
-
-void ksmbd_all_conn_set_status(u64 sess_id, u32 status);
 #endif /* __CONNECTION_H__ */
