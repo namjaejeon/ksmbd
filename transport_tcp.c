@@ -235,7 +235,7 @@ static int ksmbd_tcp_new_connection(struct socket *client_sk)
 			 "%pI4", &((struct sockaddr_in *)csin)->sin_addr);
 	else
 		snprintf(conn->client_name, sizeof(conn->client_name),
-			 "%pI6c", &((struct sockaddr_in6 *)csin)->sin6_addr);
+			 "%pI6", &((struct sockaddr_in6 *)csin)->sin6_addr);
 
 	KSMBD_TRANS(t)->handler = kthread_run(ksmbd_conn_handler_loop,
 					      conn,

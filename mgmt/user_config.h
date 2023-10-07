@@ -25,6 +25,13 @@ static inline bool user_guest(struct ksmbd_user *user)
 	return user->flags & KSMBD_USER_FLAG_GUEST_ACCOUNT;
 }
 
+static inline int user_anonymous(struct ksmbd_user *user)
+{
+	if (user->name[0] == '\0')
+		return 1;
+	return 0;
+}
+
 static inline void set_user_flag(struct ksmbd_user *user, int flag)
 {
 	user->flags |= flag;

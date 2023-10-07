@@ -40,12 +40,25 @@ u64 ksmbd_UnixTimeToNT(struct timespec64 t);
 long long ksmbd_systime(void);
 
 #ifdef CONFIG_PROC_FS
+struct ksmbd_const_name {
+	unsigned int const_value;
+	const char *name;
+};
+
 void ksmbd_proc_init(void);
 void ksmbd_proc_cleanup(void);
 void ksmbd_proc_reset(void);
 struct proc_dir_entry *ksmbd_proc_create(const char *name,
 			     int (*show)(struct seq_file *m, void *v),
 			     void *v);
+void ksmbd_proc_show_flag_names(struct seq_file *m,
+				const struct ksmbd_const_name *table,
+				int count,
+				unsigned int flags);
+void ksmbd_proc_show_const_name(struct seq_file *m,
+				const struct ksmbd_const_name *table,
+				int count,
+				unsigned int const_value);
 #else
 static inline void ksmbd_proc_init(void) {}
 static inline void ksmbd_proc_cleanup(void) {}

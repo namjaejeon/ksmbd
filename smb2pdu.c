@@ -1506,7 +1506,7 @@ static int ntlm_authenticate(struct ksmbd_work *work,
 		 * Reuse session if anonymous try to connect
 		 * on reauthetication.
 		 */
-		if (conn->binding == false && ksmbd_anonymous_user(user)) {
+		if (conn->binding == false && user_anonymous(user)) {
 			ksmbd_free_user(user);
 			return 0;
 		}

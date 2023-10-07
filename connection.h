@@ -7,6 +7,7 @@
 #define __KSMBD_CONNECTION_H__
 
 #include <linux/list.h>
+#include <linux/inet.h>
 #include <linux/ip.h>
 #include <net/sock.h>
 #include <net/tcp.h>
@@ -105,7 +106,7 @@ struct ksmbd_conn {
 	__le16				signing_algorithm;
 	bool				binding;
 
-	char				client_name[81];
+	char				client_name[INET6_ADDRSTRLEN + 1];
 };
 
 struct ksmbd_conn_ops {

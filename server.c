@@ -587,6 +587,7 @@ static int __init ksmbd_server_init(void)
 	}
 
 	ksmbd_proc_init();
+	ksmbd_sessions_init();
 
 	ksmbd_server_tcp_callbacks_init();
 
