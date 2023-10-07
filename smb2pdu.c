@@ -43,6 +43,7 @@
 #include "mgmt/user_session.h"
 #include "mgmt/ksmbd_ida.h"
 #include "ndr.h"
+#include "stats.h"
 
 static void __wbuf(struct ksmbd_work *work, void **req, void **rsp)
 {
@@ -225,6 +226,11 @@ u16 get_smb2_cmd_val(struct ksmbd_work *work)
 	else
 		rcv_hdr = smb2_get_msg(work->request_buf);
 	return le16_to_cpu(rcv_hdr->Command);
+}
+
+void smb2_inc_reqs(unsigned int cmd)
+{
+	ksmbd_counter_inc_reqs(cmd);
 }
 
 /**

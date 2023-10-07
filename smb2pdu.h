@@ -1658,6 +1658,7 @@ bool is_smb2_neg_cmd(struct ksmbd_work *work);
 bool is_smb2_rsp(struct ksmbd_work *work);
 
 u16 get_smb2_cmd_val(struct ksmbd_work *work);
+void smb2_inc_reqs(unsigned int cmd);
 void set_smb2_rsp_status(struct ksmbd_work *work, __le32 err);
 int init_smb2_rsp_hdr(struct ksmbd_work *work);
 int smb2_allocate_rsp_buf(struct ksmbd_work *work);
