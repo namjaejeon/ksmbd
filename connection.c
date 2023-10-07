@@ -17,6 +17,7 @@
 #include "connection.h"
 #include "transport_tcp.h"
 #include "transport_rdma.h"
+#include "misc.h"
 
 static DEFINE_MUTEX(init_lock);
 
@@ -24,6 +25,56 @@ static struct ksmbd_conn_ops default_conn_ops;
 
 LIST_HEAD(conn_list);
 DECLARE_RWSEM(conn_list_lock);
+
+#ifdef CONFIG_PROC_FS
+struct proc_dir_entry *proc_clients;
+
+static int proc_show_clients(struct seq_file *m, void *v)
+{
+	struct ksmbd_conn *conn;
+	struct timespec64 now, t;
+
+	seq_puts(m, "#<name> <dialect> <credits> <open files> <requests> <last active>\n");
+
+	read_lock(&conn_list_lock);
+	list_for_each_entry(conn, &conn_list, conns_list) {
+		jiffies_to_timespec64(jiffies - conn->last_active, &t);
+		ktime_get_real_ts64(&now);
+		t = timespec64_sub(now, t);
+
+		seq_printf(m, "%s 0x%03x %u %d %d %ptT\n",
+			   conn->client_name,
+			   conn->dialect,
+			   conn->total_credits,
+			   atomic_read(&conn->stats.open_files_count),
+			   atomic_read(&conn->req_running),
+			   &t);
+
+	}
+	read_unlock(&conn_list_lock);
+	return 0;
+}
+
+static int create_proc_clients(void)
+{
+	proc_clients = ksmbd_proc_create("clients",
+				proc_show_clients, NULL);
+	if (proc_clients == NULL)
+		return -ENOMEM;
+	return 0;
+}
+
+static void delete_proc_clients(void)
+{
+	if (proc_clients) {
+		proc_remove(proc_clients);
+		proc_clients = NULL;
+	}
+}
+#else
+static int create_proc_clients(void) { return 0; }
+static void delete_proc_clients(void) {}
+#endif
 
 /**
  * ksmbd_conn_free() - free resources of the connection instance
@@ -470,6 +521,7 @@ int ksmbd_conn_transport_init(void)
 	}
 out:
 	mutex_unlock(&init_lock);
+	create_proc_clients();
 	return ret;
 }
 
@@ -505,6 +557,7 @@ again:
 
 void ksmbd_conn_transport_destroy(void)
 {
+	delete_proc_clients();
 	mutex_lock(&init_lock);
 	ksmbd_tcp_destroy();
 	ksmbd_rdma_destroy();

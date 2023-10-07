@@ -213,6 +213,7 @@ static int ksmbd_tcp_new_connection(struct socket *client_sk)
 	struct sockaddr *csin;
 	int rc = 0;
 	struct tcp_transport *t;
+	struct ksmbd_conn *conn;
 
 	t = alloc_transport(client_sk);
 	if (!t) {
@@ -227,8 +228,17 @@ static int ksmbd_tcp_new_connection(struct socket *client_sk)
 		rc = -EINVAL;
 		goto out_error;
 	}
+
+	conn = KSMBD_TRANS(t)->conn;
+	if (csin->sa_family == AF_INET)
+		snprintf(conn->client_name, sizeof(conn->client_name),
+			 "%pI4", &((struct sockaddr_in *)csin)->sin_addr);
+	else
+		snprintf(conn->client_name, sizeof(conn->client_name),
+			 "%pI6c", &((struct sockaddr_in6 *)csin)->sin6_addr);
+
 	KSMBD_TRANS(t)->handler = kthread_run(ksmbd_conn_handler_loop,
-					      KSMBD_TRANS(t)->conn,
+					      conn,
 					      "ksmbd:%u",
 					      ksmbd_tcp_get_port(csin));
 	if (IS_ERR(KSMBD_TRANS(t)->handler)) {
