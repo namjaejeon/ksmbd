@@ -100,13 +100,13 @@ static int show_proc_session(struct seq_file *m, void *v)
 
 	if (sess->sign) {
 		seq_printf(m, "%-20s\t", "signing");
-		ksmbd_proc_show_const_name(m,
+		ksmbd_proc_show_const_name(m, "%s\n",
 					   ksmbd_signing_const_names,
 					   ARRAY_SIZE(ksmbd_signing_const_names),
 					   le16_to_cpu(sess->conn->signing_algorithm));
 	} else if (sess->enc) {
 		seq_printf(m, "%-20s\t", "encryption");
-		ksmbd_proc_show_const_name(m,
+		ksmbd_proc_show_const_name(m, "%s\n",
 					   ksmbd_cipher_const_names,
 					   ARRAY_SIZE(ksmbd_cipher_const_names),
 					   le16_to_cpu(sess->conn->cipher_type));
