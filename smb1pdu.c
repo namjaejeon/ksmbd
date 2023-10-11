@@ -10,6 +10,7 @@
 #include <linux/statfs.h>
 #include <linux/vmalloc.h>
 
+#include "compat.h"
 #include "glob.h"
 #include "oplock.h"
 #include "connection.h"
@@ -29,6 +30,7 @@
 #include "mgmt/user_session.h"
 #include "ndr.h"
 #include "smberr.h"
+#include "unicode.h"
 
 static int smb1_oplock_enable = false;
 
@@ -2475,14 +2477,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			goto out;
 		}
 	} else {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = inode_permission(mnt_user_ns(path.mnt),
-				       d_inode(path.dentry),
-				       may_flags);
-#else
-		err = inode_permission(d_inode(path.dentry),
-				       may_flags);
-#endif
+		err = compat_inode_permission(&path, d_inode(path.dentry),
+					      may_flags);
 		if (err)
 			goto free_path;
 	}
@@ -2594,8 +2590,9 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 					   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			struct xattr_dos_attrib da;
 
-			err = ksmbd_vfs_get_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+			err = compat_ksmbd_vfs_get_dos_attrib_xattr(&path,
+								    path.dentry,
+								    &da);
 			if (err > 0)
 				fp->create_time = da.create_time;
 			err = 0;
@@ -2609,8 +2606,8 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			da.attr = smb_get_dos_attr(&stat);
 			da.create_time = fp->create_time;
 
-			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     &path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path,
+								    &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
@@ -3617,9 +3614,9 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 	aclbuf->access_entry_count = 0;
 
 	/* check if POSIX_ACL_XATTR_ACCESS exists */
-	value_len = ksmbd_vfs_getxattr(mnt_user_ns(path->mnt), path->dentry,
-				       XATTR_NAME_POSIX_ACL_ACCESS,
-				       &buf);
+	value_len = compat_ksmbd_vfs_getxattr(path, path->dentry,
+					      XATTR_NAME_POSIX_ACL_ACCESS,
+					      &buf);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 				value_len, ACL_TYPE_ACCESS);
@@ -3627,10 +3624,9 @@ static int smb_get_acl(struct ksmbd_work *work, struct path *path)
 		buf = NULL;
 	}
 
-	/* check if POSIX_ACL_XATTR_DEFAULT exists */
-	value_len = ksmbd_vfs_getxattr(mnt_user_ns(path->mnt), path->dentry,
-				       XATTR_NAME_POSIX_ACL_DEFAULT,
-				       &buf);
+	value_len = compat_ksmbd_vfs_getxattr(path, path->dentry,
+					      XATTR_NAME_POSIX_ACL_DEFAULT,
+					      &buf);
 	if (value_len > 0) {
 		rsp_data_cnt += ACL_to_cifs_posix((char *)aclbuf, buf,
 						  value_len, ACL_TYPE_DEFAULT);
@@ -3907,8 +3903,8 @@ static int smb_get_ea(struct ksmbd_work *work, struct path *path)
 		ptr = (char *)(&temp_fea->name + name_len + 1);
 		buf_free_len -= (offsetof(struct fea, name) + name_len + 1);
 
-		value_len = ksmbd_vfs_getxattr(mnt_user_ns(path->mnt),
-					       path->dentry, name, &buf);
+		value_len = compat_ksmbd_vfs_getxattr(path, path->dentry,
+						      name, &buf);
 		if (value_len <= 0) {
 			rc = -ENOENT;
 			rsp->hdr.Status.CifsError = STATUS_INVALID_HANDLE;
@@ -4025,8 +4021,8 @@ static int query_path_info(struct ksmbd_work *work)
 				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		struct xattr_dos_attrib da;
 
-		rc = ksmbd_vfs_get_dos_attrib_xattr(mnt_user_ns(path.mnt),
-						    path.dentry, &da);
+		rc = compat_ksmbd_vfs_get_dos_attrib_xattr(&path,
+							   path.dentry, &da);
 		if (rc > 0)
 			create_time = da.create_time;
 		rc = 0;
@@ -4921,14 +4917,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 			goto out;
 		}
 	} else if (file_present) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = inode_permission(mnt_user_ns(path.mnt),
-				       d_inode(path.dentry),
-				       may_flags);
-#else
-		err = inode_permission(d_inode(path.dentry),
-				       may_flags);
-#endif
+		err = compat_inode_permission(&path, d_inode(path.dentry),
+					      may_flags);
 		if (err)
 			goto free_path;
 	}
@@ -5953,14 +5943,8 @@ static int find_first(struct ksmbd_work *work)
 			    dirpath, rc);
 		goto err_free_dirpath;
 	} else {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		if (inode_permission(mnt_user_ns(path.mnt),
-				     d_inode(path.dentry),
-				     MAY_READ | MAY_EXEC)) {
-#else
-		if (inode_permission(d_inode(path.dentry),
-					MAY_READ | MAY_EXEC)) {
-#endif
+		if (compat_inode_permission(&path, d_inode(path.dentry),
+					    MAY_READ | MAY_EXEC)) {
 			rc = -EACCES;
 			path_put(&path);
 			goto err_free_dirpath;
@@ -6670,11 +6654,8 @@ static int query_file_info(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp), &st);
-#else
-	generic_fillattr(file_inode(fp->filp), &st);
-#endif
+	compat_generic_fillattr(&fp->filp->f_path, STATX_BASIC_STATS,
+				file_inode(fp->filp), &st);
 
 	switch (le16_to_cpu(req_params->InformationLevel)) {
 
@@ -7348,8 +7329,7 @@ static int create_dir(struct ksmbd_work *work)
 				   XATTR_DOSINFO_CREATE_TIME |
 				   XATTR_DOSINFO_ITIME;
 
-			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     &path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in EA\n");
 			path_put(&path);
@@ -7531,8 +7511,7 @@ int smb_mkdir(struct ksmbd_work *work)
 				   XATTR_DOSINFO_CREATE_TIME |
 				   XATTR_DOSINFO_ITIME;
 
-			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     &path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			path_put(&path);
@@ -7624,11 +7603,8 @@ int smb_checkdir(struct ksmbd_work *work)
 		}
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
-#else
-	generic_fillattr(d_inode(path.dentry), &stat);
-#endif
+	compat_generic_fillattr(&path, STATX_BASIC_STATS,
+				d_inode(path.dentry), &stat);
 
 	if (!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status.CifsError = STATUS_NOT_A_DIRECTORY;
@@ -7901,11 +7877,8 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 		goto out;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), st);
-#else
-	generic_fillattr(d_inode(path.dentry), st);
-#endif
+	compat_generic_fillattr(&path, STATX_BASIC_STATS,
+				d_inode(path.dentry), st);
 	path_put(&path);
 out:
 	ksmbd_revert_fsids(work);
@@ -8108,11 +8081,8 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto out;
 		file_present = false;
 	} else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
-#else
-		generic_fillattr(d_inode(path.dentry), &stat);
-#endif
+		compat_generic_fillattr(&path, STATX_BASIC_STATS,
+					d_inode(path.dentry), &stat);
 
 	oplock_flags =
 		le16_to_cpu(req->OpenFlags) & (REQ_OPLOCK | REQ_BATCHOPLOCK);
@@ -8156,20 +8126,11 @@ int smb_open_andx(struct ksmbd_work *work)
 			pr_err("cannot get linux path, err = %d\n", err);
 			goto out;
 		}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
-#else
-		generic_fillattr(d_inode(path.dentry), &stat);
-#endif
+		compat_generic_fillattr(&path, STATX_BASIC_STATS,
+					d_inode(path.dentry), &stat);
 	} else if (file_present) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = inode_permission(mnt_user_ns(path.mnt),
-				       d_inode(path.dentry),
-				       may_flags);
-#else
-		err = inode_permission(d_inode(path.dentry),
-				       may_flags);
-#endif
+		err = compat_inode_permission(&path, d_inode(path.dentry),
+					      may_flags);
 		if (err)
 			goto free_path;
 	}
@@ -8241,8 +8202,9 @@ int smb_open_andx(struct ksmbd_work *work)
 					   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 			struct xattr_dos_attrib da;
 
-			err = ksmbd_vfs_get_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     path.dentry, &da);
+			err = compat_ksmbd_vfs_get_dos_attrib_xattr(&path,
+								    path.dentry,
+								    &da);
 			if (err > 0) {
 				fp->create_time = da.create_time;
 				fp->itime = da.itime;
@@ -8261,8 +8223,7 @@ int smb_open_andx(struct ksmbd_work *work)
 				   XATTR_DOSINFO_CREATE_TIME |
 				   XATTR_DOSINFO_ITIME;
 
-			err = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path.mnt),
-							     &path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
@@ -8370,11 +8331,8 @@ int smb_setattr(struct ksmbd_work *work)
 		err = 0;
 		goto out;
 	}
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-	generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
-#else
-	generic_fillattr(d_inode(path.dentry), &stat);
-#endif
+	compat_generic_fillattr(&path, STATX_BASIC_STATS,
+				d_inode(path.dentry), &stat);
 	path_put(&path);
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
