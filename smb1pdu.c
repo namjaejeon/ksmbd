@@ -284,6 +284,7 @@ int smb_get_ksmbd_tcon(struct ksmbd_work *work)
 	work->tcon = NULL;
 	if (cmd == SMB_COM_TREE_CONNECT_ANDX ||
 	    cmd == SMB_COM_NT_CANCEL ||
+	    cmd == SMB_COM_PROCESS_EXIT ||
 	    cmd == SMB_COM_LOGOFF_ANDX) {
 		ksmbd_debug(SMB, "skip to check tree connect request\n");
 		return 0;
