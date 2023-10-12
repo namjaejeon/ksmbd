@@ -608,8 +608,11 @@ static char *smb_get_name(struct ksmbd_share_config *share, const char *src,
 		*wild_card_pos = '\0';
 
 
-	if (ksmbd_validate_filename(name) < 0)
+	if (ksmbd_validate_filename(name) < 0) {
+		if (!converted)
+			kfree(name);
 		return ERR_PTR(-ENOENT);
+	}
 
 	if (ksmbd_share_veto_filename(share, name)) {
 		ksmbd_debug(SMB,
@@ -697,6 +700,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share,
 
 err_pattern:
 	kfree(pattern);
+	*srch_ptr = NULL;
 err_name:
 	kfree(name);
 
