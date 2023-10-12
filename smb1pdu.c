@@ -7335,20 +7335,6 @@ out:
 }
 
 /**
- * get_dfs_referral() - handler for smb dfs referral command
- * @work:	smb work containing get dfs referral command buffer
- *
- * Return:	0 on success, otherwise error
- */
-static int get_dfs_referral(struct ksmbd_work *work)
-{
-	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
-
-	rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
-	return 0;
-}
-
-/**
  * smb_trans2() - handler for trans2 commands
  * @work:	smb work containing trans2 command buffer
  *
@@ -7399,23 +7385,48 @@ int smb_trans2(struct ksmbd_work *work)
 		err = create_dir(work);
 		break;
 	case TRANS2_GET_DFS_REFERRAL:
-		err = get_dfs_referral(work);
-		break;
 	default:
 		ksmbd_debug(SMB, "sub command 0x%x not implemented yet\n",
 			    sub_command);
-		rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
-		return -EINVAL;
+		err = -EINVAL;
 	}
 
 	if (err) {
-		ksmbd_debug(SMB, "%s failed with error %d\n", __func__, err);
-		if (err == -EBUSY)
+		switch (err) {
+		case -EINVAL:
+			rsp_hdr->Status.CifsError = STATUS_NOT_SUPPORTED;
+			break;
+		case -ENOMEM:
+			rsp_hdr->Status.CifsError = STATUS_NO_MEMORY;
+			break;
+		case -ENOENT:
+			rsp_hdr->Status.CifsError = STATUS_NO_SUCH_FILE;
+			break;
+		case -EBUSY:
 			rsp_hdr->Status.CifsError = STATUS_DELETE_PENDING;
-		return err;
+			break;
+		case -EACCES:
+		case -EXDEV:
+			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
+			break;
+		case -EBADF:
+			rsp_hdr->Status.CifsError = STATUS_FILE_CLOSED;
+			break;
+		case -EFAULT:
+			rsp_hdr->Status.CifsError = STATUS_INVALID_LEVEL;
+			break;
+		case -EOPNOTSUPP:
+			rsp_hdr->Status.CifsError = STATUS_NOT_IMPLEMENTED;
+			break;
+		case -EIO:
+			rsp_hdr->Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+			break;
+		}
+
+		ksmbd_debug(SMB, "%s failed with error %d\n", __func__, err);
 	}
 
-	return 0;
+	return err;
 }
 
 /**
