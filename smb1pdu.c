@@ -3189,11 +3189,22 @@ int smb_echo(struct ksmbd_work *work)
 {
 	struct smb_com_echo_req *req = work->request_buf;
 	struct smb_com_echo_rsp *rsp = work->response_buf;
-	__u16 data_count;
+	__u16 data_count, echo_count;
 	int i;
 
+	echo_count = le16_to_cpu(req->EchoCount);
+
 	ksmbd_debug(SMB, "SMB_COM_ECHO called with echo count %u\n",
-			le16_to_cpu(req->EchoCount));
+		    echo_count);
+
+	if (!echo_count) {
+		work->send_no_response = true;
+		return 0;
+	}
+
+	/* don't let a client make us work too much */
+	if (echo_count > 10)
+		echo_count = 10;
 
 	data_count = le16_to_cpu(req->ByteCount);
 	/* send echo response to server */
@@ -3207,8 +3218,7 @@ int smb_echo(struct ksmbd_work *work)
 	/* Send req->EchoCount - 1 number of ECHO response now &
 	 * if SMB CANCEL for Echo comes don't send response
 	 */
-	for (i = 1; i < le16_to_cpu(req->EchoCount) && !work->send_no_response;
-	     i++) {
+	for (i = 1; i < echo_count && !work->send_no_response; i++) {
 		rsp->SequenceNumber = cpu_to_le16(i);
 		ksmbd_conn_write(work);
 	}
