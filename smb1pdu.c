@@ -345,6 +345,7 @@ int smb_tree_disconnect(struct ksmbd_work *work)
 	struct smb_hdr *rsp_hdr = (struct smb_hdr *)work->response_buf;
 	struct ksmbd_tree_connect *tcon = work->tcon;
 	struct ksmbd_session *sess = work->sess;
+	int err;
 
 	if (!tcon) {
 		pr_err("Invalid tid %d\n", req_hdr->Tid);
@@ -353,7 +354,26 @@ int smb_tree_disconnect(struct ksmbd_work *work)
 	}
 
 	ksmbd_close_tree_conn_fds(work);
-	ksmbd_tree_conn_disconnect(sess, tcon);
+
+	write_lock(&sess->tree_conns_lock);
+	if (tcon->t_state == TREE_DISCONNECTED) {
+		write_unlock(&sess->tree_conns_lock);
+		rsp_hdr->Status.CifsError = STATUS_NETWORK_NAME_DELETED;
+		return -ENOENT;
+	}
+
+	WARN_ON_ONCE(atomic_dec_and_test(&tcon->refcount));
+	tcon->t_state = TREE_DISCONNECTED;
+	write_unlock(&sess->tree_conns_lock);
+
+	err = ksmbd_tree_conn_disconnect(sess, tcon);
+	if (err) {
+		rsp_hdr->Status.CifsError = STATUS_NETWORK_NAME_DELETED;
+		return -ENOENT;
+	}
+
+	work->tcon = NULL;
+
 	return 0;
 }
 
@@ -521,6 +541,10 @@ int smb_tree_connect_andx(struct ksmbd_work *work)
 	kfree(treename);
 	kfree(dev_type);
 	kfree(name);
+
+	write_lock(&sess->tree_conns_lock);
+	status.tree_conn->t_state = TREE_CONNECTED;
+	write_unlock(&sess->tree_conns_lock);
 
 	return status.ret;
 
