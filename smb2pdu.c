@@ -2227,11 +2227,7 @@ int smb2_session_logoff(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 	sess_id = le64_to_cpu(req->hdr.SessionId);
-	if (conn->master_conn)
-		ksmbd_conn_lock(conn->master_conn);
 	ksmbd_all_conn_set_status(conn, sess_id, KSMBD_SESS_NEED_RECONNECT);
-	if (conn->master_conn)
-		ksmbd_conn_unlock(conn->master_conn);
 	ksmbd_conn_unlock(conn);
 
 	ksmbd_close_session_fds(work);
