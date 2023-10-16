@@ -2442,7 +2442,10 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			ksmbd_debug(SMB,
 				"returning as user does not have permission to write\n");
 			err = -EACCES;
-			goto out;
+			if (file_present)
+				goto free_path;
+			else
+				goto out;
 		}
 	}
 
