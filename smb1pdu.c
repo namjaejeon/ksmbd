@@ -1227,6 +1227,7 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 		return 0;
 	}
 
+	ksmbd_conn_lock(conn);
 	uid = le16_to_cpu(pSMB->req.hdr.Uid);
 	if (uid != 0) {
 		sess = ksmbd_session_lookup(conn, uid);
@@ -1265,6 +1266,7 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 
 	work->sess = sess;
 	ksmbd_conn_set_good(conn);
+	ksmbd_conn_unlock(conn);
 	return 0;
 
 out_err:
@@ -1276,6 +1278,7 @@ out_err:
 		ksmbd_session_destroy(sess);
 		work->sess = NULL;
 	}
+	ksmbd_conn_unlock(conn);
 	return rc;
 }
 
