@@ -4551,8 +4551,7 @@ static int query_fs_info(struct ksmbd_work *work)
 
 	info_level = le16_to_cpu(req_params->InformationLevel);
 
-	tree_conn = ksmbd_tree_conn_lookup(work->sess,
-					   le16_to_cpu(req_hdr->Tid));
+	tree_conn = work->tcon;
 	if (!tree_conn)
 		return -ENOENT;
 	share = tree_conn->share_conf;
@@ -8436,7 +8435,7 @@ int smb_query_information_disk(struct ksmbd_work *work)
 		goto out;
 	}
 
-	tree_conn = ksmbd_tree_conn_lookup(work->sess, le16_to_cpu(req->Tid));
+	tree_conn = work->tcon;
 	if (!tree_conn) {
 		err = -ENOENT;
 		goto out;
