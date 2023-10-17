@@ -4467,36 +4467,45 @@ static int set_fs_info(struct ksmbd_work *work)
 {
 	struct smb_com_trans2_setfsi_req *req = work->request_buf;
 	struct smb_com_trans2_setfsi_rsp *rsp = work->response_buf;
-	int info_level = le16_to_cpu(req->InformationLevel);
+	struct smb_com_trans2_setfsi_req_params *params;
+	int info_level;
+
+	params = (struct smb_com_trans2_setfsi_req_params *)
+		(work->request_buf + le16_to_cpu(req->ParameterOffset) + 4);
+
+	info_level = le16_to_cpu(params->InformationLevel);
 
 	switch (info_level) {
-	u64 client_cap;
-
 	case SMB_SET_CIFS_UNIX_INFO:
+	{
+		u64 client_cap;
+
 		ksmbd_debug(SMB, "SMB_SET_CIFS_UNIX_INFO\n");
-		if (le16_to_cpu(req->ClientUnixMajor) !=
+		if (le16_to_cpu(params->ClientUnixMajor) !=
 			CIFS_UNIX_MAJOR_VERSION) {
 			pr_err("Non compatible unix major info\n");
 			return -EINVAL;
 		}
 
-		if (le16_to_cpu(req->ClientUnixMinor) !=
+		if (le16_to_cpu(params->ClientUnixMinor) !=
 			CIFS_UNIX_MINOR_VERSION) {
 			pr_err("Non compatible unix minor info\n");
 			return -EINVAL;
 		}
 
-		client_cap = le64_to_cpu(req->ClientUnixCap);
+		client_cap = le64_to_cpu(params->ClientUnixCap);
 		ksmbd_debug(SMB, "clients unix cap = %llx\n", client_cap);
 		/* TODO: process caps */
+		rsp->hdr.WordCount = 0x0A;
 		rsp->t2.TotalDataCount = 0;
 		break;
+	}
 	default:
 		ksmbd_debug(SMB, "info level %x  not supported\n", info_level);
 		return -EINVAL;
 	}
 
-	create_trans2_reply(work, le16_to_cpu(rsp->t2.TotalDataCount));
+	inc_rfc1001_len(&rsp->hdr, rsp->hdr.WordCount * 2);
 	return 0;
 }
 
