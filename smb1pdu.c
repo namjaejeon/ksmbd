@@ -4872,7 +4872,6 @@ static int smb_posix_open(struct ksmbd_work *work)
 	struct ksmbd_share_config *share = work->tcon->share_conf;
 	struct open_psx_req *psx_req;
 	struct open_psx_rsp *psx_rsp;
-	struct file_unix_basic_info *unix_info;
 	struct path path, parent_path;
 	struct kstat stat;
 	__u16 data_offset, rsp_info_level, file_info = 0;
@@ -5050,14 +5049,9 @@ prepare_rsp:
 	}
 
 	pSMB_rsp->hdr.Status.CifsError = STATUS_SUCCESS;
-	unix_info = (struct file_unix_basic_info *)((char *)psx_rsp +
-			sizeof(struct open_psx_rsp));
-	init_unix_info(unix_info, mnt_user_ns(path.mnt), &stat);
-
 	pSMB_rsp->hdr.WordCount = 10;
 	pSMB_rsp->t2.TotalParameterCount = cpu_to_le16(2);
-	pSMB_rsp->t2.TotalDataCount = cpu_to_le16(sizeof(struct open_psx_rsp) +
-			sizeof(struct file_unix_basic_info));
+	pSMB_rsp->t2.TotalDataCount = cpu_to_le16(sizeof(struct open_psx_rsp));
 	pSMB_rsp->t2.ParameterCount = pSMB_rsp->t2.TotalParameterCount;
 	pSMB_rsp->t2.Reserved = 0;
 	pSMB_rsp->t2.ParameterCount = cpu_to_le16(2);
@@ -5069,8 +5063,8 @@ prepare_rsp:
 	pSMB_rsp->t2.SetupCount = 0;
 	pSMB_rsp->t2.Reserved1 = 0;
 
-	/* 2 for parameter count + 112 data count + 3 pad (1 pad1 + 2 pad2)*/
-	pSMB_rsp->ByteCount = cpu_to_le16(117);
+	/* 2 for parameter count + 12 data count + 3 pad (1 pad1 + 2 pad2)*/
+	pSMB_rsp->ByteCount = cpu_to_le16(sizeof(struct open_psx_rsp) + 2 + 3);
 	pSMB_rsp->Reserved2 = 0;
 	inc_rfc1001_len(&pSMB_rsp->hdr, (pSMB_rsp->hdr.WordCount * 2 + 117));
 
