@@ -9,6 +9,10 @@
 #include <linux/namei.h>
 #include <linux/statfs.h>
 #include <linux/vmalloc.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#include <linux/filelock.h>
+#endif
 
 #include "compat.h"
 #include "glob.h"
@@ -4449,7 +4453,7 @@ static int query_path_info(struct ksmbd_work *work)
 		rsp->ByteCount = cpu_to_le16(101); /* 100 data count + 1pad */
 		rsp->Pad = 0;
 		unix_info = (struct file_unix_basic_info *)(&rsp->Pad + 1);
-		init_unix_info(unix_info, mnt_user_ns(path.mnt), &st);
+		init_unix_info(unix_info, &init_user_ns, &st);
 		inc_rfc1001_len(rsp_hdr, (10 * 2 + 101));
 		break;
 	}
@@ -5007,6 +5011,11 @@ static int smb_posix_open(struct ksmbd_work *work)
 		if (create_directory)
 			goto prepare_rsp;
 	} else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		err = inode_permission(mnt_idmap(path.mnt),
+				       d_inode(path.dentry),
+				       may_flags);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		err = inode_permission(mnt_user_ns(path.mnt),
 				       d_inode(path.dentry),
@@ -5014,6 +5023,7 @@ static int smb_posix_open(struct ksmbd_work *work)
 #else
 		err = inode_permission(d_inode(path.dentry),
 				       may_flags);
+#endif
 #endif
 		if (err)
 			goto free_path;
@@ -5334,7 +5344,7 @@ static int smb_set_unix_pathinfo(struct ksmbd_work *work)
 		(((char *) &req->hdr.Protocol) + le16_to_cpu(req->DataOffset));
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
-	err = unix_info_to_attr(unix_info, mnt_user_ns(path.mnt), &attrs);
+	err = unix_info_to_attr(unix_info, &init_user_ns, &attrs);
 	path_put(&path);
 	ksmbd_revert_fsids(work);
 	if (err)
@@ -6204,7 +6214,11 @@ static int find_first(struct ksmbd_work *work)
 		d_info.name = (const char *)d_info.smb1_name;
 		d_info.name_len = de->namelen;
 		rc = ksmbd_vfs_readdir_name(work,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+					    file_mnt_idmap(dir_fp->filp),
+#else
 					    file_mnt_user_ns(dir_fp->filp),
+#endif
 					    &ksmbd_kstat,
 					    de->name,
 					    de->namelen,
@@ -6444,7 +6458,11 @@ static int find_next(struct ksmbd_work *work)
 		d_info.name = (const char *)d_info.smb1_name;
 		d_info.name_len = de->namelen;
 		rc = ksmbd_vfs_readdir_name(work,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+					    file_mnt_idmap(dir_fp->filp),
+#else
 					    file_mnt_user_ns(dir_fp->filp),
+#endif
 					    &ksmbd_kstat,
 					    de->name,
 					    de->namelen,
@@ -6930,7 +6948,7 @@ static int query_file_info(struct ksmbd_work *work)
 		ptr = (char *)&rsp->Pad + 1;
 		memset(ptr, 0, 4);
 		uinfo = (struct file_unix_basic_info *)(ptr + 4);
-		init_unix_info(uinfo, file_mnt_user_ns(fp->filp), &st);
+		init_unix_info(uinfo, &init_user_ns, &st);
 		inc_rfc1001_len(rsp_hdr, 10 * 2 + le16_to_cpu(rsp->ByteCount));
 		break;
 	}
@@ -7069,8 +7087,7 @@ static int smb_set_unix_fileinfo(struct ksmbd_work *work)
 
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
-	err = unix_info_to_attr(unix_info,
-				file_mnt_user_ns(fp->filp), &attrs);
+	err = unix_info_to_attr(unix_info, &init_user_ns, &attrs);
 	ksmbd_fd_put(work, fp);
 	ksmbd_revert_fsids(work);
 	if (err)
@@ -8323,10 +8340,14 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto out;
 		}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		generic_fillattr(mnt_idmap(path.mnt), d_inode(path.dentry), &stat);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 		generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
 #else
 		generic_fillattr(d_inode(path.dentry), &stat);
+#endif
 #endif
 	} else if (file_present) {
 		err = compat_inode_permission(&path, d_inode(path.dentry),
