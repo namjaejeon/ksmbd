@@ -3858,7 +3858,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 {
 	struct smb_com_trans2_qpi_req *req = work->request_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
-	int err, name_len;
+	int err, name_len, link_len;
 	char *buf, *ptr;
 
 	buf = kzalloc((CIFS_MF_SYMLINK_LINK_MAXLEN), GFP_KERNEL);
@@ -3895,6 +3895,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 		work->response_buf = nptr;
 		rsp = (struct smb_com_trans2_rsp *)work->response_buf;
 	}
+	link_len = err;
 	err = 0;
 
 	ptr = (char *)&rsp->Buffer[0];
@@ -3904,12 +3905,17 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	if (is_smbreq_unicode(&req->hdr)) {
 		name_len = smb_strtoUTF16((__le16 *)ptr,
 					  buf,
-					  CIFS_MF_SYMLINK_LINK_MAXLEN,
+					  link_len,
 					  work->conn->local_nls);
 		name_len++;     /* trailing null */
 		name_len *= 2;
 	} else { /* BB add path length overrun check */
-		name_len = strscpy(ptr, buf, CIFS_MF_SYMLINK_LINK_MAXLEN - 1);
+		name_len = strscpy(ptr, buf, link_len);
+		if (name_len == -E2BIG) {
+			err = -ENOMEM;
+			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+			goto out;
+		}
 		name_len++;     /* trailing null */
 	}
 
