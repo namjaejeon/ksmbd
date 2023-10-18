@@ -760,7 +760,6 @@ int smb_rename(struct ksmbd_work *work)
 	struct ksmbd_file *fp = NULL;
 	int oldname_len;
 	struct path path;
-	bool file_present = true;
 	int rc = 0;
 
 	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
@@ -793,19 +792,6 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
-	rc = ksmbd_vfs_kern_path(work, newname, LOOKUP_NO_SYMLINKS, &path, 1);
-	if (rc)
-		file_present = false;
-	else
-		path_put(&path);
-
-	if (file_present && strncmp(oldname, newname, strlen(oldname))) {
-		rc = -EEXIST;
-		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_COLLISION;
-		ksmbd_debug(SMB, "cannot rename already existing file\n");
-		goto out;
-	}
-
 	ksmbd_debug(SMB, "rename %s -> %s\n", oldname, newname);
 	rc = ksmbd_vfs_kern_path(work, oldname, LOOKUP_NO_SYMLINKS, &path, 1);
 	if (rc)
@@ -818,7 +804,7 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
-	rc = ksmbd_vfs_fp_rename(work, fp, newname);
+	rc = ksmbd_vfs_fp_rename(work, fp, newname, RENAME_NOREPLACE);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		path_put(&path);
@@ -832,6 +818,23 @@ out:
 		ksmbd_close_fd(work, fp->volatile_id);
 	kfree(oldname);
 	kfree(newname);
+
+	if (rc) {
+		switch (rc) {
+		case -EEXIST:
+			rsp->hdr.Status.CifsError =
+				STATUS_OBJECT_NAME_COLLISION;
+			break;
+		case -ENOENT:
+			rsp->hdr.Status.CifsError =
+				NT_STATUS_OBJECT_NAME_NOT_FOUND;
+			break;
+		case -ENOMEM:
+			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
+			break;
+		}
+	}
+
 	return rc;
 }
 
@@ -7285,7 +7288,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	struct set_file_rename *info;
 	struct ksmbd_file *fp;
 	char *newname;
-	int rc = 0;
+	int rc = 0, flags;
 
 	req = (struct smb_com_trans2_sfi_req *)work->request_buf;
 	rsp = (struct smb_com_trans2_sfi_rsp *)work->response_buf;
@@ -7306,14 +7309,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 		return -ENOENT;
 	}
 
-	if (info->overwrite) {
-		rc = ksmbd_vfs_truncate(work, fp, 0);
-		if (rc) {
-			rsp->hdr.Status.CifsError = STATUS_INVALID_PARAMETER;
-			ksmbd_fd_put(work, fp);
-			return rc;
-		}
-	}
+	flags = info->overwrite ? 0 : RENAME_NOREPLACE;
 
 	newname = smb_get_name(share, info->target_name, PATH_MAX, work, 0);
 	if (IS_ERR(newname)) {
@@ -7323,7 +7319,7 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "new name(%s)\n", newname);
-	rc = ksmbd_vfs_fp_rename(work, fp, newname);
+	rc = ksmbd_vfs_fp_rename(work, fp, newname, flags);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;

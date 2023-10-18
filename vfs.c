@@ -1487,7 +1487,8 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			      struct mnt_idmap *dst_idmap,
 			      struct dentry *dst_dent_parent,
 			      struct dentry *trap_dent,
-			      char *dst_name)
+			      char *dst_name,
+			      int flags)
 #else
 static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			      struct user_namespace *src_user_ns,
@@ -1496,7 +1497,8 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			      struct user_namespace *dst_user_ns,
 			      struct dentry *dst_dent_parent,
 			      struct dentry *trap_dent,
-			      char *dst_name)
+			      char *dst_name,
+			      int flags)
 #endif
 {
 	struct dentry *dst_dent;
@@ -1549,6 +1551,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			.new_mnt_idmap	= dst_idmap,
 			.new_dir	= d_inode(dst_dent_parent),
 			.new_dentry	= dst_dent,
+			.flags		= flags,
 		};
 #else
 		struct renamedata rd = {
@@ -1558,6 +1561,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 			.new_mnt_userns	= dst_user_ns,
 			.new_dir	= d_inode(dst_dent_parent),
 			.new_dentry	= dst_dent,
+			.flags		= flags,
 		};
 #endif
 		err = vfs_rename(&rd);
@@ -1567,7 +1571,7 @@ static int __ksmbd_vfs_rename(struct ksmbd_work *work,
 				 d_inode(dst_dent_parent),
 				 dst_dent,
 				 NULL,
-				 0);
+				 flags);
 #endif
 	}
 	if (err)
@@ -1580,7 +1584,7 @@ out:
 }
 
 int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
-			char *newname)
+			char *newname, int flags)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	struct mnt_idmap *idmap;
@@ -1650,7 +1654,8 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 				 mnt_idmap(dst_path.mnt),
 				 dst_dent_parent,
 				 trap_dent,
-				 dst_name);
+				 dst_name,
+				 flags);
 #else
 	err = __ksmbd_vfs_rename(work,
 				 user_ns,
@@ -1659,7 +1664,8 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 				 mnt_user_ns(dst_path.mnt),
 				 dst_dent_parent,
 				 trap_dent,
-				 dst_name);
+				 dst_name,
+				 flags);
 #endif
 out_lock:
 	dput(src_dent);
