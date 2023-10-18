@@ -7419,6 +7419,86 @@ static int set_file_info(struct ksmbd_work *work)
 	return err;
 }
 
+/*
+ * helper to create a directory and set DOS attrs
+ */
+static int smb_common_mkdir(struct ksmbd_work *work, char *name, mode_t mode)
+{
+	struct smb_hdr *rsp = work->response_buf;
+	int err;
+
+	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
+		ksmbd_debug(SMB,
+			"returning as user does not have permission to write\n");
+		rsp->Status.CifsError = STATUS_ACCESS_DENIED;
+		return -EACCES;
+	}
+
+	if (ksmbd_override_fsids(work)) {
+		rsp->Status.CifsError = STATUS_NO_MEMORY;
+		return -ENOMEM;
+	}
+
+	err = ksmbd_vfs_mkdir(work, name, mode);
+	if (err) {
+		if (err == -EEXIST) {
+			if (!(rsp->Flags2 & SMBFLG2_ERR_STATUS)) {
+				rsp->Status.DosError.ErrorClass = ERRDOS;
+				rsp->Status.DosError.Error =
+					cpu_to_le16(ERRnoaccess);
+			} else
+				rsp->Status.CifsError =
+					STATUS_OBJECT_NAME_COLLISION;
+		} else
+			rsp->Status.CifsError = STATUS_DATA_ERROR;
+		goto out;
+	}
+
+	if (test_share_config_flag(work->tcon->share_conf,
+				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
+		__u64 ctime;
+		struct path path, parent_path;
+		struct xattr_dos_attrib da = {0};
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+		err = ksmbd_vfs_kern_path_locked(work, name, 0,
+						 &parent_path, &path, 1);
+#else
+		err = ksmbd_vfs_kern_path(work, name, 0, &path, 1);
+#endif
+		if (!err) {
+			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
+
+			da.version = 4;
+			da.attr = ATTR_DIRECTORY;
+			da.itime = da.create_time = ctime;
+			da.flags = XATTR_DOSINFO_ATTRIB |
+				   XATTR_DOSINFO_CREATE_TIME |
+				   XATTR_DOSINFO_ITIME;
+
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
+			if (err)
+				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+			inode_unlock(d_inode(parent_path.dentry));
+			path_put(&path);
+			path_put(&parent_path);
+#else
+			path_put(&path);
+#endif
+		}
+		err = 0;
+	}
+
+	rsp->Status.CifsError = STATUS_SUCCESS;
+	rsp->WordCount = 0;
+
+out:
+	ksmbd_revert_fsids(work);
+
+	return err;
+}
+
 /**
  * create_dir() - trans2 create directory dispatcher
  * @work:   smb work containing set file info command buffer
@@ -7435,65 +7515,18 @@ static int create_dir(struct ksmbd_work *work)
 	int err;
 
 	name = smb_get_name(share, work->request_buf +
-			le16_to_cpu(req->ParameterOffset) + 4,
-			PATH_MAX, work, false);
+			    le16_to_cpu(req->ParameterOffset) + 4,
+			    PATH_MAX, work, false);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
-	if (ksmbd_override_fsids(work)) {
-		kfree(name);
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	err = smb_common_mkdir(work, name, mode);
 
-	err = ksmbd_vfs_mkdir(work, name, mode);
-	if (err) {
-		if (err == -EEXIST) {
-			if (!(((struct smb_hdr *)work->request_buf)->Flags2 &
-						SMBFLG2_ERR_STATUS)) {
-				ntstatus_to_dos(STATUS_OBJECT_NAME_COLLISION,
-					&rsp->hdr.Status.DosError.ErrorClass,
-					&rsp->hdr.Status.DosError.Error);
-			} else
-				rsp->hdr.Status.CifsError =
-					STATUS_OBJECT_NAME_COLLISION;
-		} else
-			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
-		goto out;
-	} else
-		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
-
-	if (test_share_config_flag(work->tcon->share_conf,
-				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-		__u64 ctime;
-		struct path path;
-		struct xattr_dos_attrib da = {0};
-
-		err = ksmbd_vfs_kern_path(work, name, 0, &path, 1);
-		if (!err) {
-			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
-
-			da.version = 4;
-			da.attr = ATTR_DIRECTORY;
-			da.itime = da.create_time = ctime;
-			da.flags = XATTR_DOSINFO_ATTRIB |
-				   XATTR_DOSINFO_CREATE_TIME |
-				   XATTR_DOSINFO_ITIME;
-
-			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
-			if (err)
-				ksmbd_debug(SMB, "failed to store creation time in EA\n");
-			path_put(&path);
-		}
-		err = 0;
-	}
-
-out:
-	memset(&rsp->hdr.WordCount, 0, 3);
-	ksmbd_revert_fsids(work);
+	rsp->ByteCount = 0;
 	kfree(name);
+
 	return err;
 }
 
@@ -7607,74 +7640,17 @@ int smb_mkdir(struct ksmbd_work *work)
 	char *name;
 	int err;
 
-	if (!test_tree_conn_flag(work->tcon, KSMBD_TREE_CONN_FLAG_WRITABLE)) {
-		ksmbd_debug(SMB,
-			"returning as user does not have permission to write\n");
-		rsp->hdr.Status.CifsError = STATUS_ACCESS_DENIED;
-		return -EACCES;
-	}
-
 	name = smb_get_name(share, req->DirName, PATH_MAX, work, false);
 	if (IS_ERR(name)) {
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
 
-	if (ksmbd_override_fsids(work)) {
-		kfree(name);
-		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
-		return -ENOMEM;
-	}
+	err = smb_common_mkdir(work, name, mode);
 
-	err = ksmbd_vfs_mkdir(work, name, mode);
-	if (err) {
-		if (err == -EEXIST) {
-			if (!(((struct smb_hdr *)work->request_buf)->Flags2 &
-						SMBFLG2_ERR_STATUS)) {
-				rsp->hdr.Status.DosError.ErrorClass = ERRDOS;
-				rsp->hdr.Status.DosError.Error =
-					cpu_to_le16(ERRnoaccess);
-			} else
-				rsp->hdr.Status.CifsError =
-					STATUS_OBJECT_NAME_COLLISION;
-		} else
-			rsp->hdr.Status.CifsError = STATUS_DATA_ERROR;
-		goto out;
-	} else {
-		/* mkdir success, return response to server */
-		rsp->hdr.Status.CifsError = STATUS_SUCCESS;
-		rsp->hdr.WordCount = 0;
-		rsp->ByteCount = 0;
-	}
-
-	if (test_share_config_flag(work->tcon->share_conf,
-				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
-		__u64 ctime;
-		struct path path;
-		struct xattr_dos_attrib da = {0};
-
-		err = ksmbd_vfs_kern_path(work, name, 0, &path, 1);
-		if (!err) {
-			ctime = ksmbd_UnixTimeToNT(current_time(d_inode(path.dentry)));
-
-			da.version = 4;
-			da.attr = ATTR_DIRECTORY;
-			da.itime = da.create_time = ctime;
-			da.flags = XATTR_DOSINFO_ATTRIB |
-				   XATTR_DOSINFO_CREATE_TIME |
-				   XATTR_DOSINFO_ITIME;
-
-			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
-			if (err)
-				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
-			path_put(&path);
-		}
-		err = 0;
-	}
-
-out:
-	ksmbd_revert_fsids(work);
+	rsp->ByteCount = 0;
 	kfree(name);
+
 	return err;
 }
 
