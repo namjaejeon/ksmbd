@@ -4046,7 +4046,7 @@ static int query_path_info(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct trans2_qpi_req_params *req_params;
 	char *name = NULL;
-	struct path path;
+	struct path path, parent_path;
 	struct kstat st;
 	int rc;
 	char *ptr;
@@ -4072,8 +4072,12 @@ static int query_path_info(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return -ENOMEM;
 	}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					&parent_path, &path, 0);
+#else
 	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
+#endif
 	if (rc) {
 		if (rc == -EACCES || rc == -EXDEV)
 			rsp_hdr->Status.CifsError = STATUS_ACCESS_DENIED;
@@ -4501,7 +4505,13 @@ static int query_path_info(struct ksmbd_work *work)
 	}
 
 err_out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
 	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 out:
 	ksmbd_revert_fsids(work);
 	kfree(name);
@@ -5145,6 +5155,9 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct unlink_psx_rsp *psx_rsp = NULL;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	struct path path, parent_path;
+#endif
 	char *name;
 	int rc = 0;
 
@@ -5160,8 +5173,21 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					&parent_path, &path, 0);
+	if (rc < 0)
+		goto out;
 
+	rc = ksmbd_vfs_remove_file(work, &path);
+
+	inode_unlock(d_inode(parent_path.dentry));
+	path_put(&path);
+	path_put(&parent_path);
+
+#else
 	rc = ksmbd_vfs_remove_file(work, name);
+#endif
 	if (rc < 0)
 		goto out;
 
@@ -5992,7 +6018,7 @@ static int find_first(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct smb_com_trans2_ffirst_req_params *req_params;
 	struct smb_com_trans2_ffirst_rsp_parms *params = NULL;
-	struct path path;
+	struct path path, parent_path;
 	struct ksmbd_dirent *de;
 	struct ksmbd_file *dir_fp = NULL;
 	struct kstat kstat;
@@ -6024,10 +6050,21 @@ static int find_first(struct ksmbd_work *work)
 		goto err_out;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	/* convert '/' to null character to avoid lookup failing */
+	if (strlen(dirpath) == 1 && dirpath[0] == '/')
+		dirpath[0] = '\0';
+
+	ksmbd_debug(SMB, "complete dir path = %s\n", dirpath);
+	rc = ksmbd_vfs_kern_path_locked(work, dirpath,
+					LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
+					&parent_path, &path, 0);
+#else
 	ksmbd_debug(SMB, "complete dir path = %s\n",  dirpath);
 	rc = ksmbd_vfs_kern_path(work, dirpath,
 				 LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
 				 &path, 0);
+#endif
 	if (rc < 0) {
 		ksmbd_debug(SMB, "cannot create vfs root path <%s> %d\n",
 			    dirpath, rc);
@@ -6036,25 +6073,26 @@ static int find_first(struct ksmbd_work *work)
 		if (compat_inode_permission(&path, d_inode(path.dentry),
 					    MAY_READ | MAY_EXEC)) {
 			rc = -EACCES;
-			path_put(&path);
-			goto err_free_dirpath;
+			goto err_free_kernpath;
 		}
 	}
 
 	if (d_is_symlink(path.dentry)) {
 		rc = -EACCES;
-		path_put(&path);
-		goto err_free_dirpath;
+		goto err_free_kernpath;
 	}
 
 	dir_fp = ksmbd_vfs_dentry_open(work, &path, O_RDONLY, 0, 1);
 	if (IS_ERR(dir_fp)) {
 		ksmbd_debug(SMB, "dir dentry open failed with rc=%d\n", rc);
-		path_put(&path);
 		rc = -EINVAL;
 		dir_fp = NULL;
-		goto err_free_dirpath;
+		goto err_free_kernpath;
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
+	path_put(&parent_path);
+#endif
 
 	write_lock(&dir_fp->f_ci->m_lock);
 	list_add(&dir_fp->node, &dir_fp->f_ci->m_fp_list);
@@ -6064,7 +6102,7 @@ static int find_first(struct ksmbd_work *work)
 	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
 	if (!dir_fp->readdir_data.dirent) {
 		rc = -ENOMEM;
-		goto err_free_dirpath;
+		goto err_out;
 	}
 
 	dir_fp->filename = dirpath;
@@ -6247,6 +6285,14 @@ static int find_first(struct ksmbd_work *work)
 	ksmbd_revert_fsids(work);
 	return 0;
 
+err_free_kernpath:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
+	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 err_free_dirpath:
 	kfree(dirpath);
 err_out:
@@ -7628,7 +7674,7 @@ int smb_checkdir(struct ksmbd_work *work)
 	struct smb_com_check_directory_req *req = work->request_buf;
 	struct smb_com_check_directory_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
-	struct path path;
+	struct path path, parent_path;
 	struct kstat stat;
 	char *name, *last;
 	int err;
@@ -7639,9 +7685,13 @@ int smb_checkdir(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	err = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					 &parent_path, &path, caseless_lookup);
+#else
 	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  caseless_lookup);
+#endif
 	if (err) {
 		if (err == -ENOENT) {
 			/*
@@ -7655,10 +7705,16 @@ int smb_checkdir(struct ksmbd_work *work)
 			if (last && last[1] != '\0') {
 				*last = '\0';
 				last++;
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+				err = ksmbd_vfs_kern_path_locked(work, name,
+						LOOKUP_FOLLOW | LOOKUP_DIRECTORY,
+						&parent_path, &path,
+						caseless_lookup);
+#else
 				err = ksmbd_vfs_kern_path(work, name, LOOKUP_FOLLOW |
 						LOOKUP_DIRECTORY, &path,
 						caseless_lookup);
+#endif
 			} else {
 				ksmbd_debug(SMB, "can't lookup parent %s\n",
 					name);
@@ -7705,7 +7761,13 @@ int smb_checkdir(struct ksmbd_work *work)
 		rsp->ByteCount = 0;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
 	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 	kfree(name);
 	return err;
 }
@@ -7743,6 +7805,9 @@ int smb_rmdir(struct ksmbd_work *work)
 	struct smb_com_delete_directory_req *req = work->request_buf;
 	struct smb_com_delete_directory_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	struct path path, parent_path;
+#endif
 	char *name;
 	int err;
 
@@ -7758,8 +7823,21 @@ int smb_rmdir(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	err = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					 &parent_path, &path, 0);
+	if (err < 0) {
+		kfree(name);
+		return err;
+	}
 
+	err = ksmbd_vfs_remove_file(work, &path);
+	inode_unlock(d_inode(parent_path.dentry));
+	path_put(&path);
+	path_put(&parent_path);
+#else
 	err = ksmbd_vfs_remove_file(work, name);
+#endif
 	if (err) {
 		if (err == -ENOTEMPTY)
 			rsp->hdr.Status.CifsError = STATUS_DIRECTORY_NOT_EMPTY;
@@ -7810,8 +7888,23 @@ int smb_unlink(struct ksmbd_work *work)
 	fp = ksmbd_lookup_fd_filename(work, name);
 	if (fp)
 		err = -ESHARE;
-	else
+	else {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+		struct path path, parent_path;
+
+		err = ksmbd_vfs_kern_path_locked(work, name,
+						 LOOKUP_NO_SYMLINKS,
+						 &parent_path, &path, 0);
+		if (!err) {
+			err = ksmbd_vfs_remove_file(work, &path);
+			inode_unlock(d_inode(parent_path.dentry));
+			path_put(&path);
+			path_put(&parent_path);
+		}
+#else
 		err = ksmbd_vfs_remove_file(work, name);
+#endif
+	}
 
 	if (err) {
 		if (err == -EISDIR)
@@ -7941,7 +8034,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 {
 	struct smb_com_query_information_req *req = work->request_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
-	struct path path;
+	struct path path, parent_path;
 	char *name;
 	__le32 err = 0;
 	int ret;
@@ -7954,8 +8047,12 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 		kfree(name);
 		return STATUS_NO_MEMORY;
 	}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	ret = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					 &parent_path, &path, 0);
+#else
 	ret = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 0);
+#endif
 	if (ret) {
 		pr_err("look up failed err %d\n", ret);
 
@@ -7969,7 +8066,13 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 
 	compat_generic_fillattr(&path, STATX_BASIC_STATS,
 				d_inode(path.dentry), st);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
 	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 out:
 	ksmbd_revert_fsids(work);
 	kfree(name);
@@ -8413,7 +8516,7 @@ int smb_setattr(struct ksmbd_work *work)
 	struct smb_com_setattr_req *req = work->request_buf;
 	struct smb_com_setattr_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
-	struct path path;
+	struct path path, parent_path;
 	struct kstat stat;
 	struct iattr attrs;
 	int err = 0;
@@ -8425,9 +8528,14 @@ int smb_setattr(struct ksmbd_work *work)
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_INVALID;
 		return PTR_ERR(name);
 	}
-
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	err = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					 &parent_path, &path,
+					 req->hdr.Flags & SMBFLG_CASELESS);
+#else
 	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path,
 				  req->hdr.Flags & SMBFLG_CASELESS);
+#endif
 	if (err) {
 		ksmbd_debug(SMB, "look up failed err %d\n", err);
 		rsp->hdr.Status.CifsError = STATUS_OBJECT_NAME_NOT_FOUND;
@@ -8439,6 +8547,14 @@ int smb_setattr(struct ksmbd_work *work)
 	path_put(&path);
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
+	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 
 	dos_attr = le16_to_cpu(req->attr);
 	if (!dos_attr)
