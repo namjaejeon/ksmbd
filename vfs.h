@@ -165,7 +165,11 @@ int ksmbd_vfs_symlink(struct ksmbd_work *work,
 		      const char *name, const char *symname);
 int ksmbd_vfs_readlink(struct path *path, char *buf, int lenp);
 int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+			   struct mnt_idmap *idmap,
+#else
 			   struct user_namespace *user_ns,
+#endif
 			   struct ksmbd_kstat *ksmbd_kstat,
 			   const char *de_name, int de_name_len,
 			   const char *dir_path);
