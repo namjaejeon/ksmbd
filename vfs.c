@@ -1043,7 +1043,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   const char *de_name, int de_name_len,
 			   const char *dir_path)
 {
-	struct path path;
+	struct path path, parent_path;
 	int rc, file_pathlen, dir_pathlen;
 	char *name;
 
@@ -1059,7 +1059,12 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
 	name[file_pathlen] = '\0';
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+					&parent_path, &path, true);
+#else
 	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+#endif
 	if (rc) {
 		pr_err("lookup failed: %s [%d]\n", name, rc);
 		kfree(name);
@@ -1067,7 +1072,13 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	}
 
 	ksmbd_vfs_fill_dentry_attrs(work, user_ns, path.dentry, ksmbd_kstat);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	inode_unlock(d_inode(parent_path.dentry));
 	path_put(&path);
+	path_put(&parent_path);
+#else
+	path_put(&path);
+#endif
 	kfree(name);
 	return 0;
 }
