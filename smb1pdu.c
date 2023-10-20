@@ -5084,20 +5084,8 @@ static int smb_posix_open(struct ksmbd_work *work)
 		if (create_directory)
 			goto prepare_rsp;
 	} else {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		err = inode_permission(mnt_idmap(path.mnt),
-				       d_inode(path.dentry),
-				       may_flags);
-#else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		err = inode_permission(mnt_user_ns(path.mnt),
-				       d_inode(path.dentry),
-				       may_flags);
-#else
-		err = inode_permission(d_inode(path.dentry),
-				       may_flags);
-#endif
-#endif
+		err = compat_inode_permission(&path, d_inode(path.dentry),
+					      may_flags);
 		if (err)
 			goto free_path;
 	}
