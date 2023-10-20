@@ -36,6 +36,72 @@
 #include "smberr.h"
 #include "unicode.h"
 
+static const char *const smb_cmd_str[] = {
+	[SMB_COM_CREATE_DIRECTORY] = "SMB_COM_CREATE_DIRECTORY",
+	[SMB_COM_DELETE_DIRECTORY] = "SMB_COM_DELETE_DIRECTORY",
+	[SMB_COM_CLOSE] = "SMB_COM_CLOSE",
+	[SMB_COM_FLUSH] = "SMB_COM_FLUSH",
+	[SMB_COM_DELETE] = "SMB_COM_DELETE",
+	[SMB_COM_RENAME] = "SMB_COM_RENAME",
+	[SMB_COM_QUERY_INFORMATION] = "SMB_COM_QUERY_INFORMATION",
+	[SMB_COM_SETATTR] = "SMB_COM_SETATTR",
+	[SMB_COM_WRITE] = "SMB_COM_WRITE",
+	[SMB_COM_CHECK_DIRECTORY] = "SMB_COM_CHECK_DIRECTORY",
+	[SMB_COM_PROCESS_EXIT] = "SMB_COM_PROCESS_EXIT",
+	[SMB_COM_LOCKING_ANDX] = "SMB_COM_LOCKING_ANDX",
+	[SMB_COM_TRANSACTION] = "SMB_COM_TRANSACTION",
+	[SMB_COM_COPY] = "SMB_COM_COPY",
+	[SMB_COM_ECHO] = "SMB_COM_ECHO",
+	[SMB_COM_OPEN_ANDX] = "SMB_COM_OPEN_ANDX",
+	[SMB_COM_READ_ANDX] = "SMB_COM_READ_ANDX",
+	[SMB_COM_WRITE_ANDX] = "SMB_COM_WRITE_ANDX",
+	[SMB_COM_TRANSACTION2] = "SMB_COM_TRANSACTION2",
+	[SMB_COM_TRANSACTION2_SECONDARY] = "SMB_COM_TRANSACTION2_SECONDARY",
+	[SMB_COM_FIND_CLOSE2] = "SMB_COM_FIND_CLOSE2",
+	[SMB_COM_TREE_DISCONNECT] = "SMB_COM_TREE_DISCONNECT",
+	[SMB_COM_NEGOTIATE] = "SMB_COM_NEGOTIATE",
+	[SMB_COM_SESSION_SETUP_ANDX] = "SMB_COM_SESSION_SETUP_ANDX",
+	[SMB_COM_LOGOFF_ANDX] = "SMB_COM_LOGOFF_ANDX",
+	[SMB_COM_TREE_CONNECT_ANDX] = "SMB_COM_TREE_CONNECT_ANDX",
+	[SMB_COM_QUERY_INFORMATION_DISK] = "SMB_COM_QUERY_INFORMATION_DISK",
+	[SMB_COM_NT_TRANSACT] = "SMB_COM_NT_TRANSACT",
+	[SMB_COM_NT_TRANSACT_SECONDARY] = "SMB_COM_NT_TRANSACT_SECONDARY",
+	[SMB_COM_NT_CREATE_ANDX] = "SMB_COM_NT_CREATE_ANDX",
+	[SMB_COM_NT_CANCEL] = "SMB_COM_NT_CANCEL",
+	[SMB_COM_NT_RENAME] = "SMB_COM_NT_RENAME",
+};
+
+static const char *smb_cmd_to_str(u16 cmd)
+{
+	if (cmd < ARRAY_SIZE(smb_cmd_str))
+		return smb_cmd_str[cmd];
+
+	return "unknown_cmd";
+}
+
+static const char *const smb_trans2_cmd_str[] = {
+	[TRANS2_OPEN] = "TRANS2_OPEN",
+	[TRANS2_FIND_FIRST] = "TRANS2_FIND_FIRST",
+	[TRANS2_FIND_NEXT] = "TRANS2_FIND_NEXT",
+	[TRANS2_QUERY_FS_INFORMATION] = "TRANS2_QUERY_FS_INFORMATION",
+	[TRANS2_SET_FS_INFORMATION] = "TRANS2_SET_FS_INFORMATION",
+	[TRANS2_QUERY_PATH_INFORMATION] = "TRANS2_QUERY_PATH_INFORMATION",
+	[TRANS2_SET_PATH_INFORMATION] = "TRANS2_SET_PATH_INFORMATION",
+	[TRANS2_QUERY_FILE_INFORMATION] = "TRANS2_QUERY_FILE_INFORMATION",
+	[TRANS2_SET_FILE_INFORMATION] = "TRANS2_SET_FILE_INFORMATION",
+	[TRANS2_CREATE_DIRECTORY] = "TRANS2_CREATE_DIRECTORY",
+	[TRANS2_GET_DFS_REFERRAL] = "TRANS2_GET_DFS_REFERRAL",
+	[TRANS2_REPORT_DFS_INCOSISTENCY] = "TRANS2_REPORT_DFS_INCOSISTENCY",
+};
+
+static const char *smb_trans2_cmd_to_str(u16 cmd)
+{
+	if (cmd < ARRAY_SIZE(smb_trans2_cmd_str))
+		return smb_trans2_cmd_str[cmd];
+
+	return "unknown_trans2_cmd";
+}
+
 static int smb1_oplock_enable = false;
 
 /* Default: allocation roundup size = 1048576 */
@@ -252,6 +318,9 @@ int smb_check_user_session(struct ksmbd_work *work)
 	struct smb_hdr *req_hdr = (struct smb_hdr *)work->request_buf;
 	struct ksmbd_conn *conn = work->conn;
 	unsigned int cmd = conn->ops->get_cmd_val(work);
+
+	ksmbd_debug(SMB, "received SMB command: %s\n",
+		    smb_cmd_to_str(req_hdr->Command));
 
 	work->sess = NULL;
 	if (cmd == SMB_COM_NEGOTIATE || cmd == SMB_COM_SESSION_SETUP_ANDX ||
@@ -7557,6 +7626,8 @@ int smb_trans2(struct ksmbd_work *work)
 		return -EINVAL;
 	}
 
+	ksmbd_debug(SMB, "processing trans2 subcommand: %s\n",
+		    smb_trans2_cmd_to_str(sub_command));
 	switch (sub_command) {
 	case TRANS2_FIND_FIRST:
 		err = find_first(work);
