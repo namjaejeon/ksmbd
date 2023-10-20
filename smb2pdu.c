@@ -18,6 +18,7 @@
 #include <linux/filelock.h>
 #endif
 
+#include "compat.h"
 #include "glob.h"
 #include "smb2pdu.h"
 #include "smbfsctl.h"
@@ -2572,13 +2573,7 @@ static void smb2_new_xattrs(struct ksmbd_tree_connect *tcon, const struct path *
 	da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
 		XATTR_DOSINFO_ITIME;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	rc = ksmbd_vfs_set_dos_attrib_xattr(mnt_idmap(path->mnt),
-					    path, &da);
-#else
-	rc = ksmbd_vfs_set_dos_attrib_xattr(mnt_user_ns(path->mnt),
-					    path, &da);
-#endif
+	rc = compat_ksmbd_vfs_set_dos_attrib_xattr(path, &da);
 	if (rc)
 		ksmbd_debug(SMB, "failed to store file attribute into xattr\n");
 }
@@ -2596,13 +2591,7 @@ static void smb2_update_xattrs(struct ksmbd_tree_connect *tcon,
 				    KSMBD_SHARE_FLAG_STORE_DOS_ATTRS))
 		return;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	rc = ksmbd_vfs_get_dos_attrib_xattr(mnt_idmap(path->mnt),
-					    path->dentry, &da);
-#else
-	rc = ksmbd_vfs_get_dos_attrib_xattr(mnt_user_ns(path->mnt),
-					    path->dentry, &da);
-#endif
+	rc = compat_ksmbd_vfs_get_dos_attrib_xattr(path, path->dentry, &da);
 	if (rc > 0) {
 		fp->f_ci->m_fattr = cpu_to_le32(da.attr);
 		fp->create_time = da.create_time;
@@ -6226,12 +6215,7 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
 			XATTR_DOSINFO_ITIME;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		rc = ksmbd_vfs_set_dos_attrib_xattr(idmap,
-#else
-		rc = ksmbd_vfs_set_dos_attrib_xattr(user_ns,
-#endif
-						    &filp->f_path, &da);
+		rc = compat_ksmbd_vfs_set_dos_attrib_xattr(&filp->f_path, &da);
 		if (rc)
 			ksmbd_debug(SMB,
 				    "failed to restore file attribute in EA\n");
@@ -8162,22 +8146,12 @@ static inline int fsctl_set_sparse(struct ksmbd_work *work, u64 id,
 				   struct file_sparse *sparse)
 {
 	struct ksmbd_file *fp;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	struct mnt_idmap *idmap;
-#else
-	struct user_namespace *user_ns;
-#endif
 	int ret = 0;
 	__le32 old_fattr;
 
 	fp = ksmbd_lookup_fd_fast(work, id);
 	if (!fp)
 		return -ENOENT;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-	idmap = file_mnt_idmap(fp->filp);
-#else
-	user_ns = file_mnt_user_ns(fp->filp);
-#endif
 
 	old_fattr = fp->f_ci->m_fattr;
 	if (sparse->SetSparse)
@@ -8190,22 +8164,15 @@ static inline int fsctl_set_sparse(struct ksmbd_work *work, u64 id,
 				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		struct xattr_dos_attrib da;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		ret = ksmbd_vfs_get_dos_attrib_xattr(idmap,
-#else
-		ret = ksmbd_vfs_get_dos_attrib_xattr(user_ns,
-#endif
-						     fp->filp->f_path.dentry, &da);
+		ret = compat_ksmbd_vfs_get_dos_attrib_xattr(&fp->filp->f_path,
+							    fp->filp->f_path.dentry,
+							    &da);
 		if (ret <= 0)
 			goto out;
 
 		da.attr = le32_to_cpu(fp->f_ci->m_fattr);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		ret = ksmbd_vfs_set_dos_attrib_xattr(idmap,
-#else
-		ret = ksmbd_vfs_set_dos_attrib_xattr(user_ns,
-#endif
-						     &fp->filp->f_path, &da);
+		ret = compat_ksmbd_vfs_set_dos_attrib_xattr(&fp->filp->f_path,
+							    &da);
 		if (ret)
 			fp->f_ci->m_fattr = old_fattr;
 	}
