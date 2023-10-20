@@ -328,9 +328,6 @@ int smb_session_disconnect(struct ksmbd_work *work)
 	ksmbd_conn_wait_idle(conn, sess->id);
 
 	ksmbd_tree_conn_session_logoff(sess);
-	xa_erase(&conn->sessions, sess->id);
-	ksmbd_session_destroy(sess);
-	work->sess = NULL;
 
 	/* let start_tcp_sess free conn info now */
 	ksmbd_conn_set_exiting(conn);
