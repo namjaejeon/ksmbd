@@ -44,6 +44,36 @@
 #include "mgmt/ksmbd_ida.h"
 #include "ndr.h"
 
+static const char *const smb2_cmd_str[] = {
+	[SMB2_NEGOTIATE_HE] = "SMB2_NEGOTIATE",
+	[SMB2_SESSION_SETUP_HE] = "SMB2_SESSION_SETUP",
+	[SMB2_LOGOFF_HE] = "SMB2_LOGOFF",
+	[SMB2_TREE_CONNECT_HE] = "SMB2_TREE_CONNECT",
+	[SMB2_TREE_DISCONNECT_HE] = "SMB2_TREE_DISCONNECT",
+	[SMB2_CREATE_HE] = "SMB2_CREATE",
+	[SMB2_CLOSE_HE] = "SMB2_CLOSE",
+	[SMB2_FLUSH_HE] = "SMB2_FLUSH",
+	[SMB2_READ_HE] = "SMB2_READ",
+	[SMB2_WRITE_HE] = "SMB2_WRITE",
+	[SMB2_LOCK_HE] = "SMB2_LOCK",
+	[SMB2_IOCTL_HE] = "SMB2_IOCTL",
+	[SMB2_CANCEL_HE] = "SMB2_CANCEL",
+	[SMB2_ECHO_HE] = "SMB2_ECHO",
+	[SMB2_QUERY_DIRECTORY_HE] = "SMB2_QUERY_DIRECTORY",
+	[SMB2_CHANGE_NOTIFY_HE] = "SMB2_CHANGE_NOTIFY",
+	[SMB2_QUERY_INFO_HE] = "SMB2_QUERY_INFO",
+	[SMB2_SET_INFO_HE] = "SMB2_SET_INFO",
+	[SMB2_OPLOCK_BREAK_HE] = "SMB2_OPLOCK_BREAK",
+};
+
+static const char *smb2_cmd_to_str(u16 cmd)
+{
+	if (cmd < ARRAY_SIZE(smb2_cmd_str))
+		return smb2_cmd_str[cmd];
+
+	return "unknown_cmd";
+}
+
 static void __wbuf(struct ksmbd_work *work, void **req, void **rsp)
 {
 	if (work->next_smb2_rcv_hdr_off) {
@@ -573,6 +603,8 @@ int smb2_check_user_session(struct ksmbd_work *work)
 	unsigned int cmd = le16_to_cpu(req_hdr->Command);
 	unsigned long long sess_id;
 
+	ksmbd_debug(SMB, "received command: %s\n",
+		    smb2_cmd_to_str(req_hdr->Command));
 	/*
 	 * SMB2_ECHO, SMB2_NEGOTIATE, SMB2_SESSION_SETUP command do not
 	 * require a session id, so no need to validate user session's for
