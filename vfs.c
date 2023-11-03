@@ -3033,7 +3033,12 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(idmap, STATX_BASIC_STATS, d_inode(dentry),
+			 ksmbd_kstat->kstat);
+#else
 	generic_fillattr(idmap, d_inode(dentry), ksmbd_kstat->kstat);
+#endif
 #else
 	generic_fillattr(user_ns, d_inode(dentry), ksmbd_kstat->kstat);
 #endif

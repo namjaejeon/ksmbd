@@ -4715,8 +4715,13 @@ static int get_file_basic_info(struct smb2_query_info_rsp *rsp,
 	basic_info = (struct smb2_file_basic_info *)rsp->Buffer;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS,
+			file_inode(fp->filp), &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
 			 &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
 			 &stat);
@@ -4749,7 +4754,11 @@ static void get_file_standard_info(struct smb2_query_info_rsp *rsp,
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS, inode, &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
 #endif
@@ -4807,7 +4816,11 @@ static int get_file_all_info(struct ksmbd_work *work,
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS, inode, &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
 #endif
@@ -4890,8 +4903,13 @@ static void get_file_stream_info(struct ksmbd_work *work,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS,
+			 file_inode(fp->filp), &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
 			 &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
 			 &stat);
@@ -4989,8 +5007,13 @@ static void get_file_internal_info(struct smb2_query_info_rsp *rsp,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS,
+			 file_inode(fp->filp), &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
 			 &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
 			 &stat);
@@ -5023,7 +5046,11 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 	inode = file_inode(fp->filp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS, inode, &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), inode, &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), inode, &stat);
 #endif
@@ -5088,8 +5115,13 @@ static void get_file_compression_info(struct smb2_query_info_rsp *rsp,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	generic_fillattr(file_mnt_idmap(fp->filp), STATX_BASIC_STATS,
+			 file_inode(fp->filp), &stat);
+#else
 	generic_fillattr(file_mnt_idmap(fp->filp), file_inode(fp->filp),
 			 &stat);
+#endif
 #else
 	generic_fillattr(file_mnt_user_ns(fp->filp), file_inode(fp->filp),
 			 &stat);
