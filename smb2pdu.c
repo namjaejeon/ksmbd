@@ -3085,14 +3085,16 @@ int smb2_open(struct ksmbd_work *work)
 			daccess = cpu_to_le32(GENERIC_ALL_FLAGS);
 		} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			rc = ksmbd_vfs_query_maximal_access(idmap,
+			ksmbd_vfs_query_maximal_access(idmap,
+						       path.dentry,
+						       &daccess);
 #else
 			rc = ksmbd_vfs_query_maximal_access(user_ns,
-#endif
 							    path.dentry,
 							    &daccess);
 			if (rc)
 				goto err_out;
+#endif
 			already_permitted = true;
 		}
 		maximal_access = daccess;

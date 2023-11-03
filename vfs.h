@@ -133,7 +133,7 @@ int ksmbd_vfs_lock_parent(struct mnt_idmap *idmap, struct dentry *parent,
 			  struct dentry *child);
 int ksmbd_vfs_may_delete(struct mnt_idmap *idmap, struct dentry *dentry);
 #endif
-int ksmbd_vfs_query_maximal_access(struct mnt_idmap *idmap,
+void ksmbd_vfs_query_maximal_access(struct mnt_idmap *idmap,
 				   struct dentry *dentry, __le32 *daccess);
 #else
 int ksmbd_vfs_lock_parent(struct user_namespace *user_ns, struct dentry *parent,
