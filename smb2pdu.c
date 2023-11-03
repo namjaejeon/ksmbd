@@ -5188,7 +5188,11 @@ static void find_file_posix_info(struct smb2_query_info_rsp *rsp,
 	file_info->LastAccessTime = cpu_to_le64(time);
 	time = ksmbd_UnixTimeToNT(inode->i_mtime);
 	file_info->LastWriteTime = cpu_to_le64(time);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+	time = ksmbd_UnixTimeToNT(inode_get_ctime(inode));
+#else
 	time = ksmbd_UnixTimeToNT(inode->i_ctime);
+#endif
 	file_info->ChangeTime = cpu_to_le64(time);
 	file_info->DosAttributes = fp->f_ci->m_fattr;
 	file_info->Inode = cpu_to_le64(inode->i_ino);
@@ -5834,7 +5838,11 @@ int smb2_close(struct ksmbd_work *work)
 		rsp->LastAccessTime = cpu_to_le64(time);
 		time = ksmbd_UnixTimeToNT(inode->i_mtime);
 		rsp->LastWriteTime = cpu_to_le64(time);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+		time = ksmbd_UnixTimeToNT(inode_get_ctime(inode));
+#else
 		time = ksmbd_UnixTimeToNT(inode->i_ctime);
+#endif
 		rsp->ChangeTime = cpu_to_le64(time);
 		ksmbd_fd_put(work, fp);
 	} else {
@@ -6217,7 +6225,11 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 	if (file_info->ChangeTime)
 		attrs.ia_ctime = ksmbd_NTtimeToUnix(file_info->ChangeTime);
 	else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+		attrs.ia_ctime = inode_get_ctime(inode);
+#else
 		attrs.ia_ctime = inode->i_ctime;
+#endif
 
 	if (file_info->LastWriteTime) {
 		attrs.ia_mtime = ksmbd_NTtimeToUnix(file_info->LastWriteTime);
@@ -6262,7 +6274,11 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 			return -EACCES;
 
 		inode_lock(inode);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+		inode_set_ctime_to_ts(inode, attrs.ia_ctime);
+#else
 		inode->i_ctime = attrs.ia_ctime;
+#endif
 		attrs.ia_valid &= ~ATTR_CTIME;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
