@@ -2415,7 +2415,8 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 			rc = ksmbd_vfs_setxattr(user_ns,
 #endif
 						path, attr_name, value,
-						le16_to_cpu(eabuf->EaValueLength), 0);
+						le16_to_cpu(eabuf->EaValueLength),
+						0, true);
 			if (rc < 0) {
 				ksmbd_debug(SMB,
 					    "ksmbd_vfs_setxattr is failed(%d)\n",
@@ -2491,7 +2492,7 @@ static noinline int smb2_set_stream_name_xattr(const struct path *path,
 #else
 	rc = ksmbd_vfs_setxattr(user_ns, path,
 #endif
-				xattr_stream_name, NULL, 0, 0);
+				xattr_stream_name, NULL, 0, 0, false);
 	if (rc < 0)
 		pr_err("Failed to store XATTR stream name :%d\n", rc);
 	return 0;
@@ -2573,7 +2574,7 @@ static void smb2_new_xattrs(struct ksmbd_tree_connect *tcon, const struct path *
 	da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
 		XATTR_DOSINFO_ITIME;
 
-	rc = compat_ksmbd_vfs_set_dos_attrib_xattr(path, &da);
+	rc = compat_ksmbd_vfs_set_dos_attrib_xattr(path, &da, false);
 	if (rc)
 		ksmbd_debug(SMB, "failed to store file attribute into xattr\n");
 }
@@ -2671,7 +2672,7 @@ static int smb2_create_sd_buffer(struct ksmbd_work *work,
 	    sizeof(struct create_sd_buf_req))
 		return -EINVAL;
 	return set_info_sec(work->conn, work->tcon, path, &sd_buf->ntsd,
-			    le32_to_cpu(sd_buf->ccontext.DataLength), true);
+			    le32_to_cpu(sd_buf->ccontext.DataLength), true, false);
 }
 
 static void ksmbd_acls_fattr(struct smb_fattr *fattr,
@@ -3328,7 +3329,8 @@ int smb2_open(struct ksmbd_work *work)
 #endif
 								    &path,
 								    pntsd,
-								    pntsd_size);
+								    pntsd_size,
+								    false);
 					kfree(pntsd);
 					if (rc)
 						pr_err("failed to store ntacl in xattr : %d\n",
@@ -3403,12 +3405,6 @@ int smb2_open(struct ksmbd_work *work)
 
 	if (req->CreateOptions & FILE_DELETE_ON_CLOSE_LE)
 		ksmbd_fd_set_delete_on_close(fp, file_info);
-
-	if (need_truncate) {
-		rc = smb2_create_truncate(&path);
-		if (rc)
-			goto err_out;
-	}
 
 	if (req->CreateContextsOffset) {
 		struct create_alloc_size_req *az_req;
@@ -3579,15 +3575,14 @@ int smb2_open(struct ksmbd_work *work)
 
 err_out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	if (file_present || created) {
-		inode_unlock(d_inode(parent_path.dentry));
-		path_put(&path);
-		path_put(&parent_path);
-	}
+	if (file_present || created)
+		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	if (file_present || created)
 		path_put(&path);
 #endif
+	if (fp && need_truncate)
+		rc = smb2_create_truncate(&fp->filp->f_path);
 	ksmbd_revert_fsids(work);
 err_out1:
 	if (!rc) {
@@ -5951,7 +5946,7 @@ static int smb2_rename(struct ksmbd_work *work,
 		rc = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp),
 					&fp->filp->f_path,
 					xattr_stream_name,
-					NULL, 0, 0);
+					NULL, 0, 0, true);
 		if (rc < 0) {
 			pr_err("failed to store stream name in xattr: %d\n",
 			       rc);
@@ -6054,7 +6049,7 @@ static int smb2_rename(struct ksmbd_work *work,
 #endif
 					&fp->filp->f_path,
 					xattr_stream_name,
-					NULL, 0, 0);
+					NULL, 0, 0, true);
 		if (rc < 0) {
 			pr_err("failed to store stream name in xattr: %d\n",
 			       rc);
@@ -6193,11 +6188,8 @@ static int smb2_create_link(struct ksmbd_work *work,
 		rc = -EINVAL;
 out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	if (file_present) {
-		inode_unlock(d_inode(parent_path.dentry));
-		path_put(&path);
-		path_put(&parent_path);
-	}
+	if (file_present)
+		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #endif
 	if (!IS_ERR(link_name))
 		kfree(link_name);
@@ -6277,7 +6269,8 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		da.flags = XATTR_DOSINFO_ATTRIB | XATTR_DOSINFO_CREATE_TIME |
 			XATTR_DOSINFO_ITIME;
 
-		rc = compat_ksmbd_vfs_set_dos_attrib_xattr(&filp->f_path, &da);
+		rc = compat_ksmbd_vfs_set_dos_attrib_xattr(&filp->f_path, &da,
+				true);
 		if (rc)
 			ksmbd_debug(SMB,
 				    "failed to restore file attribute in EA\n");
@@ -6670,7 +6663,7 @@ static int smb2_set_info_sec(struct ksmbd_file *fp, int addition_info,
 	fp->saccess |= FILE_SHARE_DELETE_LE;
 
 	return set_info_sec(fp->conn, fp->tcon, &fp->filp->f_path, pntsd,
-			buf_len, false);
+			buf_len, false, true);
 }
 
 /**
@@ -8238,7 +8231,8 @@ static inline int fsctl_set_sparse(struct ksmbd_work *work, u64 id,
 
 		da.attr = le32_to_cpu(fp->f_ci->m_fattr);
 		ret = compat_ksmbd_vfs_set_dos_attrib_xattr(&fp->filp->f_path,
-							    &da);
+							    &da,
+							    true);
 		if (ret)
 			fp->f_ci->m_fattr = old_fattr;
 	}
