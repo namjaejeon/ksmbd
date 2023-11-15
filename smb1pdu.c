@@ -4121,7 +4121,11 @@ static int query_path_info(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct trans2_qpi_req_params *req_params;
 	char *name = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	struct kstat st;
 	int rc;
 	char *ptr;
@@ -4679,7 +4683,6 @@ static int set_fs_info(struct ksmbd_work *work)
  */
 static int query_fs_info(struct ksmbd_work *work)
 {
-	struct smb_hdr *req_hdr = work->request_buf;
 	struct smb_com_trans2_req *req = work->request_buf;
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct smb_com_trans2_qfsi_req_params *req_params;
@@ -6080,7 +6083,11 @@ static int find_first(struct ksmbd_work *work)
 	struct smb_com_trans2_rsp *rsp = work->response_buf;
 	struct smb_com_trans2_ffirst_req_params *req_params;
 	struct smb_com_trans2_ffirst_rsp_parms *params = NULL;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	struct ksmbd_dirent *de;
 	struct ksmbd_file *dir_fp = NULL;
 	struct kstat kstat;
@@ -7508,7 +7515,11 @@ static int smb_common_mkdir(struct ksmbd_work *work, char *name, mode_t mode)
 	if (test_share_config_flag(work->tcon->share_conf,
 				   KSMBD_SHARE_FLAG_STORE_DOS_ATTRS)) {
 		__u64 ctime;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 		struct path path, parent_path;
+#else
+		struct path path;
+#endif
 		struct xattr_dos_attrib da = {0};
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
@@ -7718,7 +7729,11 @@ int smb_checkdir(struct ksmbd_work *work)
 	struct smb_com_check_directory_req *req = work->request_buf;
 	struct smb_com_check_directory_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	struct kstat stat;
 	char *name, *last;
 	int err;
@@ -8073,7 +8088,11 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 {
 	struct smb_com_query_information_req *req = work->request_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	char *name;
 	__le32 err = 0;
 	int ret;
@@ -8557,7 +8576,11 @@ int smb_setattr(struct ksmbd_work *work)
 	struct smb_com_setattr_req *req = work->request_buf;
 	struct smb_com_setattr_rsp *rsp = work->response_buf;
 	struct ksmbd_share_config *share = work->tcon->share_conf;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	struct kstat stat;
 	struct iattr attrs;
 	int err = 0;
