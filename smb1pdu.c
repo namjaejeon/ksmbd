@@ -2744,7 +2744,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			da.create_time = fp->create_time;
 
 			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path,
-								    &da);
+								    &da, false);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
@@ -2796,9 +2796,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 
 free_path:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -4583,9 +4581,7 @@ static int query_path_info(struct ksmbd_work *work)
 
 err_out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -5175,9 +5171,7 @@ prepare_rsp:
 
 free_path:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -5252,10 +5246,7 @@ static int smb_posix_unlink(struct ksmbd_work *work)
 
 	rc = ksmbd_vfs_remove_file(work, &path);
 
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
-
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	rc = ksmbd_vfs_remove_file(work, name);
 #endif
@@ -6363,9 +6354,7 @@ static int find_first(struct ksmbd_work *work)
 
 err_free_kernpath:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -7538,13 +7527,11 @@ static int smb_common_mkdir(struct ksmbd_work *work, char *name, mode_t mode)
 				   XATTR_DOSINFO_CREATE_TIME |
 				   XATTR_DOSINFO_ITIME;
 
-			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da, false);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-			inode_unlock(d_inode(parent_path.dentry));
-			path_put(&path);
-			path_put(&parent_path);
+			ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 			path_put(&path);
 #endif
@@ -7819,9 +7806,7 @@ int smb_checkdir(struct ksmbd_work *work)
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -7889,9 +7874,8 @@ int smb_rmdir(struct ksmbd_work *work)
 	}
 
 	err = ksmbd_vfs_remove_file(work, &path);
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	err = ksmbd_vfs_remove_file(work, name);
 #endif
@@ -7954,9 +7938,7 @@ int smb_unlink(struct ksmbd_work *work)
 						 &parent_path, &path, 0);
 		if (!err) {
 			err = ksmbd_vfs_remove_file(work, &path);
-			inode_unlock(d_inode(parent_path.dentry));
-			path_put(&path);
-			path_put(&parent_path);
+			ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 		}
 #else
 		err = ksmbd_vfs_remove_file(work, name);
@@ -8124,9 +8106,7 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 	compat_generic_fillattr(&path, STATX_BASIC_STATS,
 				d_inode(path.dentry), st);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -8484,7 +8464,8 @@ int smb_open_andx(struct ksmbd_work *work)
 				   XATTR_DOSINFO_CREATE_TIME |
 				   XATTR_DOSINFO_ITIME;
 
-			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da);
+			err = compat_ksmbd_vfs_set_dos_attrib_xattr(&path, &da,
+					false);
 			if (err)
 				ksmbd_debug(SMB, "failed to store creation time in xattr\n");
 			err = 0;
@@ -8522,9 +8503,7 @@ int smb_open_andx(struct ksmbd_work *work)
 
 free_path:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
@@ -8611,9 +8590,7 @@ int smb_setattr(struct ksmbd_work *work)
 	attrs.ia_mode = 0;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	inode_unlock(d_inode(parent_path.dentry));
-	path_put(&path);
-	path_put(&parent_path);
+	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
 	path_put(&path);
 #endif
