@@ -2801,7 +2801,7 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out1;
 		}
 
-		ksmbd_debug(SMB, "converted name = %s\n", name);
+		pr_err("converted name = %s\n", name);
 		if (strchr(name, ':')) {
 			if (!test_share_config_flag(work->tcon->share_conf,
 						    KSMBD_SHARE_FLAG_STREAMS)) {
@@ -3381,10 +3381,21 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	} else {
 		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
+			if (S_ISDIR(stat.mode) &&
+			    (lc->req_state & SMB2_LEASE_WRITE_CACHING_LE))
+			       lc->req_state &= ~SMB2_LEASE_WRITE_CACHING_LE;
+
 			req_op_level = smb2_map_lease_to_oplock(lc->req_state);
-			ksmbd_debug(SMB,
+			pr_err(
 				    "lease req for(%s) req oplock state 0x%x, lease state 0x%x\n",
 				    name, req_op_level, lc->req_state);
+
+			/*
+			 * Compare parent lease using parent key. If there is no
+			 * a lease that has same parent key, Send lease break noti.
+			 */
+			ksmbd_parent_lease_break(fp, lc, conn->ClientGUID);
+
 			rc = find_same_lease_key(sess, fp->f_ci, lc);
 			if (rc)
 				goto err_out;
@@ -3502,7 +3513,7 @@ int smb2_open(struct ksmbd_work *work)
 	if (opinfo && opinfo->is_lease) {
 		struct create_context *lease_ccontext;
 
-		ksmbd_debug(SMB, "lease granted on(%s) lease state 0x%x\n",
+		pr_err("lease granted on(%s) lease state 0x%x\n",
 			    name, opinfo->o_lease->state);
 		rsp->OplockLevel = SMB2_OPLOCK_LEVEL_LEASE;
 

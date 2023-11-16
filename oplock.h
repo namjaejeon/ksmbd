@@ -81,7 +81,7 @@ struct oplock_info {
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	bool			is_smb2;
 #endif
-	bool			open_trunc;	/* truncate on open */
+	bool			lease_none;	/* truncate on open or parent key break */
 	struct lease		*o_lease;
 	struct list_head        interim_list;
 	struct list_head        op_entry;
@@ -100,7 +100,7 @@ struct lease_break_info {
 
 struct oplock_break_info {
 	int level;
-	int open_trunc;
+	int lease_none;
 	int fid;
 };
 
@@ -136,4 +136,7 @@ struct oplock_info *lookup_lease_in_table(struct ksmbd_conn *conn,
 int find_same_lease_key(struct ksmbd_session *sess, struct ksmbd_inode *ci,
 			struct lease_ctx_info *lctx);
 void destroy_lease_table(struct ksmbd_conn *conn);
+void ksmbd_parent_lease_break(struct ksmbd_file *fp, struct lease_ctx_info *lctx,
+		const char *guid);
+void smb_break_parent_oplock(struct ksmbd_file *fp);
 #endif /* __KSMBD_OPLOCK_H */
