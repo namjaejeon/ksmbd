@@ -51,6 +51,7 @@ struct ksmbd_inode {
 	atomic_t			op_count;
 	/* opinfo count for streams */
 	atomic_t			sop_count;
+	struct dentry			*m_de;
 	struct inode			*m_inode;
 	unsigned int			m_flags;
 	struct hlist_node		m_hash;
@@ -157,7 +158,7 @@ struct ksmbd_file *ksmbd_lookup_fd_cguid(char *cguid);
 #ifdef CONFIG_SMB_INSECURE_SERVER
 struct ksmbd_file *ksmbd_lookup_fd_filename(struct ksmbd_work *work, char *filename);
 #endif
-struct ksmbd_file *ksmbd_lookup_fd_inode(struct inode *inode);
+struct ksmbd_file *ksmbd_lookup_fd_inode(struct dentry *dentry);
 unsigned int ksmbd_open_durable_fd(struct ksmbd_file *fp);
 struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp);
 void ksmbd_close_tree_conn_fds(struct ksmbd_work *work);
@@ -182,7 +183,7 @@ enum KSMBD_INODE_STATUS {
 	KSMBD_INODE_STATUS_PENDING_DELETE,
 };
 
-int ksmbd_query_inode_status(struct inode *inode);
+int ksmbd_query_inode_status(struct dentry *dentry);
 bool ksmbd_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_set_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_clear_inode_pending_delete(struct ksmbd_file *fp);
