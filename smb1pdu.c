@@ -2620,7 +2620,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 			goto free_path;
 	}
 
-	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
+	err = ksmbd_query_inode_status(path.dentry->d_parent);
 	if (err == KSMBD_INODE_STATUS_PENDING_DELETE) {
 		err = -EBUSY;
 		goto free_path;
@@ -4196,7 +4196,7 @@ static int query_path_info(struct ksmbd_work *work)
 		struct file_info_standard *infos;
 
 		ksmbd_debug(SMB, "SMB_INFO_STANDARD\n");
-		rc = ksmbd_query_inode_status(d_inode(path.dentry));
+		rc = ksmbd_query_inode_status(path.dentry);
 		if (rc == KSMBD_INODE_STATUS_PENDING_DELETE) {
 			rc = -EBUSY;
 			goto err_out;
@@ -4241,7 +4241,7 @@ static int query_path_info(struct ksmbd_work *work)
 		unsigned int del_pending;
 
 		ksmbd_debug(SMB, "SMB_QUERY_FILE_STANDARD_INFO\n");
-		del_pending = ksmbd_query_inode_status(d_inode(path.dentry));
+		del_pending = ksmbd_query_inode_status(path.dentry);
 		if (del_pending == KSMBD_INODE_STATUS_PENDING_DELETE)
 			del_pending = 1;
 		else
@@ -4398,7 +4398,7 @@ static int query_path_info(struct ksmbd_work *work)
 
 		ksmbd_debug(SMB, "SMB_QUERY_FILE_ALL_INFO\n");
 
-		del_pending = ksmbd_query_inode_status(d_inode(path.dentry));
+		del_pending = ksmbd_query_inode_status(path.dentry);
 		if (del_pending == KSMBD_INODE_STATUS_PENDING_DELETE)
 			del_pending = 1;
 		else
@@ -8395,7 +8395,7 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto free_path;
 	}
 
-	err = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
+	err = ksmbd_query_inode_status(path.dentry->d_parent);
 	if (err == KSMBD_INODE_STATUS_PENDING_DELETE) {
 		err = -EBUSY;
 		goto free_path;
