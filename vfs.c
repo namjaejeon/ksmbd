@@ -1386,7 +1386,7 @@ retry:
 		goto out3;
 	}
 
-	parent_fp = ksmbd_lookup_fd_inode(d_inode(old_child->d_parent));
+	parent_fp = ksmbd_lookup_fd_inode(old_child->d_parent);
 	if (parent_fp) {
 		if (parent_fp->daccess & FILE_DELETE_LE) {
 			pr_err("parent dir is opened with delete access\n");
@@ -1468,7 +1468,7 @@ static int ksmbd_validate_entry_in_use(struct dentry *src_dent)
 		if (d_really_is_negative(dst_dent))
 			continue;
 
-		child_fp = ksmbd_lookup_fd_inode(d_inode(dst_dent));
+		child_fp = ksmbd_lookup_fd_inode(dst_dent);
 		if (child_fp) {
 			spin_unlock(&src_dent->d_lock);
 			ksmbd_debug(VFS, "Forbid rename, sub file/dir is in use\n");

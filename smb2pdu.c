@@ -3192,7 +3192,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
-	rc = ksmbd_query_inode_status(d_inode(path.dentry->d_parent));
+	rc = ksmbd_query_inode_status(path.dentry->d_parent);
 	if (rc == KSMBD_INODE_STATUS_PENDING_DELETE) {
 		rc = -EBUSY;
 		goto err_out;
@@ -6452,7 +6452,7 @@ static int set_rename_info(struct ksmbd_work *work, struct ksmbd_file *fp,
 		return ret;
 	}
 
-	parent_fp = ksmbd_lookup_fd_inode(d_inode(parent));
+	parent_fp = ksmbd_lookup_fd_inode(parent);
 	inode_unlock(d_inode(parent));
 	dput(parent);
 
