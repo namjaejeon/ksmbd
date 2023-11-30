@@ -108,6 +108,7 @@ static int alloc_lease(struct oplock_info *opinfo, struct lease_ctx_info *lctx)
 	lease->new_state = 0;
 	lease->flags = lctx->flags;
 	lease->duration = lctx->duration;
+	lease->is_dir = lctx->is_dir;
 	memcpy(lease->parent_lease_key, lctx->parent_lease_key, SMB2_LEASE_KEY_SIZE);
 	lease->version = lctx->version;
 	lease->epoch = le16_to_cpu(lctx->epoch);
@@ -1018,7 +1019,7 @@ static int smb2_lease_break_noti(struct oplock_info *opinfo)
 	br_info->curr_state = lease->state;
 	br_info->new_state = lease->new_state;
 	if (lease->version == 2)
-		br_info->epoch = cpu_to_le16(lease->epoch);
+		br_info->epoch = cpu_to_le16(++lease->epoch);
 	else
 		br_info->epoch = 0;
 	memcpy(br_info->lease_key, lease->lease_key, SMB2_LEASE_KEY_SIZE);
@@ -1102,7 +1103,8 @@ static int oplock_break(struct oplock_info *brk_opinfo, int req_op_level)
 					lease->new_state =
 						SMB2_LEASE_READ_CACHING_LE;
 			} else {
-				if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE)
+				if (lease->state & SMB2_LEASE_HANDLE_CACHING_LE &&
+						!lease->is_dir)
 					lease->new_state =
 						SMB2_LEASE_READ_CACHING_LE;
 				else
@@ -1294,6 +1296,28 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
 	default:
 		grant_none_oplock(opinfo, lctx);
 		break;
+	}
+}
+
+void ksmbd_parent_lease_break(struct ksmbd_file *fp,
+		struct lease_ctx_info *lctx, const char *guid)
+{
+	struct oplock_info *opinfo;
+	struct ksmbd_inode *p_ci = NULL;
+
+	if (!(lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE))
+		return;
+
+	p_ci = ksmbd_inode_lookup_lock(fp->filp->f_path.dentry->d_parent);
+	if (!p_ci)
+		return;
+
+	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
+		if (!opinfo->is_lease)
+			continue;
+
+		if (!compare_guid_key(opinfo, guid, lctx->parent_lease_key))
+			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE);
 	}
 }
 
@@ -1665,10 +1689,11 @@ struct lease_ctx_info *parse_lease_state(void *open_req, bool is_dir)
 		struct create_lease_v2 *lc = (struct create_lease_v2 *)cc;
 
 		memcpy(lreq->lease_key, lc->lcontext.LeaseKey, SMB2_LEASE_KEY_SIZE);
-		if (is_dir)
+		if (is_dir) {
 			lreq->req_state = lc->lcontext.LeaseState &
 				~SMB2_LEASE_WRITE_CACHING_LE;
-		else
+			lreq->is_dir = true;
+		} else
 			lreq->req_state = lc->lcontext.LeaseState;
 		lreq->flags = lc->lcontext.LeaseFlags;
 		lreq->epoch = lc->lcontext.Epoch;
