@@ -3411,7 +3411,7 @@ int smb2_open(struct ksmbd_work *work)
 			 * a lease that has same parent key, Send lease break
 			 * notification.
 			 */
-			ksmbd_parent_lease_break(fp, lc, conn->ClientGUID);
+			smb_send_parent_lease_break_noti(fp, lc);
 
 			req_op_level = smb2_map_lease_to_oplock(lc->req_state);
 			ksmbd_debug(SMB,

@@ -1299,8 +1299,8 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
 	}
 }
 
-void ksmbd_parent_lease_break(struct ksmbd_file *fp,
-		struct lease_ctx_info *lctx, const char *guid)
+void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
+		struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
@@ -1316,7 +1316,8 @@ void ksmbd_parent_lease_break(struct ksmbd_file *fp,
 		if (!opinfo->is_lease)
 			continue;
 
-		if (!compare_guid_key(opinfo, guid, lctx->parent_lease_key))
+		if (!compare_guid_key(opinfo, fp->conn->ClientGUID,
+				      lctx->parent_lease_key))
 			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE);
 	}
 }
