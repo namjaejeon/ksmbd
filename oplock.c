@@ -643,12 +643,13 @@ static struct oplock_info *same_client_has_lease(struct ksmbd_inode *ci,
 			/* upgrading lease */
 			if ((atomic_read(&ci->op_count) +
 			     atomic_read(&ci->sop_count)) == 1) {
-				if (lease->state ==
-				    (lctx->req_state & lease->state)) {
+				if (lease->state != SMB2_LEASE_NONE_LE &&
+				    lease->state == (lctx->req_state & lease->state)) {
 					lease->state |= lctx->req_state;
 					if (lctx->req_state &
 						SMB2_LEASE_WRITE_CACHING_LE)
 						lease_read_to_write(opinfo);
+
 				}
 			} else if ((atomic_read(&ci->op_count) +
 				    atomic_read(&ci->sop_count)) > 1) {
@@ -1246,6 +1247,7 @@ static void copy_lease(struct oplock_info *op1, struct oplock_info *op2)
 	       SMB2_LEASE_KEY_SIZE);
 	lease2->duration = lease1->duration;
 	lease2->flags = lease1->flags;
+	lease2->epoch = lease1->epoch++;
 }
 
 static int add_lease_global_list(struct oplock_info *opinfo)
@@ -1305,7 +1307,7 @@ void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
 
-	if (!(lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE))
+	if (lctx->version != 2)
 		return;
 
 	p_ci = ksmbd_inode_lookup_lock(fp->filp->f_path.dentry->d_parent);
@@ -1316,7 +1318,8 @@ void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 		if (!opinfo->is_lease)
 			continue;
 
-		if (!compare_guid_key(opinfo, fp->conn->ClientGUID,
+		if (!(lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE) ||
+		    !compare_guid_key(opinfo, fp->conn->ClientGUID,
 				      lctx->parent_lease_key))
 			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE);
 	}
@@ -1326,6 +1329,9 @@ void smb_send_parent_lease_break_noti_close(struct ksmbd_file *fp)
 {
 	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
+
+	if (fp->f_opinfo->o_lease->version != 2)
+		return;
 
 	p_ci = ksmbd_inode_lookup_lock(fp->filp->f_path.dentry->d_parent);
 	if (!p_ci)
