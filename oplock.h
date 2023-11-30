@@ -140,4 +140,5 @@ int find_same_lease_key(struct ksmbd_session *sess, struct ksmbd_inode *ci,
 void destroy_lease_table(struct ksmbd_conn *conn);
 void ksmbd_parent_lease_break(struct ksmbd_file *fp,
 		struct lease_ctx_info *lctx, const char *guid);
+void smb_send_parent_lease_break_noti_close(struct ksmbd_file *fp);
 #endif /* __KSMBD_OPLOCK_H */
