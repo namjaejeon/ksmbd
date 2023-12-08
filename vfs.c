@@ -871,8 +871,11 @@ int ksmbd_vfs_setattr(struct ksmbd_work *work, const char *name, u64 fid,
 	bool update_size = false;
 	int err = 0;
 	struct ksmbd_file *fp = NULL;
-	struct user_namespace *user_ns;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	struct mnt_idmap *idmap;
+#else
+	struct user_namespace *user_ns;
+#endif
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
@@ -1083,7 +1086,11 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 			   const char *dir_path)
 #endif
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path path, parent_path;
+#else
+	struct path path;
+#endif
 	int rc, file_pathlen, dir_pathlen;
 	char *name;
 
