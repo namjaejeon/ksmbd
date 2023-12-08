@@ -1838,6 +1838,7 @@ ssize_t ksmbd_vfs_getxattr(struct user_namespace *user_ns,
  * @attr_value:	xattr value to set
  * @attr_size:	size of xattr value
  * @flags:	destination buffer length
+ * @get_write:	get write access to a mount
  *
  * Return:	0 on success, otherwise error
  */
