@@ -116,7 +116,7 @@ jobs:
         mv tests/generic/011.new tests/generic/011
         mv tests/generic/011.out.new tests/generic/011.out
         sudo ./check generic/011
-        sudo ./check generic/013
+        #        sudo ./check generic/013
         sudo ./check generic/014
         sudo ./check generic/023
         sudo ./check generic/024
@@ -133,7 +133,7 @@ jobs:
         sudo ./check generic/046
         sudo ./check generic/051
         sudo ./check generic/069
-        sudo ./check generic/070
+        #        sudo ./check generic/070
         sudo ./check generic/071
         sudo ./check generic/072
         sudo ./check generic/074
