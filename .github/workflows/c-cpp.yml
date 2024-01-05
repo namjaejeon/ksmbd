@@ -474,6 +474,8 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.v2_epoch1
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.v2_epoch2
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.v2_epoch3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.v2_complex2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.lease.v2_rename
         # smb2 acls test
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.acls.CREATOR
         sudo rm -rf /mnt/test3/*
