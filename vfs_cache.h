@@ -120,6 +120,7 @@ struct ksmbd_file {
 	int				dot_dotdot[2];
 	unsigned int			f_state;
 	bool				reserve_lease_break;
+	int				dh_flags;
 };
 
 static inline void set_ctx_actor(struct dir_context *ctx,
@@ -191,6 +192,7 @@ void ksmbd_set_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_clear_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 				  int file_info);
+int ksmbd_reopen_durable_fd(struct ksmbd_work *work, struct ksmbd_file *fp);
 int ksmbd_init_file_cache(void);
 void ksmbd_exit_file_cache(void);
 #endif /* __VFS_CACHE_H__ */
