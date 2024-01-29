@@ -25,6 +25,14 @@
 #define KSMBD_NO_FID		(INT_MAX)
 #define SMB2_NO_FID		(0xFFFFFFFFFFFFFFFFULL)
 
+enum {
+	DURABLE_REQ_V2,
+	DURABLE_RECONN_V2,
+	DURABLE_REQ,
+	DURABLE_RECONN,
+	APP_INSTANCE_ID,
+};
+
 struct ksmbd_conn;
 struct ksmbd_session;
 

@@ -2732,18 +2732,11 @@ static void ksmbd_acls_fattr(struct smb_fattr *fattr,
 	}
 }
 
-#define DURABLE_RECONN_V2	1
-#define DURABLE_RECONN		2
-#define DURABLE_REQ_V2		3
-#define DURABLE_REQ		4
-#define APP_INSTANCE_ID		5
-
 struct durable_handle_info {
 	struct ksmbd_file *fp;
-	int type;
-	int reconnected;
-	int persistent;
-	int timeout;
+	unsigned short int type;
+	unsigned int flags;
+	unsigned int timeout;
 	char *CreateGuid;
 };
 
@@ -2757,7 +2750,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 	int i, err = 0;
 	u64 persistent_id = 0;
 	int req_op_level;
-	static const char *durable_arr[] = {"DH2C", "DHnC", "DH2Q", "DHnQ"};
+	static const char *durable_arr[] = {"DH2Q", "DH2C", "DHnQ", "DHnC"};
 
 	req_op_level = req->RequestedOplockLevel;
 	for (i = 1; i <= ARRAY_SIZE(durable_arr); i++) {
@@ -2793,7 +2786,6 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 			dh_info->type = i;
-			dh_info->reconnected = 1;
 			ksmbd_debug(SMB,
 				"reconnect v2 Persistent-id from reconnect = %llu\n",
 					persistent_id);
@@ -2819,7 +2811,6 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 			dh_info->type = i;
-			dh_info->reconnected = 1;
 			ksmbd_debug(SMB,
 				"reconnect Persistent-id from reconnect = %llu\n",
 					persistent_id);
