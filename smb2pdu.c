@@ -3026,7 +3026,7 @@ int smb2_open(struct ksmbd_work *work)
 			}
 			file_info = FILE_OPENED;
 			fp = dh_info.fp;
-			goto reconnected;
+			goto reconnected_fp;
 		}
 	}
 
@@ -3692,13 +3692,13 @@ int smb2_open(struct ksmbd_work *work)
 			memcpy(fp->create_guid, dh_info.CreateGuid,
 					SMB2_CREATE_GUID_SIZE);
 			if (dh_info.timeout)
-				fp->durable_timeout = dh_info.timeout;
+				fp->durable_timeout = min(dh_info.timeout, 300);
 			else
-				fp->durable_timeout = 1600;
+				fp->durable_timeout = 60;
 		}
 	}
 
-reconnected:
+reconnected_fp:
 	rsp->StructureSize = cpu_to_le16(89);
 	rcu_read_lock();
 	opinfo = rcu_dereference(fp->f_opinfo);

@@ -1893,6 +1893,8 @@ void create_durable_v2_rsp_buf(char *cc, struct ksmbd_file *fp)
 	buf->Name[3] = 'Q';
 
 	buf->Timeout = cpu_to_le32(fp->durable_timeout);
+	if (fp->is_persistent)
+		buf->Flags = SMB2_DHANDLE_FLAG_PERSISTENT;
 }
 
 /**
