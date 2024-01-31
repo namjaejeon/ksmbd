@@ -798,21 +798,20 @@ int ksmbd_file_table_flush(struct ksmbd_work *work)
 int ksmbd_reopen_durable_fd(struct ksmbd_work *work, struct ksmbd_file *fp)
 {
 	if (!fp->is_durable || fp->conn || fp->tcon) {
-		ksmbd_err("Invalid durable fd [%p:%p]\n",
-				fp->conn, fp->tcon);
+		pr_err("Invalid durable fd [%p:%p]\n", fp->conn, fp->tcon);
 		return -EBADF;
 	}
 
-	if (HAS_FILE_ID(fp->volatile_id)) {
-		ksmbd_err("Still in use durable fd: %u\n", fp->volatile_id);
+	if (has_file_id(fp->volatile_id)) {
+		pr_err("Still in use durable fd: %llu\n", fp->volatile_id);
 		return -EBADF;
 	}
 
-	fp->conn = work->sess->conn;
+	fp->conn = work->conn;
 	fp->tcon = work->tcon;
 
 	__open_id(&work->sess->file_table, fp, OPEN_ID_TYPE_VOLATILE_ID);
-	if (!HAS_FILE_ID(fp->volatile_id)) {
+	if (!has_file_id(fp->volatile_id)) {
 		fp->conn = NULL;
 		fp->tcon = NULL;
 		return -EBADF;
