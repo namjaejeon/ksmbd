@@ -3682,7 +3682,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
-	if (dh_info.type) {
+	if (dh_info.type == DURABLE_REQ_V2 || dh_info.type == DURABLE_REQ) {
 		if (dh_info.type == DURABLE_REQ_V2 && dh_info.persistent)
 			fp->is_persistent = true;
 		else
