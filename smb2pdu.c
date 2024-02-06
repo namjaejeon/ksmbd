@@ -2734,10 +2734,9 @@ static void ksmbd_acls_fattr(struct smb_fattr *fattr,
 
 enum {
 	DURABLE_REQ_V2 = 1,
-	DURABLE_RECONN_V2,
 	DURABLE_REQ,
+	DURABLE_RECONN_V2,
 	DURABLE_RECONN,
-	APP_INSTANCE_ID,
 };
 
 struct durable_info {
@@ -2759,13 +2758,15 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 	int dh_idx, err = 0;
 	u64 persistent_id = 0;
 	int req_op_level;
-	static const char *durable_arr[] = {"DH2Q", "DH2C", "DHnQ", "DHnC"};
+	static const char *durable_arr[] = {"DH2Q", "DHnQ", "DH2C", "DHnC"};
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 	req_op_level = req->RequestedOplockLevel;
 	for (dh_idx = DURABLE_REQ_V2; dh_idx <= ARRAY_SIZE(durable_arr);
 	     dh_idx++) {
+		pr_err("%s : %d, dh_idx : %u\n", __func__, __LINE__, dh_idx);
 		context = smb2_find_context_vals(req, durable_arr[dh_idx - 1], 4);
-		if (IS_ERR(context)) {
+		if (IS_ERR_OR_NULL(context)) {
 			err = PTR_ERR(context);
 			if (err == -EINVAL) {
 				pr_err("bad name length\n");
@@ -2780,6 +2781,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		{
 			struct create_durable_reconn_v2_req *recon_v2;
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			recon_v2 = (struct create_durable_reconn_v2_req *)context;
 			persistent_id = le64_to_cpu(recon_v2->Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
@@ -2789,11 +2791,13 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (memcmp(dh_info->fp->create_guid, recon_v2->CreateGuid,
 				   SMB2_CREATE_GUID_SIZE)) {
 				err = -EBADF;
 				goto out;
 			}
+		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->type = dh_idx;
 			dh_info->reconnected = true;
 			ksmbd_debug(SMB,
@@ -2811,14 +2815,17 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			recon = (struct create_durable_reconn_req *)context;
 			persistent_id = le64_to_cpu(recon->Data.Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (!dh_info->fp) {
 				pr_err("Failed to get Durable handle state\n");
 				err = -EBADF;
 				goto out;
 			}
+		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->type = dh_idx;
 			ksmbd_debug(SMB,
 				"reconnect Persistent-id from reconnect = %llu\n",
@@ -2835,10 +2842,13 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			durable_v2_blob =
 				(struct create_durable_req_v2 *)context;
 			ksmbd_debug(SMB, "Request for durable v2 open\n");
+		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->fp = ksmbd_lookup_fd_cguid(durable_v2_blob->CreateGuid);
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (dh_info->fp) {
 				if (!memcmp(conn->ClientGUID, dh_info->fp->client_guid,
 					    SMB2_CLIENT_GUID_SIZE)) {
@@ -2853,6 +2863,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				}
 			}
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
 				dh_info->CreateGuid =
@@ -2874,11 +2885,14 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
+		pr_err("%s : %d\n", __func__, __LINE__);
 				ksmbd_debug(SMB, "Request for durable open\n");
 				dh_info->type = dh_idx;
 			}
+		pr_err("%s : %d\n", __func__, __LINE__);
 			break;
 		default:
 			break;
@@ -3004,20 +3018,26 @@ int smb2_open(struct ksmbd_work *work)
 	if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
 		lc = parse_lease_state(req, S_ISDIR(file_inode(filp)->i_mode));
 
-	if (server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE &&
+	if (/*server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE &&*/
 	    req->CreateContextsOffset) {
+		pr_err("%s : %d\n", __func__, __LINE__);
 		rc = parse_durable_handle_context(work, req, lc, &dh_info);
+		pr_err("%s : %d\n", __func__, __LINE__);
 		if (rc) {
 			pr_err("error parsing durable handle context\n");
-			goto err_out1;
+			goto err_out2;
 		}
 
 		if (dh_info.reconnected == true) {
 			fp = dh_info.fp;
+		pr_err("%s : %d\n", __func__, __LINE__);
 			rc = smb2_check_durable_oplock(dh_info.fp, lc, name);
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (rc)
 				goto err_out2;
+		pr_err("%s : %d\n", __func__, __LINE__);
 			rc = ksmbd_reopen_durable_fd(work, dh_info.fp);
+		pr_err("%s : %d\n", __func__, __LINE__);
 			if (rc)
 				goto err_out2;
 			if (ksmbd_override_fsids(work)) {
@@ -3792,19 +3812,25 @@ reconnected_fp:
 	if (dh_info.type == DURABLE_REQ || dh_info.type == DURABLE_REQ_V2) {
 		struct create_context *durable_ccontext;
 
+		pr_err("%s : %d\n", __func__, __LINE__);
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
+		pr_err("%s : %d\n", __func__, __LINE__);
 		contxt_cnt++;
 		if (dh_info.type == DURABLE_REQ) {
+		pr_err("%s : %d\n", __func__, __LINE__);
 			create_durable_rsp_buf(rsp->Buffer +
 					le32_to_cpu(rsp->CreateContextsLength));
+		pr_err("%s : %d\n", __func__, __LINE__);
 			le32_add_cpu(&rsp->CreateContextsLength,
 					conn->vals->create_durable_size);
 			iov_len += conn->vals->create_durable_size;
 		} else {
+		pr_err("%s : %d\n", __func__, __LINE__);
 			create_durable_v2_rsp_buf(rsp->Buffer +
 					le32_to_cpu(rsp->CreateContextsLength),
 					fp);
+		pr_err("%s : %d\n", __func__, __LINE__);
 			le32_add_cpu(&rsp->CreateContextsLength,
 					conn->vals->create_durable_v2_size);
 			iov_len += conn->vals->create_durable_v2_size;
