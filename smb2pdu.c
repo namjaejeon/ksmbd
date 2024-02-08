@@ -2885,11 +2885,11 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-		pr_err("%s : %d\n", __func__, __LINE__);
+		pr_err("%s : %d, req_op_level : %x\n", __func__, __LINE__, req_op_level);
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
 		pr_err("%s : %d\n", __func__, __LINE__);
-				ksmbd_debug(SMB, "Request for durable open\n");
+				pr_err("Request for durable open\n");
 				dh_info->type = dh_idx;
 			}
 		pr_err("%s : %d\n", __func__, __LINE__);
@@ -3016,13 +3016,11 @@ int smb2_open(struct ksmbd_work *work)
 
 	req_op_level = req->RequestedOplockLevel;
 	if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
-		lc = parse_lease_state(req, S_ISDIR(file_inode(filp)->i_mode));
+		lc = parse_lease_state(req);
 
 	if (/*server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE &&*/
 	    req->CreateContextsOffset) {
-		pr_err("%s : %d\n", __func__, __LINE__);
 		rc = parse_durable_handle_context(work, req, lc, &dh_info);
-		pr_err("%s : %d\n", __func__, __LINE__);
 		if (rc) {
 			pr_err("error parsing durable handle context\n");
 			goto err_out2;
@@ -3030,14 +3028,10 @@ int smb2_open(struct ksmbd_work *work)
 
 		if (dh_info.reconnected == true) {
 			fp = dh_info.fp;
-		pr_err("%s : %d\n", __func__, __LINE__);
 			rc = smb2_check_durable_oplock(dh_info.fp, lc, name);
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (rc)
 				goto err_out2;
-		pr_err("%s : %d\n", __func__, __LINE__);
 			rc = ksmbd_reopen_durable_fd(work, dh_info.fp);
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (rc)
 				goto err_out2;
 			if (ksmbd_override_fsids(work)) {
@@ -3606,6 +3600,11 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	} else {
 		if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE) {
+			if (S_ISDIR(file_inode(filp)->i_mode)) {
+				lc->req_state &= ~SMB2_LEASE_WRITE_CACHING_LE;
+				lc->is_dir = true;
+			}
+
 			/*
 			 * Compare parent lease using parent key. If there is no
 			 * a lease that has same parent key, Send lease break

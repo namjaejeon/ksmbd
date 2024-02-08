@@ -1747,7 +1747,7 @@ void create_lease_buf(u8 *rbuf, struct lease *lease)
  *
  * Return:  oplock state, -ENOENT if create lease context not found
  */
-struct lease_ctx_info *parse_lease_state(void *open_req, bool is_dir)
+struct lease_ctx_info *parse_lease_state(void *open_req)
 {
 	struct create_context *cc;
 	struct smb2_create_req *req = (struct smb2_create_req *)open_req;
@@ -1765,12 +1765,7 @@ struct lease_ctx_info *parse_lease_state(void *open_req, bool is_dir)
 		struct create_lease_v2 *lc = (struct create_lease_v2 *)cc;
 
 		memcpy(lreq->lease_key, lc->lcontext.LeaseKey, SMB2_LEASE_KEY_SIZE);
-		if (is_dir) {
-			lreq->req_state = lc->lcontext.LeaseState &
-				~SMB2_LEASE_WRITE_CACHING_LE;
-			lreq->is_dir = true;
-		} else
-			lreq->req_state = lc->lcontext.LeaseState;
+		lreq->req_state = lc->lcontext.LeaseState;
 		lreq->flags = lc->lcontext.LeaseFlags;
 		lreq->epoch = lc->lcontext.Epoch;
 		lreq->duration = lc->lcontext.LeaseDuration;
