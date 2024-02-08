@@ -1107,7 +1107,8 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 	unsigned int smb2_buf_len, smb2_neg_size, neg_ctxt_len = 0;
 	__le32 status;
 
-	ksmbd_debug(SMB, "Received negotiate request\n");
+	//ksmbd_debug(SMB, "Received negotiate request\n");
+	pr_err("Received negotiate request\n");
 	conn->need_neg = false;
 	if (ksmbd_conn_good(conn)) {
 		pr_err("conn->tcp_status is already in CifsGood State\n");
@@ -2760,7 +2761,6 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 	int req_op_level;
 	static const char *durable_arr[] = {"DH2Q", "DHnQ", "DH2C", "DHnC"};
 
-		pr_err("%s : %d\n", __func__, __LINE__);
 	req_op_level = req->RequestedOplockLevel;
 	for (dh_idx = DURABLE_REQ_V2; dh_idx <= ARRAY_SIZE(durable_arr);
 	     dh_idx++) {
@@ -2781,7 +2781,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		{
 			struct create_durable_reconn_v2_req *recon_v2;
 
-		pr_err("%s : %d\n", __func__, __LINE__);
+			pr_err("%s : %d DURABLE_RECONN_V2\n", __func__, __LINE__);
 			recon_v2 = (struct create_durable_reconn_v2_req *)context;
 			persistent_id = le64_to_cpu(recon_v2->Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
@@ -2791,13 +2791,11 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (memcmp(dh_info->fp->create_guid, recon_v2->CreateGuid,
 				   SMB2_CREATE_GUID_SIZE)) {
 				err = -EBADF;
 				goto out;
 			}
-		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->type = dh_idx;
 			dh_info->reconnected = true;
 			ksmbd_debug(SMB,
@@ -2815,19 +2813,19 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-		pr_err("%s : %d\n", __func__, __LINE__);
+		pr_err("%s : %d DURABLE_RECONN\n", __func__, __LINE__);
 			recon = (struct create_durable_reconn_req *)context;
 			persistent_id = le64_to_cpu(recon->Data.Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (!dh_info->fp) {
 				pr_err("Failed to get Durable handle state\n");
 				err = -EBADF;
 				goto out;
 			}
-		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->type = dh_idx;
-			ksmbd_debug(SMB,
+			dh_info->reconnected = true;
+			pr_err(
+//			ksmbd_debug(SMB,
 				"reconnect Persistent-id from reconnect = %llu\n",
 					persistent_id);
 			break;
@@ -2842,13 +2840,11 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-		pr_err("%s : %d\n", __func__, __LINE__);
+			pr_err("%s : %d DURABLE_REQ_V2\n", __func__, __LINE__);
 			durable_v2_blob =
 				(struct create_durable_req_v2 *)context;
 			ksmbd_debug(SMB, "Request for durable v2 open\n");
-		pr_err("%s : %d\n", __func__, __LINE__);
 			dh_info->fp = ksmbd_lookup_fd_cguid(durable_v2_blob->CreateGuid);
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (dh_info->fp) {
 				if (!memcmp(conn->ClientGUID, dh_info->fp->client_guid,
 					    SMB2_CLIENT_GUID_SIZE)) {
@@ -2863,7 +2859,6 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				}
 			}
 
-		pr_err("%s : %d\n", __func__, __LINE__);
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
 				dh_info->CreateGuid =
@@ -2885,14 +2880,12 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-		pr_err("%s : %d, req_op_level : %x\n", __func__, __LINE__, req_op_level);
+			pr_err("%s : %d, DURABLE_REQ req_op_level : %x\n", __func__, __LINE__, req_op_level);
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
-		pr_err("%s : %d\n", __func__, __LINE__);
-				pr_err("Request for durable open\n");
+				ksmbd_debug(SMB, "Request for durable open\n");
 				dh_info->type = dh_idx;
 			}
-		pr_err("%s : %d\n", __func__, __LINE__);
 			break;
 		default:
 			break;
@@ -2984,7 +2977,8 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out2;
 		}
 
-		ksmbd_debug(SMB, "converted name = %s\n", name);
+		//ksmbd_debug(SMB, "converted name = %s\n", name);
+		pr_err("converted name = %s\n", name);
 		if (strchr(name, ':')) {
 			if (!test_share_config_flag(work->tcon->share_conf,
 						    KSMBD_SHARE_FLAG_STREAMS)) {
@@ -3027,19 +3021,25 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (dh_info.reconnected == true) {
-			fp = dh_info.fp;
 			rc = smb2_check_durable_oplock(dh_info.fp, lc, name);
 			if (rc)
 				goto err_out2;
+
 			rc = ksmbd_reopen_durable_fd(work, dh_info.fp);
 			if (rc)
 				goto err_out2;
+
 			if (ksmbd_override_fsids(work)) {
 				rc = -ENOMEM;
 				goto err_out2;
 			}
+
 			file_info = FILE_OPENED;
 			fp = dh_info.fp;
+
+			rc = ksmbd_vfs_getattr(&fp->filp->f_path, &stat);
+			if (rc)
+				goto err_out2;
 			goto reconnected_fp;
 		}
 	}
@@ -3869,6 +3869,7 @@ err_out:
 err_out1:
 	ksmbd_revert_fsids(work);
 err_out2:
+	pr_err("%s:%d, rc : %d\n", __func__, __LINE__, rc);
 	if (!rc) {
 		ksmbd_update_fstate(&work->sess->file_table, fp, FP_INITED);
 		rc = ksmbd_iov_pin_rsp(work, (void *)rsp, iov_len);
