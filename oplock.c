@@ -2094,12 +2094,14 @@ int smb2_check_durable_oplock(struct ksmbd_file *fp,
 	int ret = 0;
 
 	if (opinfo && opinfo->is_lease) {
+#if 0
 		if (!lctx) {
 			pr_err("open does not include lease\n");
 			ret = -EBADF;
 			goto out;
 		}
-		if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
+#endif
+		if (lctx && memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
 					SMB2_LEASE_KEY_SIZE)) {
 			pr_err("invalid lease key\n");
 			ret = -EBADF;

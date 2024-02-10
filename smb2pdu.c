@@ -2798,6 +2798,13 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				err = -EBADF;
 				goto out;
 			}
+
+			if (memcmp(conn->ClientGUID, dh_info->fp->client_guid,
+				   SMB2_CLIENT_GUID_SIZE)) {
+				err = -EBADF;
+				goto out;
+			}
+
 			dh_info->type = dh_idx;
 			dh_info->reconnected = true;
 			pr_err(
@@ -2998,6 +3005,7 @@ int smb2_open(struct ksmbd_work *work)
 
 		if (dh_info.reconnected == true) {
 			fp = dh_info.fp;
+			pr_err("req_op_level : %x, lc : %p\n", req_op_level, lc);
 			rc = smb2_check_durable_oplock(fp, lc, name);
 			if (rc)
 				goto err_out2;
