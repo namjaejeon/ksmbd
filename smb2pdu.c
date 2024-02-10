@@ -3016,6 +3016,8 @@ int smb2_open(struct ksmbd_work *work)
 			rc = ksmbd_vfs_getattr(&fp->filp->f_path, &stat);
 			if (rc)
 				goto err_out2;
+
+			ksmbd_fd_put(work, fp);
 			goto reconnected_fp;
 		}
 	}
