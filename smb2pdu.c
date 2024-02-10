@@ -2997,11 +2997,12 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (dh_info.reconnected == true) {
-			rc = smb2_check_durable_oplock(dh_info.fp, lc, name);
+			fp = dh_info.fp;
+			rc = smb2_check_durable_oplock(fp, lc, name);
 			if (rc)
 				goto err_out2;
 
-			rc = ksmbd_reopen_durable_fd(work, dh_info.fp);
+			rc = ksmbd_reopen_durable_fd(work, fp);
 			if (rc)
 				goto err_out2;
 
@@ -3011,7 +3012,6 @@ int smb2_open(struct ksmbd_work *work)
 			}
 
 			file_info = FILE_OPENED;
-			fp = dh_info.fp;
 
 			rc = ksmbd_vfs_getattr(&fp->filp->f_path, &stat);
 			if (rc)
