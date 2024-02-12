@@ -165,7 +165,8 @@ static struct oplock_info *opinfo_get_list(struct ksmbd_inode *ci)
 	opinfo = list_first_or_null_rcu(&ci->m_op_list, struct oplock_info,
 					op_entry);
 	if (opinfo) {
-		if (!atomic_inc_not_zero(&opinfo->refcount))
+		if (opinfo->conn == NULL ||
+		    !atomic_inc_not_zero(&opinfo->refcount))
 			opinfo = NULL;
 		else {
 			atomic_inc(&opinfo->conn->r_count);
@@ -1322,7 +1323,7 @@ void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 
 	read_lock(&p_ci->m_lock);
 	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (!opinfo->is_lease)
+		if (opinfo->conn == NULL || !opinfo->is_lease)
 			continue;
 
 		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE &&
@@ -1367,7 +1368,7 @@ void smb_lazy_parent_lease_break_close(struct ksmbd_file *fp)
 
 	read_lock(&p_ci->m_lock);
 	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (!opinfo->is_lease)
+		if (opinfo->conn == NULL || !opinfo->is_lease)
 			continue;
 
 		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE) {
@@ -1577,6 +1578,9 @@ void smb_break_all_levII_oplock(struct ksmbd_work *work, struct ksmbd_file *fp,
 
 	rcu_read_lock();
 	list_for_each_entry_rcu(brk_op, &ci->m_op_list, op_entry) {
+		if (brk_op->conn == NULL)
+			continue;
+
 		if (!atomic_inc_not_zero(&brk_op->refcount))
 			continue;
 

@@ -2801,6 +2801,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 
 			if (memcmp(conn->ClientGUID, dh_info->fp->client_guid,
 				   SMB2_CLIENT_GUID_SIZE)) {
+				pr_err("different client guid!\n");
 				err = -EBADF;
 				goto out;
 			}
@@ -2961,7 +2962,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		//ksmbd_debug(SMB, "converted name = %s\n", name);
-		pr_err("converted name = %s\n", name);
+		pr_err("converted name = %s, conn : %p\n", name, conn);
 		if (strchr(name, ':')) {
 			if (!test_share_config_flag(work->tcon->share_conf,
 						    KSMBD_SHARE_FLAG_STREAMS)) {
