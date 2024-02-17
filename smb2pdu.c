@@ -2802,6 +2802,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			if (memcmp(conn->ClientGUID, dh_info->fp->client_guid,
 				   SMB2_CLIENT_GUID_SIZE)) {
 				pr_err("different client guid!\n");
+				ksmbd_close_durable_fd(dh_info->fp);
 				err = -EBADF;
 				goto out;
 			}

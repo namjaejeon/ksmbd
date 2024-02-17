@@ -159,6 +159,7 @@ void ksmbd_fd_put(struct ksmbd_work *work, struct ksmbd_file *fp);
 struct ksmbd_inode *ksmbd_inode_lookup_lock(struct dentry *d);
 void ksmbd_inode_put(struct ksmbd_inode *ci);
 struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id);
+void ksmbd_close_durable_fd(struct ksmbd_file *fp);
 struct ksmbd_file *ksmbd_lookup_fd_cguid(char *cguid);
 #ifdef CONFIG_SMB_INSECURE_SERVER
 struct ksmbd_file *ksmbd_lookup_fd_filename(struct ksmbd_work *work, char *filename);

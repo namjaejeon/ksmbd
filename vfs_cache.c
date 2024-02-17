@@ -494,6 +494,14 @@ struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id)
 	return __ksmbd_lookup_fd(&global_ft, id);
 }
 
+void ksmbd_close_durable_fd(struct ksmbd_file *fp)
+{
+	if (!atomic_dec_and_test(&fp->refcount))
+		return;
+	__ksmbd_remove_durable_fd(fp);
+	kmem_cache_free(filp_cache, fp);
+}
+
 struct ksmbd_file *ksmbd_lookup_fd_cguid(char *cguid)
 {
 	struct ksmbd_file	*fp = NULL;
