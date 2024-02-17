@@ -2770,6 +2770,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			if (memcmp(dh_info->fp->create_guid, recon_v2->CreateGuid,
 				   SMB2_CREATE_GUID_SIZE)) {
 				err = -EBADF;
+				ksmbd_close_durable_fd(dh_info->fp);
 				goto out;
 			}
 			dh_info->type = dh_idx;
@@ -2782,6 +2783,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		case DURABLE_RECONN:
 		{
 			struct create_durable_reconn_req *recon;
+			struct oplock_info *opinfo;
 
 			if (dh_info->type == DURABLE_RECONN_V2 ||
 			    dh_info->type == DURABLE_REQ_V2) {
@@ -2799,7 +2801,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 				goto out;
 			}
 
-			if (memcmp(conn->ClientGUID, dh_info->fp->client_guid,
+			if (lc && memcmp(conn->ClientGUID, dh_info->fp->client_guid,
 				   SMB2_CLIENT_GUID_SIZE)) {
 				pr_err("different client guid!\n");
 				ksmbd_close_durable_fd(dh_info->fp);
@@ -3006,28 +3008,33 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (dh_info.reconnected == true) {
-			fp = dh_info.fp;
 			pr_err("req_op_level : %x, lc : %p\n", req_op_level, lc);
 			rc = smb2_check_durable_oplock(fp, lc, name);
-			if (rc)
-				goto err_out2;
-
-			rc = ksmbd_reopen_durable_fd(work, fp);
-			if (rc)
-				goto err_out2;
-
-			if (ksmbd_override_fsids(work)) {
-				rc = -ENOMEM;
+			if (rc) {
+				ksmbd_put_durable_fd(dh_info.fp);
 				goto err_out2;
 			}
 
+			rc = ksmbd_reopen_durable_fd(work, fp);
+			if (rc) {
+				ksmbd_put_durable_fd(dh_info.fp);
+				goto err_out2;
+			}
+
+			if (ksmbd_override_fsids(work)) {
+				rc = -ENOMEM;
+				ksmbd_put_durable_fd(dh_info.fp);
+				goto err_out2;
+			}
+
+			fp = dh_info.fp;
 			file_info = FILE_OPENED;
 
 			rc = ksmbd_vfs_getattr(&fp->filp->f_path, &stat);
 			if (rc)
 				goto err_out2;
 
-			ksmbd_fd_put(work, fp);
+			ksmbd_put_durable_fd(fp);
 			goto reconnected_fp;
 		}
 	}

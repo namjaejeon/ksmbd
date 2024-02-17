@@ -2090,7 +2090,7 @@ out:
 	return ret_op;
 }
 
-int smb2_check_durable_oplock(struct ksmbd_file *fp,
+int smb2_check_durable_oplock(struct ksmbd_conn *conn, struct ksmbd_file *fp,
 			      struct lease_ctx_info *lctx,
 			      char *name)
 {
@@ -2098,19 +2098,26 @@ int smb2_check_durable_oplock(struct ksmbd_file *fp,
 	int ret = 0;
 
 	if (opinfo && opinfo->is_lease) {
-#if 0
 		if (!lctx) {
 			pr_err("open does not include lease\n");
 			ret = -EBADF;
 			goto out;
 		}
-#endif
-		if (lctx && memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
+
+		if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
 					SMB2_LEASE_KEY_SIZE)) {
 			pr_err("invalid lease key\n");
 			ret = -EBADF;
 			goto out;
 		}
+
+		if (memcmp(conn->ClientGUID, fp->client_guid,
+			   SMB2_CLIENT_GUID_SIZE)) {
+			pr_err("different client guid!\n");
+			ret = -EBADF;
+			goto out;
+		}
+
 //		if (name && strcmp(fp->filename, name)) {
 //			ksmbd_err("invalid name reconnect %s\n", name);
 //			ret = -EINVAL;
