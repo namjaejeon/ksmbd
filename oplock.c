@@ -2090,12 +2090,15 @@ out:
 	return ret_op;
 }
 
-int smb2_check_durable_oplock(struct ksmbd_conn *conn, struct ksmbd_file *fp,
+int smb2_check_durable_oplock(struct ksmbd_conn *conn,
+			      struct ksmbd_share_config *share,
+			      struct ksmbd_file *fp,
 			      struct lease_ctx_info *lctx,
 			      char *name)
 {
 	struct oplock_info *opinfo = opinfo_get(fp);
 	int ret = 0;
+	char *pathname, *ab_pathname;
 
 	if (opinfo && opinfo->is_lease) {
 		if (memcmp(conn->ClientGUID, fp->client_guid,
@@ -2118,11 +2121,23 @@ int smb2_check_durable_oplock(struct ksmbd_conn *conn, struct ksmbd_file *fp,
 			goto out;
 		}
 
-//		if (name && strcmp(fp->filename, name)) {
-//			ksmbd_err("invalid name reconnect %s\n", name);
-//			ret = -EINVAL;
-//			goto out;
-//		}
+		pathname = kmalloc(PATH_MAX, GFP_KERNEL);
+		if (!pathname)
+			return -EACCES;
+
+		ab_pathname = d_path(&fp->filp->f_path, pathname, PATH_MAX);
+		if (IS_ERR(ab_pathname)) {
+			kfree(pathname);
+			return -EACCES;
+		}
+
+		if (name && strcmp(&ab_pathname[share->path_sz + 1], name)) {
+			pr_err("invalid name reconnect %s\n", name);
+			kfree(pathname);
+			ret = -EINVAL;
+			goto out;
+		}
+		kfree(pathname);
 	}
 out:
 	if (opinfo)

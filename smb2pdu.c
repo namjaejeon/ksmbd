@@ -2993,7 +2993,8 @@ int smb2_open(struct ksmbd_work *work)
 
 		if (dh_info.reconnected == true) {
 			pr_err("req_op_level : %x, lc : %p\n", req_op_level, lc);
-			rc = smb2_check_durable_oplock(conn, dh_info.fp, lc, name);
+			rc = smb2_check_durable_oplock(conn, share, dh_info.fp,
+						       lc, name);
 			if (rc) {
 				ksmbd_put_durable_fd(dh_info.fp);
 				goto err_out2;
