@@ -715,6 +715,9 @@ static inline bool is_reconnectable(struct ksmbd_file *fp)
 	if (!opinfo)
 		return false;
 
+	if (ksmbd_inode_pending_delete(fp))
+		return false;
+
 	if (opinfo->op_state != OPLOCK_STATE_NONE) {
 		opinfo_put(opinfo);
 		return false;
