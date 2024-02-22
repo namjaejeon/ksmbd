@@ -14,6 +14,7 @@
 #include <linux/workqueue.h>
 
 #include "vfs.h"
+#include "mgmt/share_config.h"
 
 /* Windows style file permissions for extended response */
 #define	FILE_GENERIC_ALL	0x1F01FF
@@ -196,6 +197,8 @@ void ksmbd_clear_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 				  int file_info);
 int ksmbd_reopen_durable_fd(struct ksmbd_work *work, struct ksmbd_file *fp);
+int ksmbd_validate_name_reconnect(struct ksmbd_share_config *share,
+				  struct ksmbd_file *fp, char *name);
 int ksmbd_init_file_cache(void);
 void ksmbd_exit_file_cache(void);
 #endif /* __VFS_CACHE_H__ */

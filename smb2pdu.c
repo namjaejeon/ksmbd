@@ -2992,9 +2992,22 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (dh_info.reconnected == true) {
+			if (memcmp(conn->ClientGUID, dh_info.fp->client_guid,
+						SMB2_CLIENT_GUID_SIZE)) {
+				pr_err("different client guid!\n");
+				ksmbd_put_durable_fd(dh_info.fp);
+				rc = -EBADF;
+				goto err_out2;
+			}
+
 			pr_err("req_op_level : %x, lc : %p\n", req_op_level, lc);
-			rc = smb2_check_durable_oplock(conn, share, dh_info.fp,
-						       lc, name);
+			rc = smb2_check_durable_oplock(dh_info.fp, lc);
+			if (rc) {
+				ksmbd_put_durable_fd(dh_info.fp);
+				goto err_out2;
+			}
+
+			rc = ksmbd_validate_name_reconnect(share, dh_info.fp, name);
 			if (rc) {
 				ksmbd_put_durable_fd(dh_info.fp);
 				goto err_out2;

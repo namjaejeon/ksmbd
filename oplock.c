@@ -627,7 +627,7 @@ static struct oplock_info *same_client_has_lease(struct ksmbd_inode *ci,
 	 */
 	read_lock(&ci->m_lock);
 	list_for_each_entry(opinfo, &ci->m_op_list, op_entry) {
-		if (!opinfo->is_lease)
+		if (!opinfo->is_lease || !opinfo->conn)
 			continue;
 		read_unlock(&ci->m_lock);
 		lease = opinfo->o_lease;
@@ -2090,24 +2090,13 @@ out:
 	return ret_op;
 }
 
-int smb2_check_durable_oplock(struct ksmbd_conn *conn,
-			      struct ksmbd_share_config *share,
-			      struct ksmbd_file *fp,
-			      struct lease_ctx_info *lctx,
-			      char *name)
+int smb2_check_durable_oplock(struct ksmbd_file *fp,
+			      struct lease_ctx_info *lctx)
 {
 	struct oplock_info *opinfo = opinfo_get(fp);
 	int ret = 0;
-	char *pathname, *ab_pathname;
 
 	if (opinfo && opinfo->is_lease) {
-		if (memcmp(conn->ClientGUID, fp->client_guid,
-			   SMB2_CLIENT_GUID_SIZE)) {
-			pr_err("different client guid!\n");
-			ret = -EBADF;
-			goto out;
-		}
-
 		if (!lctx) {
 			pr_err("open does not include lease\n");
 			ret = -EBADF;
@@ -2118,26 +2107,7 @@ int smb2_check_durable_oplock(struct ksmbd_conn *conn,
 					SMB2_LEASE_KEY_SIZE)) {
 			pr_err("invalid lease key\n");
 			ret = -EBADF;
-			goto out;
 		}
-
-		pathname = kmalloc(PATH_MAX, GFP_KERNEL);
-		if (!pathname)
-			return -EACCES;
-
-		ab_pathname = d_path(&fp->filp->f_path, pathname, PATH_MAX);
-		if (IS_ERR(ab_pathname)) {
-			kfree(pathname);
-			return -EACCES;
-		}
-
-		if (name && strcmp(&ab_pathname[share->path_sz + 1], name)) {
-			pr_err("invalid name reconnect %s\n", name);
-			kfree(pathname);
-			ret = -EINVAL;
-			goto out;
-		}
-		kfree(pathname);
 	}
 out:
 	if (opinfo)
