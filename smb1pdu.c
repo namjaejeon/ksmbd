@@ -8608,7 +8608,6 @@ int smb_setattr(struct ksmbd_work *work)
 	}
 	compat_generic_fillattr(&path, STATX_BASIC_STATS,
 				d_inode(path.dentry), &stat);
-	path_put(&path);
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
 
