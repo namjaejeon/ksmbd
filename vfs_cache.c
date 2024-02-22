@@ -327,7 +327,8 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 
 	fd_limit_close();
 	__ksmbd_remove_durable_fd(fp);
-	__ksmbd_remove_fd(ft, fp);
+	if (ft)
+		__ksmbd_remove_fd(ft, fp);
 
 	close_id_del_oplock(fp);
 	filp = fp->filp;
@@ -498,8 +499,8 @@ void ksmbd_put_durable_fd(struct ksmbd_file *fp)
 {
 	if (!atomic_dec_and_test(&fp->refcount))
 		return;
-	__ksmbd_remove_durable_fd(fp);
-	kmem_cache_free(filp_cache, fp);
+
+	__ksmbd_close_fd(NULL, fp);
 }
 
 struct ksmbd_file *ksmbd_lookup_fd_cguid(char *cguid)
@@ -713,9 +714,6 @@ static inline bool is_reconnectable(struct ksmbd_file *fp)
 	bool reconn = false;
 
 	if (!opinfo)
-		return false;
-
-	if (ksmbd_inode_pending_delete(fp))
 		return false;
 
 	if (opinfo->op_state != OPLOCK_STATE_NONE) {

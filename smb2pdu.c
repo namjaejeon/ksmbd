@@ -2762,7 +2762,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			persistent_id = le64_to_cpu(recon_v2->Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
 			if (!dh_info->fp) {
-				pr_err("Failed to get Durable handle state\n");
+				pr_err("Failed to get durable handle state\n");
 				err = -EBADF;
 				goto out;
 			}
@@ -2789,7 +2789,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			persistent_id = le64_to_cpu(recon->Data.Fid.PersistentFileId);
 			dh_info->fp = ksmbd_lookup_durable_fd(persistent_id);
 			if (!dh_info->fp) {
-				pr_err("Failed to get Durable handle state\n");
+				pr_err("Failed to get durable handle state\n");
 				err = -EBADF;
 				goto out;
 			}
