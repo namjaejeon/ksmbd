@@ -6866,8 +6866,10 @@ static int query_file_info(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-	compat_generic_fillattr(&fp->filp->f_path, STATX_BASIC_STATS,
-				file_inode(fp->filp), &st);
+	rc = vfs_getattr(&fp->filp->f_path, &st, STATX_BASIC_STATS,
+			 AT_STATX_SYNC_AS_STAT);
+	if (rc)
+		goto err_out;
 
 	switch (le16_to_cpu(req_params->InformationLevel)) {
 
@@ -7808,8 +7810,10 @@ int smb_checkdir(struct ksmbd_work *work)
 		}
 	}
 
-	compat_generic_fillattr(&path, STATX_BASIC_STATS,
-				d_inode(path.dentry), &stat);
+	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+			  AT_STATX_SYNC_AS_STAT);
+	if (err)
+		goto out;
 
 	if (!S_ISDIR(stat.mode)) {
 		rsp->hdr.Status.CifsError = STATUS_NOT_A_DIRECTORY;
@@ -7820,6 +7824,7 @@ int smb_checkdir(struct ksmbd_work *work)
 		rsp->ByteCount = 0;
 	}
 
+out:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
@@ -8122,8 +8127,8 @@ static __le32 smb_query_info_path(struct ksmbd_work *work, struct kstat *st)
 		goto out;
 	}
 
-	compat_generic_fillattr(&path, STATX_BASIC_STATS,
-				d_inode(path.dentry), st);
+	err = vfs_getattr(&path, st, STATX_BASIC_STATS,
+			  AT_STATX_SYNC_AS_STAT);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	ksmbd_vfs_kern_path_unlock(&parent_path, &path);
 #else
@@ -8335,9 +8340,12 @@ int smb_open_andx(struct ksmbd_work *work)
 		if (err == -EACCES || err == -EXDEV)
 			goto out;
 		file_present = false;
-	} else
-		compat_generic_fillattr(&path, STATX_BASIC_STATS,
-					d_inode(path.dentry), &stat);
+	} else {
+		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+				  AT_STATX_SYNC_AS_STAT);
+		if (err)
+			goto free_path;
+	}
 
 	oplock_flags =
 		le16_to_cpu(req->OpenFlags) & (REQ_OPLOCK | REQ_BATCHOPLOCK);
@@ -8379,15 +8387,10 @@ int smb_open_andx(struct ksmbd_work *work)
 			goto out;
 		}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		generic_fillattr(mnt_idmap(path.mnt), d_inode(path.dentry), &stat);
-#else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
-		generic_fillattr(mnt_user_ns(path.mnt), d_inode(path.dentry), &stat);
-#else
-		generic_fillattr(d_inode(path.dentry), &stat);
-#endif
-#endif
+		err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+				  AT_STATX_SYNC_AS_STAT);
+		if (err)
+			goto free_path;
 	} else if (file_present) {
 		err = compat_inode_permission(&path, d_inode(path.dentry),
 					      may_flags);
@@ -8606,8 +8609,12 @@ int smb_setattr(struct ksmbd_work *work)
 		err = 0;
 		goto out;
 	}
-	compat_generic_fillattr(&path, STATX_BASIC_STATS,
-				d_inode(path.dentry), &stat);
+
+	err = vfs_getattr(&path, &stat, STATX_BASIC_STATS,
+			  AT_STATX_SYNC_AS_STAT);
+	if (err)
+		goto out;
+
 	attrs.ia_valid = 0;
 	attrs.ia_mode = 0;
 
