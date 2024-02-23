@@ -2757,6 +2757,13 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		{
 			struct create_durable_reconn_v2_req *recon_v2;
 
+			if (dh_info->type == DURABLE_RECONN ||
+			    dh_info->type == DURABLE_REQ ||
+			    dh_info->type == DURABLE_REQ_V2) {
+				err = -EINVAL;
+				goto out;
+			}
+
 			pr_err("%s : %d DURABLE_RECONN_V2\n", __func__, __LINE__);
 			recon_v2 = (struct create_durable_reconn_v2_req *)context;
 			persistent_id = le64_to_cpu(recon_v2->Fid.PersistentFileId);
@@ -2806,7 +2813,8 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		{
 			struct create_durable_req_v2 *durable_v2_blob;
 
-			if (dh_info->type == DURABLE_RECONN ||
+			if (dh_info->type == DURABLE_REQ ||
+			    dh_info->type == DURABLE_RECONN ||
 			    dh_info->type == DURABLE_RECONN_V2) {
 				err = -EINVAL;
 				goto out;
@@ -2853,11 +2861,15 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			}
 
 			pr_err("%s : %d, DURABLE_REQ req_op_level : %x\n", __func__, __LINE__, req_op_level);
+			dh_info->type = dh_idx;
+#if 0
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
 				ksmbd_debug(SMB, "Request for durable open\n");
+				pr_err("Request for durable open\n");
 				dh_info->type = dh_idx;
 			}
+#endif
 			break;
 		default:
 			break;
@@ -3705,7 +3717,7 @@ int smb2_open(struct ksmbd_work *work)
 			memcpy(fp->create_guid, dh_info.CreateGuid,
 					SMB2_CREATE_GUID_SIZE);
 			if (dh_info.timeout)
-				fp->durable_timeout = min_t(unsigned int, dh_info.timeout, 300);
+				fp->durable_timeout = dh_info.timeout;//min_t(unsigned int, dh_info.timeout, 300);
 			else
 				fp->durable_timeout = 60;
 		}
