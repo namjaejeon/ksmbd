@@ -2710,10 +2710,10 @@ static void ksmbd_acls_fattr(struct smb_fattr *fattr,
 }
 
 enum {
-	DURABLE_REQ_V2 = 1,
-	DURABLE_REQ,
-	DURABLE_RECONN_V2,
+	DURABLE_RECONN_V2 = 1,
 	DURABLE_RECONN,
+	DURABLE_REQ_V2,
+	DURABLE_REQ,
 };
 
 struct durable_info {
@@ -2735,10 +2735,10 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 	int dh_idx, err = 0;
 	u64 persistent_id = 0;
 	int req_op_level;
-	static const char *durable_arr[] = {"DH2Q", "DHnQ", "DH2C", "DHnC"};
+	static const char *durable_arr[] = {"DH2C", "DHnC", "DH2Q", "DHnQ"};
 
 	req_op_level = req->RequestedOplockLevel;
-	for (dh_idx = DURABLE_REQ_V2; dh_idx <= ARRAY_SIZE(durable_arr);
+	for (dh_idx = DURABLE_RECONN_V2; dh_idx <= ARRAY_SIZE(durable_arr);
 	     dh_idx++) {
 		pr_err("%s : %d, dh_idx : %u\n", __func__, __LINE__, dh_idx);
 		context = smb2_find_context_vals(req, durable_arr[dh_idx - 1], 4);
@@ -2758,7 +2758,6 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			struct create_durable_reconn_v2_req *recon_v2;
 
 			if (dh_info->type == DURABLE_RECONN ||
-			    dh_info->type == DURABLE_REQ ||
 			    dh_info->type == DURABLE_REQ_V2) {
 				err = -EINVAL;
 				goto out;
@@ -2813,8 +2812,7 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 		{
 			struct create_durable_req_v2 *durable_v2_blob;
 
-			if (dh_info->type == DURABLE_REQ ||
-			    dh_info->type == DURABLE_RECONN ||
+			if (dh_info->type == DURABLE_RECONN ||
 			    dh_info->type == DURABLE_RECONN_V2) {
 				err = -EINVAL;
 				goto out;
