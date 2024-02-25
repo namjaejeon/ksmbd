@@ -3002,6 +3002,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (dh_info.reconnected == true) {
+			pr_err("%s:%d, fp->voltile_id : %lld\n", __func__, __LINE__, dh_info.fp->volatile_id);
 			if (memcmp(conn->ClientGUID, dh_info.fp->client_guid,
 						SMB2_CLIENT_GUID_SIZE)) {
 				pr_err("different client guid!\n");
@@ -3745,6 +3746,7 @@ reconnected_fp:
 
 	rsp->PersistentFileId = fp->persistent_id;
 	rsp->VolatileFileId = fp->volatile_id;
+	pr_err("%s:%d, fp->voltile_id : %lld\n", __func__, __LINE__, fp->volatile_id);
 
 	rsp->CreateContextsOffset = 0;
 	rsp->CreateContextsLength = 0;
@@ -3815,25 +3817,19 @@ reconnected_fp:
 	if (dh_info.type == DURABLE_REQ || dh_info.type == DURABLE_REQ_V2) {
 		struct create_context *durable_ccontext;
 
-		pr_err("%s : %d\n", __func__, __LINE__);
 		durable_ccontext = (struct create_context *)(rsp->Buffer +
 				le32_to_cpu(rsp->CreateContextsLength));
-		pr_err("%s : %d\n", __func__, __LINE__);
 		contxt_cnt++;
 		if (dh_info.type == DURABLE_REQ) {
-		pr_err("%s : %d\n", __func__, __LINE__);
 			create_durable_rsp_buf(rsp->Buffer +
 					le32_to_cpu(rsp->CreateContextsLength));
-		pr_err("%s : %d\n", __func__, __LINE__);
 			le32_add_cpu(&rsp->CreateContextsLength,
 					conn->vals->create_durable_size);
 			iov_len += conn->vals->create_durable_size;
 		} else {
-		pr_err("%s : %d\n", __func__, __LINE__);
 			create_durable_v2_rsp_buf(rsp->Buffer +
 					le32_to_cpu(rsp->CreateContextsLength),
 					fp);
-		pr_err("%s : %d\n", __func__, __LINE__);
 			le32_add_cpu(&rsp->CreateContextsLength,
 					conn->vals->create_durable_v2_size);
 			iov_len += conn->vals->create_durable_v2_size;
