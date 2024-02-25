@@ -2859,15 +2859,12 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			}
 
 			pr_err("%s : %d, DURABLE_REQ req_op_level : %x\n", __func__, __LINE__, req_op_level);
-			dh_info->type = dh_idx;
-#if 0
 			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
 			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
 				ksmbd_debug(SMB, "Request for durable open\n");
 				pr_err("Request for durable open\n");
 				dh_info->type = dh_idx;
 			}
-#endif
 			break;
 		default:
 			break;
@@ -3003,22 +3000,8 @@ int smb2_open(struct ksmbd_work *work)
 
 		if (dh_info.reconnected == true) {
 			pr_err("%s:%d, fp->voltile_id : %lld\n", __func__, __LINE__, dh_info.fp->volatile_id);
-			if (memcmp(conn->ClientGUID, dh_info.fp->client_guid,
-						SMB2_CLIENT_GUID_SIZE)) {
-				pr_err("different client guid!\n");
-				ksmbd_put_durable_fd(dh_info.fp);
-				rc = -EBADF;
-				goto err_out2;
-			}
-
 			pr_err("req_op_level : %x, lc : %p\n", req_op_level, lc);
-			rc = smb2_check_durable_oplock(dh_info.fp, lc);
-			if (rc) {
-				ksmbd_put_durable_fd(dh_info.fp);
-				goto err_out2;
-			}
-
-			rc = ksmbd_validate_name_reconnect(share, dh_info.fp, name);
+			rc = smb2_check_durable_oplock(conn, share, dh_info.fp, lc, name);
 			if (rc) {
 				ksmbd_put_durable_fd(dh_info.fp);
 				goto err_out2;
