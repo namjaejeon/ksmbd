@@ -147,6 +147,8 @@ void ksmbd_session_destroy(struct ksmbd_session *sess)
 	if (sess->user)
 		ksmbd_free_user(sess->user);
 
+	pr_err("%s : %d\n", __func__, __LINE__);
+
 	ksmbd_tree_conn_session_logoff(sess);
 	ksmbd_destroy_file_table(&sess->file_table);
 	ksmbd_session_rpc_clear_list(sess);
@@ -339,6 +341,7 @@ void destroy_previous_session(struct ksmbd_conn *conn,
 	    memcmp(user->passkey, prev_user->passkey, user->passkey_sz))
 		goto out;
 
+	pr_err("$$$$$$$$$$$$$$$$$$$$$$$ %s : %d\n", __func__, __LINE__);
 	ksmbd_destroy_file_table(&prev_sess->file_table);
 	prev_sess->state = SMB2_SESSION_EXPIRED;
 out:

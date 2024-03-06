@@ -2100,14 +2100,14 @@ int smb2_check_durable_oplock(struct ksmbd_conn *conn,
 	int ret = 0;
 
 	if (opinfo) {
-		if (opinfo->is_lease) {
-			if (memcmp(conn->ClientGUID, fp->client_guid,
-				   SMB2_CLIENT_GUID_SIZE)) {
-				pr_err("different client guid!\n");
-				ret = -EBADF;
-				goto out;
-			}
+		if (memcmp(conn->ClientGUID, fp->client_guid,
+			   SMB2_CLIENT_GUID_SIZE)) {
+			pr_err("different client guid!\n");
+			ret = -EBADF;
+			goto out;
+		}
 
+		if (opinfo->is_lease) {
 			if (!lctx) {
 				pr_err("create context does not include lease\n");
 				ret = -EBADF;
