@@ -2859,12 +2859,8 @@ static int parse_durable_handle_context(struct ksmbd_work *work,
 			}
 
 			pr_err("%s : %d, DURABLE_REQ req_op_level : %x\n", __func__, __LINE__, req_op_level);
-			if (((lc && (lc->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) ||
-			     req_op_level == SMB2_OPLOCK_LEVEL_BATCH)) {
-				ksmbd_debug(SMB, "Request for durable open\n");
-				pr_err("Request for durable open\n");
-				dh_info->type = dh_idx;
-			}
+			pr_err("Request for durable open\n");
+			dh_info->type = dh_idx;
 			break;
 		default:
 			break;
@@ -3031,6 +3027,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	} else if (req_op_level == SMB2_OPLOCK_LEVEL_LEASE)
 		lc = parse_lease_state(req);
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (le32_to_cpu(req->ImpersonationLevel) > le32_to_cpu(IL_DELEGATE_LE)) {
 		pr_err("Invalid impersonationlevel : 0x%x\n",
@@ -3066,6 +3063,7 @@ int smb2_open(struct ksmbd_work *work)
 			}
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (le32_to_cpu(req->CreateDisposition) >
 	    le32_to_cpu(FILE_OVERWRITE_IF_LE)) {
@@ -3089,6 +3087,7 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out2;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	if (req->CreateContextsOffset) {
 		/* Parse non-durable handle create contexts */
 		context = smb2_find_context_vals(req, SMB2_CREATE_EA_BUFFER, 4);
@@ -3154,6 +3153,7 @@ int smb2_open(struct ksmbd_work *work)
 			}
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (ksmbd_override_fsids(work)) {
 		rc = -ENOMEM;
@@ -3220,6 +3220,7 @@ int smb2_open(struct ksmbd_work *work)
 		rc = 0;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	if (stream_name) {
 		if (req->CreateOptions & FILE_DIRECTORY_FILE_LE) {
 			if (s_type == DATA_STREAM) {
@@ -3243,6 +3244,7 @@ int smb2_open(struct ksmbd_work *work)
 		if (rc < 0)
 			goto err_out;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (file_present && req->CreateOptions & FILE_NON_DIRECTORY_FILE_LE &&
 	    S_ISDIR(d_inode(path.dentry)->i_mode) &&
@@ -3276,6 +3278,7 @@ int smb2_open(struct ksmbd_work *work)
 		if (rc)
 			goto err_out;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (daccess & FILE_MAXIMAL_ACCESS_LE) {
 		if (!file_present) {
@@ -3297,6 +3300,7 @@ int smb2_open(struct ksmbd_work *work)
 		maximal_access = daccess;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	open_flags = smb2_create_open_flags(file_present, daccess,
 					    req->CreateDisposition,
 					    &may_flags);
@@ -3309,6 +3313,7 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out;
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	/*create file if not present */
 	if (!file_present) {
@@ -3387,12 +3392,14 @@ int smb2_open(struct ksmbd_work *work)
 			}
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	rc = ksmbd_query_inode_status(path.dentry->d_parent);
 	if (rc == KSMBD_INODE_STATUS_PENDING_DELETE) {
 		rc = -EBUSY;
 		goto err_out;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	rc = 0;
 	filp = dentry_open(&path, open_flags, current_cred());
@@ -3402,6 +3409,7 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	if (file_present) {
 		if (!(open_flags & O_TRUNC))
 			file_info = FILE_OPENED;
@@ -3415,6 +3423,7 @@ int smb2_open(struct ksmbd_work *work)
 		file_info = FILE_CREATED;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	ksmbd_vfs_set_fadvise(filp, req->CreateOptions);
 
 	/* Obtain Volatile-ID */
@@ -3427,11 +3436,13 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 	/* Get Persistent-ID */
+	pr_err("%s : %d\n", __func__, __LINE__);
 	ksmbd_open_durable_fd(fp);
 	if (!has_file_id(fp->persistent_id)) {
 		rc = -ENOMEM;
 		goto err_out;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	fp->cdoption = req->CreateDisposition;
 	fp->daccess = daccess;
@@ -3536,6 +3547,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 		rc = 0;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (stream_name) {
 		rc = smb2_set_stream_name_xattr(&path,
@@ -3546,6 +3558,7 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out;
 		file_info = FILE_CREATED;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	fp->attrib_only = !(req->DesiredAccess & ~(FILE_READ_ATTRIBUTES_LE |
 			FILE_WRITE_ATTRIBUTES_LE | FILE_SYNCHRONIZE_LE));
@@ -3564,6 +3577,7 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	if (file_present || created)
 		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
@@ -3578,6 +3592,7 @@ int smb2_open(struct ksmbd_work *work)
 		need_truncate = 1;
 	}
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	share_ret = ksmbd_smb_check_shared_mode(fp->filp, fp);
 	if (!test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_OPLOCKS) ||
 	    (req_op_level == SMB2_OPLOCK_LEVEL_LEASE &&
@@ -3628,6 +3643,7 @@ int smb2_open(struct ksmbd_work *work)
 		if (rc)
 			goto err_out1;
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	if (req->CreateContextsOffset) {
 		struct create_alloc_size_req *az_req;
@@ -3669,6 +3685,7 @@ int smb2_open(struct ksmbd_work *work)
 			query_disk_id = 1;
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 	rc = ksmbd_vfs_getattr(&path, &stat);
 	if (rc)
@@ -3689,6 +3706,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
+	pr_err("%s : %d\n", __func__, __LINE__);
 	if (dh_info.type == DURABLE_REQ_V2 || dh_info.type == DURABLE_REQ) {
 		if (dh_info.type == DURABLE_REQ_V2 && dh_info.persistent)
 			fp->is_persistent = true;
@@ -3704,8 +3722,10 @@ int smb2_open(struct ksmbd_work *work)
 				fp->durable_timeout = 60;
 		}
 	}
+	pr_err("%s : %d\n", __func__, __LINE__);
 
 reconnected_fp:
+	pr_err("%s : %d\n", __func__, __LINE__);
 	rsp->StructureSize = cpu_to_le16(89);
 	rcu_read_lock();
 	opinfo = rcu_dereference(fp->f_opinfo);

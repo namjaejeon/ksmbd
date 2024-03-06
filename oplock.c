@@ -2099,28 +2099,56 @@ int smb2_check_durable_oplock(struct ksmbd_conn *conn,
 	struct oplock_info *opinfo = opinfo_get(fp);
 	int ret = 0;
 
-	if (opinfo && opinfo->is_lease) {
-		if (memcmp(conn->ClientGUID, fp->client_guid,
-					SMB2_CLIENT_GUID_SIZE)) {
-			pr_err("different client guid!\n");
-			ret = -EBADF;
-			goto out;
-		}
+	if (opinfo) {
+		if (opinfo->is_lease) {
+			if (memcmp(conn->ClientGUID, fp->client_guid,
+				   SMB2_CLIENT_GUID_SIZE)) {
+				pr_err("different client guid!\n");
+				ret = -EBADF;
+				goto out;
+			}
 
-		if (!lctx) {
-			pr_err("open does not include lease\n");
-			ret = -EBADF;
-			goto out;
-		}
+			if (!lctx) {
+				pr_err("create context does not include lease\n");
+				ret = -EBADF;
+				goto out;
+			}
 
-		if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
-					SMB2_LEASE_KEY_SIZE)) {
-			pr_err("invalid lease key\n");
-			ret = -EBADF;
-			goto out;
-		}
+			if (memcmp(opinfo->o_lease->lease_key, lctx->lease_key,
+				   SMB2_LEASE_KEY_SIZE)) {
+				pr_err("invalid lease key\n");
+				ret = -EBADF;
+				goto out;
+			}
+			
+			if (!(lctx->req_state & SMB2_LEASE_HANDLE_CACHING_LE)) {
+				pr_err("lease state does not contain SMB2_LEASE_HANDLE_CACHING\n");
+				ret = -EBADF;
+				goto out;
+			}
 
-		ret = ksmbd_validate_name_reconnect(share, fp, name);
+			if (opinfo->o_lease->version != lctx->version) {
+				ret = -EBADF;
+				goto out;
+			}
+
+			if (!ksmbd_inode_pending_delete(fp))
+				ret = ksmbd_validate_name_reconnect(share,
+								    fp, name);
+		} else  {
+			if (lctx) {
+				pr_err("create context include lease\n");
+				ret = -EBADF;
+				goto out;
+			}
+
+			if (opinfo->level != SMB2_OPLOCK_LEVEL_BATCH) {
+				pr_err("oplock level is not equal to SMB2_OPLOCK_LEVEL_BATCH\n");
+				ret = -EBADF;
+				goto out;
+			}
+
+		}
 	}
 out:
 	if (opinfo)
