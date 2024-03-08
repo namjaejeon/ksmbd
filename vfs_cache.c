@@ -496,9 +496,7 @@ struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id)
 
 	fp = __ksmbd_lookup_fd(&global_ft, id);
 	if (fp && fp->conn) {
-		pr_err("%s:%d, fp->voltile_id : %lld\n", __func__, __LINE__, fp->volatile_id);
 		ksmbd_put_durable_fd(fp);
-		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n");
 		fp = NULL;
 	}
 
@@ -757,11 +755,9 @@ static bool session_fd_check(struct ksmbd_tree_connect *tcon,
 	struct oplock_info *op;
 	struct ksmbd_conn *conn;
 
-	pr_err("%s:%d, fp->voltile_id : %lld\n", __func__, __LINE__, fp->volatile_id);
 	if (!is_reconnectable(fp))
 		return false;
 
-	pr_err("%s:%d, disconnect : %p, fp->voltile_id : %lld\n", __func__, __LINE__, fp->conn, fp->volatile_id);
 	conn = fp->conn;
 	ci = fp->f_ci;
 	write_lock(&ci->m_lock);
@@ -848,7 +844,7 @@ int ksmbd_validate_name_reconnect(struct ksmbd_share_config *share,
 	}
 
 	if (name && strcmp(&ab_pathname[share->path_sz + 1], name)) {
-		pr_err("invalid name reconnect %s\n", name);
+		ksmbd_debug(SMB, "invalid name reconnect %s\n", name);
 		ret = -EINVAL;
 	}
 
@@ -910,7 +906,6 @@ void ksmbd_destroy_file_table(struct ksmbd_file_table *ft)
 		return;
 
 	__close_file_table_ids(ft, NULL, session_fd_check);
-	pr_err("%s : %d\n", __func__, __LINE__);
 	idr_destroy(ft->idr);
 	kfree(ft->idr);
 	ft->idr = NULL;
