@@ -490,6 +490,11 @@ struct ksmbd_file *ksmbd_lookup_fd_slow(struct ksmbd_work *work, u64 id,
 	return fp;
 }
 
+struct ksmbd_file *ksmbd_lookup_global_fd(unsigned long long id)
+{
+	return __ksmbd_lookup_fd(&global_ft, id);
+}
+
 struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id)
 {
 	struct ksmbd_file *fp;
