@@ -72,6 +72,7 @@ jobs:
         make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
     - name: Compile and insmod ksmbd module
       run: |
+        uname -r
         cd ../ksmbd
         make > /dev/null
         sudo make install > /dev/null
