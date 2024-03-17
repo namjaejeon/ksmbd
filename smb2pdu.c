@@ -8245,7 +8245,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 	u64 id = KSMBD_NO_FID;
 	struct ksmbd_conn *conn = work->conn;
 	int ret = 0;
-	char *buffer = (char *)req + le16_to_cpu(req->InputOffset);
+	char *buffer;
 
 	if (work->next_smb2_rcv_hdr_off) {
 		req = ksmbd_req_buf_next(work);
@@ -8267,6 +8267,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 		rsp->hdr.Status = STATUS_NOT_SUPPORTED;
 		goto out;
 	}
+
+	buffer = (char *)req + le16_to_cpu(req->InputOffset);
 
 	cnt_code = le32_to_cpu(req->CntCode);
 	ret = smb2_calc_max_out_buf_len(work, 48,
