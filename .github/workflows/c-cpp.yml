@@ -72,6 +72,7 @@ jobs:
         make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
     - name: Compile and insmod ksmbd module
       run: |
+        uname -r
         cd ../ksmbd
         make > /dev/null
         sudo make install > /dev/null
@@ -492,3 +493,31 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.session_setup_credits_granted
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.single_req_credits_granted
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.credits.skipped_mid
+        # smb2 durable handle test
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.open-oplock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.open-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen1a
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen1a-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen2a
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen2-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen2-lease-v2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.reopen4
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.delete_on_close2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.file-position
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.alloc-size
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-open.read-only
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.create-blob
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.open-oplock
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.open-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen1a
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen1a-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen2
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen2b
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen2c
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen2-lease
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.durable-v2-open.reopen2-lease-v2
