@@ -583,16 +583,28 @@ static int check_lock_range(struct file *filp, loff_t start, loff_t end,
 		return 0;
 
 	spin_lock(&ctx->flc_lock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	for_each_file_lock(flock, &ctx->flc_posix) {
+#else
 	list_for_each_entry(flock, &ctx->flc_posix, fl_list) {
+#endif
 		/* check conflict locks */
 		if (flock->fl_end >= start && end >= flock->fl_start) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+			if (lock_is_read(flock)) {
+#else
 			if (flock->fl_type == F_RDLCK) {
+#endif
 				if (type == WRITE) {
 					pr_err("not allow write by shared lock\n");
 					error = 1;
 					goto out;
 				}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+			} else if (lock_is_write(flock)) {
+#else
 			} else if (flock->fl_type == F_WRLCK) {
+#endif
 				/* check owner in lock */
 				if (flock->fl_file != filp) {
 					error = 1;

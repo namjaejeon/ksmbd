@@ -7669,7 +7669,11 @@ static void smb2_remove_blocked_lock(void **argv)
 	struct file_lock *flock = (struct file_lock *)argv[0];
 
 	ksmbd_vfs_posix_lock_unblock(flock);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	locks_wake_up(flock);
+#else
 	wake_up(&flock->fl_wait);
+#endif
 }
 
 static inline bool lock_defer_pending(struct file_lock *fl)
@@ -7819,7 +7823,11 @@ int smb2_lock(struct ksmbd_work *work)
 				    file_inode(smb_lock->fl->fl_file))
 					continue;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+				if (lock_is_unlock(smb_lock->fl)) {
+#else
 				if (smb_lock->fl->fl_type == F_UNLCK) {
+#endif
 					if (cmp_lock->fl->fl_file == smb_lock->fl->fl_file &&
 					    cmp_lock->start == smb_lock->start &&
 					    cmp_lock->end == smb_lock->end &&
@@ -7879,7 +7887,11 @@ int smb2_lock(struct ksmbd_work *work)
 		}
 		up_read(&conn_list_lock);
 out_check_cl:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+		if (lock_is_unlock(smb_lock->fl) && nolock) {
+#else
 		if (smb_lock->fl->fl_type == F_UNLCK && nolock) {
+#endif
 			pr_err("Try to unlock nolocked range\n");
 			rsp->hdr.Status = STATUS_RANGE_NOT_LOCKED;
 			goto out;
