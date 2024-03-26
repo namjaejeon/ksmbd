@@ -8,6 +8,9 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+#define _NEED_FILE_LOCK_FIELD_MACROS
+#endif
 #include <linux/filelock.h>
 #endif
 #include <linux/uaccess.h>
