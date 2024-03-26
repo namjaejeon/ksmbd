@@ -8,9 +8,6 @@
 #include <linux/fs.h>
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
-#define _NEED_FILE_LOCK_FIELD_MACROS
-#endif
 #include <linux/filelock.h>
 #endif
 #include <linux/uaccess.h>
@@ -609,7 +606,11 @@ static int check_lock_range(struct file *filp, loff_t start, loff_t end,
 			} else if (flock->fl_type == F_WRLCK) {
 #endif
 				/* check owner in lock */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+				if (flock->c.flc_file != filp) {
+#else
 				if (flock->fl_file != filp) {
+#endif
 					error = 1;
 					pr_err("not allow rw access by exclusive lock from other opens\n");
 					goto out;
@@ -3273,13 +3274,22 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 
 void ksmbd_vfs_posix_lock_wait(struct file_lock *flock)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	wait_event(flock->c.flc_wait, !flock->c.flc_blocker);
+#else
 	wait_event(flock->fl_wait, !flock->fl_blocker);
+#endif
 }
 
 int ksmbd_vfs_posix_lock_wait_timeout(struct file_lock *flock, long timeout)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 9, 0)
+	return wait_event_interruptible_timeout(flock->c.flc_wait,
+						!flock->c.flc_blocker,
+#else
 	return wait_event_interruptible_timeout(flock->fl_wait,
 						!flock->fl_blocker,
+#endif
 						timeout);
 }
 
