@@ -2928,20 +2928,12 @@ static int smb_read_andx_pipe(struct ksmbd_work *work)
 	struct smb_com_read_req *req = work->request_buf;
 	struct smb_com_read_rsp *rsp = work->response_buf;
 	struct ksmbd_rpc_command *rpc_resp;
-	char *data_buf;
 	int ret = 0, nbytes = 0;
-	unsigned int count;
-	unsigned int rsp_buflen = MAX_CIFS_SMALL_BUFFER_SIZE -
-		sizeof(struct smb_com_read_rsp);
-
-	rsp_buflen = min((unsigned int)(MAX_CIFS_SMALL_BUFFER_SIZE -
-				sizeof(struct smb_com_read_rsp)), rsp_buflen);
-
-	count = min_t(unsigned int, le16_to_cpu(req->MaxCount), rsp_buflen);
-	data_buf = (char *) (&rsp->ByteCount) + sizeof(rsp->ByteCount);
 
 	rpc_resp = ksmbd_rpc_read(work->sess, req->Fid);
 	if (rpc_resp) {
+		void *aux_buf;
+
 		if (rpc_resp->flags != KSMBD_RPC_OK || !rpc_resp->payload_sz) {
 			rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 			kvfree(rpc_resp);
@@ -2949,10 +2941,25 @@ static int smb_read_andx_pipe(struct ksmbd_work *work)
 		}
 
 		nbytes = rpc_resp->payload_sz;
-		memcpy(data_buf, rpc_resp->payload, rpc_resp->payload_sz);
+		aux_buf = kvmalloc(nbytes, GFP_KERNEL);
+		if (!aux_buf) {
+			kvfree(rpc_resp);
+			return -ENOMEM;
+		}
+		memcpy(aux_buf, rpc_resp->payload, nbytes);
+
 		kvfree(rpc_resp);
+		ret = ksmbd_iov_pin_rsp_read(work, (char *)rsp + 4,
+					     sizeof (struct smb_com_read_rsp) - 4,
+					     aux_buf, nbytes);
+		if (ret) {
+			kvfree(aux_buf);
+			rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+			return -EINVAL;
+		}
 	} else {
-		ret = -EINVAL;
+		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
+		return -EINVAL;
 	}
 
 	rsp->hdr.Status.CifsError = STATUS_SUCCESS;
