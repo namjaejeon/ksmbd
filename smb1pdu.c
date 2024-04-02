@@ -1371,6 +1371,7 @@ out_err:
 	rsp->resp.ByteCount = 0;
 	if (rc < 0 && sess) {
 		xa_erase(&conn->sessions, sess->id);
+		hash_del(&sess->hlist);
 		ksmbd_session_destroy(sess);
 		work->sess = NULL;
 	}
