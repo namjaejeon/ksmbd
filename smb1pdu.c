@@ -1273,8 +1273,9 @@ no_password_check:
 			rsp->ByteCount = rsp->SecurityBlobLength;
 		}
 	} else {
-		pr_err("Invalid phase\n");
+		pr_err("Invalid phase %d\n", negblob->MessageType);
 		err = -EINVAL;
+		goto out_err;
 	}
 
 	/* this is an ANDx command ? */
