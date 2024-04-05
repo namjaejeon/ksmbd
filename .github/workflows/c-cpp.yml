@@ -329,8 +329,8 @@ jobs:
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-break
         sudo rm -rf /mnt/test3/*
-        #        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-padding
-        #sudo rm -rf /mnt/test3/*
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.compound.compound-padding
+        sudo rm -rf /mnt/test3/*
         # smb2 streams test
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.dir
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.streams.io
@@ -405,27 +405,27 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch19
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch20
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch21
-        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch22
-        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch23
-        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch24
-        ##./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch25
-        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch26 #fail
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch22a
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch23
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch24
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch25
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.batch26 #fail
         # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.stream1 #fail
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.doc
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl1
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl2
         sudo rm -rf /mnt/test3/*
-        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.brl3
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii500
         sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii501
         sudo rm -rf /mnt/test3/*
-        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.oplock.levelii502
         #sudo rm -rf /mnt/test3/*
         # smb2 session test
-        # - ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect1
+        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect1
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reconnect2
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth1
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.session.reauth2
