@@ -24,6 +24,7 @@ struct interface {
 	char			*name;
 	struct mutex		sock_release_lock;
 	int			state;
+	bool			ipv6;
 };
 
 static LIST_HEAD(iface_list);
@@ -40,7 +41,7 @@ struct tcp_transport {
 static struct ksmbd_transport_ops ksmbd_tcp_transport_ops;
 
 static void tcp_stop_kthread(struct task_struct *kthread);
-static struct interface *alloc_iface(char *ifname);
+static struct interface *alloc_iface(char *ifname, bool ipv6);
 
 #define KSMBD_TRANS(t)	(&(t)->transport)
 #define TCP_TRANS(t)	((struct tcp_transport *)container_of(t, \
@@ -302,13 +303,13 @@ static int ksmbd_kthread_fn(void *p)
  *
  * Return:	0 on success or error number
  */
-static int ksmbd_tcp_run_kthread(struct interface *iface)
+static int ksmbd_tcp_run_kthread(struct interface *iface, bool is_ipv6)
 {
 	int rc;
 	struct task_struct *kthread;
 
-	kthread = kthread_run(ksmbd_kthread_fn, (void *)iface, "ksmbd-%s",
-			      iface->name);
+	kthread = kthread_run(ksmbd_kthread_fn, (void *)iface, "ksmbd-%s:%s",
+			      is_ipv6 == true ? "ipv6" : "ipv4", iface->name);
 	if (IS_ERR(kthread)) {
 		rc = PTR_ERR(kthread);
 		return rc;
@@ -446,6 +447,7 @@ static void tcp_destroy_socket(struct socket *ksmbd_socket)
 /**
  * create_socket - create socket for ksmbd/0
  * @iface:      interface to bind the created socket to
+ * @is_ipv4:	whether this is an ipv4 or ipv6 socket
  *
  * Return:	0 on success, error number otherwise
  */
@@ -455,29 +457,35 @@ static int create_socket(struct interface *iface)
 	struct sockaddr_in6 sin6;
 	struct sockaddr_in sin;
 	struct socket *ksmbd_socket;
-	bool ipv4 = false;
 
-	ret = sock_create(PF_INET6, SOCK_STREAM, IPPROTO_TCP, &ksmbd_socket);
-	if (ret) {
-		if (ret != -EAFNOSUPPORT)
-			pr_err("Can't create socket for ipv6, fallback to ipv4: %d\n", ret);
+	if (iface->ipv6 == true) {
+		pr_err("%s: %d, ipv6\n", __func__, __LINE__);
+		ret = sock_create(PF_INET6, SOCK_STREAM, IPPROTO_TCP,
+				  &ksmbd_socket);
+		if (ret) {
+			if (ret != -EAFNOSUPPORT)
+				pr_err("Can't create socket for ipv6: %d\n", ret);
+			goto out_clear;
+		}
+		
+		sin6.sin6_family = PF_INET6;
+		sin6.sin6_addr = in6addr_any;
+		sin6.sin6_port = htons(server_conf.tcp_port);
+	} else {
+		pr_err("%s: %d, ipv4\n", __func__, __LINE__);
 		ret = sock_create(PF_INET, SOCK_STREAM, IPPROTO_TCP,
 				  &ksmbd_socket);
 		if (ret) {
-			pr_err("Can't create socket for ipv4: %d\n", ret);
+			if (ret != -EAFNOSUPPORT)
+				pr_err("Can't create socket for ipv4: %d\n", ret);
 			goto out_clear;
 		}
 
 		sin.sin_family = PF_INET;
 		sin.sin_addr.s_addr = htonl(INADDR_ANY);
 		sin.sin_port = htons(server_conf.tcp_port);
-		ipv4 = true;
-	} else {
-		sin6.sin6_family = PF_INET6;
-		sin6.sin6_addr = in6addr_any;
-		sin6.sin6_port = htons(server_conf.tcp_port);
 	}
-
+	
 	ksmbd_tcp_nodelay(ksmbd_socket);
 	ksmbd_tcp_reuseaddr(ksmbd_socket);
 
@@ -503,14 +511,14 @@ static int create_socket(struct interface *iface)
 		goto out_error;
 	}
 
-	if (ipv4)
-		ret = kernel_bind(ksmbd_socket, (struct sockaddr *)&sin,
-				  sizeof(sin));
-	else
+	if (iface->ipv6)
 		ret = kernel_bind(ksmbd_socket, (struct sockaddr *)&sin6,
 				  sizeof(sin6));
+	else
+		ret = kernel_bind(ksmbd_socket, (struct sockaddr *)&sin,
+				  sizeof(sin));
 	if (ret) {
-		pr_err("Failed to bind socket: %d\n", ret);
+		pr_err("Failed to bind socket: %d, is it ipv6 ? : %d\n", ret, iface->ipv6);
 		goto out_error;
 	}
 
@@ -524,7 +532,7 @@ static int create_socket(struct interface *iface)
 	}
 
 	iface->ksmbd_socket = ksmbd_socket;
-	ret = ksmbd_tcp_run_kthread(iface);
+	ret = ksmbd_tcp_run_kthread(iface, iface->ipv6);
 	if (ret) {
 		pr_err("Can't start ksmbd main kthread: %d\n", ret);
 		goto out_error;
@@ -558,21 +566,41 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 				if (iface->state != IFACE_STATE_DOWN)
 					break;
 				ret = create_socket(iface);
+			pr_err("%s: %d, ret : %d, iface->ipv6 : %d\n", __func__, __LINE__, ret, iface->ipv6);
 				if (ret)
 					return NOTIFY_OK;
 				break;
 			}
 		}
 		if (!found && bind_additional_ifaces) {
-			iface = alloc_iface(kstrdup(netdev->name, GFP_KERNEL));
+			iface = alloc_iface(kstrdup(netdev->name, GFP_KERNEL),
+					    false);
 			if (!iface)
 				return NOTIFY_OK;
 			ret = create_socket(iface);
+			pr_err("%s: %d, ret : %d\n", __func__, __LINE__, ret);
 			if (ret)
 				break;
+#if IS_ENABLED(CONFIG_IPV6)
+			pr_err("%s: %d\n", __func__, __LINE__);
+			iface = alloc_iface(kstrdup(netdev->name, GFP_KERNEL),
+					    true);
+			if (!iface) {
+				pr_err("iface : %p\n", iface);
+				break;
+			}
+			ret = create_socket(iface);
+			pr_err("ret : %d\n", ret);
+			if (ret) {
+				list_del(&iface->entry);
+				kfree(iface->name);
+				kfree(iface);
+			}
+#endif
 		}
 		break;
 	case NETDEV_DOWN:
+			pr_err("%s: %d, iface name : %s, iface->ipv6 : %d\n", __func__, __LINE__, iface->name, iface->ipv6);
 		list_for_each_entry(iface, &iface_list, entry) {
 			if (!strcmp(iface->name, netdev->name) &&
 			    iface->state == IFACE_STATE_CONFIGURED) {
@@ -623,13 +651,14 @@ void ksmbd_tcp_destroy(void)
 	unregister_netdevice_notifier(&ksmbd_netdev_notifier);
 
 	list_for_each_entry_safe(iface, tmp, &iface_list, entry) {
+		pr_err("%s: %d, iface name : %s\n", __func__, __LINE__, iface->name);
 		list_del(&iface->entry);
 		kfree(iface->name);
 		kfree(iface);
 	}
 }
 
-static struct interface *alloc_iface(char *ifname)
+static struct interface *alloc_iface(char *ifname, bool is_ipv6)
 {
 	struct interface *iface;
 
@@ -644,6 +673,7 @@ static struct interface *alloc_iface(char *ifname)
 
 	iface->name = ifname;
 	iface->state = IFACE_STATE_DOWN;
+	iface->ipv6 = is_ipv6;
 	list_add(&iface->entry, &iface_list);
 	mutex_init(&iface->sock_release_lock);
 	return iface;
@@ -660,8 +690,13 @@ int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 		for_each_netdev(&init_net, netdev) {
 			if (netdev->priv_flags & IFF_BRIDGE_PORT)
 				continue;
-			if (!alloc_iface(kstrdup(netdev->name, GFP_KERNEL)))
+			pr_err("%s:%d, netdev name : %s\n", __func__, __LINE__, netdev->name);
+			if (!alloc_iface(kstrdup(netdev->name, GFP_KERNEL), false))
 				return -ENOMEM;
+#if IS_ENABLED(CONFIG_IPV6)
+			if (!alloc_iface(kstrdup(netdev->name, GFP_KERNEL), true))
+				return -ENOMEM;
+#endif
 		}
 		rtnl_unlock();
 		bind_additional_ifaces = 1;
@@ -669,7 +704,7 @@ int ksmbd_tcp_set_interfaces(char *ifc_list, int ifc_list_sz)
 	}
 
 	while (ifc_list_sz > 0) {
-		if (!alloc_iface(kstrdup(ifc_list, GFP_KERNEL)))
+		if (!alloc_iface(kstrdup(ifc_list, GFP_KERNEL), false))
 			return -ENOMEM;
 
 		sz = strlen(ifc_list);
