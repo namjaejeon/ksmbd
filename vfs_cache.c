@@ -34,6 +34,9 @@ static struct ksmbd_file_table global_ft;
 static atomic_long_t fd_limit;
 static struct kmem_cache *filp_cache;
 
+static struct workqueue_struct *durable_scavenger_wq;
+static DEFINE_MUTEX(durable_scavenger_lock);
+
 void ksmbd_set_fd_limit(unsigned long limit)
 {
 	limit = min(limit, get_max_files());
@@ -753,6 +756,31 @@ static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon,
 	return fp->tcon != tcon;
 }
 
+void ksmbd_launch_durable_scavenger_wq(void)
+{
+	struct ksmbd_file *fp = NULL;
+	unsigned int id;
+
+	while (idr_is_empty(global_ft.idr)) {
+		bool found_fp_timeout = false;
+
+		write_lock(&global_ft.lock);
+		idr_for_each_entry(global_ft.idr, fp, id) {
+			if (fp->durable_timeout)
+				found_fp_timeout = true;
+
+			if (fp->durable_scavenger_timeout < jiffies_to_msecs(jiffies)) {
+				idr_remove(global_ft.idr, fp->persistent_id);
+				kmem_cache_free(filp_cache, fp);
+			}
+		}
+		write_unlock(&global_ft.lock);
+
+		if (found_fp_timeout == false)
+			break;
+	}
+}
+
 static bool session_fd_check(struct ksmbd_tree_connect *tcon,
 			     struct ksmbd_file *fp)
 {
@@ -776,6 +804,13 @@ static bool session_fd_check(struct ksmbd_tree_connect *tcon,
 	fp->conn = NULL;
 	fp->tcon = NULL;
 	fp->volatile_id = KSMBD_NO_FID;
+
+	if (fp->durable_timeout)
+		fp->durable_scavenger_timeout =
+			jiffies_to_msecs(jiffies) + fp->durable_timeout;
+
+
+	ksmbd_launch_durable_scavenger_wq();
 
 	return true;
 }
