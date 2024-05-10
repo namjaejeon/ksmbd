@@ -170,6 +170,7 @@ struct ksmbd_file *ksmbd_lookup_fd_filename(struct ksmbd_work *work, char *filen
 struct ksmbd_file *ksmbd_lookup_fd_inode(struct dentry *dentry);
 unsigned int ksmbd_open_durable_fd(struct ksmbd_file *fp);
 struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp);
+void ksmbd_launch_ksmbd_durable_scavenger(void);
 void ksmbd_close_tree_conn_fds(struct ksmbd_work *work);
 void ksmbd_close_session_fds(struct ksmbd_work *work);
 int ksmbd_close_inode_fds(struct ksmbd_work *work, struct inode *inode);
@@ -201,6 +202,8 @@ void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 int ksmbd_reopen_durable_fd(struct ksmbd_work *work, struct ksmbd_file *fp);
 int ksmbd_validate_name_reconnect(struct ksmbd_share_config *share,
 				  struct ksmbd_file *fp, char *name);
+int ksmbd_init_scavenger_wq(void);
+void ksmbd_scavenger_wq_destroy(void);
 int ksmbd_init_file_cache(void);
 void ksmbd_exit_file_cache(void);
 #endif /* __VFS_CACHE_H__ */

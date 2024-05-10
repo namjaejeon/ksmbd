@@ -34,7 +34,7 @@ static struct ksmbd_file_table global_ft;
 static atomic_long_t fd_limit;
 static struct kmem_cache *filp_cache;
 
-static struct workqueue_struct *durable_scavenger_wq;
+static struct workqueue_struct *scavenger_wq;
 static DEFINE_MUTEX(durable_scavenger_lock);
 
 void ksmbd_set_fd_limit(unsigned long limit)
@@ -756,7 +756,7 @@ static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon,
 	return fp->tcon != tcon;
 }
 
-void ksmbd_launch_durable_scavenger_wq(void)
+static void ksmbd_durable_scavenger(struct work_struct *work)
 {
 	struct ksmbd_file *fp = NULL;
 	unsigned int id;
@@ -779,6 +779,20 @@ void ksmbd_launch_durable_scavenger_wq(void)
 		if (found_fp_timeout == false)
 			break;
 	}
+
+	kfree(work);
+}
+
+void ksmbd_launch_ksmbd_durable_scavenger(void)
+{
+	struct work_struct *durable_work;
+
+	durable_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
+	if (!durable_work)
+		return;
+
+	INIT_WORK(durable_work, ksmbd_durable_scavenger);
+	queue_work(scavenger_wq, durable_work);
 }
 
 static bool session_fd_check(struct ksmbd_tree_connect *tcon,
@@ -809,9 +823,6 @@ static bool session_fd_check(struct ksmbd_tree_connect *tcon,
 		fp->durable_scavenger_timeout =
 			jiffies_to_msecs(jiffies) + fp->durable_timeout;
 
-
-	ksmbd_launch_durable_scavenger_wq();
-
 	return true;
 }
 
@@ -831,6 +842,7 @@ void ksmbd_close_session_fds(struct ksmbd_work *work)
 					 session_fd_check);
 
 	atomic_sub(num, &work->conn->stats.open_files_count);
+	ksmbd_launch_ksmbd_durable_scavenger();
 }
 
 int ksmbd_init_global_file_table(void)
@@ -949,6 +961,21 @@ void ksmbd_destroy_file_table(struct ksmbd_file_table *ft)
 	idr_destroy(ft->idr);
 	kfree(ft->idr);
 	ft->idr = NULL;
+}
+
+int ksmbd_init_scavenger_wq(void)
+{
+	scavenger_wq = alloc_workqueue("ksmbd-scavenger_wq", 0, 0);
+	if (!scavenger_wq)
+		return -ENOMEM;
+
+	return 0;
+}
+
+void ksmbd_scavenger_wq_destroy(void)
+{
+	destroy_workqueue(scavenger_wq);
+	scavenger_wq = NULL;
 }
 
 int ksmbd_init_file_cache(void)

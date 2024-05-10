@@ -555,6 +555,7 @@ static int ksmbd_server_shutdown(void)
 	WRITE_ONCE(server_conf.state, SERVER_STATE_SHUTTING_DOWN);
 
 	class_unregister(&ksmbd_control_class);
+	ksmbd_scavenger_wq_destroy();
 	ksmbd_workqueue_destroy();
 	ksmbd_ipc_release();
 	ksmbd_conn_transport_destroy();
@@ -610,6 +611,11 @@ static int __init ksmbd_server_init(void)
 	ret = ksmbd_workqueue_init();
 	if (ret)
 		goto err_crypto_destroy;
+
+	ret = ksmbd_init_scavenger_wq();
+	if (ret)
+		goto err_crypto_destroy;
+
 	return 0;
 
 err_crypto_destroy:
