@@ -20,6 +20,7 @@
 #include "mgmt/tree_connect.h"
 #include "mgmt/user_session.h"
 #include "smb_common.h"
+#include "server.h"
 
 #define S_DEL_PENDING			1
 #define S_DEL_ON_CLS			2
@@ -787,6 +788,9 @@ void ksmbd_launch_ksmbd_durable_scavenger(void)
 {
 	struct work_struct *durable_work;
 
+	if (!scavenger_wq)
+		return;
+
 	durable_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
 	if (!durable_work)
 		return;
@@ -842,7 +846,6 @@ void ksmbd_close_session_fds(struct ksmbd_work *work)
 					 session_fd_check);
 
 	atomic_sub(num, &work->conn->stats.open_files_count);
-	ksmbd_launch_ksmbd_durable_scavenger();
 }
 
 int ksmbd_init_global_file_table(void)
@@ -965,6 +968,9 @@ void ksmbd_destroy_file_table(struct ksmbd_file_table *ft)
 
 int ksmbd_init_scavenger_wq(void)
 {
+	if (!(server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE))
+		return 0;
+
 	scavenger_wq = alloc_workqueue("ksmbd-scavenger_wq", 0, 0);
 	if (!scavenger_wq)
 		return -ENOMEM;
@@ -974,6 +980,9 @@ int ksmbd_init_scavenger_wq(void)
 
 void ksmbd_scavenger_wq_destroy(void)
 {
+	if (!(server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE))
+		return;
+
 	destroy_workqueue(scavenger_wq);
 	scavenger_wq = NULL;
 }
