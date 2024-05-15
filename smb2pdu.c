@@ -2231,7 +2231,6 @@ int smb2_session_logoff(struct ksmbd_work *work)
 
 	ksmbd_destroy_file_table(&sess->file_table);
 	sess->state = SMB2_SESSION_EXPIRED;
-	ksmbd_launch_ksmbd_durable_scavenger();
 
 	ksmbd_free_user(sess->user);
 	sess->user = NULL;

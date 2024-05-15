@@ -35,9 +35,6 @@ static struct ksmbd_file_table global_ft;
 static atomic_long_t fd_limit;
 static struct kmem_cache *filp_cache;
 
-static struct workqueue_struct *scavenger_wq;
-static DEFINE_MUTEX(durable_scavenger_lock);
-
 void ksmbd_set_fd_limit(unsigned long limit)
 {
 	limit = min(limit, get_max_files());
@@ -504,7 +501,8 @@ struct ksmbd_file *ksmbd_lookup_durable_fd(unsigned long long id)
 	struct ksmbd_file *fp;
 
 	fp = __ksmbd_lookup_fd(&global_ft, id);
-	if (fp && fp->conn) {
+	if (fp && (fp->conn ||
+		   fp->durable_scavenger_timeout < jiffies_to_msecs(jiffies))) {
 		ksmbd_put_durable_fd(fp);
 		fp = NULL;
 	}
@@ -757,48 +755,6 @@ static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon,
 	return fp->tcon != tcon;
 }
 
-static void ksmbd_durable_scavenger(struct work_struct *work)
-{
-	struct ksmbd_file *fp = NULL;
-	unsigned int id;
-
-	while (idr_is_empty(global_ft.idr)) {
-		bool found_fp_timeout = false;
-
-		write_lock(&global_ft.lock);
-		idr_for_each_entry(global_ft.idr, fp, id) {
-			if (fp->durable_timeout)
-				found_fp_timeout = true;
-
-			if (fp->durable_scavenger_timeout < jiffies_to_msecs(jiffies)) {
-				idr_remove(global_ft.idr, fp->persistent_id);
-				kmem_cache_free(filp_cache, fp);
-			}
-		}
-		write_unlock(&global_ft.lock);
-
-		if (found_fp_timeout == false)
-			break;
-	}
-
-	kfree(work);
-}
-
-void ksmbd_launch_ksmbd_durable_scavenger(void)
-{
-	struct work_struct *durable_work;
-
-	if (!scavenger_wq)
-		return;
-
-	durable_work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
-	if (!durable_work)
-		return;
-
-	INIT_WORK(durable_work, ksmbd_durable_scavenger);
-	queue_work(scavenger_wq, durable_work);
-}
-
 static bool session_fd_check(struct ksmbd_tree_connect *tcon,
 			     struct ksmbd_file *fp)
 {
@@ -964,27 +920,6 @@ void ksmbd_destroy_file_table(struct ksmbd_file_table *ft)
 	idr_destroy(ft->idr);
 	kfree(ft->idr);
 	ft->idr = NULL;
-}
-
-int ksmbd_init_scavenger_wq(void)
-{
-	if (!(server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE))
-		return 0;
-
-	scavenger_wq = alloc_workqueue("ksmbd-scavenger_wq", 0, 0);
-	if (!scavenger_wq)
-		return -ENOMEM;
-
-	return 0;
-}
-
-void ksmbd_scavenger_wq_destroy(void)
-{
-	if (!(server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE))
-		return;
-
-	destroy_workqueue(scavenger_wq);
-	scavenger_wq = NULL;
 }
 
 int ksmbd_init_file_cache(void)
