@@ -344,7 +344,9 @@ int ksmbd_conn_handler_loop(void *p)
 		kvfree(conn->request_buf);
 		conn->request_buf = NULL;
 
+		pr_err("%s:%d\n", __func__, __LINE__);
 		size = t->ops->read(t, hdr_buf, sizeof(hdr_buf), -1);
+		pr_err("%s:%d, size : %d\n", __func__, __LINE__, size);
 		if (size != sizeof(hdr_buf))
 			break;
 
@@ -386,7 +388,9 @@ int ksmbd_conn_handler_loop(void *p)
 		 * We already read 4 bytes to find out PDU size, now
 		 * read in PDU
 		 */
+		pr_err("%s:%d\n", __func__, __LINE__);
 		size = t->ops->read(t, conn->request_buf + 4, pdu_size, 2);
+		pr_err("%s:%d, size : %d\n", __func__, __LINE__, size);
 		if (size < 0) {
 			pr_err("sock_read failed: %d\n", size);
 			break;

@@ -358,7 +358,7 @@ static int ksmbd_tcp_readv(struct tcp_transport *t, struct kvec *iov_orig,
 
 		length = kernel_recvmsg(t->sock, &ksmbd_msg,
 					iov, segs, to_read, 0);
-
+		pr_err("%s : %d, length : %d\n", __func__, __LINE__, length);
 		if (length == -EINTR) {
 			total_read = -ESHUTDOWN;
 			break;
@@ -580,6 +580,7 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 		list_for_each_entry(iface, &iface_list, entry) {
 			if (!strcmp(iface->name, netdev->name) &&
 			    iface->state == IFACE_STATE_CONFIGURED) {
+				pr_err("%s : %d, netdev->name : %s\n", __func__, __LINE__, netdev->name);
 				tcp_stop_kthread(iface->ksmbd_kthread);
 				iface->ksmbd_kthread = NULL;
 				mutex_lock(&iface->sock_release_lock);
