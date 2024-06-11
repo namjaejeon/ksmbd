@@ -264,7 +264,8 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 		err = ksmbd_vfs_remove_xattr(file_mnt_user_ns(filp),
 #endif
 					     &filp->f_path,
-					     fp->stream.name);
+					     fp->stream.name,
+					     true);
 		if (err)
 			pr_err("remove xattr failed : %s\n",
 			       fp->stream.name);

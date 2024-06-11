@@ -2397,7 +2397,8 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 				rc = ksmbd_vfs_remove_xattr(user_ns,
 #endif
 							    path,
-							    attr_name);
+							    attr_name,
+							    get_write);
 
 				if (rc < 0) {
 					ksmbd_debug(SMB,
@@ -2417,7 +2418,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 #endif
 						path, attr_name, value,
 						le16_to_cpu(eabuf->EaValueLength),
-						0, true);
+						0, get_write);
 			if (rc < 0) {
 				ksmbd_debug(SMB,
 					    "ksmbd_vfs_setxattr is failed(%d)\n",
@@ -2526,9 +2527,9 @@ static int smb2_remove_smb_xattrs(const struct path *path)
 		    !strncmp(&name[XATTR_USER_PREFIX_LEN], STREAM_PREFIX,
 			     STREAM_PREFIX_LEN)) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			err = ksmbd_vfs_remove_xattr(idmap, path, name);
+			err = ksmbd_vfs_remove_xattr(idmap, path, name, true);
 #else
-			err = ksmbd_vfs_remove_xattr(user_ns, path, name);
+			err = ksmbd_vfs_remove_xattr(user_ns, path, name, true);
 #endif
 			if (err)
 				ksmbd_debug(SMB, "remove xattr failed : %s\n",
