@@ -884,6 +884,7 @@ int smb_rename(struct ksmbd_work *work)
 		goto out;
 	}
 
+	ksmbd_update_fstate(&work->sess->file_table, fp, FP_INITED);
 	rc = ksmbd_vfs_fp_rename(work, fp, newname);
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
@@ -5190,6 +5191,7 @@ free_path:
 out:
 	switch (err) {
 	case 0:
+		ksmbd_update_fstate(&work->sess->file_table, fp, FP_INITED);
 		break;
 	case -ENOSPC:
 		pSMB_rsp->hdr.Status.CifsError = STATUS_DISK_FULL;
