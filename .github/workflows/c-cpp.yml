@@ -101,6 +101,7 @@ jobs:
         ksmbd.adduser -P ./ksmbdpwd.db -a testuser -p 1234
         git clone https://github.com/namjaejeon/cifsd-test-result
         cp cifsd-test-result/testsuites/smb.conf .
+        cat smb.conf
         sudo ksmbd.mountd -n -C ./smb.conf -P ./ksmbdpwd.db&
         sleep 1
         ps -ax | grep smbd
