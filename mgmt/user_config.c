@@ -12,6 +12,7 @@
 struct ksmbd_user *ksmbd_login_user(const char *account)
 {
 	struct ksmbd_login_response *resp;
+	struct ksmbd_login_response_ext *resp_ext = NULL;
 	struct ksmbd_user *user = NULL;
 
 	resp = ksmbd_ipc_login_request(account);
@@ -21,13 +22,17 @@ struct ksmbd_user *ksmbd_login_user(const char *account)
 	if (!(resp->status & KSMBD_USER_FLAG_OK))
 		goto out;
 
-	user = ksmbd_alloc_user(resp);
+	if (resp->status & KSMBD_USER_FLAG_EXTENSION)
+		resp_ext = ksmbd_ipc_login_request_ext(account);
+
+	user = ksmbd_alloc_user(resp, resp_ext);
 out:
 	kvfree(resp);
 	return user;
 }
 
-struct ksmbd_user *ksmbd_alloc_user(struct ksmbd_login_response *resp)
+struct ksmbd_user *ksmbd_alloc_user(struct ksmbd_login_response *resp,
+		struct ksmbd_login_response_ext *resp_ext)
 {
 	struct ksmbd_user *user = NULL;
 
@@ -44,18 +49,37 @@ struct ksmbd_user *ksmbd_alloc_user(struct ksmbd_login_response *resp)
 	if (user->passkey)
 		memcpy(user->passkey, resp->hash, resp->hash_sz);
 
+	user->ngroups = 0;
+	user->sgid = NULL;
+
 	if (!user->name || !user->passkey) {
+free_user:
 		kfree(user->name);
 		kfree(user->passkey);
 		kfree(user);
 		user = NULL;
+	} else if (resp_ext) {
+		if (resp_ext->ngroups > KSMBD_MAX_GROUPS) {
+			pr_err("ngroups(%u) from login response exceeds max groups(%d)\n",
+					resp_ext->ngroups, KSMBD_MAX_GROUPS);
+			goto free_user;
+		}
+
+		user->sgid = kmemdup(resp_ext->sgid,
+				     resp_ext->ngroups * sizeof(__u32),
+				     GFP_KERNEL);
+		if (user->sgid)
+			user->ngroups = resp_ext->ngroups;
+		ksmbd_debug("supplementary groups : %d\n", user->ngroups);
 	}
+
 	return user;
 }
 
 void ksmbd_free_user(struct ksmbd_user *user)
 {
 	ksmbd_ipc_logout_request(user->name, user->flags);
+	kfree(user->sgid);
 	kfree(user->name);
 	kfree(user->passkey);
 	kfree(user);
