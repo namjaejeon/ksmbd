@@ -201,7 +201,7 @@ struct smb_direct_rdma_rw_msg {
 	struct list_head	list;
 	struct rdma_rw_ctx	rw_ctx;
 	struct sg_table		sgt;
-	struct scatterlist	sg_list[0];
+	struct scatterlist	sg_list[];
 };
 
 void init_smbd_max_io_size(unsigned int sz)
