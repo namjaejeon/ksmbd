@@ -3205,12 +3205,6 @@ int smb2_open(struct ksmbd_work *work)
 #endif
 				goto err_out;
 			}
-		} else if (d_is_symlink(path.dentry)) {
-			rc = -EACCES;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
-			path_put(&path);
-#endif
-			goto err_out;
 		}
 
 		file_present = true;
