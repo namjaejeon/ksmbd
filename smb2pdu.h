@@ -1047,6 +1047,18 @@ struct reparse_data_buffer {
 	__u8	DataBuffer[]; /* Variable Length */
 } __packed;
 
+struct reparse_symlink_data_buffer {
+	__le32	ReparseTag;
+	__le16	ReparseDataLength;
+	__u16	Reserved;
+	__le16	SubstituteNameOffset;
+	__le16	SubstituteNameLength;
+	__le16	PrintNameOffset;
+	__le16	PrintNameLength;
+	__le32	Flags;
+	__u8	PathBuffer[]; /* Variable Length */
+} __packed;
+
 /* Completion Filter flags for Notify */
 #define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
 #define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002

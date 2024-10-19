@@ -2103,7 +2103,7 @@ static int smb2_create_open_flags(bool file_present, __le32 access,
 		*may_flags = MAY_OPEN | MAY_READ;
 	}
 
-	if (access == FILE_READ_ATTRIBUTES_LE || S_ISBLK(mode) || S_ISCHR(mode))
+	if (access == FILE_READ_ATTRIBUTES_LE || S_ISBLK(mode) || S_ISCHR(mode) || S_ISLNK(mode))
 		oflags |= O_PATH;
 
 	if (file_present) {
@@ -8802,9 +8802,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 		reparse_ptr->ReparseTag =
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
-		reparse_ptr->ReparseDataLength = 0;
+		if (reparse_ptr->ReparseTag == IO_REPARSE_TAG_LX_SYMLINK_LE) {
+
+			nbytes = sizeof(reparse_symlink_data_buffer) + path_len;
+		} else
+			reparse_ptr->ReparseDataLength = 0;
+
 		ksmbd_fd_put(work, fp);
-		nbytes = sizeof(struct reparse_data_buffer);
+		nbytes += sizeof(struct reparse_data_buffer);
 		break;
 	}
 	case FSCTL_DUPLICATE_EXTENTS_TO_FILE:
