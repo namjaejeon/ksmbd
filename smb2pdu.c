@@ -8803,7 +8803,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 		reparse_ptr->ReparseTag =
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
 		if (reparse_ptr->ReparseTag == IO_REPARSE_TAG_LX_SYMLINK_LE) {
+			struct reparse_symlink_data_buffer *sym = reparse_ptr->DataBuffer;
 
+			sym->SubstituteNameOffset = ;
+			sym->SubstituteNameLength = ;
 			nbytes = sizeof(reparse_symlink_data_buffer) + path_len;
 		} else
 			reparse_ptr->ReparseDataLength = 0;
