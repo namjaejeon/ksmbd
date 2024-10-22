@@ -345,4 +345,5 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 				struct inode *parent_inode);
 #endif
 char *ksmbd_vfs_get_link(struct ksmbd_file *fp);
+int ksmbd_page_link(struct ksmbd_file *fp, char *link);
 #endif /* __KSMBD_VFS_H__ */

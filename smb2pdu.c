@@ -2971,6 +2971,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		ksmbd_debug(SMB, "converted name = %s\n", name);
+		pr_err("converted name = %s\n", name);
 		if (strchr(name, ':')) {
 			if (!test_share_config_flag(work->tcon->share_conf,
 						    KSMBD_SHARE_FLAG_STREAMS)) {
@@ -8854,6 +8855,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 	{
 		struct reparse_data_buffer *reparse_ptr =
 			(struct reparse_data_buffer *)buffer;
+		struct ksmbd_file *fp;
+
+		fp = ksmbd_lookup_fd_fast(work, id);
+		if (!fp) {
+			pr_err("not found fp!!\n");
+			ret = -ENOENT;
+			goto out;
+		}
 
 		pr_err("%s:%d\n", __func__, __LINE__);
 		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
@@ -8868,6 +8877,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 					conn->local_nls);
 			if (IS_ERR(symname)) {
 				ret = PTR_ERR(symname);
+				ksmbd_fd_put(work, fp);
 				goto out;
 			}
 
@@ -8877,9 +8887,11 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 			ret = ksmbd_page_link(fp, symname);
 			kfree(symname);
+			ksmbd_fd_put(work, fp);
 			if (ret)
 				goto out;
 		} else {
+			ksmbd_fd_put(work, fp);
 			ret = -EOPNOTSUPP;
 			goto out;
 		}

@@ -3485,3 +3485,17 @@ char *ksmbd_vfs_get_link(struct ksmbd_file *fp)
 	ksmbd_conv_path_to_windows(link);
 	return link;
 }
+
+int ksmbd_page_link(struct ksmbd_file *fp, char *link)
+{
+	int ret;
+	struct inode *inode = file_inode(fp->filp);
+	umode_t mode = inode->i_mode & S_IRWXUGO;
+
+	inode->i_mode = 0;
+	inode->i_mode |= S_IFLNK | mode;
+	ret = page_symlink(inode, link, strlen(link));
+	pr_err("%s:%d, ret : %d\n", __func__, __LINE__, ret);
+
+	return ret;
+}
