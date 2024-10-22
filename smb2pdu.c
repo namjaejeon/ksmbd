@@ -8792,7 +8792,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 		struct reparse_data_buffer *reparse_ptr;
 		struct ksmbd_file *fp;
 
-		reparse_ptr = (struct reparse_data_buffer *)&rsp->Buffer[0];
+		reparse_ptr = (struct reparse_data_buffer *)rsp->Buffer;
 		fp = ksmbd_lookup_fd_fast(work, id);
 		if (!fp) {
 			pr_err("not found fp!!\n");
@@ -8804,7 +8804,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
 		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
-				(struct reparse_symlink_data_buffer *)reparse_ptr->DataBuffer;
+				(struct reparse_symlink_data_buffer *)rsp->Buffer;
 			char *symname;
 			u8 *usymname;
 			u16 symname_len;
