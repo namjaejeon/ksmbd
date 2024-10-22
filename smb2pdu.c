@@ -8838,11 +8838,11 @@ int smb2_ioctl(struct ksmbd_work *work)
 				sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
 			reparse_ptr->ReparseDataLength =
 				cpu_to_le16(12 + symname_len * 2);
-			nbytes += sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
+			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
 			pr_err("%s:%d, symname_len : %d\n", __func__, __LINE__, symname_len);
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
-			nbytes += sizeof(struct reparse_data_buffer);
+			nbytes = sizeof(struct reparse_data_buffer);
 		}
 
 		ksmbd_fd_put(work, fp);
