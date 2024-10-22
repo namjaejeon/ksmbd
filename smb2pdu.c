@@ -8816,9 +8816,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 				goto out;
 			}
 
-			pr_err("symname : %s\n", symname);
+			ksmbd_debug(SMB, "symname : %s\n", symname);
 			usymname = kzalloc((strlen(symname)) * sizeof(__le16), GFP_KERNEL);
 			if (!usymname) {
+				kfree(symname);
 				ksmbd_fd_put(work, fp);
 				ret = -ENOMEM;
 				goto out;
@@ -8839,13 +8840,50 @@ int smb2_ioctl(struct ksmbd_work *work)
 			reparse_ptr->ReparseDataLength =
 				cpu_to_le16(12 + symname_len * 2);
 			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
-			pr_err("%s:%d, symname_len : %d\n", __func__, __LINE__, symname_len);
+			kfree(symname);
+			kfree(usymname);
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
 		}
 
 		ksmbd_fd_put(work, fp);
+		break;
+	}
+	case FSCTL_SET_REPARSE_POINT:
+	{
+		struct reparse_data_buffer *reparse_ptr =
+			(struct reparse_data_buffer *)buffer;
+
+		pr_err("%s:%d\n", __func__, __LINE__);
+		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+			struct reparse_symlink_data_buffer *sym =
+				(struct reparse_symlink_data_buffer *)buffer;
+			char *symname;
+
+			symname = smb_strndup_from_utf16(sym->PathBuffer +
+					le16_to_cpu(sym->SubstituteNameOffset),
+					le16_to_cpu(sym->SubstituteNameLength),
+					true,
+					conn->local_nls);
+			if (IS_ERR(symname)) {
+				ret = PTR_ERR(symname);
+				goto out;
+			}
+
+			ksmbd_conv_path_to_unix(symname);
+			ksmbd_strip_last_slash(symname);
+			pr_err("create symname : %s\n", symname);
+
+			ret = ksmbd_page_link(fp, symname);
+			kfree(symname);
+			if (ret)
+				goto out;
+		} else {
+			ret = -EOPNOTSUPP;
+			goto out;
+		}
+
 		break;
 	}
 	case FSCTL_DUPLICATE_EXTENTS_TO_FILE:
