@@ -727,7 +727,7 @@ static __le32 smb2_get_reparse_tag_special_file(umode_t mode)
 		return 0;
 
 	if (S_ISLNK(mode))
-		return IO_REPARSE_TAG_LX_SYMLINK_LE;
+		return cpu_to_le32(IO_REPARSE_TAG_SYMLINK);//IO_REPARSE_TAG_LX_SYMLINK_LE;
 	else if (S_ISFIFO(mode))
 		return IO_REPARSE_TAG_LX_FIFO_LE;
 	else if (S_ISSOCK(mode))
@@ -8802,7 +8802,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 		reparse_ptr->ReparseTag =
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
-		if (reparse_ptr->ReparseTag == IO_REPARSE_TAG_LX_SYMLINK_LE) {
+		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
 				(struct reparse_symlink_data_buffer *)reparse_ptr->DataBuffer;
 			char *symname;
@@ -8816,6 +8816,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				goto out;
 			}
 
+			pr_err("symname : %s\n", symname);
 			usymname = kzalloc((strlen(symname)) * sizeof(__le16), GFP_KERNEL);
 			if (!usymname) {
 				ksmbd_fd_put(work, fp);
@@ -8828,20 +8829,23 @@ int smb2_ioctl(struct ksmbd_work *work)
 					      conn->local_nls, 0);
 			symname_len *= sizeof(__le16);
 			sym->PrintNameOffset = 0;
-			sym->PrintNameLength = symname_len;
+			sym->PrintNameLength = cpu_to_le16(symname_len);
 			memcpy(sym->PathBuffer, usymname, symname_len);
 			sym->SubstituteNameOffset = cpu_to_le16(symname_len);
 			sym->SubstituteNameLength = cpu_to_le16(symname_len);
 			memcpy(&sym->PathBuffer[symname_len], usymname, symname_len);
-			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
 			if (*symname != '\\')
 				sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
-			reparse_ptr->ReparseDataLength = symname_len * 2;
-		} else
+			reparse_ptr->ReparseDataLength =
+				cpu_to_le16(12 + symname_len * 2);
+			nbytes += sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
+			pr_err("%s:%d, symname_len : %d\n", __func__, __LINE__, symname_len);
+		} else {
 			reparse_ptr->ReparseDataLength = 0;
+			nbytes += sizeof(struct reparse_data_buffer);
+		}
 
 		ksmbd_fd_put(work, fp);
-		nbytes += sizeof(struct reparse_data_buffer);
 		break;
 	}
 	case FSCTL_DUPLICATE_EXTENTS_TO_FILE:
