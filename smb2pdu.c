@@ -8803,11 +8803,40 @@ int smb2_ioctl(struct ksmbd_work *work)
 		reparse_ptr->ReparseTag =
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
 		if (reparse_ptr->ReparseTag == IO_REPARSE_TAG_LX_SYMLINK_LE) {
-			struct reparse_symlink_data_buffer *sym = reparse_ptr->DataBuffer;
+			struct reparse_symlink_data_buffer *sym =
+				(struct reparse_symlink_data_buffer *)reparse_ptr->DataBuffer;
+			char *symname;
+			u8 *usymname;
+			u16 symname_len;
 
-			sym->SubstituteNameOffset = ;
-			sym->SubstituteNameLength = ;
-			nbytes = sizeof(reparse_symlink_data_buffer) + path_len;
+			symname = ksmbd_vfs_get_link(fp);
+			if (IS_ERR(symname)) {
+				ksmbd_fd_put(work, fp);
+				ret = PTR_ERR(symname);
+				goto out;
+			}
+
+			usymname = kzalloc((strlen(symname)) * sizeof(__le16), GFP_KERNEL);
+			if (!usymname) {
+				ksmbd_fd_put(work, fp);
+				ret = -ENOMEM;
+				goto out;
+			}
+
+			symname_len = smbConvertToUTF16((__le16 *)usymname,
+                                              symname, strlen(symname),
+					      conn->local_nls, 0);
+			symname_len *= sizeof(__le16);
+			sym->PrintNameOffset = 0;
+			sym->PrintNameLength = symname_len;
+			memcpy(sym->PathBuffer, usymname, symname_len);
+			sym->SubstituteNameOffset = cpu_to_le16(symname_len);
+			sym->SubstituteNameLength = cpu_to_le16(symname_len);
+			memcpy(&sym->PathBuffer[symname_len], usymname, symname_len);
+			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
+			if (*symname != '\\')
+				sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
+			reparse_ptr->ReparseDataLength = symname_len * 2;
 		} else
 			reparse_ptr->ReparseDataLength = 0;
 

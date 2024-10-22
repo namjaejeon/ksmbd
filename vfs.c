@@ -3468,3 +3468,20 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 	posix_acl_release(acls);
 	return rc;
 }
+
+char *ksmbd_vfs_get_link(struct ksmbd_file *fp)
+{
+	const char *res;
+	char *link;
+	DEFINE_DELAYED_CALL(done);
+
+	res = vfs_get_link(fp->filp->f_path.dentry, &done);
+	if (IS_ERR(res))
+		return (char *)res;
+	link = kstrdup(res, GFP_KERNEL);
+	do_delayed_call(&done);
+	if (!link)
+		return ERR_PTR(-ENOMEM);
+	ksmbd_conv_path_to_windows(link);
+	return link;
+}

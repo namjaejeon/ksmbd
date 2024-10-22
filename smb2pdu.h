@@ -1047,6 +1047,8 @@ struct reparse_data_buffer {
 	__u8	DataBuffer[]; /* Variable Length */
 } __packed;
 
+#define SYMLINK_FLAG_RELATIVE 0x00000001
+
 struct reparse_symlink_data_buffer {
 	__le32	ReparseTag;
 	__le16	ReparseDataLength;
