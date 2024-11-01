@@ -721,13 +721,15 @@ void smb2_send_interim_resp(struct ksmbd_work *work, __le32 status)
 	ksmbd_free_work_struct(in_work);
 }
 
-static __le32 smb2_get_reparse_tag_special_file(umode_t mode)
+static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
 {
+	umode_t mode = ksmbd_stat->kstat->mode;
+
 	if (S_ISDIR(mode) || S_ISREG(mode))
 		return 0;
 
 	if (S_ISLNK(mode))
-		return cpu_to_le32(IO_REPARSE_TAG_SYMLINK);//IO_REPARSE_TAG_LX_SYMLINK_LE;
+		return IO_REPARSE_TAG_LX_SYMLINK_LE;
 	else if (S_ISFIFO(mode))
 		return IO_REPARSE_TAG_LX_FIFO_LE;
 	else if (S_ISSOCK(mode))
@@ -736,6 +738,8 @@ static __le32 smb2_get_reparse_tag_special_file(umode_t mode)
 		return IO_REPARSE_TAG_LX_CHR_LE;
 	else if (S_ISBLK(mode))
 		return IO_REPARSE_TAG_LX_BLK_LE;
+	else if (ksmbd_stat->is_native_symlink)
+		return cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
 
 	return 0;
 }
@@ -755,13 +759,16 @@ static int smb2_get_dos_mode(struct kstat *stat, int attribute)
 		attr = ATTR_DIRECTORY |
 			(attribute & (ATTR_HIDDEN | ATTR_SYSTEM));
 	} else {
+		struct ksmbd_kstat ksmbd_stat = {0};
+
 		attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 		attr &= ~(ATTR_DIRECTORY);
 		if (S_ISREG(stat->mode) && (server_conf.share_fake_fscaps &
 				FILE_SUPPORTS_SPARSE_FILES))
 			attr |= ATTR_SPARSE;
 
-		if (smb2_get_reparse_tag_special_file(stat->mode))
+		ksmbd_stat->kstat = stat;
+		if (smb2_get_reparse_tag_special_file(ksmbd_stat))
 			attr |= ATTR_REPARSE;
 	}
 
@@ -3001,6 +3008,9 @@ int smb2_open(struct ksmbd_work *work)
 		}
 	}
 
+	pr_err("%s:%d, open reparse : %d\n",
+			__func__, __LINE__, req->CreateOptions & FILE_OPEN_REPARSE_POINT_LE);
+
 	req_op_level = req->RequestedOplockLevel;
 
 	if (server_conf.flags & KSMBD_GLOBAL_FLAG_DURABLE_HANDLE &&
@@ -4062,7 +4072,7 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		ffdinfo = (struct file_full_directory_info *)kstat;
 		ffdinfo->FileNameLength = cpu_to_le32(conv_len);
 		ffdinfo->EaSize =
-			smb2_get_reparse_tag_special_file(ksmbd_kstat->kstat->mode);
+			smb2_get_reparse_tag_special_file(ksmbd_kstat);
 		if (ffdinfo->EaSize)
 			ffdinfo->ExtFileAttributes = ATTR_REPARSE_POINT_LE;
 		if (d_info->hide_dot_file && d_info->name[0] == '.')
@@ -4078,7 +4088,7 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		fbdinfo = (struct file_both_directory_info *)kstat;
 		fbdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fbdinfo->EaSize =
-			smb2_get_reparse_tag_special_file(ksmbd_kstat->kstat->mode);
+			smb2_get_reparse_tag_special_file(ksmbd_kstat);
 		if (fbdinfo->EaSize)
 			fbdinfo->ExtFileAttributes = ATTR_REPARSE_POINT_LE;
 		fbdinfo->ShortNameLength = 0;
@@ -4118,7 +4128,7 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		dinfo = (struct file_id_full_dir_info *)kstat;
 		dinfo->FileNameLength = cpu_to_le32(conv_len);
 		dinfo->EaSize =
-			smb2_get_reparse_tag_special_file(ksmbd_kstat->kstat->mode);
+			smb2_get_reparse_tag_special_file(ksmbd_kstat);
 		if (dinfo->EaSize)
 			dinfo->ExtFileAttributes = ATTR_REPARSE_POINT_LE;
 		dinfo->Reserved = 0;
@@ -4136,7 +4146,7 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		fibdinfo = (struct file_id_both_directory_info *)kstat;
 		fibdinfo->FileNameLength = cpu_to_le32(conv_len);
 		fibdinfo->EaSize =
-			smb2_get_reparse_tag_special_file(ksmbd_kstat->kstat->mode);
+			smb2_get_reparse_tag_special_file(ksmbd_kstat);
 		if (fibdinfo->EaSize)
 			fibdinfo->ExtFileAttributes = ATTR_REPARSE_POINT_LE;
 		fibdinfo->UniqueId = cpu_to_le64(ksmbd_kstat->kstat->ino);
@@ -8793,6 +8803,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 		struct reparse_data_buffer *reparse_ptr;
 		struct ksmbd_file *fp;
 
+		pr_err("%s:%d\n", __func__, __LINE__);
 		reparse_ptr = (struct reparse_data_buffer *)rsp->Buffer;
 		fp = ksmbd_lookup_fd_fast(work, id);
 		if (!fp) {
@@ -8801,8 +8812,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		reparse_ptr->ReparseTag =
-			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
+		reparse_ptr->ReparseTag = 0;
+			//smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
 		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
 				(struct reparse_symlink_data_buffer *)rsp->Buffer;
@@ -8843,6 +8854,12 @@ int smb2_ioctl(struct ksmbd_work *work)
 			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
 			kfree(symname);
 			kfree(usymname);
+		} else if (reparse_ptr->ReparseTag ==
+			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+			struct reparse_posix_data *buf =
+				(struct reparse_posix_data *)buffer;
+		
+		
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
@@ -8865,7 +8882,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 		}
 
 		pr_err("%s:%d\n", __func__, __LINE__);
-		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+		if (reparse_ptr->ReparseTag ==
+		    cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
 				(struct reparse_symlink_data_buffer *)buffer;
 			char *symname;
@@ -8885,11 +8903,35 @@ int smb2_ioctl(struct ksmbd_work *work)
 			ksmbd_strip_last_slash(symname);
 			pr_err("create symname : %s\n", symname);
 
-			ret = ksmbd_page_link(fp, symname);
+			//ret = ksmbd_page_link(fp, symname);
 			kfree(symname);
 			ksmbd_fd_put(work, fp);
 			if (ret)
 				goto out;
+		} else if (reparse_ptr->ReparseTag ==
+			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+			struct reparse_posix_data *buf =
+				(struct reparse_posix_data *)buffer;
+			u64 type;
+
+			switch ((type = le64_to_cpu(buf->InodeType))) {
+		        case NFS_SPECFILE_LNK:
+
+				break;
+			case NFS_SPECFILE_CHR:
+			case NFS_SPECFILE_BLK:
+
+				break;
+			case NFS_SPECFILE_FIFO:
+			case NFS_SPECFILE_SOCK:
+				break;
+			default:
+				ksmbd_debug(SMB, "Unhandled info type : 0x%llx\n",
+						type);
+				ksmbd_fd_put(work, fp);
+				ret = -EOPNOTSUPP;
+				goto out;
+			}
 		} else {
 			ksmbd_fd_put(work, fp);
 			ret = -EOPNOTSUPP;

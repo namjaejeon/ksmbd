@@ -111,6 +111,7 @@ struct ksmbd_kstat {
 	struct kstat		*kstat;
 	unsigned long long	create_time;
 	__le32			file_attributes;
+	bool			is_native_symlink;
 };
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 12, 0)
