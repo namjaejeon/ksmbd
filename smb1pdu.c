@@ -260,7 +260,7 @@ int smb_allocate_rsp_buf(struct ksmbd_work *work)
 			sz = large_sz;
 	}
 
-	work->response_buf = kvmalloc(sz, GFP_KERNEL | __GFP_ZERO);
+	work->response_buf = kvmalloc(sz, KSMBD_DEFAULT_GFP | __GFP_ZERO);
 	work->response_sz = sz;
 
 	if (!work->response_buf) {
@@ -768,7 +768,7 @@ static char *smb_get_dir_name(struct ksmbd_share_config *share,
 	}
 	ksmbd_debug(SMB, "pattern searched = %s pattern_len = %d\n",
 		    pattern_pos, pattern_len);
-	pattern = kmalloc(pattern_len + 1, GFP_KERNEL);
+	pattern = kmalloc(pattern_len + 1, KSMBD_DEFAULT_GFP);
 	if (!pattern) {
 		rc = -ENOMEM;
 		goto err_name;
@@ -1161,7 +1161,7 @@ static int build_sess_rsp_extsec(struct ksmbd_conn *conn,
 
 			sz = sizeof(struct negotiate_message) +
 				(strlen(ksmbd_netbios_name()) * 2 + 1 + 4) * 6;
-			neg_blob = kmalloc(sz, GFP_KERNEL);
+			neg_blob = kmalloc(sz, KSMBD_DEFAULT_GFP);
 			if (!neg_blob) {
 				err = -ENOMEM;
 				goto out_err;
@@ -1608,7 +1608,7 @@ static struct ksmbd_lock *smb_lock_init(struct file_lock *flock,
 {
 	struct ksmbd_lock *lock;
 
-	lock = kzalloc(sizeof(struct ksmbd_lock), GFP_KERNEL);
+	lock = kzalloc(sizeof(struct ksmbd_lock), KSMBD_DEFAULT_GFP);
 	if (!lock)
 		return NULL;
 
@@ -2407,7 +2407,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	/* here allocated +2 (UNI '\0') length for both ASCII & UNI
 	 * to avoid unnecessary if/else check
 	 */
-	src = kzalloc(le16_to_cpu(req->NameLength) + 2, GFP_KERNEL);
+	src = kzalloc(le16_to_cpu(req->NameLength) + 2, KSMBD_DEFAULT_GFP);
 	if (!src) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 
@@ -2439,7 +2439,7 @@ int smb_nt_create_andx(struct ksmbd_work *work)
 	if (is_relative_root) {
 		char *full_name;
 
-		full_name = kasprintf(GFP_KERNEL, "\\%s\\%s", root, name);
+		full_name = kasprintf(KSMBD_DEFAULT_GFP, "\\%s\\%s", root, name);
 		if (!full_name) {
 			kfree(name);
 			rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
@@ -3042,7 +3042,7 @@ int smb_read_andx(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pd, offset %lld, count %zu\n",
 		    fp->filp->f_path.dentry, pos, count);
 
-	work->aux_payload_buf = kvmalloc(count, GFP_KERNEL | __GFP_ZERO);
+	work->aux_payload_buf = kvmalloc(count, KSMBD_DEFAULT_GFP | __GFP_ZERO);
 	if (!work->aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -3905,7 +3905,7 @@ static void *ksmbd_realloc_response(void *ptr, size_t old_sz, size_t new_sz)
 	size_t sz = min(old_sz, new_sz);
 	void *nptr;
 
-	nptr = kvmalloc(new_sz, GFP_KERNEL | __GFP_ZERO);
+	nptr = kvmalloc(new_sz, KSMBD_DEFAULT_GFP | __GFP_ZERO);
 	if (!nptr)
 		return ptr;
 	memcpy(nptr, ptr, sz);
@@ -3926,7 +3926,7 @@ static int smb_readlink(struct ksmbd_work *work, struct path *path)
 	int err, name_len, link_len;
 	char *buf, *ptr;
 
-	buf = kzalloc((CIFS_MF_SYMLINK_LINK_MAXLEN), GFP_KERNEL);
+	buf = kzalloc((CIFS_MF_SYMLINK_LINK_MAXLEN), KSMBD_DEFAULT_GFP);
 	if (!buf) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		return -ENOMEM;
@@ -5473,7 +5473,7 @@ static int smb_set_ea(struct ksmbd_work *work)
 
 		next = ea->name_len + le16_to_cpu(ea->value_len) + 4;
 
-		attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+		attr_name = kmalloc(XATTR_NAME_MAX + 1, KSMBD_DEFAULT_GFP);
 		if (!attr_name) {
 			rc = -ENOMEM;
 			goto out;
@@ -6168,7 +6168,7 @@ static int find_first(struct ksmbd_work *work)
 	up_write(&dir_fp->f_ci->m_lock);
 
 	set_ctx_actor(&dir_fp->readdir_data.ctx, ksmbd_fill_dirent);
-	dir_fp->readdir_data.dirent = (void *)__get_free_page(GFP_KERNEL);
+	dir_fp->readdir_data.dirent = (void *)__get_free_page(KSMBD_DEFAULT_GFP);
 	if (!dir_fp->readdir_data.dirent) {
 		rc = -ENOMEM;
 		goto err_out;
@@ -6184,7 +6184,7 @@ static int find_first(struct ksmbd_work *work)
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
-	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+	d_info.smb1_name = kmalloc(NAME_MAX + 1, KSMBD_DEFAULT_GFP);
 	if (!d_info.smb1_name) {
 		rc = -ENOMEM;
 		goto err_out;
@@ -6445,7 +6445,7 @@ static int find_next(struct ksmbd_work *work)
 	if (params_count % 4)
 		data_alignment_offset = 4 - params_count % 4;
 
-	d_info.smb1_name = kmalloc(NAME_MAX + 1, GFP_KERNEL);
+	d_info.smb1_name = kmalloc(NAME_MAX + 1, KSMBD_DEFAULT_GFP);
 	if (!d_info.smb1_name) {
 		rc = -ENOMEM;
 		goto err_out;

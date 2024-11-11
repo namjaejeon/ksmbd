@@ -557,7 +557,7 @@ int smb2_allocate_rsp_buf(struct ksmbd_work *work)
 	if (le32_to_cpu(hdr->NextCommand) > 0)
 		sz = large_sz;
 
-	work->response_buf = kvzalloc(sz, GFP_KERNEL);
+	work->response_buf = kvzalloc(sz, KSMBD_DEFAULT_GFP);
 	if (!work->response_buf)
 		return -ENOMEM;
 
@@ -1153,7 +1153,7 @@ int smb2_handle_negotiate(struct ksmbd_work *work)
 	case SMB311_PROT_ID:
 		conn->preauth_info =
 			kzalloc(sizeof(struct preauth_integrity_info),
-				GFP_KERNEL);
+				KSMBD_DEFAULT_GFP);
 		if (!conn->preauth_info) {
 			rc = -ENOMEM;
 			rsp->hdr.Status = STATUS_INVALID_PARAMETER;
@@ -1280,7 +1280,7 @@ static int alloc_preauth_hash(struct ksmbd_session *sess,
 		return 0;
 
 	sess->Preauth_HashValue = kmemdup(conn->preauth_info->Preauth_HashValue,
-					  PREAUTH_HASHVALUE_SIZE, GFP_KERNEL);
+					  PREAUTH_HASHVALUE_SIZE, KSMBD_DEFAULT_GFP);
 	if (!sess->Preauth_HashValue)
 		return -ENOMEM;
 
@@ -1366,7 +1366,7 @@ static int ntlm_negotiate(struct ksmbd_work *work,
 	sz = sizeof(struct challenge_message);
 	sz += (strlen(ksmbd_netbios_name()) * 2 + 1 + 4) * 6;
 
-	neg_blob = kzalloc(sz, GFP_KERNEL);
+	neg_blob = kzalloc(sz, KSMBD_DEFAULT_GFP);
 	if (!neg_blob)
 		return -ENOMEM;
 
@@ -1557,12 +1557,12 @@ binding_session:
 	if (conn->dialect >= SMB30_PROT_ID) {
 		chann = lookup_chann_list(sess, conn);
 		if (!chann) {
-			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
+			chann = kmalloc(sizeof(struct channel), KSMBD_DEFAULT_GFP);
 			if (!chann)
 				return -ENOMEM;
 
 			chann->conn = conn;
-			xa_store(&sess->ksmbd_chann_list, (long)conn, chann, GFP_KERNEL);
+			xa_store(&sess->ksmbd_chann_list, (long)conn, chann, KSMBD_DEFAULT_GFP);
 		}
 	}
 
@@ -1640,12 +1640,12 @@ static int krb5_authenticate(struct ksmbd_work *work,
 	if (conn->dialect >= SMB30_PROT_ID) {
 		chann = lookup_chann_list(sess, conn);
 		if (!chann) {
-			chann = kmalloc(sizeof(struct channel), GFP_KERNEL);
+			chann = kmalloc(sizeof(struct channel), KSMBD_DEFAULT_GFP);
 			if (!chann)
 				return -ENOMEM;
 
 			chann->conn = conn;
-			xa_store(&sess->ksmbd_chann_list, (long)conn, chann, GFP_KERNEL);
+			xa_store(&sess->ksmbd_chann_list, (long)conn, chann, KSMBD_DEFAULT_GFP);
 		}
 	}
 
@@ -2367,7 +2367,7 @@ static int smb2_set_ea(struct smb2_ea_info *eabuf, unsigned int buf_len,
 			le16_to_cpu(eabuf->EaValueLength))
 		return -EINVAL;
 
-	attr_name = kmalloc(XATTR_NAME_MAX + 1, GFP_KERNEL);
+	attr_name = kmalloc(XATTR_NAME_MAX + 1, KSMBD_DEFAULT_GFP);
 	if (!attr_name)
 		return -ENOMEM;
 
@@ -2993,7 +2993,7 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out2;
 		}
 	} else {
-		name = kstrdup("", GFP_KERNEL);
+		name = kstrdup("", KSMBD_DEFAULT_GFP);
 		if (!name) {
 			rc = -ENOMEM;
 			goto err_out2;
@@ -3506,7 +3506,7 @@ int smb2_open(struct ksmbd_work *work)
 							sizeof(struct smb_sid) * 3 +
 							sizeof(struct smb_acl) +
 							sizeof(struct smb_ace) * ace_num * 2,
-							GFP_KERNEL);
+							KSMBD_DEFAULT_GFP);
 					if (!pntsd) {
 						posix_acl_release(fattr.cf_acls);
 						posix_acl_release(fattr.cf_dacls);
@@ -5199,7 +5199,7 @@ static int get_file_stream_info(struct ksmbd_work *work,
 
 		/* plus : size */
 		streamlen += 1;
-		stream_buf = kmalloc(streamlen + 1, GFP_KERNEL);
+		stream_buf = kmalloc(streamlen + 1, KSMBD_DEFAULT_GFP);
 		if (!stream_buf)
 			break;
 
@@ -6224,7 +6224,7 @@ static int smb2_rename(struct ksmbd_work *work,
 	int rc;
 
 	ksmbd_debug(SMB, "setting FILE_RENAME_INFO\n");
-	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
+	pathname = kmalloc(PATH_MAX, KSMBD_DEFAULT_GFP);
 	if (!pathname)
 		return -ENOMEM;
 
@@ -6359,7 +6359,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 		return -EINVAL;
 
 	ksmbd_debug(SMB, "setting FILE_LINK_INFORMATION\n");
-	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
+	pathname = kmalloc(PATH_MAX, KSMBD_DEFAULT_GFP);
 	if (!pathname)
 		return -ENOMEM;
 
@@ -7029,7 +7029,7 @@ static noinline int smb2_read_pipe(struct ksmbd_work *work)
 		}
 
 		aux_payload_buf =
-			kvmalloc(rpc_resp->payload_sz, GFP_KERNEL);
+			kvmalloc(rpc_resp->payload_sz, KSMBD_DEFAULT_GFP);
 		if (!aux_payload_buf) {
 			err = -ENOMEM;
 			goto out;
@@ -7206,7 +7206,7 @@ int smb2_read(struct ksmbd_work *work)
 	ksmbd_debug(SMB, "filename %pD, offset %lld, len %zu\n",
 		    fp->filp, offset, length);
 
-	aux_payload_buf = kvzalloc(length, GFP_KERNEL);
+	aux_payload_buf = kvzalloc(length, KSMBD_DEFAULT_GFP);
 	if (!aux_payload_buf) {
 		err = -ENOMEM;
 		goto out;
@@ -7356,7 +7356,7 @@ static ssize_t smb2_write_rdma_channel(struct ksmbd_work *work,
 	int ret;
 	ssize_t nbytes;
 
-	data_buf = kvzalloc(length, GFP_KERNEL);
+	data_buf = kvzalloc(length, KSMBD_DEFAULT_GFP);
 	if (!data_buf)
 		return -ENOMEM;
 
@@ -7714,7 +7714,7 @@ static struct ksmbd_lock *smb2_lock_init(struct file_lock *flock,
 {
 	struct ksmbd_lock *lock;
 
-	lock = kzalloc(sizeof(struct ksmbd_lock), GFP_KERNEL);
+	lock = kzalloc(sizeof(struct ksmbd_lock), KSMBD_DEFAULT_GFP);
 	if (!lock)
 		return NULL;
 
@@ -8016,7 +8016,7 @@ skip:
 					    "would have to wait for getting lock\n");
 				list_add(&smb_lock->llist, &rollback_list);
 
-				argv = kmalloc(sizeof(void *), GFP_KERNEL);
+				argv = kmalloc(sizeof(void *), KSMBD_DEFAULT_GFP);
 				if (!argv) {
 					err = -ENOMEM;
 					goto out;
@@ -9514,7 +9514,7 @@ int smb3_encrypt_resp(struct ksmbd_work *work)
 	int rc = -ENOMEM;
 	void *tr_buf;
 
-	tr_buf = kzalloc(sizeof(struct smb2_transform_hdr) + 4, GFP_KERNEL);
+	tr_buf = kzalloc(sizeof(struct smb2_transform_hdr) + 4, KSMBD_DEFAULT_GFP);
 	if (!tr_buf)
 		return rc;
 
