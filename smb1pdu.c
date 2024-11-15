@@ -336,8 +336,10 @@ int smb_check_user_session(struct ksmbd_work *work)
 	}
 
 	work->sess = ksmbd_session_lookup(conn, le16_to_cpu(req_hdr->Uid));
-	if (work->sess)
+	if (work->sess) {
+		ksmbd_user_session_get(work->sess);
 		return 1;
+	}
 	ksmbd_debug(SMB, "Invalid user session, Uid %u\n",
 		    le16_to_cpu(req_hdr->Uid));
 	return -EINVAL;
@@ -1333,6 +1335,7 @@ int smb_session_setup_andx(struct ksmbd_work *work)
 			rc = -ENOENT;
 			goto out_err;
 		}
+		ksmbd_user_session_get(sess);
 		ksmbd_debug(SMB, "Reuse session ID: %llu, Uid: %u\n",
 			    sess->id, uid);
 	} else {
