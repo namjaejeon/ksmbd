@@ -8569,6 +8569,42 @@ static int fsctl_request_resume_key(struct ksmbd_work *work,
 	return 0;
 }
 
+static int fsctl_fill_reparse_symlink(struct reparse_symlink_data_buffer *repase_sym,
+		char *symname)
+{
+	u8 *usymname;
+	u16 symname_len;
+
+	ksmbd_debug(SMB, "symname : %s\n", symname);
+	usymname = kzalloc((strlen(symname)) * sizeof(__le16),
+			GFP_KERNEL);
+	if (!usymname) {
+		kfree(symname);
+		ksmbd_fd_put(work, fp);
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	symname_len = smbConvertToUTF16((__le16 *)usymname, symname,
+			strlen(symname), conn->local_nls, 0);
+	symname_len *= sizeof(__le16);
+	sym->PrintNameOffset = 0;
+	sym->PrintNameLength = cpu_to_le16(symname_len);
+	memcpy(sym->PathBuffer, usymname, symname_len);
+	sym->SubstituteNameOffset = cpu_to_le16(symname_len);
+	sym->SubstituteNameLength = cpu_to_le16(symname_len);
+	memcpy(&sym->PathBuffer[symname_len], usymname, symname_len);
+	if (*symname != '\\')
+		sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
+	reparse_ptr->ReparseDataLength =
+		cpu_to_le16(12 + symname_len * 2);
+	nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
+	kfree(symname);
+	kfree(usymname);
+
+	return 0;
+}
+
 /**
  * smb2_ioctl() - handler for smb2 ioctl command
  * @work:	smb work containing ioctl command buffer
@@ -8812,10 +8848,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		reparse_ptr->ReparseTag = 0;
-			//smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
-		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
-			struct reparse_symlink_data_buffer *sym =
+		reparse_ptr->ReparseTag =
+			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
+		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK)) {
+			struct reparse_symlink_data_buffer *reparse_sym =
 				(struct reparse_symlink_data_buffer *)rsp->Buffer;
 			char *symname;
 			u8 *usymname;
@@ -8828,38 +8864,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 				goto out;
 			}
 
-			ksmbd_debug(SMB, "symname : %s\n", symname);
-			usymname = kzalloc((strlen(symname)) * sizeof(__le16), GFP_KERNEL);
-			if (!usymname) {
-				kfree(symname);
-				ksmbd_fd_put(work, fp);
-				ret = -ENOMEM;
+			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
+			if (ret)
 				goto out;
-			}
-
-			symname_len = smbConvertToUTF16((__le16 *)usymname,
-                                              symname, strlen(symname),
-					      conn->local_nls, 0);
-			symname_len *= sizeof(__le16);
-			sym->PrintNameOffset = 0;
-			sym->PrintNameLength = cpu_to_le16(symname_len);
-			memcpy(sym->PathBuffer, usymname, symname_len);
-			sym->SubstituteNameOffset = cpu_to_le16(symname_len);
-			sym->SubstituteNameLength = cpu_to_le16(symname_len);
-			memcpy(&sym->PathBuffer[symname_len], usymname, symname_len);
-			if (*symname != '\\')
-				sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
-			reparse_ptr->ReparseDataLength =
-				cpu_to_le16(12 + symname_len * 2);
-			nbytes = sizeof(struct reparse_symlink_data_buffer) + symname_len * 2;
-			kfree(symname);
-			kfree(usymname);
 		} else if (reparse_ptr->ReparseTag ==
 			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
-		
-		
+	
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
