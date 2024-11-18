@@ -2310,6 +2310,9 @@ out:
 		}
 	}
 
+	ksmbd_debug(RDMA, "netdev(%s) rdma capable : %s\n",
+		    netdev->name, rdma_capable ? "true" : "false");
+
 	return rdma_capable;
 }
 
