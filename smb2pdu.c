@@ -8872,6 +8872,9 @@ int smb2_ioctl(struct ksmbd_work *work)
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
 	
+			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
+			if (ret)
+				goto out;
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
