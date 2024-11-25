@@ -119,4 +119,22 @@ struct xattr_ntacl {
 #define XATTR_NAME_SD_LEN	\
 		(sizeof(XATTR_SECURITY_PREFIX SD_PREFIX) - 1)
 
+/*
+ * xattr_ntacl is used for storing ntacl and hashes.
+ * Hash is used for checking valid posix acl and ntacl in xattr.
+ */
+struct xattr_rp {
+	__u16	version; /* version 1 */
+	void	*rp_buf;
+	__u32	rp_size;
+	__u16	hash_type; /* hash type */
+	__u8	hash[XATTR_RP_HASH_SIZE]; /* 64bytes hash for ntacl */
+};
+
+/* REPARSE POINT SYMLINK XATTR PREFIX */
+#define RP_SYM_PREFIX			"RP_SYM"
+#define RP_SYM_PREFIX_LEN	(sizeof(RP_SYM_PREFIX) - 1)
+#define XATTR_NAME_RP_SYM	(XATTR_SECURITY_PREFIX RP_SYM_PREFIX)
+#define XATTR_NAME_RP_SYM_LEN	\
+		(sizeof(XATTR_SECURITY_PREFIX RP_SYM_PREFIX) - 1)
 #endif /* __XATTR_H__ */

@@ -544,3 +544,35 @@ int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl)
 	ret = ndr_read_bytes(n, acl->sd_buf, acl->sd_size);
 	return ret;
 }
+
+int ndr_encode_rp(struct ndr *n, struct xattr_rp *rp)
+{
+	int ret;
+
+	n->offset = 0;
+	n->length = 2048;
+	n->data = kzalloc(n->length, GFP_KERNEL);
+	if (!n->data)
+		return -ENOMEM;
+
+	ret = ndr_write_int16(n, acl->version);
+	if (ret)
+		return ret;
+
+	/* push hash type and hash 64bytes */
+	ret = ndr_write_int16(n, acl->hash_type);
+	if (ret)
+		return ret;
+
+	ret = ndr_write_bytes(n, acl->hash, XATTR_RP_HASH_SIZE);
+	if (ret)
+		return ret;
+
+	ret = ndr_write_bytes(n, acl->posix_acl_hash, XATTR_SD_HASH_SIZE);
+	if (ret)
+		return ret;
+
+	/* push ndr for reparse point buffer */
+	ret = ndr_write_bytes(n, acl->rp_buf, acl->rp_size);
+	return ret;
+}

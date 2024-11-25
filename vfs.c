@@ -3509,3 +3509,51 @@ int ksmbd_page_link(struct ksmbd_file *fp, char *link)
 
 	return ret;
 }
+
+int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   const struct path *path,
+			   char *symname)
+{
+	int rc;
+	struct ndr sd_ndr = {0}, acl_ndr = {0};
+	struct xattr_rp xrp = {0};
+	struct dentry *dentry = path->dentry;
+	struct inode *inode = d_inode(dentry);
+
+	xrp.version = 1;
+	xrp.hash_type = XATTR_RP_HASH_TYPE_SHA256;
+	xrp.sd_buf = symname;
+	xrp.sd_size = strlen(symname);
+
+	rc = ksmbd_gen_sd_hash(conn, xrp.sd_buf, xrp.sd_size, xrp.hash);
+	if (rc) {
+		pr_err("failed to generate hash for ndr acl\n");
+		return rc;
+	}
+
+	rc = ndr_encode_rp(&sd_ndr, &xrp);
+	if (rc) {
+		pr_err("failed to encode ndr to posix acl\n");
+		goto out;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_setxattr(idmap, path,
+#else
+	rc = ksmbd_vfs_setxattr(user_ns, path,
+#endif
+				XATTR_NAME_RP, sd_ndr.data,
+				sd_ndr.offset, 0, true);
+	if (rc < 0)
+		pr_err("Failed to store XATTR ntacl :%d\n", rc);
+
+	kfree(sd_ndr.data);
+out:
+	kfree(acl_ndr.data);
+	return rc;
+}
