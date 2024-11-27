@@ -3517,28 +3517,28 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   const struct path *path,
-			   char *symname)
+			   char *rp_data, int rp_len)
 {
 	int rc;
-	struct ndr sd_ndr = {0}, acl_ndr = {0};
+	struct ndr rp_ndr = {0};
 	struct xattr_rp xrp = {0};
 	struct dentry *dentry = path->dentry;
 	struct inode *inode = d_inode(dentry);
 
 	xrp.version = 1;
 	xrp.hash_type = XATTR_RP_HASH_TYPE_SHA256;
-	xrp.sd_buf = symname;
-	xrp.sd_size = strlen(symname);
+	xrp.rp_buf = rp_data;
+	xrp.rp_size = rp_len;
 
-	rc = ksmbd_gen_sd_hash(conn, xrp.sd_buf, xrp.sd_size, xrp.hash);
+	rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, xrp.hash);
 	if (rc) {
-		pr_err("failed to generate hash for ndr acl\n");
+		pr_err("Failed to generate hash for ndr reparse\n");
 		return rc;
 	}
 
-	rc = ndr_encode_rp(&sd_ndr, &xrp);
+	rc = ndr_encode_rp(&rp_ndr, &xrp);
 	if (rc) {
-		pr_err("failed to encode ndr to posix acl\n");
+		pr_err("Failed to encode ndr to reprase\n");
 		goto out;
 	}
 
@@ -3547,13 +3547,69 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 #else
 	rc = ksmbd_vfs_setxattr(user_ns, path,
 #endif
-				XATTR_NAME_RP, sd_ndr.data,
-				sd_ndr.offset, 0, true);
+				XATTR_NAME_RP, rp_ndr.data,
+				rp_ndr.offset, 0, true);
 	if (rc < 0)
-		pr_err("Failed to store XATTR ntacl :%d\n", rc);
-
-	kfree(sd_ndr.data);
+		pr_err("Failed to store XATTR reparse point : %d\n", rc);
 out:
-	kfree(acl_ndr.data);
+	kfree(rp_ndr.data);
+	return rc;
+}
+
+int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   struct dentry *dentry,
+			   char **rp_data)
+{
+	int rc;
+	struct ndr n;
+	struct xattr_rp xrp;
+	struct inode *inode = d_inode(dentry);
+	__u8 cmp_hash[XATTR_RP_HASH_SIZE] = {0};
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_getxattr(idmap, dentry, XATTR_NAME_RP, &n.data);
+#else
+	rc = ksmbd_vfs_getxattr(user_ns, dentry, XATTR_NAME_RP, &n.data);
+#endif
+	if (rc <= 0)
+		return rc;
+
+	n.length = rc;
+	rc = ndr_decode_rp(&n, &xrp);
+	if (rc)
+		goto free_n_data;
+
+	rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, cmp_hash);
+	if (rc) {
+		pr_err("failed to generate hash for ndr reparse\n");
+		goto out_free;
+	}
+
+	if (memcmp(cmp_hash, rp->hash, XATTR_RP_HASH_SIZE)) {
+		pr_err("hash value diff\n");
+		rc = -EINVAL;
+		goto out_free;
+	}
+
+	if (rp.sd_size == 0) {
+		pr_err("rp size is invalid\n");
+		goto out_free;
+	}
+
+	*rp_data = rp.rp_buf;
+	rc = rp.rp_size;
+out_free:
+	if (rc < 0) {
+		kfree(rp.rp_buf);
+		*rp_data = NULL;
+	}
+
+free_n_data:
+	kfree(n.data);
 	return rc;
 }

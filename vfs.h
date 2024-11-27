@@ -347,4 +347,12 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 #endif
 char *ksmbd_vfs_get_link(struct ksmbd_file *fp);
 int ksmbd_page_link(struct ksmbd_file *fp, char *link);
+int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   const struct path *path,
+			   char *symname);
 #endif /* __KSMBD_VFS_H__ */

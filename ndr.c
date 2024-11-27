@@ -545,7 +545,7 @@ int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl)
 	return ret;
 }
 
-int ndr_encode_rp(struct ndr *n, struct xattr_rp *rp)
+int ndr_encode_rp(struct ndr *n, struct xattr_rp *xrp)
 {
 	int ret;
 
@@ -555,24 +555,50 @@ int ndr_encode_rp(struct ndr *n, struct xattr_rp *rp)
 	if (!n->data)
 		return -ENOMEM;
 
-	ret = ndr_write_int16(n, acl->version);
+	ret = ndr_write_int16(n, xrp->version);
 	if (ret)
 		return ret;
 
 	/* push hash type and hash 64bytes */
-	ret = ndr_write_int16(n, acl->hash_type);
+	ret = ndr_write_int16(n, xrp->hash_type);
 	if (ret)
 		return ret;
 
-	ret = ndr_write_bytes(n, acl->hash, XATTR_RP_HASH_SIZE);
-	if (ret)
-		return ret;
-
-	ret = ndr_write_bytes(n, acl->posix_acl_hash, XATTR_SD_HASH_SIZE);
+	ret = ndr_write_bytes(n, xrp->hash, XATTR_RP_HASH_SIZE);
 	if (ret)
 		return ret;
 
 	/* push ndr for reparse point buffer */
-	ret = ndr_write_bytes(n, acl->rp_buf, acl->rp_size);
+	ret = ndr_write_bytes(n, xrp->rp_buf, xrp->rp_size);
+	return ret;
+}
+
+int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
+{
+	int ret;
+
+	n->offset = 0;
+	ret = ndr_read_int16(n, &xrp->version);
+	if (ret)
+		return ret;
+	if (rp->version != 1) {
+		ksmbd_debug(VFS, "v%d version is not supported\n", rp->version);
+		return -EINVAL;
+	}
+
+	ret = ndr_read_int16(n, &xrp->hash_type);
+	if (ret)
+		return ret;
+
+	ret = ndr_read_bytes(n, xrp->hash, XATTR_SD_HASH_SIZE);
+	if (ret)
+		return ret;
+
+	rp->rp_size = n->length - n->offset;
+	rp->rp_buf = kzalloc(xrp->rp_size, GFP_KERNEL);
+	if (!rp->rp_buf)
+		return -ENOMEM;
+
+	ret = ndr_read_bytes(n, xrp->rp_buf, xrp->rp_size);
 	return ret;
 }
