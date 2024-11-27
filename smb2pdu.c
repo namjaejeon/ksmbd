@@ -751,24 +751,30 @@ static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
  *
  * Return:      converted dos mode
  */
-static int smb2_get_dos_mode(struct kstat *stat, int attribute)
+static int smb2_get_dos_mode(struct ksmbd_file *fp, int attribute)
 {
 	int attr = 0;
+	umode_t mode = file_inode(fp->filp)->i_mode;
 
-	if (S_ISDIR(stat->mode)) {
+	if (S_ISDIR(mode)) {
 		attr = ATTR_DIRECTORY |
 			(attribute & (ATTR_HIDDEN | ATTR_SYSTEM));
 	} else {
-		struct ksmbd_kstat ksmbd_stat = {0};
-
 		attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 		attr &= ~(ATTR_DIRECTORY);
-		if (S_ISREG(stat->mode) && (server_conf.share_fake_fscaps &
+		if (S_ISREG(mode) && (server_conf.share_fake_fscaps &
 				FILE_SUPPORTS_SPARSE_FILES))
 			attr |= ATTR_SPARSE;
 
-		ksmbd_stat->kstat = stat;
-		if (smb2_get_reparse_tag_special_file(ksmbd_stat))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = ksmbd_vfs_casexattr_len(file_mnt_idmap(fp->filp),
+#else
+		rc = ksmbd_vfs_casexattr_len(file_mnt_user_ns(fp->filp),
+#endif
+					fp->filp->f_path.dentry,
+					XATTR_NAME_RP,
+					XATTR_NAME_RP_LEN);
+		if (rc > 0)
 			attr |= ATTR_REPARSE;
 	}
 
@@ -3698,7 +3704,7 @@ int smb2_open(struct ksmbd_work *work)
 		fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
 	if (req->FileAttributes || fp->f_ci->m_fattr == 0)
 		fp->f_ci->m_fattr =
-			cpu_to_le32(smb2_get_dos_mode(&stat, le32_to_cpu(req->FileAttributes)));
+			cpu_to_le32(smb2_get_dos_mode(fp, le32_to_cpu(req->FileAttributes)));
 
 	if (!created)
 		smb2_update_xattrs(tcon, &path, fp);
@@ -8848,6 +8854,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
+		if (S_ISLNK(file_inode(fp->filp)->mode))
+			reparse_ptr->ReparseTag = ;
+		else if (fp->is_
+
 		reparse_ptr->ReparseTag =
 			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
 		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK)) {
@@ -8869,12 +8879,26 @@ int smb2_ioctl(struct ksmbd_work *work)
 				goto out;
 		} else if (reparse_ptr->ReparseTag ==
 			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+			char *symname;
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
-	
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			ret = ksmbd_vfs_get_rp_xattr(conn,
+					file_mnt_idmap(fp->filp),
+					fp->filp->f_path.dentry, symname);
+#else
+			ret = ksmbd_vfs_get_rp_xattr(conn,
+					file_mnt_user_ns(fp->filp),
+					fp->filp->f_path.dentry, symname);
+#endif
+			if (ret <= 0)
+				goto ret;
+
 			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
 			if (ret)
 				goto out;
+			kfree(symname);
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
