@@ -8912,8 +8912,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 			
 				break;
 			default:
-				ksmbd_debug(SMB, "Unhandled info type : 0x%llx\n",
-						type);
+				ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
+						tag);
 				kfree(rp_data);
 				ksmbd_fd_put(work, fp);
 				ret = -ENOENT;
