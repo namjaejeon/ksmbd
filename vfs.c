@@ -3532,11 +3532,14 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 	xrp.rp_buf = rp_data;
 	xrp.rp_size = rp_len;
 
-	rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, xrp.hash);
-	if (rc) {
-		pr_err("Failed to generate hash for ndr reparse\n");
-		return rc;
-	}
+	if (xrp.rp_size) {
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, xrp.hash);
+		if (rc) {
+			pr_err("Failed to generate hash for ndr reparse\n");
+			return rc;
+		}
+	} else
+		memset(xrp.hash, 0, XATTR_RP_HASH_SIZE);
 
 	rc = ndr_encode_rp(&rp_ndr, &xrp);
 	if (rc) {
@@ -3572,41 +3575,44 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 	struct ndr n;
 	struct xattr_rp xrp;
 	struct inode *inode = d_inode(dentry);
-	__u8 cmp_hash[XATTR_RP_HASH_SIZE] = {0};
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	rc = ksmbd_vfs_getxattr(idmap, dentry, XATTR_NAME_RP, &n.data);
 #else
 	rc = ksmbd_vfs_getxattr(user_ns, dentry, XATTR_NAME_RP, &n.data);
 #endif
-	if (rc <= 0)
+	if (rc <= 0) {
+		if (rc == 0)
+			rc = -EINVAL;
 		return rc;
+	}
 
 	n.length = rc;
 	rc = ndr_decode_rp(&n, &xrp);
 	if (rc)
 		goto free_n_data;
 
-	rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, cmp_hash);
-	if (rc) {
-		pr_err("failed to generate hash for ndr reparse\n");
-		goto out_free;
-	}
+	if (xrp.rp_size) {
+		__u8 cmp_hash[XATTR_RP_HASH_SIZE] = {0};
 
-	if (memcmp(cmp_hash, xrp->hash, XATTR_RP_HASH_SIZE)) {
-		pr_err("hash value diff\n");
-		rc = -EINVAL;
-		goto out_free;
-	}
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, cmp_hash);
+		if (rc) {
+			pr_err("failed to generate hash for ndr reparse\n");
+			goto out_free;
+		}
 
-	if (xrp.sd_size == 0) {
-		rc = -EINVAL;
-		pr_err("rp size is invalid\n");
-		goto out_free;
-	}
+		if (memcmp(cmp_hash, xrp->hash, XATTR_RP_HASH_SIZE)) {
+			pr_err("hash value diff\n");
+			rc = -EINVAL;
+			goto out_free;
+		}
 
-	*rp_data = xrp.rp_buf;
-	rc = xrp.rp_size;
+		*rp_data = xrp.rp_buf;
+		rc = xrp.rp_size;
+	} else {
+		*rp_data = NULL;
+		rc = 0;
+	}
 	tag = xrp.tag;
 out_free:
 	if (rc < 0) {

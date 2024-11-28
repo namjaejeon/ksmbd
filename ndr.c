@@ -572,6 +572,9 @@ int ndr_encode_rp(struct ndr *n, struct xattr_rp *xrp)
 	if (ret)
 		return ret;
 
+	if (!xrp->rp_size)
+		return 0;
+
 	/* push ndr for reparse point buffer */
 	ret = ndr_write_bytes(n, xrp->rp_buf, xrp->rp_size);
 	return ret;
@@ -602,8 +605,11 @@ int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
 	if (ret)
 		return ret;
 
-	rp->rp_size = n->length - n->offset;
-	rp->rp_buf = kzalloc(xrp->rp_size, GFP_KERNEL);
+	xrp->rp_size = n->length - n->offset;
+	if (!xrp->rp_size)
+		return 0;
+
+	xrp->rp_buf = kzalloc(xrp->rp_size, GFP_KERNEL);
 	if (!rp->rp_buf)
 		return -ENOMEM;
 
