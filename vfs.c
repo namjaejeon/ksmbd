@@ -3597,6 +3597,7 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 	}
 
 	if (rp.sd_size == 0) {
+		rc = -EINVAL;
 		pr_err("rp size is invalid\n");
 		goto out_free;
 	}

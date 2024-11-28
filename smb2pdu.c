@@ -8854,13 +8854,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		if (S_ISLNK(file_inode(fp->filp)->mode))
-			reparse_ptr->ReparseTag = ;
-		else if (fp->is_
-
-		reparse_ptr->ReparseTag =
-			smb2_get_reparse_tag_special_file(file_inode(fp->filp)->i_mode);
-		if (reparse_ptr->ReparseTag == cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK)) {
+		if (S_ISLNK(file_inode(fp->filp)->mode)) {
 			struct reparse_symlink_data_buffer *reparse_sym =
 				(struct reparse_symlink_data_buffer *)rsp->Buffer;
 			char *symname;
@@ -8877,8 +8871,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
 			if (ret)
 				goto out;
-		} else if (reparse_ptr->ReparseTag ==
-			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+
+			reparse_ptr->ReparseTag =
+				cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK);
+		} else if (fp->is_native_symlink) {
 			char *symname;
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
@@ -8899,6 +8895,9 @@ int smb2_ioctl(struct ksmbd_work *work)
 			if (ret)
 				goto out;
 			kfree(symname);
+
+			reparse_ptr->ReparseTag =
+				cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
@@ -8941,8 +8940,18 @@ int smb2_ioctl(struct ksmbd_work *work)
 			ksmbd_conv_path_to_unix(symname);
 			ksmbd_strip_last_slash(symname);
 			pr_err("create symname : %s\n", symname);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			ret = ksmbd_vfs_set_rp_xattr(conn,
+					file_mnt_idmap(fp->filp),
+					fp->filp->f_path.dentry, symname,
+					strlen(symname));
+#else
+			ret = ksmbd_vfs_set_rp_xattr(conn,
+					file_mnt_user_ns(fp->filp),
+					fp->filp->f_path.dentry, symname,
+					strlen(symname));
+#endif
 
-			//ret = ksmbd_page_link(fp, symname);
 			kfree(symname);
 			ksmbd_fd_put(work, fp);
 			if (ret)
