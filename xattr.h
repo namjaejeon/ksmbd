@@ -119,6 +119,10 @@ struct xattr_ntacl {
 #define XATTR_NAME_SD_LEN	\
 		(sizeof(XATTR_SECURITY_PREFIX SD_PREFIX) - 1)
 
+
+#define XATTR_RP_HASH_TYPE_SHA256	0x1
+#define XATTR_RP_HASH_SIZE		64
+
 /*
  * xattr_ntacl is used for storing ntacl and hashes.
  * Hash is used for checking valid posix acl and ntacl in xattr.

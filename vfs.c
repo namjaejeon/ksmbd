@@ -3149,8 +3149,6 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 	}
 
 	if (1) { //test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)) {
-		rp;
-
 		rc = ksmbd_vfs_get_reparse_point_xattr(idmap, dentry, &rp);
 		if (rc > 0) {
 			if (rp.ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) 
@@ -3583,7 +3581,7 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 #endif
 	if (rc <= 0) {
 		if (rc == 0)
-			rc = -EINVAL;
+			rc = -ENOENT;
 		return rc;
 	}
 

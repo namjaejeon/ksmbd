@@ -8880,36 +8880,48 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 			reparse_ptr->ReparseTag =
 				cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK);
-		} else if (fp->is_native_symlink) {
+		} else {
 			unsigned int tag;
-			char *symname;
+			char *rp_data;
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			ret = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_idmap(fp->filp),
-					fp->filp->f_path.dentry, &tag, symname);
+					fp->filp->f_path.dentry, &tag, rp_data);
 #else
 			ret = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_user_ns(fp->filp),
-					fp->filp->f_path.dentry, &tag, symname);
+					fp->filp->f_path.dentry, &tag, rp_data);
 #endif
 			if (ret < 0)
 				goto ret;
 
-			if (tag != IO_REPARSE_TAG_LX_SYMLINK) {
-				ret = -EINVAL;
-				goto out;
+			switch (tag) {
+		        case IO_REPARSE_TAG_LX_SYMLINK:
+				ret = fsctl_fill_reparse_symlink(reparse_sym, rp_data);
+				if (ret)
+					goto out;
+				reparse_ptr->ReparseTag =
+					cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
+				break;
+		        case NFS_SPECFILE_LNK:
+				struct reparse_posix_data *buf =
+					(struct reparse_posix_data *)buffer;
+			
+				break;
+			default:
+				ksmbd_debug(SMB, "Unhandled info type : 0x%llx\n",
+						type);
+				kfree(rp_data);
+				ksmbd_fd_put(work, fp);
+				ret = -ENOENT;
 			}
-
-			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
-			if (ret)
+			kfree(rp_data);
+			ksmbd_fd_put(work, fp);
+			if (ret < 0)
 				goto out;
-			kfree(symname);
-
-			reparse_ptr->ReparseTag =
-				cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
 		} else {
 			reparse_ptr->ReparseDataLength = 0;
 			nbytes = sizeof(struct reparse_data_buffer);
