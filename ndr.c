@@ -559,6 +559,10 @@ int ndr_encode_rp(struct ndr *n, struct xattr_rp *xrp)
 	if (ret)
 		return ret;
 
+	ret = ndr_write_int32(n, xrp->tag);
+	if (ret)
+		return ret;	
+
 	/* push hash type and hash 64bytes */
 	ret = ndr_write_int16(n, xrp->hash_type);
 	if (ret)
@@ -585,6 +589,10 @@ int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
 		ksmbd_debug(VFS, "v%d version is not supported\n", rp->version);
 		return -EINVAL;
 	}
+
+	ret = ndr_read_int32(n, &xrp->tag);
+	if (ret)
+		return ret;
 
 	ret = ndr_read_int16(n, &xrp->hash_type);
 	if (ret)

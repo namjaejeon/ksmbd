@@ -8882,14 +8882,19 @@ int smb2_ioctl(struct ksmbd_work *work)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			ret = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_idmap(fp->filp),
-					fp->filp->f_path.dentry, symname);
+					fp->filp->f_path.dentry, &tag, symname);
 #else
 			ret = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_user_ns(fp->filp),
-					fp->filp->f_path.dentry, symname);
+					fp->filp->f_path.dentry, &tag, symname);
 #endif
 			if (ret <= 0)
 				goto ret;
+
+			if (tag != IO_REPARSE_TAG_LX_SYMLINK) {
+				ret = -EINVAL;
+				goto out;
+			}
 
 			ret = fsctl_fill_reparse_symlink(reparse_sym, symname);
 			if (ret)
@@ -8957,21 +8962,73 @@ int smb2_ioctl(struct ksmbd_work *work)
 			if (ret)
 				goto out;
 		} else if (reparse_ptr->ReparseTag ==
-			   cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
+			   cpu_to_le32(IO_REPARSE_TAG_NFS)) {
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
 			u64 type;
 
 			switch ((type = le64_to_cpu(buf->InodeType))) {
 		        case NFS_SPECFILE_LNK:
+			{
+				char *symname;
 
+				// validate repasedata len
+				symname = smb_strndup_from_utf16(buf->DataBuffer,
+						le16_to_cpu(buf->ReparseDataLength),
+						true,
+						conn->local_nls);
+				if (IS_ERR(symname)) {
+					ret = PTR_ERR(symname);
+					ksmbd_fd_put(work, fp);
+					goto out;
+				}
+
+				ksmbd_conv_path_to_unix(symname);
+				ksmbd_strip_last_slash(symname);
+				pr_err("create symname : %s\n", symname);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+				ret = ksmbd_vfs_set_rp_xattr(conn,
+						file_mnt_idmap(fp->filp),
+						fp->filp->f_path.dentry,
+						symname, strlen(symname));
+#else
+				ret = ksmbd_vfs_set_rp_xattr(conn,
+						file_mnt_user_ns(fp->filp),
+						fp->filp->f_path.dentry,
+						symname, strlen(symname));
+#endif
+
+				kfree(symname);
+				if (ret) {
+					ksmbd_fd_put(work, fp);
+					goto out;
+				}
 				break;
+			}
 			case NFS_SPECFILE_CHR:
-			case NFS_SPECFILE_BLK:
+				__le64 *dev = (__le64 *)buf->DataBuffer;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+				ret = ksmbd_vfs_set_rp_xattr(conn,
+						file_mnt_idmap(fp->filp),
+						fp->filp->f_path.dentry,
+						dev, sizeof(__le64));
+#else
+				ret = ksmbd_vfs_set_rp_xattr(conn,
+						file_mnt_user_ns(fp->filp),
+						fp->filp->f_path.dentry,
+						dev, sizeof(__le64));
+#endif
+				break;
+			case NFS_SPECFILE_BLK:
+				inode->i_mode |= S_IFBLK;
+				inode->i_rdev = reparse_nfs_mkdev(buf);
 				break;
 			case NFS_SPECFILE_FIFO:
+				inode->i_mode |= S_IFIFO;
+				break;
 			case NFS_SPECFILE_SOCK:
+				inode->i_mode |= S_IFSOCK;
 				break;
 			default:
 				ksmbd_debug(SMB, "Unhandled info type : 0x%llx\n",
@@ -8980,6 +9037,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				ret = -EOPNOTSUPP;
 				goto out;
 			}
+			ksmbd_fd_put(work, fp);
 		} else {
 			ksmbd_fd_put(work, fp);
 			ret = -EOPNOTSUPP;

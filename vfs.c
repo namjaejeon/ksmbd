@@ -3517,6 +3517,7 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   const struct path *path,
+			   unsigned int tag,
 			   char *rp_data, int rp_len)
 {
 	int rc;
@@ -3526,6 +3527,7 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 	struct inode *inode = d_inode(dentry);
 
 	xrp.version = 1;
+	xrp.tag = tag;
 	xrp.hash_type = XATTR_RP_HASH_TYPE_SHA256;
 	xrp.rp_buf = rp_data;
 	xrp.rp_size = rp_len;
@@ -3563,6 +3565,7 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   struct dentry *dentry,
+			   unsigned int tag,
 			   char **rp_data)
 {
 	int rc;
@@ -3590,20 +3593,21 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 		goto out_free;
 	}
 
-	if (memcmp(cmp_hash, rp->hash, XATTR_RP_HASH_SIZE)) {
+	if (memcmp(cmp_hash, xrp->hash, XATTR_RP_HASH_SIZE)) {
 		pr_err("hash value diff\n");
 		rc = -EINVAL;
 		goto out_free;
 	}
 
-	if (rp.sd_size == 0) {
+	if (xrp.sd_size == 0) {
 		rc = -EINVAL;
 		pr_err("rp size is invalid\n");
 		goto out_free;
 	}
 
-	*rp_data = rp.rp_buf;
-	rc = rp.rp_size;
+	*rp_data = xrp.rp_buf;
+	rc = xrp.rp_size;
+	tag = xrp.tag;
 out_free:
 	if (rc < 0) {
 		kfree(rp.rp_buf);

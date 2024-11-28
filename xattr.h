@@ -125,6 +125,7 @@ struct xattr_ntacl {
  */
 struct xattr_rp {
 	__u16	version; /* version 1 */
+	__u32	tag;	
 	void	*rp_buf;
 	__u32	rp_size;
 	__u16	hash_type; /* hash type */

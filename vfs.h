@@ -354,5 +354,15 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   const struct path *path,
-			   char *symname);
+			   unsigned int tag,
+			   char *rp_data, int rp_len);
+int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   struct dentry *dentry,
+			   unsigned int tag,
+			   char **rp_data);
 #endif /* __KSMBD_VFS_H__ */
