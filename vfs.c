@@ -3149,10 +3149,18 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 	}
 
 	if (1) { //test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)) {
-		rc = ksmbd_vfs_get_reparse_point_xattr(idmap, dentry, &rp);
+		char *rp_data;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
+				&tag, rp_data);
+#else
+		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
+				&tag, rp_data);
+#endif
 		if (rc > 0) {
-			if (rp.ReparseTag == cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) 
-				ksmbd_kstat->is_native_symlink = true;
+			ksmbd_kstat->reparse_tag = tag;
+			kfree(rp_data);
 		}
 	}
 
