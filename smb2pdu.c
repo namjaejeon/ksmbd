@@ -8946,8 +8946,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 					break;
 				default:
-					ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
-							tag);
+					ksmbd_debug(SMB, "Unhandled nfs inode type : 0x%x\n",
+							le64_to_cpu(buf->InodeType));
 					kfree(rp_data);
 					ret = -ENOENT;
 				}
@@ -8960,7 +8960,6 @@ int smb2_ioctl(struct ksmbd_work *work)
 			} else {
 				ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
 						tag);
-				kfree(rp_data);
 				ret = -ENOENT;
 			}
 
@@ -8995,7 +8994,6 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		pr_err("%s:%d\n", __func__, __LINE__);
 		if (reparse_ptr->ReparseTag ==
 		    cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
@@ -9039,12 +9037,13 @@ int smb2_ioctl(struct ksmbd_work *work)
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
 			u64 type;
+			xattr_rp_nfs *rp_nfs;
+			unsigned int rp_nfs_size;
 
 			switch ((type = le64_to_cpu(buf->InodeType))) {
 		        case NFS_SPECFILE_LNK:
 			{
 				char *symname;
-				xattr_rp_nfs *rp_nfs;
 				unsigned int symname_len;
 
 				// validate repasedata len
@@ -9063,8 +9062,9 @@ int smb2_ioctl(struct ksmbd_work *work)
 				pr_err("create symname : %s\n", symname);
 
 				symname_len = strlen(symname);
-				rp_nfs = kmalloc(symname_len + sizeof(__le64),
-						GFP_KERNEL);
+				rp_nfs_size = symname_len + sizeof(__le64);
+
+				rp_nfs = kmalloc(rp_nfs_size, GFP_KERNEL);
 				if (!rp_nfs) {
 					ret = -ENOMEM;
 					ksmbd_fd_put(work, fp);
@@ -9076,45 +9076,36 @@ int smb2_ioctl(struct ksmbd_work *work)
 				memcpy(rp_nfs->rp_nfs_data, symname,
 						symname_len); 
 				kfree(symname);
-
-				rp_nfs_size = symname_len + sizeof(__le64);
 				break;
 			}
 			case NFS_SPECFILE_CHR:
 			case NFS_SPECFILE_BLK:
-				xattr_rp_nfs *rp_nfs;
+			{
 				__le64 *dev = (__le64 *)buf->DataBuffer;
 
-				rp_nfs = kmalloc(symname_len + sizeof(__le64),
-						GFP_KERNEL);
+				rp_nfs_size = sizeof(__le64) * 2;
+				rp_nfs = kmalloc(sizeof(rp_nfs_size, GFP_KERNEL));
 				if (!rp_nfs) {
 					ret = -ENOMEM;
 					ksmbd_fd_put(work, fp);
-					kfree(symname);
+					goto out;
+				}
+				rp_nfs->inode_type = buf->InodeType;
+				memcpy(rp_nfs->rp_nfs_data, buf->DataBuffer,
+						sizeof(__le64)); 
+				break;
+			}
+			case NFS_SPECFILE_FIFO:
+			case NFS_SPECFILE_SOCK:
+				rp_nfs_size = sizeof(__le64);
+				rp_nfs = kmalloc(sizeof(rp_nfs_size, GFP_KERNEL));
+				if (!rp_nfs) {
+					ret = -ENOMEM;
+					ksmbd_fd_put(work, fp);
 					goto out;
 				}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-				ret = ksmbd_vfs_set_rp_xattr(conn,
-						file_mnt_idmap(fp->filp),
-						fp->filp->f_path.dentry,
-						NFS_SPECFILE_CHR,
-						dev, sizeof(__le64));
-#else
-				ret = ksmbd_vfs_set_rp_xattr(conn,
-						file_mnt_user_ns(fp->filp),
-						fp->filp->f_path.dentry,
-						NFS_SPECFILE_CHR,
-						dev, sizeof(__le64));
-#endif
-				break;
-			case NFS_SPECFILE_BLK:
-				__le64 *dev = (__le64 *)buf->DataBuffer;
-
-				break;
-			case NFS_SPECFILE_FIFO:
-				break;
-			case NFS_SPECFILE_SOCK:
+				rp_nfs->inode_type = buf->InodeType;
 				break;
 			default:
 				ksmbd_debug(SMB, "Unhandled info type : 0x%llx\n",
@@ -9140,7 +9131,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			ksmbd_fd_put(work, fp);
 		} else {
 			ksmbd_fd_put(work, fp);
-			ret = -EOPNOTSUPP;
+			ret = -ENOENT;
 			goto out;
 		}
 
