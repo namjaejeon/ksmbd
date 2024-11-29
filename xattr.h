@@ -123,15 +123,9 @@ struct xattr_ntacl {
 #define XATTR_RP_HASH_TYPE_SHA256	0x1
 #define XATTR_RP_HASH_SIZE		64
 
-struct xattr_rp_sym {
-	__u32 tag;
-	u8 symname[];
-};
-
 struct xattr_rp_nfs {
-	__u32 tag;
-	__u64 inode_type;
-	u8 rp_nfs_data[];
+	__le64 inode_type;
+	__u8 rp_nfs_data[];
 };
 
 /*
@@ -140,7 +134,7 @@ struct xattr_rp_nfs {
  */
 struct xattr_rp {
 	__u16	version; /* version 1 */
-	__u32	tag;	
+	__u32	tag;
 	void	*rp_buf;
 	__u32	rp_size;
 	__u16	hash_type; /* hash type */

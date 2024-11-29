@@ -8842,11 +8842,9 @@ int smb2_ioctl(struct ksmbd_work *work)
 		break;
 	case FSCTL_GET_REPARSE_POINT:
 	{
-		struct reparse_data_buffer *reparse_ptr;
 		struct ksmbd_file *fp;
 
 		pr_err("%s:%d\n", __func__, __LINE__);
-		reparse_ptr = (struct reparse_data_buffer *)rsp->Buffer;
 		fp = ksmbd_lookup_fd_fast(work, id);
 		if (!fp) {
 			pr_err("not found fp!!\n");
@@ -8878,13 +8876,11 @@ int smb2_ioctl(struct ksmbd_work *work)
 			if (ret)
 				goto out;
 
-			reparse_ptr->ReparseTag =
+			reparse_sym->ReparseTag =
 				cpu_to_le32(IO_REPARSE_TAG_LX_SYMLINK);
 		} else {
 			unsigned int tag;
 			char *rp_data;
-			struct reparse_posix_data *buf =
-				(struct reparse_posix_data *)buffer;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			ret = ksmbd_vfs_get_rp_xattr(conn,
@@ -8898,26 +8894,44 @@ int smb2_ioctl(struct ksmbd_work *work)
 			if (ret < 0)
 				goto ret;
 
-			switch (tag) {
-		        case IO_REPARSE_TAG_LX_SYMLINK:
+			if (tag == IO_REPARSE_TAG_LX_SYMLINK) {
+				struct reparse_symlink_data_buffer *reparse_sym =
+					(struct reparse_symlink_data_buffer *)rsp->Buffer;
+
 				ret = fsctl_fill_reparse_symlink(reparse_sym, rp_data);
 				if (ret)
 					goto out;
 				reparse_ptr->ReparseTag =
 					cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
-				break;
-		        case NFS_SPECFILE_LNK:
+			} else if (tag == IO_REPARSE_TAG_NFS) {
+				xattr_rp_nfs *rp_nfs = rp_data;
+				u64 inode_type = le64_to_cpu(rp_nfs->inode_type);
 				struct reparse_posix_data *buf =
 					(struct reparse_posix_data *)buffer;
-			
-				break;
-			default:
+
+				switch (inode_type) {
+				case NFS_SPECFILE_LNK:
+					struct reparse_posix_data *buf =
+						(struct reparse_posix_data *)buffer;
+
+					break;
+				case NFS_SPECFILE_CHR:
+				case NFS_SPECFILE_BLK:
+				case NFS_SPECFILE_FIFO:
+				case NFS_SPECFILE_SOCK:
+				default:
+					ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
+							tag);
+					kfree(rp_data);
+					ret = -ENOENT;
+				}
+			} else {
 				ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
 						tag);
 				kfree(rp_data);
-				ksmbd_fd_put(work, fp);
 				ret = -ENOENT;
 			}
+
 			kfree(rp_data);
 			ksmbd_fd_put(work, fp);
 			if (ret < 0)
