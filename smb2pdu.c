@@ -738,8 +738,8 @@ static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
 		return IO_REPARSE_TAG_LX_CHR_LE;
 	else if (S_ISBLK(mode))
 		return IO_REPARSE_TAG_LX_BLK_LE;
-	else if (ksmbd_stat->is_native_symlink)
-		return cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
+	else if (ksmbd_stat->reparse_tag)
+		return cpu_to_le32(ksmbd_stat->reparse_tag);
 
 	return 0;
 }
@@ -760,6 +760,8 @@ static int smb2_get_dos_mode(struct ksmbd_file *fp, int attribute)
 		attr = ATTR_DIRECTORY |
 			(attribute & (ATTR_HIDDEN | ATTR_SYSTEM));
 	} else {
+		int rc;
+
 		attr = (attribute & 0x00005137) | ATTR_ARCHIVE;
 		attr &= ~(ATTR_DIRECTORY);
 		if (S_ISREG(mode) && (server_conf.share_fake_fscaps &
@@ -8575,8 +8577,8 @@ static int fsctl_request_resume_key(struct ksmbd_work *work,
 	return 0;
 }
 
-static int fsctl_fill_reparse_symlink(struct reparse_symlink_data_buffer *repase_sym,
-		char *symname)
+static int fsctl_fill_reparse_symlink(struct ksmbd_conn *conn, 
+		struct reparse_symlink_data_buffer *reparse_sym, char *symname)
 {
 	u8 *usymname;
 	u16 symname_len;
@@ -8584,25 +8586,21 @@ static int fsctl_fill_reparse_symlink(struct reparse_symlink_data_buffer *repase
 	ksmbd_debug(SMB, "symname : %s\n", symname);
 	usymname = kzalloc((strlen(symname)) * sizeof(__le16),
 			GFP_KERNEL);
-	if (!usymname) {
-		kfree(symname);
-		ksmbd_fd_put(work, fp);
-		ret = -ENOMEM;
-		goto out;
-	}
+	if (!usymname)
+		return -ENOMEM;
 
 	symname_len = smbConvertToUTF16((__le16 *)usymname, symname,
 			strlen(symname), conn->local_nls, 0);
 	symname_len *= sizeof(__le16);
-	sym->PrintNameOffset = 0;
-	sym->PrintNameLength = cpu_to_le16(symname_len);
-	memcpy(sym->PathBuffer, usymname, symname_len);
-	sym->SubstituteNameOffset = cpu_to_le16(symname_len);
-	sym->SubstituteNameLength = cpu_to_le16(symname_len);
-	memcpy(&sym->PathBuffer[symname_len], usymname, symname_len);
+	reparse_sym->PrintNameOffset = 0;
+	reparse_sym->PrintNameLength = cpu_to_le16(symname_len);
+	memcpy(reparse_sym->PathBuffer, usymname, symname_len);
+	reparse_sym->SubstituteNameOffset = cpu_to_le16(symname_len);
+	reparse_sym->SubstituteNameLength = cpu_to_le16(symname_len);
+	memcpy(&reparse_sym->PathBuffer[symname_len], usymname, symname_len);
 	if (*symname != '\\')
-		sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
-	sym->ReparseDataLength =
+		reparse_sym->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
+	reparse_sym->ReparseDataLength =
 		cpu_to_le16(12 + symname_len * 2);
 	kfree(symname);
 	kfree(usymname);
@@ -8857,11 +8855,10 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		if (S_ISLNK(file_inode(fp->filp)->mode)) {
+		if (S_ISLNK(file_inode(fp->filp)->i_mode)) {
 			struct reparse_symlink_data_buffer *reparse_sym =
 				(struct reparse_symlink_data_buffer *)rsp->Buffer;
 			char *symname;
-			u8 *usymname;
 			u16 symname_len;
 
 			symname = ksmbd_vfs_get_link(fp);
@@ -8871,7 +8868,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 				goto out;
 			}
 
-			symname_len = fsctl_fill_reparse_symlink(reparse_sym, symname);
+			symname_len = fsctl_fill_reparse_symlink(conn,
+					reparse_sym, symname);
 			if (symname_len < 0) {
 				ret = symname_len;
 				goto out;
@@ -8888,22 +8886,24 @@ int smb2_ioctl(struct ksmbd_work *work)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			rp_data_size = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_idmap(fp->filp),
-					fp->filp->f_path.dentry, &tag, rp_data);
+					fp->filp->f_path.dentry, &tag, &rp_data);
 #else
 			rp_data_size = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_user_ns(fp->filp),
-					fp->filp->f_path.dentry, &tag, rp_data);
+					fp->filp->f_path.dentry, &tag, &rp_data);
 #endif
 			if (rp_data_size < 0) {
-				ret = rp_data_size
+				ret = rp_data_size;
 				goto out;
 			}
 
 			if (tag == IO_REPARSE_TAG_LX_SYMLINK) {
+				unsigned int symname_len;
 				struct reparse_symlink_data_buffer *reparse_sym =
 					(struct reparse_symlink_data_buffer *)rsp->Buffer;
 
-				symname_len = fsctl_fill_reparse_symlink(reparse_sym, rp_data);
+				symname_len = fsctl_fill_reparse_symlink(conn,
+						reparse_sym, rp_data);
 				if (symname_len < 0) {
 					ret = symname_len;
 					goto out;
@@ -8914,7 +8914,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				nbytes = sizeof(struct reparse_symlink_data_buffer) +
 					symname_len * 2;
 			} else if (tag == IO_REPARSE_TAG_NFS) {
-				xattr_rp_nfs *rp_nfs = rp_data;
+				struct xattr_rp_nfs *rp_nfs = rp_data;
 				struct reparse_posix_data *buf =
 					(struct reparse_posix_data *)buffer;
 
@@ -9037,7 +9037,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			struct reparse_posix_data *buf =
 				(struct reparse_posix_data *)buffer;
 			u64 type;
-			xattr_rp_nfs *rp_nfs;
+			struct xattr_rp_nfs *rp_nfs;
 			unsigned int rp_nfs_size;
 
 			switch ((type = le64_to_cpu(buf->InodeType))) {

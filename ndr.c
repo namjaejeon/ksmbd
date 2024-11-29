@@ -588,8 +588,9 @@ int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
 	ret = ndr_read_int16(n, &xrp->version);
 	if (ret)
 		return ret;
-	if (rp->version != 1) {
-		ksmbd_debug(VFS, "v%d version is not supported\n", rp->version);
+	if (xrp->version != 1) {
+		ksmbd_debug(VFS, "v%d version is not supported\n",
+				xrp->version);
 		return -EINVAL;
 	}
 
@@ -610,7 +611,7 @@ int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
 		return 0;
 
 	xrp->rp_buf = kzalloc(xrp->rp_size, GFP_KERNEL);
-	if (!rp->rp_buf)
+	if (!xrp->rp_buf)
 		return -ENOMEM;
 
 	ret = ndr_read_bytes(n, xrp->rp_buf, xrp->rp_size);

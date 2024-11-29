@@ -3150,13 +3150,14 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 
 	if (1) { //test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)) {
 		char *rp_data;
+		unsigned int tag;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
-				&tag, rp_data);
+				&tag, &rp_data);
 #else
 		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
-				&tag, rp_data);
+				&tag, &rp_data);
 #endif
 		if (rc > 0) {
 			ksmbd_kstat->reparse_tag = tag;
@@ -3529,8 +3530,6 @@ int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
 	int rc;
 	struct ndr rp_ndr = {0};
 	struct xattr_rp xrp = {0};
-	struct dentry *dentry = path->dentry;
-	struct inode *inode = d_inode(dentry);
 
 	xrp.version = 1;
 	xrp.tag = tag;
@@ -3574,13 +3573,12 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   struct dentry *dentry,
-			   unsigned int tag,
+			   unsigned int *tag,
 			   char **rp_data)
 {
 	int rc;
 	struct ndr n;
 	struct xattr_rp xrp;
-	struct inode *inode = d_inode(dentry);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	rc = ksmbd_vfs_getxattr(idmap, dentry, XATTR_NAME_RP, &n.data);
@@ -3607,7 +3605,7 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 			goto out_free;
 		}
 
-		if (memcmp(cmp_hash, xrp->hash, XATTR_RP_HASH_SIZE)) {
+		if (memcmp(cmp_hash, xrp.hash, XATTR_RP_HASH_SIZE)) {
 			pr_err("hash value diff\n");
 			rc = -EINVAL;
 			goto out_free;
@@ -3619,10 +3617,11 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 		*rp_data = NULL;
 		rc = 0;
 	}
-	tag = xrp.tag;
+
+	*tag = xrp.tag;
 out_free:
 	if (rc < 0) {
-		kfree(rp.rp_buf);
+		kfree(xrp.rp_buf);
 		*rp_data = NULL;
 	}
 

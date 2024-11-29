@@ -363,6 +363,6 @@ int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
 			   struct user_namespace *user_ns,
 #endif
 			   struct dentry *dentry,
-			   unsigned int tag,
+			   unsigned int *tag,
 			   char **rp_data);
 #endif /* __KSMBD_VFS_H__ */
