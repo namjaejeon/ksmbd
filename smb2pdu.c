@@ -725,9 +725,14 @@ static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
 {
 	umode_t mode = ksmbd_stat->kstat->mode;
 
-	if (S_ISDIR(mode) || S_ISREG(mode))
+	if (S_ISDIR(mode) || S_ISREG(mode)) {
+	pr_err("1 ksmbd_stat->reparse_tag : %x\n", ksmbd_stat->reparse_tag);
+		if (ksmbd_stat->reparse_tag)
+			return cpu_to_le32(ksmbd_stat->reparse_tag);
 		return 0;
+	}
 
+	pr_err("2 ksmbd_stat->reparse_tag : %x\n", ksmbd_stat->reparse_tag);
 	if (S_ISLNK(mode))
 		return IO_REPARSE_TAG_LX_SYMLINK_LE;
 	else if (S_ISFIFO(mode))
@@ -738,8 +743,6 @@ static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
 		return IO_REPARSE_TAG_LX_CHR_LE;
 	else if (S_ISBLK(mode))
 		return IO_REPARSE_TAG_LX_BLK_LE;
-	else if (ksmbd_stat->reparse_tag)
-		return cpu_to_le32(ksmbd_stat->reparse_tag);
 
 	return 0;
 }
@@ -776,6 +779,7 @@ static int smb2_get_dos_mode(struct ksmbd_file *fp, int attribute)
 					fp->filp->f_path.dentry,
 					XATTR_NAME_RP,
 					XATTR_NAME_RP_LEN);
+		pr_err("%s:%d rc : %d\n", __func__, __LINE__, rc);
 		if (rc > 0)
 			attr |= ATTR_REPARSE;
 	}
@@ -4254,12 +4258,12 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 	struct user_namespace	*user_ns = file_mnt_user_ns(priv->dir_fp->filp);
 #endif
 	struct kstat		kstat;
-	struct ksmbd_kstat	ksmbd_kstat;
 	int			rc;
 	int			i;
 
 	for (i = 0; i < priv->d_info->num_entry; i++) {
 		struct dentry *dent;
+		struct ksmbd_kstat	ksmbd_kstat = {0};
 
 		if (dentry_name(priv->d_info, priv->info_level))
 			return -EINVAL;
@@ -8841,7 +8845,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 	{
 		struct ksmbd_file *fp;
 
-		pr_err("%s:%d\n", __func__, __LINE__);
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 		fp = ksmbd_lookup_fd_fast(work, id);
 		if (!fp) {
 			pr_err("not found fp!!\n");
@@ -8861,6 +8865,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			char *symname;
 			u16 symname_len;
 
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 			symname = ksmbd_vfs_get_link(fp);
 			if (IS_ERR(symname)) {
 				ksmbd_fd_put(work, fp);
@@ -8883,6 +8888,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			unsigned int tag, rp_data_size;
 			char *rp_data;
 
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			rp_data_size = ksmbd_vfs_get_rp_xattr(conn,
 					file_mnt_idmap(fp->filp),
@@ -8902,6 +8908,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				struct reparse_symlink_data_buffer *reparse_sym =
 					(struct reparse_symlink_data_buffer *)rsp->Buffer;
 
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 				symname_len = fsctl_fill_reparse_symlink(conn,
 						reparse_sym, rp_data);
 				if (symname_len < 0) {
@@ -8918,6 +8925,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 					(struct xattr_rp_nfs *)rp_data;
 				struct reparse_posix_data *buf =
 					(struct reparse_posix_data *)buffer;
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 
 				buf->ReparseTag = cpu_to_le64(tag);
 				buf->InodeType = rp_nfs->inode_type;
@@ -8997,6 +9005,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				(struct reparse_symlink_data_buffer *)buffer;
 			char *symname;
 
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 			symname = smb_strndup_from_utf16(sym->PathBuffer +
 					le16_to_cpu(sym->SubstituteNameOffset),
 					le16_to_cpu(sym->SubstituteNameLength),
@@ -9037,6 +9046,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 			struct xattr_rp_nfs *rp_nfs;
 			unsigned int rp_nfs_size;
 
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT NFS\n", __func__, __LINE__);
 			switch ((type = le64_to_cpu(buf->InodeType))) {
 		        case NFS_SPECFILE_LNK:
 			{

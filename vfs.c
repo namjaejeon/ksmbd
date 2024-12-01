@@ -3159,6 +3159,7 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
 				&tag, &rp_data);
 #endif
+		pr_err("%s:%d dentry->d_name : %s, rc : %d\n", __func__, __LINE__, dentry->d_name.name, rc);
 		if (rc > 0) {
 			ksmbd_kstat->reparse_tag = tag;
 			kfree(rp_data);
