@@ -20,7 +20,9 @@
 #include "glob.h"
 
 #include <linux/fips.h>
+#ifdef CONFIG_SMB_INSECURE_SERVER
 #include <crypto/des.h>
+#endif
 
 #include "server.h"
 #include "smb_common.h"
@@ -67,7 +69,7 @@ void ksmbd_copy_gss_neg_header(void *buf)
 {
 	memcpy(buf, NEGOTIATE_GSS_HEADER, AUTH_GSS_LENGTH);
 }
-
+#ifdef CONFIG_SMB_INSECURE_SERVER
 static void
 str_to_key(unsigned char *str, unsigned char *key)
 {
@@ -149,7 +151,6 @@ out:
 	return rc;
 }
 
-#ifdef CONFIG_SMB_INSECURE_SERVER
 static int ksmbd_enc_update_sess_key(unsigned char *md5_hash, char *nonce,
 				     char *server_challenge, int len)
 {
@@ -326,6 +327,7 @@ out:
 	return ret;
 }
 
+#ifdef CONFIG_SMB_INSECURE_SERVER
 /**
  * ksmbd_auth_ntlm() - NTLM authentication handler
  * @sess:	session of connection
@@ -362,6 +364,7 @@ int ksmbd_auth_ntlm(struct ksmbd_session *sess, char *pw_buf, char *cryptkey)
 	ksmbd_debug(AUTH, "ntlmv1 authentication pass\n");
 	return 0;
 }
+#endif
 
 /**
  * ksmbd_auth_ntlmv2() - NTLMv2 authentication handler
