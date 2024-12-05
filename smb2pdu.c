@@ -4442,6 +4442,7 @@ static int __query_dir(struct dir_context *ctx, const char *name, int namlen,
 #else
 		return 0;
 #endif
+	d_info->num_scan++;
 	if (ksmbd_share_veto_filename(priv->work->tcon->share_conf, name))
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 		return true;
@@ -4636,7 +4637,16 @@ int smb2_query_dir(struct ksmbd_work *work)
 	dir_fp->readdir_data.private		= &query_dir_private;
 	set_ctx_actor(&dir_fp->readdir_data.ctx, __query_dir);
 
+again:
 	rc = iterate_dir(dir_fp->filp, &dir_fp->readdir_data.ctx);
+	/*
+	 * num_entry can be 0 if the directory iteration stops before reaching
+	 * the end of the directory and no file is matched with the search
+	 * pattern.
+	 */
+	if (rc >= 0 && !d_info.num_entry && d_info.num_scan &&
+	    d_info.out_buf_len > 0)
+		goto again;
 	/*
 	 * req->OutputBufferLength is too small to contain even one entry.
 	 * In this case, it immediately returns OutputBufferLength 0 to client.
