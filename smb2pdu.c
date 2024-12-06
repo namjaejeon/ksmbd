@@ -6485,19 +6485,13 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
-	attrs.ia_valid |= ATTR_CTIME;
 	if (file_info->ChangeTime)
-		attrs.ia_ctime = ksmbd_NTtimeToUnix(file_info->ChangeTime);
-	else
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-		attrs.ia_ctime = inode_get_ctime(inode);
-#else
-		attrs.ia_ctime = inode->i_ctime;
-#endif
+		inode_set_ctime_to_ts(inode,
+				ksmbd_NTtimeToUnix(file_info->ChangeTime));
 
 	if (file_info->LastWriteTime) {
 		attrs.ia_mtime = ksmbd_NTtimeToUnix(file_info->LastWriteTime);
-		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET);
+		attrs.ia_valid |= (ATTR_MTIME | ATTR_MTIME_SET | ATTR_CTIME);
 	}
 
 	if (file_info->Attributes) {
@@ -6539,12 +6533,6 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 			return -EACCES;
 
 		inode_lock(inode);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
-		inode_set_ctime_to_ts(inode, attrs.ia_ctime);
-#else
-		inode->i_ctime = attrs.ia_ctime;
-#endif
-		attrs.ia_valid &= ~ATTR_CTIME;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		rc = notify_change(idmap, dentry, &attrs, NULL);
