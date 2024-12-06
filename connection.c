@@ -138,8 +138,8 @@ void ksmbd_conn_enqueue_request(struct ksmbd_work *work)
 		requests_queue = &conn->requests;
 #endif
 
+	atomic_inc(&conn->req_running);
 	if (requests_queue) {
-		atomic_inc(&conn->req_running);
 		spin_lock(&conn->request_lock);
 		list_add_tail(&work->request_entry, requests_queue);
 		spin_unlock(&conn->request_lock);
@@ -150,11 +150,12 @@ void ksmbd_conn_try_dequeue_request(struct ksmbd_work *work)
 {
 	struct ksmbd_conn *conn = work->conn;
 
+	atomic_dec(&conn->req_running);
+
 	if (list_empty(&work->request_entry) &&
 	    list_empty(&work->async_request_entry))
 		return;
 
-	atomic_dec(&conn->req_running);
 	spin_lock(&conn->request_lock);
 	list_del_init(&work->request_entry);
 	spin_unlock(&conn->request_lock);
