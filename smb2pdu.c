@@ -6485,9 +6485,14 @@ static int set_file_basic_info(struct ksmbd_file *fp,
 		attrs.ia_valid |= (ATTR_ATIME | ATTR_ATIME_SET);
 	}
 
-	if (file_info->ChangeTime)
+	if (file_info->ChangeTime) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 		inode_set_ctime_to_ts(inode,
 				ksmbd_NTtimeToUnix(file_info->ChangeTime));
+#else
+		inode->i_ctime = ksmbd_NTtimeToUnix(file_info->ChangeTime);
+#endif
+	}
 
 	if (file_info->LastWriteTime) {
 		attrs.ia_mtime = ksmbd_NTtimeToUnix(file_info->LastWriteTime);
