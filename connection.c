@@ -380,9 +380,9 @@ int ksmbd_conn_handler_loop(void *p)
 		conn->request_buf = NULL;
 
 		if (atomic_inc_return(&conn->req_running) >= max_req) {
-			atomic_dec_return(&conn->req_running);
 			wait_event_interruptible(conn->req_running_q,
 				atomic_read(&conn->req_running) < max_req);
+			atomic_dec(&conn->req_running);
 		}
 
 		size = t->ops->read(t, hdr_buf, sizeof(hdr_buf), -1);
