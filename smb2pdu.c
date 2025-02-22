@@ -1589,7 +1589,6 @@ binding_session:
 	return 0;
 }
 
-#ifdef CONFIG_SMB_SERVER_KERBEROS5
 static int krb5_authenticate(struct ksmbd_work *work,
 			     struct smb2_sess_setup_req *req,
 			     struct smb2_sess_setup_rsp *rsp)
@@ -1671,14 +1670,6 @@ static int krb5_authenticate(struct ksmbd_work *work,
 	}
 	return 0;
 }
-#else
-static int krb5_authenticate(struct ksmbd_work *work,
-			     struct smb2_sess_setup_req *req,
-			     struct smb2_sess_setup_rsp *rsp)
-{
-	return -EOPNOTSUPP;
-}
-#endif
 
 int smb2_sess_setup(struct ksmbd_work *work)
 {
