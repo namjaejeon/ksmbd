@@ -357,10 +357,8 @@ static int server_conf_init(void)
 	server_conf.min_protocol = ksmbd_min_protocol();
 	server_conf.max_protocol = ksmbd_max_protocol();
 	server_conf.auth_mechs = KSMBD_AUTH_NTLMSSP;
-#ifdef CONFIG_SMB_SERVER_KERBEROS5
 	server_conf.auth_mechs |= KSMBD_AUTH_KRB5 |
 				KSMBD_AUTH_MSKRB5;
-#endif
 	server_conf.max_inflight_req = SMB2_MAX_CREDITS;
 	return 0;
 }
