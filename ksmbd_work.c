@@ -16,10 +16,15 @@
 static struct kmem_cache *work_cache;
 static struct workqueue_struct *ksmbd_wq;
 
+DEFINE_MUTEX(work_alloc_lock);
+
 struct ksmbd_work *ksmbd_alloc_work_struct(void)
 {
-	struct ksmbd_work *work = kmem_cache_zalloc(work_cache, KSMBD_DEFAULT_GFP);
+	struct ksmbd_work *work;
 
+	mutex_lock(&work_alloc_lock);
+	work = kmem_cache_zalloc(work_cache, KSMBD_DEFAULT_GFP);
+	mutex_unlock(&work_alloc_lock);
 	if (work) {
 		work->compound_fid = KSMBD_NO_FID;
 		work->compound_pfid = KSMBD_NO_FID;
@@ -64,7 +69,9 @@ void ksmbd_free_work_struct(struct ksmbd_work *work)
 
 	if (work->async_id)
 		ksmbd_release_id(&work->conn->async_ida, work->async_id);
+	mutex_lock(&work_alloc_lock);
 	kmem_cache_free(work_cache, work);
+	mutex_unlock(&work_alloc_lock);
 }
 
 void ksmbd_work_pool_destroy(void)
