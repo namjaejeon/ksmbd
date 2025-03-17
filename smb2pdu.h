@@ -198,7 +198,7 @@ struct smb2_err_rsp {
 	__u8   ErrorContextCount;
 	__u8   Reserved;
 	__le32 ByteCount;  /* even if zero, at least one byte follows */
-	__u8   ErrorData[1];  /* variable length */
+	__u8   ErrorData[];  /* variable length */
 } __packed;
 
 struct smb2_negotiate_req {
@@ -1761,4 +1761,22 @@ static inline void *smb2_get_msg(void *buf)
 	return buf + 4;
 }
 
+#define SMB2_SYMLINK_STRUCT_SIZE \
+        (sizeof(struct smb2_err_rsp) + sizeof(struct smb2_symlink_err_rsp))
+
+#define SYMLINK_ERROR_TAG 0x4c4d5953
+
+struct smb2_symlink_err_rsp {
+	__le32 SymLinkLength;
+	__le32 SymLinkErrorTag;
+	__le32 ReparseTag;
+	__le16 ReparseDataLength;
+	__le16 UnparsedPathLength;
+	__le16 SubstituteNameOffset;
+	__le16 SubstituteNameLength;
+	__le16 PrintNameOffset;
+	__le16 PrintNameLength;
+	__le32 Flags;
+	__u8  PathBuffer[];
+} __packed;
 #endif	/* _SMB2PDU_H */
