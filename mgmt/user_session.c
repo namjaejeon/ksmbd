@@ -240,6 +240,9 @@ void ksmbd_sessions_deregister(struct ksmbd_conn *conn)
 #else
 				hash_del(&sess->hlist);
 #endif
+				down_write(&conn->session_lock);
+				xa_erase(&conn->sessions, sess->id);
+				up_write(&conn->session_lock);
 				ksmbd_session_destroy(sess);
 			}
 		}
