@@ -1160,11 +1160,11 @@ int smb_inherit_dacl(struct ksmbd_conn *conn,
 #else
 	struct user_namespace *user_ns = mnt_user_ns(path->mnt);
 #endif
-	int inherited_flags = 0, flags = 0, i, ace_cnt = 0, nt_size = 0, pdacl_size;
+	int inherited_flags = 0, flags = 0, i, nt_size = 0, pdacl_size;
 	int rc = 0, pntsd_type, pntsd_size, acl_len, aces_size;
 	unsigned int dacloffset;
 	size_t dacl_struct_end;
-	u16 num_aces;
+	u16 num_aces, ace_cnt = 0;
 	char *aces_base;
 	bool is_dir = S_ISDIR(d_inode(path->dentry)->i_mode);
 
