@@ -773,12 +773,8 @@ static bool tree_conn_fd_check(struct ksmbd_tree_connect *tcon,
 
 static bool ksmbd_durable_scavenger_alive(void)
 {
-	mutex_lock(&durable_scavenger_lock);
-	if (!durable_scavenger_running) {
-		mutex_unlock(&durable_scavenger_lock);
+	if (READ_ONCE(durable_scavenger_running) == false)
 		return false;
-	}
-	mutex_unlock(&durable_scavenger_lock);
 
 	if (kthread_should_stop())
 		return false;
@@ -859,9 +855,7 @@ static int ksmbd_durable_scavenger(void *dummy)
 			break;
 	}
 
-	mutex_lock(&durable_scavenger_lock);
-	durable_scavenger_running = false;
-	mutex_unlock(&durable_scavenger_lock);
+	WRITE_ONCE(durable_scavenger_running, false);
 
 	module_put(THIS_MODULE);
 
@@ -874,12 +868,12 @@ void ksmbd_launch_ksmbd_durable_scavenger(void)
 		return;
 
 	mutex_lock(&durable_scavenger_lock);
-	if (durable_scavenger_running == true) {
+	if (READ_ONCE(durable_scavenger_running) == true) {
 		mutex_unlock(&durable_scavenger_lock);
 		return;
 	}
 
-	durable_scavenger_running = true;
+	WRITE_ONCE(durable_scavenger_running, true);
 
 	server_conf.dh_task = kthread_run(ksmbd_durable_scavenger,
 				     (void *)NULL, "ksmbd-durable-scavenger");
@@ -895,12 +889,12 @@ void ksmbd_stop_durable_scavenger(void)
 		return;
 
 	mutex_lock(&durable_scavenger_lock);
-	if (!durable_scavenger_running) {
+	if (READ_ONCE(durable_scavenger_running) == false) {
 		mutex_unlock(&durable_scavenger_lock);
 		return;
 	}
 
-	durable_scavenger_running = false;
+	WRITE_ONCE(durable_scavenger_running, false);
 	if (waitqueue_active(&dh_wq))
 		wake_up(&dh_wq);
 	mutex_unlock(&durable_scavenger_lock);
