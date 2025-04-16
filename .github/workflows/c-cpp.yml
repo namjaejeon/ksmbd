@@ -13,14 +13,14 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-22.04
 
     steps:
     - uses: actions/checkout@v4
     - name: Download the kernel
       run: |
         sudo apt-get update
-        sudo apt-get install libelf-dev wget tar gzip python2.7
+        sudo apt-get install libelf-dev wget tar gzip
         wget https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.109.tar.gz
         tar xf linux-5.4.109.tar.gz
         mv linux-5.4.109 linux-stable
