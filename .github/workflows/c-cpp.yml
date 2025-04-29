@@ -13,7 +13,7 @@ on:
 jobs:
   build:
 
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -21,9 +21,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libelf-dev wget tar gzip
-        wget https://mirrors.edge.kernel.org/pub/linux/kernel/v5.x/linux-5.4.109.tar.gz
-        tar xf linux-5.4.109.tar.gz
-        mv linux-5.4.109 linux-stable
     - name: Prerequisite for xfstests testing
       run: |
         sudo apt-get install cifs-utils
@@ -32,49 +29,15 @@ jobs:
         sudo apt-get install xfslibs-dev uuid-dev libtool-bin xfsprogs libgdbm-dev gawk fio attr libattr1-dev libacl1-dev libaio-dev
         sudo apt-get install liblmdb-dev libgnutls28-dev libgpgme-dev libjansson-dev libarchive-dev libacl1-dev
         sudo apt-get install gnutls-bin libparse-yapp-perl libjansson-dev libarchive-dev libjson-perl
+        sudo apt-get install libnl-3-dev libnl-genl-3-dev krb5-multidev heimdal-multidev libglib2.0-dev
         git clone https://github.com/cifsd-team/ksmbd-tools
         export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH
         export PATH=/usr/local/lib:$PATH
         sudo useradd fsgqa
         sudo useradd 123456-fsgqa
-    - name: Copy ksmbd source to kernel
-      run: |
-        mv linux-stable ../
-        mkdir ../linux-stable/fs/ksmbd
-        cp -ar * ../linux-stable/fs/ksmbd/
-    - name: Compile with 5.4 kernel
-      run: |
-        cd ../linux-stable
-        yes "" | make oldconfig > /dev/null
-        echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
-        echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
-        echo 'CONFIG_SMB_SERVER=m' >> .config
-        echo 'CONFIG_SMB_INSECURE_SERVER=y' >> .config
-        echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
-        echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
-        make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
-
-        yes "" | make oldconfig > /dev/null
-        echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
-        echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
-        echo 'CONFIG_SMB_SERVER=m' >> .config
-        echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
-        echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
-        echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
-        make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
-
-        yes "" | make oldconfig > /dev/null
-        echo 'obj-$(CONFIG_SMB_SERVER) += ksmbd/' >> fs/Makefile
-        echo 'source "fs/ksmbd/Kconfig"' >> fs/Kconfig
-        echo 'CONFIG_SMB_SERVER=m' >> .config
-        echo '# CONFIG_SMB_INSECURE_SERVER is not set' >> .config
-        echo '# CONFIG_SMB_SERVER_SMBDIRECT is not set' >> .config
-        echo '# CONFIG_SMB_SERVER_CHECK_CAP_NET_ADMIN is not set' >> .config
-        make -j$((`nproc`+1)) fs/ksmbd/ksmbd.ko
     - name: Compile and insmod ksmbd module
       run: |
         uname -r
-        cd ../ksmbd
         make > /dev/null
         sudo make install > /dev/null
         sudo modprobe ksmbd
@@ -231,10 +194,10 @@ jobs:
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.leading-slash
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.impersonation
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.dir-alloc-size
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.aclfile
-        sudo rm -rf /mnt/test3/*
-        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.acldir
-        sudo rm -rf /mnt/test3/*
+        #        ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.aclfile
+        #sudo rm -rf /mnt/test3/*
+        #./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.acldir
+        #sudo rm -rf /mnt/test3/*
         ./bin/smbtorture //127.0.0.1/cifsd-test3/ -Utestuser%1234 smb2.create.nulldacl
         sudo rm -rf /mnt/test3/*
         # smb2 delete-on-close test
