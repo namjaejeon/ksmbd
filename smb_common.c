@@ -478,7 +478,7 @@ int ksmbd_populate_dot_dotdot_entries(struct ksmbd_work *work, int info_level,
 
 	for (i = 0; i < 2; i++) {
 		struct kstat kstat;
-		struct ksmbd_kstat ksmbd_kstat;
+		struct ksmbd_kstat ksmbd_kstat = {0};
 		struct dentry *dentry;
 
 		if (!dir->dot_dotdot[i]) { /* fill dot entry info */

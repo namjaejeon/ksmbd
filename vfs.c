@@ -3148,6 +3148,24 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		}
 	}
 
+	if (1) { //test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)) {
+		char *rp_data;
+		unsigned int tag;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
+				&tag, &rp_data);
+#else
+		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
+				&tag, &rp_data);
+#endif
+		pr_err("%s:%d dentry->d_name : %s, rc : %d\n", __func__, __LINE__, dentry->d_name.name, rc);
+		if (rc > 0) {
+			ksmbd_kstat->reparse_tag = tag;
+			kfree(rp_data);
+		}
+	}
+
 	return 0;
 }
 
@@ -3466,5 +3484,149 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 	}
 
 	posix_acl_release(acls);
+	return rc;
+}
+
+char *ksmbd_vfs_get_link(struct ksmbd_file *fp)
+{
+	const char *res;
+	char *link;
+	DEFINE_DELAYED_CALL(done);
+
+	res = vfs_get_link(fp->filp->f_path.dentry, &done);
+	if (IS_ERR(res))
+		return (char *)res;
+	link = kstrdup(res, GFP_KERNEL);
+	do_delayed_call(&done);
+	if (!link)
+		return ERR_PTR(-ENOMEM);
+	ksmbd_conv_path_to_windows(link);
+	return link;
+}
+
+int ksmbd_page_link(struct ksmbd_file *fp, char *link)
+{
+	int ret;
+	struct inode *inode = file_inode(fp->filp);
+	umode_t mode = inode->i_mode & S_IRWXUGO;
+
+	inode->i_mode = 0;
+	inode->i_mode |= S_IFLNK | mode;
+	ret = page_symlink(inode, link, strlen(link));
+	pr_err("%s:%d, ret : %d\n", __func__, __LINE__, ret);
+
+	return ret;
+}
+
+int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   const struct path *path,
+			   unsigned int tag,
+			   char *rp_data, int rp_len)
+{
+	int rc;
+	struct ndr rp_ndr = {0};
+	struct xattr_rp xrp = {0};
+
+	xrp.version = 1;
+	xrp.tag = tag;
+	xrp.hash_type = XATTR_RP_HASH_TYPE_SHA256;
+	xrp.rp_buf = rp_data;
+	xrp.rp_size = rp_len;
+
+	if (xrp.rp_size) {
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, xrp.hash);
+		if (rc) {
+			pr_err("Failed to generate hash for ndr reparse\n");
+			return rc;
+		}
+	} else
+		memset(xrp.hash, 0, XATTR_RP_HASH_SIZE);
+
+	rc = ndr_encode_rp(&rp_ndr, &xrp);
+	if (rc) {
+		pr_err("Failed to encode ndr to reprase\n");
+		goto out;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_setxattr(idmap, path,
+#else
+	rc = ksmbd_vfs_setxattr(user_ns, path,
+#endif
+				XATTR_NAME_RP, rp_ndr.data,
+				rp_ndr.offset, 0, true);
+	if (rc < 0)
+		pr_err("Failed to store XATTR reparse point : %d\n", rc);
+out:
+	kfree(rp_ndr.data);
+	return rc;
+}
+
+int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   struct dentry *dentry,
+			   unsigned int *tag,
+			   char **rp_data)
+{
+	int rc;
+	struct ndr n;
+	struct xattr_rp xrp;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_getxattr(idmap, dentry, XATTR_NAME_RP, &n.data);
+#else
+	rc = ksmbd_vfs_getxattr(user_ns, dentry, XATTR_NAME_RP, &n.data);
+#endif
+	if (rc <= 0) {
+		if (rc == 0)
+			rc = -ENOENT;
+		return rc;
+	}
+
+	n.length = rc;
+	rc = ndr_decode_rp(&n, &xrp);
+	if (rc)
+		goto free_n_data;
+
+	if (xrp.rp_size) {
+		__u8 cmp_hash[XATTR_RP_HASH_SIZE] = {0};
+
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, cmp_hash);
+		if (rc) {
+			pr_err("failed to generate hash for ndr reparse\n");
+			goto out_free;
+		}
+
+		if (memcmp(cmp_hash, xrp.hash, XATTR_RP_HASH_SIZE)) {
+			pr_err("hash value diff\n");
+			rc = -EINVAL;
+			goto out_free;
+		}
+
+		*rp_data = xrp.rp_buf;
+		rc = xrp.rp_size;
+	} else {
+		*rp_data = NULL;
+		rc = 0;
+	}
+
+	*tag = xrp.tag;
+out_free:
+	if (rc < 0) {
+		kfree(xrp.rp_buf);
+		*rp_data = NULL;
+	}
+
+free_n_data:
+	kfree(n.data);
 	return rc;
 }
