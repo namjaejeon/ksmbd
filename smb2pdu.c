@@ -3806,6 +3806,7 @@ int smb2_open(struct ksmbd_work *work)
 				&tag, &symname);
 #endif
 		if (rc > 0 && tag == IO_REPARSE_TAG_SYMLINK) {
+			pr_err("%s:%d, tag : IO_REPARSE_TAG_SYMLINK, symname : %s\n", __func__, __LINE__, symname);
 			smb2_set_symlink_err_rsp(work, symname);
 			kfree(symname);
 			rsp->hdr.Status = STATUS_STOPPED_ON_SYMLINK;
@@ -4926,7 +4927,7 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 #endif
 	const struct path *path = &fp->filp->f_path;
 
-	eainfo = (struct smb2_ea_info *)ptr + *rsp_data_cnt;
+	eainfo = (struct smb2_ea_info *)(ptr + *rsp_data_cnt);
 	prev_eainfo = eainfo;
 
 	while (idx < xattr_list_len) {
@@ -5014,7 +5015,7 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 		}
 	}
 
-	pr_err("next_offset : %u, buf_free_len : %d, rsp_data_cnt : %d\n", next_offset, buf_free_len, rsp_data_cnt);
+	pr_err("next_offset : %u, buf_free_len : %d, rsp_data_cnt : %d\n", next_offset, *buf_free_len, *rsp_data_cnt);
 	/* Fill EA request name with empty value */
 	if (ea_name_len && next_offset == 0) {
 		next_offset = ALIGN(offsetof(struct smb2_ea_info, name) +
@@ -5150,7 +5151,6 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 //		prev_eainfo->NextEntryOffset = 0;
 	}
 
-	pr_err("%s:%d\n", __func__, __LINE__);
 done:
 	if (!rc && rsp_data_cnt == 0) {
 		rsp->hdr.Status = STATUS_NO_EAS_ON_FILE;
