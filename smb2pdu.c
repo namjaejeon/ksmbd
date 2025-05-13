@@ -4919,7 +4919,7 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 	struct smb2_ea_info *eainfo, *prev_eainfo;
 	char *name, *buf;
 	int name_len, value_len, idx = 0;
-	ssize_t alignment_bytes, next_offset = 0;
+	ssize_t next_offset = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	struct mnt_idmap *idmap = file_mnt_idmap(fp->filp);
 #else
@@ -4934,7 +4934,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 		name = xattr_list + idx;
 		name_len = strlen(name);
 
-		pr_err("%s, len %d, ea_name : %s, ea_len : %u\n", name, name_len, ea_name, ea_name_len);
 		idx += name_len + 1;
 
 		/*
@@ -4950,7 +4949,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 			continue;
 
 		if (ea_name_len) {
-//			pr_err("ea name : %s\n", ea_name);
 			if (strncmp(&name[XATTR_USER_PREFIX_LEN], ea_name,
 				     ea_name_len))
 				continue;
@@ -4962,8 +4960,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 
 		if (!strncmp(name, XATTR_USER_PREFIX, XATTR_USER_PREFIX_LEN))
 			name_len -= XATTR_USER_PREFIX_LEN;
-
-		pr_err("2 %s, len %d\n", name, name_len);
 
 		ptr = eainfo->name + name_len + 1;
 		/* bailout if xattr can't fit in buf_free_len */
@@ -4979,7 +4975,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 		if (value_len > 0) {
 			if (*buf_free_len - value_len < 0) {
 				kfree(buf);
-				pr_err("%s:%d\n", __func__, __LINE__);
 				break;
 			}
 			memcpy(ptr, buf, value_len);
@@ -5015,7 +5010,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 		}
 	}
 
-	pr_err("next_offset : %u, buf_free_len : %d, rsp_data_cnt : %d\n", next_offset, *buf_free_len, *rsp_data_cnt);
 	/* Fill EA request name with empty value */
 	if (ea_name_len && next_offset == 0) {
 		next_offset = ALIGN(offsetof(struct smb2_ea_info, name) +
@@ -5025,7 +5019,6 @@ static int smb2_fill_ea_rsp(struct ksmbd_file *fp, char *xattr_list,
 			goto out;
 		}
 
-		pr_err("fill empty ea name : %s\n", ea_name);
 		eainfo->EaNameLength = ea_name_len;
 		memcpy(eainfo->name, ea_name, ea_name_len);
 		eainfo->name[ea_name_len] = '\0';
@@ -5057,10 +5050,9 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 		       struct smb2_query_info_req *req,
 		       struct smb2_query_info_rsp *rsp, void *rsp_org)
 {
-	struct smb2_ea_info *eainfo, *prev_eainfo;
-	char *name, *ptr, *xattr_list = NULL, *buf;
-	int rc, name_len, value_len, xattr_list_len, idx;
-	ssize_t buf_free_len, alignment_bytes, next_offset = 0, rsp_data_cnt = 0;
+	char *ptr, *xattr_list = NULL;
+	int rc, xattr_list_len;
+	ssize_t buf_free_len, next_offset = 0, rsp_data_cnt = 0;
 	struct smb2_ea_info_req *ea_req = NULL;
 
 	if (!(fp->daccess & FILE_READ_EA_LE)) {
@@ -5080,15 +5072,12 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 
 	buf_free_len = smb2_calc_max_out_buf_len(work, 8,
 			le32_to_cpu(req->OutputBufferLength));
-	if (buf_free_len < 0) {
-		pr_err("%s:%d\n", __func__, __LINE__);
+	if (buf_free_len < 0)
 		return -EINVAL;
-	}
 
 	rc = ksmbd_vfs_listxattr(fp->filp->f_path.dentry, &xattr_list);
 	if (rc < 0) {
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
-		pr_err("%s:%d\n", __func__, __LINE__);
 		goto out;
 	} else if (!rc) { /* there is no EA in the file */
 		ksmbd_debug(SMB, "no ea data in the file\n");
@@ -5099,7 +5088,6 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 
 	ptr = (char *)rsp->Buffer;
 
-	pr_err("%s:%d\n", __func__, __LINE__);
 	if (req->InputBufferLength) {
 		unsigned int input_buf_len = le32_to_cpu(req->InputBufferLength);
 		unsigned int next;
@@ -5114,7 +5102,6 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 			    sizeof(struct smb2_ea_info_req) + ea_req->EaNameLength)
 				break;
 
-			pr_err("ea_req name : %s\n", ea_req->name);
 			next_offset = smb2_fill_ea_rsp(fp, xattr_list,
 					xattr_list_len, ptr,
 					&rsp_data_cnt, &buf_free_len,
@@ -5145,11 +5132,8 @@ static int smb2_get_ea(struct ksmbd_work *work, struct ksmbd_file *fp,
 		}
 	}
 
-	if (rsp_data_cnt) {
-//		prev_eainfo = (struct smb2_ea_info *)(ptr + rsp_data_cnt - next_offset);
+	if (rsp_data_cnt)
 		((struct smb2_ea_info *)(ptr + rsp_data_cnt - next_offset))->NextEntryOffset = 0;
-//		prev_eainfo->NextEntryOffset = 0;
-	}
 
 done:
 	if (!rc && rsp_data_cnt == 0) {
@@ -5158,7 +5142,6 @@ done:
 	}
 	rsp->OutputBufferLength = cpu_to_le32(rsp_data_cnt);
 out:
-	pr_err("%s:%d, rc : %d, rsp_data_cnt : %u\n", __func__, __LINE__, rc, rsp_data_cnt);
 	if (rc < 0)
 		rsp->hdr.Status = STATUS_INVALID_HANDLE;
 
@@ -9156,9 +9139,6 @@ int smb2_ioctl(struct ksmbd_work *work)
 		struct reparse_data_buffer *reparse_ptr =
 			(struct reparse_data_buffer *)buffer;
 		struct ksmbd_file *fp;
-		int sid = 1000;
-		int mode = 0644;
-		long long dev = 1000;
 
 		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 		fp = ksmbd_lookup_fd_fast(work, id);
@@ -9212,47 +9192,6 @@ int smb2_ioctl(struct ksmbd_work *work)
 #endif
 
 			kfree(symname);
-#if 0
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			ret = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp), &fp->filp->f_path,
-#else
-			ret = ksmbd_vfs_setxattr(user_ns, path,
-#endif
-					XATTR_NAME_WSL_UID, &sid,
-					sizeof(int), 0, true);
-			if (ret < 0)
-				pr_err("Failed to store XATTR reparse point : %d\n", ret);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			ret = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp), &fp->filp->f_path,
-#else
-			ret = ksmbd_vfs_setxattr(user_ns, path,
-#endif
-					XATTR_NAME_WSL_GID, &sid,
-					sizeof(int), 0, true);
-			if (ret < 0)
-				pr_err("Failed to store XATTR reparse point : %d\n", ret);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			ret = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp), &fp->filp->f_path,
-#else
-			ret = ksmbd_vfs_setxattr(user_ns, path,
-#endif
-					XATTR_NAME_WSL_MODE, &mode,
-					sizeof(int), 0, true);
-			if (ret < 0)
-				pr_err("Failed to store XATTR reparse point : %d\n", ret);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-			ret = ksmbd_vfs_setxattr(file_mnt_idmap(fp->filp), &fp->filp->f_path,
-#else
-			ret = ksmbd_vfs_setxattr(user_ns, path,
-#endif
-					XATTR_NAME_WSL_DEV, &dev,
-					sizeof(long long), 0, true);
-			if (ret < 0)
-				pr_err("Failed to store XATTR reparse point : %d\n", ret);
-#endif
 			ksmbd_fd_put(work, fp);
 			if (ret)
 				goto out;
