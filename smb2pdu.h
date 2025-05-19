@@ -198,7 +198,7 @@ struct smb2_err_rsp {
 	__u8   ErrorContextCount;
 	__u8   Reserved;
 	__le32 ByteCount;  /* even if zero, at least one byte follows */
-	__u8   ErrorData[1];  /* variable length */
+	__u8   ErrorData[];  /* variable length */
 } __packed;
 
 struct smb2_negotiate_req {
@@ -1047,6 +1047,34 @@ struct reparse_data_buffer {
 	__u8	DataBuffer[]; /* Variable Length */
 } __packed;
 
+#define SYMLINK_FLAG_RELATIVE 0x00000001
+
+/* For IO_REPARSE_TAG_NFS */
+#define NFS_SPECFILE_LNK	0x00000000014B4E4C
+#define NFS_SPECFILE_CHR	0x0000000000524843
+#define NFS_SPECFILE_BLK	0x00000000004B4C42
+#define NFS_SPECFILE_FIFO	0x000000004F464946
+#define NFS_SPECFILE_SOCK	0x000000004B434F53
+struct reparse_posix_data {
+	__le32	ReparseTag;
+	__le16	ReparseDataLength;
+	__u16	Reserved;
+	__le64	InodeType; /* LNK, FIFO, CHR etc. */
+	__u8	DataBuffer[];
+} __attribute__((packed));
+
+struct reparse_symlink_data_buffer {
+	__le32	ReparseTag;
+	__le16	ReparseDataLength;
+	__u16	Reserved;
+	__le16	SubstituteNameOffset;
+	__le16	SubstituteNameLength;
+	__le16	PrintNameOffset;
+	__le16	PrintNameLength;
+	__le32	Flags;
+	__u8	PathBuffer[]; /* Variable Length */
+} __packed;
+
 /* Completion Filter flags for Notify */
 #define FILE_NOTIFY_CHANGE_FILE_NAME	0x00000001
 #define FILE_NOTIFY_CHANGE_DIR_NAME	0x00000002
@@ -1733,4 +1761,22 @@ static inline void *smb2_get_msg(void *buf)
 	return buf + 4;
 }
 
+#define SMB2_SYMLINK_STRUCT_SIZE \
+	(sizeof(struct smb2_err_rsp) + sizeof(struct smb2_symlink_err_rsp))
+
+#define SYMLINK_ERROR_TAG 0x4c4d5953
+
+struct smb2_symlink_err_rsp {
+	__le32 SymLinkLength;
+	__le32 SymLinkErrorTag;
+	__le32 ReparseTag;
+	__le16 ReparseDataLength;
+	__le16 UnparsedPathLength;
+	__le16 SubstituteNameOffset;
+	__le16 SubstituteNameLength;
+	__le16 PrintNameOffset;
+	__le16 PrintNameLength;
+	__le32 Flags;
+	__u8  PathBuffer[];
+} __packed;
 #endif	/* _SMB2PDU_H */
