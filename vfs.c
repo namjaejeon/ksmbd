@@ -417,8 +417,13 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	struct user_namespace *user_ns;
 #endif
 	struct path path;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	struct dentry *dentry, *d;
+	int err = 0;
+#else
 	struct dentry *dentry;
 	int err;
+#endif
 
 	dentry = ksmbd_vfs_kern_path_create(work, name,
 					    LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
@@ -437,6 +442,16 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	user_ns = mnt_user_ns(path.mnt);
 #endif
 	mode |= S_IFDIR;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	d = dentry;
+	dentry = vfs_mkdir(idmap, d_inode(path.dentry), dentry, mode);
+	if (IS_ERR(dentry))
+		err = PTR_ERR(dentry);
+	else if (d_is_negative(dentry))
+		err = -ENOENT;
+	if (!err && dentry != d)
+		ksmbd_vfs_inherit_owner(work, d_inode(path.dentry), d_inode(dentry));
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	err = vfs_mkdir(idmap, d_inode(path.dentry), dentry, mode);
@@ -475,6 +490,7 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	}
 
 out_err:
+#endif
 	done_path_create(&path, dentry);
 	if (err)
 		pr_err("mkdir(%s): creation failed (err:%d)\n", name, err);
