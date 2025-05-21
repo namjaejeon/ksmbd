@@ -1405,7 +1405,7 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	int new_type;
 	int err, lookup_flags = LOOKUP_NO_SYMLINKS;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
-	int target_lookup_flags = LOOKUP_RENAME_TARGET;
+	int target_lookup_flags = LOOKUP_RENAME_TARGET | LOOKUP_CREATE;
 #endif
 
 	if (ksmbd_override_fsids(work))
