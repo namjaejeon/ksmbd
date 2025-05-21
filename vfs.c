@@ -140,10 +140,12 @@ static int ksmbd_vfs_path_lookup_locked(struct ksmbd_share_config *share_conf,
 	if (IS_ERR(d))
 		goto err_out;
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
 	if (d_is_negative(d)) {
 		dput(d);
 		goto err_out;
 	}
+#endif
 
 	path->dentry = d;
 	path->mnt = mntget(parent_path->mnt);
@@ -1402,6 +1404,9 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	struct ksmbd_file *parent_fp;
 	int new_type;
 	int err, lookup_flags = LOOKUP_NO_SYMLINKS;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	int target_lookup_flags = LOOKUP_RENAME_TARGET;
+#endif
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
@@ -1411,6 +1416,16 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 		err = PTR_ERR(to);
 		goto revert_fsids;
 	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	/*
+	 * explicitly handle file overwrite case, for compatibility with
+	 * filesystems that may not support rename flags (e.g: fuse)
+	 */
+	if (flags & RENAME_NOREPLACE)
+		target_lookup_flags |= LOOKUP_EXCL;
+	flags &= ~(RENAME_NOREPLACE);
+#endif
 
 retry:
 	err = vfs_path_parent_lookup(to, lookup_flags | LOOKUP_BENEATH,
@@ -1451,8 +1466,13 @@ retry:
 		ksmbd_fd_put(work, parent_fp);
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
+	new_dentry = lookup_one_qstr_excl(&new_last, new_path.dentry,
+					  lookup_flags | target_lookup_flags);
+#else
 	new_dentry = lookup_one_qstr_excl(&new_last, new_path.dentry,
 					  lookup_flags | LOOKUP_RENAME_TARGET);
+#endif
 	if (IS_ERR(new_dentry)) {
 		err = PTR_ERR(new_dentry);
 		goto out3;
@@ -1463,6 +1483,7 @@ retry:
 		goto out4;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 15, 0)
 	/*
 	 * explicitly handle file overwrite case, for compatibility with
 	 * filesystems that may not support rename flags (e.g: fuse)
@@ -1472,6 +1493,7 @@ retry:
 		goto out4;
 	}
 	flags &= ~(RENAME_NOREPLACE);
+#endif
 
 	if (old_child == trap) {
 		err = -EINVAL;
