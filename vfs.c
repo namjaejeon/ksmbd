@@ -147,6 +147,27 @@ static int ksmbd_vfs_path_lookup_locked(struct ksmbd_share_config *share_conf,
 	}
 #endif
 
+#if 0
+	if (d_is_symlink(d)) {
+		const char *symlink_path;
+		DEFINE_DELAYED_CALL(done);
+
+		pathname = vfs_get_link(d, &done);
+		if (!IS_ERR(symlink_path)) {
+			pr_err("symlink path : %s\n", symlink_path);
+
+			//memcpy(buf, link, *lenp);
+			do_delayed_call(&done);
+			dput(d);
+			inode_unlock(d_inode(parent_path->dentry));
+			mnt_drop_write(parent_path->mnt);
+			path_put(parent_path);
+			putname(filename);
+			goto lookup_symlink;
+		}
+	}
+#endif
+
 	path->dentry = d;
 	path->mnt = mntget(parent_path->mnt);
 

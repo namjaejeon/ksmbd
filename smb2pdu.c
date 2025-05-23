@@ -3236,6 +3236,22 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 			}
 		} else if (d_is_symlink(path.dentry)) {
+			const char *symlink_pathname;
+			DEFINE_DELAYED_CALL(done);
+
+			symlink_pathname = vfs_get_link(d, &done);
+			if (!IS_ERR(symlink_path)) {
+				pr_err("symlink path : %s\n", symlink_path);
+
+				kfree(name);
+				name = kstrdup(symlink_pathname, KSMBD_DEFAULT_GFP);
+				do_delayed_call(&done);
+				ksmbd_vfs_kern_path_unlock(&parent_path, &path);
+
+				rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+                                        &parent_path, &path, 1);
+			}
+
 			rc = -EACCES;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 			path_put(&path);
