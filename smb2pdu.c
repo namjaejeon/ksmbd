@@ -9030,8 +9030,8 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
 			symname = ksmbd_vfs_get_link(fp);
+			ksmbd_fd_put(work, fp);
 			if (IS_ERR(symname)) {
-				ksmbd_fd_put(work, fp);
 				ret = PTR_ERR(symname);
 				goto out;
 			}
@@ -9061,6 +9061,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 					file_mnt_user_ns(fp->filp),
 					fp->filp->f_path.dentry, &tag, &rp_data);
 #endif
+			ksmbd_fd_put(work, fp);
 			if (rp_data_size < 0) {
 				ret = rp_data_size;
 				goto out;
@@ -9127,17 +9128,43 @@ int smb2_ioctl(struct ksmbd_work *work)
 
 				buf->ReparseDataLength = rp_data_size;
 			} else {
-				ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
-						tag);
-				ret = -ENOENT;
+				struct reparse_data_buffer *reparse_ptr =
+					(struct reparse_data_buffer *)rsp->Buffer;
+
+				switch (tag) {
+				case IO_REPARSE_TAG_LX_SYMLINK_LE:
+				case IO_REPARSE_TAG_AF_UNIX_LE:
+				case IO_REPARSE_TAG_LX_FIFO_LE:
+					if (rp_data_size > 0) {
+						ret = -EINVAL;
+						goto out;
+					}
+					break;
+				case IO_REPARSE_TAG_LX_CHR_LE:
+				case IO_REPARSE_TAG_LX_BLK_LE:
+					if (rp_data_size != sizeof(__le64)) {
+						ret = -EINVAL;
+						goto out;
+					}
+					break;
+				default:
+					ksmbd_debug(SMB, "Unhandled tag type : 0x%x\n",
+							tag);
+					ret = -ENOENT;
+				}
+
+
+				if (rp_data_size > 0) {
+					memcpy(reparse_ptr->DataBuffer, rp_data,
+							rp_data_size);
+					reparse_ptr->ReparseDataLength = rp_data_size;
+				}
+
+				kfree(rp_data);
+				if (ret < 0)
+					goto out;
 			}
-
-			kfree(rp_data);
-			if (ret < 0)
-				goto out;
 		}
-
-		ksmbd_fd_put(work, fp);
 		break;
 	}
 	case FSCTL_SET_REPARSE_POINT:
@@ -9146,7 +9173,6 @@ int smb2_ioctl(struct ksmbd_work *work)
 			(struct reparse_data_buffer *)buffer;
 		struct ksmbd_file *fp;
 
-		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 		fp = ksmbd_lookup_fd_fast(work, id);
 		if (!fp) {
 			pr_err("not found fp!!\n");
@@ -9154,14 +9180,13 @@ int smb2_ioctl(struct ksmbd_work *work)
 			goto out;
 		}
 
-		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 		if (fp->f_ci->m_fattr & ATTR_REPARSE_POINT_LE) {
 			ret = -EINVAL;
 			ksmbd_fd_put(work, fp);
 			goto out;
 		}
 
-		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL, reparse_ptr->ReparseTag : %x\n", __func__, __LINE__, reparse_ptr->ReparseTag);
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT, reparse_ptr->ReparseTag : %x\n", __func__, __LINE__, reparse_ptr->ReparseTag);
 		if (reparse_ptr->ReparseTag ==
 		    cpu_to_le32(IO_REPARSE_TAG_SYMLINK)) {
 			struct reparse_symlink_data_buffer *sym =
@@ -9296,13 +9321,46 @@ int smb2_ioctl(struct ksmbd_work *work)
 					IO_REPARSE_TAG_NFS,
 					(char *)rp_nfs, rp_nfs_size);
 #endif
+			kfree(rp_nfs);
 			ksmbd_fd_put(work, fp);
 		} else {
-			ksmbd_fd_put(work, fp);
-			ret = -ENOENT;
-			goto out;
-		}
+			char *rp_wsl = NULL;
+			int rp_wsl_size = 0;
 
+			switch (reparse_ptr->ReparseTag) {
+			case IO_REPARSE_TAG_LX_SYMLINK_LE:
+			case IO_REPARSE_TAG_AF_UNIX_LE:
+			case IO_REPARSE_TAG_LX_FIFO_LE:
+				break;
+			case IO_REPARSE_TAG_LX_CHR_LE:
+			case IO_REPARSE_TAG_LX_BLK_LE:
+			{
+				rp_wsl = reparse_ptr->DataBuffer;
+				rp_wsl_size = sizeof(__le64);
+				break;
+			}
+
+			default:
+				ksmbd_fd_put(work, fp);
+				ret = -ENOENT;
+				goto out;
+			}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			ret = ksmbd_vfs_set_rp_xattr(conn,
+					file_mnt_idmap(fp->filp),
+					&fp->filp->f_path,
+					reparse_ptr->ReparseTag,
+					rp_wsl, rp_wsl_size);
+#else
+			ret = ksmbd_vfs_set_rp_xattr(conn,
+					file_mnt_user_ns(fp->filp),
+					&fp->filp->f_path,
+					reparse_ptr->ReparseTag,
+					rp_wsl, rp_wsl_size);
+#endif
+			ksmbd_fd_put(work, fp);
+		}
 		break;
 	}
 	case FSCTL_DUPLICATE_EXTENTS_TO_FILE:
