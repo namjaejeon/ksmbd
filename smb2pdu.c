@@ -779,7 +779,7 @@ static __le32 smb2_get_reparse_tag_special_file(struct ksmbd_kstat *ksmbd_stat)
 {
 	umode_t mode = ksmbd_stat->kstat->mode;
 
-	if (S_ISDIR(mode) || S_ISREG(mode))
+	if (ksmbd_stat->reparse_tag)
 		return cpu_to_le32(ksmbd_stat->reparse_tag);
 
 	if (S_ISLNK(mode))
@@ -9072,7 +9072,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				struct reparse_symlink_data_buffer *reparse_sym =
 					(struct reparse_symlink_data_buffer *)rsp->Buffer;
 
-		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT SYM\n", __func__, __LINE__);
 				symname_len = fsctl_fill_reparse_symlink(conn,
 						reparse_sym, rp_data);
 				if (symname_len < 0) {
@@ -9089,7 +9089,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 					(struct xattr_rp_nfs *)rp_data;
 				struct reparse_posix_data *buf =
 					(struct reparse_posix_data *)buffer;
-		pr_err("%s:%d FSCTL_GET_REPARSE_POINT\n", __func__, __LINE__);
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT NFS\n", __func__, __LINE__);
 
 				buf->ReparseTag = cpu_to_le64(tag);
 				buf->InodeType = rp_nfs->inode_type;
@@ -9135,6 +9135,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				case IO_REPARSE_TAG_LX_SYMLINK_LE:
 				case IO_REPARSE_TAG_AF_UNIX_LE:
 				case IO_REPARSE_TAG_LX_FIFO_LE:
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT WSL\n", __func__, __LINE__);
 					if (rp_data_size > 0) {
 						ret = -EINVAL;
 						goto out;
@@ -9142,6 +9143,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 					break;
 				case IO_REPARSE_TAG_LX_CHR_LE:
 				case IO_REPARSE_TAG_LX_BLK_LE:
+		pr_err("%s:%d FSCTL_GET_REPARSE_POINT WSL\n", __func__, __LINE__);
 					if (rp_data_size != sizeof(__le64)) {
 						ret = -EINVAL;
 						goto out;
@@ -9193,7 +9195,7 @@ int smb2_ioctl(struct ksmbd_work *work)
 				(struct reparse_symlink_data_buffer *)buffer;
 			char *symname;
 
-		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT SYM\n", __func__, __LINE__);
 			symname = smb_strndup_from_utf16(sym->PathBuffer +
 					le16_to_cpu(sym->SubstituteNameOffset),
 					le16_to_cpu(sym->SubstituteNameLength),
@@ -9331,12 +9333,14 @@ int smb2_ioctl(struct ksmbd_work *work)
 			case IO_REPARSE_TAG_LX_SYMLINK_LE:
 			case IO_REPARSE_TAG_AF_UNIX_LE:
 			case IO_REPARSE_TAG_LX_FIFO_LE:
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 				break;
 			case IO_REPARSE_TAG_LX_CHR_LE:
 			case IO_REPARSE_TAG_LX_BLK_LE:
 			{
 				rp_wsl = reparse_ptr->DataBuffer;
 				rp_wsl_size = sizeof(__le64);
+		pr_err("%s:%d FSCTL_SET_REPARSE_POINT WSL\n", __func__, __LINE__);
 				break;
 			}
 
