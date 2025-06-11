@@ -369,10 +369,13 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
-	int err;
+	int err, flags = 0;
 
-	dentry = ksmbd_vfs_kern_path_create(work, name,
-					    LOOKUP_NO_SYMLINKS, &path);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags = LOOKUP_NO_SYMLINKS;
+
+	dentry = ksmbd_vfs_kern_path_create(work, name, flags, &path);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		if (err != -ENOENT)
@@ -421,11 +424,13 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 #endif
 	struct path path;
 	struct dentry *dentry;
-	int err;
+	int err, flags = LOOKUP_DIRECTORY;
 
-	dentry = ksmbd_vfs_kern_path_create(work, name,
-					    LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
-					    &path);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
+	dentry = ksmbd_vfs_kern_path_create(work, name, flags, &path);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		if (err != -EEXIST)
@@ -1109,7 +1114,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 #else
 	struct path path;
 #endif
-	int rc, file_pathlen, dir_pathlen;
+	int rc, file_pathlen, dir_pathlen, flags = 0;
 	char *name;
 
 	dir_pathlen = strlen(dir_path);
@@ -1124,11 +1129,15 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
 	name[file_pathlen] = '\0';
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags = LOOKUP_NO_SYMLINKS;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
-					&parent_path, &path, true);
+	rc = ksmbd_vfs_kern_path_locked(work, name, flags, &parent_path,
+					&path, true);
 #else
-	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+	rc = ksmbd_vfs_kern_path(work, name, flags, &path, 1);
 #endif
 	if (rc) {
 		pr_err("lookup failed: %s [%d]\n", name, rc);
@@ -1232,12 +1241,16 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 #endif
 	struct path path;
 	struct dentry *parent;
-	int err;
+	int err, flags = 0;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, false);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags = LOOKUP_NO_SYMLINKS;
+
+	err = ksmbd_vfs_kern_path(work, name, flags, &path, false);
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
@@ -1317,21 +1330,23 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 {
 	struct path oldpath, newpath;
 	struct dentry *dentry;
-	int err;
+	int err, flags = LOOKUP_REVAL;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = kern_path(oldname, LOOKUP_NO_SYMLINKS, &oldpath);
+	err = kern_path(oldname, flags, &oldpath);
 	if (err) {
 		pr_err("cannot get linux path for %s, err = %d\n",
 		       oldname, err);
 		goto out1;
 	}
 
-	dentry = ksmbd_vfs_kern_path_create(work, newname,
-					    LOOKUP_NO_SYMLINKS | LOOKUP_REVAL,
-					    &newpath);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
+	dentry = ksmbd_vfs_kern_path_create(work, newname, flags, &newpath);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		pr_err("path create err for %s, err %d\n", newname, err);
@@ -1382,7 +1397,7 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	struct ksmbd_file *parent_fp;
 	int new_type;
-	int err, lookup_flags = LOOKUP_NO_SYMLINKS;
+	int err, lookup_flags = 0;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
@@ -1393,6 +1408,9 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 		goto revert_fsids;
 	}
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		lookup_flags |= LOOKUP_NO_SYMLINKS;
 retry:
 	err = vfs_path_parent_lookup(to, lookup_flags | LOOKUP_BENEATH,
 				     &new_path, &new_last, &new_type,
@@ -1633,7 +1651,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	struct dentry *src_dent_parent, *dst_dent_parent;
 	struct dentry *src_dent, *trap_dent, *src_child;
 	char *dst_name;
-	int err;
+	int err, lookup_flags = LOOKUP_DIRECTORY;
 
 	dst_name = extract_last_component(newname);
 	if (!dst_name) {
@@ -1644,9 +1662,11 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	src_dent_parent = dget_parent(fp->filp->f_path.dentry);
 	src_dent = fp->filp->f_path.dentry;
 
-	err = ksmbd_vfs_kern_path(work, newname,
-				  LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
-				  &dst_path, false);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		lookup_flags |= LOOKUP_NO_SYMLINKS;
+
+	err = ksmbd_vfs_kern_path(work, newname, lookup_flags, &dst_path, false);
 	if (err) {
 		ksmbd_debug(VFS, "Cannot get path for %s [%d]\n", newname, err);
 		goto out;
@@ -3107,11 +3127,12 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 {
 	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	u64 time;
-	int rc;
+	int rc, tag;
 	struct path path = {
 		.mnt = share_conf->vfs_path.mnt,
 		.dentry = dentry,
 	};
+	char *rp_data;
 
 	rc = vfs_getattr(&path, ksmbd_kstat->kstat,
 			 STATX_BASIC_STATS | STATX_BTIME,
@@ -3148,22 +3169,17 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		}
 	}
 
-	if (1) { //test_share_config_flag(work->tcon->share_conf, KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)) {
-		char *rp_data;
-		unsigned int tag;
-
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
-				&tag, &rp_data);
+	rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
+			&tag, &rp_data);
 #else
-		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
-				&tag, &rp_data);
+	rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
+			&tag, &rp_data);
 #endif
-		pr_err("%s:%d dentry->d_name : %s, rc : %d, tag : %x\n", __func__, __LINE__, dentry->d_name.name, rc, tag);
-		if (rc > 0) {
-			ksmbd_kstat->reparse_tag = tag;
-			kfree(rp_data);
-		}
+	pr_err("%s:%d dentry->d_name : %s, rc : %d, tag : %x\n", __func__, __LINE__, dentry->d_name.name, rc, tag);
+	if (rc > 0) {
+		ksmbd_kstat->reparse_tag = tag;
+		kfree(rp_data);
 	}
 
 	return 0;

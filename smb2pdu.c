@@ -3240,11 +3240,15 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out2;
 	}
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
+	rc = ksmbd_vfs_kern_path_locked(work, name, flags,
 					&parent_path, &path, 1);
 #else
-	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+	rc = ksmbd_vfs_kern_path(work, name, flags, &path, 1);
 #endif
 	if (!rc) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
@@ -3274,6 +3278,16 @@ int smb2_open(struct ksmbd_work *work)
 #endif
 				goto err_out;
 			}
+		}
+
+		if (!test_share_config_flag(work->tcon->share_conf,
+					    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK) &&
+		    d_is_symlink(path.dentry)) {
+			rc = -EACCES;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
+			path_put(&path);
+#endif
+			goto err_out;
 		}
 
 		file_present = true;
@@ -5757,12 +5771,16 @@ static int smb2_get_info_filesystem(struct ksmbd_work *work,
 	int fsinfoclass = 0;
 	struct kstatfs stfs;
 	struct path path;
-	int rc = 0, len;
+	int rc = 0, len, flags = 0;
 
 	if (!share->path)
 		return -EIO;
 
-	rc = kern_path(share->path, LOOKUP_NO_SYMLINKS, &path);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
+	rc = kern_path(share->path, flags, &path);
 	if (rc) {
 		pr_err("cannot create vfs path\n");
 		return -EIO;
@@ -6392,7 +6410,7 @@ static int smb2_rename(struct ksmbd_work *work,
 	char *pathname = NULL;
 	struct path path;
 	bool file_present = true;
-	int rc;
+	int rc, flags = 0;
 
 	ksmbd_debug(SMB, "setting FILE_RENAME_INFO\n");
 	pathname = kmalloc(PATH_MAX, GFP_KERNEL);
@@ -6464,8 +6482,12 @@ static int smb2_rename(struct ksmbd_work *work,
 		goto out;
 	}
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
 	ksmbd_debug(SMB, "new name %s\n", new_name);
-	rc = ksmbd_vfs_kern_path(work, new_name, LOOKUP_NO_SYMLINKS, &path, 1);
+	rc = ksmbd_vfs_kern_path(work, new_name, flags, &path, 1);
 	if (rc) {
 		if (rc != -ENOENT)
 			goto out;
@@ -6523,7 +6545,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 	struct path parent_path;
 #endif
 	bool file_present = false;
-	int rc;
+	int rc, flags = 0;
 
 	if (buf_len < (u64)sizeof(struct smb2_file_link_info) +
 			le32_to_cpu(file_info->FileNameLength))
@@ -6549,12 +6571,16 @@ static int smb2_create_link(struct ksmbd_work *work,
 		goto out;
 	}
 
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+		flags |= LOOKUP_NO_SYMLINKS;
+
 	ksmbd_debug(SMB, "target name is %s\n", target_name);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	rc = ksmbd_vfs_kern_path_locked(work, link_name, LOOKUP_NO_SYMLINKS,
-					&parent_path, &path, 0);
+	rc = ksmbd_vfs_kern_path_locked(work, link_name, flags, &parent_path,
+					&path, 0);
 #else
-	rc = ksmbd_vfs_kern_path(work, link_name, LOOKUP_NO_SYMLINKS, &path, 0);
+	rc = ksmbd_vfs_kern_path(work, link_name, flags, &path, 0);
 #endif
 	if (rc) {
 		if (rc != -ENOENT)
