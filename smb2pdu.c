@@ -3013,8 +3013,6 @@ int smb2_open(struct ksmbd_work *work)
 	umode_t posix_mode = 0;
 	__le32 daccess, maximal_access = 0;
 	int iov_len = 0;
-	char *symname;
-	unsigned int tag;
 
 	WORK_BUFFERS(work, req, rsp);
 
@@ -3042,7 +3040,6 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		ksmbd_debug(SMB, "converted name = %s\n", name);
-		pr_err("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ converted name = %s\n", name);
 		if (strchr(name, ':')) {
 			if (!test_share_config_flag(work->tcon->share_conf,
 						    KSMBD_SHARE_FLAG_STREAMS)) {
@@ -3071,9 +3068,6 @@ int smb2_open(struct ksmbd_work *work)
 			goto err_out2;
 		}
 	}
-
-	pr_err("%s:%d, open reparse : %d\n",
-			__func__, __LINE__, req->CreateOptions & FILE_OPEN_REPARSE_POINT_LE);
 
 	req_op_level = req->RequestedOplockLevel;
 
@@ -3280,12 +3274,6 @@ int smb2_open(struct ksmbd_work *work)
 #endif
 				goto err_out;
 			}
-		} else if (d_is_symlink(path.dentry)) {
-			rc = -EACCES;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
-			path_put(&path);
-#endif
-			goto err_out;
 		}
 
 		file_present = true;
@@ -3766,20 +3754,14 @@ int smb2_open(struct ksmbd_work *work)
 		fp->create_time = ksmbd_UnixTimeToNT(stat.btime);
 	else
 		fp->create_time = ksmbd_UnixTimeToNT(stat.ctime);
-	if (req->FileAttributes || fp->f_ci->m_fattr == 0) {
-	pr_err("%s:%d\n", __func__, __LINE__);
+	if (req->FileAttributes || fp->f_ci->m_fattr == 0)
 		fp->f_ci->m_fattr =
 			cpu_to_le32(smb2_get_dos_mode(fp, le32_to_cpu(req->FileAttributes)));
-	}
 
-	if (fp->f_ci->m_fattr & ATTR_REPARSE_POINT_LE)
-		pr_err("## set REPARSE POINT!!!!!!!!!!\n");
 	if (!created)
 		smb2_update_xattrs(tcon, &path, fp);
 	else
 		smb2_new_xattrs(tcon, &path, fp);
-	if (fp->f_ci->m_fattr & ATTR_REPARSE_POINT_LE)
-		pr_err("$$ set REPARSE POINT!!!!!!!!!!\n");
 
 	memcpy(fp->client_guid, conn->ClientGUID, SMB2_CLIENT_GUID_SIZE);
 
@@ -3804,24 +3786,39 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 	if (file_present && !(req->CreateOptions & FILE_OPEN_REPARSE_POINT_LE)) {
+		char *symname = NULL;
+
+		if (d_is_symlink(path.dentry)) {
+			symname = ksmbd_vfs_get_link(fp);
+                        if (IS_ERR(symname))
+				symname = NULL;
+		} else {
+			unsigned int tag;
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
-		rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, fp->filp->f_path.dentry,
-				&tag, &symname);
+			rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap,
+					fp->filp->f_path.dentry,
+					&tag, &symname);
 #else
-		rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, fp->filp->f_path.dentry,
-				&tag, &symname);
+			rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns,
+					fp->filp->f_path.dentry,
+					&tag, &symname);
 #endif
-		if (rc > 0 && tag == IO_REPARSE_TAG_SYMLINK) {
-			pr_err("%s:%d, tag : IO_REPARSE_TAG_SYMLINK, symname : %s\n", __func__, __LINE__, symname);
+			if (rc <= 0 || tag != IO_REPARSE_TAG_SYMLINK)
+				kfree(symname);
+			symname = NULL;
+		}
+
+		if (symname) {
 			smb2_set_symlink_err_rsp(work, symname);
 			kfree(symname);
 			rsp->hdr.Status = STATUS_STOPPED_ON_SYMLINK;
-			rc = 0;
 			smb2_set_err_rsp(work);
 
 			work->compound_fid = fp->volatile_id;
 			work->compound_pfid = fp->persistent_id;
 			work->compound_sid = le64_to_cpu(work->sess->id);
+			rc = 0;
 			goto err_out1;
 		}
 		rc = 0;
@@ -3976,7 +3973,6 @@ err_out:
 err_out1:
 	ksmbd_revert_fsids(work);
 err_out2:
-	pr_err("%s:%d, rc : %d\n", __func__, __LINE__, rc);
 	if (!rc) {
 		ksmbd_update_fstate(&work->sess->file_table, fp, FP_INITED);
 		rc = ksmbd_iov_pin_rsp(work, (void *)rsp, iov_len);
@@ -4004,11 +4000,6 @@ err_out2:
 			rsp->hdr.Status = STATUS_OBJECT_NAME_COLLISION;
 		else if (rc == -EMFILE)
 			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
-		else if (rc == -ELOOP) {
-			smb2_set_symlink_err_rsp(work, symname);
-			kfree(symname);
-			rsp->hdr.Status = STATUS_STOPPED_ON_SYMLINK;
-		}
 		if (!rsp->hdr.Status)
 			rsp->hdr.Status = STATUS_UNEXPECTED_IO_ERROR;
 
