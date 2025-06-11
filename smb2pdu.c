@@ -3012,7 +3012,7 @@ int smb2_open(struct ksmbd_work *work)
 	u64 time;
 	umode_t posix_mode = 0;
 	__le32 daccess, maximal_access = 0;
-	int iov_len = 0;
+	int iov_len = 0, flags = 0;
 
 	WORK_BUFFERS(work, req, rsp);
 
@@ -3241,7 +3241,7 @@ int smb2_open(struct ksmbd_work *work)
 	}
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
@@ -3281,7 +3281,7 @@ int smb2_open(struct ksmbd_work *work)
 		}
 
 		if (!test_share_config_flag(work->tcon->share_conf,
-					    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK) &&
+					    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS) &&
 		    d_is_symlink(path.dentry)) {
 			rc = -EACCES;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
@@ -5777,7 +5777,7 @@ static int smb2_get_info_filesystem(struct ksmbd_work *work,
 		return -EIO;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 	rc = kern_path(share->path, flags, &path);
@@ -6483,7 +6483,7 @@ static int smb2_rename(struct ksmbd_work *work,
 	}
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 	ksmbd_debug(SMB, "new name %s\n", new_name);
@@ -6572,7 +6572,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 	}
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 	ksmbd_debug(SMB, "target name is %s\n", target_name);

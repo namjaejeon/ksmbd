@@ -372,7 +372,7 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 	int err, flags = 0;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = LOOKUP_NO_SYMLINKS;
 
 	dentry = ksmbd_vfs_kern_path_create(work, name, flags, &path);
@@ -427,7 +427,7 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	int err, flags = LOOKUP_DIRECTORY;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 	dentry = ksmbd_vfs_kern_path_create(work, name, flags, &path);
@@ -1130,7 +1130,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	name[file_pathlen] = '\0';
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = LOOKUP_NO_SYMLINKS;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
@@ -1247,7 +1247,7 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 		return -ENOMEM;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags = LOOKUP_NO_SYMLINKS;
 
 	err = ksmbd_vfs_kern_path(work, name, flags, &path, false);
@@ -1343,7 +1343,7 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 	}
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		flags |= LOOKUP_NO_SYMLINKS;
 
 	dentry = ksmbd_vfs_kern_path_create(work, newname, flags, &newpath);
@@ -1409,7 +1409,7 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	}
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		lookup_flags |= LOOKUP_NO_SYMLINKS;
 retry:
 	err = vfs_path_parent_lookup(to, lookup_flags | LOOKUP_BENEATH,
@@ -1663,7 +1663,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	src_dent = fp->filp->f_path.dentry;
 
 	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINK)
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
 		lookup_flags |= LOOKUP_NO_SYMLINKS;
 
 	err = ksmbd_vfs_kern_path(work, newname, lookup_flags, &dst_path, false);
