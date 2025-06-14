@@ -173,9 +173,6 @@ static int smb2_set_symlink_err_rsp(struct ksmbd_work *work, char *symname)
 	sym_err_rsp->ReparseTag = cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
 	sym_err_rsp->ReparseDataLength = cpu_to_le16(12 + symname_len * 2);
 	sym_err_rsp->UnparsedPathLength = 0;
-	err_rsp->ByteCount =
-		cpu_to_le32(sizeof(struct smb2_symlink_err_rsp) +
-				symname_len * 2);
 	sym_err_rsp->SymLinkLength =
 		cpu_to_le32((sizeof(struct smb2_symlink_err_rsp) - sizeof(__le32)) +
 				symname_len * 2);
@@ -207,6 +204,8 @@ void smb2_set_err_rsp(struct ksmbd_work *work)
 
 		ksmbd_iov_pin_rsp(work, (void *)err_rsp, SMB2_SYMLINK_STRUCT_SIZE +
 				  le32_to_cpu(sym_err_rsp->SubstituteNameLength) * 2);
+		err_rsp->ByteCount = cpu_to_le32(SMB2_SYMLINK_STRUCT_SIZE +
+                                  le32_to_cpu(sym_err_rsp->SubstituteNameLength) * 2);
 	} else {
 		int err;
 
@@ -3279,7 +3278,7 @@ int smb2_open(struct ksmbd_work *work)
 				goto err_out;
 			}
 		}
-
+#if 0
 		if (!test_share_config_flag(work->tcon->share_conf,
 					    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS) &&
 		    d_is_symlink(path.dentry)) {
@@ -3289,6 +3288,7 @@ int smb2_open(struct ksmbd_work *work)
 #endif
 			goto err_out;
 		}
+#endif
 
 		file_present = true;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
@@ -3832,6 +3832,7 @@ int smb2_open(struct ksmbd_work *work)
 			work->compound_fid = fp->volatile_id;
 			work->compound_pfid = fp->persistent_id;
 			work->compound_sid = le64_to_cpu(work->sess->id);
+			ksmbd_fd_put(work, fp);
 			rc = 0;
 			goto err_out1;
 		}
