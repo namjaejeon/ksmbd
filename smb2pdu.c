@@ -4319,6 +4319,12 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 			return -EINVAL;
 
 		lock_dir(priv->dir_fp);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
+		dent = lookup_one(idmap,
+				  &QSTR_LEN(priv->d_info->name,
+					    priv->d_info->name_len),
+				  priv->dir_fp->filp->f_path.dentry);
+#else
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		dent = lookup_one(idmap, priv->d_info->name,
@@ -4331,6 +4337,7 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 		dent = lookup_one_len(priv->d_info->name,
 				  priv->dir_fp->filp->f_path.dentry,
 				  priv->d_info->name_len);
+#endif
 #endif
 		unlock_dir(priv->dir_fp);
 
