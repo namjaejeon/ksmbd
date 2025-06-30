@@ -24,3 +24,5 @@ int ndr_encode_posix_acl(struct ndr *n, struct user_namespace *user_ns,
 int ndr_encode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl);
 int ndr_encode_v3_ntacl(struct ndr *n, struct xattr_ntacl *acl);
 int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl);
+int ndr_encode_rp(struct ndr *n, struct xattr_rp *rp);
+int ndr_decode_rp(struct ndr *n, struct xattr_rp *rp);
