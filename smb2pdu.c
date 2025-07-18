@@ -4286,6 +4286,7 @@ struct smb2_query_dir_private {
 	int			info_level;
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
 static void lock_dir(struct ksmbd_file *dir_fp)
 {
 	struct dentry *dir = dir_fp->filp->f_path.dentry;
@@ -4299,6 +4300,7 @@ static void unlock_dir(struct ksmbd_file *dir_fp)
 
 	inode_unlock(d_inode(dir));
 }
+#endif
 
 static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 {
@@ -4318,13 +4320,13 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 		if (dentry_name(priv->d_info, priv->info_level))
 			return -EINVAL;
 
-		lock_dir(priv->dir_fp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
-		dent = lookup_one(idmap,
-				  &QSTR_LEN(priv->d_info->name,
-					    priv->d_info->name_len),
-				  priv->dir_fp->filp->f_path.dentry);
+		dent = lookup_one_unlocked(idmap,
+					   &QSTR_LEN(priv->d_info->name,
+					   priv->d_info->name_len),
+					   priv->dir_fp->filp->f_path.dentry);
 #else
+		lock_dir(priv->dir_fp);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 		dent = lookup_one(idmap, priv->d_info->name,
@@ -4338,8 +4340,8 @@ static int process_query_dir_entries(struct smb2_query_dir_private *priv)
 				  priv->dir_fp->filp->f_path.dentry,
 				  priv->d_info->name_len);
 #endif
-#endif
 		unlock_dir(priv->dir_fp);
+#endif
 
 		if (IS_ERR(dent)) {
 			ksmbd_debug(SMB, "Cannot lookup `%s' [%ld]\n",
