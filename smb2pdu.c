@@ -6491,7 +6491,6 @@ static int smb2_create_link(struct ksmbd_work *work,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	struct path parent_path;
 #endif
-	bool file_present = false;
 	int rc;
 
 	if (buf_len < (u64)sizeof(struct smb2_file_link_info) +
@@ -6529,14 +6528,10 @@ static int smb2_create_link(struct ksmbd_work *work,
 		if (rc != -ENOENT)
 			goto out;
 	} else {
-		file_present = true;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0)
 		path_put(&path);
 #endif
-	}
-
-	if (file_info->ReplaceIfExists) {
-		if (file_present) {
+		if (file_info->ReplaceIfExists) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 			rc = ksmbd_vfs_remove_file(work, &path);
 #else
@@ -6548,23 +6543,20 @@ static int smb2_create_link(struct ksmbd_work *work,
 					    link_name);
 				goto out;
 			}
-		}
-	} else {
-		if (file_present) {
+		} else {
 			rc = -EEXIST;
 			ksmbd_debug(SMB, "link already exists\n");
 			goto out;
 		}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
+#endif
 	}
-
 	rc = ksmbd_vfs_link(work, target_name, link_name);
 	if (rc)
 		rc = -EINVAL;
 out:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	if (file_present)
-		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
-#endif
+
 	if (!IS_ERR(link_name))
 		kfree(link_name);
 	kfree(pathname);
