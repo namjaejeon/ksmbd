@@ -544,3 +544,76 @@ int ndr_decode_v4_ntacl(struct ndr *n, struct xattr_ntacl *acl)
 	ret = ndr_read_bytes(n, acl->sd_buf, acl->sd_size);
 	return ret;
 }
+
+int ndr_encode_rp(struct ndr *n, struct xattr_rp *xrp)
+{
+	int ret;
+
+	n->offset = 0;
+	n->length = 2048;
+	n->data = kzalloc(n->length, GFP_KERNEL);
+	if (!n->data)
+		return -ENOMEM;
+
+	ret = ndr_write_int16(n, xrp->version);
+	if (ret)
+		return ret;
+
+	ret = ndr_write_int32(n, xrp->tag);
+	if (ret)
+		return ret;
+
+	/* push hash type and hash 64bytes */
+	ret = ndr_write_int16(n, xrp->hash_type);
+	if (ret)
+		return ret;
+
+	ret = ndr_write_bytes(n, xrp->hash, XATTR_RP_HASH_SIZE);
+	if (ret)
+		return ret;
+
+	if (!xrp->rp_size)
+		return 0;
+
+	/* push ndr for reparse point buffer */
+	ret = ndr_write_bytes(n, xrp->rp_buf, xrp->rp_size);
+	return ret;
+}
+
+int ndr_decode_rp(struct ndr *n, struct xattr_rp *xrp)
+{
+	int ret;
+
+	n->offset = 0;
+	ret = ndr_read_int16(n, &xrp->version);
+	if (ret)
+		return ret;
+	if (xrp->version != 1) {
+		ksmbd_debug(VFS, "v%d version is not supported\n",
+				xrp->version);
+		return -EINVAL;
+	}
+
+	ret = ndr_read_int32(n, &xrp->tag);
+	if (ret)
+		return ret;
+
+	ret = ndr_read_int16(n, &xrp->hash_type);
+	if (ret)
+		return ret;
+
+	ret = ndr_read_bytes(n, xrp->hash, XATTR_SD_HASH_SIZE);
+	if (ret)
+		return ret;
+
+	xrp->rp_size = n->length - n->offset;
+	if (!xrp->rp_size)
+		return 0;
+
+	xrp->rp_buf = kzalloc(xrp->rp_size, GFP_KERNEL);
+	if (!xrp->rp_buf)
+		return -ENOMEM;
+
+	ret = ndr_read_bytes(n, xrp->rp_buf, xrp->rp_size);
+	return ret;
+}
