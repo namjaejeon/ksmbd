@@ -1767,9 +1767,6 @@ static inline void *smb2_get_msg(void *buf)
 
 #define POSIX_FILETYPE_SHIFT	12
 
-#define SMB2_SYMLINK_STRUCT_SIZE \
-	(sizeof(struct smb2_err_rsp) + sizeof(struct smb2_symlink_err_rsp))
-
 #define SYMLINK_ERROR_TAG 0x4c4d5953
 
 struct smb2_symlink_err_rsp {
@@ -1785,4 +1782,15 @@ struct smb2_symlink_err_rsp {
 	__le32 Flags;
 	__u8  PathBuffer[];
 } __packed;
+
+/* SMB 3.1.1 and later dialects. See MS-SMB2 section 2.2.2.1 */
+struct smb2_error_context_rsp {
+	__le32 ErrorDataLength;
+	__le32 ErrorId;
+	__u8  ErrorContextData[] __counted_by_le(ErrorDataLength);
+} __packed;
+
+/* ErrorId values */
+#define SMB2_ERROR_ID_DEFAULT		0x00000000
+#define SMB2_ERROR_ID_SHARE_REDIRECT	cpu_to_le32(0x72645253) /* "rdRS" */
 #endif	/* _SMB2PDU_H */

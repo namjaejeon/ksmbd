@@ -143,6 +143,7 @@ int smb2_get_ksmbd_tcon(struct ksmbd_work *work)
 static int smb2_set_symlink_err_rsp(struct ksmbd_work *work, char *symname)
 {
 	struct smb2_err_rsp *err_rsp;
+	struct smb2_error_context_rsp *err_cxt_rsp;
 	struct smb2_symlink_err_rsp *sym_err_rsp;
 	u8 *usymname;
 	u16 symname_len;
@@ -152,18 +153,22 @@ static int smb2_set_symlink_err_rsp(struct ksmbd_work *work, char *symname)
 	if (!usymname)
 		return -ENOMEM;
 
-	ksmbd_conv_path_to_windows(symname);
-
-	symname_len = smbConvertToUTF16((__le16 *)usymname, symname,
-			strlen(symname), work->conn->local_nls, 0);
-	symname_len *= sizeof(__le16);
-
 	if (work->next_smb2_rcv_hdr_off)
 		err_rsp = ksmbd_resp_buf_next(work);
 	else
 		err_rsp = smb2_get_msg(work->response_buf);
 
-	sym_err_rsp = (struct smb2_symlink_err_rsp *)err_rsp->ErrorData;
+	err_cxt_rsp = (struct smb2_error_context_rsp *)err_rsp->ErrorData;
+	err_cxt_rsp->ErrorId = SMB2_ERROR_ID_DEFAULT;
+	sym_err_rsp = (struct smb2_symlink_err_rsp *)err_cxt_rsp->ErrorContextData;
+
+	if (*symname != '/')
+		sym_err_rsp->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
+
+	ksmbd_conv_path_to_windows(symname);
+	symname_len = smbConvertToUTF16((__le16 *)usymname, symname,
+			strlen(symname), work->conn->local_nls, 0);
+	symname_len *= sizeof(__le16);
 
 	sym_err_rsp->PrintNameOffset = 0;
 	sym_err_rsp->PrintNameLength = cpu_to_le16(symname_len);
@@ -171,9 +176,6 @@ static int smb2_set_symlink_err_rsp(struct ksmbd_work *work, char *symname)
 	sym_err_rsp->SubstituteNameOffset = cpu_to_le16(symname_len);
 	sym_err_rsp->SubstituteNameLength = cpu_to_le16(symname_len);
 	memcpy(&sym_err_rsp->PathBuffer[symname_len], usymname, symname_len);
-	if (*symname != '\\')
-		sym_err_rsp->Flags = cpu_to_le32(SYMLINK_FLAG_RELATIVE);
-
 	sym_err_rsp->SymLinkErrorTag = cpu_to_le32(SYMLINK_ERROR_TAG);
 	sym_err_rsp->ReparseTag = cpu_to_le32(IO_REPARSE_TAG_SYMLINK);
 	sym_err_rsp->ReparseDataLength = cpu_to_le16(12 + symname_len * 2);
@@ -181,7 +183,10 @@ static int smb2_set_symlink_err_rsp(struct ksmbd_work *work, char *symname)
 	sym_err_rsp->SymLinkLength =
 		cpu_to_le32((sizeof(struct smb2_symlink_err_rsp) - sizeof(__le32)) +
 				symname_len * 2);
+	err_cxt_rsp->ErrorDataLength =
+		cpu_to_le32(sizeof(struct smb2_symlink_err_rsp) + symname_len * 2);
 	kfree(usymname);
+	pr_err("%s:%d\n", __func__, __LINE__);
 
 	return 0;
 }
@@ -200,20 +205,24 @@ void smb2_set_err_rsp(struct ksmbd_work *work)
 		err_rsp = smb2_get_msg(work->response_buf);
 
 	err_rsp->StructureSize = SMB2_ERROR_STRUCTURE_SIZE2_LE;
-	err_rsp->ErrorContextCount = 0;
 	err_rsp->Reserved = 0;
 
 	if (err_rsp->hdr.Status == STATUS_STOPPED_ON_SYMLINK) {
-		struct smb2_symlink_err_rsp *sym_err_rsp =
-			(struct smb2_symlink_err_rsp *)err_rsp->ErrorData;
+		struct smb2_error_context_rsp *err_cxt_rsp =
+			(struct smb2_error_context_rsp *)err_rsp->ErrorData;
+		unsigned int err_rsp_size =
+			offsetof(struct smb2_error_context_rsp, ErrorContextData) +
+			le32_to_cpu(err_cxt_rsp->ErrorDataLength);
 
-		ksmbd_iov_pin_rsp(work, (void *)err_rsp, SMB2_SYMLINK_STRUCT_SIZE +
-				  le32_to_cpu(sym_err_rsp->SubstituteNameLength) * 2);
-		err_rsp->ByteCount = cpu_to_le32(SMB2_SYMLINK_STRUCT_SIZE +
-                                  le32_to_cpu(sym_err_rsp->SubstituteNameLength) * 2);
+		err_rsp->ErrorContextCount = 1;
+		pr_err("err_rsp_size : %u: %lu, %u\n", err_rsp_size, offsetof(struct smb2_error_context_rsp, ErrorContextData), le32_to_cpu(err_cxt_rsp->ErrorDataLength));
+		ksmbd_iov_pin_rsp(work, (void *)err_rsp,
+				sizeof(struct smb2_err_rsp) + err_rsp_size);
+		err_rsp->ByteCount = cpu_to_le32(err_rsp_size);
 	} else {
 		int err;
 
+		err_rsp->ErrorContextCount = 0;
 		err_rsp->ByteCount = 0;
 		err_rsp->ErrorData[0] = 0;
 		err = ksmbd_iov_pin_rsp(work, (void *)err_rsp,
