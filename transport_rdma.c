@@ -398,7 +398,7 @@ static struct smb_direct_transport *alloc_transport(struct rdma_cm_id *cm_id)
 	INIT_WORK(&t->send_immediate_work, smb_direct_send_immediate_work);
 	INIT_WORK(&t->disconnect_work, smb_direct_disconnect_rdma_work);
 
-	conn = ksmbd_conn_alloc();
+	conn = ksmbd_conn_alloc(0);
 	if (!conn)
 		goto err;
 	conn->transport = KSMBD_TRANS(t);

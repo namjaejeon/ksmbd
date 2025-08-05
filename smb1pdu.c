@@ -1658,6 +1658,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	int locked, timeout;
 	const unsigned long long loff_max = ~0;
 	struct ksmbd_conn *conn;
+	unsigned long idx;
 
 	timeout = le32_to_cpu(req->Timeout);
 	ksmbd_debug(SMB, "got oplock brk for fid %d lock type = 0x%x, timeout: %d\n",
@@ -1782,7 +1783,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 		list_del(&smb_lock->llist);
 		/* check locks in connections */
 		down_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		xa_each_each(&conn_list, idx, conn) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=
@@ -1948,7 +1949,7 @@ skip:
 
 		locked = 0;
 		up_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		xa_each_each(&conn_list, idx, conn) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry(cmp_lock, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=

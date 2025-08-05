@@ -22,7 +22,7 @@ static DEFINE_MUTEX(init_lock);
 
 static struct ksmbd_conn_ops default_conn_ops;
 
-LIST_HEAD(conn_list);
+DEFINE_XARRAY(conn_list);
 DECLARE_RWSEM(conn_list_lock);
 
 /**
@@ -36,7 +36,7 @@ DECLARE_RWSEM(conn_list_lock);
 void ksmbd_conn_free(struct ksmbd_conn *conn)
 {
 	down_write(&conn_list_lock);
-	list_del(&conn->conns_list);
+	xa_erase(&conn_list, conn->inet_addr);
 	up_write(&conn_list_lock);
 
 	xa_destroy(&conn->sessions);
@@ -53,9 +53,10 @@ void ksmbd_conn_free(struct ksmbd_conn *conn)
  *
  * Return:	ksmbd_conn struct on success, otherwise NULL
  */
-struct ksmbd_conn *ksmbd_conn_alloc(void)
+struct ksmbd_conn *ksmbd_conn_alloc(__be32 inet_addr)
 {
 	struct ksmbd_conn *conn;
+	int err;
 
 	conn = kzalloc(sizeof(struct ksmbd_conn), KSMBD_DEFAULT_GFP);
 	if (!conn)
@@ -81,6 +82,7 @@ struct ksmbd_conn *ksmbd_conn_alloc(void)
 	atomic_set(&conn->refcnt, 1);
 	conn->total_credits = 1;
 	conn->outstanding_credits = 0;
+	conn->inet_addr = inet_addr;
 
 	init_waitqueue_head(&conn->req_running_q);
 	init_waitqueue_head(&conn->r_count_q);
@@ -98,7 +100,14 @@ struct ksmbd_conn *ksmbd_conn_alloc(void)
 	init_rwsem(&conn->session_lock);
 
 	down_write(&conn_list_lock);
-	list_add(&conn->conns_list, &conn_list);
+	err = xa_err(xa_store(&conn_list, inet_addr, conn, KSMBD_DEFAULT_GFP));
+	if (err < 0) {
+		if (IS_ENABLED(CONFIG_UNICODE))
+			utf8_unload(conn->um);
+		unload_nls(conn->local_nls);
+		kfree(conn);
+		conn = NULL;
+	}
 	up_write(&conn_list_lock);
 	return conn;
 }
@@ -107,9 +116,10 @@ bool ksmbd_conn_lookup_dialect(struct ksmbd_conn *c)
 {
 	struct ksmbd_conn *t;
 	bool ret = false;
+	unsigned long idx;
 
 	down_read(&conn_list_lock);
-	list_for_each_entry(t, &conn_list, conns_list) {
+	xa_for_each(&conn_list, idx, t) {
 		if (memcmp(t->ClientGUID, c->ClientGUID, SMB2_CLIENT_GUID_SIZE))
 			continue;
 
@@ -181,9 +191,10 @@ void ksmbd_conn_unlock(struct ksmbd_conn *conn)
 void ksmbd_all_conn_set_status(u64 sess_id, u32 status)
 {
 	struct ksmbd_conn *conn;
+	unsigned long idx;
 
 	down_read(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, conns_list) {
+	xa_for_each(&conn_list, idx, conn) {
 		if (conn->binding || xa_load(&conn->sessions, sess_id))
 			WRITE_ONCE(conn->status, status);
 	}
@@ -198,6 +209,7 @@ void ksmbd_conn_wait_idle(struct ksmbd_conn *conn)
 int ksmbd_conn_wait_idle_sess_id(struct ksmbd_conn *curr_conn, u64 sess_id)
 {
 	struct ksmbd_conn *conn;
+	unsigned long idx;
 	int rc, retry_count = 0, max_timeout = 120;
 	int rcount = 1;
 
@@ -206,7 +218,7 @@ retry_idle:
 		return -EIO;
 
 	down_read(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, conns_list) {
+	xa_for_each(&conn_list, idx, conn) {
 		if (conn->binding || xa_load(&conn->sessions, sess_id)) {
 			if (conn == curr_conn)
 				rcount = 2;
@@ -532,10 +544,11 @@ static void stop_sessions(void)
 {
 	struct ksmbd_conn *conn;
 	struct ksmbd_transport *t;
+	unsigned long idx;
 
 again:
 	down_read(&conn_list_lock);
-	list_for_each_entry(conn, &conn_list, conns_list) {
+	xa_for_each(&conn_list, idx, conn) {
 		t = conn->transport;
 		ksmbd_conn_set_exiting(conn);
 		if (t->ops->shutdown) {
@@ -546,7 +559,7 @@ again:
 	}
 	up_read(&conn_list_lock);
 
-	if (!list_empty(&conn_list)) {
+	if (!xa_empty(&conn_list)) {
 		msleep(100);
 		goto again;
 	}
