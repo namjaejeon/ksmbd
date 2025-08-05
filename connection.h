@@ -109,6 +109,7 @@ struct ksmbd_conn {
 	bool				binding;
 	atomic_t			refcnt;
 	bool				is_aapl;
+	__be32				inet_addr;
 };
 
 struct ksmbd_conn_ops {
