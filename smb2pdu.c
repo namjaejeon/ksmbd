@@ -2626,7 +2626,7 @@ static void smb2_update_xattrs(struct ksmbd_tree_connect *tcon,
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-static int smb2_creat(struct ksmbd_work *work, struct path *parent_path,
+static int smb2_creat(struct ksmbd_work *work,
 		      struct path *path, char *name, int open_flags,
 		      umode_t posix_mode, bool is_dir)
 #else
@@ -2659,11 +2659,7 @@ static int smb2_creat(struct ksmbd_work *work, struct path *path, char *name,
 			return rc;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	rc = ksmbd_vfs_kern_path_locked(work, name, 0, parent_path, path, 0);
-#else
 	rc = ksmbd_vfs_kern_path(work, name, 0, path, 0);
-#endif
 	if (rc) {
 		pr_err("cannot get linux path (%s), err = %d\n",
 		       name, rc);
@@ -2941,9 +2937,6 @@ int smb2_open(struct ksmbd_work *work)
 	struct smb2_create_req *req;
 	struct smb2_create_rsp *rsp;
 	struct path path;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	struct path parent_path;
-#endif
 	struct ksmbd_share_config *share = tcon->share_conf;
 	struct ksmbd_file *fp = NULL;
 	struct file *filp = NULL;
@@ -3203,12 +3196,8 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out2;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	rc = ksmbd_vfs_kern_path_locked(work, name, LOOKUP_NO_SYMLINKS,
-					&parent_path, &path, 1);
-#else
-	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
-#endif
+	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS,
+				 &path, 1);
 	if (!rc) {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 		file_present = true;
@@ -3357,11 +3346,7 @@ int smb2_open(struct ksmbd_work *work)
 
 	/*create file if not present */
 	if (!file_present) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-		rc = smb2_creat(work, &parent_path, &path, name, open_flags,
-#else
 		rc = smb2_creat(work, &path, name, open_flags,
-#endif
 				posix_mode,
 				req->CreateOptions & FILE_DIRECTORY_FILE_LE);
 		if (rc) {
@@ -3609,13 +3594,8 @@ int smb2_open(struct ksmbd_work *work)
 		goto err_out;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	if (file_present || created)
-		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
-#else
 	if (file_present || created)
 		path_put(&path);
-#endif
 
 	if (!S_ISDIR(file_inode(filp)->i_mode) && open_flags & O_TRUNC &&
 	    !fp->attrib_only && !stream_name) {
@@ -3899,13 +3879,8 @@ reconnected_fp:
 	}
 
 err_out:
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	if (rc && (file_present || created))
-		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
-#else
 	if (rc && (file_present || created))
 		path_put(&path);
-#endif
 err_out1:
 	ksmbd_revert_fsids(work);
 err_out2:
@@ -6488,9 +6463,6 @@ static int smb2_create_link(struct ksmbd_work *work,
 {
 	char *link_name = NULL, *target_name = NULL, *pathname = NULL;
 	struct path path;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-	struct path parent_path;
-#endif
 	int rc;
 
 	if (buf_len < (u64)sizeof(struct smb2_file_link_info) +
@@ -6520,7 +6492,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 	ksmbd_debug(SMB, "target name is %s\n", target_name);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
 	rc = ksmbd_vfs_kern_path_locked(work, link_name, LOOKUP_NO_SYMLINKS,
-					&parent_path, &path, 0);
+					&path, 0);
 #else
 	rc = ksmbd_vfs_kern_path(work, link_name, LOOKUP_NO_SYMLINKS, &path, 0);
 #endif
@@ -6549,7 +6521,7 @@ static int smb2_create_link(struct ksmbd_work *work,
 			goto out;
 		}
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
-		ksmbd_vfs_kern_path_unlock(&parent_path, &path);
+		ksmbd_vfs_kern_path_unlock(&path);
 #endif
 	}
 	rc = ksmbd_vfs_link(work, target_name, link_name);
