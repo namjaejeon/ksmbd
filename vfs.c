@@ -97,7 +97,11 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 				 struct path *path, bool do_lock)
 {
 	struct qstr last;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 16, 0)
 	struct filename *filename __free(putname) = NULL;
+#else
+	struct filename *filename = NULL;
+#endif
 	struct path *root_share_path = &share_conf->vfs_path;
 	int err, type;
 	struct dentry *d;
@@ -116,11 +120,18 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 	err = vfs_path_parent_lookup(filename, flags,
 				     path, &last, &type,
 				     root_share_path);
-	if (err)
+	if (err) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+		putname(filename);
+#endif
 		return err;
+	}
 
 	if (unlikely(type != LAST_NORM)) {
 		path_put(path);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+		putname(filename);
+#endif
 		return -ENOENT;
 	}
 
@@ -128,6 +139,9 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 		err = mnt_want_write(path->mnt);
 		if (err) {
 			path_put(path);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+			putname(filename);
+#endif
 			return -ENOENT;
 		}
 
@@ -141,16 +155,23 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 				inode_unlock(path->dentry->d_inode);
 				mnt_drop_write(path->mnt);
 				path_put(path);
+				putname(filename);
 				return -ENOENT;
 			}
 #endif
 			dput(path->dentry);
 			path->dentry = d;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+			putname(filename);
+#endif
 			return 0;
 		}
 		inode_unlock(path->dentry->d_inode);
 		mnt_drop_write(path->mnt);
 		path_put(path);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+		putname(filename);
+#endif
 		return -ENOENT;
 	}
 
@@ -167,6 +188,9 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 	}
 	if (IS_ERR(d)) {
 		path_put(path);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+		putname(filename);
+#endif
 		return -ENOENT;
 	}
 	dput(path->dentry);
@@ -176,9 +200,15 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 		err = follow_down(path, 0);
 		if (err < 0) {
 			path_put(path);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+			putname(filename);
+#endif
 			return -ENOENT;
 		}
 	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
+	putname(filename);
+#endif
 	return 0;
 }
 #else
