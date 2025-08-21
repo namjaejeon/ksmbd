@@ -146,7 +146,7 @@ static int __ksmbd_iov_pin_rsp(struct ksmbd_work *work, void *ib, int len,
 	inc_rfc1001_len(work->iov[0].iov_base, len);
 
 	if (aux_size) {
-		__ksmbd_iov_pin(work, aux_buf, aux_size);
+//		__ksmbd_iov_pin(work, aux_buf, aux_size);
 		inc_rfc1001_len(work->iov[0].iov_base, aux_size);
 
 		ar->buf = aux_buf;

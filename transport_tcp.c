@@ -133,6 +133,7 @@ static void ksmbd_tcp_free_transport(struct ksmbd_transport *kt)
 {
 	struct tcp_transport *t = TCP_TRANS(kt);
 
+	sockfd_put(t->sock);
 	sock_release(t->sock);
 	kfree(t->iov);
 	kfree(t);
@@ -237,6 +238,11 @@ static int ksmbd_tcp_new_connection(struct socket *client_sk)
 	if (kernel_getpeername(client_sk, csin) < 0) {
 		pr_err("client ip resolution failed\n");
 		rc = -EINVAL;
+		goto out_error;
+	}
+
+	if (IS_ERR(sock_alloc_file(client_sk, 0, NULL))) {
+		rc = -ENOMEM;
 		goto out_error;
 	}
 
