@@ -334,19 +334,23 @@ static int ksmbd_kthread_fn(void *p)
  * ksmbd_tcp_run_kthread() - start forker thread
  * @iface: pointer to struct interface
  *
- * start forker thread(ksmbd/0) at module init time to listen
- * on port 445 for new SMB connection requests. It creates per connection
- * server threads(ksmbd/x)
+ * start forker thread(ksmbd/iface name) at module init time to listen
+ * on port 445(or 443) for new SMB connection requests. It creates per
+ * connection server threads(ksmbd/ip address)
  *
  * Return:	0 on success or error number
  */
-static int ksmbd_tcp_run_kthread(struct interface *iface)
+static int ksmbd_tcp_run_kthread(struct interface *iface, int proto)
 {
 	int rc;
 	struct task_struct *kthread;
 
-	kthread = kthread_run(ksmbd_kthread_fn, (void *)iface, "ksmbd-%s",
-			      iface->name);
+	if (proto == IPPROTO_QUIC)
+		kthread = kthread_run(ksmbd_kthread_fn, (void *)iface,
+				"ksmbd-quic-%s", iface->name);
+	else
+		kthread = kthread_run(ksmbd_kthread_fn, (void *)iface,
+				"ksmbd-%s", iface->name);
 	if (IS_ERR(kthread)) {
 		rc = PTR_ERR(kthread);
 		return rc;
@@ -487,7 +491,7 @@ static void tcp_destroy_socket(struct socket *ksmbd_socket)
  *
  * Return:	0 on success, error number otherwise
  */
-static int create_socket(struct interface *iface)
+static int create_socket(struct interface *iface, int type, int proto)
 {
 	int ret;
 	struct sockaddr_in6 sin6;
@@ -495,13 +499,13 @@ static int create_socket(struct interface *iface)
 	struct socket *ksmbd_socket;
 	bool ipv4 = false;
 
-	ret = sock_create_kern(current->nsproxy->net_ns, PF_INET6, SOCK_STREAM,
-			IPPROTO_TCP, &ksmbd_socket);
+	ret = sock_create_kern(current->nsproxy->net_ns, PF_INET6, type,
+			proto, &ksmbd_socket);
 	if (ret) {
 		if (ret != -EAFNOSUPPORT)
 			pr_err("Can't create socket for ipv6, fallback to ipv4: %d\n", ret);
 		ret = sock_create_kern(current->nsproxy->net_ns, PF_INET,
-				SOCK_STREAM, IPPROTO_TCP, &ksmbd_socket);
+				type, proto, &ksmbd_socket);
 		if (ret) {
 			pr_err("Can't create socket for ipv4: %d\n", ret);
 			goto out_clear;
@@ -509,12 +513,18 @@ static int create_socket(struct interface *iface)
 
 		sin.sin_family = PF_INET;
 		sin.sin_addr.s_addr = htonl(INADDR_ANY);
-		sin.sin_port = htons(server_conf.tcp_port);
+		if (proto == IPPROTO_QUIC)
+			sin.sin_port = htons(443);
+		else
+			sin.sin_port = htons(server_conf.tcp_port);
 		ipv4 = true;
 	} else {
 		sin6.sin6_family = PF_INET6;
 		sin6.sin6_addr = in6addr_any;
-		sin6.sin6_port = htons(server_conf.tcp_port);
+		if (proto == IPPROTO_QUIC)
+			sin6.sin6_port = htons(443);
+		else
+			sin6.sin6_port = htons(server_conf.tcp_port);
 
 		lock_sock(ksmbd_socket->sk);
 		ksmbd_socket->sk->sk_ipv6only = false;
@@ -524,26 +534,32 @@ static int create_socket(struct interface *iface)
 	ksmbd_tcp_nodelay(ksmbd_socket);
 	ksmbd_tcp_reuseaddr(ksmbd_socket);
 
+	if (proto == IPPROTO_TCP) {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
-	ret = kernel_setsockopt(ksmbd_socket,
-				SOL_SOCKET,
-				SO_BINDTODEVICE,
-				iface->name,
+		ret = kernel_setsockopt(ksmbd_socket, SOL_SOCKET,
+				SO_BINDTODEVICE, iface->name,
 				strlen(iface->name));
 #else
-	ret = sock_setsockopt(ksmbd_socket,
-			      SOL_SOCKET,
-			      SO_BINDTODEVICE,
+		ret = sock_setsockopt(ksmbd_socket, SOL_SOCKET,
+				SO_BINDTODEVICE,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-			      (char __user *)iface->name,
+				(char __user *)iface->name,
 #else
-			      KERNEL_SOCKPTR(iface->name),
+				KERNEL_SOCKPTR(iface->name),
 #endif
-			      strlen(iface->name));
+				strlen(iface->name));
 #endif
-	if (ret != -ENODEV && ret < 0) {
-		pr_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
-		goto out_error;
+		if (ret != -ENODEV && ret < 0) {
+			pr_err("Failed to set SO_BINDTODEVICE: %d\n", ret);
+			goto out_error;
+		}
+	} else if (proto == IPPROTO_QUIC) {
+		ret = quic_kernel_setsockopt(sock->sk, QUIC_SOCKOPT_ALPN, iface->name,
+				strlen(iface->name));
+		if (ret) {
+			pr_err("Failed to set QUIC_SOCKOPT_ALPN: %d\n", ret);
+			goto out_error;
+		}
 	}
 
 	if (ipv4)
@@ -567,7 +583,7 @@ static int create_socket(struct interface *iface)
 	}
 
 	iface->ksmbd_socket = ksmbd_socket;
-	ret = ksmbd_tcp_run_kthread(iface);
+	ret = ksmbd_tcp_run_kthread(iface, proto);
 	if (ret) {
 		pr_err("Can't start ksmbd main kthread: %d\n", ret);
 		goto out_error;
@@ -609,7 +625,10 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 		if (iface && iface->state == IFACE_STATE_DOWN) {
 			ksmbd_debug(CONN, "netdev-up event: netdev(%s) is going up\n",
 					iface->name);
-			ret = create_socket(iface);
+			ret = create_socket(iface, SOCK_STREAM, IPPROTO_TCP);
+			if (ret)
+				return NOTIFY_OK;
+			ret = create_socket(iface, SOCK_DGRAM, IPPROTO_QUIC);
 			if (ret)
 				return NOTIFY_OK;
 		}
@@ -619,9 +638,12 @@ static int ksmbd_netdev_event(struct notifier_block *nb, unsigned long event,
 				return NOTIFY_OK;
 			ksmbd_debug(CONN, "netdev-up event: netdev(%s) is going up\n",
 				    iface->name);
-			ret = create_socket(iface);
+			ret = create_socket(iface, SOCK_STREAM, IPPROTO_TCP);
 			if (ret)
 				break;
+			ret = create_socket(iface, SOCK_DGRAM, IPPROTO_QUIC);
+			if (ret)
+				return NOTIFY_OK;
 		}
 		break;
 	case NETDEV_DOWN:
