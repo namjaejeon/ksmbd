@@ -25,6 +25,7 @@
 #include <linux/namei.h>
 #endif
 #include <linux/mount.h>
+#include <linux/splice.h>
 
 #include "glob.h"
 #include "oplock.h"
@@ -3344,7 +3345,18 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 		if (src_off + len > src_file_size)
 			return -E2BIG;
 
-		ret = vfs_copy_file_range(src_fp->filp, src_off,
+		/*
+		 * vfs_copy_file_range does not allow overlapped copying
+		 * within the same file.
+		 */
+		if (file_inode(src_fp->filp) == file_inode(dst_fp->filp) &&
+				dst_off + len > src_off &&
+				dst_off < src_off + len)
+			ret = do_splice_direct(src_fp->filp, &src_off,
+					dst_fp->filp, &dst_off,
+					min_t(size_t, len, MAX_RW_COUNT), 0);
+		else
+			ret = vfs_copy_file_range(src_fp->filp, src_off,
 					  dst_fp->filp, dst_off, len, 0);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
 		if (ret == -EOPNOTSUPP || ret == -EXDEV)
