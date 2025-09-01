@@ -119,4 +119,53 @@ struct xattr_ntacl {
 #define XATTR_NAME_SD_LEN	\
 		(sizeof(XATTR_SECURITY_PREFIX SD_PREFIX) - 1)
 
+
+#define XATTR_RP_HASH_TYPE_SHA256	0x1
+#define XATTR_RP_HASH_SIZE		64
+
+struct xattr_rp_nfs {
+	__le64 inode_type;
+	__u8 rp_nfs_data[];
+};
+
+/*
+ * xattr_ntacl is used for storing ntacl and hashes.
+ * Hash is used for checking valid posix acl and ntacl in xattr.
+ */
+struct xattr_rp {
+	__u16	version; /* version 1 */
+	__u32	tag;
+	void	*rp_buf;
+	__u32	rp_size;
+	__u16	hash_type; /* hash type */
+	__u8	hash[XATTR_RP_HASH_SIZE]; /* 64bytes hash for ntacl */
+};
+
+/* REPARSE POINT SYMLINK XATTR PREFIX */
+#define RP_PREFIX			"RP"
+#define RP_PREFIX_LEN	(sizeof(RP_PREFIX) - 1)
+#define XATTR_NAME_RP	(XATTR_SECURITY_PREFIX RP_PREFIX)
+#define XATTR_NAME_RP_LEN	\
+		(sizeof(XATTR_SECURITY_PREFIX RP_PREFIX) - 1)
+
+#define SMB2_WSL_XATTR_UID              "$LXUID"
+#define SMB2_WSL_XATTR_GID              "$LXGID"
+#define SMB2_WSL_XATTR_MODE             "$LXMOD"
+#define SMB2_WSL_XATTR_DEV              "$LXDEV"
+
+#define XATTR_NAME_WSL_UID	(XATTR_USER_PREFIX SMB2_WSL_XATTR_UID)
+#define XATTR_NAME_WSL_UID_LEN	\
+		(sizeof(XATTR_USER_PREFIX XATTR_NAME_WSL_UID) - 1)
+
+#define XATTR_NAME_WSL_GID	(XATTR_USER_PREFIX SMB2_WSL_XATTR_GID)
+#define XATTR_NAME_WSL_GID_LEN	\
+		(sizeof(XATTR_USER_PREFIX XATTR_NAME_WSL_GID) - 1)
+
+#define XATTR_NAME_WSL_MODE	(XATTR_USER_PREFIX SMB2_WSL_XATTR_MODE)
+#define XATTR_NAME_WSL_MODE_LEN	\
+		(sizeof(XATTR_USER_PREFIX XATTR_NAME_WSL_MODE) - 1)
+
+#define XATTR_NAME_WSL_DEV	(XATTR_USER_PREFIX SMB2_WSL_XATTR_DEV)
+#define XATTR_NAME_WSL_DEV_LEN	\
+		(sizeof(XATTR_USER_PREFIX XATTR_NAME_WSL_DEV) - 1)
 #endif /* __XATTR_H__ */
