@@ -1655,7 +1655,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 	unsigned int cmd = 0;
 	LIST_HEAD(lock_list);
 	LIST_HEAD(rollback_list);
-	int locked, timeout;
+	int locked, timeout, bkt;
 	const unsigned long long loff_max = ~0;
 	struct ksmbd_conn *conn;
 
@@ -1782,7 +1782,7 @@ int smb_locking_andx(struct ksmbd_work *work)
 		list_del(&smb_lock->llist);
 		/* check locks in connections */
 		down_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		hash_for_each(conn_list, bkt, conn, hlist) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry_safe(cmp_lock, tmp2, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=
@@ -1947,8 +1947,8 @@ skip:
 			flock->fl_end = offset + length;
 
 		locked = 0;
-		up_read(&conn_list_lock);
-		list_for_each_entry(conn, &conn_list, conns_list) {
+		down_read(&conn_list_lock);
+		hash_for_each(conn_list, bkt, conn, hlist) {
 			spin_lock(&conn->llist_lock);
 			list_for_each_entry(cmp_lock, &conn->lock_list, clist) {
 				if (file_inode(cmp_lock->fl->fl_file) !=
