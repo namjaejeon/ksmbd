@@ -1539,10 +1539,18 @@ retry:
 	}
 
 	rd.old_mnt_idmap	= mnt_idmap(old_path->mnt),
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
+	rd.old_parent		= old_parent,
+#else
 	rd.old_dir		= d_inode(old_parent),
+#endif
 	rd.old_dentry		= old_child,
 	rd.new_mnt_idmap	= mnt_idmap(new_path.mnt),
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
+	rd.new_parent		= new_path.dentry,
+#else
 	rd.new_dir		= new_path.dentry->d_inode,
+#endif
 	rd.new_dentry		= new_dentry,
 	rd.flags		= flags,
 	rd.delegated_inode	= NULL,
