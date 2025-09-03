@@ -8431,7 +8431,11 @@ static int fsctl_query_iface_info_ioctl(struct ksmbd_conn *conn,
 		if (!ksmbd_find_netdev_name_iface_list(netdev->name))
 			continue;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
+		flags = netif_get_flags(netdev);
+#else
 		flags = dev_get_flags(netdev);
+#endif
 		if (!(flags & IFF_RUNNING))
 			continue;
 ipv6_retry:
