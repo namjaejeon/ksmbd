@@ -198,17 +198,18 @@ relookup:
 		return -ENOENT;
 	}
 
-	kfree(symname);
-	if (d_is_symlink(d)) {
-		symname = ksmbd_vfs_get_link(d);
-		if (!IS_ERR(symname)) {
-			pr_err("%s:%d, symname : %s\n", __func__, __LINE__, symname);
-			dput(d);
-			path_put(path);
-			putname(filename);
-	//		kfree(pathname);
-			pathname = symname;
-			goto relookup;
+	if (!test_share_config_flag(share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+		kfree(symname);
+		if (d_is_symlink(d)) {
+			symname = ksmbd_vfs_get_link(d);
+			if (!IS_ERR(symname)) {
+				dput(d);
+				path_put(path);
+				putname(filename);
+				pathname = symname;
+				goto relookup;
+			}
 		}
 	}
 
@@ -1400,23 +1401,21 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 {
 	struct path oldpath, newpath;
 	struct dentry *dentry;
-	int err, flags = LOOKUP_REVAL;
+	int err;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = kern_path(oldname, flags, &oldpath);
+	err = kern_path(oldname, LOOKUP_NO_SYMLINKS, &oldpath);
 	if (err) {
 		pr_err("cannot get linux path for %s, err = %d\n",
 		       oldname, err);
 		goto out1;
 	}
 
-	if (!test_share_config_flag(work->tcon->share_conf,
-				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
-		flags |= LOOKUP_NO_SYMLINKS;
-
-	dentry = ksmbd_vfs_kern_path_create(work, newname, flags, &newpath);
+	dentry = ksmbd_vfs_kern_path_create(work, newname,
+					    LOOKUP_NO_SYMLINKS | LOOKUP_REVAL,
+					    &newpath);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		pr_err("path create err for %s, err %d\n", newname, err);
@@ -1467,7 +1466,7 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	struct ksmbd_file *parent_fp;
 	int new_type;
-	int err, lookup_flags = LOOKUP_NO_SYMLINKS;
+	int err, lookup_flags = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
 	int target_lookup_flags = LOOKUP_RENAME_TARGET | LOOKUP_CREATE;
 #endif
@@ -1480,6 +1479,10 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 		err = PTR_ERR(to);
 		goto revert_fsids;
 	}
+
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = LOOKUP_NO_SYMLINKS;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
 	/*
