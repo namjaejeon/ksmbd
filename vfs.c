@@ -106,6 +106,7 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 	struct path *root_share_path = &share_conf->vfs_path;
 	int err, type;
 	struct dentry *d;
+	char *symname = NULL;
 
 	if (pathname[0] == '\0') {
 		pathname = share_conf->path;
@@ -114,6 +115,8 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 		flags |= LOOKUP_BENEATH;
 	}
 
+relookup:
+	pr_err("%s:%d, pathname : %s\n", __func__, __LINE__, pathname);
 	filename = getname_kernel(pathname);
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
@@ -194,6 +197,21 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #endif
 		return -ENOENT;
 	}
+
+	kfree(symname);
+	if (d_is_symlink(d)) {
+		symname = ksmbd_vfs_get_link(d);
+		if (!IS_ERR(symname)) {
+			pr_err("%s:%d, symname : %s\n", __func__, __LINE__, symname);
+			dput(d);
+			path_put(path);
+			putname(filename);
+	//		kfree(pathname);
+			pathname = symname;
+			goto relookup;
+		}
+	}
+
 	dput(path->dentry);
 	path->dentry = d;
 
