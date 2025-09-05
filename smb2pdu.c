@@ -9441,13 +9441,13 @@ int smb2_ioctl(struct ksmbd_work *work)
 					file_mnt_idmap(fp->filp),
 					&fp->filp->f_path,
 					IO_REPARSE_TAG_SYMLINK,
-					symname, strlen(symname));
+					symname, strlen(symname) + 1);
 #else
 			ret = ksmbd_vfs_set_rp_xattr(conn,
 					file_mnt_user_ns(fp->filp),
 					&fp->filp->f_path,
 					IO_REPARSE_TAG_SYMLINK,
-					symname, strlen(symname));
+					symname, strlen(symname) + 1);
 #endif
 
 			kfree(symname);
