@@ -1787,7 +1787,11 @@ struct smb2_symlink_err_rsp {
 struct smb2_error_context_rsp {
 	__le32 ErrorDataLength;
 	__le32 ErrorId;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 10, 0)
 	__u8  ErrorContextData[] __counted_by_le(ErrorDataLength);
+#else
+	__u8  ErrorContextData[];
+#endif
 } __packed;
 
 /* ErrorId values */

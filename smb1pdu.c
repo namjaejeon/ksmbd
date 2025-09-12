@@ -887,7 +887,11 @@ int smb_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_update_fstate(&work->sess->file_table, fp, FP_INITED);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_rename(work, &fp->filp->f_path, newname, 0);
+#else
 	rc = ksmbd_vfs_fp_rename(work, fp, newname);
+#endif
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_NO_MEMORY;
 		path_put(&path);
@@ -7337,7 +7341,11 @@ static int smb_fileinfo_rename(struct ksmbd_work *work)
 	}
 
 	ksmbd_debug(SMB, "new name(%s)\n", newname);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+	rc = ksmbd_vfs_rename(work, &fp->filp->f_path, newname, 0);
+#else
 	rc = ksmbd_vfs_fp_rename(work, fp, newname);
+#endif
 	if (rc) {
 		rsp->hdr.Status.CifsError = STATUS_UNEXPECTED_IO_ERROR;
 		goto out;
