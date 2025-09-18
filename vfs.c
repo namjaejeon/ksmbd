@@ -105,19 +105,19 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #else
 	struct filename *filename = NULL;
 #endif
-	struct path *root_share_path = &share_conf->vfs_path;
+	struct path *root_share_path = NULL;
 	int err, type, symlink_count = 0;
 	struct dentry *d;
 	char *symname = NULL;
 
+relookup:
 	if (pathname[0] == '\0') {
 		pathname = share_conf->path;
-		root_share_path = NULL;
 	} else {
 		flags |= LOOKUP_BENEATH;
+		root_share_path = &share_conf->vfs_path;
 	}
 
-relookup:
 	filename = getname_kernel(pathname);
 	if (IS_ERR(filename))
 		return PTR_ERR(filename);
@@ -211,7 +211,6 @@ relookup:
 				path_put(path);
 				putname(filename);
 				pathname = symname;
-				flags |= LOOKUP_BENEATH;
 				goto relookup;
 			}
 		}
