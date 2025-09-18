@@ -76,6 +76,7 @@ struct ksmbd_work {
 	/* Is this SYNC or ASYNC ksmbd_work */
 	bool                            asynchronous:1;
 	bool                            need_invalidate_rkey:1;
+	bool				stop_symlink:1;
 
 	unsigned int                    remote_key;
 	/* cancel works */
