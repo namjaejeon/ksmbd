@@ -114,7 +114,7 @@ relookup:
 	if (pathname[0] == '\0') {
 		pathname = share_conf->path;
 	} else {
-		flags |= LOOKUP_BENEATH;
+		flags |= (LOOKUP_BENEATH | LOOKUP_IN_ROOT);
 		root_share_path = &share_conf->vfs_path;
 	}
 
