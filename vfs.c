@@ -203,6 +203,14 @@ relookup:
 				   KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
 		kfree(symname);
 		if (d_is_symlink(d)) {
+			/*
+			 * Do not allow the share directory to be a symlink.
+			 */
+			if (pathname[0] != '\0') {
+				dput(d);
+				path_put(path);
+				return -ELOOP;
+			}
 			symname = ksmbd_vfs_get_link(d);
 			if (!IS_ERR(symname) &&
 			    symlink_count++ < MAX_SYMLINK_DEPTH) {
