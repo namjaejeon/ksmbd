@@ -309,6 +309,9 @@ static int ksmbd_kthread_fn(void *p)
 				max_ip_conns++;
 #endif
 			if (server_conf.max_ip_connections <= max_ip_conns) {
+				pr_info_ratelimited(
+						"Limit the maximum number of ip connections(%u)\n",
+						max_ip_conns);
 				ret = -EAGAIN;
 				break;
 			}
