@@ -2376,10 +2376,22 @@ bool ksmbd_rdma_capable_netdev(struct net_device *netdev)
 		return true;
 
 	/* check if netdev is bride */
-	if (netif_is_bridge_master(netdev))
+	if (netif_is_bridge_master(netdev) ||
+	    netdev->priv_flags & IFF_802_1Q_VLAN)
 		netdev_for_each_lower_dev(netdev, lower_dev, iter)
 			if (__ksmbd_rdma_capable_netdev(lower_dev))
 				return true;
+
+#ifdef CONFIG_INFINIBAND_IPOIB
+	/* use ipoib_dev_priv to get ib_device safely */
+	if (netdev->type == ARPHRD_INFINIBAND) {
+		struct ipoib_dev_priv *priv = netdev_priv(netdev);
+
+		if (priv && priv->ca && rdma_frwr_is_supported(&priv->ca->attrs))
+			return true;
+	}
+#endif
+
 	return false;
 }
 
