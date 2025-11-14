@@ -306,7 +306,7 @@ static int ksmbd_negotiate_smb_dialect(void *buf)
 		if (smb2_neg_size > smb_buf_length)
 			goto err_out;
 
-		if (struct_size(req, Dialects, le16_to_cpu(req->DialectCount)) >
+		if (struct_size(req, Dialects, le16_to_cpu(req->DialectCount)) - sizeof(req->Dialects) >
 		    smb_buf_length)
 			goto err_out;
 
