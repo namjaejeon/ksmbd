@@ -3500,10 +3500,10 @@ int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_inherit_posix_acl(struct mnt_idmap *idmap,
-				struct path *path, struct inode *parent_inode)
+				const struct path *path, struct inode *parent_inode)
 #else
 int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
-				struct path *path, struct inode *parent_inode)
+				const struct path *path, struct inode *parent_inode)
 #endif
 {
 	struct posix_acl *acls;
