@@ -3415,10 +3415,10 @@ void ksmbd_vfs_posix_lock_unblock(struct file_lock *flock)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 int ksmbd_vfs_set_init_posix_acl(struct mnt_idmap *idmap,
-				 struct path *path)
+				 const struct path *path)
 #else
 int ksmbd_vfs_set_init_posix_acl(struct user_namespace *user_ns,
-				 struct path *path)
+				 const struct path *path)
 #endif
 {
 	struct posix_acl_state acl_state;
