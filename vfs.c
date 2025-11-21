@@ -103,7 +103,7 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #else
 	struct filename *filename = NULL;
 #endif
-	struct path *root_share_path = &share_conf->vfs_path;
+	const struct path *root_share_path = &share_conf->vfs_path;
 	int err, type;
 	struct dentry *d;
 
