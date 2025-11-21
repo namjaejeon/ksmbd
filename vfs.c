@@ -443,7 +443,11 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 		pr_err("File(%s): creation failed (err:%d)\n", name, err);
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	end_creating_path(&path, dentry);
+#else
 	done_path_create(&path, dentry);
+#endif
 	return err;
 }
 
@@ -537,7 +541,11 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 
 out_err:
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	end_creating_path(&path, dentry);
+#else
 	done_path_create(&path, dentry);
+#endif
 	if (err)
 		pr_err("mkdir(%s): creation failed (err:%d)\n", name, err);
 	return err;
@@ -1075,7 +1083,11 @@ int ksmbd_vfs_symlink(struct ksmbd_work *work, const char *name,
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	dentry = start_creating_path(AT_FDCWD, symname, &path, 0);
+#else
 	dentry = kern_path_create(AT_FDCWD, symname, &path, 0);
+#endif
 	if (IS_ERR(dentry)) {
 		ksmbd_revert_fsids(work);
 		err = PTR_ERR(dentry);
@@ -1095,7 +1107,11 @@ int ksmbd_vfs_symlink(struct ksmbd_work *work, const char *name,
 	if (err && (err != -EEXIST || err != -ENOSPC))
 		ksmbd_debug(VFS, "failed to create symlink, err %d\n", err);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	end_creating_path(&path, dentry);
+#else
 	done_path_create(&path, dentry);
+#endif
 	ksmbd_revert_fsids(work);
 	return err;
 }
@@ -1415,7 +1431,11 @@ int ksmbd_vfs_link(struct ksmbd_work *work, const char *oldname,
 		ksmbd_debug(VFS, "vfs_link failed err %d\n", err);
 
 out3:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	end_creating_path(&newpath, dentry);
+#else
 	done_path_create(&newpath, dentry);
+#endif
 out2:
 	path_put(&oldpath);
 out1:
@@ -2061,7 +2081,11 @@ struct dentry *ksmbd_vfs_kern_path_create(struct ksmbd_work *work,
 	if (!abs_name)
 		return ERR_PTR(-ENOMEM);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	dent = start_creating_path(AT_FDCWD, abs_name, path, flags);
+#else
 	dent = kern_path_create(AT_FDCWD, abs_name, path, flags);
+#endif
 	kfree(abs_name);
 	return dent;
 }
