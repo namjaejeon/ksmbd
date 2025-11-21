@@ -1541,14 +1541,20 @@ retry:
 		goto out4;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	rd.mnt_idmap		= mnt_idmap(old_path->mnt),
+#else
 	rd.old_mnt_idmap	= mnt_idmap(old_path->mnt),
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
 	rd.old_parent		= old_parent,
 #else
 	rd.old_dir		= d_inode(old_parent),
 #endif
 	rd.old_dentry		= old_child,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 18, 0)
 	rd.new_mnt_idmap	= mnt_idmap(new_path.mnt),
+#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 17, 0)
 	rd.new_parent		= new_path.dentry,
 #else
