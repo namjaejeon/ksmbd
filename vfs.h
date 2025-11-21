@@ -244,7 +244,7 @@ int ksmbd_vfs_kern_path(struct ksmbd_work *work, char *name,
 int ksmbd_vfs_kern_path_locked(struct ksmbd_work *work, char *name,
 			       unsigned int flags,
 			       struct path *path, bool caseless);
-void ksmbd_vfs_kern_path_unlock(struct path *path);
+void ksmbd_vfs_kern_path_unlock(const struct path *path);
 #else
 int ksmbd_vfs_kern_path(struct ksmbd_work *work,
 			char *name, unsigned int flags, struct path *path,
