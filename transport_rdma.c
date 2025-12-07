@@ -2211,8 +2211,14 @@ int ksmbd_rdma_init(void)
 	 * This avoids the situation that a clients cannot send packets
 	 * for lack of credits
 	 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 0)
+	smb_direct_wq = alloc_workqueue("ksmbd-smb_direct-wq",
+					WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_PERCPU,
+					0);
+#else
 	smb_direct_wq = alloc_workqueue("ksmbd-smb_direct-wq",
 					WQ_HIGHPRI | WQ_MEM_RECLAIM, 0);
+#endif
 	if (!smb_direct_wq)
 		return -ENOMEM;
 
