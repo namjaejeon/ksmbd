@@ -494,7 +494,11 @@ int ksmbd_vfs_mkdir(struct ksmbd_work *work, const char *name, umode_t mode)
 	mode |= S_IFDIR;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
 	d = dentry;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+	dentry = vfs_mkdir(idmap, d_inode(path.dentry), dentry, mode, NULL);
+#else
 	dentry = vfs_mkdir(idmap, d_inode(path.dentry), dentry, mode);
+#endif
 	if (IS_ERR(dentry))
 		err = PTR_ERR(dentry);
 	else if (d_is_negative(dentry))
