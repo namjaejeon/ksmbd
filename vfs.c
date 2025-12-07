@@ -427,8 +427,12 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 	mode |= S_IFREG;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 12, 0)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+	err = vfs_create(mnt_idmap(path.mnt), dentry, mode);
+#else
 	err = vfs_create(mnt_idmap(path.mnt), d_inode(path.dentry),
 			 dentry, mode, true);
+#endif
 #else
 	err = vfs_create(mnt_user_ns(path.mnt), d_inode(path.dentry),
 			 dentry, mode, true);
