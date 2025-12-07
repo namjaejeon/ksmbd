@@ -1277,7 +1277,11 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, const struct path *path)
 
 	idmap = mnt_idmap(path->mnt);
 	if (S_ISDIR(d_inode(path->dentry)->i_mode)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+		err = vfs_rmdir(idmap, d_inode(parent), path->dentry, NULL);
+#else
 		err = vfs_rmdir(idmap, d_inode(parent), path->dentry);
+#endif
 		if (err && err != -ENOTEMPTY)
 			ksmbd_debug(VFS, "rmdir failed, err %d\n", err);
 	} else {
@@ -2662,7 +2666,11 @@ int ksmbd_vfs_unlink(struct file *filp)
 	dget(dentry);
 
 	if (S_ISDIR(d_inode(dentry)->i_mode))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+		err = vfs_rmdir(idmap, d_inode(dir), dentry, NULL);
+#else
 		err = vfs_rmdir(idmap, d_inode(dir), dentry);
+#endif
 	else
 		err = vfs_unlink(idmap, d_inode(dir), dentry, NULL);
 
