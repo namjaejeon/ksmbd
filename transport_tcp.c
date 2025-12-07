@@ -557,10 +557,18 @@ static int create_socket(struct interface *iface)
 	}
 
 	if (ipv4)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+		ret = kernel_bind(ksmbd_socket, (struct sockaddr_unsized *)&sin,
+#else
 		ret = kernel_bind(ksmbd_socket, (struct sockaddr *)&sin,
+#endif
 				  sizeof(sin));
 	else
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
+		ret = kernel_bind(ksmbd_socket, (struct sockaddr_unsized *)&sin6,
+#else
 		ret = kernel_bind(ksmbd_socket, (struct sockaddr *)&sin6,
+#endif
 				  sizeof(sin6));
 	if (ret) {
 		pr_err("Failed to bind socket: %d\n", ret);
