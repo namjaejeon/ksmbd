@@ -93,6 +93,8 @@ int ksmbd_vfs_lock_parent(struct dentry *parent, struct dentry *child)
 	return 0;
 }
 
+#define MAX_SYMLINK_DEPTH 40
+
 static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 				 char *pathname, unsigned int flags,
 				 struct path *path, bool do_lock)
@@ -103,15 +105,17 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #else
 	struct filename *filename = NULL;
 #endif
-	const struct path *root_share_path = &share_conf->vfs_path;
-	int err, type;
+	const struct path *root_share_path = NULL;
+	int err, type, symlink_count = 0;
 	struct dentry *d;
+	char *symname = NULL;
 
+relookup:
 	if (pathname[0] == '\0') {
 		pathname = share_conf->path;
-		root_share_path = NULL;
 	} else {
-		flags |= LOOKUP_BENEATH;
+		flags |= LOOKUP_BENEATH | LOOKUP_IN_ROOT;
+		root_share_path = &share_conf->vfs_path;
 	}
 
 	filename = getname_kernel(pathname);
@@ -194,6 +198,32 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #endif
 		return -ENOENT;
 	}
+
+	if (test_share_config_flag(share_conf,
+				   KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS)) {
+		kfree(symname);
+		if (d_is_symlink(d)) {
+			/*
+			 * Do not allow the share directory to be a symlink.
+			 */
+			if (pathname[0] != '\0') {
+				dput(d);
+				path_put(path);
+				return -ELOOP;
+			}
+			symname = ksmbd_vfs_get_link(d);
+			if (!IS_ERR(symname) &&
+			    symlink_count++ < MAX_SYMLINK_DEPTH) {
+				dput(d);
+				ksmbd_conv_path_to_unix(symname);
+				path_put(path);
+				putname(filename);
+				pathname = symname;
+				goto relookup;
+			}
+		}
+	}
+
 	dput(path->dentry);
 	path->dentry = d;
 
@@ -412,10 +442,13 @@ int ksmbd_vfs_create(struct ksmbd_work *work, const char *name, umode_t mode)
 {
 	struct path path;
 	struct dentry *dentry;
-	int err;
+	int err, flags = 0;
 
-	dentry = ksmbd_vfs_kern_path_create(work, name,
-					    LOOKUP_NO_SYMLINKS, &path);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = LOOKUP_NO_SYMLINKS;
+
+	dentry = ksmbd_vfs_kern_path_create(work, name, flags, &path);
 	if (IS_ERR(dentry)) {
 		err = PTR_ERR(dentry);
 		if (err != -ENOENT)
@@ -1199,7 +1232,7 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 #endif
 {
 	struct path path;
-	int rc, file_pathlen, dir_pathlen;
+	int rc, file_pathlen, dir_pathlen, flags = 0;
 	char *name;
 
 	dir_pathlen = strlen(dir_path);
@@ -1214,7 +1247,11 @@ int ksmbd_vfs_readdir_name(struct ksmbd_work *work,
 	memcpy(name + dir_pathlen + 1, de_name, de_name_len);
 	name[file_pathlen] = '\0';
 
-	rc = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, 1);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = LOOKUP_NO_SYMLINKS;
+
+	rc = ksmbd_vfs_kern_path(work, name, flags, &path, 1);
 	if (rc) {
 		pr_err("lookup failed: %s [%d]\n", name, rc);
 		kfree(name);
@@ -1317,12 +1354,16 @@ int ksmbd_vfs_remove_file(struct ksmbd_work *work, char *name)
 #endif
 	struct path path;
 	struct dentry *parent;
-	int err;
+	int err, flags = 0;
 
 	if (ksmbd_override_fsids(work))
 		return -ENOMEM;
 
-	err = ksmbd_vfs_kern_path(work, name, LOOKUP_NO_SYMLINKS, &path, false);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		flags = LOOKUP_NO_SYMLINKS;
+
+	err = ksmbd_vfs_kern_path(work, name, flags, &path, false);
 	if (err) {
 		ksmbd_debug(VFS, "can't get %s, err %d\n", name, err);
 		ksmbd_revert_fsids(work);
@@ -1471,7 +1512,7 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	struct ksmbd_file *parent_fp;
 	int new_type;
-	int err, lookup_flags = LOOKUP_NO_SYMLINKS;
+	int err, lookup_flags = 0;
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
 	int target_lookup_flags = LOOKUP_RENAME_TARGET | LOOKUP_CREATE;
 #endif
@@ -1484,6 +1525,10 @@ int ksmbd_vfs_rename(struct ksmbd_work *work, const struct path *old_path,
 		err = PTR_ERR(to);
 		goto revert_fsids;
 	}
+
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags = LOOKUP_NO_SYMLINKS;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 15, 0)
 	/*
@@ -1756,7 +1801,7 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	struct dentry *src_dent_parent, *dst_dent_parent;
 	struct dentry *src_dent, *trap_dent, *src_child;
 	char *dst_name;
-	int err;
+	int err, lookup_flags = LOOKUP_DIRECTORY;
 
 	dst_name = extract_last_component(newname);
 	if (!dst_name) {
@@ -1767,9 +1812,11 @@ int ksmbd_vfs_fp_rename(struct ksmbd_work *work, struct ksmbd_file *fp,
 	src_dent_parent = dget_parent(fp->filp->f_path.dentry);
 	src_dent = fp->filp->f_path.dentry;
 
-	err = ksmbd_vfs_kern_path(work, newname,
-				  LOOKUP_NO_SYMLINKS | LOOKUP_DIRECTORY,
-				  &dst_path, false);
+	if (!test_share_config_flag(work->tcon->share_conf,
+				    KSMBD_SHARE_FLAG_FOLLOW_SYMLINKS))
+		lookup_flags |= LOOKUP_NO_SYMLINKS;
+
+	err = ksmbd_vfs_kern_path(work, newname, lookup_flags, &dst_path, false);
 	if (err) {
 		ksmbd_debug(VFS, "Cannot get path for %s [%d]\n", newname, err);
 		goto out;
@@ -3246,11 +3293,12 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 {
 	struct ksmbd_share_config *share_conf = work->tcon->share_conf;
 	u64 time;
-	int rc;
+	int rc, tag;
 	struct path path = {
 		.mnt = share_conf->vfs_path.mnt,
 		.dentry = dentry,
 	};
+	char *rp_data;
 
 	rc = vfs_getattr(&path, ksmbd_kstat->kstat,
 			 STATX_BASIC_STATS | STATX_BTIME,
@@ -3285,6 +3333,18 @@ int ksmbd_vfs_fill_dentry_attrs(struct ksmbd_work *work,
 		} else {
 			ksmbd_debug(VFS, "fail to load dos attribute.\n");
 		}
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_get_rp_xattr(work->conn, idmap, dentry,
+			&tag, &rp_data);
+#else
+	rc = ksmbd_vfs_get_rp_xattr(work->conn, user_ns, dentry,
+			&tag, &rp_data);
+#endif
+	if (rc > 0) {
+		ksmbd_kstat->reparse_tag = tag;
+		kfree(rp_data);
 	}
 
 	return 0;
@@ -3616,5 +3676,145 @@ int ksmbd_vfs_inherit_posix_acl(struct user_namespace *user_ns,
 	}
 
 	posix_acl_release(acls);
+	return rc;
+}
+
+char *ksmbd_vfs_get_link(struct dentry *dentry)
+{
+	const char *res;
+	char *link;
+	DEFINE_DELAYED_CALL(done);
+
+	res = vfs_get_link(dentry, &done);
+	if (IS_ERR(res))
+		return (char *)res;
+	link = kstrdup(res, GFP_KERNEL);
+	do_delayed_call(&done);
+	if (!link)
+		return ERR_PTR(-ENOMEM);
+	ksmbd_conv_path_to_windows(link);
+	return link;
+}
+
+int ksmbd_page_link(struct ksmbd_file *fp, char *link)
+{
+	struct inode *inode = file_inode(fp->filp);
+	umode_t mode = inode->i_mode & S_IRWXUGO;
+
+	inode->i_mode = 0;
+	inode->i_mode |= S_IFLNK | mode;
+	return page_symlink(inode, link, strlen(link));
+}
+
+int ksmbd_vfs_set_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   const struct path *path,
+			   unsigned int tag,
+			   char *rp_data, int rp_len)
+{
+	int rc;
+	struct ndr rp_ndr = {0};
+	struct xattr_rp xrp = {0};
+
+	xrp.version = 1;
+	xrp.tag = tag;
+	xrp.hash_type = XATTR_RP_HASH_TYPE_SHA256;
+	xrp.rp_buf = rp_data;
+	xrp.rp_size = rp_len;
+
+	if (xrp.rp_size) {
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, xrp.hash);
+		if (rc) {
+			pr_err("Failed to generate hash for ndr reparse\n");
+			return rc;
+		}
+	} else
+		memset(xrp.hash, 0, XATTR_RP_HASH_SIZE);
+
+	rc = ndr_encode_rp(&rp_ndr, &xrp);
+	if (rc) {
+		pr_err("Failed to encode ndr to reprase\n");
+		goto out;
+	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_setxattr(idmap, path,
+#else
+	rc = ksmbd_vfs_setxattr(user_ns, path,
+#endif
+				XATTR_NAME_RP, rp_ndr.data,
+				rp_ndr.offset, 0, true);
+	if (rc < 0)
+		pr_err("Failed to store XATTR reparse point : %d\n", rc);
+out:
+	kfree(rp_ndr.data);
+	return rc;
+}
+
+int ksmbd_vfs_get_rp_xattr(struct ksmbd_conn *conn,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			   struct mnt_idmap *idmap,
+#else
+			   struct user_namespace *user_ns,
+#endif
+			   struct dentry *dentry,
+			   unsigned int *tag,
+			   char **rp_data)
+{
+	int rc;
+	struct ndr n;
+	struct xattr_rp xrp;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	rc = ksmbd_vfs_getxattr(idmap, dentry, XATTR_NAME_RP, &n.data);
+#else
+	rc = ksmbd_vfs_getxattr(user_ns, dentry, XATTR_NAME_RP, &n.data);
+#endif
+	if (rc <= 0) {
+		if (rc == 0)
+			rc = -ENOENT;
+		return rc;
+	}
+
+	n.length = rc;
+	rc = ndr_decode_rp(&n, &xrp);
+	if (rc)
+		goto free_n_data;
+
+	if (xrp.rp_size) {
+		__u8 cmp_hash[XATTR_RP_HASH_SIZE] = {0};
+
+		rc = ksmbd_gen_sd_hash(conn, xrp.rp_buf, xrp.rp_size, cmp_hash);
+		if (rc) {
+			pr_err("failed to generate hash for ndr reparse\n");
+			goto out_free;
+		}
+
+		if (memcmp(cmp_hash, xrp.hash, XATTR_RP_HASH_SIZE)) {
+			pr_err("hash value diff\n");
+			rc = -EINVAL;
+			goto out_free;
+		}
+
+		*rp_data = xrp.rp_buf;
+		rc = xrp.rp_size;
+	} else {
+		*rp_data = NULL;
+		rc = 0;
+	}
+
+	*tag = xrp.tag;
+out_free:
+	if (rc < 0) {
+		kfree(xrp.rp_buf);
+		*rp_data = NULL;
+	}
+
+free_n_data:
+	kfree(n.data);
 	return rc;
 }
