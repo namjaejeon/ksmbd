@@ -93,9 +93,9 @@ static int show_proc_session(struct seq_file *m, void *v)
 	i = 0;
 	xa_for_each(&sess->ksmbd_chann_list, id, chan) {
 	if (chan->conn->inet_addr)
-		seq_printf(m, "%-20s\t%pI4\n", "client", &chan->conn->inet_addr);
+		seq_printf(m, "%-20s\t%pI4c\n", "client", &chan->conn->inet_addr);
 	else
-		seq_printf(m, "%-20s\t%pI6\n", "client", &chan->conn->inet6_addr);
+		seq_printf(m, "%-20s\t%pI6c\n", "client", &chan->conn->inet6_addr);
 	seq_printf(m, "%-20s\t%s\n", "user", session_user_name(sess));
 	seq_printf(m, "%-20s\t%llu\n", "id", sess->id);
 	seq_printf(m, "%-20s\t%s\n", "state", session_state_string(sess));
@@ -202,9 +202,9 @@ static int show_proc_sessions(struct seq_file *m, void *v)
 		ksmbd_user_session_get(session);
 
 		if (chan->conn->inet_addr)
-			seq_printf(m, " %-40pI4", &chan->conn->inet_addr);
+			seq_printf(m, " %-40pI4c", &chan->conn->inet_addr);
 		else
-			seq_printf(m, " %-40pI6", &chan->conn->inet6_addr);
+			seq_printf(m, " %-40pI6c", &chan->conn->inet6_addr);
 		seq_printf(m, " %-15s %-10llu %-10s\n",
 			   session_user_name(session),
 			   session->id,

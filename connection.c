@@ -35,7 +35,9 @@ static int proc_show_clients(struct seq_file *m, void *v)
 	struct timespec64 now, t;
 	int i;
 
-	seq_puts(m, "#<name> <dialect> <credits> <open files> <requests> <last active>\n");
+	seq_printf(m, "#%-20s %-10s %-10s %-10s %-10s %-10s\n",
+			"<name>", "<dialect>", "<credits>", "<open files>",
+			"<requests>", "<last active>");
 
 	down_read(&conn_list_lock);
 	hash_for_each(conn_list, i, conn, hlist) {
@@ -43,10 +45,10 @@ static int proc_show_clients(struct seq_file *m, void *v)
 		ktime_get_real_ts64(&now);
 		t = timespec64_sub(now, t);
 		if (conn->inet_addr)
-			seq_printf(m, "%pI4", &conn->inet_addr);
+			seq_printf(m, "%-20pI4c", &conn->inet_addr);
 		else
-			seq_printf(m, "%pI6", &conn->inet6_addr);
-		seq_printf(m, " 0x%03x %u %d %d %ptT\n",
+			seq_printf(m, "%-20pI6c", &conn->inet6_addr);
+		seq_printf(m, "   0x%-10x %-10u %-12d %-10d %ptT\n",
 			   conn->dialect,
 			   conn->total_credits,
 			   atomic_read(&conn->stats.open_files_count),
