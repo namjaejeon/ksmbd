@@ -91,6 +91,7 @@ static int show_proc_session(struct seq_file *m, void *v)
 	ksmbd_user_session_get(sess);
 
 	i = 0;
+	down_read(&sess->chann_lock);
 	xa_for_each(&sess->ksmbd_chann_list, id, chan) {
 	if (chan->conn->inet_addr)
 		seq_printf(m, "%-20s\t%pI4c\n", "client", &chan->conn->inet_addr);
@@ -121,6 +122,7 @@ static int show_proc_session(struct seq_file *m, void *v)
 	}
 		i++;
 	}
+	up_read(&sess->chann_lock);
 
 	seq_printf(m, "%-20s\t%d\n", "channels", i);
 
