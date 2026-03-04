@@ -126,13 +126,21 @@ static void free_lease(struct oplock_info *opinfo)
 	kfree(lease);
 }
 
-static void free_opinfo(struct oplock_info *opinfo)
+static void free_opinfo_rcu(struct rcu_head *rcu)
 {
+
+	struct oplock_info *opinfo = container_of(rcu, struct oplock_info, rcu);
+
 	if (opinfo->is_lease)
 		free_lease(opinfo);
 	if (opinfo->conn && atomic_dec_and_test(&opinfo->conn->refcnt))
 		kfree(opinfo->conn);
 	kfree(opinfo);
+}
+
+static void free_opinfo(struct oplock_info *opinfo)
+{
+	call_rcu(&opinfo->rcu, free_opinfo_rcu);
 }
 
 struct oplock_info *opinfo_get(struct ksmbd_file *fp)
