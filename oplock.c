@@ -126,16 +126,20 @@ static void free_lease(struct oplock_info *opinfo)
 	kfree(lease);
 }
 
-static void free_opinfo_rcu(struct rcu_head *rcu)
+static void __free_opinfo(struct oplock_info *opinfo)
 {
-
-	struct oplock_info *opinfo = container_of(rcu, struct oplock_info, rcu);
-
 	if (opinfo->is_lease)
 		free_lease(opinfo);
 	if (opinfo->conn && atomic_dec_and_test(&opinfo->conn->refcnt))
 		kfree(opinfo->conn);
 	kfree(opinfo);
+}
+
+static void free_opinfo_rcu(struct rcu_head *rcu)
+{
+	struct oplock_info *opinfo = container_of(rcu, struct oplock_info, rcu);
+
+	__free_opinfo(opinfo);
 }
 
 static void free_opinfo(struct oplock_info *opinfo)
@@ -1505,20 +1509,21 @@ set_lev:
 	set_oplock_level(opinfo, req_op_level, lctx);
 
 out:
-	rcu_assign_pointer(fp->f_opinfo, opinfo);
-	opinfo->o_fp = fp;
-
 	opinfo_count_inc(fp);
 	opinfo_add(opinfo);
+
 	if (opinfo->is_lease) {
 		err = add_lease_global_list(opinfo);
 		if (err)
 			goto err_out;
 	}
 
+	rcu_assign_pointer(fp->f_opinfo, opinfo);
+	opinfo->o_fp = fp;
+
 	return 0;
 err_out:
-	free_opinfo(opinfo);
+	__free_opinfo(opinfo);
 	return err;
 }
 
