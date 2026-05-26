@@ -8765,6 +8765,11 @@ static inline int fsctl_set_sparse(struct ksmbd_work *work, u64 id,
 	if (!fp)
 		return -ENOENT;
 
+	if (!(fp->daccess & (FILE_WRITE_DATA_LE | FILE_WRITE_ATTRIBUTES_LE))) {
+		ret = -EACCES;
+		goto out;
+	}
+
 	old_fattr = fp->f_ci->m_fattr;
 	if (sparse->SetSparse)
 		fp->f_ci->m_fattr |= ATTR_SPARSE_FILE_LE;
