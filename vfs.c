@@ -134,7 +134,7 @@ static int ksmbd_vfs_path_lookup(struct ksmbd_share_config *share_conf,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 16, 0)
 		putname(filename);
 #endif
-		return -ENOENT;
+		return -EINVAL;
 	}
 
 	if (do_lock) {
