@@ -386,6 +386,9 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 		up_write(&ci->m_lock);
 
 		if (remove_stream_xattr) {
+			const struct cred *saved_cred;
+
+			saved_cred = override_creds(filp->f_cred);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 			err = ksmbd_vfs_remove_xattr(file_mnt_idmap(filp),
 #else
@@ -394,6 +397,7 @@ static void __ksmbd_inode_close(struct ksmbd_file *fp)
 						     &filp->f_path,
 						     fp->stream.name,
 						     true);
+			revert_creds(saved_cred);
 			if (err)
 				pr_err("remove xattr failed : %s\n",
 				       fp->stream.name);
