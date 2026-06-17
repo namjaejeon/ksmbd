@@ -37,6 +37,11 @@ static bool lease_v2_flags_valid(__le32 flags)
 	return !(flags & ~SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE);
 }
 
+static bool lease_has_parent_key(struct lease *lease)
+{
+	return lease->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE;
+}
+
 /**
  * alloc_opinfo() - allocate a new opinfo object for oplock info
  * @work:	smb work
@@ -132,7 +137,7 @@ static int alloc_lease(struct oplock_info *opinfo, struct lease_ctx_info *lctx)
 	lease->is_dir = lctx->is_dir;
 	memcpy(lease->parent_lease_key, lctx->parent_lease_key, SMB2_LEASE_KEY_SIZE);
 	lease->version = lctx->version;
-	lease->epoch = le16_to_cpu(lctx->epoch) + 1;
+	lease->epoch = lctx->version == 2 ? 1 : 0;
 	INIT_LIST_HEAD(&opinfo->lease_entry);
 	opinfo->o_lease = lease;
 
@@ -1441,9 +1446,7 @@ int smb_grant_oplock(struct ksmbd_work *work, int req_op_level, u64 pid,
 
 	/* Only v2 leases handle the directory */
 	if (S_ISDIR(file_inode(fp->filp)->i_mode)) {
-		if (!lctx || lctx->version != 2 ||
-		    (lctx->flags != SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE &&
-		     !lctx->epoch))
+		if (!lctx || lctx->version != 2)
 			return 0;
 	}
 
@@ -1736,14 +1739,17 @@ void create_lease_buf(u8 *rbuf, struct lease *lease)
 {
 	if (lease->version == 2) {
 		struct create_lease_v2 *buf = (struct create_lease_v2 *)rbuf;
+		__le32 flags = lease->flags & SMB2_LEASE_FLAG_BREAK_IN_PROGRESS_LE;
 
 		memset(buf, 0, sizeof(struct create_lease_v2));
 		memcpy(buf->lcontext.LeaseKey, lease->lease_key,
 		       SMB2_LEASE_KEY_SIZE);
-		buf->lcontext.LeaseFlags = lease->flags;
+		if (lease_has_parent_key(lease))
+			flags |= SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE;
+		buf->lcontext.LeaseFlags = flags;
 		buf->lcontext.Epoch = cpu_to_le16(lease->epoch);
 		buf->lcontext.LeaseState = lease->state;
-		if (lease->flags == SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE)
+		if (lease_has_parent_key(lease))
 			memcpy(buf->lcontext.ParentLeaseKey, lease->parent_lease_key,
 			       SMB2_LEASE_KEY_SIZE);
 		buf->ccontext.DataOffset = cpu_to_le16(offsetof
@@ -1761,7 +1767,8 @@ void create_lease_buf(u8 *rbuf, struct lease *lease)
 
 		memset(buf, 0, sizeof(struct create_lease));
 		memcpy(buf->lcontext.LeaseKey, lease->lease_key, SMB2_LEASE_KEY_SIZE);
-		buf->lcontext.LeaseFlags = lease->flags;
+		buf->lcontext.LeaseFlags =
+			lease->flags & SMB2_LEASE_FLAG_BREAK_IN_PROGRESS_LE;
 		buf->lcontext.LeaseState = lease->state;
 		buf->ccontext.DataOffset = cpu_to_le16(offsetof
 				(struct create_lease, lcontext));
@@ -1827,7 +1834,7 @@ struct lease_ctx_info *parse_lease_state(void *open_req)
 
 		memcpy(lreq->lease_key, lc->lcontext.LeaseKey, SMB2_LEASE_KEY_SIZE);
 		lreq->req_state = lc->lcontext.LeaseState;
-		lreq->flags = lc->lcontext.LeaseFlags;
+		lreq->flags = 0;
 		lreq->duration = lc->lcontext.LeaseDuration;
 		if (!lease_state_valid(lreq->req_state))
 			goto err_out;
