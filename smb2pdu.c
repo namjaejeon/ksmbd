@@ -9449,7 +9449,7 @@ static void smb21_lease_break_ack(struct ksmbd_work *work)
 	lease_state = req->LeaseState;
 	lease->state = lease_state;
 	lease->new_state = SMB2_LEASE_NONE_LE;
-	opinfo->level = smb2_map_lease_to_oplock(lease_state);
+	lease_update_oplock_levels(lease);
 
 	rsp->StructureSize = cpu_to_le16(36);
 	rsp->Reserved = 0;
