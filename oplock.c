@@ -147,9 +147,19 @@ static struct lease_table *alloc_lease_table(struct oplock_info *opinfo)
 
 	memcpy(lb->client_guid, opinfo->conn->ClientGUID,
 	       SMB2_CLIENT_GUID_SIZE);
+	lb->conn = ksmbd_conn_get(opinfo->conn);
 	INIT_LIST_HEAD(&lb->lease_list);
 	spin_lock_init(&lb->lb_lock);
 	return lb;
+}
+
+static void free_lease_table(struct lease_table *lb)
+{
+	if (!lb)
+		return;
+
+	ksmbd_conn_put(lb->conn);
+	kfree(lb);
 }
 
 static struct lease *alloc_lease(struct lease_ctx_info *lctx,
@@ -1142,6 +1152,9 @@ static int smb2_lease_break_noti(struct oplock_info *opinfo, bool wait_ack,
 	struct lease *lease = opinfo->o_lease;
 
 	conn = READ_ONCE(opinfo->conn);
+	if (lease->version == 2 && lease->l_lb && lease->l_lb->conn &&
+	    !ksmbd_conn_releasing(lease->l_lb->conn))
+		conn = lease->l_lb->conn;
 	if (!conn)
 		return 0;
 
@@ -1344,7 +1357,7 @@ void destroy_lease_table(struct ksmbd_conn *conn)
 		list_for_each_entry_safe(lease, ltmp, &lb->lease_list, l_entry)
 			lease_del_table(lease);
 		list_del(&lb->l_entry);
-		kfree(lb);
+		free_lease_table(lb);
 	}
 	write_unlock(&lease_list_lock);
 }
@@ -1403,7 +1416,7 @@ static void add_lease_global_list(struct lease *lease, struct ksmbd_conn *conn,
 			    SMB2_CLIENT_GUID_SIZE)) {
 			lease_add_table(lease, lb);
 			write_unlock(&lease_list_lock);
-			kfree(new_lb);
+			free_lease_table(new_lb);
 			return;
 		}
 	}

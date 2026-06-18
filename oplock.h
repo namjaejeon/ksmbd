@@ -42,6 +42,7 @@ struct lease_ctx_info {
 
 struct lease_table {
 	char			client_guid[SMB2_CLIENT_GUID_SIZE];
+	struct ksmbd_conn	*conn;
 	struct list_head	lease_list;
 	struct list_head	l_entry;
 	spinlock_t		lb_lock;
