@@ -57,6 +57,7 @@ struct lease {
 	int			version;
 	unsigned short		epoch;
 	bool			is_dir;
+	bool			reuse_epoch;
 	struct ksmbd_inode	*ci;
 	struct lease_table	*l_lb;
 	struct list_head	l_entry;
