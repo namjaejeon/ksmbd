@@ -1295,11 +1295,66 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
 	}
 }
 
+/*
+ * Collect refcounted lease holders on a parent directory that need to be
+ * broken, without holding p_ci->m_lock during the break acknowledgment
+ * wait (up to OPLOCK_WAIT_TIME, 35s). Holding that lock across
+ * oplock_break() blocks every other create/delete/rename under the same
+ * parent directory for the full wait whenever a single lease holder
+ * fails to acknowledge -- e.g. a macOS Time Machine client whose backupd
+ * connection has gone quiet mid-backup while Finder is still browsing
+ * the same share. Returns the number of entries filled into *out
+ * (caller must kfree it).
+ */
+static int collect_parent_lease_holders(struct ksmbd_inode *p_ci,
+					struct ksmbd_file *fp,
+					struct lease_ctx_info *lctx,
+					struct oplock_info ***out)
+{
+	struct oplock_info *opinfo, **arr = NULL;
+	int count = 0, cap = 0;
+
+	down_read(&p_ci->m_lock);
+	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
+		if (opinfo->conn == NULL || !opinfo->is_lease)
+			continue;
+		if (opinfo->o_lease->state == SMB2_OPLOCK_LEVEL_NONE)
+			continue;
+		if (lctx && (lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE) &&
+		    compare_guid_key(opinfo, fp->conn->ClientGUID,
+				     lctx->parent_lease_key))
+			continue;
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		if (ksmbd_conn_releasing(opinfo->conn)) {
+			opinfo_put(opinfo);
+			continue;
+		}
+		if (count == cap) {
+			int new_cap = cap ? cap * 2 : 4;
+			struct oplock_info **n = krealloc(arr,
+					new_cap * sizeof(*n), GFP_KERNEL);
+			if (!n) {
+				opinfo_put(opinfo);
+				continue;
+			}
+			arr = n;
+			cap = new_cap;
+		}
+		arr[count++] = opinfo;
+	}
+	up_read(&p_ci->m_lock);
+
+	*out = arr;
+	return count;
+}
+
 void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 				      struct lease_ctx_info *lctx)
 {
-	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
+	struct oplock_info **to_break = NULL;
+	int count, i;
 
 	if (lctx->version != 2)
 		return;
@@ -1308,36 +1363,22 @@ void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 	if (!p_ci)
 		return;
 
-	down_read(&p_ci->m_lock);
-	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (opinfo->conn == NULL || !opinfo->is_lease)
-			continue;
-
-		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE &&
-		    (!(lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE) ||
-		     !compare_guid_key(opinfo, fp->conn->ClientGUID,
-				      lctx->parent_lease_key))) {
-			if (!atomic_inc_not_zero(&opinfo->refcount))
-				continue;
-
-			if (ksmbd_conn_releasing(opinfo->conn)) {
-				opinfo_put(opinfo);
-				continue;
-			}
-
-			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE, NULL);
-			opinfo_put(opinfo);
-		}
-	}
-	up_read(&p_ci->m_lock);
-
+	count = collect_parent_lease_holders(p_ci, fp, lctx, &to_break);
 	ksmbd_inode_put(p_ci);
+
+	for (i = 0; i < count; i++) {
+		oplock_break(to_break[i], SMB2_OPLOCK_LEVEL_NONE, NULL);
+		opinfo_put(to_break[i]);
+	}
+	kfree(to_break);
 }
 
 void smb_lazy_parent_lease_break_close(struct ksmbd_file *fp)
 {
 	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
+	struct oplock_info **to_break = NULL;
+	int count, i;
 
 	rcu_read_lock();
 	opinfo = rcu_dereference(fp->f_opinfo);
@@ -1350,27 +1391,14 @@ void smb_lazy_parent_lease_break_close(struct ksmbd_file *fp)
 	if (!p_ci)
 		return;
 
-	down_read(&p_ci->m_lock);
-	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (opinfo->conn == NULL || !opinfo->is_lease)
-			continue;
-
-		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE) {
-			if (!atomic_inc_not_zero(&opinfo->refcount))
-				continue;
-
-			if (ksmbd_conn_releasing(opinfo->conn)) {
-				opinfo_put(opinfo);
-				continue;
-			}
-
-			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE, NULL);
-			opinfo_put(opinfo);
-		}
-	}
-	up_read(&p_ci->m_lock);
-
+	count = collect_parent_lease_holders(p_ci, fp, NULL, &to_break);
 	ksmbd_inode_put(p_ci);
+
+	for (i = 0; i < count; i++) {
+		oplock_break(to_break[i], SMB2_OPLOCK_LEVEL_NONE, NULL);
+		opinfo_put(to_break[i]);
+	}
+	kfree(to_break);
 }
 
 /**
