@@ -6854,9 +6854,9 @@ static int set_file_disposition_info(struct ksmbd_file *fp,
 		if (S_ISDIR(inode->i_mode) &&
 		    ksmbd_vfs_empty_dir(fp) == -ENOTEMPTY)
 			return -EBUSY;
-		ksmbd_set_inode_pending_delete(fp);
+		ksmbd_fd_set_delete_pending(fp);
 	} else {
-		ksmbd_clear_inode_pending_delete(fp);
+		ksmbd_fd_clear_delete_pending(fp);
 	}
 	return 0;
 }
