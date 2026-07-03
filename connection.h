@@ -116,6 +116,7 @@ struct ksmbd_conn {
 	bool				binding;
 	atomic_t			refcnt;
 	bool				is_aapl;
+	bool				aapl_readdir_attr; /* READDIR_ATTR negotiated */
 };
 
 struct ksmbd_conn_ops {

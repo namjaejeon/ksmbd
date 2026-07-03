@@ -581,6 +581,62 @@ struct smb2_tree_disconnect_rsp {
 /* Apple Defined Contexts */
 #define	SMB2_CREATE_AAPL			"AAPL"
 
+/*
+ * Apple AAPL SMB2 extension -- kAAPL_SERVER_QUERY create context.
+ *
+ * Omitting the model string when reply_bitmap includes AAPL_BITMAP_MODEL_INFO
+ * causes smbfs.kext to enter a broken disconnect path requiring a reboot.
+ *
+ * Layout: ccontext(16) + Name[4] + Pad[4] + cmd(4) + reserved(4) +
+ *         reply_bitmap(8) + server_caps(8) + vol_caps(8)
+ * When MODEL_INFO requested, appended: pad2(4) + model_bytes(4) + UTF-16LE
+ */
+#define AAPL_CTX_NAME_OFF	16	/* sizeof(struct create_context) */
+#define AAPL_CTX_DATA_OFF	24	/* ALIGN(16 + 4, 8) */
+#define SMB2_CREATE_AAPL_LEN	4
+
+#define AAPL_SERVER_QUERY	1
+
+#define AAPL_BITMAP_SERVER_CAPS	0x01ULL
+#define AAPL_BITMAP_VOL_CAPS	0x02ULL
+#define AAPL_BITMAP_MODEL_INFO	0x04ULL
+
+/* Server capability flags (server_caps field) */
+#define AAPL_CAPS_READDIR_ATTR	0x01ULL  /* inline FinderInfo per FIND entry */
+#define AAPL_CAPS_COPYFILE	0x02ULL  /* FSCTL_SRV_COPYCHUNK for Cmd+D */
+#define AAPL_CAPS_UNIX_BASED	0x04ULL  /* server is Unix-based */
+
+/*
+ * UNIX_BASED: prevents macOS Windows-compat mode (question-mark icons).
+ * COPYFILE: enables server-side file copy via FSCTL_SRV_COPYCHUNK.
+ * READDIR_ATTR: inline FinderInfo per FIND entry, set when client also
+ *   advertises the bit; format: EaSize=max_access, ShortName[0..7]=rfork_size,
+ *   ShortName[8..23]=FinderInfo(16B), Reserved2=unix_mode.
+ */
+#define AAPL_SERVER_CAPS_KSMBD	(AAPL_CAPS_UNIX_BASED | AAPL_CAPS_COPYFILE | \
+				 AAPL_CAPS_READDIR_ATTR)
+
+/* Volume capability flags (vol_caps field) */
+#define AAPL_VOLCAPS_FULL_SYNC	0x04ULL  /* SMB2 FLUSH maps to F_FULLFSYNC */
+
+/* Model string: up to 31 ASCII chars */
+#define AAPL_MODEL_MAX_CHARS	31
+#define AAPL_MODEL_UTF16_BYTES	(AAPL_MODEL_MAX_CHARS * 2)
+
+/*
+ * Max AAPL response: header(24) + base data(32) + pad2(4) + model_bytes(4)
+ * + model(62), 8-byte aligned: ALIGN(126, 8) = 128 bytes.
+ */
+#define AAPL_RSP_MAX_SIZE	128
+
+/* AAPL server query request (client->server) */
+struct aapl_server_query_req {
+	__le32 cmd;
+	__le32 reserved;
+	__le64 req_bitmap;
+	__le64 client_caps;
+} __packed;
+
 struct smb2_create_req {
 	struct smb2_hdr hdr;
 	__le16 StructureSize;	/* Must be 57 */
@@ -630,6 +686,18 @@ struct create_context {
 	__le16 DataOffset;
 	__le32 DataLength;
 	__u8 Buffer[0];
+} __packed;
+
+struct create_aapl_rsp {
+	struct create_context ccontext;
+	__u8   Name[4];
+	__u8   Pad[4];
+	__le32 cmd;
+	__le32 reserved;
+	__le64 reply_bitmap;
+	__le64 server_caps;
+	__le64 vol_caps;
+	/* when AAPL_BITMAP_MODEL_INFO: __le32 pad2; __le32 model_bytes; __le16 model[] */
 } __packed;
 
 struct create_durable_req_v2 {
