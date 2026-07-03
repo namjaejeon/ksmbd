@@ -2677,6 +2677,16 @@ static void smb2_update_xattrs(struct ksmbd_tree_connect *tcon,
 
 	rc = compat_ksmbd_vfs_get_dos_attrib_xattr(path, path->dentry, &da);
 	if (rc > 0) {
+		/*
+		 * Don't report a stale SPARSE bit (e.g. left over from a
+		 * previous client, or from before the share was reconfigured)
+		 * when the share isn't currently advertising sparse-file
+		 * support. TM sparsebundle band files rely on sparse status
+		 * being accurate, since macOS decides whether to use
+		 * FSCTL_SET_SPARSE based on it.
+		 */
+		if (!(server_conf.share_fake_fscaps & FILE_SUPPORTS_SPARSE_FILES))
+			da.attr &= ~ATTR_SPARSE;
 		fp->f_ci->m_fattr = cpu_to_le32(da.attr);
 		fp->create_time = da.create_time;
 		fp->itime = da.itime;
