@@ -2536,6 +2536,26 @@ static noinline int smb2_set_stream_name_xattr(const struct path *path,
 	return 0;
 }
 
+/*
+ * fp->stream.size is the byte length of the mangled xattr *name*
+ * (used as attr_name_len when looking the xattr up), not the size of
+ * the xattr's value. Reporting it as EndOfFile/AllocationSize for a
+ * stream handle is wrong -- query the xattr's actual value length
+ * instead.
+ */
+static loff_t ksmbd_stream_eof(struct ksmbd_file *fp)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	ssize_t slen = ksmbd_vfs_casexattr_len(file_mnt_idmap(fp->filp),
+#else
+	ssize_t slen = ksmbd_vfs_casexattr_len(mnt_user_ns(fp->filp->f_path.mnt),
+#endif
+					       fp->filp->f_path.dentry,
+					       fp->stream.name,
+					       fp->stream.size);
+	return slen < 0 ? 0 : (loff_t)slen;
+}
+
 static int smb2_remove_smb_xattrs(const struct path *path)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
@@ -3774,9 +3794,16 @@ reconnected_fp:
 	rsp->LastWriteTime = cpu_to_le64(time);
 	time = ksmbd_UnixTimeToNT(stat.ctime);
 	rsp->ChangeTime = cpu_to_le64(time);
-	rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
-		cpu_to_le64(stat.blocks << 9);
-	rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
+	if (ksmbd_stream_fd(fp)) {
+		loff_t seof = ksmbd_stream_eof(fp);
+
+		rsp->AllocationSize = cpu_to_le64((u64)seof);
+		rsp->EndofFile = cpu_to_le64((u64)seof);
+	} else {
+		rsp->AllocationSize = S_ISDIR(stat.mode) ? 0 :
+			cpu_to_le64(stat.blocks << 9);
+		rsp->EndofFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
+	}
 	rsp->FileAttributes = fp->f_ci->m_fattr;
 
 	rsp->Reserved2 = 0;
@@ -5127,8 +5154,10 @@ static int get_file_standard_info(struct smb2_query_info_rsp *rsp,
 		sinfo->AllocationSize = cpu_to_le64(stat.blocks << 9);
 		sinfo->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	} else {
-		sinfo->AllocationSize = cpu_to_le64(fp->stream.size);
-		sinfo->EndOfFile = cpu_to_le64(fp->stream.size);
+		loff_t seof = ksmbd_stream_eof(fp);
+
+		sinfo->AllocationSize = cpu_to_le64((u64)seof);
+		sinfo->EndOfFile = cpu_to_le64((u64)seof);
 	}
 	sinfo->NumberOfLinks = cpu_to_le32(get_nlink(&stat) - delete_pending);
 	sinfo->DeletePending = delete_pending;
@@ -5197,8 +5226,10 @@ static int get_file_all_info(struct ksmbd_work *work,
 			cpu_to_le64(stat.blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	} else {
-		file_info->AllocationSize = cpu_to_le64(fp->stream.size);
-		file_info->EndOfFile = cpu_to_le64(fp->stream.size);
+		loff_t seof = ksmbd_stream_eof(fp);
+
+		file_info->AllocationSize = cpu_to_le64((u64)seof);
+		file_info->EndOfFile = cpu_to_le64((u64)seof);
 	}
 	file_info->NumberOfLinks =
 			cpu_to_le32(get_nlink(&stat) - delete_pending);
@@ -5403,8 +5434,10 @@ static int get_file_network_open_info(struct smb2_query_info_rsp *rsp,
 		file_info->AllocationSize = cpu_to_le64(stat.blocks << 9);
 		file_info->EndOfFile = S_ISDIR(stat.mode) ? 0 : cpu_to_le64(stat.size);
 	} else {
-		file_info->AllocationSize = cpu_to_le64(fp->stream.size);
-		file_info->EndOfFile = cpu_to_le64(fp->stream.size);
+		loff_t seof = ksmbd_stream_eof(fp);
+
+		file_info->AllocationSize = cpu_to_le64((u64)seof);
+		file_info->EndOfFile = cpu_to_le64((u64)seof);
 	}
 	file_info->Reserved = cpu_to_le32(0);
 	rsp->OutputBufferLength =
@@ -5535,8 +5568,10 @@ static int find_file_posix_info(struct smb2_query_info_rsp *rsp,
 		file_info->EndOfFile = cpu_to_le64(stat.size);
 		file_info->AllocationSize = cpu_to_le64(stat.blocks << 9);
 	} else {
-		file_info->EndOfFile = cpu_to_le64(fp->stream.size);
-		file_info->AllocationSize = cpu_to_le64(fp->stream.size);
+		loff_t seof = ksmbd_stream_eof(fp);
+
+		file_info->EndOfFile = cpu_to_le64((u64)seof);
+		file_info->AllocationSize = cpu_to_le64((u64)seof);
 	}
 	file_info->HardLinks = cpu_to_le32(stat.nlink);
 	file_info->Mode = cpu_to_le32(stat.mode & 0777);
