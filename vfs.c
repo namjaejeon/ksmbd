@@ -719,6 +719,10 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 	ssize_t nbytes = 0;
 	struct inode *inode = file_inode(filp);
 
+	/* Stream (xattr) reads work on directories too; check before S_ISDIR */
+	if (ksmbd_stream_fd(fp))
+		return ksmbd_vfs_stream_read(fp, rbuf, pos, count);
+
 	if (S_ISDIR(inode->i_mode))
 		return -EISDIR;
 
@@ -731,9 +735,6 @@ int ksmbd_vfs_read(struct ksmbd_work *work, struct ksmbd_file *fp, size_t count,
 			return -EACCES;
 		}
 	}
-
-	if (ksmbd_stream_fd(fp))
-		return ksmbd_vfs_stream_read(fp, rbuf, pos, count);
 
 	if (!work->tcon->posix_extensions) {
 		int ret;
@@ -3372,8 +3373,59 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 		return -EACCES;
 	}
 
-	if (ksmbd_stream_fd(src_fp) || ksmbd_stream_fd(dst_fp))
-		return -EBADF;
+	if (ksmbd_stream_fd(src_fp) || ksmbd_stream_fd(dst_fp)) {
+		/*
+		 * ADS stream copychunk: copy xattr from src to dst directly.
+		 * vfs_copy_file_range doesn't work on xattr-backed streams.
+		 */
+		char *buf = NULL;
+		ssize_t buf_len;
+		int sret;
+
+		if (!ksmbd_stream_fd(src_fp) || !ksmbd_stream_fd(dst_fp))
+			return -EINVAL;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+		buf_len = ksmbd_vfs_getxattr(file_mnt_idmap(src_fp->filp),
+#else
+		buf_len = ksmbd_vfs_getxattr(file_mnt_user_ns(src_fp->filp),
+#endif
+					     file_dentry(src_fp->filp),
+					     src_fp->stream.name, &buf);
+		if (buf_len < 0)
+			return buf_len;
+
+		if (buf_len > 0) {
+			/*
+			 * vfs_setxattr(NULL, 0) removes the xattr on Linux, so
+			 * skip it for empty streams: the Open already created
+			 * the empty xattr via smb2_set_stream_name_xattr.
+			 */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+			sret = ksmbd_vfs_setxattr(file_mnt_idmap(dst_fp->filp),
+#else
+			sret = ksmbd_vfs_setxattr(file_mnt_user_ns(dst_fp->filp),
+#endif
+						  &dst_fp->filp->f_path,
+						  dst_fp->stream.name,
+						  buf, buf_len, 0, false);
+			kfree(buf);
+			if (sret < 0)
+				return sret;
+		}
+
+		/*
+		 * macOS reuses the main file's chunk list for stream copies,
+		 * so req_total equals the file size, not the stream size.
+		 * Echo back TotalBytesWritten = sum(chunks) so macOS doesn't
+		 * treat the size mismatch as an error.
+		 */
+		*chunk_count_written = chunk_count;
+		*total_size_written = 0;
+		for (i = 0; i < chunk_count; i++)
+			*total_size_written += le32_to_cpu(chunks[i].Length);
+		return 0;
+	}
 
 	smb_break_all_levII_oplock(work, dst_fp, 1);
 
