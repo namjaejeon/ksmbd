@@ -89,6 +89,8 @@ struct ksmbd_work {
 	/* List head at conn->async_requests */
 	struct list_head                async_request_entry;
 	struct list_head                fp_entry;
+	/* List head at ksmbd_file->notify_pendings */
+	struct list_head                notify_entry;
 
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	/* Read data buffer */

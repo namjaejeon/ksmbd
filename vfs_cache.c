@@ -409,6 +409,7 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 {
 	struct file *filp;
 	struct ksmbd_lock *smb_lock, *tmp_lock;
+	struct ksmbd_work *cn_work, *cn_tmp;
 
 	fd_limit_close();
 	ksmbd_remove_durable_fd(fp);
@@ -433,6 +434,19 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 		list_del(&smb_lock->flist);
 		locks_free_lock(smb_lock->fl);
 		kfree(smb_lock);
+	}
+
+	/*
+	 * Complete any CHANGE_NOTIFY left pending on this handle now that
+	 * it is closed. KSMBD never completes CHANGE_NOTIFY spontaneously
+	 * (no real change-notification backend), only on close -- matching
+	 * genuine SMB2/macOS smbfs semantics and avoiding the Finder
+	 * "directory changed, re-enumerate everything" loop.
+	 */
+	list_for_each_entry_safe(cn_work, cn_tmp, &fp->notify_pendings, notify_entry) {
+		list_del_init(&cn_work->notify_entry);
+		ksmbd_conn_write(cn_work);
+		ksmbd_free_work_struct(cn_work);
 	}
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	kfree(fp->filename);
@@ -744,6 +758,7 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
 	INIT_LIST_HEAD(&fp->lock_list);
+	INIT_LIST_HEAD(&fp->notify_pendings);
 	spin_lock_init(&fp->f_lock);
 	atomic_set(&fp->refcount, 1);
 

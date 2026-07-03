@@ -9423,6 +9423,9 @@ int smb2_notify(struct ksmbd_work *work)
 {
 	struct smb2_notify_req *req;
 	struct smb2_notify_rsp *rsp;
+	struct ksmbd_work *in_work;
+	struct smb2_hdr *in_hdr;
+	struct ksmbd_file *fp;
 
 	ksmbd_debug(SMB, "Received smb2 notify\n");
 
@@ -9434,9 +9437,108 @@ int smb2_notify(struct ksmbd_work *work)
 		return -EIO;
 	}
 
-	smb2_set_err_rsp(work);
-	rsp->hdr.Status = STATUS_NOT_IMPLEMENTED;
-	return -EOPNOTSUPP;
+	/*
+	 * macOS backupd sends CHANGE_NOTIFY with FileId=FFFF...FFFF (share-root
+	 * sentinel) to watch for changes on the share root without holding an
+	 * open handle. Respond STATUS_PENDING + STATUS_NOTIFY_CLEANUP immediately;
+	 * without this, backupd aborts Time Machine setup on STATUS_FILE_CLOSED.
+	 */
+	if (req->VolatileFileId == SMB2_NO_FID &&
+	    req->PersistentFileId == SMB2_NO_FID) {
+		in_work = ksmbd_alloc_work_struct();
+		if (!in_work || allocate_interim_rsp_buf(in_work)) {
+			if (in_work)
+				ksmbd_free_work_struct(in_work);
+			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
+			smb2_set_err_rsp(work);
+			return 0;
+		}
+		if (setup_async_work(work, NULL, NULL)) {
+			ksmbd_free_work_struct(in_work);
+			rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
+			smb2_set_err_rsp(work);
+			return 0;
+		}
+		smb2_send_interim_resp(work, STATUS_PENDING);
+		in_work->conn = work->conn;
+		in_hdr = smb2_get_msg(in_work->response_buf);
+		memcpy(in_hdr, ksmbd_resp_buf_next(work),
+		       __SMB2_HEADER_STRUCTURE_SIZE);
+		in_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
+		in_hdr->Id.AsyncId = cpu_to_le64(work->async_id);
+		smb2_set_err_rsp(in_work);
+		in_hdr->Status = STATUS_NOTIFY_CLEANUP;
+		in_work->async_id = work->async_id;
+		work->async_id = 0;
+		release_async_work(work);
+		ksmbd_conn_write(in_work);
+		ksmbd_free_work_struct(in_work);
+		work->send_no_response = 1;
+		return 0;
+	}
+
+	/*
+	 * KSMBD does not implement a real change-notification backend.
+	 * Genuine SMB2 servers (and macOS smbfs) never complete a
+	 * CHANGE_NOTIFY spontaneously: it is satisfied only by a real
+	 * directory change, or with STATUS_NOTIFY_CLEANUP when the watched
+	 * handle is closed. Completing it early (e.g. on a timer) makes
+	 * Finder treat the cleanup as "directory changed" and re-enumerate
+	 * the directory forever, leaving items unopenable. Returning
+	 * STATUS_NOT_IMPLEMENTED here (like stock ksmbd) makes macOS smbfs
+	 * hard-freeze on unmount, so this must stay deferred.
+	 */
+	fp = ksmbd_lookup_fd_slow(work, req->VolatileFileId, req->PersistentFileId);
+	if (!fp) {
+		rsp->hdr.Status = STATUS_FILE_CLOSED;
+		smb2_set_err_rsp(work);
+		return 0;
+	}
+
+	in_work = ksmbd_alloc_work_struct();
+	if (!in_work || allocate_interim_rsp_buf(in_work)) {
+		if (in_work)
+			ksmbd_free_work_struct(in_work);
+		ksmbd_fd_put(work, fp);
+		rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
+		smb2_set_err_rsp(work);
+		return 0;
+	}
+
+	if (setup_async_work(work, NULL, NULL)) {
+		ksmbd_free_work_struct(in_work);
+		ksmbd_fd_put(work, fp);
+		rsp->hdr.Status = STATUS_INSUFFICIENT_RESOURCES;
+		smb2_set_err_rsp(work);
+		return 0;
+	}
+
+	smb2_send_interim_resp(work, STATUS_PENDING);
+
+	in_work->conn = work->conn;
+	in_hdr = smb2_get_msg(in_work->response_buf);
+	memcpy(in_hdr, ksmbd_resp_buf_next(work), __SMB2_HEADER_STRUCTURE_SIZE);
+	in_hdr->Flags |= SMB2_FLAGS_ASYNC_COMMAND;
+	in_hdr->Id.AsyncId = cpu_to_le64(work->async_id);
+	smb2_set_err_rsp(in_work);
+	in_hdr->Status = STATUS_NOTIFY_CLEANUP;
+
+	/*
+	 * Transfer ownership of the async id to in_work; it stays reserved
+	 * until in_work is freed after the deferred response is sent on
+	 * close, so it can't be reused for an unrelated async response.
+	 */
+	in_work->async_id = work->async_id;
+	work->async_id = 0;
+	release_async_work(work);
+
+	spin_lock(&fp->f_lock);
+	list_add_tail(&in_work->notify_entry, &fp->notify_pendings);
+	spin_unlock(&fp->f_lock);
+
+	ksmbd_fd_put(work, fp);
+	work->send_no_response = 1;
+	return 0;
 }
 
 /**
