@@ -442,11 +442,26 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 	 * (no real change-notification backend), only on close -- matching
 	 * genuine SMB2/macOS smbfs semantics and avoiding the Finder
 	 * "directory changed, re-enumerate everything" loop.
+	 *
+	 * smb2_notify() on another connection can be adding to
+	 * notify_pendings under fp->f_lock at the same time this handle is
+	 * closed. Splice the list out under that same lock before touching
+	 * it, instead of walking it unlocked -- ksmbd_conn_write() can sleep
+	 * (it takes conn's write mutex), so it must not be called while
+	 * fp->f_lock is held.
 	 */
-	list_for_each_entry_safe(cn_work, cn_tmp, &fp->notify_pendings, notify_entry) {
-		list_del_init(&cn_work->notify_entry);
-		ksmbd_conn_write(cn_work);
-		ksmbd_free_work_struct(cn_work);
+	{
+		LIST_HEAD(cn_dispose);
+
+		spin_lock(&fp->f_lock);
+		list_splice_init(&fp->notify_pendings, &cn_dispose);
+		spin_unlock(&fp->f_lock);
+
+		list_for_each_entry_safe(cn_work, cn_tmp, &cn_dispose, notify_entry) {
+			list_del_init(&cn_work->notify_entry);
+			ksmbd_conn_write(cn_work);
+			ksmbd_free_work_struct(cn_work);
+		}
 	}
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	kfree(fp->filename);
