@@ -3414,6 +3414,13 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 				return sret;
 		}
 
+		if (chunk_count == 0) {
+			/* AAPL full-stream-copy request: report actual bytes copied. */
+			*chunk_count_written = 1;
+			*total_size_written = buf_len;
+			return 0;
+		}
+
 		/*
 		 * macOS reuses the main file's chunk list for stream copies,
 		 * so req_total equals the file size, not the stream size.
@@ -3428,6 +3435,46 @@ int ksmbd_vfs_copy_file_ranges(struct ksmbd_work *work,
 	}
 
 	smb_break_all_levII_oplock(work, dst_fp, 1);
+
+	/*
+	 * macOS Finder's Cmd+D duplicate sends FSCTL_SRV_COPYCHUNK with
+	 * ChunkCount=0 meaning "copy the whole file", not the standard
+	 * SMB2 "query my copy limits, no data" semantics -- fsctl_copychunk()
+	 * only reaches here with chunk_count == 0 for AAPL-negotiated
+	 * connections, so this doesn't affect compliant non-Apple clients.
+	 * Without this, the destination stays at its just-created 0 bytes.
+	 */
+	if (chunk_count == 0) {
+		loff_t size = i_size_read(file_inode(src_fp->filp));
+		loff_t off = 0;
+
+		while (off < size) {
+			ssize_t copied = vfs_copy_file_range(src_fp->filp, off,
+					dst_fp->filp, off, size - off, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 19, 0)
+			if (copied == -EOPNOTSUPP || copied == -EXDEV)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+				copied = vfs_copy_file_range(src_fp->filp, off,
+						dst_fp->filp, off,
+						size - off, COPY_FILE_SPLICE);
+#else
+				copied = generic_copy_file_range(src_fp->filp, off,
+						dst_fp->filp, off,
+						size - off, 0);
+#endif
+#endif
+			if (copied < 0)
+				return copied;
+			if (copied == 0)
+				break;
+			off += copied;
+		}
+
+		*chunk_count_written = 1;
+		*chunk_size_written = (unsigned int)min_t(loff_t, size, UINT_MAX);
+		*total_size_written = off;
+		return 0;
+	}
 
 	if (!work->tcon->posix_extensions) {
 		for (i = 0; i < chunk_count; i++) {
