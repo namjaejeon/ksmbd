@@ -4299,9 +4299,11 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 		fibdinfo->Reserved = 0;
 		if (conn->aapl_readdir_attr) {
 			/*
-			 * READDIR_ATTR wire format, reverse-engineered from
-			 * macOS smbfs.kext network behavior:
-			 *   EaSize           = max_access (FILE_GENERIC_ALL, simplified)
+			 * READDIR_ATTR wire format, confirmed against Samba's
+			 * vfs_fruit marshalling (source3/smbd/smb2_trans2.c):
+			 *   EaSize           = max_access (expanded specific
+			 *                      rights, simplified to "grant all")
+			 *   ShortNameLength  = 24 (fixed; not 0, despite the spec)
 			 *   ShortName[0..7]  = resource fork size (uint64 LE, 0 = no rfork)
 			 *   ShortName[8..23] = compressed FinderInfo (type+creator+flags+
 			 *                      ext_flags+date_added, 16 bytes LE; all
@@ -4315,7 +4317,29 @@ static int smb2_populate_readdir_entry(struct ksmbd_conn *conn, int info_level,
 
 			if (reparse_tag)
 				fibdinfo->ExtFileAttributes = ATTR_REPARSE_POINT_LE;
-			fibdinfo->EaSize = FILE_GENERIC_ALL_LE;
+			/*
+			 * FILE_GENERIC_ALL_LE (0x10000000) is the raw
+			 * "generic all" meta-bit -- valid only in a
+			 * client's requested access mask, for the server
+			 * to expand. It has none of the specific FILE_*
+			 * rights bits set (FILE_LIST_DIRECTORY, FILE_TRAVERSE,
+			 * etc.), so reporting it here as max_access made
+			 * macOS's bit-by-bit access checks fail on every
+			 * entry -> permanent "no entry" badges in Finder.
+			 * Report the actual expanded rights instead, same
+			 * as smb_map_generic_desired_access() does when
+			 * translating a client's GENERIC_ALL request.
+			 */
+			fibdinfo->EaSize = cpu_to_le32(GENERIC_ALL_FLAGS);
+			/*
+			 * The spec says ShortNameLength should be 0 when
+			 * there's no short name, but real macOS clients
+			 * expect it set to 24 for READDIR_ATTR entries --
+			 * confirmed in Samba's vfs_fruit marshalling
+			 * (smb2_trans2.c): "on the wire behaviour shows
+			 * its set to 24 by clients."
+			 */
+			fibdinfo->ShortNameLength = 24;
 			memset(fibdinfo->ShortName, 0, sizeof(fibdinfo->ShortName));
 			fibdinfo->Reserved2 = cpu_to_le16(ksmbd_kstat->kstat->mode & 0xffff);
 		} else {

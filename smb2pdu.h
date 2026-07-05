@@ -610,8 +610,14 @@ struct smb2_tree_disconnect_rsp {
  * UNIX_BASED: prevents macOS Windows-compat mode (question-mark icons).
  * COPYFILE: enables server-side file copy via FSCTL_SRV_COPYCHUNK.
  * READDIR_ATTR: inline FinderInfo per FIND entry, set when client also
- *   advertises the bit; format: EaSize=max_access, ShortName[0..7]=rfork_size,
- *   ShortName[8..23]=FinderInfo(16B), Reserved2=unix_mode.
+ *   advertises the bit; format confirmed against Samba's vfs_fruit
+ *   (source3/smbd/smb2_trans2.c): EaSize=max_access, ShortNameLength=24
+ *   (fixed, despite spec saying 0), ShortName[0..7]=rfork_size,
+ *   ShortName[8..23]=FinderInfo(16B), Reserved2=unix_mode. The
+ *   max_access value must be an expanded specific-rights mask
+ *   (GENERIC_ALL_FLAGS), not the raw FILE_GENERIC_ALL_LE "generic"
+ *   meta-bit -- see smb2pdu.c FILEID_BOTH_DIRECTORY_INFORMATION
+ *   handling for why.
  */
 #define AAPL_SERVER_CAPS_KSMBD	(AAPL_CAPS_UNIX_BASED | AAPL_CAPS_COPYFILE | \
 				 AAPL_CAPS_READDIR_ATTR)
