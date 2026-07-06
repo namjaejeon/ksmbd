@@ -396,10 +396,6 @@ static void __ksmbd_remove_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp
 	if (!has_file_id(fp->volatile_id))
 		return;
 
-	down_write(&fp->f_ci->m_lock);
-	list_del_init(&fp->node);
-	up_write(&fp->f_ci->m_lock);
-
 	write_lock(&ft->lock);
 	idr_remove(ft->idr, fp->volatile_id);
 	write_unlock(&ft->lock);
@@ -415,6 +411,19 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 	ksmbd_remove_durable_fd(fp);
 	if (ft)
 		__ksmbd_remove_fd(ft, fp);
+
+	/*
+	 * fp stays linked into f_ci->m_fp_list (checked by
+	 * ksmbd_smb_check_shared_mode() on every open) regardless of which
+	 * file table it belongs to -- including durable handles closed by
+	 * the scavenger with ft == NULL. Unlink it here unconditionally;
+	 * leaving it linked would corrupt m_fp_list once fp is freed below.
+	 */
+	if (has_file_id(fp->volatile_id)) {
+		down_write(&fp->f_ci->m_lock);
+		list_del_init(&fp->node);
+		up_write(&fp->f_ci->m_lock);
+	}
 
 	close_id_del_oplock(fp);
 	filp = fp->filp;
@@ -772,6 +781,7 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 
 	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
+	INIT_LIST_HEAD(&fp->dh_scavenger_entry);
 	INIT_LIST_HEAD(&fp->lock_list);
 	INIT_LIST_HEAD(&fp->notify_pendings);
 	spin_lock_init(&fp->f_lock);
@@ -909,8 +919,8 @@ static void ksmbd_scavenger_dispose_dh(struct list_head *head)
 	while (!list_empty(head)) {
 		struct ksmbd_file *fp;
 
-		fp = list_first_entry(head, struct ksmbd_file, node);
-		list_del_init(&fp->node);
+		fp = list_first_entry(head, struct ksmbd_file, dh_scavenger_entry);
+		list_del_init(&fp->dh_scavenger_entry);
 		__ksmbd_close_fd(NULL, fp);
 	}
 }
@@ -954,7 +964,7 @@ static int ksmbd_durable_scavenger(void *dummy)
 			if (fp->durable_scavenger_timeout <=
 			    jiffies_to_msecs(jiffies)) {
 				__ksmbd_remove_durable_fd(fp);
-				list_add(&fp->node, &scavenger_list);
+				list_add(&fp->dh_scavenger_entry, &scavenger_list);
 			} else {
 				unsigned long durable_timeout;
 

@@ -98,6 +98,14 @@ struct ksmbd_file {
 
 	struct stream			stream;
 	struct list_head		node;
+	/*
+	 * Durable-handle scavenger's temporary dispose list linkage.
+	 * Deliberately separate from `node' (which stays linked into
+	 * f_ci->m_fp_list until the file is actually closed) -- reusing
+	 * `node' here would silently corrupt m_fp_list the moment a durable
+	 * handle times out while still registered on its inode.
+	 */
+	struct list_head		dh_scavenger_entry;
 	struct list_head		blocked_works;
 	struct list_head		lock_list;
 
