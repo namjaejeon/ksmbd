@@ -18,6 +18,7 @@
 #include "mgmt/user_session.h"
 #include "mgmt/share_config.h"
 #include "mgmt/tree_connect.h"
+#include "server.h"
 
 static LIST_HEAD(lease_table_list);
 static DEFINE_RWLOCK(lease_list_lock);
@@ -1295,11 +1296,66 @@ static void set_oplock_level(struct oplock_info *opinfo, int level,
 	}
 }
 
+/*
+ * Collect refcounted lease holders on a parent directory that need to be
+ * broken, without holding p_ci->m_lock during the break acknowledgment
+ * wait (up to OPLOCK_WAIT_TIME, 35s). Holding that lock across
+ * oplock_break() blocks every other create/delete/rename under the same
+ * parent directory for the full wait whenever a single lease holder
+ * fails to acknowledge -- e.g. a macOS Time Machine client whose backupd
+ * connection has gone quiet mid-backup while Finder is still browsing
+ * the same share. Returns the number of entries filled into *out
+ * (caller must kfree it).
+ */
+static int collect_parent_lease_holders(struct ksmbd_inode *p_ci,
+					struct ksmbd_file *fp,
+					struct lease_ctx_info *lctx,
+					struct oplock_info ***out)
+{
+	struct oplock_info *opinfo, **arr = NULL;
+	int count = 0, cap = 0;
+
+	down_read(&p_ci->m_lock);
+	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
+		if (opinfo->conn == NULL || !opinfo->is_lease)
+			continue;
+		if (opinfo->o_lease->state == SMB2_OPLOCK_LEVEL_NONE)
+			continue;
+		if (lctx && (lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE) &&
+		    compare_guid_key(opinfo, fp->conn->ClientGUID,
+				     lctx->parent_lease_key))
+			continue;
+		if (!atomic_inc_not_zero(&opinfo->refcount))
+			continue;
+		if (ksmbd_conn_releasing(opinfo->conn)) {
+			opinfo_put(opinfo);
+			continue;
+		}
+		if (count == cap) {
+			int new_cap = cap ? cap * 2 : 4;
+			struct oplock_info **n = krealloc(arr,
+					new_cap * sizeof(*n), GFP_KERNEL);
+			if (!n) {
+				opinfo_put(opinfo);
+				continue;
+			}
+			arr = n;
+			cap = new_cap;
+		}
+		arr[count++] = opinfo;
+	}
+	up_read(&p_ci->m_lock);
+
+	*out = arr;
+	return count;
+}
+
 void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 				      struct lease_ctx_info *lctx)
 {
-	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
+	struct oplock_info **to_break = NULL;
+	int count, i;
 
 	if (lctx->version != 2)
 		return;
@@ -1308,36 +1364,22 @@ void smb_send_parent_lease_break_noti(struct ksmbd_file *fp,
 	if (!p_ci)
 		return;
 
-	down_read(&p_ci->m_lock);
-	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (opinfo->conn == NULL || !opinfo->is_lease)
-			continue;
-
-		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE &&
-		    (!(lctx->flags & SMB2_LEASE_FLAG_PARENT_LEASE_KEY_SET_LE) ||
-		     !compare_guid_key(opinfo, fp->conn->ClientGUID,
-				      lctx->parent_lease_key))) {
-			if (!atomic_inc_not_zero(&opinfo->refcount))
-				continue;
-
-			if (ksmbd_conn_releasing(opinfo->conn)) {
-				opinfo_put(opinfo);
-				continue;
-			}
-
-			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE, NULL);
-			opinfo_put(opinfo);
-		}
-	}
-	up_read(&p_ci->m_lock);
-
+	count = collect_parent_lease_holders(p_ci, fp, lctx, &to_break);
 	ksmbd_inode_put(p_ci);
+
+	for (i = 0; i < count; i++) {
+		oplock_break(to_break[i], SMB2_OPLOCK_LEVEL_NONE, NULL);
+		opinfo_put(to_break[i]);
+	}
+	kfree(to_break);
 }
 
 void smb_lazy_parent_lease_break_close(struct ksmbd_file *fp)
 {
 	struct oplock_info *opinfo;
 	struct ksmbd_inode *p_ci = NULL;
+	struct oplock_info **to_break = NULL;
+	int count, i;
 
 	rcu_read_lock();
 	opinfo = rcu_dereference(fp->f_opinfo);
@@ -1350,27 +1392,14 @@ void smb_lazy_parent_lease_break_close(struct ksmbd_file *fp)
 	if (!p_ci)
 		return;
 
-	down_read(&p_ci->m_lock);
-	list_for_each_entry(opinfo, &p_ci->m_op_list, op_entry) {
-		if (opinfo->conn == NULL || !opinfo->is_lease)
-			continue;
-
-		if (opinfo->o_lease->state != SMB2_OPLOCK_LEVEL_NONE) {
-			if (!atomic_inc_not_zero(&opinfo->refcount))
-				continue;
-
-			if (ksmbd_conn_releasing(opinfo->conn)) {
-				opinfo_put(opinfo);
-				continue;
-			}
-
-			oplock_break(opinfo, SMB2_OPLOCK_LEVEL_NONE, NULL);
-			opinfo_put(opinfo);
-		}
-	}
-	up_read(&p_ci->m_lock);
-
+	count = collect_parent_lease_holders(p_ci, fp, NULL, &to_break);
 	ksmbd_inode_put(p_ci);
+
+	for (i = 0; i < count; i++) {
+		oplock_break(to_break[i], SMB2_OPLOCK_LEVEL_NONE, NULL);
+		opinfo_put(to_break[i]);
+	}
+	kfree(to_break);
 }
 
 /**
@@ -2021,6 +2050,78 @@ void create_posix_rsp_buf(char *cc, struct ksmbd_file *fp)
 	id_to_sid(from_kgid_munged(&init_user_ns, inode->i_gid),
 #endif
 		  SIDUNIX_GROUP, (struct smb_sid *)&buf->SidBuffer[28]);
+}
+
+/**
+ * create_aapl_rsp_buf() - build Apple AAPL kAAPL_SERVER_QUERY response
+ * @cc:         buffer to write the create context into (AAPL_RSP_MAX_SIZE bytes)
+ * @vol_caps:   volume capability flags (AAPL_VOLCAPS_*)
+ * @req_bitmap: the client's request bitmap, echoed back in reply_bitmap
+ *
+ * Response format follows the layout observed from macOS's own smbd:
+ *   reply_bitmap = req_bitmap masked to the fields we support
+ *   server_caps  = AAPL_SERVER_CAPS_KSMBD when requested
+ *   vol_caps     = caller-supplied
+ *   model string = server_conf.aapl_model (default "Xserve") in UTF-16LE,
+ *                  when AAPL_BITMAP_MODEL_INFO requested
+ *
+ * Sending reply_bitmap=0x03 without a model string causes smbfs.kext to
+ * enter a broken disconnect path requiring a macOS reboot to recover.
+ */
+void create_aapl_rsp_buf(char *cc, __u64 vol_caps, __u64 req_bitmap)
+{
+	struct create_aapl_rsp *buf;
+	u64 reply_bitmap;
+	u32 data_len;
+
+	buf = (struct create_aapl_rsp *)cc;
+	memset(buf, 0, AAPL_RSP_MAX_SIZE);
+
+	reply_bitmap = req_bitmap & (AAPL_BITMAP_SERVER_CAPS |
+				     AAPL_BITMAP_VOL_CAPS |
+				     AAPL_BITMAP_MODEL_INFO);
+
+	/* base data: cmd(4)+reserved(4)+reply_bitmap(8)+server_caps(8)+vol_caps(8) */
+	data_len = 32;
+	if (reply_bitmap & AAPL_BITMAP_MODEL_INFO)
+		data_len += 4 + 4 + AAPL_MODEL_UTF16_BYTES; /* pad2+model_bytes+string */
+
+	buf->ccontext.DataOffset = cpu_to_le16(offsetof(struct create_aapl_rsp, cmd));
+	buf->ccontext.DataLength = cpu_to_le32(data_len);
+	buf->ccontext.NameOffset = cpu_to_le16(offsetof(struct create_aapl_rsp, Name));
+	buf->ccontext.NameLength = cpu_to_le16(4);
+	buf->Name[0] = 'A';
+	buf->Name[1] = 'A';
+	buf->Name[2] = 'P';
+	buf->Name[3] = 'L';
+
+	buf->cmd = cpu_to_le32(AAPL_SERVER_QUERY);
+	buf->reply_bitmap = cpu_to_le64(reply_bitmap);
+	buf->server_caps = (reply_bitmap & AAPL_BITMAP_SERVER_CAPS) ?
+			   cpu_to_le64(AAPL_SERVER_CAPS_KSMBD) : 0;
+	buf->vol_caps = (reply_bitmap & AAPL_BITMAP_VOL_CAPS) ?
+			cpu_to_le64(vol_caps) : 0;
+
+	if (reply_bitmap & AAPL_BITMAP_MODEL_INFO) {
+		__le32 *p = (__le32 *)((u8 *)buf + sizeof(*buf));
+		__le16 *model_str = (__le16 *)(p + 2);
+		const char *src = server_conf.aapl_model[0] ?
+				  server_conf.aapl_model : "Xserve";
+		int i, model_bytes = 0;
+
+		/* Convert ASCII model string to UTF-16LE in-place */
+		for (i = 0; src[i] && i < AAPL_MODEL_MAX_CHARS; i++) {
+			model_str[i] = cpu_to_le16((unsigned char)src[i]);
+			model_bytes += 2;
+		}
+
+		p[0] = 0; /* pad2 */
+		p[1] = cpu_to_le32(model_bytes);
+
+		/* Update DataLength to reflect actual model string size */
+		buf->ccontext.DataLength =
+			cpu_to_le32(data_len - AAPL_MODEL_UTF16_BYTES + model_bytes);
+	}
 }
 
 /*

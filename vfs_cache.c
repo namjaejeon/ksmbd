@@ -173,6 +173,38 @@ void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 	up_write(&ci->m_lock);
 }
 
+/*
+ * FileDispositionInformation (SET_INFO) on a stream handle must only
+ * mark the stream for deletion, not the whole file -- otherwise
+ * deleting a single alternate data stream (e.g. AFP_AfpInfo) deletes
+ * the entire file's data along with it.
+ */
+void ksmbd_fd_set_delete_pending(struct ksmbd_file *fp)
+{
+	struct ksmbd_inode *ci = fp->f_ci;
+
+	if (ksmbd_stream_fd(fp)) {
+		down_write(&ci->m_lock);
+		ci->m_flags |= S_DEL_ON_CLS_STREAM;
+		up_write(&ci->m_lock);
+	} else {
+		ksmbd_set_inode_pending_delete(fp);
+	}
+}
+
+void ksmbd_fd_clear_delete_pending(struct ksmbd_file *fp)
+{
+	struct ksmbd_inode *ci = fp->f_ci;
+
+	if (ksmbd_stream_fd(fp)) {
+		down_write(&ci->m_lock);
+		ci->m_flags &= ~S_DEL_ON_CLS_STREAM;
+		up_write(&ci->m_lock);
+	} else {
+		ksmbd_clear_inode_pending_delete(fp);
+	}
+}
+
 static void ksmbd_inode_hash(struct ksmbd_inode *ci)
 {
 	struct hlist_head *b = inode_hashtable +
@@ -364,10 +396,6 @@ static void __ksmbd_remove_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp
 	if (!has_file_id(fp->volatile_id))
 		return;
 
-	down_write(&fp->f_ci->m_lock);
-	list_del_init(&fp->node);
-	up_write(&fp->f_ci->m_lock);
-
 	write_lock(&ft->lock);
 	idr_remove(ft->idr, fp->volatile_id);
 	write_unlock(&ft->lock);
@@ -377,11 +405,25 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 {
 	struct file *filp;
 	struct ksmbd_lock *smb_lock, *tmp_lock;
+	struct ksmbd_work *cn_work, *cn_tmp;
 
 	fd_limit_close();
 	ksmbd_remove_durable_fd(fp);
 	if (ft)
 		__ksmbd_remove_fd(ft, fp);
+
+	/*
+	 * fp stays linked into f_ci->m_fp_list (checked by
+	 * ksmbd_smb_check_shared_mode() on every open) regardless of which
+	 * file table it belongs to -- including durable handles closed by
+	 * the scavenger with ft == NULL. Unlink it here unconditionally;
+	 * leaving it linked would corrupt m_fp_list once fp is freed below.
+	 */
+	if (has_file_id(fp->volatile_id)) {
+		down_write(&fp->f_ci->m_lock);
+		list_del_init(&fp->node);
+		up_write(&fp->f_ci->m_lock);
+	}
 
 	close_id_del_oplock(fp);
 	filp = fp->filp;
@@ -401,6 +443,34 @@ static void __ksmbd_close_fd(struct ksmbd_file_table *ft, struct ksmbd_file *fp)
 		list_del(&smb_lock->flist);
 		locks_free_lock(smb_lock->fl);
 		kfree(smb_lock);
+	}
+
+	/*
+	 * Complete any CHANGE_NOTIFY left pending on this handle now that
+	 * it is closed. KSMBD never completes CHANGE_NOTIFY spontaneously
+	 * (no real change-notification backend), only on close -- matching
+	 * genuine SMB2/macOS smbfs semantics and avoiding the Finder
+	 * "directory changed, re-enumerate everything" loop.
+	 *
+	 * smb2_notify() on another connection can be adding to
+	 * notify_pendings under fp->f_lock at the same time this handle is
+	 * closed. Splice the list out under that same lock before touching
+	 * it, instead of walking it unlocked -- ksmbd_conn_write() can sleep
+	 * (it takes conn's write mutex), so it must not be called while
+	 * fp->f_lock is held.
+	 */
+	{
+		LIST_HEAD(cn_dispose);
+
+		spin_lock(&fp->f_lock);
+		list_splice_init(&fp->notify_pendings, &cn_dispose);
+		spin_unlock(&fp->f_lock);
+
+		list_for_each_entry_safe(cn_work, cn_tmp, &cn_dispose, notify_entry) {
+			list_del_init(&cn_work->notify_entry);
+			ksmbd_conn_write(cn_work);
+			ksmbd_free_work_struct(cn_work);
+		}
 	}
 #ifdef CONFIG_SMB_INSECURE_SERVER
 	kfree(fp->filename);
@@ -711,7 +781,9 @@ struct ksmbd_file *ksmbd_open_fd(struct ksmbd_work *work, struct file *filp)
 
 	INIT_LIST_HEAD(&fp->blocked_works);
 	INIT_LIST_HEAD(&fp->node);
+	INIT_LIST_HEAD(&fp->dh_scavenger_entry);
 	INIT_LIST_HEAD(&fp->lock_list);
+	INIT_LIST_HEAD(&fp->notify_pendings);
 	spin_lock_init(&fp->f_lock);
 	atomic_set(&fp->refcount, 1);
 
@@ -847,8 +919,8 @@ static void ksmbd_scavenger_dispose_dh(struct list_head *head)
 	while (!list_empty(head)) {
 		struct ksmbd_file *fp;
 
-		fp = list_first_entry(head, struct ksmbd_file, node);
-		list_del_init(&fp->node);
+		fp = list_first_entry(head, struct ksmbd_file, dh_scavenger_entry);
+		list_del_init(&fp->dh_scavenger_entry);
 		__ksmbd_close_fd(NULL, fp);
 	}
 }
@@ -892,7 +964,7 @@ static int ksmbd_durable_scavenger(void *dummy)
 			if (fp->durable_scavenger_timeout <=
 			    jiffies_to_msecs(jiffies)) {
 				__ksmbd_remove_durable_fd(fp);
-				list_add(&fp->node, &scavenger_list);
+				list_add(&fp->dh_scavenger_entry, &scavenger_list);
 			} else {
 				unsigned long durable_timeout;
 

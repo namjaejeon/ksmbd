@@ -98,6 +98,14 @@ struct ksmbd_file {
 
 	struct stream			stream;
 	struct list_head		node;
+	/*
+	 * Durable-handle scavenger's temporary dispose list linkage.
+	 * Deliberately separate from `node' (which stays linked into
+	 * f_ci->m_fp_list until the file is actually closed) -- reusing
+	 * `node' here would silently corrupt m_fp_list the moment a durable
+	 * handle times out while still registered on its inode.
+	 */
+	struct list_head		dh_scavenger_entry;
 	struct list_head		blocked_works;
 	struct list_head		lock_list;
 
@@ -128,6 +136,12 @@ struct ksmbd_file {
 	bool				is_resilient;
 
 	bool                            is_posix_ctxt;
+
+	/*
+	 * Pending CHANGE_NOTIFY completions for this handle, sent with
+	 * STATUS_NOTIFY_CLEANUP when the handle is closed.
+	 */
+	struct list_head		notify_pendings;
 };
 
 static inline void set_ctx_actor(struct dir_context *ctx,
@@ -203,6 +217,8 @@ void ksmbd_set_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_clear_inode_pending_delete(struct ksmbd_file *fp);
 void ksmbd_fd_set_delete_on_close(struct ksmbd_file *fp,
 				  int file_info);
+void ksmbd_fd_set_delete_pending(struct ksmbd_file *fp);
+void ksmbd_fd_clear_delete_pending(struct ksmbd_file *fp);
 int ksmbd_reopen_durable_fd(struct ksmbd_work *work, struct ksmbd_file *fp);
 int ksmbd_validate_name_reconnect(struct ksmbd_share_config *share,
 				  struct ksmbd_file *fp, char *name);
